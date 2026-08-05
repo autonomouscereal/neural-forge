@@ -6,7 +6,7 @@ boundary primitive already gives the compositionally correct local target::
 
     child_write = encoded_parent_endpoint - actual_child_pre_state
 
-This module adds the missing whole-stack pieces without executing either
+This module adds the missing whole-stack pieces without executing the parent
 model: a cycle-coupled encoder/decoder at every cached parent/live-child
 boundary, explicit ``E_(l+1) D_l`` chart transitions, polar separation of the
 orthogonal factor that may cross RMSNorm from the non-orthogonal factor that
@@ -14,9 +14,20 @@ must be absorbed by physical writers, and one forward plus one reverse
 closed-form writer reconciliation sweep.  Publication consists only of dense
 replacement tensors in the seed target dtype.  No runtime sidecar remains.
 
+The default reverse sweep transports a local writer correction to the terminal
+through the exact physical identity skip, which is only valid under the
+explicit frozen-writer-input approximation.  ``reverse_sweep_mode`` selects the
+alternative: the caller hands in one mid-sweep child recapture provider, the
+forward replacements are measured on the actual child between the sweeps, and
+the reverse solves are anchored on that measured downstream response instead of
+the identity assumption.  That mode is a distinct sealed policy; the sealed
+digest of every prior forward-only run is unchanged.
+
 This is analytic folding, not training.  There is no autograd graph, backward
-call, optimizer, parent recapture, model forward, pruning, quantization, or
-numeric quality gate.
+call, optimizer, parent recapture, parent model forward, pruning, quantization,
+or numeric quality gate.  The optional mid-sweep child recapture is executed by
+the caller's provider, never by this module, and its declared child replay and
+forward counts are sealed into the receipt.
 """
 
 from __future__ import annotations
@@ -44,6 +55,9 @@ from neural_forge.hf_cpcf_sequential_boundary_transport import (
 LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA = (
     "neural-forge-lfm2-moving-gauge-residual-reclosure-v1"
 )
+LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA = (
+    "neural-forge-lfm2-moving-gauge-residual-reclosure-recaptured-reverse-v2"
+)
 _IMPLEMENTATION = (
     "neural_forge.hf_lfm2_moving_gauge_residual_reclosure."
     "cycle-coupled-polar-forward-reverse-dense-replacement.v1"
@@ -51,6 +65,12 @@ _IMPLEMENTATION = (
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _INTERFACE_ROLES = frozenset({"input", "intermediate", "terminal"})
 _TRANSITION_MODES = frozenset({"moving_gauge", "forced_identity_diagnostic"})
+_REVERSE_SWEEP_MODES = frozenset(
+    {"forward_only_identity_transport", "recaptured_terminal_anchored"}
+)
+_IDENTITY_TRANSPORT_KIND = "exact_physical_identity_skip_under_frozen_writer_inputs"
+_TERMINAL_BOUNDARY_TRANSPORT_KIND = "exact_physical_identity_at_terminal_boundary"
+_MEASURED_TRANSPORT_KIND = "measured_recaptured_child_downstream_response"
 _SUPPORTED_TARGET_DTYPES = frozenset({"float32", "bfloat16"})
 _WRITER_PUBLICATION_KINDS = frozenset(
     {"live_physical_parameter", "deferred_dense_prior"}
@@ -731,6 +751,8 @@ class Lfm2MovingGaugeReclosurePolicy:
     absolute_ridge_floor: float = 1e-12
     orthogonality_tolerance: float = 1e-10
     transition_mode: str = "moving_gauge"
+    reverse_sweep_mode: str = "forward_only_identity_transport"
+    recaptured_step_ridge_ratio: float = 1e-2
     authentication_sha256: str = ""
 
     def __post_init__(self) -> None:
@@ -739,6 +761,7 @@ class Lfm2MovingGaugeReclosurePolicy:
             "cycle_consistency_weight",
             "writer_ridge_ratio",
             "reverse_transport_ridge_ratio",
+            "recaptured_step_ridge_ratio",
             "orthogonality_tolerance",
         ):
             object.__setattr__(
@@ -760,6 +783,13 @@ class Lfm2MovingGaugeReclosurePolicy:
                 "transition_mode must be moving_gauge or forced_identity_diagnostic."
             )
         object.__setattr__(self, "transition_mode", mode)
+        reverse_mode = str(self.reverse_sweep_mode).strip().lower()
+        if reverse_mode not in _REVERSE_SWEEP_MODES:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "reverse_sweep_mode must be forward_only_identity_transport or "
+                "recaptured_terminal_anchored."
+            )
+        object.__setattr__(self, "reverse_sweep_mode", reverse_mode)
         expected = _sha256(self.authentication_body())
         supplied = str(self.authentication_sha256).strip().lower()
         if supplied and supplied != expected:
@@ -769,7 +799,7 @@ class Lfm2MovingGaugeReclosurePolicy:
         object.__setattr__(self, "authentication_sha256", expected)
 
     def authentication_body(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
             "kind": "moving_gauge_reclosure_policy",
             "chart_ridge_ratio": self.chart_ridge_ratio,
@@ -784,6 +814,20 @@ class Lfm2MovingGaugeReclosurePolicy:
             "closed_form_solves_only": True,
             "numeric_quality_gate": False,
             "execution": dict(_ZERO_EXECUTION),
+        }
+        if self.reverse_sweep_mode == "forward_only_identity_transport":
+            # The forward-only body is pinned byte-for-byte: every reclosure
+            # sealed before the recaptured mode existed keeps its policy digest.
+            return body
+        return {
+            **body,
+            "policy_schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+            "reverse_sweep_mode": self.reverse_sweep_mode,
+            "recaptured_step_ridge_ratio": self.recaptured_step_ridge_ratio,
+            "mid_sweep_child_recapture_count": 1,
+            "reverse_downstream_transport_kind": _MEASURED_TRANSPORT_KIND,
+            "frozen_writer_input_identity_transport": False,
+            "reverse_writer_inputs_measured_after_forward_publication": True,
         }
 
     def verify_authentication(self) -> bool:
@@ -3362,6 +3406,159 @@ class Lfm2MovingGaugeWriterEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2MovingGaugeRecapturedChildState:
+    """One fresh child recapture measured between the two writer sweeps.
+
+    The compiler never executes a model.  The caller publishes the forward
+    replacements onto its live child, replays the same aligned FIT rows through
+    the adapter's existing internal recapture, and hands the measured boundary
+    states and writer input rows back here.  ``request_sha256`` binds the
+    recapture to the exact forward replacement tensors it was measured on, so a
+    stale or foreign capture fails closed instead of silently anchoring the
+    reverse sweep on the wrong child.
+    """
+
+    request_sha256: str
+    boundary_child_rows: tuple[Any, ...] = field(repr=False, compare=False)
+    writer_input_rows: Mapping[str, Any] = field(repr=False, compare=False)
+    row_alignment_sha256: str = ""
+    recapture_provenance: str = ""
+    child_state_sha256: str = ""
+    capture_sha256: str = ""
+    child_replay_capture_calls: int = 1
+    child_model_forward_calls: int = 0
+    report: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        request = _digest(self.request_sha256, "request_sha256")
+        rows_input = tuple(self.boundary_child_rows)
+        if len(rows_input) < 2:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "A mid-sweep recapture must measure every boundary state."
+            )
+        boundary_rows = tuple(
+            _matrix(value, f"boundary_child_rows.{index}", dtype=torch.float64)
+            for index, value in enumerate(rows_input)
+        )
+        row_count = int(boundary_rows[0].shape[0])
+        if any(int(value.shape[0]) != row_count for value in boundary_rows):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "Recaptured boundary rows do not share one aligned row contract."
+            )
+        if not isinstance(self.writer_input_rows, Mapping) or not (
+            self.writer_input_rows
+        ):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "Recaptured writer input rows must be a nonempty mapping."
+            )
+        writer_rows = {}
+        for parameter_id, value in self.writer_input_rows.items():
+            name = _text(parameter_id, "writer_input_rows key")
+            rows = _matrix(
+                value,
+                f"writer_input_rows.{name}",
+                dtype=torch.float64,
+            )
+            if int(rows.shape[0]) != row_count:
+                raise Lfm2MovingGaugeResidualReclosureError(
+                    "Recaptured writer input rows do not share the boundary "
+                    "row contract."
+                )
+            writer_rows[name] = rows
+        alignment = _digest(self.row_alignment_sha256, "row_alignment_sha256")
+        child_state = _digest(self.child_state_sha256, "child_state_sha256")
+        capture = _digest(self.capture_sha256, "capture_sha256")
+        provenance = _text(self.recapture_provenance, "recapture_provenance")
+        replay_calls = self.child_replay_capture_calls
+        forward_calls = self.child_model_forward_calls
+        if (
+            isinstance(replay_calls, bool)
+            or not isinstance(replay_calls, int)
+            or replay_calls < 1
+            or isinstance(forward_calls, bool)
+            or not isinstance(forward_calls, int)
+            or forward_calls < 0
+        ):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "A mid-sweep recapture must declare at least one child replay "
+                "capture and nonnegative child forward calls."
+            )
+        body = {
+            "schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+            "kind": "mid_sweep_recaptured_child_state",
+            "request_sha256": request,
+            "row_alignment_sha256": alignment,
+            "recapture_provenance": provenance,
+            "recapture_provenance_sha256": _sha256(provenance),
+            "child_state_sha256": child_state,
+            "capture_sha256": capture,
+            "rows": row_count,
+            "boundary_count": len(boundary_rows),
+            "boundary_child_widths": [
+                int(value.shape[1]) for value in boundary_rows
+            ],
+            "boundary_child_rows_sha256": [
+                fingerprint_lfm2_moving_gauge_tensor(value)
+                for value in boundary_rows
+            ],
+            "writer_parameter_ids": sorted(writer_rows),
+            "writer_input_rows_sha256": {
+                name: fingerprint_lfm2_moving_gauge_tensor(writer_rows[name])
+                for name in sorted(writer_rows)
+            },
+            "measured_on_live_child_after_forward_publication": True,
+            "child_replay_capture_calls": replay_calls,
+            "child_model_forward_calls": forward_calls,
+            "parent_model_forward_calls": 0,
+            "parent_trace_recaptures": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "quality_gate": False,
+        }
+        supplied = dict(self.report)
+        if supplied:
+            if supplied != dict(_seal(body)):
+                raise Lfm2MovingGaugeResidualAuthenticationError(
+                    "Recaptured child-state report is stale or malformed."
+                )
+            report = MappingProxyType(supplied)
+        else:
+            report = _seal(body)
+        object.__setattr__(self, "request_sha256", request)
+        object.__setattr__(self, "boundary_child_rows", boundary_rows)
+        object.__setattr__(self, "writer_input_rows", MappingProxyType(writer_rows))
+        object.__setattr__(self, "row_alignment_sha256", alignment)
+        object.__setattr__(self, "recapture_provenance", provenance)
+        object.__setattr__(self, "child_state_sha256", child_state)
+        object.__setattr__(self, "capture_sha256", capture)
+        object.__setattr__(self, "child_replay_capture_calls", replay_calls)
+        object.__setattr__(self, "child_model_forward_calls", forward_calls)
+        object.__setattr__(self, "report", report)
+
+    def verify_authentication(self) -> bool:
+        try:
+            return (
+                verify_lfm2_moving_gauge_report(self.report)
+                and self.report["boundary_child_rows_sha256"]
+                == [
+                    fingerprint_lfm2_moving_gauge_tensor(value)
+                    for value in self.boundary_child_rows
+                ]
+                and self.report["writer_input_rows_sha256"]
+                == {
+                    name: fingerprint_lfm2_moving_gauge_tensor(
+                        self.writer_input_rows[name]
+                    )
+                    for name in sorted(self.writer_input_rows)
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2MovingGaugeTransition:
     """Explicit ``E_(l+1) D_l`` plus its norm-safe polar split."""
 
@@ -3594,11 +3791,362 @@ def _split_cast_replacements(
     return MappingProxyType(result)
 
 
+def _terminal_anchored_composed_ridge(
+    design: Any,
+    downstream_transport: Any,
+    terminal_residual: Any,
+    anchor: Any,
+    weights: Any,
+    *,
+    ridge_ratio: float,
+    absolute_ridge_floor: float,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Solve ``min ||X(W-anchor)J - R||_w^2 + ridge ||W-anchor||^2`` exactly.
+
+    ``R`` is the remaining terminal residual and ``J`` the measured downstream
+    response, so only the writer *delta* is fitted: the writer keeps every part
+    of its current output and adds the correction that reaches the terminal.
+
+    The reverse sweep must not invert the measured downstream response: a
+    direction the recaptured child barely propagates would otherwise be
+    requested back at enormous magnitude, far outside the linearization the
+    recapture supports.  Solving through ``J`` instead leaves such directions
+    unrequested, because the composed normal equation weights each of them by
+    its own measured gain.
+
+    ``(X^T D X) delta (J J^T) + ridge*delta = X^T D R J^T`` is separated by one
+    symmetric eigendecomposition per side and solved coordinate-wise.  There is
+    no iterative optimizer, pseudoinverse threshold, or autograd.  At ``J = I``
+    this reduces exactly to the anchored ridge the forward-only sweep uses.
+    """
+
+    torch = _torch()
+    x = _matrix(design, "composed ridge design", dtype=torch.float64)
+    j = _matrix(downstream_transport, "composed ridge transport", dtype=torch.float64)
+    r = _matrix(terminal_residual, "composed ridge terminal residual", dtype=torch.float64)
+    a = _matrix(anchor, "composed ridge anchor", dtype=torch.float64)
+    if (
+        int(x.shape[0]) != int(r.shape[0])
+        or int(x.shape[1]) != int(a.shape[0])
+        or int(a.shape[1]) != int(j.shape[0])
+        or int(j.shape[1]) != int(r.shape[1])
+        or int(weights.numel()) != int(x.shape[0])
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Terminal-anchored composed ridge geometry is inconsistent."
+        )
+    ratio = _finite_nonnegative(ridge_ratio, "ridge_ratio")
+    floor = _finite_positive(absolute_ridge_floor, "absolute_ridge_floor")
+    transport_spectral = float(torch.linalg.matrix_norm(j, ord=2).item())
+    design_scale = _ridge_scale(x, weights)
+    scale = design_scale * transport_spectral * transport_spectral
+    ridge = max(floor, ratio * scale)
+    root = torch.sqrt(weights).unsqueeze(1)
+    weighted_x = x * root
+    # Only the delta is fitted: the writer's current output is preserved and
+    # the terminal residual is what the correction has to deliver.
+    weighted_residual = r * root
+    gram = weighted_x.T @ weighted_x
+    kernel = j @ j.T
+    cross = weighted_x.T @ weighted_residual @ j.T
+    design_values, design_basis = torch.linalg.eigh(gram)
+    transport_values, transport_basis = torch.linalg.eigh(kernel)
+    design_values = design_values.clamp_min(0.0)
+    transport_values = transport_values.clamp_min(0.0)
+    rotated = design_basis.T @ cross @ transport_basis
+    denominator = design_values.unsqueeze(1) * transport_values.unsqueeze(0) + ridge
+    delta = design_basis @ (rotated / denominator) @ transport_basis.T
+    replacement = (a + delta).contiguous()
+    if not bool(torch.isfinite(replacement).all().item()):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Terminal-anchored composed ridge replacement is non-finite."
+        )
+    report = _seal(
+        {
+            "schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+            "kind": "terminal_anchored_composed_downstream_ridge",
+            "equation": ("(X^T D X)delta(J J^T)+ridge*delta=X^T D R J^T"),
+            "fitted_quantity": "writer_delta_against_remaining_terminal_residual",
+            "solve_form": "paired_symmetric_eigenbasis",
+            "rows": int(x.shape[0]),
+            "input_width": int(x.shape[1]),
+            "downstream_width": int(j.shape[0]),
+            "terminal_width": int(j.shape[1]),
+            "ridge_ratio": ratio,
+            "design_ridge_scale": design_scale,
+            "downstream_transport_spectral_norm": transport_spectral,
+            "ridge_scale": scale,
+            "effective_ridge": ridge,
+            "design_gram_eigenvalue_max": float(design_values.max().item()),
+            "design_gram_eigenvalue_min": float(design_values.min().item()),
+            "downstream_gram_eigenvalue_max": float(transport_values.max().item()),
+            "downstream_gram_eigenvalue_min": float(transport_values.min().item()),
+            "design_sha256": fingerprint_lfm2_moving_gauge_tensor(x),
+            "downstream_transport_sha256": fingerprint_lfm2_moving_gauge_tensor(j),
+            "terminal_residual_sha256": fingerprint_lfm2_moving_gauge_tensor(r),
+            "anchor_sha256": fingerprint_lfm2_moving_gauge_tensor(a),
+            "replacement_sha256": fingerprint_lfm2_moving_gauge_tensor(replacement),
+            "downstream_transport_inverted": False,
+            "pseudoinverse_used": False,
+            "closed_form_linear_solve": True,
+            "autograd_used": False,
+            "quality_gate": False,
+        }
+    )
+    return replacement, report
+
+
+def _recaptured_writer_group(
+    sites: Sequence[Lfm2MovingGaugeWriterEvidence],
+    current: Mapping[str, Any],
+    recaptured: Lfm2MovingGaugeRecapturedChildState,
+) -> tuple[Any, Any, tuple[int, ...]]:
+    """Group one transition's writers against freshly recaptured input rows."""
+
+    torch = _torch()
+    features = torch.cat(
+        tuple(recaptured.writer_input_rows[site.parameter_id] for site in sites),
+        dim=1,
+    )
+    widths = tuple(int(site.seed_weight.shape[1]) for site in sites)
+    weights = torch.cat(
+        tuple(current[site.parameter_id].to(dtype=torch.float64) for site in sites),
+        dim=1,
+    )
+    return features, weights, widths
+
+
+def _mid_sweep_recapture_request(
+    boundaries: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    sites: Sequence[Lfm2MovingGaugeWriterEvidence],
+    current: Mapping[str, Any],
+    *,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    row_alignment_sha256: str,
+) -> Mapping[str, Any]:
+    """Seal the exact forward publication the recapture must be measured on."""
+
+    ordered = tuple(sorted(sites, key=lambda value: value.parameter_id))
+    replacements = {
+        site.parameter_id: current[site.parameter_id] for site in ordered
+    }
+    body = {
+        "schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+        "kind": "mid_sweep_recapture_request",
+        "policy_sha256": policy.authentication_sha256,
+        "row_alignment_sha256": row_alignment_sha256,
+        "rows": int(boundaries[0].fit_parent_rows.shape[0]),
+        "boundary_ids": [value.boundary_id for value in boundaries],
+        "boundary_child_widths": [value.child_width for value in boundaries],
+        "parameter_ids": [site.parameter_id for site in ordered],
+        "writer_input_widths": {
+            site.parameter_id: int(site.seed_weight.shape[1]) for site in ordered
+        },
+        "forward_replacement_weight_sha256": {
+            site.parameter_id: fingerprint_lfm2_moving_gauge_tensor(
+                replacements[site.parameter_id]
+            )
+            for site in ordered
+        },
+        "forward_sweep_completed": True,
+        "reverse_sweep_pending": True,
+        "recapture_measures_live_child_after_forward_publication": True,
+        "parent_recapture_requested": False,
+    }
+    return MappingProxyType(
+        {
+            "request_body": MappingProxyType(body),
+            "request_sha256": _sha256(body),
+            "forward_replacement_weights": MappingProxyType(replacements),
+        }
+    )
+
+
+def _authenticate_mid_sweep_recapture(
+    value: Any,
+    *,
+    request: Mapping[str, Any],
+    boundaries: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    sites: Sequence[Lfm2MovingGaugeWriterEvidence],
+) -> Lfm2MovingGaugeRecapturedChildState:
+    """Fail closed unless the recapture measured this exact publication."""
+
+    if (
+        not isinstance(value, Lfm2MovingGaugeRecapturedChildState)
+        or not value.verify_authentication()
+        or value.request_sha256 != request["request_sha256"]
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "The mid-sweep child recapture does not authenticate against the "
+            "forward writer publication it must be measured on."
+        )
+    body = request["request_body"]
+    measured_widths = [
+        int(rows.shape[1]) for rows in value.boundary_child_rows
+    ]
+    if (
+        value.row_alignment_sha256 != body["row_alignment_sha256"]
+        or len(value.boundary_child_rows) != len(boundaries)
+        or measured_widths != list(body["boundary_child_widths"])
+        or int(value.boundary_child_rows[0].shape[0]) != int(body["rows"])
+        or sorted(value.writer_input_rows) != sorted(body["parameter_ids"])
+        or any(
+            int(value.writer_input_rows[site.parameter_id].shape[1])
+            != int(site.seed_weight.shape[1])
+            for site in sites
+        )
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "The mid-sweep child recapture does not match the boundary, row, "
+            "or writer geometry of this reclosure."
+        )
+    return value
+
+
+def _recaptured_terminal_anchored_reverse_sweep(
+    boundaries: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    grouped: Mapping[int, Sequence[Lfm2MovingGaugeWriterEvidence]],
+    current: dict[str, Any],
+    *,
+    terminal_target: Any,
+    recaptured: Lfm2MovingGaugeRecapturedChildState,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+) -> tuple[list[dict[str, Any]], Any]:
+    """Re-solve writers back-to-front against the measured downstream response.
+
+    The forward-only sweep transports every local correction to the terminal
+    through the exact physical identity, which is only true while all later
+    writer inputs stay frozen.  Here the child was actually replayed after the
+    forward publication, so three approximations are replaced by measurements:
+    the terminal residual is the one the recaptured child actually has, each
+    writer is solved on its recaptured input rows, and the downstream response
+    of the terminal state to the state at each boundary is measured on those
+    rows by one anchored ridge whose anchor is the identity skip itself.  When
+    the recaptured rows carry no downstream signal the fit stays at that anchor,
+    which is exactly the forward-only approximation, so the mode degrades to the
+    old behavior instead of inventing a rotation.  Each writer is then solved
+    *through* the measured response rather than through its inverse.
+    """
+
+    torch = _torch()
+    layer_count = len(boundaries) - 1
+    measured = recaptured.boundary_child_rows
+    terminal_measured = measured[-1]
+    terminal_weights = boundaries[-1].fit_weights
+    terminal_width = int(terminal_measured.shape[1])
+    terminal_residual = (terminal_target - terminal_measured).contiguous()
+    reverse_steps: list[dict[str, Any]] = []
+    for index in range(layer_count - 1, -1, -1):
+        sites = tuple(grouped[index])
+        features, current_group, widths = _recaptured_writer_group(
+            sites,
+            current,
+            recaptured,
+        )
+        downstream_rows = measured[index + 1]
+        downstream_width = int(downstream_rows.shape[1])
+        anchor = torch.eye(downstream_width, terminal_width, dtype=torch.float64)
+        if index == layer_count - 1:
+            # The downstream boundary IS the terminal boundary: the physical
+            # relation is the identity, not something to be estimated, so this
+            # step keeps the ordinary writer ridge instead of the trust region.
+            row_transport = anchor
+            transport_report = None
+            transport_kind = _TERMINAL_BOUNDARY_TRANSPORT_KIND
+            step_ridge_ratio = policy.writer_ridge_ratio
+        else:
+            row_transport, transport_report = _anchored_ridge_replacement(
+                downstream_rows,
+                terminal_measured,
+                anchor,
+                boundaries[index].fit_weights,
+                ridge_ratio=policy.reverse_transport_ridge_ratio,
+                absolute_ridge_floor=policy.absolute_ridge_floor,
+            )
+            transport_kind = _MEASURED_TRANSPORT_KIND
+            # The measured response is a linearization taken at the recaptured
+            # point.  Its low-gain directions would otherwise buy a negligible
+            # terminal improvement with an enormous local step, which is exactly
+            # where the linearization stops describing the child.
+            step_ridge_ratio = policy.recaptured_step_ridge_ratio
+        replacement_columns, solve_report = _terminal_anchored_composed_ridge(
+            features,
+            row_transport,
+            terminal_residual,
+            current_group.T,
+            boundaries[index].fit_weights,
+            ridge_ratio=step_ridge_ratio,
+            absolute_ridge_floor=policy.absolute_ridge_floor,
+        )
+        previous_group = current_group
+        split = _split_cast_replacements(
+            sites,
+            replacement_columns.T,
+            widths,
+        )
+        current.update(split)
+        _, new_group, _ = _recaptured_writer_group(sites, current, recaptured)
+        local_realized = features @ (new_group - previous_group).T
+        terminal_realized = local_realized @ row_transport
+        local_norm = float(torch.linalg.vector_norm(local_realized).item())
+        realized_norm = float(torch.linalg.vector_norm(terminal_realized).item())
+        requested_norm = float(torch.linalg.vector_norm(terminal_residual).item())
+        relative_before = _relative_rmse(
+            terminal_target - terminal_residual,
+            terminal_target,
+            terminal_weights,
+        )
+        terminal_residual = (terminal_residual - terminal_realized).contiguous()
+        reverse_steps.append(
+            {
+                "transition_index": index,
+                "parameter_ids": [site.parameter_id for site in sites],
+                "transport_reciprocal_report_sha256": None,
+                "downstream_transport_inverted": False,
+                "downstream_transport_kind": transport_kind,
+                "chart_transition_used_as_physical_jacobian": False,
+                "solve_report_sha256": solve_report["report_sha256"],
+                "downstream_transport_sha256": (
+                    fingerprint_lfm2_moving_gauge_tensor(row_transport)
+                ),
+                "requested_terminal_l2_norm": requested_norm,
+                "realized_local_l2_norm": local_norm,
+                "realized_terminal_l2_norm": realized_norm,
+                "remaining_terminal_l2_norm": float(
+                    torch.linalg.vector_norm(terminal_residual).item()
+                ),
+                "downstream_transport_report_sha256": (
+                    None
+                    if transport_report is None
+                    else transport_report["report_sha256"]
+                ),
+                "recaptured_downstream_rows_sha256": (
+                    fingerprint_lfm2_moving_gauge_tensor(downstream_rows)
+                ),
+                "recaptured_writer_input_rows_sha256": (
+                    fingerprint_lfm2_moving_gauge_tensor(features)
+                ),
+                "terminal_amplification_ratio": (
+                    None if local_norm == 0.0 else realized_norm / local_norm
+                ),
+                "terminal_relative_rmse_before": relative_before,
+                "terminal_relative_rmse_after": _relative_rmse(
+                    terminal_target - terminal_residual,
+                    terminal_target,
+                    terminal_weights,
+                ),
+                "writer_inputs_measured_after_forward_publication": True,
+            }
+        )
+    return reverse_steps, terminal_residual
+
+
 def compile_lfm2_moving_gauge_residual_reclosure(
     boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
     writer_evidence: Sequence[Lfm2MovingGaugeWriterEvidence],
     *,
     policy: Lfm2MovingGaugeReclosurePolicy | None = None,
+    mid_sweep_recapture_provider: Any | None = None,
 ) -> Lfm2MovingGaugeDenseReplacementState:
     """Compile one complete target-dtype forward/reverse reclosure transaction."""
 
@@ -3606,6 +4154,19 @@ def compile_lfm2_moving_gauge_residual_reclosure(
     active_policy = policy or Lfm2MovingGaugeReclosurePolicy()
     boundaries_input = tuple(boundary_evidence)
     sites_input = tuple(writer_evidence)
+    recaptured_reverse = (
+        isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
+        and active_policy.reverse_sweep_mode == "recaptured_terminal_anchored"
+    )
+    if recaptured_reverse != (mid_sweep_recapture_provider is not None) or (
+        mid_sweep_recapture_provider is not None
+        and not callable(mid_sweep_recapture_provider)
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "The recaptured reverse sweep requires exactly one callable "
+            "mid-sweep child recapture provider; the forward-only sweep "
+            "accepts none."
+        )
     if (
         not isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
         or not active_policy.verify_authentication()
@@ -3683,6 +4244,7 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         tuple[Lfm2MovingGaugeTransition, ...],
         Mapping[str, Any],
         Mapping[str, Any],
+        Lfm2MovingGaugeRecapturedChildState | None,
     ]:
         initial_charts = tuple(
             fit_lfm2_cycle_coupled_moving_gauge_boundary(
@@ -3804,109 +4366,171 @@ def compile_lfm2_moving_gauge_residual_reclosure(
 
         terminal_target = charts[-1].chart.encode(boundaries_input[-1].fit_parent_rows)
         forward_terminal = state.clone()
-        terminal_residual = (terminal_target - state).contiguous()
-        physical_widths = {value.child_width for value in boundaries_input}
-        if len(physical_widths) != 1:
-            raise Lfm2MovingGaugeResidualReclosureError(
-                "The frozen-writer-input reverse approximation requires the "
-                "physical residual skip to preserve one child width."
+        recaptured: Lfm2MovingGaugeRecapturedChildState | None = None
+        if recaptured_reverse:
+            request = _mid_sweep_recapture_request(
+                boundaries_input,
+                sites_input,
+                current,
+                policy=active_policy,
+                row_alignment_sha256=alignment,
             )
-        # A chart transition describes how two *desired parent encodings* are
-        # related.  It is not a Jacobian of the installed child.  Under this
-        # solver's explicit frozen-writer-input approximation, a local writer
-        # correction travels through every later residual skip unchanged.
-        # Therefore the only honest closed-form downstream transport available
-        # here is the exact physical identity.  Nonlinear downstream response is
-        # measured by the later causal recapture/reclosure stage instead of being
-        # invented from E/D chart rotations.
-        physical_identity = torch.eye(
-            boundaries_input[-1].child_width,
-            dtype=torch.float64,
-        )
-        downstream_rows = [physical_identity] * layer_count
-        reverse_steps = []
-        for index in range(layer_count - 1, -1, -1):
-            sites = tuple(grouped[index])
-            features, current_group, widths = _writer_group(sites, current)
-            row_transport = downstream_rows[index]
-            local_requested = terminal_residual
-            current_output = features @ current_group.T
-            replacement_columns, solve_report = _anchored_ridge_replacement(
-                features,
-                current_output + local_requested,
-                current_group.T,
-                boundaries_input[index].fit_weights,
-                ridge_ratio=active_policy.writer_ridge_ratio,
-                absolute_ridge_floor=active_policy.absolute_ridge_floor,
+            recaptured = _authenticate_mid_sweep_recapture(
+                mid_sweep_recapture_provider(request),
+                request=request,
+                boundaries=boundaries_input,
+                sites=sites_input,
             )
-            previous_group = current_group
-            split = _split_cast_replacements(
-                sites,
-                replacement_columns.T,
-                widths,
+            reverse_steps, terminal_residual = (
+                _recaptured_terminal_anchored_reverse_sweep(
+                    boundaries_input,
+                    grouped,
+                    current,
+                    terminal_target=terminal_target,
+                    recaptured=recaptured,
+                    policy=active_policy,
+                )
             )
-            current.update(split)
-            _, new_group, _ = _writer_group(sites, current)
-            local_realized = features @ (new_group - previous_group).T
-            terminal_realized = local_realized @ row_transport
-            terminal_residual = (terminal_residual - terminal_realized).contiguous()
-            reverse_steps.append(
+        else:
+            terminal_residual = (terminal_target - state).contiguous()
+            physical_widths = {value.child_width for value in boundaries_input}
+            if len(physical_widths) != 1:
+                raise Lfm2MovingGaugeResidualReclosureError(
+                    "The frozen-writer-input reverse approximation requires the "
+                    "physical residual skip to preserve one child width."
+                )
+            # A chart transition describes how two *desired parent encodings* are
+            # related.  It is not a Jacobian of the installed child.  Under this
+            # solver's explicit frozen-writer-input approximation, a local writer
+            # correction travels through every later residual skip unchanged.
+            # Therefore the only honest closed-form downstream transport available
+            # here is the exact physical identity.  Nonlinear downstream response
+            # is measured by the recaptured reverse sweep or the later causal
+            # recapture/reclosure stage instead of being invented from E/D chart
+            # rotations.
+            physical_identity = torch.eye(
+                boundaries_input[-1].child_width,
+                dtype=torch.float64,
+            )
+            downstream_rows = [physical_identity] * layer_count
+            reverse_steps = []
+            for index in range(layer_count - 1, -1, -1):
+                sites = tuple(grouped[index])
+                features, current_group, widths = _writer_group(sites, current)
+                row_transport = downstream_rows[index]
+                local_requested = terminal_residual
+                current_output = features @ current_group.T
+                replacement_columns, solve_report = _anchored_ridge_replacement(
+                    features,
+                    current_output + local_requested,
+                    current_group.T,
+                    boundaries_input[index].fit_weights,
+                    ridge_ratio=active_policy.writer_ridge_ratio,
+                    absolute_ridge_floor=active_policy.absolute_ridge_floor,
+                )
+                previous_group = current_group
+                split = _split_cast_replacements(
+                    sites,
+                    replacement_columns.T,
+                    widths,
+                )
+                current.update(split)
+                _, new_group, _ = _writer_group(sites, current)
+                local_realized = features @ (new_group - previous_group).T
+                terminal_realized = local_realized @ row_transport
+                terminal_residual = (terminal_residual - terminal_realized).contiguous()
+                reverse_steps.append(
+                    {
+                        "transition_index": index,
+                        "parameter_ids": [site.parameter_id for site in sites],
+                        "transport_reciprocal_report_sha256": None,
+                        "downstream_transport_kind": _IDENTITY_TRANSPORT_KIND,
+                        "chart_transition_used_as_physical_jacobian": False,
+                        "solve_report_sha256": solve_report["report_sha256"],
+                        "downstream_transport_sha256": (
+                            fingerprint_lfm2_moving_gauge_tensor(row_transport)
+                        ),
+                        "requested_local_l2_norm": float(
+                            torch.linalg.vector_norm(local_requested).item()
+                        ),
+                        "realized_terminal_l2_norm": float(
+                            torch.linalg.vector_norm(terminal_realized).item()
+                        ),
+                        "remaining_terminal_l2_norm": float(
+                            torch.linalg.vector_norm(terminal_residual).item()
+                        ),
+                    }
+                )
+        endpoint = terminal_target - terminal_residual
+        diagnostics_body = {
+            "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+            "kind": "moving_gauge_forward_reverse_diagnostics",
+            "transition_mode": active_policy.transition_mode,
+            "forward_steps": forward_steps,
+            "reverse_steps": reverse_steps,
+            "reverse_downstream_transport_kind": (
+                _MEASURED_TRANSPORT_KIND
+                if recaptured_reverse
+                else _IDENTITY_TRANSPORT_KIND
+            ),
+            "chart_transition_used_as_physical_jacobian": False,
+            "nonlinear_downstream_jacobian_claimed": False,
+            "reverse_transport_ridge_ratio_used": recaptured_reverse,
+            "forward_terminal_relative_rmse": _relative_rmse(
+                forward_terminal,
+                terminal_target,
+                boundaries_input[-1].fit_weights,
+            ),
+            "reconciled_terminal_relative_rmse": _relative_rmse(
+                endpoint,
+                terminal_target,
+                boundaries_input[-1].fit_weights,
+            ),
+            "forward_sweep_count": 1,
+            "reverse_reconciliation_sweep_count": 1,
+            "all_metrics_diagnostic_only": True,
+            "quality_gate": False,
+        }
+        if recaptured is not None:
+            diagnostics_body.update(
                 {
-                    "transition_index": index,
-                    "parameter_ids": [site.parameter_id for site in sites],
-                    "transport_reciprocal_report_sha256": None,
-                    "downstream_transport_kind": (
-                        "exact_physical_identity_skip_under_frozen_writer_inputs"
+                    "policy_schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+                    "reverse_sweep_mode": active_policy.reverse_sweep_mode,
+                    "mid_sweep_child_recapture_count": 1,
+                    "mid_sweep_recapture_sha256": (
+                        recaptured.report["report_sha256"]
                     ),
-                    "chart_transition_used_as_physical_jacobian": False,
-                    "solve_report_sha256": solve_report["report_sha256"],
-                    "downstream_transport_sha256": (
-                        fingerprint_lfm2_moving_gauge_tensor(row_transport)
+                    "mid_sweep_recapture_request_sha256": (
+                        recaptured.request_sha256
                     ),
-                    "requested_local_l2_norm": float(
-                        torch.linalg.vector_norm(local_requested).item()
+                    "mid_sweep_recaptured_child_state_sha256": (
+                        recaptured.child_state_sha256
                     ),
-                    "realized_terminal_l2_norm": float(
-                        torch.linalg.vector_norm(terminal_realized).item()
+                    "frozen_writer_input_identity_transport": False,
+                    "downstream_response_measured_on_recaptured_child_rows": True,
+                    "measured_downstream_transport_anchor": (
+                        "exact_physical_identity_skip"
                     ),
-                    "remaining_terminal_l2_norm": float(
-                        torch.linalg.vector_norm(terminal_residual).item()
+                    "measured_forward_terminal_relative_rmse": _relative_rmse(
+                        recaptured.boundary_child_rows[-1],
+                        terminal_target,
+                        boundaries_input[-1].fit_weights,
                     ),
+                    "terminal_amplification_ratio_by_transition": {
+                        str(step["transition_index"]): (
+                            step["terminal_amplification_ratio"]
+                        )
+                        for step in reverse_steps
+                    },
                 }
             )
-        endpoint = terminal_target - terminal_residual
-        diagnostics = _seal(
-            {
-                "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
-                "kind": "moving_gauge_forward_reverse_diagnostics",
-                "transition_mode": active_policy.transition_mode,
-                "forward_steps": forward_steps,
-                "reverse_steps": reverse_steps,
-                "reverse_downstream_transport_kind": (
-                    "exact_physical_identity_skip_under_frozen_writer_inputs"
-                ),
-                "chart_transition_used_as_physical_jacobian": False,
-                "nonlinear_downstream_jacobian_claimed": False,
-                "reverse_transport_ridge_ratio_used": False,
-                "forward_terminal_relative_rmse": _relative_rmse(
-                    forward_terminal,
-                    terminal_target,
-                    boundaries_input[-1].fit_weights,
-                ),
-                "reconciled_terminal_relative_rmse": _relative_rmse(
-                    endpoint,
-                    terminal_target,
-                    boundaries_input[-1].fit_weights,
-                ),
-                "forward_sweep_count": 1,
-                "reverse_reconciliation_sweep_count": 1,
-                "all_metrics_diagnostic_only": True,
-                "quality_gate": False,
-            }
-        )
-        return charts, transitions, MappingProxyType(current), diagnostics
+        diagnostics = _seal(diagnostics_body)
+        return charts, transitions, MappingProxyType(current), diagnostics, recaptured
 
-    (charts, transitions, replacements, diagnostics), guard = run_fold_only_callback(
+    (
+        (charts, transitions, replacements, diagnostics, recaptured),
+        guard,
+    ) = run_fold_only_callback(
         operation,
         phase="lfm2-moving-gauge-residual-reclosure",
         protected_models=(),
@@ -3989,6 +4613,29 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         "numeric_quality_gate": False,
         "decoded_intelligence_gate": False,
     }
+    if recaptured is not None:
+        body.update(
+            {
+                "policy_schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+                "reverse_sweep_mode": active_policy.reverse_sweep_mode,
+                "mid_sweep_recapture_sha256": recaptured.report["report_sha256"],
+                "mid_sweep_recapture": dict(recaptured.report),
+                "forward_then_recaptured_reverse_reconciliation": True,
+                "frozen_writer_input_identity_transport": False,
+                # The recapture is executed by the caller's provider; the module
+                # still never constructs, loads, or runs a model itself.
+                "execution": {
+                    **body["execution"],
+                    "target_model_forward_calls": (
+                        recaptured.child_model_forward_calls
+                    ),
+                    "child_replay_capture_calls": (
+                        recaptured.child_replay_capture_calls
+                    ),
+                    "child_recapture_executed_by_caller_provider": True,
+                },
+            }
+        )
     return Lfm2MovingGaugeDenseReplacementState(
         parameter_ids=ids,
         replacement_weights=values,
@@ -3999,6 +4646,7 @@ def compile_lfm2_moving_gauge_residual_reclosure(
 
 
 __all__ = [
+    "LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA",
     "LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA",
     "Lfm2MovingGaugeBaseCausalEndpointChart",
     "Lfm2MovingGaugeBoundaryChart",
@@ -4007,6 +4655,7 @@ __all__ = [
     "Lfm2MovingGaugeGeneralizedCausalEndpointChart",
     "Lfm2MovingGaugeGeneralizedChartDiagnostic",
     "Lfm2MovingGaugeOrthogonalCausalEndpointChart",
+    "Lfm2MovingGaugeRecapturedChildState",
     "Lfm2MovingGaugeReclosurePolicy",
     "Lfm2MovingGaugeResidualAuthenticationError",
     "Lfm2MovingGaugeResidualReclosureError",

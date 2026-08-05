@@ -13,6 +13,7 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     Lfm2MovingGaugeBoundaryEvidence,
     Lfm2MovingGaugeGeneralizedCausalEndpointChart,
     Lfm2MovingGaugeOrthogonalCausalEndpointChart,
+    Lfm2MovingGaugeRecapturedChildState,
     Lfm2MovingGaugeReclosurePolicy,
     Lfm2MovingGaugeResidualAuthenticationError,
     Lfm2MovingGaugeResidualReclosureError,
@@ -1794,6 +1795,439 @@ def test_forward_reverse_reclosure_emits_effectful_fp32_replacements() -> None:
         result.report["diagnostics"]["reconciled_terminal_relative_rmse"]
         < result.report["diagnostics"]["forward_terminal_relative_rmse"]
     )
+
+
+TOY_WIDTH = 3
+TOY_LAYERS = 3
+TOY_RECAPTURE_ALIGNMENT_SHA = "d" * 64
+TOY_CHILD_STATE_SHA = "e" * 64
+TOY_CAPTURE_SHA = "f" * 64
+# Pinned at the commit that introduced the recaptured reverse sweep: every
+# reclosure sealed before it keeps this exact forward-only policy digest.
+FORWARD_ONLY_POLICY_SHA256 = (
+    "391318199830753ee60399a0725b7d774be5027760d62741b0ed82347f14eb55"
+)
+
+
+def _toy_phi(value: torch.Tensor) -> torch.Tensor:
+    return torch.tanh(value)
+
+
+class _ToyChild:
+    """Residual stack whose writer inputs and terminal both move with a writer.
+
+    Each layer writes ``phi(state @ reader) @ writer.T``, so publishing a new
+    writer changes every later layer's input rows (defeating the frozen-writer
+    -input approximation) and reaches the terminal through a nonlinearity
+    (defeating the identity-transport approximation).
+    """
+
+    def __init__(self, readers: tuple[torch.Tensor, ...], writers) -> None:
+        self.readers = readers
+        self.writers = list(writers)
+
+    @classmethod
+    def seeded(cls, generator: torch.Generator) -> "_ToyChild":
+        readers = tuple(
+            torch.randn(
+                TOY_WIDTH,
+                TOY_WIDTH,
+                generator=generator,
+                dtype=torch.float64,
+            )
+            * 0.8
+            for _ in range(TOY_LAYERS)
+        )
+        writers = [
+            torch.zeros(TOY_WIDTH, TOY_WIDTH, dtype=torch.float32)
+            for _ in range(TOY_LAYERS)
+        ]
+        return cls(readers, writers)
+
+    def run(self, entry: torch.Tensor):
+        state = entry.clone()
+        boundary_rows = [state.clone()]
+        writer_inputs = []
+        for index in range(TOY_LAYERS):
+            features = _toy_phi(state @ self.readers[index])
+            writer_inputs.append(features.clone())
+            state = state + features @ self.writers[index].to(dtype=torch.float64).T
+            boundary_rows.append(state.clone())
+        return tuple(boundary_rows), tuple(writer_inputs)
+
+
+class _ToyParent:
+    """One fixed nonlinear parent stack; FIT and heldout share its weights."""
+
+    def __init__(self, generator: torch.Generator) -> None:
+        self.operators = tuple(
+            torch.randn(
+                TOY_WIDTH,
+                TOY_WIDTH,
+                generator=generator,
+                dtype=torch.float64,
+            )
+            * 0.6
+            for _ in range(TOY_LAYERS)
+        )
+
+    def run(self, entry: torch.Tensor):
+        state = entry.clone()
+        series = [state.clone()]
+        for operator in self.operators:
+            state = state + _toy_phi(state @ operator) * 0.9
+            series.append(state.clone())
+        return tuple(series)
+
+
+def _toy_parameter_id(index: int) -> str:
+    return f"toy.layers.{index}.writer.weight"
+
+
+def _toy_boundaries(parents, children):
+    rows = int(parents[0].shape[0])
+    return tuple(
+        Lfm2MovingGaugeBoundaryEvidence(
+            boundary_id=f"toy:boundary:{index}",
+            interface_role=(
+                "input"
+                if index == 0
+                else "terminal"
+                if index == TOY_LAYERS
+                else "intermediate"
+            ),
+            interface_locked=index in {0, TOY_LAYERS},
+            base_encoder=torch.eye(TOY_WIDTH, TOY_WIDTH, dtype=torch.float64),
+            fit_parent_rows=parent,
+            fit_child_rows=child,
+            fit_weights=torch.ones(rows, dtype=torch.float64),
+            fit_provenance=f"toy-fit-{index}",
+            row_alignment_sha256=TOY_RECAPTURE_ALIGNMENT_SHA,
+            cached_parent_evidence_sha256=PARENT_SHA,
+            live_child_recapture_sha256=LIVE_CHILD_SHA,
+        )
+        for index, (parent, child) in enumerate(zip(parents, children, strict=True))
+    )
+
+
+def _toy_writers(child: _ToyChild, writer_inputs):
+    return tuple(
+        Lfm2MovingGaugeWriterEvidence(
+            parameter_id=_toy_parameter_id(index),
+            transition_index=index,
+            seed_weight=child.writers[index],
+            fit_input_rows=writer_inputs[index],
+            row_alignment_sha256=TOY_RECAPTURE_ALIGNMENT_SHA,
+            live_child_recapture_sha256=LIVE_CHILD_SHA,
+        )
+        for index in range(TOY_LAYERS)
+    )
+
+
+def _toy_terminal_relative_rmse(
+    state: torch.Tensor,
+    target: torch.Tensor,
+) -> float:
+    difference = torch.sqrt(((state - target) ** 2).mean())
+    denominator = torch.sqrt((target**2).mean()).clamp_min(1e-30)
+    return float((difference / denominator).item())
+
+
+def _toy_fold(seed: int):
+    """Build one small nonlinear LFM2-shaped fold plus a recapture provider."""
+
+    generator = torch.Generator().manual_seed(seed)
+    child = _ToyChild.seeded(generator)
+    parent = _ToyParent(generator)
+    fit_entry = torch.randn(48, TOY_WIDTH, generator=generator, dtype=torch.float64)
+    heldout_entry = torch.randn(
+        32,
+        TOY_WIDTH,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    fit_parents = parent.run(fit_entry)
+    heldout_parents = parent.run(heldout_entry)
+    fit_children, fit_writer_inputs = child.run(fit_entry)
+    boundaries = _toy_boundaries(fit_parents, fit_children)
+    writers = _toy_writers(child, fit_writer_inputs)
+    calls: list[str] = []
+
+    def provider(request):
+        calls.append(request["request_sha256"])
+        replacements = request["forward_replacement_weights"]
+        preview = _ToyChild(
+            child.readers,
+            [
+                replacements[_toy_parameter_id(index)].clone()
+                for index in range(TOY_LAYERS)
+            ],
+        )
+        rows, inputs = preview.run(fit_entry)
+        return Lfm2MovingGaugeRecapturedChildState(
+            request_sha256=request["request_sha256"],
+            boundary_child_rows=rows,
+            writer_input_rows={
+                _toy_parameter_id(index): inputs[index]
+                for index in range(TOY_LAYERS)
+            },
+            row_alignment_sha256=TOY_RECAPTURE_ALIGNMENT_SHA,
+            recapture_provenance="toy-mid-sweep-recapture",
+            child_state_sha256=TOY_CHILD_STATE_SHA,
+            capture_sha256=TOY_CAPTURE_SHA,
+            child_replay_capture_calls=1,
+            child_model_forward_calls=TOY_LAYERS,
+        )
+
+    return {
+        "child": child,
+        "boundaries": boundaries,
+        "writers": writers,
+        "provider": provider,
+        "provider_calls": calls,
+        "fit_entry": fit_entry,
+        "heldout_entry": heldout_entry,
+        "fit_parents": fit_parents,
+        "heldout_parents": heldout_parents,
+    }
+
+
+def _toy_install(child: _ToyChild, state, entry: torch.Tensor):
+    installed = _ToyChild(
+        child.readers,
+        [
+            state.replacements_by_parameter_id[_toy_parameter_id(index)]
+            for index in range(TOY_LAYERS)
+        ],
+    )
+    rows, _inputs = installed.run(entry)
+    return rows[-1]
+
+
+def test_forward_only_reverse_sweep_is_the_sealed_default() -> None:
+    policy = Lfm2MovingGaugeReclosurePolicy()
+    recaptured = Lfm2MovingGaugeReclosurePolicy(
+        reverse_sweep_mode="recaptured_terminal_anchored",
+    )
+
+    assert policy.reverse_sweep_mode == "forward_only_identity_transport"
+    assert policy.authentication_sha256 == FORWARD_ONLY_POLICY_SHA256
+    assert "reverse_sweep_mode" not in policy.authentication_body()
+    assert "policy_schema" not in policy.authentication_body()
+    assert recaptured.authentication_sha256 != policy.authentication_sha256
+    assert recaptured.as_dict()["policy_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA
+    )
+    assert recaptured.as_dict()["mid_sweep_child_recapture_count"] == 1
+    assert recaptured.verify_authentication()
+
+
+def test_recaptured_reverse_sweep_requires_exactly_one_provider() -> None:
+    fold = _toy_fold(2026)
+
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        compile_lfm2_moving_gauge_residual_reclosure(
+            fold["boundaries"],
+            fold["writers"],
+            policy=Lfm2MovingGaugeReclosurePolicy(
+                reverse_sweep_mode="recaptured_terminal_anchored",
+            ),
+        )
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        compile_lfm2_moving_gauge_residual_reclosure(
+            fold["boundaries"],
+            fold["writers"],
+            mid_sweep_recapture_provider=fold["provider"],
+        )
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        Lfm2MovingGaugeReclosurePolicy(reverse_sweep_mode="whatever_mode")
+    assert fold["provider_calls"] == []
+
+
+def test_recaptured_reverse_sweep_beats_forward_only_on_heldout_terminal() -> None:
+    fold = _toy_fold(2026)
+    forward_only = compile_lfm2_moving_gauge_residual_reclosure(
+        fold["boundaries"],
+        fold["writers"],
+    )
+    recaptured = compile_lfm2_moving_gauge_residual_reclosure(
+        fold["boundaries"],
+        fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            reverse_sweep_mode="recaptured_terminal_anchored",
+        ),
+        mid_sweep_recapture_provider=fold["provider"],
+    )
+
+    assert len(fold["provider_calls"]) == 1
+    terminal_chart = forward_only.boundaries[-1].chart
+    heldout_target = terminal_chart.encode(fold["heldout_parents"][-1])
+    seeded = _ToyChild(
+        fold["child"].readers,
+        [
+            torch.zeros(TOY_WIDTH, TOY_WIDTH, dtype=torch.float32)
+            for _ in range(TOY_LAYERS)
+        ],
+    )
+    unfolded_rows, _inputs = seeded.run(fold["heldout_entry"])
+    unfolded = _toy_terminal_relative_rmse(unfolded_rows[-1], heldout_target)
+    forward_error = _toy_terminal_relative_rmse(
+        _toy_install(fold["child"], forward_only, fold["heldout_entry"]),
+        heldout_target,
+    )
+    recaptured_error = _toy_terminal_relative_rmse(
+        _toy_install(fold["child"], recaptured, fold["heldout_entry"]),
+        heldout_target,
+    )
+
+    assert forward_error < unfolded
+    assert recaptured_error < 0.8 * forward_error, (
+        recaptured_error,
+        forward_error,
+        unfolded,
+    )
+    assert recaptured.verify_authentication()
+    assert recaptured.report["replacement_weight_sha256"] != (
+        forward_only.report["replacement_weight_sha256"]
+    )
+
+
+def test_recaptured_receipt_records_measured_transport_and_recapture() -> None:
+    fold = _toy_fold(2029)
+    seed_digests = [
+        moving_gauge_reclosure.fingerprint_lfm2_moving_gauge_tensor(value)
+        for value in fold["child"].writers
+    ]
+    recaptured = compile_lfm2_moving_gauge_residual_reclosure(
+        fold["boundaries"],
+        fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            reverse_sweep_mode="recaptured_terminal_anchored",
+        ),
+        mid_sweep_recapture_provider=fold["provider"],
+    )
+    diagnostics = recaptured.report["diagnostics"]
+    steps = diagnostics["reverse_steps"]
+
+    assert diagnostics["reverse_downstream_transport_kind"] == (
+        "measured_recaptured_child_downstream_response"
+    )
+    assert diagnostics["frozen_writer_input_identity_transport"] is False
+    assert diagnostics["chart_transition_used_as_physical_jacobian"] is False
+    assert diagnostics["reverse_transport_ridge_ratio_used"] is True
+    assert diagnostics["mid_sweep_child_recapture_count"] == 1
+    assert diagnostics["mid_sweep_recapture_request_sha256"] == (
+        fold["provider_calls"][0]
+    )
+    assert steps[0]["downstream_transport_kind"] == (
+        "exact_physical_identity_at_terminal_boundary"
+    )
+    assert all(
+        step["downstream_transport_kind"]
+        == "measured_recaptured_child_downstream_response"
+        for step in steps[1:]
+    )
+    for step in steps:
+        assert step["downstream_transport_inverted"] is False
+        assert step["transport_reciprocal_report_sha256"] is None
+        assert step["writer_inputs_measured_after_forward_publication"] is True
+        assert step["terminal_relative_rmse_after"] <= (
+            step["terminal_relative_rmse_before"]
+        )
+        assert step["terminal_amplification_ratio"] is not None
+    assert [step["terminal_relative_rmse_before"] for step in steps[1:]] == [
+        step["terminal_relative_rmse_after"] for step in steps[:-1]
+    ]
+    assert recaptured.report["execution"]["parent_model_forward_calls"] == 0
+    assert recaptured.report["execution"]["backward_calls"] == 0
+    assert recaptured.report["execution"]["optimizer_steps"] == 0
+    assert recaptured.report["execution"]["child_replay_capture_calls"] == 1
+    assert recaptured.report["execution"]["target_model_forward_calls"] == TOY_LAYERS
+    assert recaptured.report["mid_sweep_recapture"]["parent_model_forward_calls"] == 0
+    assert verify_lfm2_moving_gauge_report(recaptured.report["mid_sweep_recapture"])
+    # Rollback is exact because no seed tensor is ever mutated in place.
+    assert seed_digests == [
+        moving_gauge_reclosure.fingerprint_lfm2_moving_gauge_tensor(value)
+        for value in fold["child"].writers
+    ]
+    assert recaptured.report["physical_seed_tensors_mutated"] is False
+
+
+def test_stale_or_foreign_recapture_fails_closed() -> None:
+    fold = _toy_fold(2031)
+    policy = Lfm2MovingGaugeReclosurePolicy(
+        reverse_sweep_mode="recaptured_terminal_anchored",
+    )
+
+    def stale_request(request):
+        recaptured = fold["provider"](request)
+        return replace(
+            recaptured,
+            request_sha256="9" * 64,
+            report={},
+        )
+
+    def mutated_rows(request):
+        recaptured = fold["provider"](request)
+        recaptured.boundary_child_rows[-1][0, 0] += 1.0
+        return recaptured
+
+    def wrong_geometry(request):
+        recaptured = fold["provider"](request)
+        return replace(
+            recaptured,
+            boundary_child_rows=recaptured.boundary_child_rows[:-1],
+            report={},
+        )
+
+    def not_a_recapture(request):
+        return dict(request)
+
+    for provider in (stale_request, mutated_rows, wrong_geometry, not_a_recapture):
+        with pytest.raises(
+            (
+                Lfm2MovingGaugeResidualReclosureError,
+                Lfm2MovingGaugeResidualAuthenticationError,
+            )
+        ):
+            compile_lfm2_moving_gauge_residual_reclosure(
+                fold["boundaries"],
+                fold["writers"],
+                policy=policy,
+                mid_sweep_recapture_provider=provider,
+            )
+
+
+def test_identity_downstream_response_reproduces_the_anchored_writer_ridge() -> None:
+    generator = torch.Generator().manual_seed(613)
+    design = torch.randn(24, 5, generator=generator, dtype=torch.float64)
+    residual = torch.randn(24, 3, generator=generator, dtype=torch.float64)
+    anchor = torch.randn(5, 3, generator=generator, dtype=torch.float64)
+    weights = torch.rand(24, generator=generator, dtype=torch.float64) + 0.5
+
+    composed, composed_report = (
+        moving_gauge_reclosure._terminal_anchored_composed_ridge(
+            design,
+            torch.eye(3, dtype=torch.float64),
+            residual,
+            anchor,
+            weights,
+            ridge_ratio=1e-8,
+            absolute_ridge_floor=1e-12,
+        )
+    )
+    direct, _direct_report = moving_gauge_reclosure._anchored_ridge_replacement(
+        design,
+        design @ anchor + residual,
+        anchor,
+        weights,
+        ridge_ratio=1e-8,
+        absolute_ridge_floor=1e-12,
+    )
+
+    torch.testing.assert_close(composed, direct, rtol=1e-9, atol=1e-9)
+    assert composed_report["downstream_transport_inverted"] is False
+    assert composed_report["pseudoinverse_used"] is False
 
 
 def test_mutated_evidence_fails_closed_before_reclosure() -> None:

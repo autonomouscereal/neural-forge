@@ -393,6 +393,178 @@ def test_publication_is_atomic_exact_and_freshly_reloaded(tmp_path) -> None:
     assert load_dynamic_fold_artifact_certificate(destination) == certificate
 
 
+class _CountingEvaluator:
+    """One fresh-reload evaluator that records how often it is executed."""
+
+    def __init__(self) -> None:
+        self.models: list[int] = []
+
+    def __call__(self, model):
+        self.models.append(id(model))
+        return _fresh_accept(model)
+
+
+def test_fresh_reload_evaluation_is_deduplicated_on_identical_artifacts(
+    tmp_path,
+) -> None:
+    child, compilation, tokenizer = _compiled()
+    evaluator = _CountingEvaluator()
+
+    certificate = publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=tmp_path / "deduplicated",
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=evaluator,
+        saver_id="test-local-torch-save-v1",
+        loader_id="test-local-torch-load-v1",
+        tokenizer_fingerprint=tokenizer,
+    )
+
+    assert len(evaluator.models) == 1
+    assert certificate.fresh_reload_decision.accepted is True
+    assert certificate.fresh_reload_module_forward_calls > 0
+    assert certificate.fresh_reload_root_forward_calls > 0
+    assert certificate.body()["fresh_reload_source"] == ("retained-final-destination")
+    assert certificate.body()["final_destination_reload_performed"] is True
+    assert load_dynamic_fold_artifact_certificate(tmp_path / "deduplicated") == (
+        certificate
+    )
+
+
+def test_deduplicated_and_full_evaluation_certify_identically(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    deduplicated_evaluator = _CountingEvaluator()
+    full_evaluator = _CountingEvaluator()
+
+    deduplicated = publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=tmp_path / "reused",
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=deduplicated_evaluator,
+        saver_id="test-local-torch-save-v1",
+        loader_id="test-local-torch-load-v1",
+        tokenizer_fingerprint=tokenizer,
+        reuse_proven_identical_fresh_reload_evaluation=True,
+    )
+    full = publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=tmp_path / "reevaluated",
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=full_evaluator,
+        saver_id="test-local-torch-save-v1",
+        loader_id="test-local-torch-load-v1",
+        tokenizer_fingerprint=tokenizer,
+        reuse_proven_identical_fresh_reload_evaluation=False,
+    )
+
+    assert len(deduplicated_evaluator.models) == 1
+    assert len(full_evaluator.models) == 2
+    assert full_evaluator.models[0] != full_evaluator.models[1]
+    reused_body = dict(deduplicated.body())
+    full_body = dict(full.body())
+    for body in (reused_body, full_body):
+        body.pop("path")
+    assert reused_body == full_body
+
+
+def test_changed_final_destination_bytes_force_full_reevaluation(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    evaluator = _CountingEvaluator()
+    destination = tmp_path / "mutated-final-tree"
+
+    def _loader_that_writes_on_the_final_path(source):
+        model = _loader(source)
+        if destination in source.parents:
+            (source / "notes.json").write_text(
+                json.dumps({"loaded": True}),
+                encoding="utf-8",
+            )
+        return model
+
+    with pytest.raises(DynamicFoldArtifactError):
+        publish_dynamic_fold_artifact(
+            compilation=compilation,
+            child_model=child,
+            destination=destination,
+            model_saver=_saver,
+            model_loader=_loader_that_writes_on_the_final_path,
+            fresh_reload_evaluator=evaluator,
+            saver_id="test-local-torch-save-v1",
+            loader_id="test-local-torch-load-v1",
+            tokenizer_fingerprint=tokenizer,
+        )
+
+    # Fail closed: the final-destination bytes were not the proven ones, so the
+    # staged decision was not reused and the evaluator ran on both paths.
+    assert len(evaluator.models) == 2
+
+
+def test_portable_child_state_digest_sees_content_and_alias_structure() -> None:
+    child = _model(2)
+    other = _model(3)
+    baseline = artifact._portable_child_state_sha256(child)
+
+    assert baseline == artifact._portable_child_state_sha256(child)
+    assert baseline != artifact._portable_child_state_sha256(other)
+
+    untied = copy.deepcopy(child)
+    untied.lm_head.weight = torch.nn.Parameter(
+        untied.lm_head.weight.detach().clone(),
+        requires_grad=False,
+    )
+
+    assert artifact.fingerprint_model_state(untied) == (
+        artifact.fingerprint_model_state(child)
+    )
+    assert artifact._portable_child_state_sha256(untied) != baseline
+
+
+def test_fresh_reload_evaluation_fingerprint_binds_every_decision_input() -> None:
+    contract = BehaviorInferenceExecutionContract.top_level_forward()
+    fields = {
+        "artifact_tree": ({"path": "model.pt", "size_bytes": 4, "sha256": "0" * 64},),
+        "portable_child_state_sha256": "1" * 64,
+        "child_state_fingerprint": "2" * 64,
+        "state_inventory": {"serialized_state_bytes": 16},
+        "structural_topology_fingerprint": "3" * 64,
+        "loader_id": "test-local-torch-load-v1",
+        "loader_implementation_fingerprint": "4" * 64,
+        "loader_resource_fingerprint": "5" * 64,
+        "evaluator_implementation_fingerprint": "6" * 64,
+        "evaluator_resource_fingerprint": "7" * 64,
+        "behavior_gate_manifest_fingerprint": "8" * 64,
+        "inference_execution_contract": contract,
+    }
+    baseline = artifact._fresh_reload_evaluation_fingerprint(**fields)
+    changes = {
+        "artifact_tree": (
+            {"path": "model.pt", "size_bytes": 5, "sha256": "0" * 64},
+        ),
+        "portable_child_state_sha256": "9" * 64,
+        "child_state_fingerprint": "9" * 64,
+        "state_inventory": {"serialized_state_bytes": 17},
+        "structural_topology_fingerprint": "9" * 64,
+        "loader_id": "other-loader",
+        "loader_implementation_fingerprint": "9" * 64,
+        "loader_resource_fingerprint": "9" * 64,
+        "evaluator_implementation_fingerprint": "9" * 64,
+        "evaluator_resource_fingerprint": "9" * 64,
+        "behavior_gate_manifest_fingerprint": "9" * 64,
+    }
+
+    assert baseline == artifact._fresh_reload_evaluation_fingerprint(**fields)
+    for name, value in changes.items():
+        assert artifact._fresh_reload_evaluation_fingerprint(
+            **{**fields, name: value}
+        ) != baseline, name
+
+
 def test_publication_accepts_only_reload_trainability_policy_difference(
     tmp_path,
 ) -> None:

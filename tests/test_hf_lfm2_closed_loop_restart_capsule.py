@@ -26,6 +26,9 @@ from neural_forge.dynamic_closed_loop_fold import (
 torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
 
+from neural_forge import (  # noqa: E402
+    hf_lfm2_closed_loop_restart_capsule as capsule_module,
+)
 from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
     CLOSED_LOOP_RESTART_CAPSULE_CHAIN_GENESIS_SHA256,
     Lfm2ClosedLoopRestartCapsuleBindings,
@@ -34,6 +37,7 @@ from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
     authenticate_lfm2_closed_loop_restart_capsule,
     discover_lfm2_closed_loop_restart_capsules,
     latest_lfm2_closed_loop_restart_capsule,
+    lfm2_restart_capsule_terminal_phase,
     load_lfm2_closed_loop_restart_capsule,
     portable_child_state_sha256,
     portable_child_topology_sha256,
@@ -201,6 +205,7 @@ def _writer(
     directory: str = "capsules",
     split_label: str = "restart-capsule-split",
     fold_progress_sink=None,
+    publish_terminal_capsule: bool = False,
 ) -> Lfm2ClosedLoopRestartCapsuleWriter:
     root = tmp_path / directory
     root.mkdir(exist_ok=True)
@@ -214,6 +219,7 @@ def _writer(
         resume=resume,
         rotation_keep=rotation_keep,
         fold_progress_sink=fold_progress_sink,
+        publish_terminal_capsule=publish_terminal_capsule,
     )
 
 
@@ -979,6 +985,303 @@ def _config(**overrides) -> ClosedLoopCompilerConfig:
     }
     values.update(overrides)
     return ClosedLoopCompilerConfig(**values)
+
+
+class _TerminalScriptedRestartWriter(_ScriptedRestartWriter):
+    """Scripted writer that also implements the optional terminal capsule."""
+
+    def __init__(
+        self,
+        *,
+        completed: tuple[int, ...] = (),
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(completed=completed)
+        self.enabled = bool(enabled)
+        self.terminal_records: list[dict] = []
+
+    def record_terminal_phase(self, **kwargs):
+        if not self.enabled:
+            return None
+        record = {
+            "schema": "scripted-terminal-capsule-record-v1",
+            "capsule_phase": "terminal_post_output_interface",
+            "completed_layer_indices": list(kwargs["completed_layer_indices"]),
+            "selected_layer_indices": list(kwargs["selected_layer_indices"]),
+            "child_state_sha256": kwargs["child_state_sha256"],
+            "child_topology_sha256": kwargs["child_topology_sha256"],
+            "body_reclosure_enabled": kwargs["body_reclosure_enabled"],
+            "body_reclosure_sha256": kwargs["body_reclosure_sha256"],
+            "final_normalization_sha256": kwargs["final_normalization_sha256"],
+            "output_interface_enabled": kwargs["output_interface_enabled"],
+            "output_interface_sha256": kwargs["output_interface_sha256"],
+        }
+        self.terminal_records.append(record)
+        self.records.append(record)
+        return record
+
+
+def test_compiler_seals_a_terminal_capsule_after_the_output_interface() -> None:
+    adapter = _ScriptedAdapter()
+    writer = _TerminalScriptedRestartWriter()
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        _config(fold_output_interface=True),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert len(writer.terminal_records) == 1
+    terminal = writer.terminal_records[0]
+    assert terminal["completed_layer_indices"] == [0, 1, 2]
+    assert terminal["selected_layer_indices"] == [0, 1, 2]
+    assert terminal["body_reclosure_enabled"] is False
+    assert terminal["output_interface_enabled"] is True
+    assert terminal["final_normalization_sha256"] == canonical_sha256(
+        dict(report["final_normalization"])
+    )
+    assert terminal["output_interface_sha256"] == canonical_sha256(
+        dict(report["output_interface"])
+    )
+    assert terminal["body_reclosure_sha256"] == canonical_sha256(
+        dict(report["body_reclosure"])
+    )
+    # The capsule is taken on the finished candidate, after every solve.
+    assert terminal["child_state_sha256"] == report["child_state_sha256_after"]
+    assert report["restart_capsule"]["capsules_written"] == 4
+    assert report["restart_capsule"]["capsule_records"][-1] == terminal
+
+
+def test_compiler_skips_the_terminal_capsule_for_older_writers() -> None:
+    adapter = _ScriptedAdapter()
+    writer = _ScriptedRestartWriter()
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        _config(fold_output_interface=True),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert not hasattr(writer, "record_terminal_phase")
+    assert report["restart_capsule"]["capsules_written"] == 3
+
+
+def test_compiler_accepts_a_writer_that_declines_the_terminal_capsule() -> None:
+    adapter = _ScriptedAdapter()
+    writer = _TerminalScriptedRestartWriter(enabled=False)
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        _config(fold_output_interface=True),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert writer.terminal_records == []
+    assert report["restart_capsule"]["capsules_written"] == 3
+
+
+def test_terminal_capsule_publishes_and_restores_the_finished_child(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    adapter = _FakeAdapter(child)
+    writer = _writer(
+        tmp_path,
+        adapter,
+        rotation_keep=4,
+        publish_terminal_capsule=True,
+    )
+
+    for layer_index in range(3):
+        _mutate(child, 0.25)
+        _accept(writer, layer_index)
+    # Terminal solves land after the last accepted layer.
+    _mutate(child, 0.75)
+    terminal_state = portable_child_state_sha256(child)
+    record = writer.record_terminal_phase(
+        completed_layer_indices=(0, 1, 2),
+        selected_layer_indices=(0, 1, 2),
+        validation_decision_sha256=_decision_digest(2),
+        child_state_sha256=adapter.child_state_fingerprint(),
+        child_topology_sha256=adapter.child_topology_fingerprint(),
+        trajectory_split_sha256=_split_digest("restart-capsule-split"),
+        body_reclosure_enabled=True,
+        body_reclosure_sha256=_decision_digest(11),
+        final_normalization_sha256=_decision_digest(12),
+        output_interface_enabled=True,
+        output_interface_sha256=_decision_digest(13),
+    )
+
+    assert record["capsule_phase"] == "terminal_post_output_interface"
+    assert record["remaining_layer_indices"] == []
+    assert record["record_sha256"] == canonical_sha256(
+        {name: value for name, value in record.items() if name != "record_sha256"}
+    )
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+    assert reference is not None
+    authentication = authenticate_lfm2_closed_loop_restart_capsule(reference)
+    assert authentication.capsule_phase == "terminal_post_output_interface"
+    assert authentication.resume_layer_index is None
+    assert authentication.terminal_phase is not None
+    assert authentication.terminal_phase["remaining_stage"] == "evaluation"
+    assert authentication.terminal_phase["output_interface_sha256"] == (
+        _decision_digest(13)
+    )
+
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=fresh,
+        expected_bindings=writer.bindings,
+        expected_adapter_identity=adapter.restart_capsule_identity_bindings(),
+    )
+
+    assert resume.capsule_phase == "terminal_post_output_interface"
+    assert resume.child_state_sha256 == terminal_state
+    assert resume.completed_layer_indices == (0, 1, 2)
+    assert resume.resume_layer_index is None
+    payload = resume.as_dict()
+    assert payload["capsule_phase"] == "terminal_post_output_interface"
+    assert payload["resume_sha256"] == canonical_sha256(
+        {name: value for name, value in payload.items() if name != "resume_sha256"}
+    )
+    assert writer.as_dict()["terminal_capsule_published"] is True
+    assert writer.as_dict()["terminal_capsule_key"] == reference.capsule_key
+
+
+def test_terminal_capsule_requires_every_selected_layer(tmp_path: Path) -> None:
+    child = _TinyChild()
+    adapter = _FakeAdapter(child)
+    writer = _writer(tmp_path, adapter, publish_terminal_capsule=True)
+    _accept(writer, 0)
+
+    with pytest.raises(Lfm2ClosedLoopRestartCapsuleError):
+        writer.record_terminal_phase(
+            completed_layer_indices=(0,),
+            selected_layer_indices=(0, 1, 2),
+            validation_decision_sha256=_decision_digest(0),
+            child_state_sha256=adapter.child_state_fingerprint(),
+            child_topology_sha256=adapter.child_topology_fingerprint(),
+            trajectory_split_sha256=_split_digest("restart-capsule-split"),
+            body_reclosure_enabled=False,
+            body_reclosure_sha256=None,
+            final_normalization_sha256=_decision_digest(12),
+            output_interface_enabled=False,
+            output_interface_sha256=None,
+        )
+
+
+def test_tampered_terminal_phase_seal_fails_closed(tmp_path: Path) -> None:
+    child = _TinyChild()
+    adapter = _FakeAdapter(child)
+    writer = _writer(tmp_path, adapter, publish_terminal_capsule=True)
+    for layer_index in range(3):
+        _accept(writer, layer_index)
+    writer.record_terminal_phase(
+        completed_layer_indices=(0, 1, 2),
+        selected_layer_indices=(0, 1, 2),
+        validation_decision_sha256=_decision_digest(2),
+        child_state_sha256=adapter.child_state_fingerprint(),
+        child_topology_sha256=adapter.child_topology_fingerprint(),
+        trajectory_split_sha256=_split_digest("restart-capsule-split"),
+        body_reclosure_enabled=False,
+        body_reclosure_sha256=None,
+        final_normalization_sha256=_decision_digest(12),
+        output_interface_enabled=True,
+        output_interface_sha256=_decision_digest(13),
+    )
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+    assert reference is not None
+    manifest_path = reference.path / "capsule-manifest.json"
+    body = json.loads(manifest_path.read_bytes().decode("ascii"))
+    body["terminal_phase"]["output_interface_sha256"] = _decision_digest(99)
+    _write_canonical(manifest_path, body)
+
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="manifest seal is invalid",
+    ):
+        authenticate_lfm2_closed_loop_restart_capsule(reference)
+
+
+def test_terminal_phase_seal_is_validated_independently() -> None:
+    sealed = lfm2_restart_capsule_terminal_phase(
+        body_reclosure_enabled=True,
+        body_reclosure_sha256=_decision_digest(11),
+        final_normalization_sha256=_decision_digest(12),
+        output_interface_enabled=True,
+        output_interface_sha256=_decision_digest(13),
+    )
+
+    assert capsule_module._validate_terminal_phase(sealed) == sealed
+    for mutation in (
+        {"output_interface_sha256": _decision_digest(99)},
+        {"captured_before_any_evaluation": False},
+        {"remaining_stage": "promotion"},
+        {"terminal_phase_sha256": _decision_digest(98)},
+    ):
+        with pytest.raises(Lfm2ClosedLoopRestartCapsuleError):
+            capsule_module._validate_terminal_phase({**sealed, **mutation})
+    with pytest.raises(Lfm2ClosedLoopRestartCapsuleError):
+        capsule_module._validate_terminal_phase(None)
+
+
+def test_terminal_capsule_is_declined_unless_it_is_enabled(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    adapter = _FakeAdapter(child)
+    writer = _writer(tmp_path, adapter)
+    for layer_index in range(3):
+        _accept(writer, layer_index)
+    before = [
+        value.capsule_key
+        for value in discover_lfm2_closed_loop_restart_capsules(writer.directory)
+    ]
+
+    declined = writer.record_terminal_phase(
+        completed_layer_indices=(0, 1, 2),
+        selected_layer_indices=(0, 1, 2),
+        validation_decision_sha256=_decision_digest(2),
+        child_state_sha256=adapter.child_state_fingerprint(),
+        child_topology_sha256=adapter.child_topology_fingerprint(),
+        trajectory_split_sha256=_split_digest("restart-capsule-split"),
+        body_reclosure_enabled=False,
+        body_reclosure_sha256=None,
+        final_normalization_sha256=_decision_digest(12),
+        output_interface_enabled=True,
+        output_interface_sha256=_decision_digest(13),
+    )
+
+    assert declined is None
+    assert writer.publish_terminal_capsule is False
+    assert [
+        value.capsule_key
+        for value in discover_lfm2_closed_loop_restart_capsules(writer.directory)
+    ] == before
+    assert "terminal_capsule_published" not in writer.as_dict()
+
+
+def test_accepted_layer_capsule_body_is_unchanged_by_the_terminal_phase(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    writer = _writer(tmp_path, _FakeAdapter(child))
+    _accept(writer, 0)
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+    assert reference is not None
+    manifest = json.loads(
+        (Path(reference.path) / "capsule-manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "capsule_phase" not in manifest
+    assert "terminal_phase" not in manifest
+    assert "terminal_capsule_published" not in writer.as_dict()
+    authentication = authenticate_lfm2_closed_loop_restart_capsule(reference)
+    assert authentication.capsule_phase == "accepted_body_layer"
+    assert authentication.terminal_phase is None
 
 
 def test_compiler_is_unaffected_when_no_restart_capsule_is_configured() -> None:

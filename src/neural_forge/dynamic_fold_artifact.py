@@ -36,6 +36,7 @@ from .dynamic_behavior_execution import (
 )
 from .dynamic_fold_executor import (
     FoldDecision,
+    _all_named_state_tensors,
     _FoldOnlyTorchGuard,
     _WholeModelSnapshot,
     fingerprint_model_runtime_state,
@@ -58,6 +59,8 @@ PREVIOUS_SCHEMA = "neural-forge-dynamic-fold-artifact-v3"
 SCHEMA = "neural-forge-dynamic-fold-artifact-v4"
 PROVENANCE_SCHEMA = "neural-forge-dynamic-fold-provenance-v1"
 CALLABLE_FINGERPRINT_SCHEMA = "neural-forge-local-callable-fingerprint-v1"
+PORTABLE_CHILD_STATE_SCHEMA = "neural-forge-portable-child-state-v1"
+FRESH_RELOAD_EVALUATION_SCHEMA = "neural-forge-fresh-reload-evaluation-v1"
 _PROVENANCE_DIRECTORY = "provenance"
 _PROVENANCE_FILENAMES = {
     "plan": "plan.json",
@@ -728,6 +731,78 @@ def _storage_identity(value: Any) -> tuple[Any, ...]:
         return ("storage_object", id(storage))
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return ("object", id(value))
+
+
+def _portable_child_state_sha256(model: Any) -> str:
+    """Digest reloaded child state without any process-local object identity.
+
+    This is the publication-side twin of
+    ``hf_lfm2_closed_loop_restart_capsule.portable_child_state_sha256``: dense
+    content plus the storage-alias structure (a tied token table is a different
+    child from an untied one carrying the same bytes), and nothing that depends
+    on ``id()`` values or load order.
+    """
+
+    groups: dict[tuple[Any, ...], list[str]] = {}
+    for name, value in _all_named_state_tensors(model):
+        groups.setdefault(_storage_identity(value), []).append(name)
+    alias_groups = sorted(
+        (sorted(names) for names in groups.values()),
+        key=lambda names: names[0],
+    )
+    return canonical_sha256(
+        {
+            "schema": PORTABLE_CHILD_STATE_SCHEMA,
+            "dense_state_sha256": fingerprint_model_state(model),
+            "alias_groups": alias_groups,
+        }
+    )
+
+
+def _fresh_reload_evaluation_fingerprint(
+    *,
+    artifact_tree: tuple[dict[str, Any], ...],
+    portable_child_state_sha256: str,
+    child_state_fingerprint: str,
+    state_inventory: Mapping[str, int | str],
+    structural_topology_fingerprint: str,
+    loader_id: str,
+    loader_implementation_fingerprint: str,
+    loader_resource_fingerprint: str,
+    evaluator_implementation_fingerprint: str,
+    evaluator_resource_fingerprint: str,
+    behavior_gate_manifest_fingerprint: str,
+    inference_execution_contract: BehaviorInferenceExecutionContract,
+) -> str:
+    """Bind one fresh-reload decision to everything that could change it.
+
+    Two evaluations may only be collapsed into one when the bytes on disk, the
+    loaded child, the loader, the evaluator, and the behavior contract are all
+    proven identical.  Any difference in any of them changes this digest and
+    the second evaluation runs in full.
+    """
+
+    return canonical_sha256(
+        {
+            "schema": FRESH_RELOAD_EVALUATION_SCHEMA,
+            "artifact_tree": [dict(row) for row in artifact_tree],
+            "portable_child_state_sha256": portable_child_state_sha256,
+            "child_state_fingerprint": child_state_fingerprint,
+            "state_inventory": dict(state_inventory),
+            "structural_topology_fingerprint": structural_topology_fingerprint,
+            "loader_id": loader_id,
+            "loader_implementation_fingerprint": loader_implementation_fingerprint,
+            "loader_resource_fingerprint": loader_resource_fingerprint,
+            "evaluator_implementation_fingerprint": (
+                evaluator_implementation_fingerprint
+            ),
+            "evaluator_resource_fingerprint": evaluator_resource_fingerprint,
+            "behavior_gate_manifest_fingerprint": (
+                behavior_gate_manifest_fingerprint
+            ),
+            "inference_execution": inference_execution_contract.as_dict(),
+        }
+    )
 
 
 def _assert_disjoint_reload(
@@ -2487,8 +2562,20 @@ def publish_dynamic_fold_artifact(
     inspectors: InspectorRegistry | None = None,
     tokenizer_fingerprint: str | None = None,
     snapshot_config: DynamicFoldSnapshotConfig | None = None,
+    reuse_proven_identical_fresh_reload_evaluation: bool = True,
 ) -> DynamicFoldArtifactCertificate:
-    """Atomically save, freshly load, inspect, and behavior-gate one child."""
+    """Atomically save, freshly load, inspect, and behavior-gate one child.
+
+    The stage path and the final destination hold the same bytes, so the second
+    behavior evaluation re-proves what the first one proved.  When every input
+    that could change the decision is proven identical -- artifact tree, the
+    portable child state, the loader, the evaluator, and the behavior contract
+    -- the staged decision and its observed execution counts are reused and the
+    duplicate evaluation is skipped.  Any mismatch, and any caller that passes
+    ``reuse_proven_identical_fresh_reload_evaluation=False``, evaluates in full.
+    Every structural reload check still runs on both paths either way, and the
+    certificate is identical under both settings.
+    """
 
     if not bool(getattr(compilation, "complete", False)):
         raise DynamicFoldArtifactError(
@@ -2515,6 +2602,10 @@ def publish_dynamic_fold_artifact(
         raise DynamicFoldArtifactError("model_saver and model_loader must be callable.")
     if not callable(fresh_reload_evaluator):
         raise DynamicFoldArtifactError("fresh_reload_evaluator must be callable.")
+    if not isinstance(reuse_proven_identical_fresh_reload_evaluation, bool):
+        raise DynamicFoldArtifactError(
+            "reuse_proven_identical_fresh_reload_evaluation must be boolean."
+        )
     saver_id = _text(saver_id, "saver_id")
     loader_id = _text(loader_id, "loader_id")
     (
@@ -2527,6 +2618,14 @@ def publish_dynamic_fold_artifact(
         loader_resource_fingerprint,
         loader_resource_fingerprint_declared,
     ) = _callable_fingerprints(model_loader, name="model_loader")
+    (
+        evaluator_implementation_fingerprint,
+        evaluator_resource_fingerprint,
+        _evaluator_resource_fingerprint_declared,
+    ) = _callable_fingerprints(
+        fresh_reload_evaluator,
+        name="fresh_reload_evaluator",
+    )
     if not isinstance(preparation_guard_applied, bool):
         raise DynamicFoldArtifactError("preparation_guard_applied must be boolean.")
     preparation_counts = _guard_counts(
@@ -2875,6 +2974,24 @@ def publish_dynamic_fold_artifact(
             raise DynamicFoldArtifactError(
                 "Fresh reload mutated the serialized artifact tree."
             )
+        staged_evaluation_fingerprint = _fresh_reload_evaluation_fingerprint(
+            artifact_tree=before_reload_tree,
+            portable_child_state_sha256=_portable_child_state_sha256(reloaded),
+            child_state_fingerprint=reloaded_state,
+            state_inventory=reloaded_inventory,
+            structural_topology_fingerprint=(
+                reload_structural_topology_fingerprint
+            ),
+            loader_id=loader_id,
+            loader_implementation_fingerprint=(loader_implementation_fingerprint),
+            loader_resource_fingerprint=loader_resource_fingerprint,
+            evaluator_implementation_fingerprint=(
+                evaluator_implementation_fingerprint
+            ),
+            evaluator_resource_fingerprint=evaluator_resource_fingerprint,
+            behavior_gate_manifest_fingerprint=(normalized_manifest_fingerprint),
+            inference_execution_contract=inference_execution_contract,
+        )
         _authenticate_provenance_bundle(
             stage,
             plan_sha256=provenance["plan_sha256"],
@@ -2962,49 +3079,92 @@ def publish_dynamic_fold_artifact(
                 "Final-destination reloaded child contains parameter gradients."
             )
         final_reload_runtime = fingerprint_model_runtime_state(final_reloaded)
-        final_reload_parameters = tuple(
-            (parameter, bool(parameter.requires_grad))
-            for parameter in final_reloaded.parameters()
+        final_evaluation_fingerprint = _fresh_reload_evaluation_fingerprint(
+            artifact_tree=_artifact_tree(final_child_directory),
+            portable_child_state_sha256=(
+                _portable_child_state_sha256(final_reloaded)
+            ),
+            child_state_fingerprint=final_reloaded_state,
+            state_inventory=final_reloaded_inventory,
+            structural_topology_fingerprint=(
+                final_reload_structural_topology_fingerprint
+            ),
+            loader_id=loader_id,
+            loader_implementation_fingerprint=(loader_implementation_fingerprint),
+            loader_resource_fingerprint=loader_resource_fingerprint,
+            evaluator_implementation_fingerprint=(
+                evaluator_implementation_fingerprint
+            ),
+            evaluator_resource_fingerprint=evaluator_resource_fingerprint,
+            behavior_gate_manifest_fingerprint=(normalized_manifest_fingerprint),
+            inference_execution_contract=inference_execution_contract,
         )
-        for parameter, _requires_grad in final_reload_parameters:
-            parameter.requires_grad_(False)
-        try:
-            with _FoldOnlyTorchGuard() as final_reload_guard:
-                with observe_model_execution(
-                    final_reloaded,
-                    contract=inference_execution_contract,
-                ) as final_execution_counts:
-                    final_reload_decision = _decision(
-                        fresh_reload_evaluator(final_reloaded)
-                    )
-        finally:
-            for parameter, requires_grad in final_reload_parameters:
-                parameter.grad = None
-                parameter.requires_grad_(requires_grad)
-        final_reload_module_forward_calls = int(
-            final_execution_counts["module_forward_calls"]
+        reused_staged_evaluation = bool(
+            reuse_proven_identical_fresh_reload_evaluation
+            and final_evaluation_fingerprint == staged_evaluation_fingerprint
         )
-        final_reload_root_forward_calls = int(
-            final_execution_counts["root_forward_calls"]
-        )
-        final_reload_inference_entrypoint_calls = int(
-            final_execution_counts["inference_entrypoint_calls"]
-        )
-        if final_reload_decision.accepted and not execution_contract_satisfied(
-            final_execution_counts
-        ):
-            if (
-                inference_execution_contract
-                == BehaviorInferenceExecutionContract.top_level_forward()
+        if reused_staged_evaluation:
+            # The stage path already evaluated these exact bytes through this
+            # exact loader and evaluator, and nothing the decision depends on
+            # changed across the rename.  Re-running it cannot learn anything
+            # new, so the proven decision, the guard that covered it, and its
+            # observed execution counts are carried forward unchanged.  The
+            # certificate sums both guards' counters, which is unambiguous here
+            # because publication fails closed below unless every one of them is
+            # zero on both paths.
+            final_reload_guard = reload_guard
+            final_reload_decision = reload_decision
+            final_execution_counts = execution_counts
+            final_reload_module_forward_calls = reload_module_forward_calls
+            final_reload_root_forward_calls = reload_root_forward_calls
+            final_reload_inference_entrypoint_calls = (
+                reload_inference_entrypoint_calls
+            )
+        else:
+            final_reload_parameters = tuple(
+                (parameter, bool(parameter.requires_grad))
+                for parameter in final_reloaded.parameters()
+            )
+            for parameter, _requires_grad in final_reload_parameters:
+                parameter.requires_grad_(False)
+            try:
+                with _FoldOnlyTorchGuard() as final_reload_guard:
+                    with observe_model_execution(
+                        final_reloaded,
+                        contract=inference_execution_contract,
+                    ) as final_execution_counts:
+                        final_reload_decision = _decision(
+                            fresh_reload_evaluator(final_reloaded)
+                        )
+            finally:
+                for parameter, requires_grad in final_reload_parameters:
+                    parameter.grad = None
+                    parameter.requires_grad_(requires_grad)
+            final_reload_module_forward_calls = int(
+                final_execution_counts["module_forward_calls"]
+            )
+            final_reload_root_forward_calls = int(
+                final_execution_counts["root_forward_calls"]
+            )
+            final_reload_inference_entrypoint_calls = int(
+                final_execution_counts["inference_entrypoint_calls"]
+            )
+            if final_reload_decision.accepted and not execution_contract_satisfied(
+                final_execution_counts
             ):
+                if (
+                    inference_execution_contract
+                    == BehaviorInferenceExecutionContract.top_level_forward()
+                ):
+                    raise DynamicFoldArtifactError(
+                        "Final-destination evaluator accepted without executing "
+                        "the child root."
+                    )
                 raise DynamicFoldArtifactError(
                     "Final-destination evaluator accepted without executing the "
-                    "child root."
+                    "child through its declared inference entrypoint and module "
+                    "root."
                 )
-            raise DynamicFoldArtifactError(
-                "Final-destination evaluator accepted without executing the child "
-                "through its declared inference entrypoint and module root."
-            )
         if not final_reload_decision.accepted:
             raise DynamicFoldArtifactError(
                 "Final-destination child failed its behavioral gate: "

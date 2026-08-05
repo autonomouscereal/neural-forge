@@ -1811,6 +1811,9 @@ class Lfm2DenseBudgetFoldConfig:
     macro_cell_attractor_gate_config: Lfm2MacroCellAttractorGateConfig | None = None
     restart_capsule_directory: Path | None = None
     restart_capsule_rotation_keep: int = DEFAULT_RESTART_CAPSULE_ROTATION_KEEP
+    # Opt-in post-output-interface capsule: a crash in the terminal phase or the
+    # evaluators otherwise costs the whole transaction, not just that window.
+    restart_capsule_publish_terminal: bool = False
     resume_from_restart_capsule: Path | None = None
 
     def __post_init__(self) -> None:
@@ -2001,6 +2004,10 @@ class Lfm2DenseBudgetFoldConfig:
                 "restart_capsule_rotation_keep",
             ),
         )
+        if not isinstance(self.restart_capsule_publish_terminal, bool):
+            raise Lfm2DenseBudgetFoldError(
+                "restart_capsule_publish_terminal must be boolean."
+            )
         for name in ("restart_capsule_directory", "resume_from_restart_capsule"):
             value = getattr(self, name)
             if value is None:
@@ -3725,6 +3732,9 @@ class Lfm2DenseBudgetModelOperator:
                 resume=resume,
                 rotation_keep=self.config.restart_capsule_rotation_keep,
                 fold_progress_sink=fold_progress,
+                publish_terminal_capsule=(
+                    self.config.restart_capsule_publish_terminal
+                ),
             )
         except Lfm2ClosedLoopRestartCapsuleError as exc:
             raise Lfm2DenseBudgetFoldError(
@@ -3754,6 +3764,7 @@ class Lfm2DenseBudgetModelOperator:
             "enabled": True,
             "directory": str(writer.directory),
             "rotation_keep": writer.rotation_keep,
+            "terminal_capsule_enabled": bool(writer.publish_terminal_capsule),
             "bindings_sha256": writer.bindings.bindings_sha256,
             "resumed": resume is not None,
             "resumed_capsule_key": (

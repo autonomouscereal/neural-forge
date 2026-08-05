@@ -69,6 +69,9 @@ RESTART_CAPSULE_RUN_SCHEMA = (
 RESUMED_LAYER_SCHEMA = (
     "neural-forge-dynamic-closed-loop-resumed-layer-v1"
 )
+TERMINAL_CAPSULE_DECISION_SCHEMA = (
+    "neural-forge-dynamic-closed-loop-terminal-capsule-decision-v1"
+)
 MERGED_CAPTURE_REQUEST_SCHEMA = (
     "neural-forge-dynamic-closed-loop-merged-capture-request-v1"
 )
@@ -1152,6 +1155,29 @@ class AcceptedLayerRestartCapsuleWriter(Protocol):
         child_topology_sha256: str,
         trajectory_split_sha256: str,
     ) -> Mapping[str, Any]: ...
+
+    def record_terminal_phase(
+        self,
+        *,
+        completed_layer_indices: Sequence[int],
+        selected_layer_indices: Sequence[int],
+        validation_decision_sha256: str,
+        child_state_sha256: str,
+        child_topology_sha256: str,
+        trajectory_split_sha256: str,
+        body_reclosure_enabled: bool,
+        body_reclosure_sha256: str | None,
+        final_normalization_sha256: str,
+        output_interface_enabled: bool,
+        output_interface_sha256: str | None,
+    ) -> Mapping[str, Any] | None:
+        """Optional: seal the post-output-interface, pre-evaluation restart.
+
+        A writer that does not implement this, or that returns ``None``, keeps
+        accepted-layer capsules only and the orchestrator publishes no terminal
+        capsule.
+        """
+        ...
 
     def as_dict(self) -> Mapping[str, Any]: ...
 
@@ -2291,6 +2317,73 @@ class ChildClosedLoopCompiler:
         }
         return {**body, "report_sha256": canonical_sha256(body)}
 
+    def _record_terminal_restart_capsule(
+        self,
+        writer: AcceptedLayerRestartCapsuleWriter | None,
+        *,
+        selected_layers: Sequence[int],
+        split: TrajectorySplit,
+        layer_reports: Sequence[Mapping[str, Any]],
+        body_reclosure_report: Mapping[str, Any],
+        final_report: Mapping[str, Any],
+        output_interface_report: Mapping[str, Any],
+    ) -> Mapping[str, Any] | None:
+        """Seal one post-output-interface, pre-evaluation restart point.
+
+        Accepted-layer capsules stop at the last body layer, so a crash after
+        the body -- in the reclosure, the terminal solves, or the evaluators --
+        used to cost the entire transaction.  The capsule writer is optional and
+        so is this hook: a writer without ``record_terminal_phase`` keeps the
+        accepted-layer-only behavior it always had.
+        """
+
+        if writer is None:
+            return None
+        record_terminal_phase = getattr(writer, "record_terminal_phase", None)
+        if not callable(record_terminal_phase):
+            return None
+        capsule_state = self._state()
+        capsule_topology = self._topology()
+        record = record_terminal_phase(
+            completed_layer_indices=tuple(selected_layers),
+            selected_layer_indices=tuple(selected_layers),
+            validation_decision_sha256=canonical_sha256(
+                {
+                    "schema": TERMINAL_CAPSULE_DECISION_SCHEMA,
+                    "layer_reports": [dict(value) for value in layer_reports],
+                }
+            ),
+            child_state_sha256=capsule_state,
+            child_topology_sha256=capsule_topology,
+            trajectory_split_sha256=split.split_sha256,
+            body_reclosure_enabled=self.config.fold_body_reclosure,
+            body_reclosure_sha256=canonical_sha256(dict(body_reclosure_report)),
+            final_normalization_sha256=canonical_sha256(dict(final_report)),
+            output_interface_enabled=self.config.fold_output_interface,
+            output_interface_sha256=canonical_sha256(
+                dict(output_interface_report)
+            ),
+        )
+        if record is None:
+            # A writer may decline: the terminal capsule is opt-in.
+            return None
+        if not isinstance(record, Mapping):
+            raise ClosedLoopFoldError(
+                "Terminal restart-capsule writer returned no sealed record."
+            )
+        if self._state() != capsule_state or self._topology() != capsule_topology:
+            raise ClosedLoopFoldError(
+                "Terminal restart-capsule publication mutated child state or "
+                "topology."
+            )
+        self._emit_progress(
+            "child_closed_loop_terminal_restart_capsule_published",
+            selected_layer_count=len(selected_layers),
+            capsule_child_state_sha256=capsule_state,
+            output_interface_enabled=self.config.fold_output_interface,
+        )
+        return record
+
     def _restart_capsule_report(
         self,
         *,
@@ -2685,17 +2778,6 @@ class ChildClosedLoopCompiler:
                 raise ClosedLoopFoldError(
                     "A merged child capture was never consumed by its layer."
                 )
-            restart_capsule_report = (
-                self._disabled_restart_capsule_report()
-                if writer is None
-                else self._restart_capsule_report(
-                    completed_layers=completed_layers,
-                    executed_layers=executed_layers,
-                    resume_admission=resume_admission,
-                    capsule_records=capsule_records,
-                    writer_report=writer.as_dict(),
-                )
-            )
             if self.config.fold_body_reclosure:
                 self._emit_progress(
                     "child_closed_loop_body_reclosure_started",
@@ -2770,6 +2852,28 @@ class ChildClosedLoopCompiler:
                         "external_whole_output_semantic_behavior_gate"
                     ),
                 }
+            terminal_capsule_record = self._record_terminal_restart_capsule(
+                writer,
+                selected_layers=selected_layers,
+                split=split,
+                layer_reports=layer_reports,
+                body_reclosure_report=body_reclosure_report,
+                final_report=final_report,
+                output_interface_report=output_interface_report,
+            )
+            if terminal_capsule_record is not None:
+                capsule_records.append(terminal_capsule_record)
+            restart_capsule_report = (
+                self._disabled_restart_capsule_report()
+                if writer is None
+                else self._restart_capsule_report(
+                    completed_layers=completed_layers,
+                    executed_layers=executed_layers,
+                    resume_admission=resume_admission,
+                    capsule_records=capsule_records,
+                    writer_report=writer.as_dict(),
+                )
+            )
             candidate_state = self._state()
             if self._topology() != topology_before:
                 raise ClosedLoopFoldError(

@@ -132,11 +132,17 @@ CLOSED_LOOP_RESTART_CAPSULE_WRITER_SCHEMA = (
 CLOSED_LOOP_RESTART_CAPSULE_RESUME_SCHEMA = (
     "neural-forge-lfm2-closed-loop-restart-capsule-resume-v1"
 )
+CLOSED_LOOP_RESTART_CAPSULE_TERMINAL_PHASE_SCHEMA = (
+    "neural-forge-lfm2-closed-loop-restart-capsule-terminal-phase-v1"
+)
 
 CLOSED_LOOP_RESTART_CAPSULE_CHAIN_GENESIS_SHA256 = "0" * 64
 DEFAULT_RESTART_CAPSULE_ROTATION_KEEP = 2
 
 _ARTIFACT_KIND = "lfm2-closed-loop-accepted-layer-restart"
+_ACCEPTED_LAYER_PHASE = "accepted_body_layer"
+_TERMINAL_PHASE = "terminal_post_output_interface"
+_CAPSULE_PHASES = frozenset({_ACCEPTED_LAYER_PHASE, _TERMINAL_PHASE})
 _STATUS = "quarantined-mid-body-restart-only"
 _MANIFEST_NAME = "capsule-manifest.json"
 _CHILD_STATE_NAME = "child-state.safetensors"
@@ -781,6 +787,8 @@ class Lfm2ClosedLoopRestartCapsuleAuthentication:
     manifest: Mapping[str, Any]
     completed_layer_indices: tuple[int, ...]
     resume_layer_index: int | None
+    capsule_phase: str = _ACCEPTED_LAYER_PHASE
+    terminal_phase: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -796,6 +804,8 @@ class Lfm2ClosedLoopRestartCapsuleResume:
     child_state_sha256: str
     child_topology_sha256: str
     validation_decision_sha256: str
+    capsule_phase: str = _ACCEPTED_LAYER_PHASE
+    terminal_phase: Mapping[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         body = {
@@ -814,6 +824,13 @@ class Lfm2ClosedLoopRestartCapsuleResume:
             "child_state_restored_into_a_fresh_child": True,
             "skipped_layers_are_not_replayed": True,
         }
+        if self.capsule_phase != _ACCEPTED_LAYER_PHASE:
+            # An accepted-layer resume keeps its historical sealed body.
+            body = {
+                **body,
+                "capsule_phase": self.capsule_phase,
+                "terminal_phase": dict(self.terminal_phase or {}),
+            }
         return {**body, "resume_sha256": canonical_sha256(body)}
 
 
@@ -898,6 +915,74 @@ def _safe_remove_stage(
     _fsync_directory(parent)
 
 
+def lfm2_restart_capsule_terminal_phase(
+    *,
+    body_reclosure_enabled: bool,
+    body_reclosure_sha256: str | None,
+    final_normalization_sha256: str,
+    output_interface_enabled: bool,
+    output_interface_sha256: str | None,
+) -> dict[str, Any]:
+    """Seal what the terminal capsule proves has already been solved.
+
+    A terminal capsule is taken after the output interface and before any
+    evaluation, so a crash in the evaluators no longer costs the body, the
+    reclosure, the final normalization, or the output-interface solves.  It
+    pins the sealed digest of each of those stage reports, so a resumed process
+    can prove it is continuing the same transaction rather than a similar one.
+    """
+
+    if not isinstance(body_reclosure_enabled, bool) or not isinstance(
+        output_interface_enabled, bool
+    ):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "Terminal-phase stage flags must be boolean."
+        )
+    body = {
+        "schema": CLOSED_LOOP_RESTART_CAPSULE_TERMINAL_PHASE_SCHEMA,
+        "body_reclosure_enabled": body_reclosure_enabled,
+        "body_reclosure_sha256": _optional_digest(
+            body_reclosure_sha256,
+            "body_reclosure_sha256",
+        ),
+        "final_normalization_sha256": _digest(
+            final_normalization_sha256,
+            "final_normalization_sha256",
+        ),
+        "output_interface_enabled": output_interface_enabled,
+        "output_interface_sha256": _optional_digest(
+            output_interface_sha256,
+            "output_interface_sha256",
+        ),
+        "captured_after_output_interface": True,
+        "captured_before_any_evaluation": True,
+        "remaining_stage": "evaluation",
+        "body_layers_are_never_replayed_on_resume": True,
+        "terminal_solves_are_never_replayed_on_resume": True,
+    }
+    return {**body, "terminal_phase_sha256": canonical_sha256(body)}
+
+
+def _validate_terminal_phase(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "A terminal restart capsule requires its sealed terminal phase."
+        )
+    body = dict(value)
+    supplied = body.pop("terminal_phase_sha256", None)
+    if (
+        body.get("schema") != CLOSED_LOOP_RESTART_CAPSULE_TERMINAL_PHASE_SCHEMA
+        or body.get("captured_after_output_interface") is not True
+        or body.get("captured_before_any_evaluation") is not True
+        or body.get("remaining_stage") != "evaluation"
+        or canonical_sha256(body) != supplied
+    ):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "The terminal restart-capsule phase seal is invalid."
+        )
+    return dict(value)
+
+
 def _capsule_body(
     *,
     bindings: Lfm2ClosedLoopRestartCapsuleBindings,
@@ -918,11 +1003,23 @@ def _capsule_body(
     previous_capsule_chain_sha256: str,
     resumed_from_capsule_manifest_sha256: str | None,
     fold_progress: Mapping[str, Any],
+    capsule_phase: str = _ACCEPTED_LAYER_PHASE,
+    terminal_phase: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if capsule_phase == _ACCEPTED_LAYER_PHASE:
+        # Pinned byte-for-byte: every capsule sealed before the terminal phase
+        # existed keeps its content key, chain, and manifest digest.
+        phase_fields: dict[str, Any] = {}
+    else:
+        phase_fields = {
+            "capsule_phase": capsule_phase,
+            "terminal_phase": dict(terminal_phase or {}),
+        }
     return {
         "schema": CLOSED_LOOP_RESTART_CAPSULE_SCHEMA,
         "artifact_kind": _ARTIFACT_KIND,
         **_NONPROMOTABLE_FLAGS,
+        **phase_fields,
         "bindings": bindings.as_dict(),
         "bindings_sha256": bindings.bindings_sha256,
         "adapter_identity": dict(adapter_identity),
@@ -1105,6 +1202,23 @@ def _open_capsule(
         raise Lfm2ClosedLoopRestartCapsuleError(
             "Restart capsule layer inventory is inconsistent."
         )
+    capsule_phase = manifest.get("capsule_phase", _ACCEPTED_LAYER_PHASE)
+    terminal_phase = None
+    if capsule_phase not in _CAPSULE_PHASES:
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "Restart capsule phase is unknown."
+        )
+    if capsule_phase == _ACCEPTED_LAYER_PHASE:
+        if "terminal_phase" in manifest:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "An accepted-layer capsule cannot carry a terminal phase."
+            )
+    else:
+        terminal_phase = _validate_terminal_phase(manifest.get("terminal_phase"))
+        if remaining or set(completed) != set(bindings.selected_layer_indices):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "A terminal restart capsule must follow every selected layer."
+            )
     child_state_sha256 = _digest(
         manifest.get("child_state_sha256"),
         "child_state_sha256",
@@ -1155,6 +1269,8 @@ def _open_capsule(
         "completed_layer_indices": completed,
         "resume_layer_index": resume_layer_index,
         "child_state_record": record,
+        "capsule_phase": capsule_phase,
+        "terminal_phase": terminal_phase,
     }
 
 
@@ -1164,6 +1280,7 @@ def authenticate_lfm2_closed_loop_restart_capsule(
     """Authenticate one capsule without materializing a child model."""
 
     opened = _open_capsule(reference)
+    terminal_phase = opened["terminal_phase"]
     return Lfm2ClosedLoopRestartCapsuleAuthentication(
         path=opened["root"],
         reference=reference,
@@ -1171,6 +1288,10 @@ def authenticate_lfm2_closed_loop_restart_capsule(
         manifest=MappingProxyType(dict(opened["manifest"])),
         completed_layer_indices=opened["completed_layer_indices"],
         resume_layer_index=opened["resume_layer_index"],
+        capsule_phase=opened["capsule_phase"],
+        terminal_phase=(
+            None if terminal_phase is None else MappingProxyType(terminal_phase)
+        ),
     )
 
 
@@ -1403,6 +1524,7 @@ def load_lfm2_closed_loop_restart_capsule(
         raise Lfm2ClosedLoopRestartCapsuleError(
             "The restored child does not reproduce the sealed capsule state."
         )
+    terminal_phase = opened["terminal_phase"]
     return Lfm2ClosedLoopRestartCapsuleResume(
         path=root,
         reference=reference,
@@ -1414,6 +1536,10 @@ def load_lfm2_closed_loop_restart_capsule(
         child_topology_sha256=restored_topology,
         validation_decision_sha256=str(
             manifest["validation_decision_sha256"]
+        ),
+        capsule_phase=opened["capsule_phase"],
+        terminal_phase=(
+            None if terminal_phase is None else MappingProxyType(terminal_phase)
         ),
     )
 
@@ -1436,13 +1562,28 @@ def publish_lfm2_closed_loop_restart_capsule(
     previous_capsule_chain_sha256: str,
     resumed_from_capsule_manifest_sha256: str | None,
     fold_progress: Mapping[str, Any],
+    capsule_phase: str = _ACCEPTED_LAYER_PHASE,
+    terminal_phase: Mapping[str, Any] | None = None,
 ) -> Lfm2ClosedLoopRestartCapsuleReference:
-    """Atomically publish one sealed accepted-layer restart point."""
+    """Atomically publish one sealed accepted-layer or terminal restart point."""
 
     if not isinstance(bindings, Lfm2ClosedLoopRestartCapsuleBindings):
         raise TypeError(
             "bindings must be Lfm2ClosedLoopRestartCapsuleBindings."
         )
+    phase = _text(capsule_phase, "capsule_phase")
+    if phase not in _CAPSULE_PHASES:
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "capsule_phase must be accepted_body_layer or "
+            "terminal_post_output_interface."
+        )
+    if (terminal_phase is not None) != (phase == _TERMINAL_PHASE):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "Only a terminal restart capsule carries a sealed terminal phase."
+        )
+    normalized_terminal_phase = (
+        None if terminal_phase is None else _validate_terminal_phase(terminal_phase)
+    )
     root = _root_directory(directory)
     completed = _layer_indices(
         completed_layer_indices,
@@ -1526,6 +1667,8 @@ def publish_lfm2_closed_loop_restart_capsule(
                 "resumed_from_capsule_manifest_sha256",
             ),
             fold_progress=progress,
+            capsule_phase=phase,
+            terminal_phase=normalized_terminal_phase,
         )
         capsule_key = _capsule_key(body)
         directory_name = _capsule_directory_name(
@@ -1656,10 +1799,14 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         resume: Lfm2ClosedLoopRestartCapsuleResume | None = None,
         rotation_keep: int = DEFAULT_RESTART_CAPSULE_ROTATION_KEEP,
         fold_progress_sink: Any | None = None,
+        publish_terminal_capsule: bool = False,
     ) -> None:
         self.adapter = adapter
         self.directory = _root_directory(directory)
         self.rotation_keep = _positive_int(rotation_keep, "rotation_keep")
+        if not isinstance(publish_terminal_capsule, bool):
+            raise TypeError("publish_terminal_capsule must be boolean.")
+        self.publish_terminal_capsule = publish_terminal_capsule
         self.adapter_identity = lfm2_restart_capsule_adapter_identity(adapter)
         child_layers = getattr(adapter, "child_layers", None)
         selected = getattr(adapter, "_selected_layers", None)
@@ -1718,6 +1865,9 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         )
         self._published: list[Lfm2ClosedLoopRestartCapsuleReference] = []
         self._records: list[Mapping[str, Any]] = []
+        self._terminal_reference: (
+            Lfm2ClosedLoopRestartCapsuleReference | None
+        ) = None
         self._fold_progress_sink = fold_progress_sink
         self._progress_chain = (
             None
@@ -1940,6 +2090,130 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         self._records.append(record)
         return record
 
+    def record_terminal_phase(
+        self,
+        *,
+        completed_layer_indices: Sequence[int],
+        selected_layer_indices: Sequence[int],
+        validation_decision_sha256: str,
+        child_state_sha256: str,
+        child_topology_sha256: str,
+        trajectory_split_sha256: str,
+        body_reclosure_enabled: bool,
+        body_reclosure_sha256: str | None,
+        final_normalization_sha256: str,
+        output_interface_enabled: bool,
+        output_interface_sha256: str | None,
+    ) -> Mapping[str, Any] | None:
+        """Publish one sealed post-output-interface, pre-evaluation capsule.
+
+        Accepted-layer capsules stop at the last body layer, so a crash in the
+        evaluators used to cost the whole transaction: the body, the reclosure,
+        the final normalization, and the output-interface solves all had to be
+        recomputed.  This capsule is the restart point for exactly that window.
+
+        Returns ``None`` when the terminal capsule is not enabled, which the
+        orchestrator reads as a declined capsule and records nothing.
+        """
+
+        if not self.publish_terminal_capsule:
+            return None
+        completed = _layer_indices(
+            completed_layer_indices,
+            "completed_layer_indices",
+        )
+        selected = _layer_indices(
+            selected_layer_indices,
+            "selected_layer_indices",
+        )
+        if (
+            selected != self.bindings.selected_layer_indices
+            or _digest(trajectory_split_sha256, "trajectory_split_sha256")
+            != self.bindings.trajectory_split_sha256
+            or completed != selected
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "A terminal capsule requires every selected layer to be "
+                "accepted under this exact sealed run identity."
+            )
+        sealed_phase = lfm2_restart_capsule_terminal_phase(
+            body_reclosure_enabled=body_reclosure_enabled,
+            body_reclosure_sha256=body_reclosure_sha256,
+            final_normalization_sha256=final_normalization_sha256,
+            output_interface_enabled=output_interface_enabled,
+            output_interface_sha256=output_interface_sha256,
+        )
+        progress = (
+            unavailable_fold_progress_chain(
+                process_boundary=(
+                    self.resume is not None
+                    and self._first_capsule_of_this_process
+                ),
+            )
+            if self._progress_chain is None
+            else {
+                **self._progress_chain.as_dict(),
+                "process_boundary": bool(
+                    self.resume is not None
+                    and self._first_capsule_of_this_process
+                ),
+            }
+        )
+        reference = publish_lfm2_closed_loop_restart_capsule(
+            child_model=self.adapter.child_model,
+            directory=self.directory,
+            bindings=self.bindings,
+            adapter_identity=self.adapter_identity,
+            layer_index=completed[-1],
+            layer_ordinal=len(completed) - 1,
+            completed_layer_indices=completed,
+            remaining_layer_indices=(),
+            validation_decision_sha256=validation_decision_sha256,
+            origin_process_local_child_state_sha256=child_state_sha256,
+            origin_process_local_child_topology_sha256=child_topology_sha256,
+            capsule_sequence=self._sequence,
+            previous_capsule_manifest_sha256=self._previous_manifest_sha256,
+            previous_capsule_chain_sha256=self._previous_chain_sha256,
+            resumed_from_capsule_manifest_sha256=(
+                self._resumed_from_manifest_sha256
+                if self._first_capsule_of_this_process
+                else None
+            ),
+            fold_progress=progress,
+            capsule_phase=_TERMINAL_PHASE,
+            terminal_phase=sealed_phase,
+        )
+        self._completed = completed
+        self._sequence += 1
+        self._previous_manifest_sha256 = reference.manifest_sha256
+        self._previous_chain_sha256 = reference.capsule_chain_sha256
+        self._first_capsule_of_this_process = False
+        self._published.append(reference)
+        self._terminal_reference = reference
+        retained = rotate_lfm2_closed_loop_restart_capsules(
+            self.directory,
+            keep=self.rotation_keep,
+        )
+        body = {
+            "schema": CLOSED_LOOP_RESTART_CAPSULE_RECORD_SCHEMA,
+            "capsule_phase": _TERMINAL_PHASE,
+            "layer_index": int(completed[-1]),
+            "layer_ordinal": int(len(completed) - 1),
+            "capsule": reference.as_dict(),
+            "completed_layer_indices": list(completed),
+            "remaining_layer_indices": [],
+            "retained_capsule_keys": [
+                value.capsule_key for value in retained
+            ],
+            "rotation_keep": self.rotation_keep,
+            "fold_progress": dict(progress),
+            "terminal_phase": dict(sealed_phase),
+            "restart_capsule_is_not_a_promotable_child": True,
+        }
+        record = {**body, "record_sha256": canonical_sha256(body)}
+        self._records.append(record)
+        return record
+
     def as_dict(self) -> Mapping[str, Any]:
         body = {
             "schema": CLOSED_LOOP_RESTART_CAPSULE_WRITER_SCHEMA,
@@ -1959,6 +2233,17 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             "fold_progress_chain_bound": self._progress_chain is not None,
             "restart_capsule_is_not_a_promotable_child": True,
         }
+        if self._terminal_reference is not None:
+            # A writer that never published a terminal capsule keeps its
+            # historical sealed report body.
+            body = {
+                **body,
+                "terminal_capsule_published": True,
+                "terminal_capsule_key": self._terminal_reference.capsule_key,
+                "terminal_capsule_chain_sha256": (
+                    self._terminal_reference.capsule_chain_sha256
+                ),
+            }
         return {**body, "writer_sha256": canonical_sha256(body)}
 
 
@@ -1972,6 +2257,7 @@ __all__ = [
     "CLOSED_LOOP_RESTART_CAPSULE_RECORD_SCHEMA",
     "CLOSED_LOOP_RESTART_CAPSULE_RESUME_SCHEMA",
     "CLOSED_LOOP_RESTART_CAPSULE_SCHEMA",
+    "CLOSED_LOOP_RESTART_CAPSULE_TERMINAL_PHASE_SCHEMA",
     "CLOSED_LOOP_RESTART_CAPSULE_TOPOLOGY_SCHEMA",
     "CLOSED_LOOP_RESTART_CAPSULE_WRITER_SCHEMA",
     "DEFAULT_RESTART_CAPSULE_ROTATION_KEEP",
@@ -1988,6 +2274,7 @@ __all__ = [
     "latest_lfm2_closed_loop_restart_capsule",
     "lfm2_restart_capsule_adapter_identity",
     "lfm2_restart_capsule_split_sha256",
+    "lfm2_restart_capsule_terminal_phase",
     "load_lfm2_closed_loop_restart_capsule",
     "portable_child_state_sha256",
     "portable_child_topology_sha256",
