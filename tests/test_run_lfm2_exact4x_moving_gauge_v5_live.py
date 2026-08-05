@@ -335,6 +335,126 @@ def test_factory_boundary_has_no_parent_model_loader_forward_or_network_argument
     )
 
 
+def test_phase3_reuses_binder_owned_orthogonal_charts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = live.Lfm2Exact4xMovingGaugeV5LiveRuntime(
+        _request(tmp_path),
+        _bindings(),
+        phase_overrides=_overrides()[0],
+    )
+    calls = {
+        "orthogonal": 0,
+        "base": 0,
+        "generalized_fit": 0,
+        "generalized_bind": 0,
+    }
+
+    def sealed(label: str) -> dict[str, str]:
+        return {"report_sha256": live.canonical_sha256({"label": label})}
+
+    def fit_evidence(
+        _runtime: object,
+        *,
+        boundary_id: str,
+        **_kwargs: object,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(boundary_id=boundary_id)
+
+    def bind_orthogonal(evidence: SimpleNamespace) -> SimpleNamespace:
+        calls["orthogonal"] += 1
+        boundary_chart = SimpleNamespace(
+            boundary_id=evidence.boundary_id,
+            report=sealed(f"orthogonal-anchor:{evidence.boundary_id}"),
+        )
+        return SimpleNamespace(
+            boundary_chart=boundary_chart,
+            report=sealed(f"orthogonal-endpoint:{evidence.boundary_id}"),
+        )
+
+    def bind_base(evidence: SimpleNamespace) -> SimpleNamespace:
+        calls["base"] += 1
+        anchor = SimpleNamespace(
+            boundary_id=evidence.boundary_id,
+            report=sealed(f"orthogonal-anchor:{evidence.boundary_id}"),
+        )
+        return SimpleNamespace(
+            orthogonal_anchor=anchor,
+            report=sealed(f"base-endpoint:{evidence.boundary_id}"),
+        )
+
+    def fit_generalized(
+        evidence: SimpleNamespace,
+        *,
+        orthogonal_chart: SimpleNamespace,
+    ) -> SimpleNamespace:
+        calls["generalized_fit"] += 1
+        assert orthogonal_chart.boundary_id == evidence.boundary_id
+        return SimpleNamespace(
+            orthogonal_chart=orthogonal_chart,
+            report=sealed(f"generalized-diagnostic:{evidence.boundary_id}"),
+        )
+
+    def bind_generalized(
+        diagnostic: SimpleNamespace,
+        evidence: SimpleNamespace,
+    ) -> SimpleNamespace:
+        calls["generalized_bind"] += 1
+        assert diagnostic.orthogonal_chart.boundary_id == evidence.boundary_id
+        return SimpleNamespace(
+            report=sealed(f"generalized-endpoint:{evidence.boundary_id}"),
+        )
+
+    monkeypatch.setattr(
+        live.Lfm2Exact4xMovingGaugeV5LiveRuntime,
+        "_fit_evidence",
+        fit_evidence,
+    )
+    monkeypatch.setattr(
+        live,
+        "bind_lfm2_orthogonal_causal_endpoint_chart",
+        bind_orthogonal,
+    )
+    monkeypatch.setattr(live, "bind_lfm2_base_e0_causal_endpoint_chart", bind_base)
+    monkeypatch.setattr(
+        live,
+        "fit_lfm2_generalized_moving_gauge_chart_diagnostic",
+        fit_generalized,
+    )
+    monkeypatch.setattr(
+        live,
+        "bind_lfm2_generalized_e0a_causal_endpoint_chart",
+        bind_generalized,
+    )
+
+    result = runtime._phase_freeze_fit_charts({}, {})
+    artifact = result.artifact
+
+    assert calls == {
+        "orthogonal": 4,
+        "base": 2,
+        "generalized_fit": 2,
+        "generalized_bind": 2,
+    }
+    for name in ("pre", "terminal"):
+        assert artifact["orthogonal"][name] is artifact["charts"]["E0"][
+            name
+        ].boundary_chart
+        assert artifact["charts"]["E0"][name] is artifact["charts"]["E0R"][name]
+        assert artifact["charts"]["E0"][name] is artifact["charts"]["E0A"][name]
+    for name in ("post_operator", "post_layer"):
+        assert artifact["orthogonal"][name] is artifact["charts"]["E0"][
+            name
+        ].orthogonal_anchor
+        assert (
+            artifact["generalized"][name].orthogonal_chart
+            is artifact["orthogonal"][name]
+        )
+    assert result.evidence["chart_bundle_sha256s"] == runtime.chart_bundle_sha256s
+    assert len(set(runtime.chart_bundle_sha256s.values())) == 3
+
+
 def test_phase0_exact_lineage_gate_rejects_wrong_self_sealed_request(
     tmp_path: Path,
 ) -> None:

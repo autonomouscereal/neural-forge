@@ -80,7 +80,6 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     bind_lfm2_generalized_e0a_causal_endpoint_chart,
     bind_lfm2_orthogonal_causal_endpoint_chart,
     fingerprint_lfm2_moving_gauge_tensor,
-    fit_lfm2_cycle_coupled_moving_gauge_boundary,
     fit_lfm2_generalized_moving_gauge_chart_diagnostic,
     solve_lfm2_moving_gauge_anchored_writer_replacement,
 )
@@ -1258,12 +1257,22 @@ class Lfm2Exact4xMovingGaugeV5LiveRuntime:
                 locked=True,
             ),
         }
+        # Each causal binder owns the exact authenticated FIT-only orthogonal
+        # chart it used.  Reuse those owned charts instead of solving the same
+        # endpoint once here and again inside the binders.
+        locked_charts = {
+            name: bind_lfm2_orthogonal_causal_endpoint_chart(evidence[name])
+            for name in ("pre", "terminal")
+        }
+        base_charts = {
+            name: bind_lfm2_base_e0_causal_endpoint_chart(evidence[name])
+            for name in ("post_operator", "post_layer")
+        }
         orthogonal = {
-            name: fit_lfm2_cycle_coupled_moving_gauge_boundary(
-                item,
-                evaluate_heldout=False,
-            )
-            for name, item in evidence.items()
+            "pre": locked_charts["pre"].boundary_chart,
+            "post_operator": base_charts["post_operator"].orthogonal_anchor,
+            "post_layer": base_charts["post_layer"].orthogonal_anchor,
+            "terminal": locked_charts["terminal"].boundary_chart,
         }
         generalized = {
             name: fit_lfm2_generalized_moving_gauge_chart_diagnostic(
@@ -1272,28 +1281,20 @@ class Lfm2Exact4xMovingGaugeV5LiveRuntime:
             )
             for name in ("post_operator", "post_layer")
         }
-        locked_charts = {
+        right_orthogonal_charts = {
             name: bind_lfm2_orthogonal_causal_endpoint_chart(evidence[name])
-            for name in ("pre", "terminal")
+            for name in ("post_operator", "post_layer")
         }
         charts = {
             "E0": {
                 **locked_charts,
-                "post_operator": bind_lfm2_base_e0_causal_endpoint_chart(
-                    evidence["post_operator"]
-                ),
-                "post_layer": bind_lfm2_base_e0_causal_endpoint_chart(
-                    evidence["post_layer"]
-                ),
+                "post_operator": base_charts["post_operator"],
+                "post_layer": base_charts["post_layer"],
             },
             "E0R": {
                 **locked_charts,
-                "post_operator": bind_lfm2_orthogonal_causal_endpoint_chart(
-                    evidence["post_operator"]
-                ),
-                "post_layer": bind_lfm2_orthogonal_causal_endpoint_chart(
-                    evidence["post_layer"]
-                ),
+                "post_operator": right_orthogonal_charts["post_operator"],
+                "post_layer": right_orthogonal_charts["post_layer"],
             },
             "E0A": {
                 **locked_charts,
