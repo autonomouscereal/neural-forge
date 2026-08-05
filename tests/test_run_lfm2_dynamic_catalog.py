@@ -898,6 +898,57 @@ def test_closed_loop_performance_diagnostic_only_requires_dense_fold(
         )
 
 
+def test_closed_loop_finite_numeric_policies_cli_identity_and_receipt(
+    tmp_path,
+) -> None:
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "10",
+                "--dense-run-closed-loop",
+                "--dense-closed-loop-terminal-composition-floor",
+                "--dense-closed-loop-intermediate-numeric-checks-diagnostic-only",
+                "--dense-closed-loop-all-layer-finite-numeric-checks-diagnostic-only",
+            ]
+        )
+    )
+
+    assert config.dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+    assert config.dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+    target = config.identity()["target"]
+    assert target["dense_closed_loop_performance_metrics"][
+        "diagnostic_only"
+    ] is True
+    assert target["dense_closed_loop_performance_metrics"][
+        "numeric_decision_authority"
+    ] is False
+    assert target["dense_closed_loop_finite_numeric_policy"] == {
+        "intermediate_layers_diagnostic_only": True,
+        "all_layers_diagnostic_only": True,
+        "nonfinite_values_reject": True,
+        "tripwire_stop_and_attractor_reject": True,
+        "structural_authentication_capture_and_installation_failures_reject": True,
+        "manual_whole_output_review_is_authoritative": True,
+    }
+    receipt_policy = MODULE._dense_closed_loop_performance_metrics_policy(
+        config
+    )
+    assert receipt_policy["diagnostic_only"] is True
+    assert receipt_policy["numeric_decision_authority"] is False
+    assert receipt_policy[
+        "intermediate_layers_finite_numeric_diagnostic_only"
+    ] is True
+    assert receipt_policy[
+        "all_layers_finite_numeric_diagnostic_only"
+    ] is True
+    assert receipt_policy["final_finite_numeric_decision_authority"] is False
+    assert receipt_policy[
+        "nonfinite_tripwire_attractor_and_integrity_failures_reject"
+    ] is True
+
+
 def test_dense_closed_loop_replay_policy_resolves_and_fails_closed(
     tmp_path,
 ) -> None:

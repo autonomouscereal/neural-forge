@@ -51,6 +51,14 @@ def _config(root: Path, **overrides):
 def test_retention_lane_defaults_are_all_off(tmp_path) -> None:
     config = _config(tmp_path)
     assert config.dense_closed_loop_terminal_composition_floor is False
+    assert (
+        config.dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+        is False
+    )
+    assert (
+        config.dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+        is False
+    )
     assert config.dense_closed_loop_terminal_free_run_tripwire is False
     assert config.dense_closed_loop_input_error_covariance is False
     assert config.dense_closed_loop_input_error_multiplier == 0.0
@@ -58,6 +66,10 @@ def test_retention_lane_defaults_are_all_off(tmp_path) -> None:
     assert config.dense_closed_loop_solver_conditioning_diagnostics is False
     assert config.dense_closed_loop_gate_operating_point_diagnostics is False
     assert config.dense_closed_loop_depth_telemetry is False
+    assert (
+        "dense_closed_loop_finite_numeric_policy"
+        not in config.identity()["target"]
+    )
 
 
 def test_retention_lane_requires_the_closed_loop_body_fold(tmp_path) -> None:
@@ -90,6 +102,8 @@ def test_retention_lane_accepts_the_closed_loop_configuration(
         tmp_path,
         dense_run_closed_loop=True,
         dense_closed_loop_terminal_composition_floor=True,
+        dense_closed_loop_intermediate_numeric_checks_diagnostic_only=True,
+        dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only=True,
         dense_closed_loop_terminal_regression_tolerance=0.4,
         dense_closed_loop_terminal_absolute_floor_minimum_layer=3,
         dense_closed_loop_input_error_covariance=True,
@@ -102,6 +116,31 @@ def test_retention_lane_accepts_the_closed_loop_configuration(
     assert config.dense_closed_loop_terminal_regression_tolerance == 0.4
     assert config.dense_closed_loop_terminal_absolute_floor_minimum_layer == 3
     assert config.dense_closed_loop_input_error_multiplier == 0.25
+    assert config.dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+    assert config.dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+    numeric_policy = config.identity()["target"][
+        "dense_closed_loop_finite_numeric_policy"
+    ]
+    performance_policy = config.identity()["target"][
+        "dense_closed_loop_performance_metrics"
+    ]
+    assert performance_policy["diagnostic_only"] is True
+    assert performance_policy["numeric_decision_authority"] is False
+    assert numeric_policy["intermediate_layers_diagnostic_only"] is True
+    assert numeric_policy["all_layers_diagnostic_only"] is True
+    assert numeric_policy["nonfinite_values_reject"] is True
+    receipt_policy = MODULE._dense_closed_loop_performance_metrics_policy(
+        config
+    )
+    assert receipt_policy["diagnostic_only"] is True
+    assert receipt_policy["numeric_decision_authority"] is False
+    assert receipt_policy[
+        "intermediate_layers_finite_numeric_diagnostic_only"
+    ] is True
+    assert receipt_policy[
+        "all_layers_finite_numeric_diagnostic_only"
+    ] is True
+    assert receipt_policy["final_finite_numeric_decision_authority"] is False
 
 
 def test_negative_multiplier_is_refused(tmp_path) -> None:
@@ -123,6 +162,8 @@ def test_parser_exposes_every_retention_flag(tmp_path) -> None:
     }
     for flag in (
         "--dense-closed-loop-terminal-composition-floor",
+        "--dense-closed-loop-intermediate-numeric-checks-diagnostic-only",
+        "--dense-closed-loop-all-layer-finite-numeric-checks-diagnostic-only",
         "--dense-closed-loop-terminal-regression-tolerance",
         "--dense-closed-loop-terminal-absolute-floor-minimum-layer",
         "--dense-closed-loop-terminal-free-run-tripwire",
@@ -216,6 +257,8 @@ def test_depth_telemetry_reconstructs_the_depth_profile(tmp_path) -> None:
         tmp_path,
         dense_run_closed_loop=True,
         dense_closed_loop_terminal_composition_floor=True,
+        dense_closed_loop_intermediate_numeric_checks_diagnostic_only=True,
+        dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only=True,
         dense_closed_loop_depth_telemetry=True,
     )
     telemetry = MODULE._closed_loop_depth_telemetry(
@@ -241,6 +284,8 @@ def test_depth_telemetry_reconstructs_the_depth_profile(tmp_path) -> None:
         "metrics": {},
     }
     assert telemetry["terminal_composition_floor_enabled"] is True
+    assert telemetry["intermediate_numeric_checks_diagnostic_only"] is True
+    assert telemetry["all_layer_finite_numeric_checks_diagnostic_only"] is True
 
 
 def test_depth_telemetry_survives_a_missing_closed_loop_report(

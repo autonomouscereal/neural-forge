@@ -1229,6 +1229,8 @@ class ProductionLfm2CatalogConfig:
     # closed-loop adapter config, the compiled weights and the receipt are
     # byte-identical to the r12 lane.
     dense_closed_loop_terminal_composition_floor: bool = False
+    dense_closed_loop_intermediate_numeric_checks_diagnostic_only: bool = False
+    dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only: bool = False
     dense_closed_loop_terminal_regression_tolerance: float = 0.25
     dense_closed_loop_terminal_absolute_floor_minimum_layer: int = 0
     dense_closed_loop_terminal_free_run_tripwire: bool = False
@@ -2639,6 +2641,8 @@ class ProductionLfm2CatalogConfig:
 
         for name in (
             "dense_closed_loop_terminal_composition_floor",
+            "dense_closed_loop_intermediate_numeric_checks_diagnostic_only",
+            "dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only",
             "dense_closed_loop_terminal_free_run_tripwire",
             "dense_closed_loop_terminal_free_run_tripwire_stops",
             "dense_closed_loop_input_error_covariance",
@@ -3198,15 +3202,48 @@ class ProductionLfm2CatalogConfig:
                     "diagnostic_only": (
                         self
                         .dense_closed_loop_performance_metrics_diagnostic_only
+                        or self
+                        .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
                     ),
                     "numeric_decision_authority": (
-                        not self
-                        .dense_closed_loop_performance_metrics_diagnostic_only
+                        not (
+                            self
+                            .dense_closed_loop_performance_metrics_diagnostic_only
+                            or self
+                            .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+                        )
                     ),
                     "counterfactual_thresholds_recorded": True,
                     "nonfinite_values_reject": True,
                     "structural_and_integrity_failures_reject": True,
                 },
+                **(
+                    {}
+                    if not (
+                        self
+                        .dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+                        or self
+                        .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+                    )
+                    else {
+                        "dense_closed_loop_finite_numeric_policy": {
+                            "intermediate_layers_diagnostic_only": (
+                                self
+                                .dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+                            ),
+                            "all_layers_diagnostic_only": (
+                                self
+                                .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+                            ),
+                            "nonfinite_values_reject": True,
+                            "tripwire_stop_and_attractor_reject": True,
+                            "structural_authentication_capture_and_installation_failures_reject": (
+                                True
+                            ),
+                            "manual_whole_output_review_is_authoritative": True,
+                        }
+                    }
+                ),
                 "dense_closed_loop_replay": {
                     "policy": (
                         self.dense_closed_loop_replay_capture_mode
@@ -9890,6 +9927,14 @@ def build_production_catalog_wiring(
                             config
                             .dense_closed_loop_terminal_composition_floor
                         ),
+                        intermediate_layer_numeric_checks_diagnostic_only=(
+                            config
+                            .dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+                        ),
+                        all_layer_finite_numeric_checks_diagnostic_only=(
+                            config
+                            .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+                        ),
                         terminal_composition_regression_tolerance=(
                             config
                             .dense_closed_loop_terminal_regression_tolerance
@@ -10222,10 +10267,11 @@ def _dense_vocabulary_margin_candidate_gate_policy(
 def _dense_closed_loop_performance_metrics_policy(
     config: ProductionLfm2CatalogConfig,
 ) -> dict[str, Any]:
-    diagnostic_only = (
+    diagnostic_only = bool(
         config.dense_closed_loop_performance_metrics_diagnostic_only
+        or config.dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
     )
-    return {
+    policy = {
         "diagnostic_only": diagnostic_only,
         "numeric_decision_authority": not diagnostic_only,
         "counterfactual_thresholds_recorded": True,
@@ -10234,6 +10280,33 @@ def _dense_closed_loop_performance_metrics_policy(
         "external_whole_output_behavior_remains_promotion_authority": True,
         "training_steps": 0,
     }
+    if (
+        config.dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+        or config.dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+    ):
+        policy.update(
+            {
+                "intermediate_layers_finite_numeric_diagnostic_only": (
+                    config
+                    .dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+                ),
+                "all_layers_finite_numeric_diagnostic_only": (
+                    config
+                    .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+                ),
+                "final_finite_numeric_decision_authority": (
+                    not config
+                    .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
+                ),
+                "nonfinite_tripwire_attractor_and_integrity_failures_reject": (
+                    True
+                ),
+                "global_performance_metrics_diagnostic_only": (
+                    config.dense_closed_loop_performance_metrics_diagnostic_only
+                ),
+            }
+        )
+    return policy
 
 
 def _dense_closed_loop_replay_policy(
@@ -10691,6 +10764,14 @@ def _closed_loop_depth_telemetry(
         "trajectory_gate_depth_table_count": len(trajectory_events),
         "terminal_composition_floor_enabled": (
             config.dense_closed_loop_terminal_composition_floor
+        ),
+        "intermediate_numeric_checks_diagnostic_only": (
+            config
+            .dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+        ),
+        "all_layer_finite_numeric_checks_diagnostic_only": (
+            config
+            .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
         ),
         "solver_conditioning_diagnostics_enabled": (
             config.dense_closed_loop_solver_conditioning_diagnostics
@@ -13681,13 +13762,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Measure the composed TERMINAL held-out relative RMSE at every "
-            "per-layer validation and fail closed when it reaches the "
+            "per-layer validation and, by default, fail closed when it reaches the "
             "no-branch baseline of 1.0, or when installing a layer regresses "
             "it beyond --dense-closed-loop-terminal-regression-tolerance. "
-            "This is the safety bound the kernel lane already enforces and "
-            "the LFM2 lane lacks; it can only stop a layer, never promote "
-            "one, so the manual-review authority policy is untouched. Widens "
-            "every layer capture to also retain the terminal layer endpoint."
+            "Either explicit finite-numeric diagnostic policy may retain a "
+            "finite failure for manual review; nonfinite evidence remains "
+            "hard. The floor can never promote a child. Widens every layer "
+            "capture to also retain the terminal layer endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-intermediate-numeric-checks-diagnostic-only",
+        action="store_true",
+        help=(
+            "Treat finite local, terminal-floor, and terminal-regression "
+            "failures as authenticated diagnostics while the body is still "
+            "incomplete. The final fully assembled body keeps the configured "
+            "numeric authority, and nonfinite, structural, authentication, "
+            "capture, and installation failures always reject. Off by "
+            "default."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-all-layer-finite-numeric-checks-diagnostic-only",
+        action="store_true",
+        help=(
+            "Record every finite local/output threshold and terminal floor/"
+            "regression failure without blocking the candidate from manual "
+            "whole-output review, including at the final assembled layer. "
+            "Nonfinite, tripwire-stop, attractor, structural, authentication, "
+            "capture, and installation failures remain hard. Off by default."
         ),
     )
     parser.add_argument(
@@ -14520,6 +14624,14 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         # --- R13 items 2/7/8 -------------------------------------------
         dense_closed_loop_terminal_composition_floor=(
             args.dense_closed_loop_terminal_composition_floor
+        ),
+        dense_closed_loop_intermediate_numeric_checks_diagnostic_only=(
+            args
+            .dense_closed_loop_intermediate_numeric_checks_diagnostic_only
+        ),
+        dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only=(
+            args
+            .dense_closed_loop_all_layer_finite_numeric_checks_diagnostic_only
         ),
         dense_closed_loop_terminal_regression_tolerance=(
             args.dense_closed_loop_terminal_regression_tolerance

@@ -1037,6 +1037,20 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     output_metric_chunk_rows: int = 16
     validation_tolerance: float = 1e-8
     performance_metrics_diagnostic_only: bool = False
+    # A terminal measurement taken after layer k is a measurement of a
+    # partially folded child until every selected body layer has been
+    # installed.  Opt-in runs may therefore retain finite local/floor/
+    # non-regression failures as diagnostics on those incomplete layers while
+    # preserving hard authority at the fully assembled final layer.  This is
+    # deliberately not a global bypass: nonfinite values and every structural,
+    # authentication, capture, and installation invariant still fail closed.
+    intermediate_layer_numeric_checks_diagnostic_only: bool = False
+    # Standing manual-review lane: finite numeric scores guide diagnosis but
+    # do not prevent a complete candidate from reaching decoded whole-output
+    # review.  Unlike the intermediate-only policy above, this also covers the
+    # final body layer and terminal interfaces.  It never covers nonfinite or
+    # non-numeric integrity/behavior gates.
+    all_layer_finite_numeric_checks_diagnostic_only: bool = False
     # -- Terminal composition floor (R13 item 2) -------------------------
     #
     # Per-layer acceptance constrains only the sign of a *local* delta.  The
@@ -1048,8 +1062,10 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     # terminal layer's `residual.post_layer` rows.
     terminal_composition_floor_enabled: bool = False
     # A composed prediction at or above the no-branch baseline carries no
-    # signal at all.  This is a safety bound, not an intelligence verdict, so
-    # it keeps decision authority even under diagnostic-only metrics.
+    # signal at all.  This is a safety bound, not an intelligence verdict. It
+    # keeps authority under the legacy performance-only diagnostic policy;
+    # the two explicit finite-numeric policies above may instead retain it as
+    # evidence for manual whole-output review.
     terminal_composition_absolute_floor_enabled: bool = True
     # Engagement depth for the absolute wall.  A partially folded child still
     # carries unfolded layers downstream of the layer under test, so the early
@@ -1273,6 +1289,8 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                 "performance_metrics_diagnostic_only must be boolean."
             )
         for name in (
+            "all_layer_finite_numeric_checks_diagnostic_only",
+            "intermediate_layer_numeric_checks_diagnostic_only",
             "terminal_composition_floor_enabled",
             "terminal_composition_absolute_floor_enabled",
             "terminal_composition_non_regression_enabled",
@@ -6706,10 +6724,10 @@ class Lfm2DynamicClosedLoopAdapter:
           before the install.
 
         Both are *safety* bounds on measurable composition, not intelligence
-        verdicts, so they keep decision authority under diagnostic-only
-        metrics.  The manual-review authority policy is untouched: nothing
-        here can promote a child, only stop one that provably composes to
-        noise.
+        verdicts.  They keep decision authority under the legacy
+        performance-only diagnostic policy.  Explicit finite-numeric policies
+        may retain finite failures as evidence for manual review; nonfinite
+        measurements stay hard failures.  Nothing here can promote a child.
         """
 
         if not self.config.terminal_composition_floor_enabled:
@@ -6885,6 +6903,34 @@ class Lfm2DynamicClosedLoopAdapter:
             return (message,), metrics
         return (), metrics
 
+    def _layer_validation_is_incomplete(self, scope: FoldScope) -> bool:
+        """Return whether a layer decision precedes a complete body install."""
+
+        if scope.kind != "layer" or scope.layer_index is None:
+            return False
+        all_layers = tuple(range(len(self.child_layers)))
+        return bool(
+            not all_layers
+            or self._selected_layers != all_layers
+            or int(scope.layer_index) != all_layers[-1]
+        )
+
+    @staticmethod
+    def _fit_metrics_are_finite(metrics: FitMetrics | None) -> bool:
+        """Authenticate every numeric field used by a diagnostic carve-out."""
+
+        if metrics is None or not bool(metrics.finite):
+            return False
+        return all(
+            math.isfinite(float(value))
+            for value in (
+                metrics.rmse,
+                metrics.target_rms,
+                metrics.relative_rmse,
+                metrics.mean_cosine_similarity,
+            )
+        )
+
     def _validation_decision(
         self,
         *,
@@ -6908,12 +6954,39 @@ class Lfm2DynamicClosedLoopAdapter:
             and math.isfinite(float(baseline.relative_rmse))
             and math.isfinite(float(candidate.relative_rmse))
         )
+        if (
+            self.config.intermediate_layer_numeric_checks_diagnostic_only
+            or self.config.all_layer_finite_numeric_checks_diagnostic_only
+        ):
+            performance_metrics_finite = bool(
+                performance_metrics_finite
+                and self._fit_metrics_are_finite(baseline)
+                and self._fit_metrics_are_finite(candidate)
+            )
         counterfactual_threshold_passed = bool(
             performance_metrics_finite
             and improvement + self.config.validation_tolerance
             >= minimum_improvement
         )
-        diagnostic_only = self.config.performance_metrics_diagnostic_only
+        layer_validation_is_incomplete = bool(
+            (
+                self.config.intermediate_layer_numeric_checks_diagnostic_only
+                or self.config.all_layer_finite_numeric_checks_diagnostic_only
+            )
+            and self._layer_validation_is_incomplete(scope)
+        )
+        incomplete_layer_policy = bool(
+            self.config.intermediate_layer_numeric_checks_diagnostic_only
+            and layer_validation_is_incomplete
+        )
+        all_layer_policy = (
+            self.config.all_layer_finite_numeric_checks_diagnostic_only
+        )
+        diagnostic_only = bool(
+            self.config.performance_metrics_diagnostic_only
+            or incomplete_layer_policy
+            or all_layer_policy
+        )
         accepted = bool(
             performance_metrics_finite
             and (counterfactual_threshold_passed or diagnostic_only)
@@ -6922,6 +6995,18 @@ class Lfm2DynamicClosedLoopAdapter:
             reason = f"held-out {endpoint} produced nonfinite performance metrics"
         elif counterfactual_threshold_passed:
             reason = f"held-out {endpoint} improved/non-regressed"
+        elif all_layer_policy:
+            reason = (
+                f"held-out {endpoint} relative-RMSE improvement "
+                f"{improvement:.9g} is below {minimum_improvement:.9g}; "
+                "recorded diagnostically for manual whole-output review"
+            )
+        elif incomplete_layer_policy:
+            reason = (
+                f"held-out {endpoint} relative-RMSE improvement "
+                f"{improvement:.9g} is below {minimum_improvement:.9g}; "
+                "recorded diagnostically while the folded body is incomplete"
+            )
         elif diagnostic_only:
             reason = (
                 f"held-out {endpoint} relative-RMSE improvement "
@@ -6962,6 +7047,33 @@ class Lfm2DynamicClosedLoopAdapter:
             "candidate_finite": bool(candidate.finite),
             "heldout_endpoint_compared_to_projected_parent": True,
         }
+        if (
+            self.config.intermediate_layer_numeric_checks_diagnostic_only
+            or all_layer_policy
+        ):
+            metrics.update(
+                {
+                    "all_layer_finite_numeric_checks_diagnostic_only": (
+                        all_layer_policy
+                    ),
+                    "intermediate_layer_numeric_checks_diagnostic_only": (
+                        self.config
+                        .intermediate_layer_numeric_checks_diagnostic_only
+                    ),
+                    "layer_validation_is_incomplete": (
+                        layer_validation_is_incomplete
+                    ),
+                    "local_performance_metrics_diagnostic_only_for_this_scope": (
+                        diagnostic_only
+                    ),
+                    "finite_numeric_policy_diagnostic_only_for_this_scope": (
+                        incomplete_layer_policy or all_layer_policy
+                    ),
+                    "global_performance_metrics_diagnostic_only": (
+                        self.config.performance_metrics_diagnostic_only
+                    ),
+                }
+            )
         floor_engaged, floor_reasons, floor_metrics = (
             self._terminal_composition_floor(
                 layer_index=scope.layer_index,
@@ -6970,17 +7082,73 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         )
         metrics.update(floor_metrics)
+        terminal_floor_metrics_finite = bool(
+            terminal_candidate is not None
+            and self._fit_metrics_are_finite(terminal_candidate)
+            and (
+                terminal_baseline is None
+                or self._fit_metrics_are_finite(terminal_baseline)
+            )
+        )
+        finite_floor_failure_is_diagnostic = bool(
+            floor_reasons
+            and (incomplete_layer_policy or all_layer_policy)
+            and terminal_floor_metrics_finite
+        )
+        blocking_floor_reasons = (
+            () if finite_floor_failure_is_diagnostic else floor_reasons
+        )
+        if (
+            self.config.intermediate_layer_numeric_checks_diagnostic_only
+            or all_layer_policy
+        ):
+            metrics.update(
+                {
+                    "terminal_floor_metrics_finite": (
+                        terminal_floor_metrics_finite
+                    ),
+                    "terminal_floor_failure_is_diagnostic_only": (
+                        finite_floor_failure_is_diagnostic
+                    ),
+                    "terminal_floor_has_decision_authority": (
+                        not (
+                            floor_engaged
+                            and (incomplete_layer_policy or all_layer_policy)
+                            and terminal_floor_metrics_finite
+                        )
+                    ),
+                }
+            )
+            if floor_engaged:
+                metrics[
+                    "terminal_floor_retains_authority_under_diagnostic_only"
+                ] = not (
+                    (incomplete_layer_policy or all_layer_policy)
+                    and terminal_floor_metrics_finite
+                )
+        if finite_floor_failure_is_diagnostic:
+            diagnostic_context = (
+                "for manual whole-output review"
+                if all_layer_policy
+                else "while the folded body is incomplete"
+            )
+            reason = "; ".join(
+                (
+                    reason,
+                    "terminal numeric floor/non-regression failures recorded "
+                    f"diagnostically {diagnostic_context}: "
+                    + "; ".join(floor_reasons),
+                )
+            )
         tripwire_reasons, tripwire_metrics = self._terminal_free_run_tripwire(
             layer_index=scope.layer_index,
         )
         metrics.update(tripwire_metrics)
-        blocking = tuple(floor_reasons) + tuple(tripwire_reasons)
+        blocking = tuple(blocking_floor_reasons) + tuple(tripwire_reasons)
         if blocking:
-            # The composition floor is a safety bound on measured composition,
-            # so it overrides the diagnostic-only carve-out the *performance*
-            # metrics live under.  It can only stop a layer, never promote
-            # one, which is what keeps the manual-review authority policy
-            # intact.
+            # Nonfinite floor evidence, explicitly stopping tripwires, and
+            # finite floors outside an opted-in diagnostic policy retain hard
+            # authority.  No diagnostic policy can turn these into promotion.
             accepted = False
             reason = "; ".join((reason, *blocking))
         if floor_engaged:
@@ -13701,6 +13869,10 @@ class Lfm2DynamicClosedLoopAdapter:
         identity_replay_exact = (
             baseline_metrics == candidate_metrics
         )
+        numeric_diagnostic_only = bool(
+            self.config.performance_metrics_diagnostic_only
+            or self.config.all_layer_finite_numeric_checks_diagnostic_only
+        )
         if payload.identity_skip:
             if not identity_replay_exact:
                 raise Lfm2DynamicClosedLoopAdapterError(
@@ -13713,7 +13885,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 not nonfinite_metrics
                 and (
                     not failed_gates
-                    or self.config.performance_metrics_diagnostic_only
+                    or numeric_diagnostic_only
                 )
             )
         counterfactual_threshold_passed = bool(
@@ -13749,10 +13921,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 counterfactual_threshold_passed
             ),
             "performance_metrics_diagnostic_only": (
-                self.config.performance_metrics_diagnostic_only
+                numeric_diagnostic_only
             ),
             "performance_metrics_are_decision_authority": (
-                not self.config.performance_metrics_diagnostic_only
+                not numeric_diagnostic_only
             ),
             "performance_metrics_finite": not nonfinite_metrics,
             "nonfinite_metric_count": len(nonfinite_metrics),
@@ -13775,7 +13947,7 @@ class Lfm2DynamicClosedLoopAdapter:
             "same_tied_parameter_object_preserved": True,
             "full_vocabulary_metrics": True,
             "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates": (
-                not self.config.performance_metrics_diagnostic_only
+                not numeric_diagnostic_only
             ),
             "parent_distribution_cross_entropy_is_redundant_with_kl": True,
             "parent_winner_top1_and_margin_are_diagnostics": True,
@@ -13792,6 +13964,15 @@ class Lfm2DynamicClosedLoopAdapter:
                 "external_whole_output_semantic_behavior_gate"
             ),
         }
+        if self.config.all_layer_finite_numeric_checks_diagnostic_only:
+            metrics.update(
+                {
+                    "all_layer_finite_numeric_checks_diagnostic_only": True,
+                    "global_performance_metrics_diagnostic_only": (
+                        self.config.performance_metrics_diagnostic_only
+                    ),
+                }
+            )
         if self._child_heterogeneous_layout is not None:
             metrics.pop("tied_parameter_bytes_unchanged")
             metrics.pop("tied_embedding_feedback_included")
@@ -13831,7 +14012,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "rejected nonfinite metrics: "
                     + ",".join(nonfinite_metrics)
                 )
-            elif failed_gates and self.config.performance_metrics_diagnostic_only:
+            elif failed_gates and numeric_diagnostic_only:
                 reason = (
                     "held-out full-vocabulary live-child output interface "
                     "threshold failures recorded diagnostically without numeric "
