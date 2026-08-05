@@ -1,0 +1,12 @@
+{
+  "schema": "neural-forge-manual-review-protocol-seal-v1",
+  "sealed_utc": "2026-08-05T19:30:00Z",
+  "sealed_by": "claude-peer-review",
+  "reason": "Adversarial review of the V5 review chain found the prompt pack quadruple-digest-pinned but the grading criteria pinned nowhere: the protocol document's digest appeared in no source file, script, dossier field, or manifest, so a post-hoc softening of the per-case anchors would be undetectable by the chain. This seal closes the detectability gap: any review claiming to follow the frozen protocol must be judged against the digest below. The review runner should additionally verify this digest at invocation time the same way it verifies prompts_sha256 (relayed to the review-deployment owner).",
+  "protocol_file": "reports/r12-certified-20260804/V5_FROZEN_MANUAL_REVIEW_PROTOCOL.md",
+  "protocol_sha256": "e5e3776885976b1be5a8469323f7083d40c11900cca66b862eb0da41517a4d7b",
+  "protocol_git_blob": "460082cd643e7ff53e877ee142006219e5e85eb5",
+  "prompt_pack_file": "research/lfm2_semantic_whole_response_prompts_v1.json",
+  "prompt_pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+  "binding_note": "The protocol inherits its permissive clauses verbatim from docs/BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md (pre-r12) and ADDS 16 per-case anchors that are strictly harder to satisfy; reviews of r13-era children that report against this protocol must match this digest or state and justify a successor digest in a new sealed record alongside this one. Never edit this file; supersede it."
+}
