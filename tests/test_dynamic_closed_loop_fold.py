@@ -806,6 +806,40 @@ def test_terminal_only_restart_resume_requires_output_interface() -> None:
     assert adapter.commit_calls == 0
 
 
+def test_terminal_only_restart_resume_rejects_partial_prefix() -> None:
+    adapter = _ToyAdapter()
+    adapter.state["layers"] = {
+        0: {
+            "producer": "sealed-producer-0",
+            "consumer": "sealed-consumer-0",
+            "downstream": "sealed-downstream-0",
+        }
+    }
+    writer = _ToyRestartCapsuleWriter((0,))
+
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match="completed prefix covering every selected layer",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.4,
+                split_seed="terminal-resume-partial-prefix-reject",
+                fold_body_reclosure=True,
+                fold_output_interface=True,
+                allow_terminal_only_restart_resume=True,
+            ),
+            restart_capsule_config=writer,
+        ).run()
+
+    assert writer.admissions == []
+    assert writer.records == []
+    assert adapter.rollback_calls == 1
+    assert adapter.commit_calls == 0
+    assert not any(value.startswith("layer:") for value in adapter.log)
+
+
 def test_terminal_only_restart_resume_rejects_subset_selection() -> None:
     adapter = _restored_terminal_resume_adapter()
     writer = _ToyRestartCapsuleWriter((0, 1))

@@ -3503,18 +3503,21 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
         "evidence_sha256": "2" * 64,
     }
 
-    # The capture-merge flag and the restart-capsule knobs reach the dense fold
+    # The capture-merge flag and restart-continuation knobs reach the dense fold
     # config the operator is constructed from.  Whether the adapter then admits
-    # a merged capture is its own documented decision, sealed separately as
-    # merge_adjacent_layer_captures_requested/_enabled in the run report.
+    # either request is its own authenticated decision, sealed separately in the
+    # run report.
     opted_in = MODULE.build_production_catalog_wiring(
         replace(
             config,
             dense_closed_loop_merge_adjacent_layer_captures=True,
+            dense_body_reclosure_mode="moving_gauge_v3",
             dense_replay_devices=("cuda:0", "cuda:1"),
             dense_replay_devices_source=MODULE.REPLAY_DEVICES_SOURCE_CLI,
             dense_restart_capsule_root=tmp_path / "capsules",
             dense_restart_capsule_keep=3,
+            dense_resume_from_capsule=tmp_path / "capsules",
+            dense_terminal_only_restart_resume=True,
         ),
         parent_cache_payload=payload,
         parent_model=parent_model,
@@ -3539,7 +3542,14 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
         (tmp_path / "capsules").absolute()
     )
     assert opted_in_dense_config.restart_capsule_rotation_keep == 3
-    assert opted_in_dense_config.resume_from_restart_capsule is None
+    assert opted_in_dense_config.resume_from_restart_capsule == (
+        tmp_path / "capsules"
+    )
+    assert (
+        opted_in_dense_config.closed_loop_compiler_config
+        .allow_terminal_only_restart_resume
+        is True
+    )
     # The shard request reaches the dense fold config and, because the adapter
     # is what performs every capture, the adapter config it carries.
     assert opted_in_dense_config.closed_loop_replay_devices == (
@@ -5655,6 +5665,7 @@ def test_dense_closed_loop_replay_and_capsule_cli_defaults(tmp_path) -> None:
     assert default_config.dense_restart_capsule_root is None
     assert default_config.dense_restart_capsule_keep == 2
     assert default_config.dense_resume_from_capsule is None
+    assert default_config.dense_terminal_only_restart_resume is False
     # Capsules only exist inside the dense closed-loop body fold.
     assert default_config.dense_restart_capsule_directory is None
     assert default_config.on_policy_evidence_rounds == 0
@@ -5694,7 +5705,61 @@ def test_dense_closed_loop_replay_and_capsule_cli_defaults(tmp_path) -> None:
         )
     )
     assert resumed.dense_restart_capsule_directory == derived
+    assert resumed.dense_terminal_only_restart_resume is False
     assert resumed.identity() != closed_loop.identity()
+
+    moving_gauge_arguments = [
+        *_required_args(tmp_path),
+        "--compression-ratio",
+        "4",
+        "--dense-run-closed-loop",
+        "--dense-body-reclosure-mode",
+        "moving_gauge_v3",
+        "--dense-closed-loop-merge-adjacent-layer-captures",
+    ]
+    moving_gauge = MODULE.config_from_args(
+        parser.parse_args(moving_gauge_arguments)
+    )
+    moving_gauge_derived = moving_gauge.dense_restart_capsule_directory
+    moving_gauge_resumed = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *moving_gauge_arguments,
+                "--dense-resume-from-capsule",
+                str(tmp_path / "capsules"),
+            ]
+        )
+    )
+    assert moving_gauge_resumed.dense_restart_capsule_directory == (
+        moving_gauge_derived
+    )
+
+    terminal_only = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *moving_gauge_arguments,
+                "--dense-resume-from-capsule",
+                str(tmp_path / "capsules"),
+                "--dense-terminal-only-restart-resume",
+            ]
+        )
+    )
+    assert terminal_only.dense_restart_capsule_directory == moving_gauge_derived
+    assert terminal_only.dense_terminal_only_restart_resume is True
+    assert terminal_only.identity() != moving_gauge_resumed.identity()
+    assert terminal_only.identity()["target"]["dense_restart_capsule"] == {
+        "explicit_root": None,
+        "rotation_keep": 2,
+        "resume_requested": True,
+        "terminal_only_no_reclosure_requested": True,
+    }
+    terminal_policy = MODULE._dense_restart_capsule_policy(terminal_only)
+    assert terminal_policy["exact_resume_preserves_configured_body_reclosure"]
+    assert terminal_policy["terminal_only_no_reclosure_requested"]
+    assert terminal_policy[
+        "terminal_only_requires_authenticated_full_physical_layer_prefix"
+    ]
+    assert terminal_policy["terminal_only_requires_output_interface"]
 
     explicit = MODULE.config_from_args(
         parser.parse_args(
@@ -5728,6 +5793,36 @@ def test_restart_capsule_options_require_the_dense_closed_loop(tmp_path) -> None
                     *_required_args(tmp_path),
                     "--dense-restart-capsule-root",
                     str(tmp_path / "capsules"),
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires --dense-resume-from-capsule",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-body-reclosure-mode",
+                    "moving_gauge_v3",
+                    "--dense-terminal-only-restart-resume",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="moving_gauge_v3 reclosure-isolation diagnostic",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-resume-from-capsule",
+                    str(tmp_path / "capsules"),
+                    "--dense-terminal-only-restart-resume",
                 ]
             )
         )

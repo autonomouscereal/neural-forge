@@ -1253,6 +1253,7 @@ class ProductionLfm2CatalogConfig:
     dense_restart_capsule_root: Path | None = None
     dense_restart_capsule_keep: int = 2
     dense_resume_from_capsule: Path | None = None
+    dense_terminal_only_restart_resume: bool = False
     on_policy_evidence_rounds: int = 0
     on_policy_max_rounds: int = DEFAULT_ON_POLICY_MAX_ROUNDS
     # Alternation only: how many further fold passes consume the rounds this
@@ -1952,6 +1953,27 @@ class ProductionLfm2CatalogConfig:
             raise ProductionLfm2CatalogError(
                 "Accepted-layer restart capsules only exist inside the dense "
                 "closed-loop body fold; pass --dense-run-closed-loop."
+            )
+        if not isinstance(self.dense_terminal_only_restart_resume, bool):
+            raise ProductionLfm2CatalogError(
+                "dense_terminal_only_restart_resume must be boolean."
+            )
+        if (
+            self.dense_terminal_only_restart_resume
+            and self.dense_resume_from_capsule is None
+        ):
+            raise ProductionLfm2CatalogError(
+                "Terminal-only restart continuation requires "
+                "--dense-resume-from-capsule."
+            )
+        if (
+            self.dense_terminal_only_restart_resume
+            and self.dense_body_reclosure_mode != "moving_gauge_v3"
+        ):
+            raise ProductionLfm2CatalogError(
+                "Terminal-only restart continuation is a moving_gauge_v3 "
+                "reclosure-isolation diagnostic; pass "
+                "--dense-body-reclosure-mode moving_gauge_v3."
             )
         if (
             self.dense_closed_loop_merge_adjacent_layer_captures
@@ -3330,6 +3352,9 @@ class ProductionLfm2CatalogConfig:
                     "rotation_keep": self.dense_restart_capsule_keep,
                     "resume_requested": (
                         self.dense_resume_from_capsule is not None
+                    ),
+                    "terminal_only_no_reclosure_requested": (
+                        self.dense_terminal_only_restart_resume
                     ),
                 },
                 "on_policy_evidence": {
@@ -10118,6 +10143,9 @@ def build_production_catalog_wiring(
                         config
                         .dense_closed_loop_merge_adjacent_layer_captures
                     ),
+                    allow_terminal_only_restart_resume=(
+                        config.dense_terminal_only_restart_resume
+                    ),
                 ),
                 closed_loop_replay_devices=(
                     config.dense_replay_devices or None
@@ -10483,7 +10511,13 @@ def _dense_restart_capsule_policy(
                 config.dense_resume_from_capsule.expanduser().absolute()
             )
         ),
-        "mid_body_resume_requires_disabled_body_reclosure": True,
+        "exact_resume_preserves_configured_body_reclosure": True,
+        "terminal_only_no_reclosure_requested": (
+            config.dense_terminal_only_restart_resume
+        ),
+        "terminal_only_is_diagnostic_continuation": True,
+        "terminal_only_requires_authenticated_full_physical_layer_prefix": True,
+        "terminal_only_requires_output_interface": True,
         "restart_capsule_is_not_a_promotable_child": True,
     }
 
@@ -14043,9 +14077,21 @@ def build_parser() -> argparse.ArgumentParser:
             "Restart-capsule root to resume the dense closed-loop body fold "
             "from. The newest authenticated capsule under that root is loaded "
             "into the fresh child before the closed-loop adapter is built, and "
-            "its accepted ascending layer prefix is skipped. Fails closed with "
-            "--dense-body-reclosure-mode moving_gauge_v3, which requires this "
-            "process to install every layer."
+            "its accepted ascending layer prefix is skipped. By default this is "
+            "an exact authenticated continuation that preserves the configured "
+            "body-reclosure policy."
+        ),
+    )
+    parser.add_argument(
+        "--dense-terminal-only-restart-resume",
+        action="store_true",
+        help=(
+            "Explicit moving-gauge reclosure-isolation diagnostic. It admits "
+            "only an authenticated restart capsule whose accepted prefix covers "
+            "every physical body layer, executes no body-layer callback and no "
+            "body reclosure, then still folds final normalization and the output "
+            "interface. Requires --dense-resume-from-capsule and "
+            "--dense-body-reclosure-mode moving_gauge_v3."
         ),
     )
     parser.add_argument(
@@ -14775,6 +14821,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_restart_capsule_root=args.dense_restart_capsule_root,
         dense_restart_capsule_keep=args.dense_restart_capsule_keep,
         dense_resume_from_capsule=args.dense_resume_from_capsule,
+        dense_terminal_only_restart_resume=(
+            args.dense_terminal_only_restart_resume
+        ),
         on_policy_evidence_rounds=args.on_policy_evidence_rounds,
         on_policy_max_rounds=args.on_policy_max_rounds,
         on_policy_refold_after_rounds=(

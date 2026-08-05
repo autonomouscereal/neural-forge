@@ -2877,6 +2877,15 @@ class ChildClosedLoopCompiler:
                 and completed_layers
                 and not executed_layers
             )
+            if (
+                self.config.allow_terminal_only_restart_resume
+                and not fully_completed_restart_resume
+            ):
+                raise ClosedLoopFoldError(
+                    "An explicit terminal-only restart-capsule resume requires "
+                    "an authenticated completed prefix covering every selected "
+                    "layer; it cannot fall back to exact continuation."
+                )
             terminal_only_restart_resume = bool(
                 fully_completed_restart_resume
                 and self.config.allow_terminal_only_restart_resume
