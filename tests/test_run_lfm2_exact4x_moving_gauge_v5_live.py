@@ -600,6 +600,163 @@ def test_temporary_operator_rejects_unrestored_second_child_tensor(
     assert runtime._mutation_observations == []
 
 
+def test_phase4_prepares_three_writer_systems_once_and_reuses_each_chart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = live.Lfm2Exact4xMovingGaugeV5LiveRuntime(
+        _request(tmp_path),
+        _bindings(),
+        phase_overrides=_overrides()[0],
+    )
+    runtime.child = _TinyChild()
+    row_count = 5
+    residual = torch.arange(row_count * 2, dtype=torch.float32).reshape(
+        row_count,
+        2,
+    )
+    context = torch.arange(row_count * 3, dtype=torch.float32).reshape(
+        row_count,
+        3,
+    )
+    post_swiglu = torch.arange(row_count * 4, dtype=torch.float32).reshape(
+        row_count,
+        4,
+    )
+    rows = {
+        "pre": SimpleNamespace(child_rows=residual),
+        "post_operator": SimpleNamespace(
+            parent_rows=residual + 1,
+            child_rows=residual + 2,
+        ),
+        "post_layer": SimpleNamespace(
+            parent_rows=residual + 3,
+            child_rows=residual + 4,
+        ),
+        "writers": SimpleNamespace(
+            child_combined_writer_output=residual + 5,
+            child_operator_output=residual + 6,
+            child_mlp_down=residual + 7,
+        ),
+        "context": context,
+        "post_swiglu": post_swiglu,
+        "weights": torch.arange(1, row_count + 1, dtype=torch.float32),
+    }
+    monkeypatch.setattr(runtime, "_baseline_rows", lambda split: rows)
+    plans = {
+        mode: SimpleNamespace(
+            mode=mode,
+            report={"result_sha256": live.canonical_sha256({"plan": mode})},
+        )
+        for mode in runner.CHART_MODES
+    }
+    monkeypatch.setattr(runtime, "_causal_plan", lambda mode: plans[mode])
+    monkeypatch.setattr(
+        live,
+        "build_lfm2_moving_gauge_causal_state_receipt",
+        lambda plan, **_kwargs: {
+            "result_sha256": live.canonical_sha256({"receipt": plan.mode})
+        },
+    )
+
+    def joint_target(plan: object, **_kwargs: object) -> object:
+        return SimpleNamespace(
+            target_combined_writer_output=torch.full(
+                (row_count, 2),
+                float(runner.CHART_MODES.index(plan.mode) + 1),
+            ),
+            report={"result_sha256": live.canonical_sha256({"joint": plan.mode})},
+        )
+
+    def sequential_target(plan: object, **_kwargs: object) -> object:
+        chart_value = float(runner.CHART_MODES.index(plan.mode) + 10)
+        return SimpleNamespace(
+            target_operator_writer_output=torch.full(
+                (row_count, 2),
+                chart_value,
+            ),
+            target_mlp_writer_output=torch.full(
+                (row_count, 2),
+                chart_value + 1,
+            ),
+            report={"result_sha256": live.canonical_sha256({"sequential": plan.mode})},
+        )
+
+    monkeypatch.setattr(live, "build_lfm2_joint_writer_target", joint_target)
+    monkeypatch.setattr(
+        live,
+        "build_lfm2_sequential_writer_target",
+        sequential_target,
+    )
+
+    events: list[tuple[str, int]] = []
+    prepared: list[object] = []
+    solve_counts: dict[int, int] = {}
+
+    def prepare(
+        design: torch.Tensor,
+        seed: torch.Tensor,
+        weights: torch.Tensor,
+    ) -> object:
+        problem = SimpleNamespace(
+            index=len(prepared),
+            design=design.detach().clone(),
+            seed=seed.detach().clone(),
+            weights=weights.detach().clone(),
+        )
+        prepared.append(problem)
+        events.append(("prepare", int(design.shape[1])))
+        return problem
+
+    def solve(problem: object, target: torch.Tensor) -> tuple[torch.Tensor, object]:
+        identity = id(problem)
+        solve_counts[identity] = solve_counts.get(identity, 0) + 1
+        events.append(("solve", int(problem.design.shape[1])))
+        solution = problem.seed.detach().clone()
+        return solution, {
+            "replacement_weight_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(solution)
+            ),
+            "report_sha256": live.canonical_sha256(
+                {
+                    "problem": problem.index,
+                    "target": float(target.sum().item()),
+                }
+            ),
+        }
+
+    monkeypatch.setattr(
+        live,
+        "prepare_lfm2_moving_gauge_anchored_writer_problem",
+        prepare,
+    )
+    monkeypatch.setattr(
+        live,
+        "solve_lfm2_prepared_anchored_writer_replacement",
+        solve,
+    )
+
+    def reject_legacy_phase4_solver(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("phase 4 rebuilt an unprepared writer system")
+
+    monkeypatch.setattr(
+        live,
+        "solve_lfm2_moving_gauge_anchored_writer_replacement",
+        reject_legacy_phase4_solver,
+    )
+
+    result = runtime._phase_build_baseline_target_arms({}, {})
+
+    assert [event[0] for event in events[:3]] == ["prepare"] * 3
+    assert [width for _kind, width in events[:3]] == [7, 3, 4]
+    assert len(prepared) == 3
+    assert len(events) == 3 + 3 * len(runner.CHART_MODES)
+    assert solve_counts == {
+        id(problem): len(runner.CHART_MODES) for problem in prepared
+    }
+    assert set(result.artifact) == set(runner.CHART_MODES)
+
+
 def test_phase6_uses_fresh_conditioned_post_swiglu_not_baseline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

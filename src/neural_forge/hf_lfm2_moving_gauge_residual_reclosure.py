@@ -385,6 +385,331 @@ def _anchored_ridge_replacement(
     return replacement, report
 
 
+@dataclass(frozen=True, slots=True, init=False)
+class PreparedAnchoredWriterProblem:
+    """Authenticated immutable design side of one physical writer solve.
+
+    The prepared object owns detached CPU copies of every target-invariant
+    tensor used by :func:`_anchored_ridge_replacement`.  A later solve still
+    builds the target residual and calls the same unfactored
+    ``torch.linalg.solve`` path.  In particular, this object is not a cached
+    factorization and does not change the numerical algorithm.
+
+    Tensor fields are deliberately private.  ``frozen=True`` prevents field
+    replacement, while :meth:`verify_authentication` detects any in-place
+    mutation of the retained tensors before they can be used.
+    """
+
+    _design_fp64: Any = field(repr=False, compare=False)
+    _seed_weight: Any = field(repr=False, compare=False)
+    _anchor_columns_fp64: Any = field(repr=False, compare=False)
+    _seed_prediction_fp64: Any = field(repr=False, compare=False)
+    _fit_weights_fp64: Any = field(repr=False, compare=False)
+    _root_weights_fp64: Any = field(repr=False, compare=False)
+    _weighted_design_fp64: Any = field(repr=False, compare=False)
+    _regularized_system_fp64: Any = field(repr=False, compare=False)
+    ridge_ratio: float
+    absolute_ridge_floor: float
+    ridge_scale: float
+    effective_ridge: float
+    solve_form: str
+    report: Mapping[str, Any]
+
+    def authentication_body(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+            "kind": "prepared_anchored_writer_problem",
+            "rows": int(self._design_fp64.shape[0]),
+            "input_width": int(self._design_fp64.shape[1]),
+            "output_width": int(self._seed_weight.shape[0]),
+            "target_dtype": _dtype_name(self._seed_weight),
+            "ridge_ratio": self.ridge_ratio,
+            "absolute_ridge_floor": self.absolute_ridge_floor,
+            "ridge_scale": self.ridge_scale,
+            "effective_ridge": self.effective_ridge,
+            "solve_form": self.solve_form,
+            "fit_input_rows_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._design_fp64)
+            ),
+            "seed_weight_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._seed_weight)
+            ),
+            "anchor_columns_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._anchor_columns_fp64)
+            ),
+            "seed_prediction_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._seed_prediction_fp64)
+            ),
+            "fit_weights_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._fit_weights_fp64)
+            ),
+            "root_weights_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._root_weights_fp64)
+            ),
+            "weighted_design_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._weighted_design_fp64)
+            ),
+            "regularized_system_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(self._regularized_system_fp64)
+            ),
+            "target_rows_consumed": False,
+            "linear_factorization_precomputed": False,
+            "closed_form_linear_solve": True,
+            "autograd_used": False,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+
+    def verify_authentication(self) -> bool:
+        try:
+            return dict(self.report) == dict(_seal(self.authentication_body()))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False
+
+
+def _make_prepared_anchored_writer_problem(
+    *,
+    design_fp64: Any,
+    seed_weight: Any,
+    anchor_columns_fp64: Any,
+    seed_prediction_fp64: Any,
+    fit_weights_fp64: Any,
+    root_weights_fp64: Any,
+    weighted_design_fp64: Any,
+    regularized_system_fp64: Any,
+    ridge_ratio: float,
+    absolute_ridge_floor: float,
+    ridge_scale: float,
+    effective_ridge: float,
+    solve_form: str,
+) -> PreparedAnchoredWriterProblem:
+    problem = object.__new__(PreparedAnchoredWriterProblem)
+    for name, value in (
+        ("_design_fp64", design_fp64),
+        ("_seed_weight", seed_weight),
+        ("_anchor_columns_fp64", anchor_columns_fp64),
+        ("_seed_prediction_fp64", seed_prediction_fp64),
+        ("_fit_weights_fp64", fit_weights_fp64),
+        ("_root_weights_fp64", root_weights_fp64),
+        ("_weighted_design_fp64", weighted_design_fp64),
+        ("_regularized_system_fp64", regularized_system_fp64),
+        ("ridge_ratio", ridge_ratio),
+        ("absolute_ridge_floor", absolute_ridge_floor),
+        ("ridge_scale", ridge_scale),
+        ("effective_ridge", effective_ridge),
+        ("solve_form", solve_form),
+    ):
+        object.__setattr__(problem, name, value)
+    object.__setattr__(problem, "report", MappingProxyType({}))
+    object.__setattr__(
+        problem,
+        "report",
+        _seal(problem.authentication_body()),
+    )
+    return problem
+
+
+def prepare_lfm2_moving_gauge_anchored_writer_problem(
+    fit_input_rows: Any,
+    seed_weight: Any,
+    fit_weights: Any,
+    *,
+    ridge_ratio: float = 1e-8,
+    absolute_ridge_floor: float = 1e-12,
+) -> PreparedAnchoredWriterProblem:
+    """Prepare target-invariant FP64 math for repeated physical-writer solves."""
+
+    torch = _torch()
+    seed = _matrix(seed_weight, "seed_weight", require_plain=True)
+    if _dtype_name(seed) not in _SUPPORTED_TARGET_DTYPES:
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Physical writer seed dtype must be FP32 or BF16."
+        )
+    # Keep the same two-stage materialization performed by the legacy public
+    # solver and its private anchored-ridge implementation.
+    physical_design = _matrix(
+        fit_input_rows,
+        "fit_input_rows",
+        dtype=torch.float64,
+    )
+    weights = _weights(fit_weights, int(physical_design.shape[0]), "fit_weights")
+    design = _matrix(physical_design, "ridge design", dtype=torch.float64)
+    anchor = _matrix(
+        seed.detach().to(device="cpu", dtype=torch.float64).T,
+        "ridge anchor",
+        dtype=torch.float64,
+    )
+    if int(design.shape[1]) != int(anchor.shape[0]):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Fresh-primal writer rows do not match the physical dense geometry."
+        )
+    ratio = _finite_nonnegative(ridge_ratio, "ridge_ratio")
+    floor = _finite_positive(absolute_ridge_floor, "absolute_ridge_floor")
+    scale = _ridge_scale(design, weights)
+    ridge = max(floor, ratio * scale)
+    root = torch.sqrt(weights).unsqueeze(1)
+    weighted_design = design * root
+    seed_prediction = (design @ anchor).contiguous()
+    if int(design.shape[1]) <= int(design.shape[0]):
+        normal = weighted_design.T @ weighted_design
+        system = (
+            normal + ridge * torch.eye(int(normal.shape[0]), dtype=torch.float64)
+        ).contiguous()
+        solve_form = "primal"
+    else:
+        dual = weighted_design @ weighted_design.T
+        system = (
+            dual + ridge * torch.eye(int(dual.shape[0]), dtype=torch.float64)
+        ).contiguous()
+        solve_form = "dual"
+    if not bool(torch.isfinite(system).all().item()):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Prepared anchored-writer system is non-finite."
+        )
+    return _make_prepared_anchored_writer_problem(
+        design_fp64=design,
+        seed_weight=seed,
+        anchor_columns_fp64=anchor,
+        seed_prediction_fp64=seed_prediction,
+        fit_weights_fp64=weights,
+        root_weights_fp64=root,
+        weighted_design_fp64=weighted_design,
+        regularized_system_fp64=system,
+        ridge_ratio=ratio,
+        absolute_ridge_floor=floor,
+        ridge_scale=scale,
+        effective_ridge=ridge,
+        solve_form=solve_form,
+    )
+
+
+def solve_lfm2_prepared_anchored_writer_replacement(
+    problem: PreparedAnchoredWriterProblem,
+    desired_output_rows: Any,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Solve one new target against an authenticated prepared writer problem.
+
+    The returned tensor and report intentionally match
+    :func:`solve_lfm2_moving_gauge_anchored_writer_replacement` byte for byte.
+    The prepared system is passed to ``torch.linalg.solve`` afresh; no LU,
+    Cholesky, inverse, or other factorization is retained or reused.
+    """
+
+    torch = _torch()
+    if not isinstance(problem, PreparedAnchoredWriterProblem) or not (
+        problem.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Prepared anchored-writer problem failed exact authentication."
+        )
+    # Match the legacy public/private pair's two target materializations.
+    physical_target = _matrix(
+        desired_output_rows,
+        "desired_output_rows",
+        dtype=torch.float64,
+    )
+    target = _matrix(physical_target, "ridge target", dtype=torch.float64)
+    design = problem._design_fp64
+    seed = problem._seed_weight
+    anchor = problem._anchor_columns_fp64
+    weights = problem._fit_weights_fp64
+    if int(design.shape[0]) != int(target.shape[0]) or int(target.shape[1]) != int(
+        anchor.shape[1]
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Fresh-primal writer rows do not match the physical dense geometry."
+        )
+
+    weighted_residual = (
+        target - problem._seed_prediction_fp64
+    ) * problem._root_weights_fp64
+    if problem.solve_form == "primal":
+        delta = torch.linalg.solve(
+            problem._regularized_system_fp64,
+            problem._weighted_design_fp64.T @ weighted_residual,
+        )
+    elif problem.solve_form == "dual":
+        delta = problem._weighted_design_fp64.T @ torch.linalg.solve(
+            problem._regularized_system_fp64,
+            weighted_residual,
+        )
+    else:  # pragma: no cover - authenticated reports cannot reach this branch
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Prepared anchored-writer solve form is invalid."
+        )
+    replacement_columns = (anchor + delta).contiguous()
+    if not bool(torch.isfinite(replacement_columns).all().item()):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Closed-form ridge replacement is non-finite."
+        )
+    solve_report = _seal(
+        {
+            "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+            "kind": "anchored_closed_form_ridge_replacement",
+            "solve_form": problem.solve_form,
+            "rows": int(design.shape[0]),
+            "input_width": int(design.shape[1]),
+            "output_width": int(target.shape[1]),
+            "ridge_ratio": problem.ridge_ratio,
+            "ridge_scale": problem.ridge_scale,
+            "effective_ridge": problem.effective_ridge,
+            "design_sha256": problem.report["fit_input_rows_fp64_sha256"],
+            "target_sha256": fingerprint_lfm2_moving_gauge_tensor(target),
+            "anchor_sha256": problem.report["anchor_columns_fp64_sha256"],
+            "replacement_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(replacement_columns)
+            ),
+            "closed_form_linear_solve": True,
+            "autograd_used": False,
+            "quality_gate": False,
+        }
+    )
+
+    replacement = replacement_columns.T.to(dtype=seed.dtype).contiguous().clone()
+    prediction_before = problem._seed_prediction_fp64
+    prediction_after = design @ replacement.to(dtype=torch.float64).T
+    report = _seal(
+        {
+            "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+            "kind": "fresh_primal_anchored_physical_writer_replacement",
+            "rows": int(design.shape[0]),
+            "input_width": int(design.shape[1]),
+            "output_width": int(target.shape[1]),
+            "target_dtype": _dtype_name(seed),
+            "fit_input_rows_sha256": problem.report["fit_input_rows_fp64_sha256"],
+            "desired_output_rows_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(target)
+            ),
+            "fit_weights_sha256": problem.report["fit_weights_fp64_sha256"],
+            "seed_weight_sha256": problem.report["seed_weight_sha256"],
+            "replacement_weight_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(replacement)
+            ),
+            "closed_form_solve_sha256": solve_report["report_sha256"],
+            "fit_relative_rmse_before": _relative_rmse(
+                prediction_before,
+                target,
+                weights,
+            ),
+            "fit_relative_rmse_after_target_dtype_cast": _relative_rmse(
+                prediction_after,
+                target,
+                weights,
+            ),
+            "fresh_primal_rows_consumed": True,
+            "target_dtype_cast_measured": True,
+            "closed_form_linear_solve": True,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "quality_gate": False,
+        }
+    )
+    return replacement, report
+
+
 def _explicit_nonnegative_frozen_row_weights(
     value: Any,
     rows: int,
@@ -4655,6 +4980,7 @@ __all__ = [
     "Lfm2MovingGaugeGeneralizedCausalEndpointChart",
     "Lfm2MovingGaugeGeneralizedChartDiagnostic",
     "Lfm2MovingGaugeOrthogonalCausalEndpointChart",
+    "PreparedAnchoredWriterProblem",
     "Lfm2MovingGaugeRecapturedChildState",
     "Lfm2MovingGaugeReclosurePolicy",
     "Lfm2MovingGaugeResidualAuthenticationError",
@@ -4670,6 +4996,9 @@ __all__ = [
     "fit_lfm2_generalized_moving_gauge_chart_diagnostic",
     "fit_lfm2_moving_gauge_residual_chart_adapter",
     "lfm2_moving_gauge_sequential_fit_provenance",
+    "prepare_lfm2_moving_gauge_anchored_writer_problem",
+    "solve_lfm2_moving_gauge_anchored_writer_replacement",
+    "solve_lfm2_prepared_anchored_writer_replacement",
     "solve_lfm2_trace_scaled_weighted_anchored_ridge",
     "transport_lfm2_cycle_coupled_boundary_from_upstream",
     "verify_lfm2_moving_gauge_report",

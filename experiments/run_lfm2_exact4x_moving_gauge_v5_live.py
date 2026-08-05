@@ -81,7 +81,9 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     bind_lfm2_orthogonal_causal_endpoint_chart,
     fingerprint_lfm2_moving_gauge_tensor,
     fit_lfm2_generalized_moving_gauge_chart_diagnostic,
+    prepare_lfm2_moving_gauge_anchored_writer_problem,
     solve_lfm2_moving_gauge_anchored_writer_replacement,
+    solve_lfm2_prepared_anchored_writer_replacement,
 )
 from neural_forge.lfm2_carrier_bridge_publication import (
     fingerprint_lfm2_carrier_runtime_owned_tensor_state,
@@ -1412,6 +1414,26 @@ class Lfm2Exact4xMovingGaugeV5LiveRuntime:
             self.child,
             v5.REPLACEMENT_TENSOR_NAMES[1],
         ).detach()
+        combined_design = torch.cat(
+            (rows["context"], rows["post_swiglu"]),
+            dim=1,
+        )
+        combined_seed = torch.cat((operator_seed, mlp_seed), dim=1)
+        prepared_joint = prepare_lfm2_moving_gauge_anchored_writer_problem(
+            combined_design,
+            combined_seed,
+            rows["weights"],
+        )
+        prepared_operator = prepare_lfm2_moving_gauge_anchored_writer_problem(
+            rows["context"],
+            operator_seed,
+            rows["weights"],
+        )
+        prepared_mlp = prepare_lfm2_moving_gauge_anchored_writer_problem(
+            rows["post_swiglu"],
+            mlp_seed,
+            rows["weights"],
+        )
         by_chart: dict[str, Any] = {}
         for mode in v5.CHART_MODES:
             plan = self._causal_plan(mode)
@@ -1438,17 +1460,10 @@ class Lfm2Exact4xMovingGaugeV5LiveRuntime:
                 ),
                 state_receipt=joint_receipt,
             )
-            combined_design = torch.cat(
-                (rows["context"], rows["post_swiglu"]),
-                dim=1,
-            )
-            combined_seed = torch.cat((operator_seed, mlp_seed), dim=1)
             combined_solution, combined_report = (
-                solve_lfm2_moving_gauge_anchored_writer_replacement(
-                    combined_design,
+                solve_lfm2_prepared_anchored_writer_replacement(
+                    prepared_joint,
                     joint_target.target_combined_writer_output,
-                    combined_seed,
-                    rows["weights"],
                 )
             )
             operator_width = int(operator_seed.shape[1])
@@ -1499,19 +1514,15 @@ class Lfm2Exact4xMovingGaugeV5LiveRuntime:
                 mlp_source_receipt=stale_mlp_receipt,
             )
             operator_solution, operator_report = (
-                solve_lfm2_moving_gauge_anchored_writer_replacement(
-                    rows["context"],
+                solve_lfm2_prepared_anchored_writer_replacement(
+                    prepared_operator,
                     stale_target.target_operator_writer_output,
-                    operator_seed,
-                    rows["weights"],
                 )
             )
             stale_mlp_solution, stale_mlp_report = (
-                solve_lfm2_moving_gauge_anchored_writer_replacement(
-                    rows["post_swiglu"],
+                solve_lfm2_prepared_anchored_writer_replacement(
+                    prepared_mlp,
                     stale_target.target_mlp_writer_output,
-                    mlp_seed,
-                    rows["weights"],
                 )
             )
             by_chart[mode] = {

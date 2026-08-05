@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
@@ -18,6 +18,7 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     Lfm2MovingGaugeResidualAuthenticationError,
     Lfm2MovingGaugeResidualReclosureError,
     Lfm2MovingGaugeWriterEvidence,
+    PreparedAnchoredWriterProblem,
     bind_lfm2_base_e0_causal_endpoint_chart,
     bind_lfm2_generalized_e0a_causal_endpoint_chart,
     bind_lfm2_orthogonal_causal_endpoint_chart,
@@ -26,6 +27,9 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     fit_lfm2_generalized_moving_gauge_chart_diagnostic,
     fit_lfm2_moving_gauge_residual_chart_adapter,
     lfm2_moving_gauge_sequential_fit_provenance,
+    prepare_lfm2_moving_gauge_anchored_writer_problem,
+    solve_lfm2_moving_gauge_anchored_writer_replacement,
+    solve_lfm2_prepared_anchored_writer_replacement,
     solve_lfm2_trace_scaled_weighted_anchored_ridge,
     transport_lfm2_cycle_coupled_boundary_from_upstream,
     verify_lfm2_moving_gauge_report,
@@ -457,6 +461,172 @@ def test_trace_scaled_receipt_truthfully_omits_cubic_rank_estimates() -> None:
     assert report["regularized_system_full_rank"] is True
     assert report["regularized_system_full_rank_proven_by_cholesky"] is True
     assert verify_lfm2_moving_gauge_report(report)
+
+
+@pytest.mark.parametrize("seed_dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize(
+    ("rows", "input_width", "expected_solve_form"),
+    [(9, 4, "primal"), (3, 5, "dual")],
+)
+def test_prepared_writer_solve_is_byte_exact_for_every_supported_path(
+    seed_dtype: torch.dtype,
+    rows: int,
+    input_width: int,
+    expected_solve_form: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = torch.Generator().manual_seed(871 + rows + input_width)
+    output_width = 3
+    design = torch.randn(
+        rows,
+        input_width,
+        generator=generator,
+        dtype=torch.float32,
+    )
+    seed = torch.randn(
+        output_width,
+        input_width,
+        generator=generator,
+        dtype=torch.float32,
+    ).to(seed_dtype)
+    weights = torch.rand(rows, generator=generator, dtype=torch.float32) + 0.25
+    targets = tuple(
+        torch.randn(
+            rows,
+            output_width,
+            generator=generator,
+            dtype=torch.float32,
+        )
+        for _ in range(3)
+    )
+    baselines = tuple(
+        solve_lfm2_moving_gauge_anchored_writer_replacement(
+            design,
+            target,
+            seed,
+            weights,
+        )
+        for target in targets
+    )
+
+    ridge_scale_calls = 0
+    solve_calls = 0
+    original_ridge_scale = moving_gauge_reclosure._ridge_scale
+    original_solve = torch.linalg.solve
+
+    def counted_ridge_scale(*args: object, **kwargs: object) -> float:
+        nonlocal ridge_scale_calls
+        ridge_scale_calls += 1
+        return original_ridge_scale(*args, **kwargs)
+
+    def counted_solve(*args: object, **kwargs: object) -> torch.Tensor:
+        nonlocal solve_calls
+        solve_calls += 1
+        return original_solve(*args, **kwargs)
+
+    monkeypatch.setattr(
+        moving_gauge_reclosure,
+        "_ridge_scale",
+        counted_ridge_scale,
+    )
+    monkeypatch.setattr(torch.linalg, "solve", counted_solve)
+
+    prepared = prepare_lfm2_moving_gauge_anchored_writer_problem(
+        design,
+        seed,
+        weights,
+    )
+    actual = tuple(
+        solve_lfm2_prepared_anchored_writer_replacement(prepared, target)
+        for target in targets
+    )
+
+    assert isinstance(prepared, PreparedAnchoredWriterProblem)
+    assert prepared.verify_authentication()
+    assert prepared.solve_form == expected_solve_form
+    assert prepared.report["linear_factorization_precomputed"] is False
+    assert prepared.report["target_rows_consumed"] is False
+    assert ridge_scale_calls == 1
+    # Each target still executes the legacy unfactored solve.
+    assert solve_calls == len(targets)
+    for (expected_tensor, expected_report), (tensor, report) in zip(
+        baselines,
+        actual,
+        strict=True,
+    ):
+        assert torch.equal(tensor, expected_tensor)
+        assert dict(report) == dict(expected_report)
+
+
+def test_prepared_writer_owns_sources_and_is_structurally_frozen() -> None:
+    generator = torch.Generator().manual_seed(993)
+    design = torch.randn(7, 3, generator=generator, dtype=torch.float32)
+    target = torch.randn(7, 2, generator=generator, dtype=torch.float32)
+    seed = torch.randn(2, 3, generator=generator, dtype=torch.float32)
+    weights = torch.rand(7, generator=generator, dtype=torch.float32) + 0.5
+    expected, expected_report = solve_lfm2_moving_gauge_anchored_writer_replacement(
+        design.clone(),
+        target,
+        seed.clone(),
+        weights.clone(),
+    )
+    prepared = prepare_lfm2_moving_gauge_anchored_writer_problem(
+        design,
+        seed,
+        weights,
+    )
+
+    design.add_(100.0)
+    seed.zero_()
+    weights.mul_(4.0)
+    actual, report = solve_lfm2_prepared_anchored_writer_replacement(
+        prepared,
+        target,
+    )
+
+    assert torch.equal(actual, expected)
+    assert dict(report) == dict(expected_report)
+    with pytest.raises(FrozenInstanceError):
+        prepared.effective_ridge = 7.0  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        prepared.report["effective_ridge"] = 7.0  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    "tensor_field",
+    [
+        "_design_fp64",
+        "_seed_weight",
+        "_anchor_columns_fp64",
+        "_seed_prediction_fp64",
+        "_fit_weights_fp64",
+        "_root_weights_fp64",
+        "_weighted_design_fp64",
+        "_regularized_system_fp64",
+    ],
+)
+def test_prepared_writer_rejects_exact_tensor_tampering(
+    tensor_field: str,
+) -> None:
+    design = torch.arange(24, dtype=torch.float32).reshape(8, 3) / 10
+    target = torch.arange(16, dtype=torch.float32).reshape(8, 2) / 7
+    seed = torch.arange(6, dtype=torch.float32).reshape(2, 3) / 5
+    weights = torch.arange(1, 9, dtype=torch.float32)
+    prepared = prepare_lfm2_moving_gauge_anchored_writer_problem(
+        design,
+        seed,
+        weights,
+    )
+
+    retained = getattr(prepared, tensor_field)
+    retained.reshape(-1)[0].add_(1.0)
+
+    assert prepared.verify_authentication() is False
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="failed exact authentication",
+    ):
+        solve_lfm2_prepared_anchored_writer_replacement(prepared, target)
 
 
 def _rotation(angle: float) -> torch.Tensor:
