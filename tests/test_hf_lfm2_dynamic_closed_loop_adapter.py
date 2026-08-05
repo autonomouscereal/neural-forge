@@ -53,6 +53,8 @@ from neural_forge.hf_lfm2_balanced_circuit_basis import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+    LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+    LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
     Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterConfig,
     Lfm2DynamicClosedLoopAdapterError,
@@ -320,6 +322,7 @@ def _adapter(
     parent_residual_operators=None,
     progress_sink=None,
     replay_devices=None,
+    install_verification_mode=LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
@@ -389,6 +392,7 @@ def _adapter(
             ),
             output_interface_mode=output_interface_mode,
             replay_devices=replay_devices,
+            install_verification_mode=install_verification_mode,
         ),
         macro_cell_attractor_gate=macro_cell_attractor_gate,
         selective_session=selective_session,
@@ -833,6 +837,452 @@ def test_moving_gauge_install_rejects_a_stale_causal_capture_plan(
 
     assert tampered is True
     assert adapter.child_state_fingerprint() == state_before
+
+
+def _moving_gauge_install_fold(
+    sealed_parent,
+    *,
+    basis,
+    split_seed,
+    install_verification_mode,
+    progress_events=None,
+    internal_roles=None,
+):
+    """Run one whole moving-gauge fold under one install-verification mode."""
+
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+        install_verification_mode=install_verification_mode,
+        progress_sink=(
+            None
+            if progress_events is None
+            else (
+                lambda stage, metadata: progress_events.append(
+                    (stage, dict(metadata))
+                )
+            )
+        ),
+    )
+    if internal_roles is not None:
+        original_internal_recapture = adapter._body_internal_recapture
+
+        def observed_internal_recapture(self, records, audit, **kwargs):
+            internal_roles.append(
+                (
+                    kwargs["body_internal_role"],
+                    tuple(kwargs["selected_layer_indices"]),
+                )
+            )
+            return original_internal_recapture(records, audit, **kwargs)
+
+        adapter._body_internal_recapture = MethodType(
+            observed_internal_recapture,
+            adapter,
+        )
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed=split_seed,
+            fold_body_reclosure=True,
+            fold_output_interface=False,
+        ),
+    ).run()
+    return adapter, child, report
+
+
+def test_fingerprint_install_verification_reproduces_the_recaptured_child(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    split_seed = "lfm2-moving-gauge-install-verification-v1"
+
+    recapture_events = []
+    recapture_roles = []
+    recapture_adapter, recapture_child, recapture_report = (
+        _moving_gauge_install_fold(
+            sealed_parent,
+            basis=basis,
+            split_seed=split_seed,
+            install_verification_mode=(
+                LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+            ),
+            progress_events=recapture_events,
+            internal_roles=recapture_roles,
+        )
+    )
+    fingerprint_events = []
+    fingerprint_roles = []
+    fingerprint_adapter, fingerprint_child, fingerprint_report = (
+        _moving_gauge_install_fold(
+            sealed_parent,
+            basis=basis,
+            split_seed=split_seed,
+            install_verification_mode=LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+            progress_events=fingerprint_events,
+            internal_roles=fingerprint_roles,
+        )
+    )
+
+    # The mode is a proof policy, not a publication policy: the installed child
+    # is the same child, byte for byte.  (``child_state_fingerprint`` pins
+    # ``id(parameter)`` so it is only comparable inside one child instance;
+    # the state dictionary is the value-only statement.)
+    recapture_state = recapture_child.state_dict()
+    fingerprint_state = fingerprint_child.state_dict()
+    assert sorted(fingerprint_state) == sorted(recapture_state)
+    assert all(
+        torch.equal(fingerprint_state[name], recapture_state[name])
+        for name in fingerprint_state
+    )
+    recapture_payload = recapture_adapter._body_reclosure_payload
+    fingerprint_payload = fingerprint_adapter._body_reclosure_payload
+    assert recapture_payload is not None
+    assert fingerprint_payload is not None
+    assert [
+        value["result_sha256"]
+        for value in fingerprint_payload.causal_w2_step_receipts
+    ] == [
+        value["result_sha256"]
+        for value in recapture_payload.causal_w2_step_receipts
+    ]
+
+    # 1 + 4L replays collapse to exactly one, and it is the terminal capture.
+    assert len(recapture_roles) == 18
+    assert len(fingerprint_roles) == 10
+    assert fingerprint_roles[9] == ("terminal_receipt", (1,))
+    assert fingerprint_roles[:9] == recapture_roles[:9]
+
+    recapture_metadata = dict(
+        recapture_report["body_reclosure"]["install"]["metadata"]
+    )
+    fingerprint_metadata = dict(
+        fingerprint_report["body_reclosure"]["install"]["metadata"]
+    )
+    # The default lane's metadata carries NO new keys: the absence of
+    # install_verification_mode IS the full-recapture claim, and its
+    # presence would move body_reclosure_sha256/run_sha256 for every
+    # existing default-mode run.
+    assert "install_verification_mode" not in recapture_metadata
+    assert "install_verification_chain_sha256" not in recapture_metadata
+    assert "install_fingerprint_group_count" not in recapture_metadata
+    assert fingerprint_metadata["install_verification_mode"] == (
+        LFM2_INSTALL_VERIFICATION_FINGERPRINT
+    )
+    assert fingerprint_metadata["install_fingerprint_group_count"] == 9
+    chain_sha256 = fingerprint_metadata["install_verification_chain_sha256"]
+    assert isinstance(chain_sha256, str) and len(chain_sha256) == 64
+    assert set(chain_sha256).issubset(set("0123456789abcdef"))
+    assert fingerprint_metadata["causal_installation_step_count"] == 2
+
+    # The single terminal capture is compared against the preview's final
+    # sealed capture, which is the last causal step's post-W2 digest.
+    assert fingerprint_metadata["final_causal_recapture_sha256"] == (
+        fingerprint_payload.causal_w2_step_receipts[-1][
+            "post_w2_capture_sha256"
+        ]
+    )
+    assert recapture_metadata["final_causal_recapture_sha256"] == (
+        fingerprint_metadata["final_causal_recapture_sha256"]
+    )
+
+    # The validation receipt stops claiming a per-layer recapture it skipped.
+    assert recapture_report["body_reclosure"]["validation"]["metrics"][
+        "per_layer_causal_recapture_complete"
+    ] is True
+    assert fingerprint_report["body_reclosure"]["validation"]["metrics"][
+        "per_layer_causal_recapture_complete"
+    ] is False
+
+    install_recaptures = [
+        (stage, metadata)
+        for stage, metadata in fingerprint_events
+        if stage.startswith("moving_gauge_install_recapture_")
+    ]
+    assert [stage for stage, _metadata in install_recaptures] == [
+        "moving_gauge_install_recapture_started",
+        "moving_gauge_install_recapture_completed",
+    ]
+    assert all(
+        metadata["capture_boundary"] == "terminal_receipt"
+        and metadata["layer_index"] == 1
+        for _stage, metadata in install_recaptures
+    )
+    verified = [
+        metadata
+        for stage, metadata in fingerprint_events
+        if stage == "moving_gauge_install_fingerprint_verified"
+    ]
+    assert [
+        (metadata["layer_index"], metadata["capture_boundary"])
+        for metadata in verified
+    ] == [
+        (-1, "post_initial_writers"),
+        *(
+            (layer_index, boundary)
+            for layer_index in range(2)
+            for boundary in (
+                "post_operator_producer",
+                "post_operator_consumer",
+                "post_mlp_producer",
+                "post_w2",
+            )
+        ),
+    ]
+    assert all(
+        len(metadata["fingerprint_sha256"]) == 64 for metadata in verified
+    )
+    assert len({metadata["fingerprint_sha256"] for metadata in verified}) == 9
+    assert (
+        len(
+            [
+                stage
+                for stage, _metadata in recapture_events
+                if stage == "moving_gauge_install_fingerprint_verified"
+            ]
+        )
+        == 0
+    )
+    assert fingerprint_report["audit"]["parent_forward_calls"] == 0
+    assert fingerprint_report["audit"]["training_steps"] == 0
+    assert fingerprint_report["audit"]["backward_calls"] == 0
+    assert fingerprint_report["audit"]["optimizer_steps"] == 0
+
+
+def test_fingerprint_install_rejects_a_tampered_publication(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+        install_verification_mode=LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+    )
+    state_before = adapter.child_state_fingerprint()
+    original_publish = adapter._publish_dense_replacements
+    tampered = []
+
+    def tampered_publish(self, parameters, replacements, parameter_ids):
+        changed = original_publish(parameters, replacements, parameter_ids)
+        ids = tuple(parameter_ids)
+        if (
+            not tampered
+            and self._body_reclosure_payload is not None
+            and self._body_reclosure_installed_artifact_sha256 is None
+            and all("feed_forward" in value for value in ids)
+        ):
+            tampered.append(ids[0])
+            with torch.no_grad():
+                parameters[ids[0]].add_(1.0)
+        return changed
+
+    adapter._publish_dense_replacements = MethodType(
+        tampered_publish,
+        adapter,
+    )
+
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match=(
+            "install fingerprint verification failed at layer 0 boundary "
+            "post_mlp_producer"
+        ),
+    ) as raised:
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-moving-gauge-install-tamper-v1",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+            ),
+        ).run()
+
+    message = str(raised.value)
+    assert tampered
+    # The refusal names the installed digest and the sealed plan digest.
+    digests = [
+        value
+        for value in message.replace("'", " ").replace(",", " ").split()
+        if len(value) == 64 and set(value).issubset(set("0123456789abcdef"))
+    ]
+    assert len(digests) == 4
+    assert digests[:2] != digests[2:]
+    assert adapter.child_state_fingerprint() == state_before
+
+
+def test_fingerprint_install_terminal_capture_catches_a_late_divergence(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+        install_verification_mode=LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+    )
+    state_before = adapter.child_state_fingerprint()
+    original_recapture = adapter._body_internal_recapture
+    diverged = []
+
+    def divergent_recapture(self, records, audit, **kwargs):
+        # The only install-time replay in fingerprint mode is the terminal
+        # capture; move the child right before it, which is exactly the class
+        # of divergence no per-step fingerprint can see.
+        if (
+            not diverged
+            and self._body_reclosure_payload is not None
+            and self._body_reclosure_installed_artifact_sha256 is None
+        ):
+            diverged.append(kwargs["body_internal_role"])
+            with torch.no_grad():
+                child.model.layers[0].operator_norm.weight.add_(0.5)
+        return original_recapture(records, audit, **kwargs)
+
+    adapter._body_internal_recapture = MethodType(
+        divergent_recapture,
+        adapter,
+    )
+
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="terminal recapture differs from the causal preview",
+    ) as raised:
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-moving-gauge-install-terminal-v1",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+            ),
+        ).run()
+
+    assert diverged == ["terminal_receipt"]
+    message = str(raised.value)
+    digests = [
+        value
+        for value in message.split()
+        if len(value.rstrip(".")) == 64
+        and set(value.rstrip(".")).issubset(set("0123456789abcdef"))
+    ]
+    assert len(digests) == 2
+    assert digests[0] != digests[1]
+    assert adapter.child_state_fingerprint() == state_before
+
+
+def test_install_fingerprints_bind_a_factorized_writer_to_its_artifact(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        install_verification_mode=LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+    )
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(2611)
+        encoder = torch.nn.Parameter(
+            torch.randn(1, 5, dtype=torch.bfloat16),
+            requires_grad=False,
+        )
+        decoder = torch.nn.Parameter(
+            torch.randn(4, 1, dtype=torch.bfloat16),
+            requires_grad=False,
+        )
+        requested = torch.randn(4, 5, dtype=torch.bfloat16)
+    parameter_id = "model.layers.0.conv.out_proj.weight"
+    site = adapter_module._MovingGaugeWriterSite(
+        parameter_id=parameter_id,
+        topology="factorized",
+        writer_rank=1,
+        writer_contract_sha256="2" * 64,
+        seed_physical_state_sha256="3" * 64,
+        physical_parameter_ids=(
+            "model.layers.0.conv.out_proj.0.weight",
+            "model.layers.0.conv.out_proj.1.weight",
+        ),
+        physical_parameters=(encoder, decoder),
+    )
+    artifact = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+    )
+    with torch.no_grad():
+        encoder.copy_(artifact.encoder_weight)
+        decoder.copy_(artifact.decoder_weight)
+
+    installed, planned = adapter._moving_gauge_installed_writer_fingerprints(
+        {parameter_id: site},
+        {parameter_id: requested},
+        {parameter_id: artifact},
+        (parameter_id,),
+    )
+    # A factorized writer never publishes its logical action; the sealed
+    # artifact is the only thing that maps the pair back to it.
+    assert installed == planned
+    assert planned == (artifact.encoder_sha256, artifact.decoder_sha256)
+    assert adapter._authenticate_moving_gauge_install_fingerprints(
+        layer_index=0,
+        capture_boundary="post_operator_consumer",
+        installed_sha256=installed,
+        planned_sha256=planned,
+        publication_matches=True,
+    )
+
+    with torch.no_grad():
+        encoder.add_(1.0)
+    drifted, planned_again = (
+        adapter._moving_gauge_installed_writer_fingerprints(
+            {parameter_id: site},
+            {parameter_id: requested},
+            {parameter_id: artifact},
+            (parameter_id,),
+        )
+    )
+    assert drifted != planned_again
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="boundary post_operator_consumer",
+    ):
+        adapter._authenticate_moving_gauge_install_fingerprints(
+            layer_index=0,
+            capture_boundary="post_operator_consumer",
+            installed_sha256=drifted,
+            planned_sha256=planned_again,
+            publication_matches=True,
+        )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="install fingerprint for .* has no sealed factor artifact",
+    ):
+        adapter._moving_gauge_installed_writer_fingerprints(
+            {parameter_id: site},
+            {parameter_id: requested},
+            {},
+            (parameter_id,),
+        )
+
+
+def test_adapter_config_rejects_an_unknown_install_verification_mode() -> None:
+    defaults = Lfm2DynamicClosedLoopAdapterConfig()
+    assert defaults.install_verification_mode == (
+        LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+    )
+    with pytest.raises(ValueError, match="install_verification_mode"):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            install_verification_mode="fingerprints"
+        )
 
 
 def test_moving_gauge_cleanup_releases_every_capture_and_rolls_back(

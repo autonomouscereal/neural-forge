@@ -135,6 +135,8 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (
     build_lfm2_cached_global_topology_frontier,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
+    LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
+    LFM2_INSTALL_VERIFICATION_MODES,
     LFM2_REPLAY_SHARDING_ALL_DEVICES,
     LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
     LFM2_REPLAY_SHARDING_RESOLVED_STAGE,
@@ -1197,6 +1199,14 @@ class ProductionLfm2CatalogConfig:
     dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
     dense_body_reclosure_mode: str = "disabled"
+    # Verification-only (R13 efficiency): how the moving-gauge install sweep
+    # proves the publication it just made matches the sealed causal preview.
+    # ``full-recapture`` is the historical 1 + 4L capture chain and stays the
+    # default, so an unset run is byte-identical; ``fingerprint`` collapses it
+    # to per-step digest authentication plus one terminal capture.
+    dense_moving_gauge_install_verification: str = (
+        LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+    )
     dense_run_closed_loop: bool = False
     dense_closed_loop_performance_metrics_diagnostic_only: bool = False
     dense_closed_loop_replay_capture_mode: str = (
@@ -1731,6 +1741,27 @@ class ProductionLfm2CatalogConfig:
             self,
             "dense_body_reclosure_mode",
             body_reclosure_mode,
+        )
+        install_verification = str(
+            self.dense_moving_gauge_install_verification
+        ).strip().lower()
+        if install_verification not in set(LFM2_INSTALL_VERIFICATION_MODES):
+            raise ProductionLfm2CatalogError(
+                "dense_moving_gauge_install_verification must be "
+                "full-recapture or fingerprint."
+            )
+        if (
+            install_verification != LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+            and body_reclosure_mode != "moving_gauge_v3"
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_moving_gauge_install_verification only applies to "
+                "moving_gauge_v3 body reclosure."
+            )
+        object.__setattr__(
+            self,
+            "dense_moving_gauge_install_verification",
+            install_verification,
         )
         attention_consumer_mode = str(
             self.dense_attention_consumer_mode
@@ -3075,6 +3106,19 @@ class ProductionLfm2CatalogConfig:
                     self.dense_residual_basis_mode
                 ),
                 "dense_body_reclosure_mode": self.dense_body_reclosure_mode,
+                # Recorded only when it is not the default, so every existing
+                # run keeps its exact configuration digest.  A run that sets it
+                # is claiming a weaker install proof and must say so here.
+                **(
+                    {}
+                    if self.dense_moving_gauge_install_verification
+                    == LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+                    else {
+                        "dense_moving_gauge_install_verification": (
+                            self.dense_moving_gauge_install_verification
+                        )
+                    }
+                ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
                 "dense_closed_loop_performance_metrics": {
                     "diagnostic_only": (
@@ -9717,6 +9761,10 @@ def build_production_catalog_wiring(
                             config
                             .resolved_dense_closed_loop_replay_capture_mode
                         ),
+                        install_verification_mode=(
+                            config
+                            .dense_moving_gauge_install_verification
+                        ),
                         attention_consumer_mode=(
                             config.dense_attention_consumer_mode
                         ),
@@ -13461,6 +13509,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-moving-gauge-install-verification",
+        choices=LFM2_INSTALL_VERIFICATION_MODES,
+        default=LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
+        help=(
+            "How the moving-gauge install sweep proves its publication "
+            "matches the sealed causal preview. full-recapture replays the "
+            "installed child at all 1 + 4L preview boundaries and is the "
+            "default and the certification setting. fingerprint authenticates "
+            "each published group against the replacement digests the preview "
+            "sealed and spends one replay on the terminal capture; it changes "
+            "no published byte and fails closed at the step that diverges."
+        ),
+    )
+    parser.add_argument(
         "--dense-closed-loop-replay-mode",
         choices=(
             DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
@@ -14311,6 +14373,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
         dense_body_reclosure_mode=args.dense_body_reclosure_mode,
+        dense_moving_gauge_install_verification=(
+            args.dense_moving_gauge_install_verification
+        ),
         dense_run_closed_loop=args.dense_run_closed_loop,
         dense_closed_loop_performance_metrics_diagnostic_only=(
             args.dense_closed_loop_performance_metrics_diagnostic_only

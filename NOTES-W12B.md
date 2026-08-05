@@ -15,7 +15,7 @@ Line numbers below are against `01bea537` plus this wave's landed diff.
 | Item 6 — recaptured reverse sweep | `src/neural_forge/hf_lfm2_moving_gauge_residual_reclosure.py` | landed, flag-gated, default byte-identical |
 | Efficiency — fresh-reload dedup | `src/neural_forge/dynamic_fold_artifact.py` | landed, on by default, fail-closed |
 | Efficiency — terminal restart capsule | `src/neural_forge/hf_lfm2_closed_loop_restart_capsule.py` + `src/neural_forge/dynamic_closed_loop_fold.py` + `src/neural_forge/hf_lfm2_dense_budget_model_fold.py` | publication landed (opt-in flag); CLI flag + resume-from-terminal specced in §4 |
-| Efficiency — install-sweep collapse | `hf_lfm2_dynamic_closed_loop_adapter.py` | NOT implemented (file owned by the parallel agent) — spec in §2 |
+| Efficiency — install-sweep collapse | `hf_lfm2_dynamic_closed_loop_adapter.py` + `experiments/run_lfm2_dynamic_catalog.py` | **implemented** (wave 13), flag-gated, default byte-identical — spec in §2, landed shape and deviations in §2.0 |
 
 The adapter (`hf_lfm2_dynamic_closed_loop_adapter.py`) and
 `experiments/run_lfm2_dynamic_catalog.py` were not touched.
@@ -23,6 +23,106 @@ The adapter (`hf_lfm2_dynamic_closed_loop_adapter.py`) and
 ---
 
 ## 2. Install-sweep collapse — implementation spec
+
+### 2.0 Status: implemented (wave 13) — landed shape and deviations
+
+Landed as `--dense-moving-gauge-install-verification {full-recapture,fingerprint}`,
+carried on `Lfm2DynamicClosedLoopAdapterConfig.install_verification_mode` and read
+by `install_body_reclosure` as `self.install_verification_mode`. Everything in
+§2.1–§2.5 below is the spec that was implemented; the spec text is unchanged.
+Nine deviations, each with its reason:
+
+1. **Default is `full-recapture`, not `fingerprint`** (§2.3 asked for
+   `fingerprint`). R13_PLAN's contract and the wave-13 task require every
+   existing run/config to reproduce byte-for-byte, so the collapse is opt-in.
+2. **The flag lives on the adapter *config* dataclass**, not as a bare
+   constructor keyword. That is the only route from the catalog to the adapter
+   that does not edit `hf_lfm2_dense_budget_model_fold.py` (which builds the
+   adapter and was out of scope): the catalog already constructs
+   `Lfm2DynamicClosedLoopAdapterConfig` directly.
+3. **`_ADAPTER_IDENTITY_FIELDS` was not extended** (§2.3). The capsule module
+   was out of scope, and adding the key would change the adapter-identity digest
+   of every new run. It is also not load-bearing: the mode changes no published
+   byte, so a capsule resume across modes cannot change the fold result, and the
+   install receipt records the mode of the process that actually ran install.
+4. **The terminal capture runs in `fingerprint` mode only** (§2.4 said "both
+   modes"). In `full-recapture` the last layer's `post_w2` recapture already *is*
+   that capture — same `selected_layer_indices=(L-1,)`, same
+   `body_internal_role="terminal_receipt"`, and its digest is by construction the
+   preview's `final_preview_capture_sha256`. Adding a second one would cost a
+   replay and break byte-identity.
+5. **`final_preview_capture_sha256` is read as
+   `payload.causal_w2_step_receipts[-1]["post_w2_capture_sha256"]`.** Those are
+   the same value (the preview's `current_capture` at loop exit is the last
+   layer's `post_w2_capture`), and the per-step receipts are already sealed and
+   carried on the payload — so no artifact schema change was needed.
+6. **The receipt carries a chain *digest*, not the raw chain.**
+   `InstallReceipt.metadata` is `JsonScalar`-only. Fingerprint runs record
+   `install_verification_chain_sha256` (canonical digest over every group digest
+   plus the terminal capture digest) and `install_fingerprint_group_count`; the
+   per-group values themselves are emitted as
+   `moving_gauge_install_fingerprint_verified` progress events. The chain digest
+   is recomputable from the sealed causal steps, because every group digest it
+   covers is one install required the live publication to equal.
+   `install_verification_mode` is recorded in **fingerprint mode only** — the
+   absence of the key IS the full-recapture claim. (The first landing recorded
+   it unconditionally; adversarial review caught that this moves
+   `body_reclosure_sha256`/`run_sha256` for every existing default-mode run
+   through the install receipt's metadata, and it was made conditional before
+   commit. The corrected default-lane test asserts the key's absence.)
+7. **Writer groups are authenticated on physical bytes**, dense and factorized
+   alike (`_moving_gauge_installed_writer_fingerprints`), because a factorized
+   writer never publishes its logical action — its sealed factor artifact's
+   encoder/decoder digests are the plan. Producer groups compare the live
+   parameter's `fingerprint_lfm2_moving_gauge_tensor` against the step's
+   `*_replacement_weight_sha256` directly. Each group additionally requires
+   `_moving_gauge_writer_publication_matches`, so the artifact→action binding is
+   still checked per step.
+8. **Layer 0's `pre_operator_capture_sha256` link is not re-derived** in
+   fingerprint mode (it measures the initial writer publication and has no
+   fingerprint stand-in); layers 1..L-1 must still equal the previous sealed
+   step's `post_w2_capture_sha256`, so a reordered or spliced plan is refused
+   without a replay.
+9. **`per_layer_causal_recapture_complete`** in the body-reclosure validation
+   metrics became mode-derived (`True` only under `full-recapture`) instead of a
+   hardcoded `True`, and the catalog records the flag in `config.identity()`
+   only when it is not the default, so `configuration_sha256` is unchanged for
+   every existing run.
+
+Fail-closed proof points, all raising `Lfm2DynamicClosedLoopAdapterError`:
+a per-group mismatch names the layer, the boundary, and both digest lists
+(`_authenticate_moving_gauge_install_fingerprints`); the terminal capture
+mismatch names both digests; `_authenticate_immutable_json_mapping` on every
+planned step and the final publication-equality block are unchanged and run in
+both modes.
+
+Verification: `tests/test_hf_lfm2_dynamic_closed_loop_adapter.py` gained five
+tests — cross-mode child equality plus receipt/progress/replay-count contract,
+per-step tamper, terminal-divergence, factorized-writer fingerprint binding, and
+config rejection; `tests/test_run_lfm2_dynamic_catalog.py` gained the CLI/identity
+test. Cost on the toy: 18 internal recaptures → 10 (9 preview + 1 install).
+
+Adversarial-review outcomes (wave 13 review, applied before commit):
+`install_verification_mode` moved into the fingerprint-only conditional (see
+deviation 6); `publication_matches` became a required argument on both the
+authenticator and `_verify_install_boundary` (a fail-open default meant a
+future boundary that forgot the kwarg silently lost its artifact→action
+binding check); empty digest groups now raise instead of chaining a vacuous
+"verified" link. Recorded follow-ups, not yet done: (a) nothing downstream
+ENFORCES `per_layer_causal_recapture_complete` — a fingerprint run is
+promotable/certifiable today because no promotion gate reads the metric; the
+r13 launcher composition must either gate certification on it or explicitly
+accept fingerprint receipts; (b) writer-group fingerprints compare against
+the live in-memory replacement (`_tensor_sha256(replacement)`), which
+re-proves the publisher's own post-condition rather than the sealed step —
+switching the planned side to the step's sealed
+`operator_consumer_replacement_weight_sha256`/`replacement_weight_sha256`
+would make writer groups symmetric with producer groups; (c) the layer-ge-1
+`capture_chain_matches` link in fingerprint mode is tautological for any
+authenticated payload (the preview constructs it from the previous step) —
+splice protection actually comes from the replacement-digest comparisons;
+(d) there is still no test pinning the default lane against a PRE-change
+sealed baseline digest — cross-mode equality tests compare new-vs-new.
 
 ### 2.1 The exact regions
 

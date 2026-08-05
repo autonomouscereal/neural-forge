@@ -2137,6 +2137,65 @@ def test_parser_binds_moving_gauge_body_reclosure_to_closed_loop(tmp_path) -> No
         )
 
 
+def test_moving_gauge_install_verification_defaults_to_full_recapture(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    default_config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+            ]
+        )
+    )
+    assert default_config.dense_moving_gauge_install_verification == (
+        "full-recapture"
+    )
+    # An unset run keeps its exact configuration digest: the key only appears
+    # when the weaker install proof was actually requested.
+    assert (
+        "dense_moving_gauge_install_verification"
+        not in default_config.identity()["target"]
+    )
+
+    fingerprint_config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+                "--dense-moving-gauge-install-verification",
+                "fingerprint",
+            ]
+        )
+    )
+    assert fingerprint_config.dense_moving_gauge_install_verification == (
+        "fingerprint"
+    )
+    assert fingerprint_config.identity()["target"][
+        "dense_moving_gauge_install_verification"
+    ] == "fingerprint"
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="only applies to moving_gauge_v3 body reclosure",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-moving-gauge-install-verification",
+                    "fingerprint",
+                ]
+            )
+        )
+
+
 def test_macro_cell_attractor_gate_requires_dense_closed_loop(
     tmp_path,
 ) -> None:

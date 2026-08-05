@@ -181,6 +181,30 @@ LFM2_BODY_RECLOSURE_MODES = (
     LFM2_BODY_RECLOSURE_DISABLED,
     LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
 )
+# -- Moving-gauge install verification (R13 efficiency) ------------------
+#
+# The install sweep performs zero solving: every tensor it publishes came out
+# of the sealed causal preview.  ``full-recapture`` re-derives the preview's
+# whole 1 + 4L capture chain from the installed child, which is the strongest
+# possible statement (publication order and physical aliasing behave exactly as
+# previewed) and also the single largest wall-clock line item in a carrier run.
+# ``fingerprint`` authenticates every published group against the digests the
+# preview already sealed and then spends exactly one replay on the terminal
+# capture, which is the end-to-end proof that the installed child equals the
+# previewed child.  ``full-recapture`` stays the default so every existing run
+# reproduces byte-for-byte, and certification runs keep using it.
+LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE = "full-recapture"
+LFM2_INSTALL_VERIFICATION_FINGERPRINT = "fingerprint"
+LFM2_INSTALL_VERIFICATION_MODES = (
+    LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
+    LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+)
+LFM2_INSTALL_FINGERPRINT_GROUP_SCHEMA = (
+    "neural-forge-lfm2-moving-gauge-install-fingerprint-group-v1"
+)
+LFM2_INSTALL_FINGERPRINT_CHAIN_SCHEMA = (
+    "neural-forge-lfm2-moving-gauge-install-fingerprint-chain-v1"
+)
 LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA = (
     "neural-forge-lfm2-short-conv-factor-closed-loop-v1"
 )
@@ -1081,6 +1105,11 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     attention_score_maximum_softmax_fisher_error: float | None = None
     attention_score_maximum_js_divergence: float | None = None
     output_interface_mode: str = "fit-transform"
+    # Verification-only: this never changes one published byte, only how the
+    # install sweep proves the publication matches its sealed preview.  The
+    # default is the historical full capture chain, so an unset run is
+    # byte-identical to the r12 lane; see LFM2_INSTALL_VERIFICATION_MODES.
+    install_verification_mode: str = LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
     # Execution-only: a shard request changes how long a capture takes, never
     # what it seals.  ``None`` is the serial path and is byte-identical to
     # every honoured shard plan, so this never enters a fold identity.
@@ -1435,6 +1464,15 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             raise ValueError(
                 "output_interface_mode must be 'fit-transform' or "
                 "'identity-skip'."
+            )
+        if (
+            not isinstance(self.install_verification_mode, str)
+            or self.install_verification_mode
+            not in frozenset(LFM2_INSTALL_VERIFICATION_MODES)
+        ):
+            raise ValueError(
+                "install_verification_mode must be 'full-recapture' or "
+                "'fingerprint'."
             )
         object.__setattr__(
             self,
@@ -3024,6 +3062,9 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         self.body_reclosure_mode = mode
         self.body_coordinate_completion_recipe = recipe
+        # Validated by the config dataclass; mirrored here because the install
+        # sweep reads it on every published group.
+        self.install_verification_mode = self.config.install_verification_mode
         self.parent_residual_operators = operators
         if (
             macro_cell_attractor_gate is not None
@@ -4873,6 +4914,98 @@ class Lfm2DynamicClosedLoopAdapter:
             ):
                 return False
         return True
+
+    def _moving_gauge_installed_writer_fingerprints(
+        self,
+        sites: Mapping[str, _MovingGaugeWriterSite],
+        replacements: Mapping[str, Any],
+        factor_artifacts: Mapping[str, _MovingGaugeFactorWriterArtifact],
+        parameter_ids: Sequence[str],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Pair the installed physical digests with the ones the plan pins.
+
+        A dense writer publishes its logical action verbatim, so the planned
+        physical bytes are the replacement's.  A factorized writer publishes an
+        encoder/decoder pair, and the only object that maps that pair back to
+        the requested action is the sealed factor artifact — whose own digest is
+        pinned by the causal step being installed.  Returning both tuples (never
+        a bare boolean) is what lets the caller name the two digests it refused.
+        """
+
+        installed: list[str] = []
+        planned: list[str] = []
+        for parameter_id in tuple(parameter_ids):
+            site = sites.get(parameter_id)
+            replacement = replacements.get(parameter_id)
+            if site is None or replacement is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"Moving-gauge install fingerprint for {parameter_id} has "
+                    "no writer site or no sealed replacement."
+                )
+            installed.extend(
+                _tensor_sha256(value) for value in site.physical_parameters
+            )
+            if site.topology == "dense":
+                planned.append(_tensor_sha256(replacement))
+                continue
+            artifact = factor_artifacts.get(parameter_id)
+            if artifact is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"Moving-gauge install fingerprint for {parameter_id} has "
+                    "no sealed factor artifact."
+                )
+            planned.extend((artifact.encoder_sha256, artifact.decoder_sha256))
+        return tuple(installed), tuple(planned)
+
+    def _authenticate_moving_gauge_install_fingerprints(
+        self,
+        *,
+        layer_index: int,
+        capture_boundary: str,
+        installed_sha256: Sequence[str],
+        planned_sha256: Sequence[str],
+        publication_matches: bool,
+    ) -> str:
+        """Authenticate one published group against its sealed preview plan.
+
+        In ``fingerprint`` install verification this replaces a replayed
+        capture, so it is the only thing standing between a mis-ordered or
+        mis-copied publication and a committed transaction.  It therefore fails
+        closed at the group that caused it and names both digests, and it
+        returns the group digest the install receipt chains.
+        """
+
+        installed = tuple(installed_sha256)
+        planned = tuple(planned_sha256)
+        if not installed or not planned:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge install fingerprint verification received an "
+                f"empty digest group at layer {layer_index} boundary "
+                f"{capture_boundary}; an empty group can prove nothing and "
+                "must never chain."
+            )
+        if not publication_matches or installed != planned:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge install fingerprint verification failed at layer "
+                f"{layer_index} boundary {capture_boundary}: the installed "
+                f"publication {list(installed)} differs from the sealed causal "
+                f"preview plan {list(planned)}."
+            )
+        group_sha256 = canonical_sha256(
+            {
+                "schema": LFM2_INSTALL_FINGERPRINT_GROUP_SCHEMA,
+                "layer_index": layer_index,
+                "capture_boundary": capture_boundary,
+                "replacement_weight_sha256": list(installed),
+            }
+        )
+        self._emit_body_progress(
+            "moving_gauge_install_fingerprint_verified",
+            layer_index=layer_index,
+            capture_boundary=capture_boundary,
+            fingerprint_sha256=group_sha256,
+        )
+        return group_sha256
 
     def _moving_gauge_row_manifest(
         self,
@@ -11706,30 +11839,136 @@ class Lfm2DynamicClosedLoopAdapter:
         fit_records = tuple(
             self._records[index] for index in payload.fit_batch_indices
         )
-        self._emit_body_progress(
-            "moving_gauge_install_recapture_started",
-            layer_index=-1,
-            capture_boundary="post_initial_writers",
+        # ``fingerprint`` authenticates the same publication boundaries the
+        # capture chain does, without replaying the child at any of them.  The
+        # one replay it keeps is the terminal capture after the loop.
+        fingerprint_verification = (
+            self.install_verification_mode
+            == LFM2_INSTALL_VERIFICATION_FINGERPRINT
         )
-        current_capture = self._body_internal_recapture(
-            fit_records,
-            audit,
-            selected_layer_indices=(0,),
-            body_internal_role="pre_operator",
-        )
-        current_capture_sha256 = (
-            self._authenticated_capture_sha256_and_release(
-                current_capture
+        fingerprint_chain: list[Mapping[str, Any]] = []
+        current_capture_sha256: str | None = None
+        if fingerprint_verification:
+            installed_sha256, planned_sha256 = (
+                self._moving_gauge_installed_writer_fingerprints(
+                    writer_sites,
+                    writer_replacements,
+                    initial_factor_artifacts,
+                    payload.parameter_ids,
+                )
             )
-        )
-        self._emit_body_progress(
-            "moving_gauge_install_recapture_completed",
-            layer_index=-1,
-            capture_boundary="post_initial_writers",
-            capture_sha256=current_capture_sha256,
-        )
-        del current_capture
-        release_closed_loop_capture_memory()
+            fingerprint_chain.append(
+                {
+                    "layer_index": -1,
+                    "capture_boundary": "post_initial_writers",
+                    "group_sha256": (
+                        self._authenticate_moving_gauge_install_fingerprints(
+                            layer_index=-1,
+                            capture_boundary="post_initial_writers",
+                            installed_sha256=installed_sha256,
+                            planned_sha256=planned_sha256,
+                            publication_matches=(
+                                self._moving_gauge_writer_publication_matches(
+                                    writer_sites,
+                                    writer_replacements,
+                                    initial_factor_artifacts,
+                                )
+                            ),
+                        )
+                    ),
+                }
+            )
+        else:
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=-1,
+                capture_boundary="post_initial_writers",
+            )
+            current_capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+                selected_layer_indices=(0,),
+                body_internal_role="pre_operator",
+            )
+            current_capture_sha256 = (
+                self._authenticated_capture_sha256_and_release(
+                    current_capture
+                )
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=-1,
+                capture_boundary="post_initial_writers",
+                capture_sha256=current_capture_sha256,
+            )
+            del current_capture
+            release_closed_loop_capture_memory()
+
+        def _verify_install_boundary(
+            *,
+            layer_index: int,
+            planned_step: Mapping[str, Any],
+            capture_boundary: str,
+            body_internal_role: str,
+            selected_layer_indices: tuple[int, ...],
+            planned_capture_key: str,
+            recapture_error: str,
+            installed_sha256: Sequence[str],
+            planned_sha256: Sequence[str],
+            publication_matches: bool,
+        ) -> str | None:
+            """Prove one published boundary in this run's verification mode.
+
+            ``full-recapture`` replays the installed child and requires the
+            capture digest the preview sealed at this exact boundary;
+            ``fingerprint`` requires the published bytes themselves to be the
+            ones the preview sealed.  Both raise; neither warns.
+            """
+
+            if fingerprint_verification:
+                fingerprint_chain.append(
+                    {
+                        "layer_index": layer_index,
+                        "capture_boundary": capture_boundary,
+                        "group_sha256": (
+                            self
+                            ._authenticate_moving_gauge_install_fingerprints(
+                                layer_index=layer_index,
+                                capture_boundary=capture_boundary,
+                                installed_sha256=installed_sha256,
+                                planned_sha256=planned_sha256,
+                                publication_matches=publication_matches,
+                            )
+                        ),
+                    }
+                )
+                return None
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=layer_index,
+                capture_boundary=capture_boundary,
+            )
+            capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+                selected_layer_indices=selected_layer_indices,
+                body_internal_role=body_internal_role,
+            )
+            capture_sha256 = (
+                self._authenticated_capture_sha256_and_release(capture)
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=layer_index,
+                capture_boundary=capture_boundary,
+                capture_sha256=capture_sha256,
+            )
+            if planned_step.get(planned_capture_key) != capture_sha256:
+                raise Lfm2DynamicClosedLoopAdapterError(recapture_error)
+            del capture
+            release_closed_loop_capture_memory()
+            return capture_sha256
+
         installation_steps = []
         for layer_index, planned_step in enumerate(
             payload.causal_w2_step_receipts
@@ -11759,6 +11998,25 @@ class Lfm2DynamicClosedLoopAdapter:
                 else f"model.layers.{layer_index}.conv.out_proj.weight"
             )
             pre_operator_capture_sha256 = current_capture_sha256
+            # The chain link is a live measurement in ``full-recapture`` and the
+            # preview's own contiguity in ``fingerprint``: the step being
+            # installed must begin where the previous sealed step ended, so a
+            # reordered or spliced plan is still refused without a replay.
+            if fingerprint_verification:
+                # Layer 0's precondition is the one link no fingerprint can
+                # stand in for — it measures the initial writer publication —
+                # so it rests on the sealed step digest alone.
+                capture_chain_matches = layer_index == 0 or (
+                    planned_step.get("pre_operator_capture_sha256")
+                    == payload.causal_w2_step_receipts[layer_index - 1].get(
+                        "post_w2_capture_sha256"
+                    )
+                )
+            else:
+                capture_chain_matches = (
+                    planned_step.get("pre_operator_capture_sha256")
+                    == pre_operator_capture_sha256
+                )
             if (
                 planned_step.get("layer_index") != layer_index
                 or planned_step.get("parameter_id") != w2_id
@@ -11767,8 +12025,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 or tuple(planned_step.get("operator_parameter_ids", ()))
                 != operator_ids
                 or tuple(planned_step.get("mlp_parameter_ids", ())) != mlp_ids
-                or planned_step.get("pre_operator_capture_sha256")
-                != pre_operator_capture_sha256
+                or not capture_chain_matches
                 or tuple(
                     planned_step.get(
                         "operator_producer_replacement_weight_sha256",
@@ -11825,37 +12082,41 @@ class Lfm2DynamicClosedLoopAdapter:
                     operator_ids,
                 )
             )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_started",
+            post_operator_producer_capture_sha256 = _verify_install_boundary(
                 layer_index=layer_index,
+                planned_step=planned_step,
                 capture_boundary="post_operator_producer",
-            )
-            post_operator_producer_capture = self._body_internal_recapture(
-                fit_records,
-                audit,
-                selected_layer_indices=(layer_index,),
                 body_internal_role="post_operator_producer",
-            )
-            post_operator_producer_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    post_operator_producer_capture
-                )
-            )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_completed",
-                layer_index=layer_index,
-                capture_boundary="post_operator_producer",
-                capture_sha256=post_operator_producer_capture_sha256,
-            )
-            if planned_step.get(
-                "post_operator_producer_capture_sha256"
-            ) != post_operator_producer_capture_sha256:
-                raise Lfm2DynamicClosedLoopAdapterError(
+                selected_layer_indices=(layer_index,),
+                planned_capture_key="post_operator_producer_capture_sha256",
+                recapture_error=(
                     "Moving-gauge operator-producer recapture differs from "
                     "the causal preview."
-                )
-            del post_operator_producer_capture
-            release_closed_loop_capture_memory()
+                ),
+                installed_sha256=(
+                    tuple(
+                        fingerprint_lfm2_moving_gauge_tensor(
+                            producer_parameters[value]
+                        )
+                        for value in operator_ids
+                    )
+                    if fingerprint_verification
+                    else ()
+                ),
+                planned_sha256=(
+                    tuple(
+                        planned_step.get(
+                            "operator_producer_replacement_weight_sha256",
+                            (),
+                        )
+                    )
+                    if fingerprint_verification
+                    else ()
+                ),
+                # Producer boundaries publish no writer sites, so the digest
+                # equality itself is the whole proof.
+                publication_matches=True,
+            )
             changed.update(
                 self._publish_moving_gauge_writer_replacements(
                     writer_sites,
@@ -11864,37 +12125,42 @@ class Lfm2DynamicClosedLoopAdapter:
                     causal_operator_factor_artifacts,
                 )
             )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_started",
-                layer_index=layer_index,
-                capture_boundary="post_operator_consumer",
-            )
-            post_operator_consumer_capture = self._body_internal_recapture(
-                fit_records,
-                audit,
-                selected_layer_indices=(layer_index,),
-                body_internal_role="post_operator_consumer",
-            )
-            post_operator_consumer_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    post_operator_consumer_capture
+            operator_consumer_installed, operator_consumer_planned = (
+                self._moving_gauge_installed_writer_fingerprints(
+                    writer_sites,
+                    causal_operator_replacements,
+                    causal_operator_factor_artifacts,
+                    (operator_id,),
                 )
+                if fingerprint_verification
+                else ((), ())
             )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_completed",
+            post_operator_consumer_capture_sha256 = _verify_install_boundary(
                 layer_index=layer_index,
+                planned_step=planned_step,
                 capture_boundary="post_operator_consumer",
-                capture_sha256=post_operator_consumer_capture_sha256,
-            )
-            if planned_step.get(
-                "post_operator_consumer_capture_sha256"
-            ) != post_operator_consumer_capture_sha256:
-                raise Lfm2DynamicClosedLoopAdapterError(
+                body_internal_role="post_operator_consumer",
+                selected_layer_indices=(layer_index,),
+                planned_capture_key="post_operator_consumer_capture_sha256",
+                recapture_error=(
                     "Moving-gauge operator-consumer recapture differs from "
                     "the causal preview."
-                )
-            del post_operator_consumer_capture
-            release_closed_loop_capture_memory()
+                ),
+                installed_sha256=operator_consumer_installed,
+                planned_sha256=operator_consumer_planned,
+                publication_matches=(
+                    not fingerprint_verification
+                    or self._moving_gauge_writer_publication_matches(
+                        writer_sites,
+                        {
+                            operator_id: causal_operator_replacements[
+                                operator_id
+                            ]
+                        },
+                        causal_operator_factor_artifacts,
+                    )
+                ),
+            )
             changed.update(
                 self._publish_dense_replacements(
                     producer_parameters,
@@ -11902,37 +12168,41 @@ class Lfm2DynamicClosedLoopAdapter:
                     mlp_ids,
                 )
             )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_started",
+            post_mlp_producer_capture_sha256 = _verify_install_boundary(
                 layer_index=layer_index,
+                planned_step=planned_step,
                 capture_boundary="post_mlp_producer",
-            )
-            post_mlp_producer_capture = self._body_internal_recapture(
-                fit_records,
-                audit,
-                selected_layer_indices=(layer_index,),
                 body_internal_role="post_mlp_producer",
-            )
-            post_mlp_producer_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    post_mlp_producer_capture
-                )
-            )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_completed",
-                layer_index=layer_index,
-                capture_boundary="post_mlp_producer",
-                capture_sha256=post_mlp_producer_capture_sha256,
-            )
-            if planned_step.get(
-                "post_mlp_producer_capture_sha256"
-            ) != post_mlp_producer_capture_sha256:
-                raise Lfm2DynamicClosedLoopAdapterError(
+                selected_layer_indices=(layer_index,),
+                planned_capture_key="post_mlp_producer_capture_sha256",
+                recapture_error=(
                     "Moving-gauge MLP-producer recapture differs from the "
                     "causal preview."
-                )
-            del post_mlp_producer_capture
-            release_closed_loop_capture_memory()
+                ),
+                installed_sha256=(
+                    tuple(
+                        fingerprint_lfm2_moving_gauge_tensor(
+                            producer_parameters[value]
+                        )
+                        for value in mlp_ids
+                    )
+                    if fingerprint_verification
+                    else ()
+                ),
+                planned_sha256=(
+                    tuple(
+                        planned_step.get(
+                            "mlp_producer_replacement_weight_sha256",
+                            (),
+                        )
+                    )
+                    if fingerprint_verification
+                    else ()
+                ),
+                # Producer boundaries publish no writer sites, so the digest
+                # equality itself is the whole proof.
+                publication_matches=True,
+            )
             changed.update(
                 self._publish_moving_gauge_writer_replacements(
                     writer_sites,
@@ -11940,40 +12210,43 @@ class Lfm2DynamicClosedLoopAdapter:
                     (w2_id,),
                 )
             )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_started",
-                layer_index=layer_index,
-                capture_boundary="post_w2",
+            w2_installed, w2_planned = (
+                self._moving_gauge_installed_writer_fingerprints(
+                    writer_sites,
+                    causal_w2_replacements,
+                    {},
+                    (w2_id,),
+                )
+                if fingerprint_verification
+                else ((), ())
             )
-            post_w2_capture = self._body_internal_recapture(
-                fit_records,
-                audit,
-                selected_layer_indices=(
-                    min(layer_index + 1, len(self.child_layers) - 1),
-                ),
+            post_w2_capture_sha256 = _verify_install_boundary(
+                layer_index=layer_index,
+                planned_step=planned_step,
+                capture_boundary="post_w2",
                 body_internal_role=(
                     "terminal_receipt"
                     if layer_index + 1 == len(self.child_layers)
                     else "pre_operator"
                 ),
-            )
-            post_w2_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    post_w2_capture
-                )
-            )
-            self._emit_body_progress(
-                "moving_gauge_install_recapture_completed",
-                layer_index=layer_index,
-                capture_boundary="post_w2",
-                capture_sha256=post_w2_capture_sha256,
-            )
-            if planned_step.get(
-                "post_w2_capture_sha256"
-            ) != post_w2_capture_sha256:
-                raise Lfm2DynamicClosedLoopAdapterError(
+                selected_layer_indices=(
+                    min(layer_index + 1, len(self.child_layers) - 1),
+                ),
+                planned_capture_key="post_w2_capture_sha256",
+                recapture_error=(
                     "Moving-gauge W2 recapture differs from the causal preview."
-                )
+                ),
+                installed_sha256=w2_installed,
+                planned_sha256=w2_planned,
+                publication_matches=(
+                    not fingerprint_verification
+                    or self._moving_gauge_writer_publication_matches(
+                        writer_sites,
+                        {w2_id: causal_w2_replacements[w2_id]},
+                        {},
+                    )
+                ),
+            )
             installation_steps.append(
                 {
                     "layer_index": layer_index,
@@ -11992,11 +12265,77 @@ class Lfm2DynamicClosedLoopAdapter:
                     "post_w2_capture_sha256": (
                         post_w2_capture_sha256
                     ),
+                    "verification": (
+                        "replacement_weight_fingerprint"
+                        if fingerprint_verification
+                        else "capture_chain"
+                    ),
                 }
             )
             current_capture_sha256 = post_w2_capture_sha256
-            del post_w2_capture
+        install_verification_chain_sha256 = None
+        if fingerprint_verification:
+            # The one replay ``fingerprint`` keeps.  ``full-recapture`` already
+            # made this measurement as the last layer's ``post_w2`` boundary
+            # (same selected layer, same ``terminal_receipt`` role), and the
+            # preview sealed the very same digest as its
+            # ``final_preview_capture_sha256`` — so this is the end-to-end proof
+            # that the installed child is the previewed child, at 1 replay
+            # instead of 1 + 4L.
+            terminal_layer_index = len(self.child_layers) - 1
+            if not installation_steps or terminal_layer_index < 0:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Fingerprint install verification has no terminal boundary "
+                    "to prove."
+                )
+            expected_terminal_capture_sha256 = (
+                payload.causal_w2_step_receipts[-1].get(
+                    "post_w2_capture_sha256"
+                )
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=terminal_layer_index,
+                capture_boundary="terminal_receipt",
+            )
+            terminal_capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+                selected_layer_indices=(terminal_layer_index,),
+                body_internal_role="terminal_receipt",
+            )
+            terminal_capture_sha256 = (
+                self._authenticated_capture_sha256_and_release(
+                    terminal_capture
+                )
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=terminal_layer_index,
+                capture_boundary="terminal_receipt",
+                capture_sha256=terminal_capture_sha256,
+            )
+            del terminal_capture
             release_closed_loop_capture_memory()
+            if terminal_capture_sha256 != expected_terminal_capture_sha256:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge install terminal recapture differs from the "
+                    f"causal preview: the installed child replayed to "
+                    f"{terminal_capture_sha256} where the sealed preview "
+                    f"terminal capture is "
+                    f"{expected_terminal_capture_sha256}."
+                )
+            current_capture_sha256 = terminal_capture_sha256
+            install_verification_chain_sha256 = canonical_sha256(
+                {
+                    "schema": LFM2_INSTALL_FINGERPRINT_CHAIN_SCHEMA,
+                    "install_verification_mode": (
+                        self.install_verification_mode
+                    ),
+                    "groups": [dict(value) for value in fingerprint_chain],
+                    "terminal_capture_sha256": terminal_capture_sha256,
+                }
+            )
         expected_writer_final = {
             **{
                 name: value
@@ -12083,6 +12422,29 @@ class Lfm2DynamicClosedLoopAdapter:
                 "causal_installation_step_count": len(installation_steps),
                 "final_causal_recapture_sha256": current_capture_sha256,
                 "fresh_full_child_recapture_required": True,
+                # Every fingerprint-lane key is conditional, including the
+                # mode itself: the absence of install_verification_mode IS
+                # the full-recapture claim, and adding it unconditionally
+                # would move body_reclosure_sha256/run_sha256 for every
+                # existing default-mode run.  The chain digest is
+                # recomputable from the sealed causal steps, because every
+                # group digest it covers is the one install required the
+                # live publication to equal.
+                **(
+                    {}
+                    if not fingerprint_verification
+                    else {
+                        "install_verification_mode": (
+                            self.install_verification_mode
+                        ),
+                        "install_verification_chain_sha256": (
+                            install_verification_chain_sha256
+                        ),
+                        "install_fingerprint_group_count": len(
+                            fingerprint_chain
+                        ),
+                    }
+                ),
             },
         )
 
@@ -12275,7 +12637,13 @@ class Lfm2DynamicClosedLoopAdapter:
                         payload.causal_operator_parameter_ids
                     ),
                     "input_producer_reclosure_complete": True,
-                    "per_layer_causal_recapture_complete": True,
+                    # False under fingerprint install verification: the
+                    # per-layer captures were not re-derived, only the
+                    # publication and the terminal capture were proven.
+                    "per_layer_causal_recapture_complete": (
+                        self.install_verification_mode
+                        == LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+                    ),
                     "exact_unique_parameter_count": exact_count,
                     "performance_metrics_diagnostic_only": True,
                     "performance_metrics_are_decision_authority": False,
@@ -13442,6 +13810,9 @@ __all__ = [
     "LFM2_BODY_RECLOSURE_DISABLED",
     "LFM2_BODY_RECLOSURE_MODES",
     "LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3",
+    "LFM2_INSTALL_VERIFICATION_FINGERPRINT",
+    "LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE",
+    "LFM2_INSTALL_VERIFICATION_MODES",
     "LFM2_TRAJECTORY_PATH",
     "Lfm2DynamicClosedLoopAdapter",
     "Lfm2DynamicClosedLoopAdapterConfig",
