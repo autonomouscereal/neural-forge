@@ -29,8 +29,11 @@ import pytest
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_planner import (
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+    CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     NATIVE_CAUSAL_LAYER_BRANCH_METHODS,
+    NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
     NATIVE_RESIDUAL_CHART_INTERFACE_METHOD,
     DynamicFoldPlanner,
 )
@@ -41,6 +44,8 @@ torch = pytest.importorskip("torch")
 
 from neural_forge.dynamic_causal_operator_promotion import (  # noqa: E402
     KERNEL_SUPPORTS_ATTENTION_WINDOW,
+    BoundedGatedDeltaRecurrenceLayerOperator,
+    CompressedSummaryAttentionLayerOperator,
     DynamicCausalOperatorPromotionError,
     NativeFusedGatedMLPBranchOperator,
     NativeResidualChartInterfaceOperator,
@@ -62,6 +67,10 @@ from neural_forge.dynamic_native_circuit_evidence import (  # noqa: E402
     NativeResidualChart,
     capture_native_circuit_evidence,
     compile_native_residual_chart,
+)
+from neural_forge.hf_causal_kda_fold import ChimeraKDAFoldPolicy  # noqa: E402
+from neural_forge.hf_causal_sparse_latent_fold import (  # noqa: E402
+    ChimeraSparseLatentFoldPolicy,
 )
 
 
@@ -105,6 +114,22 @@ MEDIA_TOKENS = 16
 #: evidence.  ``banded_pair`` below uses a window that does bind.
 WINDOW = 32
 
+#: The whole-family crossing.  ``local`` alone is linear in the residual width,
+#: so 128 -> 32 is exactly 4x by construction.  Add ``csa``/``hca`` and that
+#: stops being true: their four summary projections are ``[hidden, hidden]``,
+#: which shrinks by sixteen while everything else shrinks by four, so no
+#: quarter-width child of a model containing them is ever exactly 4x.  This
+#: pair is the exact integer solution instead -- 128 -> 34 with *every other*
+#: geometry identical -- and it is a real solution, not a rounding: the counts
+#: below are asserted, not approximated.
+FAMILY_PARENT_WIDTH = 128
+FAMILY_CHILD_WIDTH = 34
+FAMILY_PARENT_PARAMETERS = 1_601_760
+FAMILY_CHILD_PARAMETERS = 400_440
+FAMILY_WINDOW = 8
+FAMILY_CSA_STRIDE = 4
+FAMILY_HCA_STRIDE = 8
+
 
 def _config(hidden_size: int, **changes):
     settings = {
@@ -132,6 +157,27 @@ def _config(hidden_size: int, **changes):
     config = chimera_config.ChimeraConfig(**settings)
     config.validate()
     return config
+
+
+def _family_config(hidden_size: int, **changes):
+    """One chimera trunk running every sequence-mixer family that folds."""
+
+    return _config(
+        hidden_size,
+        **{
+            "vocab_size": 1534,
+            "intermediate_size": 448,
+            "block_pattern": ("local", "kda", "csa", "hca"),
+            "kda_head_dim": 9,
+            "kda_value_head_dim": 8,
+            "kda_decay_rank": 4,
+            "kda_short_conv_kernel_size": 4,
+            "local_window": FAMILY_WINDOW,
+            "csa_compress_stride": FAMILY_CSA_STRIDE,
+            "hca_compress_stride": FAMILY_HCA_STRIDE,
+            **changes,
+        },
+    )
 
 
 def _model(config, seed: int):
@@ -172,9 +218,19 @@ class _AcceptStructuralCandidate:
 class _ChimeraFold:
     """One prepared chimera-omni plan plus everything it needs to execute."""
 
-    def __init__(self, *, window: int = WINDOW) -> None:
-        self.parent_config = _config(PARENT_WIDTH, local_window=window)
-        self.child_config = _config(CHILD_WIDTH, local_window=window)
+    def __init__(
+        self,
+        *,
+        window: int = WINDOW,
+        factory=_config,
+        parent_width: int = PARENT_WIDTH,
+        child_width: int = CHILD_WIDTH,
+        enabled_methods=NATIVE_CAUSAL_LAYER_BRANCH_METHODS,
+    ) -> None:
+        self.enabled_methods = tuple(enabled_methods)
+        self.parent_config = factory(parent_width, local_window=window)
+        self.child_config = factory(child_width, local_window=window)
+        self.child_width = int(child_width)
         self.parent = _model(self.parent_config, 20260804)
         self.child = _model(self.child_config, 4711)
         self.inputs = _batch(self.parent_config)
@@ -192,7 +248,7 @@ class _ChimeraFold:
             metadata={"test": "chimera-omni-4x-native-fold"},
         )
         self.chart = compile_native_residual_chart(
-            self.evidence, self.parent_graph, target_width=CHILD_WIDTH
+            self.evidence, self.parent_graph, target_width=self.child_width
         )
         self.recapture = NativeChildRecapture(self.inputs, forward=_forward)
         self.blank_state = {
@@ -201,7 +257,7 @@ class _ChimeraFold:
         }
         self.blank_fingerprint = fingerprint_model_state(self.child)
         self.plan = DynamicFoldPlanner(
-            enabled_experimental_method_ids=NATIVE_CAUSAL_LAYER_BRANCH_METHODS
+            enabled_experimental_method_ids=self.enabled_methods
         ).plan(
             (self.parent_graph,),
             self.child_graph,
@@ -235,6 +291,12 @@ class _ChimeraFold:
                     chart=chart, recapture=self.recapture
                 ),
                 NativeFusedGatedMLPBranchOperator(
+                    chart=chart, recapture=self.recapture
+                ),
+                BoundedGatedDeltaRecurrenceLayerOperator(
+                    chart=chart, recapture=self.recapture
+                ),
+                CompressedSummaryAttentionLayerOperator(
                     chart=chart, recapture=self.recapture
                 ),
                 NativeResidualChartInterfaceOperator(
@@ -740,3 +802,466 @@ def test_a_binding_window_folds_through_the_kernel_band_mask(
     assert fingerprint_model_state(banded_fold.child) == (
         banded_fold.blank_fingerprint
     )
+
+
+# ---------------------------------------------------------------------------
+# The whole chimera sequence-mixer family: local + kda + csa + hca + fused MLP.
+#
+# ``NOTES-W11B.md`` left the bounded gated delta recurrence and the compressed
+# summary attention as named planner gaps, and the coverage document said so.
+# These are the same proof as above -- planned, ledgered, rolled back, audited
+# -- for a parent that runs every one of those families in one trunk.
+# ---------------------------------------------------------------------------
+
+
+#: The receipt key each branch method reports its held-out endpoint under.
+FAMILY_ENDPOINT_KEYS = {
+    CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD: (
+        "validation_attention_delta_relative_rmse"
+    ),
+    CAUSAL_KDA_RECURRENT_BRANCH_METHOD: "validation_recurrence_delta_relative_rmse",
+    CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD: (
+        "validation_composite_delta_relative_rmse"
+    ),
+    CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD: "validation_mlp_delta_relative_rmse",
+}
+
+
+@pytest.fixture(scope="module")
+def family_fold() -> _ChimeraFold:
+    return _ChimeraFold(
+        window=FAMILY_WINDOW,
+        factory=_family_config,
+        parent_width=FAMILY_PARENT_WIDTH,
+        child_width=FAMILY_CHILD_WIDTH,
+        enabled_methods=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+    )
+
+
+@pytest.fixture(scope="module")
+def completed_family_run(family_fold: _ChimeraFold):
+    parent_forwards = 0
+
+    def counted(_module, _args, _output):
+        nonlocal parent_forwards
+        parent_forwards += 1
+
+    family_fold.restore_blank()
+    handle = family_fold.parent.register_forward_hook(counted)
+    try:
+        run = family_fold.execute(_AcceptStructuralCandidate())
+    finally:
+        handle.remove()
+    return run, parent_forwards
+
+
+def _family_reports(run, method_id: str) -> list[dict]:
+    return [
+        attempt.transaction_report
+        for attempt in run.attempts
+        if attempt.method_id == method_id
+    ]
+
+
+def test_the_family_plan_is_ready_with_zero_gaps_at_exactly_four_times(
+    family_fold: _ChimeraFold,
+) -> None:
+    assert family_fold.plan.ready
+    assert not family_fold.plan.gaps
+    assert family_fold.parent_graph.unique_parameter_count == FAMILY_PARENT_PARAMETERS
+    assert family_fold.child_graph.unique_parameter_count == FAMILY_CHILD_PARAMETERS
+    assert family_fold.parent_graph.unique_parameter_count == (
+        4 * family_fold.child_graph.unique_parameter_count
+    )
+
+    methods = [action.method_id for action in family_fold.plan.actions]
+    assert methods.count(CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 1
+    # One method id serves both csa and hca: they are the same
+    # ``SparseLatentAttention`` executable at two strides.
+    assert methods.count(CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD) == 2
+    assert methods.count(CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD) == 4
+    assert methods.count(NATIVE_RESIDUAL_CHART_INTERFACE_METHOD) == 14
+    assert methods.count("copy_exact") == 2
+
+    owned = [
+        path
+        for action in family_fold.plan.actions
+        for path in action.target_parameter_paths
+    ]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == set(family_fold.child_graph.parameter_paths)
+
+
+def test_the_family_fold_executes_completely_without_a_parent_forward(
+    family_fold: _ChimeraFold, completed_family_run
+) -> None:
+    run, parent_forwards = completed_family_run
+
+    assert run.status == "complete"
+    assert all(attempt.accepted for attempt in run.attempts)
+    assert parent_forwards == 0
+    assert run.observed_parent_root_forward_calls == 0
+    # The two new operators trace the parent's own recurrence and read its own
+    # weights, but they never call a parent module: every row they consume is a
+    # sealed module-boundary capture from the one forward taken before the run
+    # began.
+    assert run.observed_parent_module_forward_calls == 0
+    for name in (
+        "optimizer_constructions",
+        "optimizer_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "pruning_operations",
+        "quantization_operations",
+    ):
+        assert getattr(run, name) == 0
+    assert run.executed_fold_static_zero_training_audit_passed is True
+    assert set(run.completed_target_parameter_paths) == set(
+        family_fold.child_graph.parameter_paths
+    )
+
+    changed = [
+        path
+        for attempt in run.attempts
+        for path in attempt.transaction_report["changed_state_paths"]
+    ]
+    assert len(changed) == len(set(changed))
+    logits = family_fold.logits(family_fold.child)
+    assert tuple(logits.shape) == (
+        BATCH,
+        SEQUENCE,
+        family_fold.child_config.vocab_size,
+    )
+    assert bool(torch.isfinite(logits).all())
+
+
+def test_every_family_branch_beats_the_no_branch_baseline(
+    completed_family_run,
+) -> None:
+    run, _forwards = completed_family_run
+    counts = {
+        CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD: 1,
+        CAUSAL_KDA_RECURRENT_BRANCH_METHOD: 1,
+        CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD: 2,
+        CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD: 4,
+    }
+    for method_id, expected in counts.items():
+        reports = _family_reports(run, method_id)
+        assert len(reports) == expected
+        for report in reports:
+            endpoint = report[FAMILY_ENDPOINT_KEYS[method_id]]
+            assert 0.0 < endpoint < report[
+                "no_branch_endpoint_relative_rmse_baseline"
+            ]
+            assert report["selected_ridge"] in [
+                entry["ridge"] for entry in report["ridge_ladder"]
+            ]
+            assert report["parent_forward_calls"] == 0
+            assert report["numeric_weight_matching_objective"] is False
+
+
+def test_the_installed_child_reproduces_every_family_branch_endpoint(
+    family_fold: _ChimeraFold, completed_family_run
+) -> None:
+    """The number in the receipt is the number the installed child computes.
+
+    This is what makes the two new operators honest rather than plausible.  A
+    recurrence is not a linear map: if the class the KDA kernel replayed and the
+    class the child's ``KimiDeltaAttention`` runs differed anywhere -- a conv
+    tap, the decay chain, the gate -- twenty-four sequential steps would not
+    land on the same held-out endpoint.  Likewise a compressed-summary branch
+    whose stride or prepended zero summary were off by one would not.
+    """
+
+    run, _forwards = completed_family_run
+    assert run.status == "complete"
+    live = family_fold.recapture(family_fold.child, family_fold.child_graph)
+    _valid, _fit, _selection, validation = family_fold.evidence.token_masks()
+    flat_validation = validation.reshape(-1)
+
+    def endpoint(module_path: str) -> float:
+        installed = live.flat_rows(live.output(module_path))[flat_validation]
+        expected = family_fold.chart.encode(
+            family_fold.evidence.flat_rows(family_fold.evidence.output(module_path))
+        )[flat_validation]
+        difference = (installed - expected).square().mean().sqrt()
+        reference = expected.square().mean().sqrt().clamp_min(1e-30)
+        return float((difference / reference).item())
+
+    checked = 0
+    for attempt in run.attempts:
+        key = FAMILY_ENDPOINT_KEYS.get(attempt.method_id)
+        if key is None:
+            continue
+        report = attempt.transaction_report
+        index = int(report["target_node_id"].split(".")[1])
+        module = (
+            f"blocks.{index}.ffn"
+            if attempt.method_id == CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD
+            else f"blocks.{index}.mixer"
+        )
+        assert endpoint(module) == pytest.approx(report[key], rel=1e-5, abs=1e-9)
+        checked += 1
+    assert checked == 8
+
+
+def test_the_recurrence_receipt_carries_its_evidence_consistency_gates(
+    completed_family_run,
+) -> None:
+    run, _forwards = completed_family_run
+    (report,) = _family_reports(run, CAUSAL_KDA_RECURRENT_BRANCH_METHOD)
+
+    # The rows no module boundary emits are named as derived, and the gate that
+    # checks them is named too: the exact effective-weight unroll rebuilds the
+    # parent's cached pre-norm recurrent output from those derived rows.
+    assert report["captured_row_source"] == "sealed_native_module_boundary_capture"
+    assert "retention_rows" in report["derived_rows"]
+    assert "state_snapshots" in report["derived_rows"]
+    assert "unroll" in report["derived_row_consistency_gate"]
+    assert report["unroll_reconstruction_relative_rmse"] < 1e-6
+    # The carried depthwise taps reproduce the parent's own post-conv rows.
+    assert report["conv_tap_carry_relative_rmse"] < 1e-5
+    # More than one chunk boundary, so the state-drift gate can measure growth
+    # against the horizon at all.
+    assert len(report["state_snapshot_positions"]) > 1
+    assert len(report["state_snapshot_relative_rmse"]) == len(
+        report["state_snapshot_positions"]
+    )
+    assert report["state_snapshot_source"] == (
+        "parent_delta_rule_update_stepped_over_sealed_rows"
+    )
+    assert report["state_drift_growth_ratio"] <= 4.0
+    assert report["source_geometry"]["heads"] == report["target_geometry"]["heads"]
+    assert report["source_geometry"]["hidden_size"] == FAMILY_PARENT_WIDTH
+    assert report["target_geometry"]["hidden_size"] == FAMILY_CHILD_WIDTH
+    assert report["validation_residual_relative_rmse_bf16"] < 1.0
+
+
+def test_the_compressed_summary_receipt_separates_its_two_sub_branches(
+    completed_family_run,
+) -> None:
+    run, _forwards = completed_family_run
+    reports = _family_reports(run, CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD)
+    families = {report["mixer_family"]: report for report in reports}
+
+    assert set(families) == {"csa", "hca"}
+    assert families["csa"]["summary_stride"] == FAMILY_CSA_STRIDE
+    assert families["hca"]["summary_stride"] == FAMILY_HCA_STRIDE
+    for report in reports:
+        assert report["one_executable_for_csa_and_hca"] is True
+        assert report["method_id"] == CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD
+        assert report["local_window"] == FAMILY_WINDOW
+        # Two independently captured sub-branch values reconstruct the sealed
+        # branch write; the split is measured, not assumed.
+        assert report["split_reconstruction_relative_rmse"] < 1e-6
+        assert 0.0 < report["local_energy_fraction"] <= 1.0
+        assert 0.0 < report["summary_energy_fraction"] <= 1.0
+        # Per-sub-branch endpoints are reported separately, because the bounded
+        # alternation trades mass between them to serve the shared endpoint.
+        assert report["local_sub_branch_validation_relative_rmse"] > 0.0
+        assert report["summary_sub_branch_validation_relative_rmse"] > 0.0
+        assert report["score_chart_used"] is True
+        assert report["sub_branch_fit_coordinate_system"] == "parent_residual_width"
+        assert report["endpoint_gate_coordinate_system"] == "child_residual_width"
+        assert sorted(report["sub_branch_writers_transported_through_chart"]) == [
+            "local.out.weight",
+            "out.weight",
+        ]
+        assert report["summary_probability_overlap"] >= 0.25
+        # The kernel's no-branch floor is not a hypothetical here: on this
+        # crossing the unregularized rung of the ladder really does replay
+        # worse than writing nothing in BF16, the kernel refuses to emit a
+        # child at all, and the ladder records the refusal instead of the
+        # operator quietly taking it.
+        refusals = [
+            entry["kernel_refusal"]
+            for entry in report["ridge_ladder"]
+            if "kernel_refusal" in entry
+        ]
+        assert refusals
+        assert report["kernel_refused_ridge_rungs"] == len(refusals)
+        assert all("no-branch baseline" in value for value in refusals)
+
+
+def test_the_family_child_tracks_the_parent_where_a_blank_child_cannot(
+    family_fold: _ChimeraFold, completed_family_run
+) -> None:
+    run, _forwards = completed_family_run
+    assert run.status == "complete"
+    parent_top1 = family_fold.logits(family_fold.parent).argmax(dim=-1)
+    folded_top1 = family_fold.logits(family_fold.child).argmax(dim=-1)
+    blank = _model(family_fold.child_config, 4711)
+    blank.load_state_dict(family_fold.blank_state)
+    blank.eval()
+    blank_top1 = family_fold.logits(blank).argmax(dim=-1)
+
+    folded_agreement = float((parent_top1 == folded_top1).double().mean())
+    blank_agreement = float((parent_top1 == blank_top1).double().mean())
+    # A machinery proof, not a capability claim: the parent is untrained.
+    assert folded_agreement > 0.5
+    assert folded_agreement > blank_agreement + 0.25
+
+
+def test_a_rejected_recurrence_branch_rolls_the_family_run_back(
+    family_fold: _ChimeraFold,
+) -> None:
+    class _RejectTheRecurrence:
+        def evaluate(self, context: Any) -> FoldDecision:
+            if context.action.method_id == CAUSAL_KDA_RECURRENT_BRANCH_METHOD:
+                return FoldDecision.reject("Rejected for the rollback contract.")
+            return FoldDecision.accept("Accepted.")
+
+    family_fold.restore_blank()
+    run = family_fold.execute(_RejectTheRecurrence())
+
+    assert run.status == "rejected"
+    rejected = [attempt for attempt in run.attempts if not attempt.accepted]
+    assert len(rejected) == 1
+    assert rejected[0].method_id == CAUSAL_KDA_RECURRENT_BRANCH_METHOD
+    assert rejected[0].rollback_exact is True
+    # Every transaction accepted before the rejection is undone too, tensor for
+    # tensor -- including the whole first layer and the interface bundle.
+    assert fingerprint_model_state(family_fold.child) == family_fold.blank_fingerprint
+    for name, value in family_fold.child.state_dict().items():
+        assert torch.equal(value, family_fold.blank_state[name])
+    family_fold.restore_blank()
+
+
+def _refuse(family_fold: _ChimeraFold, operator, method_id: str):
+    action = next(
+        value for value in family_fold.plan.actions if value.method_id == method_id
+    )
+    before = fingerprint_model_state(family_fold.child)
+    with pytest.raises(
+        DynamicCausalOperatorPromotionError, match="no installable branch solve"
+    ) as error:
+        operator.prepare(
+            action,
+            family_fold.context,
+            FoldEvidence(
+                family_fold.evidence.cache_key,
+                family_fold.evidence,
+                channels=action.evidence_requirements,
+            ),
+        )
+    assert fingerprint_model_state(family_fold.child) == before
+    return str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("operator_class", "method_id", "policy", "measurement"),
+    (
+        (
+            BoundedGatedDeltaRecurrenceLayerOperator,
+            CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+            ChimeraKDAFoldPolicy(conv_carry_tolerance=1.0e-15),
+            "carried depthwise conv taps",
+        ),
+        (
+            CompressedSummaryAttentionLayerOperator,
+            CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+            ChimeraSparseLatentFoldPolicy(
+                minimum_summary_probability_overlap=0.999
+            ),
+            "block assignment",
+        ),
+    ),
+)
+def test_a_kernel_refusal_becomes_a_rejection_with_rollback(
+    family_fold: _ChimeraFold, operator_class, method_id, policy, measurement
+) -> None:
+    """A kernel that refuses to emit is a planner-visible failure, not a pass.
+
+    Both kernels carry the design's fail-closed thresholds in a sealed policy
+    and raise rather than emit a child when one is breached.  Tightening one of
+    those thresholds is the honest way to drive that path here: the kernel then
+    refuses on *every* ridge rung, and the operator has to surface it as its own
+    failure, carrying the kernel's own measurement in the message, and leave the
+    child bit-identical.
+    """
+
+    family_fold.restore_blank()
+    message = _refuse(
+        family_fold,
+        operator_class(
+            chart=family_fold.chart,
+            recapture=family_fold.recapture,
+            fold_policy=policy,
+        ),
+        method_id,
+    )
+    assert measurement in message
+    assert "ridge" in message
+
+
+def test_the_summary_kernel_refuses_a_branch_that_loses_to_writing_nothing(
+    family_fold: _ChimeraFold,
+) -> None:
+    """The design's 1.0 no-branch floor, exercised through the kernel itself.
+
+    A ridge ladder of one absurd rung crushes the compressed-summary solve to
+    almost nothing; the kernel's BF16 replay then lands at or above the
+    no-branch baseline and it refuses to emit a child at all.  The operator
+    surfaces that refusal by name.
+
+    The recurrence kernel enforces the same floor, but a ridge-collapsed KDA
+    solve lands *just under* it -- a huge ridge leaves the correlation
+    direction, which still beats writing nothing -- so its floor is not
+    reachable from the ridge axis and is covered by the policy case above
+    instead.  Saying so is more useful than inventing a rung that happens to
+    trip it.
+    """
+
+    family_fold.restore_blank()
+    message = _refuse(
+        family_fold,
+        CompressedSummaryAttentionLayerOperator(
+            chart=family_fold.chart,
+            recapture=family_fold.recapture,
+            ridge_ladder=(1.0e12,),
+        ),
+        CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+    )
+    assert "no-branch baseline" in message
+
+
+def test_a_recurrence_geometry_the_graph_does_not_declare_fails_closed(
+    family_fold: _ChimeraFold,
+) -> None:
+    """The IR is what was contracted; the live module is what will be folded.
+
+    If they disagree, the plan was approved for an operator that is not the one
+    about to run, so the transaction is refused before any mutation instead of
+    quietly trusting one of the two.
+    """
+
+    family_fold.restore_blank()
+    action = next(
+        value
+        for value in family_fold.plan.actions
+        if value.method_id == CAUSAL_KDA_RECURRENT_BRANCH_METHOD
+    )
+    operator = BoundedGatedDeltaRecurrenceLayerOperator(
+        chart=family_fold.chart, recapture=family_fold.recapture
+    )
+    mixer = family_fold.parent.get_submodule("blocks.1.mixer")
+    original = mixer.gate_lower_bound
+    mixer.gate_lower_bound = original - 1.0
+    before = fingerprint_model_state(family_fold.child)
+    try:
+        with pytest.raises(
+            DynamicCausalOperatorPromotionError, match="gate_lower_bound"
+        ):
+            operator.prepare(
+                action,
+                family_fold.context,
+                FoldEvidence(
+                    family_fold.evidence.cache_key,
+                    family_fold.evidence,
+                    channels=action.evidence_requirements,
+                ),
+            )
+    finally:
+        mixer.gate_lower_bound = original
+    assert fingerprint_model_state(family_fold.child) == before

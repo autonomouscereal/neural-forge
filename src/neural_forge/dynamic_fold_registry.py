@@ -1441,6 +1441,90 @@ def default_method_registry() -> FoldMethodRegistry:
             "projection or an undeclared layout fails closed.",
         ),
         _method(
+            "causal_kda_recurrent_layer",
+            "family_neutral_causal_bounded_gated_delta_recurrence_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("causal_kda_recurrent_branch",),
+            ("causal_kda_recurrent_branch",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "residual_branch_input",
+                "attention_norm_output",
+                "query_projection_output",
+                "key_projection_output",
+                "value_projection_output",
+                "short_conv_output_rows",
+                "decay_projection_output",
+                "write_strength_projection_output",
+                "output_gate_projection_output",
+                "recurrent_output_rows",
+                "recurrent_state_snapshots",
+                "recurrent_mixer_delta",
+                "depth_source_stack",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_bounded_gated_delta_recurrence_residual_write",
+                "bounded_gated_delta_recurrence_state",
+                "nope_position_transport",
+            ),
+            "Closed-form fold of one bounded gated delta-rule recurrence "
+            "branch: exact effective-weight unroll against the cached "
+            "recurrent output, barycentric head contraction, balanced-ranked "
+            "channel-aligned selection, inverse-chain decay/beta/gate ridges, "
+            "installed-recurrence replay and an endpoint-coupled writer. The "
+            "short-conv kernel size and the gate floor are contract constants; "
+            "a changed one, an inconsistent cache, a saturated inverse target, "
+            "a superlinear state drift or a validation endpoint at or above "
+            "the no-branch baseline fails closed.",
+        ),
+        _method(
+            "causal_summary_attention_layer",
+            "family_neutral_causal_compressed_summary_attention_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("causal_summary_attention_branch",),
+            ("causal_summary_attention_branch",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "residual_branch_input",
+                "attention_norm_output",
+                "local_sub_branch_delta",
+                "summary_sub_branch_delta",
+                "local_query_projection_output",
+                "local_key_projection_output",
+                "local_value_projection_output",
+                "summary_query_projection_output",
+                "summary_key_projection_output",
+                "summary_value_projection_output",
+                "compressed_summary_attention_delta",
+                "depth_source_stack",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_local_window_plus_compressed_summary_residual_write",
+                "local_window_and_compressed_summary_sub_branches",
+                "q_k_v_o",
+                "gqa_group",
+                "nope_position_transport",
+            ),
+            "Closed-form fold of one composite local-window plus "
+            "compressed-summary attention branch. One stride-parameterized "
+            "executable covers csa and hca: the sealed write is split exactly "
+            "into its two sub-branches, the local sub-branch folds through the "
+            "windowed NoPE GQA kernel and the summary sub-branch through a "
+            "score ridge, an installed-probability replay and an "
+            "endpoint-coupled value/output solve, under bounded alternation. "
+            "The window and the stride are contract constants; a change to "
+            "either, a split that does not reconstruct the sealed write, a "
+            "summary replay that abandons the parent's block assignment, or a "
+            "validation endpoint at or above the no-branch baseline fails "
+            "closed.",
+        ),
+        _method(
             "native_residual_chart_interface",
             "native_residual_chart_interface",
             MethodStatus.EXPERIMENTAL,

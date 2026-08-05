@@ -164,13 +164,36 @@ def _common_module_prefix(paths: Sequence[str]) -> str:
     return ".".join(shared)
 
 
+def _intermediate_module_paths(node_module: str, owner: str) -> tuple[str, ...]:
+    """Name every module strictly between one node's module and one owner."""
+
+    prefix = f"{node_module}."
+    if owner == node_module or not owner.startswith(prefix):
+        return ()
+    tail = owner[len(prefix):].split(".")
+    return tuple(
+        prefix + ".".join(tail[:index]) for index in range(1, len(tail))
+    )
+
+
 def native_capture_paths(graph: ModelCircuitGraph) -> tuple[str, ...]:
     """Name every module boundary this bundle observes, from the graph alone.
 
-    Two boundaries per parameterized node: the module that *owns* each tensor,
-    and the module that owns the node as a whole.  For a split-Q/K/V/O
-    attention node the second one is the attention module itself, which is the
-    only place the branch delta appears as a value.
+    Three classes of boundary per parameterized node, all read off the graph:
+
+    * the module that *owns* each tensor;
+    * the module that owns the node as a whole -- for a split-Q/K/V/O attention
+      node that is the attention module itself, which is the only place the
+      branch delta appears as a value;
+    * every module strictly *between* those two.
+
+    The third class is what makes a composite operator legible without knowing
+    what it is.  When one node owns a nested sub-module tree -- a sequence
+    mixer whose local sub-branch is a whole attention module, or a recurrence
+    whose short convolutions wrap their own ``Conv1d`` -- the intermediate
+    module is the only boundary at which that sub-branch's own value exists.
+    A node whose tensors are all direct children (every HF-shaped decoder layer
+    here) gains no path from this rule, so it is additive by construction.
     """
 
     if not isinstance(graph, ModelCircuitGraph):
@@ -182,7 +205,10 @@ def native_capture_paths(graph: ModelCircuitGraph) -> tuple[str, ...]:
             continue
         owners = tuple(_module_path(value) for value in parameter_paths)
         paths.update(owners)
-        paths.add(_common_module_prefix(owners))
+        node_module = _common_module_prefix(owners)
+        paths.add(node_module)
+        for owner in owners:
+            paths.update(_intermediate_module_paths(node_module, owner))
     return tuple(sorted(paths))
 
 

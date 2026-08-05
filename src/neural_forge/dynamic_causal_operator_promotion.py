@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,8 @@ from .dynamic_fold_planner import (
     CAUSAL_ATTENTION_BRANCH_METHOD,
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
     CAUSAL_GATED_MLP_BRANCH_METHOD,
+    CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     NATIVE_RESIDUAL_CHART_INTERFACE_METHOD,
     FoldAction,
@@ -61,7 +63,30 @@ from .hf_causal_cross_width_charts import (
 from .hf_causal_gqa_attention_fold import (
     HFCausalGQATopology,
     apply_rope,
+    causal_attention_probabilities,
     compile_hf_causal_gqa_attention_fold,
+)
+from .hf_causal_kda_fold import (
+    ChimeraKDAFoldPolicy,
+    ChimeraKDAGeometry,
+    ChimeraKDALayerEvidence,
+    HFCausalKDAFoldError,
+    chimera_kda_geometry,
+    chimera_kda_parameters,
+    compile_hf_causal_kda_fold,
+    kda_effective_weights,
+)
+from .hf_causal_sparse_latent_fold import (
+    ChimeraSparseLatentFoldPolicy,
+    ChimeraSparseLatentGeometry,
+    ChimeraSummaryAttentionLayerEvidence,
+    HFCausalSparseLatentFoldError,
+    chimera_sparse_latent_geometry,
+    compile_hf_causal_sparse_latent_fold,
+    split_summary_branch_delta,
+    summary_attention_probabilities,
+    summary_block_mask,
+    summary_pooling_matrix,
 )
 from .hf_closed_form_causal_circuit_fold import (
     fit_functional_swiglu,
@@ -3349,6 +3374,1344 @@ class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
         )
 
 
+# ---------------------------------------------------------------------------
+# chimera sequence-mixer families: the bounded gated delta recurrence (KDA) and
+# the composite local-window + compressed-summary attention (CSA/HCA).
+# ---------------------------------------------------------------------------
+
+#: Where the parent rows of each chimera family come from.  Every one of these
+#: is a *module boundary in the sealed one-forward bundle*, resolved from the
+#: node's own parameter roles rather than from a hard-coded attribute name, so
+#: an operator that cannot find one of them says which role is missing instead
+#: of reaching into the parent.
+_SEALED_ROW_SOURCE = "sealed_native_module_boundary_capture"
+#: Rows that no module boundary produces and that are therefore *derived* from
+#: captured rows and carried parent weights.  Naming them is the point: the
+#: kernel's own unroll gate then measures the derivation against a boundary the
+#: parent really did emit (the pre-norm recurrent output), so nothing here is
+#: asserted.
+_KDA_DERIVED_ROWS = (
+    "retention_rows",
+    "beta_rows",
+    "gate_rows",
+    "decay_logit_rows",
+    "state_snapshots",
+)
+_SUMMARY_DERIVED_ROWS = (
+    "raw_summaries",
+    "summary_scores",
+    "summary_probabilities",
+    "local_probabilities",
+)
+
+
+def _f64(value: Any) -> Any:
+    torch = _torch()
+    return value.detach().to(device="cpu", dtype=torch.float64)
+
+
+def _row_positions(batch: int, sequence: int) -> Any:
+    """Token positions for a kernel replay signature that still takes them.
+
+    Under the NoPE policy the rotary transport is the identity, so these are
+    inert; the kernel's signature keeps them because the same code path serves
+    a rotating topology.
+    """
+
+    torch = _torch()
+    return torch.arange(int(sequence)).reshape(1, -1).expand(int(batch), int(sequence))
+
+
+def _exact_role_parameter_path(node: Any, wanted: str, role: str) -> str:
+    """Resolve one tensor by the exact trailing component of its IR role.
+
+    :func:`_role_parameter_path` matches a substring, which is right when the
+    role names are disjoint.  A composite operator breaks that: a compressed
+    summary node owns both ``local.out`` and ``out``, so ``"out"`` names two
+    tensors.  This matches the role's last component exactly instead.
+    """
+
+    matches = tuple(
+        parameter.path
+        for parameter in node.parameters
+        if str(parameter.role).rpartition(".")[2] == wanted
+    )
+    if len(matches) != 1:
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} could not resolve exactly one {wanted!r} tensor on "
+            f"{node.node_id!r}; found {len(matches)}."
+        )
+    return matches[0]
+
+
+def _submodule(model: Any, module_path: str, role: str) -> Any:
+    try:
+        return model.get_submodule(module_path)
+    except (AttributeError, KeyError) as exc:
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} cannot resolve the module {module_path!r} the graph names."
+        ) from exc
+
+
+def _declared_matches_module(
+    attributes: Mapping[str, Any],
+    measured: Mapping[str, Any],
+    role: str,
+    side: str,
+) -> dict[str, Any]:
+    """Fail closed unless the IR's declared geometry is the live module's.
+
+    The IR is what the planner contracted against and the live module is what
+    the kernel will read.  If they disagree, the plan was approved for an
+    operator that is not the one about to be folded, so the transaction is
+    refused rather than silently trusting either source.
+    """
+
+    disagreements = {
+        name: (attributes.get(name), value)
+        for name, value in measured.items()
+        if attributes.get(name) != value
+    }
+    if disagreements:
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} refuses the {side} operator: the graph declares "
+            + ", ".join(
+                f"{name}={declared!r} but the live module reports {actual!r}"
+                for name, (declared, actual) in sorted(disagreements.items())
+            )
+            + "."
+        )
+    return dict(measured)
+
+
+class _ChimeraMixerBranchOperator(_NativeChartOperator):
+    """Shared fail-closed preamble for the two chimera sequence-mixer folds.
+
+    Both families install exactly the same shape of transaction: the branch's
+    input normalization plus every tensor of one mixer module, fitted from the
+    live child's own rows against the chart-projected parent write, inside one
+    snapshot.  What differs is the kernel in the middle, so only that is left
+    to the subclasses.
+
+    Two things these operators do that the local/dense pair does not:
+
+    * they **assemble a family evidence record** for their kernel out of the
+      sealed module-boundary bundle, reading no parent forward at all.  Rows a
+      module boundary really produced are used as captured; rows that no
+      boundary produces are derived from captured rows and carried parent
+      weights, named as derived in the receipt, and then checked by the
+      kernel's own evidence-consistency gate against a boundary the parent did
+      emit;
+    * they **surface the kernel's refusals**.  Both kernels enforce the design's
+      1.0 no-branch floor after a BF16 replay and refuse to emit a child on
+      breach.  Each rung of the ridge ladder records either its selection
+      endpoint or the kernel's refusal message, and a ladder on which every
+      rung refused fails the transaction closed with those messages rather than
+      installing anything.
+    """
+
+    #: Ridge-independent evidence-consistency gates run once, before the ladder,
+    #: so a genuinely inconsistent cache fails closed with the kernel's own
+    #: message instead of being reported as "no rung produced a finite solve".
+    evidence_gate_stage = "before_ridge_ladder"
+
+    def _branch_targets(
+        self,
+        target_nodes: Sequence[Any],
+        action: FoldAction,
+        role: str,
+        operator_kind: str,
+    ) -> tuple[Any, Any, str, str, str, tuple[Any, ...], tuple[str, ...]]:
+        """Resolve the target norm, the target mixer and the installed paths."""
+
+        target_operator = _single_node(
+            target_nodes, operator_kind, role, "target sequence mixer"
+        )
+        target_norm = _single_node(
+            target_nodes, CircuitKind.NORM.value, role, "target input norm"
+        )
+        norm_module = node_module_path(target_norm)
+        norm_path = _role_parameter_path(target_norm, "norm", role)
+        mixer_module = node_module_path(target_operator)
+        selectors = tuple(
+            node
+            for node in target_nodes
+            if node.kind == CircuitKind.RESIDUAL_ADD.value and tuple(node.parameters)
+        )
+        if len(selectors) > 1:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} admits at most one learned depth selector per branch."
+            )
+        selector_paths = tuple(
+            parameter.path for node in selectors for parameter in node.parameters
+        )
+        mixer_paths = tuple(target_operator.parameter_paths)
+        paths = _installed_paths(
+            action, (norm_path, *mixer_paths, *selector_paths), role
+        )
+        return (
+            target_operator,
+            target_norm,
+            norm_module,
+            norm_path,
+            mixer_module,
+            selectors,
+            paths,
+        )
+
+    def _child_installs(
+        self,
+        *,
+        child_state: Mapping[str, Any],
+        mixer_module: str,
+        target_operator: Any,
+        context: FoldExecutionContext,
+        role: str,
+    ) -> tuple[tuple[str, Any], ...]:
+        """Map a kernel's chimera-named child state onto the IR's own paths.
+
+        The kernels emit exactly the parameter names of the target module.  The
+        graph independently says which tensors that node owns.  Requiring the
+        two sets to be equal is the same assertion the kernel suites make
+        (``set(emitted) == set(child.state_dict())``) and it is what stops a
+        partially installed mixer from ever reaching the child.
+        """
+
+        installs = {
+            f"{mixer_module}.{name}": value for name, value in child_state.items()
+        }
+        declared = set(target_operator.parameter_paths)
+        if set(installs) != declared:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} kernel emitted {sorted(set(installs) - declared)!r} and "
+                f"omitted {sorted(declared - set(installs))!r} against the "
+                f"tensors {target_operator.node_id!r} owns."
+            )
+        for path, value in installs.items():
+            live = context.child_model.get_parameter(path)
+            if tuple(int(size) for size in value.shape) != tuple(
+                int(size) for size in live.shape
+            ):
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} compiled {path!r} with shape "
+                    f"{tuple(int(size) for size in value.shape)}, but the child "
+                    f"parameter is {tuple(int(size) for size in live.shape)}."
+                )
+        return tuple(sorted(installs.items()))
+
+    @staticmethod
+    def _ladder_rung(
+        ladder: list[dict[str, Any]],
+        candidate: float,
+        compile_rung: Any,
+        score_rung: Any,
+        refusals: tuple[type[Exception], ...],
+    ) -> tuple[Any, float] | None:
+        """Compile one ridge rung, recording a kernel refusal as a refusal."""
+
+        try:
+            fold = compile_rung(candidate)
+        except refusals as exc:
+            ladder.append({"ridge": candidate, "kernel_refusal": str(exc)})
+            return None
+        score = score_rung(fold)
+        ladder.append({"ridge": candidate, "selection_relative_rmse": score})
+        if not math.isfinite(score):
+            return None
+        return fold, score
+
+    def _select_over_ridge_ladder(
+        self,
+        *,
+        compile_rung: Any,
+        score_rung: Any,
+        refusals: tuple[type[Exception], ...],
+        role: str,
+    ) -> tuple[Any, float, float, list[dict[str, Any]]]:
+        ladder: list[dict[str, Any]] = []
+        selected = None
+        selected_ridge = None
+        selected_score = None
+        for candidate in self.ridge_ladder:
+            outcome = self._ladder_rung(
+                ladder, candidate, compile_rung, score_rung, refusals
+            )
+            if outcome is None:
+                continue
+            fold, score = outcome
+            if selected_score is None or score < selected_score:
+                selected, selected_ridge, selected_score = fold, candidate, score
+        if selected is None:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} found no installable branch solve on the selection "
+                "partition; every ridge rung either refused or was not finite: "
+                + "; ".join(
+                    f"ridge {entry['ridge']}: "
+                    + str(
+                        entry.get("kernel_refusal")
+                        or entry.get("selection_relative_rmse")
+                    )
+                    for entry in ladder
+                )
+            )
+        return selected, selected_ridge, selected_score, ladder
+
+
+class BoundedGatedDeltaRecurrenceLayerOperator(_ChimeraMixerBranchOperator):
+    """Install one bounded gated delta-rule recurrence branch (chimera KDA).
+
+    The executable is ``hf_causal_kda_fold.compile_hf_causal_kda_fold``: exact
+    effective-weight unroll, barycentric head contraction, balanced-ranked
+    channel-aligned selection, inverse-chain decay/beta/gate ridges, an
+    installed-recurrence replay and an endpoint-coupled writer, all closed form
+    (design section 1.1).  This operator's whole job is to hand that kernel a
+    real evidence record built from the sealed one-forward bundle and to make
+    its refusals planner-visible.
+
+    Where the parent rows come from, stated exactly:
+
+    * ``pre_conv_*`` are the captured outputs of the three input projections;
+    * ``query_rows`` / ``key_rows`` / ``value_rows`` are the captured outputs of
+      the three depthwise short-convolution modules -- the parent's real
+      post-convolution, post-SiLU rows -- with only the parent's own L2
+      normalization applied to the two key-side ones.  Fitting them from the
+      carried taps instead would make the kernel's conv-carry gate compare a
+      replay with itself;
+    * ``recurrent_output_rows`` is the captured *input* of the headwise output
+      norm, which is the only boundary at which ``o_t`` exists as a value;
+    * ``retention`` / ``beta`` / ``gate`` / ``decay logits`` are derived from
+      captured projection outputs and the carried decay parameters, because no
+      module boundary emits them.  The kernel's unroll gate then reconstructs
+      ``o_t`` from those derived rows and compares it against the captured
+      ``recurrent_output_rows``; a wrong derivation cannot survive that;
+    * ``state_snapshots`` are stepped with the parent's own static
+      ``delta_rule_update`` over those rows.  That is a method call on cached
+      tensors, not a module forward, so the fold still performs none.
+    """
+
+    method_id = CAUSAL_KDA_RECURRENT_BRANCH_METHOD
+    branch_id = "bounded_gated_delta_recurrence"
+
+    #: Chunk boundaries at which the parent and child recurrence states are
+    #: compared.  The design's state-drift gate needs more than one boundary to
+    #: measure growth against the horizon at all.
+    state_snapshot_stride = 8
+
+    def __init__(
+        self,
+        *,
+        state_snapshot_stride: int | None = None,
+        fold_policy: ChimeraKDAFoldPolicy | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        if state_snapshot_stride is not None:
+            self.state_snapshot_stride = _positive_int(
+                state_snapshot_stride, "state_snapshot_stride"
+            )
+        # The kernel's own sealed thresholds -- unroll and conv-carry
+        # tolerances, saturation and dispersion fractions, the state-drift cap.
+        # They are the design's fail-closed conditions, so they belong to the
+        # transaction and are sealed in its fingerprint; a caller may tighten
+        # them but never reaches past them.
+        self.fold_policy = fold_policy or ChimeraKDAFoldPolicy()
+        if not isinstance(self.fold_policy, ChimeraKDAFoldPolicy):
+            raise DynamicCausalOperatorPromotionError(
+                "fold_policy must be a ChimeraKDAFoldPolicy."
+            )
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "base": super().resource_fingerprint,
+                "state_snapshot_stride": int(self.state_snapshot_stride),
+                "fold_policy": self.fold_policy.as_dict(),
+            }
+        )
+
+    def _geometry(
+        self,
+        model: Any,
+        mixer_module: str,
+        attributes: Mapping[str, Any],
+        hidden_size: int,
+        role: str,
+        side: str,
+    ) -> tuple[Any, ChimeraKDAGeometry]:
+        module = _submodule(model, mixer_module, role)
+        try:
+            geometry = chimera_kda_geometry(module)
+        except HFCausalKDAFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot read the {side} bounded gated delta recurrence "
+                f"geometry: {exc}"
+            ) from exc
+        if geometry.hidden_size != hidden_size:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} {side} recurrence reads a residual width of "
+                f"{geometry.hidden_size}, not the chart's {hidden_size}."
+            )
+        _declared_matches_module(
+            attributes,
+            {
+                "heads": geometry.heads,
+                "key_head_dim": geometry.key_head_dim,
+                "value_head_dim": geometry.value_head_dim,
+                "decay_rank": geometry.decay_rank,
+                "internal_short_conv_kernel_size": geometry.conv_kernel_size,
+                "gate_lower_bound": geometry.gate_lower_bound,
+                "state_elements": geometry.heads
+                * geometry.key_head_dim
+                * geometry.value_head_dim,
+            },
+            role,
+            side,
+        )
+        return module, geometry
+
+    def _layer_evidence(
+        self,
+        *,
+        node: Any,
+        module: Any,
+        geometry: ChimeraKDAGeometry,
+        sealed: NativeCircuitEvidence,
+        norm_module: str,
+        mixer_module: str,
+        layer_index: int,
+        role: str,
+    ) -> ChimeraKDALayerEvidence:
+        torch = _torch()
+
+        def rows(path: str) -> Any:
+            if not sealed.has(path):
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} needs the sealed module boundary {path!r}; the "
+                    "parent bundle does not carry it."
+                )
+            capture = sealed.capture(path)
+            if capture.call_count != 1:
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} refuses {path!r}: it ran {capture.call_count} times "
+                    "in the sealed forward, so 'the' cached rows are ambiguous."
+                )
+            return sealed.output(path)
+
+        def module_of(wanted: str) -> str:
+            return owning_module_path(
+                _exact_role_parameter_path(node, wanted, role)
+            )
+
+        def heads(value: Any, width: int) -> Any:
+            return value.reshape(
+                int(value.shape[0]), int(value.shape[1]), geometry.heads, width
+            )
+
+        def normalize(value: Any) -> Any:
+            return value / value.square().sum(dim=-1, keepdim=True).clamp_min(
+                1e-30
+            ).sqrt()
+
+        pre_conv_query = rows(module_of("q_proj_weight"))
+        pre_conv_key = rows(module_of("k_proj_weight"))
+        pre_conv_value = rows(module_of("v_proj_weight"))
+        # ``q_conv``/``k_conv``/``v_conv`` wrap their own ``Conv1d``; the wrapper
+        # is the boundary whose output is post-convolution and post-SiLU in the
+        # trunk's own row layout.
+        query_rows = normalize(
+            heads(
+                rows(owning_module_path(module_of("q_conv_conv_weight"))),
+                geometry.key_head_dim,
+            )
+        )
+        key_rows = normalize(
+            heads(
+                rows(owning_module_path(module_of("k_conv_conv_weight"))),
+                geometry.key_head_dim,
+            )
+        )
+        value_rows = heads(
+            rows(owning_module_path(module_of("v_conv_conv_weight"))),
+            geometry.value_head_dim,
+        )
+        decay_bias = _f64(module.decay_bias).reshape(
+            1, 1, geometry.heads, geometry.key_head_dim
+        )
+        decay_logits = heads(
+            rows(module_of("decay_up_weight")), geometry.key_head_dim
+        ) + decay_bias
+        scale = _f64(module.decay_log_scale).exp().reshape(1, 1, geometry.heads, 1)
+        retention = torch.exp(
+            geometry.gate_lower_bound * torch.sigmoid(scale * decay_logits)
+        )
+        beta = torch.sigmoid(rows(module_of("write_strength_weight")))
+        gate = torch.sigmoid(
+            heads(rows(module_of("output_gate_weight")), geometry.value_head_dim)
+        )
+        recurrent = sealed.input(module_of("output_norm_weight"))
+        if tuple(int(size) for size in recurrent.shape[2:]) != (
+            geometry.heads,
+            geometry.value_head_dim,
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} captured a headwise output-norm input of shape "
+                f"{tuple(int(size) for size in recurrent.shape)}, which is not "
+                "the recurrence output this geometry predicts."
+            )
+        delta = rows(mixer_module)
+        block_input = sealed.input(norm_module)
+        update = getattr(module, "delta_rule_update", None)
+        if not callable(update):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} needs the parent's own delta_rule_update to trace its "
+                "recurrence state; the module does not expose one."
+            )
+        batch, sequence = int(delta.shape[0]), int(delta.shape[1])
+        state = torch.zeros(
+            batch,
+            geometry.heads,
+            geometry.key_head_dim,
+            geometry.value_head_dim,
+            dtype=torch.float64,
+        )
+        snapshots = []
+        positions = []
+        stride = int(self.state_snapshot_stride)
+        for position in range(sequence):
+            state = update(
+                state,
+                key_rows[:, position],
+                value_rows[:, position],
+                retention[:, position],
+                beta[:, position],
+            )
+            if position == sequence - 1 or (position + 1) % stride == 0:
+                snapshots.append(state.clone())
+                positions.append(position)
+        try:
+            return ChimeraKDALayerEvidence(
+                index=int(layer_index),
+                block_input=block_input,
+                attention_norm_output=rows(norm_module),
+                pre_conv_query=pre_conv_query,
+                pre_conv_key=pre_conv_key,
+                pre_conv_value=pre_conv_value,
+                query_rows=query_rows,
+                key_rows=key_rows,
+                value_rows=value_rows,
+                retention_rows=retention,
+                decay_logit_rows=decay_logits,
+                beta_rows=beta,
+                recurrent_output_rows=recurrent,
+                gate_rows=gate,
+                attention_delta=delta,
+                block_output=block_input + delta,
+                state_snapshots=torch.stack(snapshots, dim=0),
+                state_snapshot_positions=tuple(positions),
+                geometry=geometry,
+                metadata={
+                    "schema": SCHEMA,
+                    "component": "chimera_kda_evidence_from_sealed_module_boundaries",
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                    "optimizer_steps": 0,
+                    "backward_calls": 0,
+                    "captured_row_source": _SEALED_ROW_SOURCE,
+                    "derived_rows": list(_KDA_DERIVED_ROWS),
+                    "state_snapshot_stride": stride,
+                },
+            )
+        except HFCausalKDAFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} could not assemble a KDA evidence record from the "
+                f"sealed bundle: {exc}"
+            ) from exc
+
+    def prepare(
+        self,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        evidence: FoldEvidence,
+    ) -> CausalBranchFoldTransaction:
+        role = "Bounded gated delta recurrence layer operator"
+        sealed, parent_graph, source_nodes, target_nodes = self._bind(
+            action, context, evidence, role
+        )
+        source_operator = _single_node(
+            source_nodes,
+            CircuitKind.RECURRENT_MIXER.value,
+            role,
+            "source recurrent mixer",
+        )
+        (
+            target_operator,
+            _target_norm,
+            norm_module,
+            norm_path,
+            mixer_module,
+            selectors,
+            paths,
+        ) = self._branch_targets(
+            target_nodes, action, role, CircuitKind.RECURRENT_MIXER.value
+        )
+        source_mixer_module = node_module_path(source_operator)
+        if source_mixer_module != mixer_module:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} source and target mixer modules differ: "
+                f"{source_mixer_module!r} against {mixer_module!r}."
+            )
+        parent_model = context.parent_models[action.sources[0].parent_name]
+        source_module, source_geometry = self._geometry(
+            parent_model,
+            mixer_module,
+            dict(source_operator.attributes),
+            self.chart.source_width,
+            role,
+            "source",
+        )
+        _target_module, target_geometry = self._geometry(
+            context.child_model,
+            mixer_module,
+            dict(target_operator.attributes),
+            self.chart.target_width,
+            role,
+            "target",
+        )
+        try:
+            parameters = chimera_kda_parameters(
+                source_module, geometry=source_geometry
+            )
+        except HFCausalKDAFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot carry the parent recurrence parameters: {exc}"
+            ) from exc
+        valid, fit, selection, validation = sealed.token_masks()
+        layer_evidence = self._layer_evidence(
+            node=source_operator,
+            module=source_module,
+            geometry=source_geometry,
+            sealed=sealed,
+            norm_module=norm_module,
+            mixer_module=mixer_module,
+            layer_index=int(target_operator.layer_index or 0),
+            role=role,
+        )
+        policy = self.fold_policy
+        try:
+            # The evidence-consistency gate is ridge-independent, so it runs
+            # once, here, and a breach fails closed with the kernel's own
+            # measurement instead of being reported as a bad ridge.
+            unroll = kda_effective_weights(
+                layer_evidence,
+                row_mask=valid,
+                tolerance=policy.unroll_reconstruction_tolerance,
+            )
+        except HFCausalKDAFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses this branch: the sealed evidence is not "
+                f"consistent with a bounded gated delta recurrence -- {exc}"
+            ) from exc
+        incumbent = context.child_state_fingerprint
+        snapshot = _capture(context, paths, self.snapshot_config)
+        try:
+            selector_report: dict[str, Any] = {"depth_selector_present": bool(selectors)}
+            if selectors:
+                live = self._recapture_child(context, role)
+                installs, selector_report = self._depth_selector_installs(
+                    selector=selectors[0],
+                    parent_model=parent_model,
+                    child_model=context.child_model,
+                    sealed=sealed,
+                    live=live,
+                    role=role,
+                )
+                selector_report["depth_selector_present"] = True
+                _install(context, installs)
+            live = self._recapture_child(context, role)
+            epsilon = _norm_epsilon(context.child_model, norm_module, role)
+            branch_input = live.input(norm_module)
+            branch_normalized_target = self.chart.encode(sealed.output(norm_module))
+            norm_fold = fit_rmsnorm_diagonal(
+                _masked_rows(branch_input, fit),
+                _masked_rows(branch_normalized_target, fit),
+                epsilon=epsilon,
+                ridge=self.ridge,
+            )
+            normalized = _rmsnorm(branch_input, norm_fold.weight, epsilon)
+            branch_delta_target = self.chart.encode(layer_evidence.attention_delta)
+
+            def compile_rung(candidate: float) -> Any:
+                return compile_hf_causal_kda_fold(
+                    layer_evidence,
+                    parameters,
+                    target_geometry,
+                    fit_token_mask=fit,
+                    validation_token_mask=validation,
+                    valid_token_mask=valid,
+                    child_normalized_rows=normalized,
+                    endpoint_target=branch_delta_target,
+                    policy=replace(policy, ridge=candidate),
+                    unroll=unroll,
+                )
+
+            def score_rung(fold: Any) -> float:
+                replayed, _recurrent, _snapshots = fold.replay(normalized)
+                return _relative_rmse(
+                    _masked_rows(replayed, selection),
+                    _masked_rows(branch_delta_target, selection),
+                )
+
+            (
+                kda_fold,
+                selected_ridge,
+                selection_endpoint,
+                ladder,
+            ) = self._select_over_ridge_ladder(
+                compile_rung=compile_rung,
+                score_rung=score_rung,
+                refusals=(HFCausalKDAFoldError,),
+                role=role,
+            )
+            delta, _recurrent, _snapshots = kda_fold.replay(normalized)
+            endpoint = self._require_endpoint(
+                _relative_rmse(
+                    _masked_rows(delta, validation),
+                    _masked_rows(branch_delta_target, validation),
+                ),
+                role,
+                "validation recurrence-delta relative RMSE",
+            )
+            receipt = dict(kda_fold.report)
+            installs = self._child_installs(
+                child_state=kda_fold.child_state_dict(),
+                mixer_module=mixer_module,
+                target_operator=target_operator,
+                context=context,
+                role=role,
+            )
+            report = {
+                **_fold_only_operation_audit(),
+                **selector_report,
+                "schema": SCHEMA,
+                "kind": "native_bounded_gated_delta_recurrence_branch",
+                "method_id": self.method_id,
+                "source_family": parent_graph.family,
+                "target_family": context.child_graph.family,
+                "source_node_id": source_operator.node_id,
+                "target_node_id": target_operator.node_id,
+                "cached_parent_evidence_sha256": sealed.cache_key,
+                "residual_chart_sha256": self.chart.map_sha256,
+                "residual_chart_source_width": self.chart.source_width,
+                "residual_chart_target_width": self.chart.target_width,
+                "per_boundary_chart_set": False,
+                "position_policy": "nope",
+                "source_geometry": source_geometry.as_dict(),
+                "target_geometry": target_geometry.as_dict(),
+                "captured_row_source": _SEALED_ROW_SOURCE,
+                "derived_rows": list(_KDA_DERIVED_ROWS),
+                "derived_row_consistency_gate": (
+                    "kda_effective_weight_unroll_against_the_captured_"
+                    "pre_norm_recurrent_output"
+                ),
+                "unroll_reconstruction_relative_rmse": unroll.relative_rmse,
+                "unroll_report_sha256": unroll.diagnostics["report_sha256"],
+                "conv_tap_carry_relative_rmse": receipt["conv_tap_carry_relative_rmse"],
+                "state_snapshot_stride": int(self.state_snapshot_stride),
+                "kernel_fold_policy": policy.as_dict(),
+                "state_snapshot_positions": receipt["state_snapshot_positions"],
+                "state_snapshot_relative_rmse": receipt["state_snapshot_relative_rmse"],
+                "state_drift_growth_ratio": receipt["state_drift_growth_ratio"],
+                "state_drift_gate_applicable": receipt["state_drift_gate_applicable"],
+                "state_snapshot_source": (
+                    "parent_delta_rule_update_stepped_over_sealed_rows"
+                ),
+                "input_norm_report_sha256": norm_fold.report["report_sha256"],
+                "recurrence_report_sha256": receipt["report_sha256"],
+                "installed_parameter_paths": list(paths),
+                "child_recaptures": int(getattr(self.recapture, "calls", 0)),
+                "selected_ridge": selected_ridge,
+                "ridge_ladder": ladder,
+                "kernel_refused_ridge_rungs": sum(
+                    1 for entry in ladder if "kernel_refusal" in entry
+                ),
+                "selection_endpoint_relative_rmse": selection_endpoint,
+                "no_branch_endpoint_relative_rmse_baseline": (
+                    self.no_branch_endpoint_relative_rmse_baseline
+                ),
+                "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
+                "validation_recurrence_delta_relative_rmse": endpoint,
+                "validation_residual_relative_rmse_bf16": receipt[
+                    "validation_residual_relative_rmse_bf16"
+                ],
+                "parent_residual_coordinate_endpoints": False,
+                "sequential_child_replay": True,
+                "numeric_weight_matching_objective": False,
+                "zero_gradient": True,
+            }
+            _install(context, (*installs, (norm_path, norm_fold.weight)))
+            candidate = context.child_state_fingerprint
+        except BaseException:
+            try:
+                snapshot.restore(_live_parameters(context, paths))
+            finally:
+                snapshot.cleanup()
+            raise
+        return CausalBranchFoldTransaction(
+            method_id=self.method_id,
+            context=context,
+            snapshot=snapshot,
+            installed_paths=paths,
+            incumbent_state_fingerprint=incumbent,
+            candidate_state_fingerprint=candidate,
+            report=report,
+        )
+
+
+class CompressedSummaryAttentionLayerOperator(_ChimeraMixerBranchOperator):
+    """Install one composite local-window plus compressed-summary branch.
+
+    One executable covers ``csa`` and ``hca``:
+    ``hf_causal_sparse_latent_fold.compile_hf_causal_sparse_latent_fold`` is
+    parameterized by the summary stride, and the stride is read off the IR node
+    rather than off a method id.  A stride change is refused by the kernel as a
+    kind translation, and the planner refuses it first, so the two families can
+    never be folded into one another by accident.
+
+    The evidence record is assembled from the sealed one-forward bundle with no
+    parent forward:
+
+    * ``local_delta`` is the captured output of the nested local-attention
+      module and ``summary_delta`` the captured output of the summary writer,
+      so the kernel's split gate compares two independently captured values
+      against the captured branch write rather than against their own sum;
+    * the six projection row sets are the captured outputs of the six
+      projections, and the summary key/value rows already carry the parent's
+      prepended zero summary because they were captured downstream of it;
+    * the pooled summaries and both probability tensors are recomputed with the
+      kernel's own pooling and softmax helpers, which are the parent's operators
+      and are asserted to be so in the kernel's suite.
+    """
+
+    method_id = CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD
+    branch_id = "compressed_summary_attention"
+
+    def __init__(
+        self,
+        *,
+        fold_policy: ChimeraSparseLatentFoldPolicy | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        # The kernel's own sealed thresholds: the sub-branch split tolerance,
+        # the minimum summary probability overlap, and the alternation budget.
+        self.fold_policy = fold_policy or ChimeraSparseLatentFoldPolicy()
+        if not isinstance(self.fold_policy, ChimeraSparseLatentFoldPolicy):
+            raise DynamicCausalOperatorPromotionError(
+                "fold_policy must be a ChimeraSparseLatentFoldPolicy."
+            )
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "base": super().resource_fingerprint,
+                "fold_policy": self.fold_policy.as_dict(),
+            }
+        )
+
+    def _transported_child_state(
+        self,
+        *,
+        child_state: Mapping[str, Any],
+        mixer_module: str,
+        context: FoldExecutionContext,
+        role: str,
+    ) -> tuple[dict[str, Any], tuple[str, ...]]:
+        """Carry the sub-branch writers into the child's residual coordinates.
+
+        The kernel fits both sub-branches against the parent's own sub-branch
+        deltas, because that is where its split gate captured them, so both
+        writers come back mapping into the *parent* residual width.  Each of
+        them is the last linear map in its sub-branch, so
+
+            ``context @ (E^T W)^T == (context @ W^T) @ E``
+
+        holds identically: transporting the writer is the same thing as
+        projecting the sub-branch's output, exactly, with no second fit.  Every
+        other emitted tensor must already match the child parameter it names,
+        and anything that matches neither shape fails closed rather than being
+        reshaped into place.
+        """
+
+        transported: dict[str, Any] = {}
+        folded: list[str] = []
+        for name, value in child_state.items():
+            path = f"{mixer_module}.{name}"
+            try:
+                live = context.child_model.get_parameter(path)
+            except AttributeError as exc:
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} kernel emitted {name!r}, which the child module "
+                    "does not own."
+                ) from exc
+            shape = tuple(int(size) for size in value.shape)
+            wanted = tuple(int(size) for size in live.shape)
+            if shape == wanted:
+                transported[name] = value
+                continue
+            if (
+                len(shape) == 2
+                and shape[0] == self.chart.source_width
+                and wanted == (self.chart.target_width, shape[1])
+            ):
+                transported[name] = self.chart.fold_producer_weight(value)
+                folded.append(name)
+                continue
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot place the compiled {name!r} of shape {shape} "
+                f"into the child parameter of shape {wanted}."
+            )
+        return transported, tuple(sorted(folded))
+
+    def _geometry(
+        self,
+        model: Any,
+        mixer_module: str,
+        attributes: Mapping[str, Any],
+        hidden_size: int,
+        role: str,
+        side: str,
+    ) -> tuple[Any, ChimeraSparseLatentGeometry]:
+        module = _submodule(model, mixer_module, role)
+        family = attributes.get("mixer_family")
+        if family not in {"csa", "hca"}:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses the {side} operator: it declares "
+                f"mixer_family={family!r}, which is neither csa nor hca."
+            )
+        try:
+            geometry = chimera_sparse_latent_geometry(module, family=str(family))
+        except HFCausalSparseLatentFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot read the {side} compressed-summary geometry: "
+                f"{exc}"
+            ) from exc
+        if geometry.hidden_size != hidden_size:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} {side} mixer reads a residual width of "
+                f"{geometry.hidden_size}, not the chart's {hidden_size}."
+            )
+        _declared_matches_module(
+            attributes,
+            {
+                "query_heads": geometry.query_heads,
+                "key_value_heads": geometry.key_value_heads,
+                "head_dim": geometry.head_dim,
+                "local_window": geometry.local_window,
+                "summary_stride": geometry.summary_stride,
+                "mixer_family": geometry.family,
+            },
+            role,
+            side,
+        )
+        return module, geometry
+
+    def _layer_evidence(
+        self,
+        *,
+        node: Any,
+        geometry: ChimeraSparseLatentGeometry,
+        sealed: NativeCircuitEvidence,
+        norm_module: str,
+        mixer_module: str,
+        layer_index: int,
+        valid: Any,
+        role: str,
+    ) -> ChimeraSummaryAttentionLayerEvidence:
+        torch = _torch()
+
+        def rows(path: str) -> Any:
+            if not sealed.has(path):
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} needs the sealed module boundary {path!r}; the "
+                    "parent bundle does not carry it."
+                )
+            capture = sealed.capture(path)
+            if capture.call_count != 1:
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} refuses {path!r}: it ran {capture.call_count} times "
+                    "in the sealed forward, so 'the' cached rows are ambiguous."
+                )
+            return sealed.output(path)
+
+        def module_of(wanted: str) -> str:
+            return owning_module_path(
+                _exact_role_parameter_path(node, wanted, role)
+            )
+
+        local_module = owning_module_path(module_of("local_q_proj_weight"))
+        normalized = rows(norm_module)
+        batch, sequence = int(normalized.shape[0]), int(normalized.shape[1])
+        local_delta = rows(local_module)
+        summary_delta = rows(module_of("out_weight"))
+        attention_delta = rows(mixer_module)
+        pooling = summary_pooling_matrix(sequence, geometry.summary_stride)
+        summaries = torch.matmul(pooling.reshape(1, *pooling.shape), normalized)
+        summary_query = rows(module_of("summary_q_weight"))
+        summary_key = rows(module_of("summary_k_weight"))
+        summary_value = rows(module_of("summary_v_weight"))
+        scores, probabilities = summary_attention_probabilities(
+            summary_query,
+            summary_key,
+            block_mask=summary_block_mask(sequence, geometry.summary_stride),
+            scaling=geometry.summary_scaling,
+        )
+        local_query = rows(module_of("local_q_proj_weight"))
+        local_key = rows(module_of("local_k_proj_weight"))
+        local_value = rows(module_of("local_v_proj_weight"))
+        topology = geometry.local_topology()
+
+        def per_head(flat: Any, count: int) -> Any:
+            return (
+                flat.reshape(batch, sequence, count, geometry.head_dim)
+                .permute(0, 2, 1, 3)
+                .contiguous()
+            )
+
+        _local_scores, local_probabilities = causal_attention_probabilities(
+            per_head(local_query, geometry.query_heads),
+            per_head(local_key, geometry.key_value_heads),
+            attention_mask=valid,
+            scaling=topology.attention_scaling,
+            attention_window=topology.attention_window,
+        )
+        block_input = sealed.input(norm_module)
+        try:
+            return ChimeraSummaryAttentionLayerEvidence(
+                index=int(layer_index),
+                block_input=block_input,
+                attention_norm_output=normalized,
+                local_delta=local_delta,
+                summary_delta=summary_delta,
+                attention_delta=attention_delta,
+                block_output=block_input + attention_delta,
+                local_query_rows=local_query,
+                local_key_rows=local_key,
+                local_value_rows=local_value,
+                local_probabilities=local_probabilities,
+                raw_summaries=summaries[:, 1:].contiguous(),
+                summary_query_rows=summary_query,
+                summary_key_rows=summary_key,
+                summary_value_rows=summary_value,
+                summary_scores=scores,
+                summary_probabilities=probabilities,
+                block_ids=tuple(
+                    position // geometry.summary_stride for position in range(sequence)
+                ),
+                geometry=geometry,
+                metadata={
+                    "schema": SCHEMA,
+                    "component": (
+                        "chimera_sparse_latent_evidence_from_sealed_module_boundaries"
+                    ),
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                    "optimizer_steps": 0,
+                    "backward_calls": 0,
+                    "captured_row_source": _SEALED_ROW_SOURCE,
+                    "derived_rows": list(_SUMMARY_DERIVED_ROWS),
+                },
+            )
+        except HFCausalSparseLatentFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} could not assemble a compressed-summary evidence "
+                f"record from the sealed bundle: {exc}"
+            ) from exc
+
+    def prepare(
+        self,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        evidence: FoldEvidence,
+    ) -> CausalBranchFoldTransaction:
+        role = "Compressed summary attention layer operator"
+        sealed, parent_graph, source_nodes, target_nodes = self._bind(
+            action, context, evidence, role
+        )
+        source_operator = _single_node(
+            source_nodes, CircuitKind.ATTENTION.value, role, "source attention"
+        )
+        (
+            target_operator,
+            _target_norm,
+            norm_module,
+            norm_path,
+            mixer_module,
+            selectors,
+            paths,
+        ) = self._branch_targets(
+            target_nodes, action, role, CircuitKind.ATTENTION.value
+        )
+        source_mixer_module = node_module_path(source_operator)
+        if source_mixer_module != mixer_module:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} source and target mixer modules differ: "
+                f"{source_mixer_module!r} against {mixer_module!r}."
+            )
+        parent_model = context.parent_models[action.sources[0].parent_name]
+        _source_module, source_geometry = self._geometry(
+            parent_model,
+            mixer_module,
+            dict(source_operator.attributes),
+            self.chart.source_width,
+            role,
+            "source",
+        )
+        _target_module, target_geometry = self._geometry(
+            context.child_model,
+            mixer_module,
+            dict(target_operator.attributes),
+            self.chart.target_width,
+            role,
+            "target",
+        )
+        if (
+            source_geometry.summary_stride != target_geometry.summary_stride
+            or source_geometry.local_window != target_geometry.local_window
+            or source_geometry.family != target_geometry.family
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses a stride, window or family change: "
+                f"{source_geometry.as_dict()} against "
+                f"{target_geometry.as_dict()}. Both are contract constants, not "
+                "fold coordinates."
+            )
+        valid, fit, selection, validation = sealed.token_masks()
+        layer_evidence = self._layer_evidence(
+            node=source_operator,
+            geometry=source_geometry,
+            sealed=sealed,
+            norm_module=norm_module,
+            mixer_module=mixer_module,
+            layer_index=int(target_operator.layer_index or 0),
+            valid=valid,
+            role=role,
+        )
+        policy = self.fold_policy
+        try:
+            # Ridge-independent, so the sub-branch split gate runs once and a
+            # breach fails closed with the kernel's own measurement.
+            split = split_summary_branch_delta(
+                layer_evidence,
+                row_mask=valid,
+                tolerance=policy.split_reconstruction_tolerance,
+            )
+        except HFCausalSparseLatentFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses this branch: the captured local and summary "
+                f"sub-branches do not reconstruct the sealed write -- {exc}"
+            ) from exc
+        incumbent = context.child_state_fingerprint
+        snapshot = _capture(context, paths, self.snapshot_config)
+        try:
+            selector_report: dict[str, Any] = {"depth_selector_present": bool(selectors)}
+            if selectors:
+                live = self._recapture_child(context, role)
+                installs, selector_report = self._depth_selector_installs(
+                    selector=selectors[0],
+                    parent_model=parent_model,
+                    child_model=context.child_model,
+                    sealed=sealed,
+                    live=live,
+                    role=role,
+                )
+                selector_report["depth_selector_present"] = True
+                _install(context, installs)
+            live = self._recapture_child(context, role)
+            epsilon = _norm_epsilon(context.child_model, norm_module, role)
+            branch_input = live.input(norm_module)
+            branch_normalized_target = self.chart.encode(sealed.output(norm_module))
+            norm_fold = fit_rmsnorm_diagonal(
+                _masked_rows(branch_input, fit),
+                _masked_rows(branch_normalized_target, fit),
+                epsilon=epsilon,
+                ridge=self.ridge,
+            )
+            normalized = _rmsnorm(branch_input, norm_fold.weight, epsilon)
+            branch_delta_target = self.chart.encode(layer_evidence.attention_delta)
+            score_chart = (
+                None
+                if self.chart.source_width == self.chart.target_width
+                else self.chart.encoder
+            )
+
+            def compile_rung(candidate: float) -> Any:
+                # No ``endpoint_target``: the kernel's cross-width lane fits
+                # both sub-branches against the *parent's own* sub-branch
+                # deltas, which is where its split gate captured them.  The two
+                # sub-branch writers are the last linear map in their
+                # sub-branch, so transporting them through the chart afterwards
+                # is exact rather than a second fit -- see
+                # ``_transported_child_state``.
+                return compile_hf_causal_sparse_latent_fold(
+                    layer_evidence,
+                    target_geometry,
+                    attention_mask=valid,
+                    fit_token_mask=fit,
+                    validation_token_mask=validation,
+                    valid_token_mask=valid,
+                    child_normalized_rows=normalized,
+                    score_chart=score_chart,
+                    policy=replace(policy, ridge=candidate),
+                )
+
+            positions = _row_positions(sealed.batch_size, sealed.sequence_length)
+
+            def replay(fold: Any) -> tuple[Any, Any, Any]:
+                total, local, summary = fold.replay(
+                    normalized, attention_mask=valid, position_ids=positions
+                )
+                return (
+                    self.chart.encode(total),
+                    self.chart.encode(local),
+                    self.chart.encode(summary),
+                )
+
+            def score_rung(fold: Any) -> float:
+                replayed, _local, _summary = replay(fold)
+                return _relative_rmse(
+                    _masked_rows(replayed, selection),
+                    _masked_rows(branch_delta_target, selection),
+                )
+
+            (
+                summary_fold,
+                selected_ridge,
+                selection_endpoint,
+                ladder,
+            ) = self._select_over_ridge_ladder(
+                compile_rung=compile_rung,
+                score_rung=score_rung,
+                refusals=(HFCausalSparseLatentFoldError,),
+                role=role,
+            )
+            delta, local_delta, summary_delta = replay(summary_fold)
+            endpoint = self._require_endpoint(
+                _relative_rmse(
+                    _masked_rows(delta, validation),
+                    _masked_rows(branch_delta_target, validation),
+                ),
+                role,
+                "validation composite-delta relative RMSE",
+            )
+            receipt = dict(summary_fold.report)
+            child_state, transported = self._transported_child_state(
+                child_state=summary_fold.child_state_dict(),
+                mixer_module=mixer_module,
+                context=context,
+                role=role,
+            )
+            installs = self._child_installs(
+                child_state=child_state,
+                mixer_module=mixer_module,
+                target_operator=target_operator,
+                context=context,
+                role=role,
+            )
+            report = {
+                **_fold_only_operation_audit(),
+                **selector_report,
+                "schema": SCHEMA,
+                "kind": "native_compressed_summary_attention_branch",
+                "method_id": self.method_id,
+                "source_family": parent_graph.family,
+                "target_family": context.child_graph.family,
+                "source_node_id": source_operator.node_id,
+                "target_node_id": target_operator.node_id,
+                "cached_parent_evidence_sha256": sealed.cache_key,
+                "residual_chart_sha256": self.chart.map_sha256,
+                "residual_chart_source_width": self.chart.source_width,
+                "residual_chart_target_width": self.chart.target_width,
+                "per_boundary_chart_set": False,
+                "position_policy": "nope",
+                "mixer_family": target_geometry.family,
+                "summary_stride": target_geometry.summary_stride,
+                "local_window": target_geometry.local_window,
+                "one_executable_for_csa_and_hca": True,
+                "source_geometry": source_geometry.as_dict(),
+                "target_geometry": target_geometry.as_dict(),
+                "captured_row_source": _SEALED_ROW_SOURCE,
+                "derived_rows": list(_SUMMARY_DERIVED_ROWS),
+                "split_report_sha256": split.diagnostics["report_sha256"],
+                "split_reconstruction_relative_rmse": split.diagnostics[
+                    "split_reconstruction_relative_rmse"
+                ],
+                "local_energy_fraction": split.diagnostics["local_energy_fraction"],
+                "summary_energy_fraction": split.diagnostics["summary_energy_fraction"],
+                "score_chart_used": bool(score_chart is not None),
+                "kernel_fold_policy": policy.as_dict(),
+                "summary_probability_overlap": receipt["summary_probability_overlap"],
+                "sub_branch_writers_transported_through_chart": list(transported),
+                "sub_branch_writer_transport": (
+                    "exact_producer_fold_of_the_last_linear_map_in_each_"
+                    "sub_branch"
+                ),
+                "sub_branch_fit_coordinate_system": "parent_residual_width",
+                "endpoint_gate_coordinate_system": "child_residual_width",
+                "local_sub_branch_validation_relative_rmse": _relative_rmse(
+                    _masked_rows(local_delta, validation),
+                    _masked_rows(self.chart.encode(layer_evidence.local_delta), validation),
+                ),
+                "summary_sub_branch_validation_relative_rmse": _relative_rmse(
+                    _masked_rows(summary_delta, validation),
+                    _masked_rows(
+                        self.chart.encode(layer_evidence.summary_delta), validation
+                    ),
+                ),
+                "input_norm_report_sha256": norm_fold.report["report_sha256"],
+                "summary_attention_report_sha256": receipt["report_sha256"],
+                "local_fold_report_sha256": receipt["local_fold_report_sha256"],
+                "installed_parameter_paths": list(paths),
+                "child_recaptures": int(getattr(self.recapture, "calls", 0)),
+                "selected_ridge": selected_ridge,
+                "ridge_ladder": ladder,
+                "kernel_refused_ridge_rungs": sum(
+                    1 for entry in ladder if "kernel_refusal" in entry
+                ),
+                "selection_endpoint_relative_rmse": selection_endpoint,
+                "no_branch_endpoint_relative_rmse_baseline": (
+                    self.no_branch_endpoint_relative_rmse_baseline
+                ),
+                "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
+                "validation_composite_delta_relative_rmse": endpoint,
+                "validation_residual_relative_rmse_bf16": receipt[
+                    "validation_residual_relative_rmse_bf16"
+                ],
+                "parent_residual_coordinate_endpoints": False,
+                "sequential_child_replay": True,
+                "numeric_weight_matching_objective": False,
+                "zero_gradient": True,
+            }
+            _install(context, (*installs, (norm_path, norm_fold.weight)))
+            candidate = context.child_state_fingerprint
+        except BaseException:
+            try:
+                snapshot.restore(_live_parameters(context, paths))
+            finally:
+                snapshot.cleanup()
+            raise
+        return CausalBranchFoldTransaction(
+            method_id=self.method_id,
+            context=context,
+            snapshot=snapshot,
+            installed_paths=paths,
+            incumbent_state_fingerprint=incumbent,
+            candidate_state_fingerprint=candidate,
+            report=report,
+        )
+
+
 class NativeResidualChartInterfaceOperator(_NativeChartOperator):
     """Carry one global interface circuit across the residual chart.
 
@@ -3674,15 +5037,19 @@ __all__ = [
     "CAUSAL_ATTENTION_BRANCH_METHOD",
     "CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD",
     "CAUSAL_GATED_MLP_BRANCH_METHOD",
+    "CAUSAL_KDA_RECURRENT_BRANCH_METHOD",
+    "CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD",
     "CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD",
     "KERNEL_SUPPORTS_ATTENTION_WINDOW",
     "KERNEL_SUPPORTS_POSITION_ENCODING",
     "NATIVE_RESIDUAL_CHART_INTERFACE_METHOD",
     "SCHEMA",
     "TOKEN_INTERFACE_BRIDGE_METHOD",
+    "BoundedGatedDeltaRecurrenceLayerOperator",
     "CausalBranchFoldTransaction",
     "CausalGQAAttentionBranchOperator",
     "CausalGatedMLPBranchOperator",
+    "CompressedSummaryAttentionLayerOperator",
     "CrossWidthBranchBinding",
     "CrossWidthCausalBranchOperator",
     "CrossWidthTokenHeadInterfaceOperator",

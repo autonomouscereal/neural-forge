@@ -50,6 +50,28 @@ NATIVE_CAUSAL_LAYER_BRANCH_METHODS = (
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
 )
+#: The two remaining chimera sequence-mixer families that have a fold kernel.
+#: The names are the design document's own
+#: (``docs/KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md`` section 4); the gap
+#: capability names the planner reports while they are *missing* are different
+#: strings on purpose, because a capability is what an implementer must build
+#: and a method id is what an operator executes.
+CAUSAL_KDA_RECURRENT_BRANCH_METHOD = "causal_kda_recurrent_layer"
+#: One method id covers both ``csa`` and ``hca``.  They are the same
+#: ``SparseLatentAttention`` module at two strides and one stride-parameterized
+#: kernel executes both, so a second id would claim a second executable that
+#: does not exist.  The stride is a contract constant of the crossing: it is
+#: sealed in the action configuration and the receipt, and changing it fails
+#: closed as a kind translation rather than folding.
+CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD = "causal_summary_attention_layer"
+#: Every native-trunk branch method, for a caller that wants the whole chimera
+#: sequence-mixer coverage rather than only the local/dense pair.
+NATIVE_CHIMERA_LAYER_BRANCH_METHODS = (
+    CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
+    CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+    CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+)
 #: Global interface circuits whose only difference is the residual coordinate
 #: system a contraction chart already covers.
 NATIVE_RESIDUAL_CHART_INTERFACE_METHOD = "native_residual_chart_interface"
@@ -1014,6 +1036,13 @@ def _causal_branch_contract(
     residual write that operator owns, optionally preceded by the learned depth
     selector that chooses which residual the normalization reads.  Nothing here
     inspects a model family.
+
+    The sequence-mixing branch admits one ``ATTENTION`` node *or* one
+    ``RECURRENT_MIXER`` node.  That is not a relaxation: a bounded gated
+    delta-rule recurrence is exactly one complete coupled operator making one
+    ordered residual write, and demanding split Q/K/V/O of it would demand the
+    softmax projections it does not have.  The two operator classes are proven
+    by different contracts and select different executables.
     """
 
     nodes = tuple(nodes)
@@ -1023,15 +1052,23 @@ def _causal_branch_contract(
     )
     if branch == "attention":
         labels = _ATTENTION_BRANCH_LABELS
-        operators = tuple(
+        attention_operators = tuple(
             node for node in nodes if node.kind == CircuitKind.ATTENTION.value
         )
-        operator_proven = _projection_role_contract(
-            operators,
-            require_q=True,
-            require_k=True,
-            require_v=True,
-            require_o=True,
+        recurrent_operators = tuple(
+            node for node in nodes if node.kind == CircuitKind.RECURRENT_MIXER.value
+        )
+        operators = attention_operators + recurrent_operators
+        operator_proven = (
+            _projection_role_contract(
+                attention_operators,
+                require_q=True,
+                require_k=True,
+                require_v=True,
+                require_o=True,
+            )
+            if attention_operators
+            else _bounded_gated_delta_recurrence_contract(graph, recurrent_operators)
         )
     elif branch == "mlp":
         labels = _MLP_BRANCH_LABELS
@@ -1097,6 +1134,25 @@ def _causal_operator_attributes(
     kind: str,
 ) -> dict[str, JsonScalar]:
     operators = tuple(node for node in nodes if node.kind == kind)
+    return _node_attributes(operators[0]) if len(operators) == 1 else {}
+
+
+def _sequence_mixer_attributes(
+    nodes: Sequence[CircuitNode],
+) -> dict[str, JsonScalar]:
+    """Return the attributes of the branch's one sequence-mixing operator.
+
+    The branch contract has already proven there is exactly one, and that it is
+    an attention node or a recurrent mixer; this reads whichever it is so the
+    width and policy checks do not have to know first.
+    """
+
+    operators = tuple(
+        node
+        for node in nodes
+        if node.kind
+        in {CircuitKind.ATTENTION.value, CircuitKind.RECURRENT_MIXER.value}
+    )
     return _node_attributes(operators[0]) if len(operators) == 1 else {}
 
 
@@ -1250,6 +1306,153 @@ def _windowed_nope_attention_contract(nodes: Sequence[CircuitNode]) -> bool:
     )
 
 
+def _positive_attribute(attributes: Mapping[str, JsonScalar], name: str) -> bool:
+    value = attributes.get(name)
+    return bool(
+        isinstance(value, int) and not isinstance(value, bool) and value > 0
+    )
+
+
+def _compressed_summary_attention_contract(nodes: Sequence[CircuitNode]) -> bool:
+    """Prove one composite local-window + compressed-summary attention operator.
+
+    The design contract is
+    ``docs/KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md`` section 1.2: ``csa``
+    and ``hca`` are one ``SparseLatentAttention`` module that computes a
+    windowed grouped-query sub-branch and a strided full-width summary
+    sub-branch from the *same* normalized rows and writes their sum into the
+    residual stream exactly once.  This contract therefore demands a single
+    composite node that says so -- two sub-branches, one residual write -- and
+    refuses a node that still describes the pair as two independent operators.
+    Both the window and the stride are contract constants of the crossing; the
+    equality check between parent and child lives in the layer contract, and
+    the kernel refuses a change to either as a kind translation.
+    """
+
+    operators = tuple(
+        node for node in nodes if node.kind == CircuitKind.ATTENTION.value
+    )
+    if len(operators) != 1:
+        return False
+    attributes = _node_attributes(operators[0])
+    window = attributes.get("local_window")
+    return bool(
+        attributes.get("position_policy") == "nope"
+        and not _declares_rope_requirement(attributes)
+        and attributes.get("composite_operator") is True
+        and attributes.get("composite_residual_writes") == 1
+        and attributes.get("composite_sub_branches")
+        == "local_window,compressed_summary"
+        and attributes.get("sub_branch_combination")
+        == "sum_of_local_window_and_compressed_summary"
+        and attributes.get("summary_reduction")
+        == "mean_over_stride_with_leading_zero_summary"
+        and attributes.get("summary_projection_style") == "split_qkv_full_width"
+        and attributes.get("projection_style")
+        == "split_qkv_local_window_plus_full_width_compressed_summary"
+        and attributes.get("projection_bias") is False
+        and attributes.get("causal") is True
+        and attributes.get("fold_kernel_family_required")
+        == "compressed_summary_attention"
+        and attributes.get("mixer_family") in {"csa", "hca"}
+        and _positive_attribute(attributes, "summary_stride")
+        and _positive_attribute(attributes, "head_dim")
+        and _positive_attribute(attributes, "query_heads")
+        and _positive_attribute(attributes, "key_value_heads")
+        # The local sub-branch really is banded; an unbanded summary attention
+        # is a different operator and the kernel has no envelope for it.
+        and isinstance(window, int)
+        and not isinstance(window, bool)
+        and window > 0
+        and _projection_role_contract(
+            operators,
+            require_q=True,
+            require_k=True,
+            require_v=True,
+            require_o=True,
+        )
+    )
+
+
+def _bounded_gated_delta_recurrence_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    """Prove one bounded gated delta-rule recurrence operator.
+
+    The design contract is
+    ``docs/KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md`` sections 1.1 and 4:
+    a KDA branch is one ``RECURRENT_MIXER`` node carrying an explicit
+    ``[batch, heads, key_dim, value_dim]`` state across a recurrent ``STATE``
+    edge, with the three internal depthwise short convolutions, the low-rank
+    decay map and the headwise output norm as *internal structure* of that one
+    operator rather than as separate circuits.  Every attribute the kernel
+    reads is required here by name, so a node that does not declare its
+    geometry keeps the planner's gap instead of reaching a kernel that would
+    then have to guess it.
+    """
+
+    operators = tuple(
+        node for node in nodes if node.kind == CircuitKind.RECURRENT_MIXER.value
+    )
+    if len(operators) != 1:
+        return False
+    attributes = _node_attributes(operators[0])
+    lower_bound = attributes.get("gate_lower_bound")
+    roles = _parameter_roles(operators, {CircuitKind.RECURRENT_MIXER.value})
+    return bool(
+        attributes.get("position_policy") == "nope"
+        and not _declares_rope_requirement(attributes)
+        and attributes.get("operator_type") == "kimi_delta_attention"
+        and attributes.get("recurrence") == "bounded_gated_delta_rule"
+        and attributes.get("softmax_free") is True
+        and attributes.get("not_attention_qkv") is True
+        and attributes.get("internal_headwise_output_norm") is True
+        and attributes.get("state_layout") == "batch_heads_key_value"
+        and attributes.get("internal_short_conv_operators") == 3
+        and attributes.get("internal_short_conv_paths") == "q_conv,k_conv,v_conv"
+        and attributes.get("fold_kernel_family_required")
+        == "bounded_gated_delta_recurrence"
+        and all(
+            _positive_attribute(attributes, name)
+            for name in (
+                "heads",
+                "key_head_dim",
+                "value_head_dim",
+                "decay_rank",
+                "state_elements",
+                "internal_short_conv_kernel_size",
+            )
+        )
+        # The retention floor is ``exp(gate_lower_bound)``; a non-negative bound
+        # would put the floor at or above one, which is not a decay at all.
+        and isinstance(lower_bound, (int, float))
+        and not isinstance(lower_bound, bool)
+        and float(lower_bound) < 0.0
+        and _roles_contain(roles, ("q_proj",))
+        and _roles_contain(roles, ("k_proj",))
+        and _roles_contain(roles, ("v_proj",))
+        and _roles_contain(roles, ("out_weight",))
+        and _roles_contain(roles, ("decay_down",))
+        and _roles_contain(roles, ("decay_up",))
+        and _roles_contain(roles, ("decay_bias",))
+        and _roles_contain(roles, ("decay_log_scale",))
+        and _roles_contain(roles, ("write_strength",))
+        and _roles_contain(roles, ("output_gate",))
+        and _roles_contain(roles, ("output_norm",))
+        and _roles_contain(roles, ("q_conv",))
+        and _roles_contain(roles, ("k_conv",))
+        and _roles_contain(roles, ("v_conv",))
+        and _stateful_operator_contract(
+            graph,
+            operators,
+            operator_kind=CircuitKind.RECURRENT_MIXER.value,
+            port_kind=PortKind.RECURRENT_STATE.value,
+            edge_kind=EdgeKind.STATE.value,
+        )
+    )
+
+
 def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
     """Prove one dense SiLU-gated MLP whose gate and up share one tensor.
 
@@ -1281,6 +1484,99 @@ def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
         and not isinstance(intermediate, bool)
         and intermediate > 0
     )
+
+
+#: The declared operator widths each native sequence-mixer family may contract.
+#: Every one of them is a *coordinate* the registered kernel can cut; anything
+#: not listed here (a window, a stride, a short-conv kernel size, a gate floor)
+#: is a contract constant checked for equality instead.
+_NATIVE_OPERATOR_CONTRACTION_WIDTHS: Mapping[str, tuple[str, ...]] = {
+    "causal_sliding_window_split_qkv_attention": (
+        "query_heads",
+        "key_value_heads",
+        "head_dim",
+    ),
+    "compressed_summary_attention": (
+        "query_heads",
+        "key_value_heads",
+        "head_dim",
+    ),
+    "bounded_gated_delta_recurrence": (
+        "heads",
+        "key_head_dim",
+        "value_head_dim",
+        "decay_rank",
+    ),
+}
+#: Attributes that must be *equal* on both sides of a native sequence-mixer
+#: crossing, per family.  Each one changes which inputs the operator can see or
+#: what its own arithmetic is, so changing it is a kind translation and not a
+#: fold coordinate (design section 3).
+_NATIVE_OPERATOR_CONTRACT_CONSTANTS: Mapping[str, tuple[str, ...]] = {
+    "causal_sliding_window_split_qkv_attention": ("sliding_window",),
+    "compressed_summary_attention": (
+        "local_window",
+        "summary_stride",
+        "mixer_family",
+    ),
+    "bounded_gated_delta_recurrence": (
+        "internal_short_conv_kernel_size",
+        "gate_lower_bound",
+    ),
+}
+
+
+def _native_sequence_mixer_branch(
+    source_nodes: Sequence[CircuitNode],
+    target_nodes: Sequence[CircuitNode],
+    source_attributes: Mapping[str, JsonScalar],
+    target_attributes: Mapping[str, JsonScalar],
+) -> tuple[str, str] | None:
+    """Name the branch method one NoPE sequence-mixer crossing may install.
+
+    Three families, three separately proven contracts, three method ids -- and
+    a fourth outcome, ``None``, for everything else.  ``csa`` and ``hca`` share
+    one method id because they share one stride-parameterized executable; the
+    stride itself is a contract constant checked below, so the two strides can
+    never be folded into each other by accident.
+    """
+
+    family = source_attributes.get("fold_kernel_family_required")
+    contracts = {
+        "causal_sliding_window_split_qkv_attention": (
+            _windowed_nope_attention_contract,
+            CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
+            "cached_parent_endpoint_coupled_windowed_nope_gqa_qk_softmax_vo",
+        ),
+        "compressed_summary_attention": (
+            _compressed_summary_attention_contract,
+            CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+            (
+                "cached_parent_endpoint_coupled_local_window_plus_compressed_"
+                "summary_sub_branch_write"
+            ),
+        ),
+    }
+    if family in contracts:
+        contract, method_id, fit_objective = contracts[family]
+        if not contract(source_nodes) or not contract(target_nodes):
+            return None
+    elif family == "bounded_gated_delta_recurrence":
+        method_id = CAUSAL_KDA_RECURRENT_BRANCH_METHOD
+        fit_objective = (
+            "cached_parent_endpoint_coupled_bounded_gated_delta_recurrence_write"
+        )
+        # The branch contract already proved this arm through
+        # ``_bounded_gated_delta_recurrence_contract`` on both sides.
+    else:
+        return None
+    for name in _NATIVE_OPERATOR_CONTRACT_CONSTANTS[family]:
+        if source_attributes.get(name) != target_attributes.get(name):
+            # A band, a stride, a short-conv kernel or a gate floor is a
+            # contract constant: no evidence anywhere says what the parent
+            # would have computed under a different one.
+            return None
+    return method_id, fit_objective
 
 
 def _family_neutral_causal_layer_contract(
@@ -1329,20 +1625,27 @@ def _family_neutral_causal_layer_contract(
         # per-boundary chart set re-coordinates every residual write; anything
         # else keeps the planner's explicit operator gap.
         return None
-    source_attention = _causal_operator_attributes(
-        source[0], CircuitKind.ATTENTION.value
-    )
-    target_attention = _causal_operator_attributes(
-        target[0], CircuitKind.ATTENTION.value
-    )
+    source_attention = _sequence_mixer_attributes(source[0])
+    target_attention = _sequence_mixer_attributes(target[0])
     source_mlp = _causal_operator_attributes(source[1], CircuitKind.GATED_MLP.value)
     target_mlp = _causal_operator_attributes(target[1], CircuitKind.GATED_MLP.value)
-    widths = (
-        ("query_heads", source_attention, target_attention),
-        ("key_value_heads", source_attention, target_attention),
-        ("head_dim", source_attention, target_attention),
-        ("intermediate_size", source_mlp, target_mlp),
-    )
+    if transport == "rope":
+        operator_widths: tuple[str, ...] = ("query_heads", "key_value_heads", "head_dim")
+    else:
+        operator_widths = _NATIVE_OPERATOR_CONTRACTION_WIDTHS.get(
+            source_attention.get("fold_kernel_family_required"), ()
+        )
+        if not operator_widths or source_attention.get(
+            "fold_kernel_family_required"
+        ) != target_attention.get("fold_kernel_family_required"):
+            # Either the family has no registered branch operator at all, or
+            # the two sides declare different families -- and no registered
+            # operator crosses between two sequence-mixer classes in one
+            # transaction, so the crossing keeps its gap.
+            return None
+    widths = tuple(
+        (name, source_attention, target_attention) for name in operator_widths
+    ) + (("intermediate_size", source_mlp, target_mlp),)
     for name, source_values, target_values in widths:
         source_width = source_values.get(name)
         target_width = target_values.get(name)
@@ -1368,21 +1671,11 @@ def _family_neutral_causal_layer_contract(
             "cached_parent_endpoint_coupled_gqa_rope_qk_softmax_vo",
         )
     else:
-        if not _windowed_nope_attention_contract(
-            source[0]
-        ) or not _windowed_nope_attention_contract(target[0]):
-            return None
-        if source_attention.get("sliding_window") != target_attention.get(
-            "sliding_window"
-        ):
-            # A window is a contract constant, not a fold coordinate: changing
-            # which keys exist changes the operator, and no evidence says what
-            # the parent would have attended to under a different band.
-            return None
-        attention_branch = (
-            CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
-            "cached_parent_endpoint_coupled_windowed_nope_gqa_qk_softmax_vo",
+        attention_branch = _native_sequence_mixer_branch(
+            source[0], target[0], source_attention, target_attention
         )
+        if attention_branch is None:
+            return None
     source_fused = _fused_gate_up_mlp_contract(source[1])
     target_fused = _fused_gate_up_mlp_contract(target[1])
     if source_fused != target_fused:
@@ -2043,6 +2336,14 @@ def _bundle_kind_contract(
         return _causal_branch_contract(
             graph, nodes, branch="attention"
         ) and _windowed_nope_attention_contract(nodes)
+    if requirement == "causal_summary_attention_branch":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _compressed_summary_attention_contract(nodes)
+    if requirement == "causal_kda_recurrent_branch":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _bounded_gated_delta_recurrence_contract(graph, nodes)
     if requirement == "causal_fused_gate_up_mlp_branch":
         return _causal_branch_contract(
             graph, nodes, branch="mlp"
@@ -2450,6 +2751,24 @@ def _coupled_role_contract(
         return _causal_branch_contract(
             graph, nodes, branch="attention"
         ) and _windowed_nope_attention_contract(nodes)
+    if role == "input_norm_local_window_plus_compressed_summary_residual_write":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _compressed_summary_attention_contract(nodes)
+    if role == "local_window_and_compressed_summary_sub_branches":
+        return _compressed_summary_attention_contract(nodes)
+    if role == "input_norm_bounded_gated_delta_recurrence_residual_write":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _bounded_gated_delta_recurrence_contract(graph, nodes)
+    if role == "bounded_gated_delta_recurrence_state":
+        return _stateful_operator_contract(
+            graph,
+            nodes,
+            operator_kind=CircuitKind.RECURRENT_MIXER.value,
+            port_kind=PortKind.RECURRENT_STATE.value,
+            edge_kind=EdgeKind.STATE.value,
+        )
     if role == "input_norm_fused_gate_up_swiglu_down_residual_write":
         return _causal_branch_contract(
             graph, nodes, branch="mlp"
@@ -3941,9 +4260,12 @@ __all__ = [
     "CAUSAL_ATTENTION_BRANCH_METHOD",
     "CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD",
     "CAUSAL_GATED_MLP_BRANCH_METHOD",
+    "CAUSAL_KDA_RECURRENT_BRANCH_METHOD",
     "CAUSAL_LAYER_BRANCH_METHODS",
+    "CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD",
     "CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD",
     "NATIVE_CAUSAL_LAYER_BRANCH_METHODS",
+    "NATIVE_CHIMERA_LAYER_BRANCH_METHODS",
     "NATIVE_RESIDUAL_CHART_INTERFACE_METHOD",
     "DynamicFoldPlan",
     "DynamicFoldPlanner",

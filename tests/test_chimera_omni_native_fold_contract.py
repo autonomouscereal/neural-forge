@@ -32,8 +32,11 @@ from neural_forge.dynamic_fold_planner import (
     CAUSAL_ATTENTION_BRANCH_METHOD,
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
     CAUSAL_GATED_MLP_BRANCH_METHOD,
+    CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     NATIVE_CAUSAL_LAYER_BRANCH_METHODS,
+    NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
     NATIVE_RESIDUAL_CHART_INTERFACE_METHOD,
     DynamicFoldPlanner,
 )
@@ -359,3 +362,231 @@ def test_the_new_methods_are_registered_experimental():
     assert registry.get(CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD).family_id != (
         registry.get(CAUSAL_GATED_MLP_BRANCH_METHOD).family_id
     )
+
+
+# ---------------------------------------------------------------------------
+# The two chimera sequence-mixer families that gained a kernel: the bounded
+# gated delta recurrence and the composite compressed-summary attention.
+# ---------------------------------------------------------------------------
+
+FAMILY_PARENT_WIDTH = 128
+FAMILY_CHILD_WIDTH = 34
+
+
+def family_config(hidden_size: int, **changes):
+    """A trunk running every sequence mixer that has a registered kernel.
+
+    ``csa``/``hca`` own four ``[hidden, hidden]`` summary projections, which
+    shrink quadratically while everything else shrinks linearly, so a
+    quarter-width child of this trunk is never exactly 4x.  128 -> 34 with
+    every other geometry identical is the exact integer solution, and the
+    execution suite asserts the two parameter counts.
+    """
+
+    return coverable_config(
+        hidden_size,
+        **{
+            "vocab_size": 1534,
+            "intermediate_size": 448,
+            "block_pattern": ("local", "kda", "csa", "hca"),
+            "kda_head_dim": 9,
+            "kda_value_head_dim": 8,
+            "kda_decay_rank": 4,
+            "kda_short_conv_kernel_size": 4,
+            "local_window": 8,
+            "csa_compress_stride": 4,
+            "hca_compress_stride": 8,
+            **changes,
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def family_graphs():
+    return (
+        _graph(family_config(FAMILY_PARENT_WIDTH), "family-parent"),
+        _graph(family_config(FAMILY_CHILD_WIDTH), "family-child", seed=4711),
+    )
+
+
+def test_every_kernelled_sequence_mixer_family_plans_with_zero_gaps(family_graphs):
+    parent_graph, child_graph = family_graphs
+    plan = _plan(parent_graph, child_graph, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS)
+
+    assert plan.ready
+    assert not plan.gaps
+    assert parent_graph.unique_parameter_count == 4 * child_graph.unique_parameter_count
+
+    methods = [action.method_id for action in plan.actions]
+    assert methods.count(CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 1
+    # csa and hca share one method id: one stride-parameterized executable.
+    assert methods.count(CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD) == 2
+    assert methods.count(CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD) == 4
+
+    owned = [path for action in plan.actions for path in action.target_parameter_paths]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == set(child_graph.parameter_paths)
+
+
+def test_the_new_branch_actions_name_their_objectives_and_constants(family_graphs):
+    plan = _plan(*family_graphs, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS)
+    recurrence = next(
+        action
+        for action in plan.actions
+        if action.method_id == CAUSAL_KDA_RECURRENT_BRANCH_METHOD
+    )
+    summaries = [
+        action
+        for action in plan.actions
+        if action.method_id == CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD
+    ]
+
+    assert dict(recurrence.configuration)["fit_objective"] == (
+        "cached_parent_endpoint_coupled_bounded_gated_delta_recurrence_write"
+    )
+    for action in summaries:
+        assert dict(action.configuration)["fit_objective"] == (
+            "cached_parent_endpoint_coupled_local_window_plus_compressed_"
+            "summary_sub_branch_write"
+        )
+    # The composite is one transaction over one node: every tensor of the
+    # nested local attention *and* the summary projections travels together.
+    paths = set(summaries[0].target_parameter_paths)
+    assert any(path.endswith("mixer.local.q_proj.weight") for path in paths)
+    assert any(path.endswith("mixer.summary_q.weight") for path in paths)
+    assert any(path.endswith("mixer.out.weight") for path in paths)
+    assert any(path.endswith("mixer.local.out.weight") for path in paths)
+    # The recurrence carries its three internal short convs and its headwise
+    # output norm in the same transaction, because they are internal structure
+    # of one operator rather than circuits of their own.
+    recurrent_paths = set(recurrence.target_parameter_paths)
+    assert any(path.endswith("mixer.q_conv.conv.weight") for path in recurrent_paths)
+    assert any(path.endswith("mixer.output_norm.weight") for path in recurrent_paths)
+    assert any(path.endswith("mixer.decay_log_scale") for path in recurrent_paths)
+
+
+@pytest.mark.parametrize(
+    ("changes", "blocked", "survivors", "capability"),
+    (
+        (
+            {"csa_compress_stride": 2},
+            CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+            1,
+            "compressed_summary_attention_layer_operator",
+        ),
+        (
+            {"hca_compress_stride": 16},
+            CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+            1,
+            "compressed_summary_attention_layer_operator",
+        ),
+        (
+            {"kda_short_conv_kernel_size": 3},
+            CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+            0,
+            "bounded_gated_delta_recurrence_layer_operator",
+        ),
+    ),
+)
+def test_a_contract_constant_change_fails_closed(
+    family_graphs, changes, blocked, survivors, capability
+):
+    """A stride and a short-conv kernel are contract constants, not coordinates.
+
+    Changing either changes which inputs the operator can see or what its own
+    arithmetic is.  No evidence anywhere says what the parent would have
+    computed under a different one, so *that layer* keeps its gap -- by the name
+    of the kernel family it needed -- while every layer whose constants are
+    unchanged still folds through the same method id.
+    """
+
+    child = _graph(
+        family_config(FAMILY_CHILD_WIDTH, **changes),
+        f"family-child-{sorted(changes)[0]}",
+        seed=4711,
+    )
+    plan = _plan(
+        family_graphs[0], child, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS
+    )
+
+    assert not plan.ready
+    methods = [action.method_id for action in plan.actions]
+    assert methods.count(blocked) == survivors
+    assert capability in {gap.required_capability for gap in plan.gaps}
+
+
+def test_the_two_new_families_stay_gapped_without_their_lane(family_graphs):
+    """The lane is opt-in per family, exactly as the local/dense pair is."""
+
+    plan = _plan(*family_graphs, enabled=NATIVE_CAUSAL_LAYER_BRANCH_METHODS)
+
+    assert not plan.ready
+    capabilities = {gap.required_capability for gap in plan.gaps}
+    assert "bounded_gated_delta_recurrence_layer_operator" in capabilities
+    assert "compressed_summary_attention_layer_operator" in capabilities
+    # The one family whose lane is enabled still folds.
+    assert CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD in {
+        action.method_id for action in plan.actions
+    }
+
+
+def test_gated_mla_and_stable_latent_moe_remain_named_gaps_with_every_lane_on():
+    """The two families this wave does *not* cover keep their own names.
+
+    The k3-aligned reference config runs kda and gated_mla with a Stable
+    LatentMoE channel mixer.  Turning every registered lane on does not close
+    it, and the gaps say why one family at a time: no operator implements the
+    compressed latent attention, and none implements the Stable LatentMoE
+    channel mixer.
+
+    The recurrence is named here too, and that is not a regression: a layer
+    whose feed-forward half has no owning transaction cannot be closed by
+    folding its sequence mixer alone, so the kda layer of *this* parent gaps by
+    both of the families it needs.  The dense-channel-mixer parent above is the
+    case that proves the recurrence itself folds.
+    """
+
+    parent = chimera_config.k3_aligned_test_config()
+    child = dataclasses.replace(parent, hidden_size=96)
+    child.validate()
+    plan = _plan(
+        _graph(parent, "k3-parent-covered"),
+        _graph(child, "k3-child-covered", seed=4711),
+        enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+    )
+
+    assert not plan.ready
+    capabilities = {gap.required_capability for gap in plan.gaps}
+    assert "compressed_latent_kv_attention_layer_operator" in capabilities
+    assert "stable_latent_moe_channel_mixer_operator" in capabilities
+    assert "bounded_gated_delta_recurrence_layer_operator" in capabilities
+    reasons = " ".join(gap.reason for gap in plan.gaps)
+    assert "stable_latent_moe" in reasons
+    assert "compressed_latent_attention" in reasons
+
+
+def test_the_two_new_methods_are_registered_on_their_own_experimental_lanes():
+    registry = default_method_registry()
+    families = set()
+    for method_id in (
+        CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+        CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+    ):
+        method = registry.get(method_id)
+        assert method.status == MethodStatus.EXPERIMENTAL.value
+        assert method.zero_gradient is True
+        assert method.standalone is True
+        assert method.evidence_channels
+        assert method.coupled_roles
+        families.add(method.family_id)
+    # Four distinct lanes: a closure recorded against one branch operator must
+    # not silently close any of the others.
+    families.update(
+        registry.get(method_id).family_id
+        for method_id in (
+            CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
+            CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+        )
+    )
+    assert len(families) == 4

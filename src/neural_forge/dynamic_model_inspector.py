@@ -8030,12 +8030,6 @@ _CHIMERA_SPARSE_LATENT_PARAMETERS = frozenset(
         "out.weight",
     }
 )
-_CHIMERA_SPARSE_LATENT_SUMMARY_PARAMETERS = (
-    "summary_q.weight",
-    "summary_k.weight",
-    "summary_v.weight",
-    "out.weight",
-)
 _CHIMERA_KDA_PARAMETERS = frozenset(
     {
         "q_proj.weight",
@@ -8092,11 +8086,14 @@ _CHIMERA_MIXER_KERNEL_FAMILIES: Mapping[str, str] = {
     "kda": "bounded_gated_delta_recurrence",
     "gated_mla": "compressed_latent_attention",
 }
-# Families whose IR decomposition already matches the shape the repository's
-# promoted causal branch kernels are written against: split Q/K/V/O, a
-# divisible grouped-query group, one pre-operator norm, one ordered residual
-# write.  Everything else is an honest kernel gap.
-_CHIMERA_STRUCTURALLY_COVERABLE_MIXERS = frozenset({"local"})
+# Families whose IR decomposition matches the shape a promoted causal branch
+# operator in this repository is written against: one pre-operator norm, one
+# complete coupled operator node, one ordered residual write, and a registered
+# fold kernel for the declared family.  ``local`` folds through the windowed
+# NoPE GQA kernel, ``csa``/``hca`` through the stride-parameterized sparse
+# latent kernel, ``kda`` through the bounded gated delta-rule kernel.
+# ``gated_mla`` has no kernel, so it is still an honest gap.
+_CHIMERA_STRUCTURALLY_COVERABLE_MIXERS = frozenset({"local", "csa", "hca", "kda"})
 
 
 class ChimeraOmniInspectionError(DynamicModelInspectionError):
@@ -8154,88 +8151,6 @@ class _ChimeraOmniLayoutView:
         return self._model.parameters()
 
 
-def _chimera_add_node(
-    builder: _GraphBuilder,
-    node_id: str,
-    kind: CircuitKind | str,
-    path: str,
-    *,
-    layer_index: int | None,
-    inputs: tuple[CircuitPort, ...],
-    outputs: tuple[CircuitPort, ...],
-    parameters: tuple[ParameterSpec, ...] = (),
-    attributes: Mapping[str, Any] | None = None,
-) -> CircuitNode:
-    """Append one node whose parameters were resolved from an explicit list.
-
-    :meth:`_GraphBuilder.add_node` owns every tensor under one module path,
-    which is exactly right until two circuits share a module.  chimera-omni's
-    ``SparseLatentAttention`` is that case: it nests a whole
-    ``LocalCausalAttention`` inside the module that also owns the compressed
-    summary projections, so the summary circuit's tensors have to be named one
-    by one instead of swept up by recursion.
-    """
-
-    node = CircuitNode(
-        node_id=node_id,
-        kind=kind,
-        order=builder.order,
-        path=path,
-        layer_index=layer_index,
-        inputs=inputs,
-        outputs=outputs,
-        parameters=parameters,
-        attributes=tuple((attributes or {}).items()),
-    )
-    builder.nodes.append(node)
-    builder.order += 1
-    return node
-
-
-def _chimera_named_parameters(
-    model: Any,
-    module_path: str,
-    local_names: Sequence[str],
-    role_prefix: str,
-    groups: Mapping[str, str],
-    captured: set[str],
-) -> tuple[ParameterSpec, ...]:
-    """Own exactly the listed tensors of one module, and nothing else."""
-
-    try:
-        module = model.get_submodule(module_path)
-    except (AttributeError, KeyError) as exc:
-        raise ChimeraOmniInspectionError(
-            f"chimera-omni could not resolve module path {module_path!r}."
-        ) from exc
-    available = dict(module.named_parameters(recurse=True, remove_duplicate=False))
-    values = []
-    for local_name in local_names:
-        parameter = available.get(local_name)
-        if parameter is None:
-            raise ChimeraOmniInspectionError(
-                f"chimera-omni expected {module_path}.{local_name} to be a "
-                "learned tensor of this circuit."
-            )
-        path = f"{module_path}.{local_name}"
-        if path in captured:
-            raise ChimeraOmniInspectionError(
-                f"Parameter {path!r} belongs to multiple circuit nodes."
-            )
-        captured.add(path)
-        values.append(
-            ParameterSpec(
-                path=path,
-                role=f"{role_prefix}.{local_name.replace('.', '_')}",
-                shape=tuple(int(value) for value in parameter.shape),
-                dtype=str(parameter.dtype),
-                storage_group=groups[path],
-                trainable=bool(parameter.requires_grad),
-            )
-        )
-    return tuple(values)
-
-
 def _chimera_graph_with_model_class(
     graph: ModelCircuitGraph,
     model_class: str,
@@ -8277,9 +8192,12 @@ class ChimeraOmniCircuitInspector:
 
     Mixer families are described honestly and refused by name.  ``local`` is
     causal sliding-window split-Q/K/V/O grouped-query attention; ``csa`` and
-    ``hca`` decompose into that same local circuit *plus* a separate strided
-    compressed-summary attention summed into one delta; ``gated_mla`` is
-    compressed-latent attention with a full-rank output gate; ``kda`` is a
+    ``hca`` are one composite ``ATTENTION`` operator that runs a local window
+    and a strided compressed summary over the *same* normalized rows and makes
+    exactly one residual write, so they are emitted as one node whose two
+    sub-branches are declared attributes rather than as two nodes joined by a
+    residual add the model never performs; ``gated_mla`` is compressed-latent
+    attention with a full-rank output gate; ``kda`` is a
     bounded gated delta-rule recurrence carrying an explicit
     ``[batch, heads, key_dim, value_dim]`` state, which is what
     ``CircuitKind.RECURRENT_MIXER`` means, so it is emitted as one -- with the
@@ -8560,7 +8478,6 @@ class ChimeraOmniCircuitInspector:
         block_kind: str,
         layer_index: int,
         geometry: Mapping[str, Any],
-        groups: Mapping[str, str],
         normalized_port: Any,
         delta_port: Any,
         require_linear: Any,
@@ -8685,94 +8602,53 @@ class ChimeraOmniCircuitInspector:
                 ]
             )
             inputs, outputs = attention_ports()
-            window_node = builder.add_node(
-                f"{prefix}.operator.local_window",
+            # One composite operator, not a local node plus a summary node.
+            # ``SparseLatentAttention.forward`` computes both sub-branches from
+            # the same normalized rows and returns ``local + out(summary)`` --
+            # one value, written into the residual stream exactly once.  Two
+            # nodes joined by a RESIDUAL_ADD would encode a residual write the
+            # model does not perform and would break the family-neutral
+            # one-operator-per-branch contract
+            # (``docs/KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md`` section 4,
+            # ``NOTES-W11B.md``).  The sub-branch structure survives as declared
+            # attributes, which is what it is: internal structure of one
+            # operator.
+            node = builder.add_node(
+                f"{prefix}.operator",
                 CircuitKind.ATTENTION,
-                f"{mixer_path}.local",
+                mixer_path,
                 layer_index=layer_index,
                 inputs=inputs,
                 outputs=outputs,
-                role_prefix="operator_local_window",
+                role_prefix="operator",
                 attributes={
                     **local_attributes(),
-                    "compound_parent": block_kind,
-                    "compound_branch": "local_window",
-                },
-            )
-            builder.edge(
-                operator_norm, "normalized", window_node, "residual", EdgeKind.DATA
-            )
-            builder.edge(
-                window_node,
-                "cache_out",
-                window_node,
-                "cache_in",
-                EdgeKind.CACHE,
-                recurrent=True,
-            )
-            summary_inputs, summary_outputs = attention_ports()
-            summary_node = _chimera_add_node(
-                builder,
-                f"{prefix}.operator.compressed_summary",
-                CircuitKind.ATTENTION,
-                mixer_path,
-                layer_index=layer_index,
-                inputs=summary_inputs,
-                outputs=summary_outputs,
-                parameters=_chimera_named_parameters(
-                    model,
-                    mixer_path,
-                    _CHIMERA_SPARSE_LATENT_SUMMARY_PARAMETERS,
-                    "operator_compressed_summary",
-                    groups,
-                    builder.captured,
-                ),
-                attributes={
-                    "projection_style": "split_qkv_full_width",
-                    "query_heads": 1,
-                    "key_value_heads": 1,
-                    "head_dim": hidden,
-                    "grouped_query_attention": False,
+                    "projection_style": (
+                        "split_qkv_local_window_plus_full_width_compressed_summary"
+                    ),
                     "layer_type": "compressed_summary_attention",
-                    "compress_stride": stride,
+                    "operator_type": "sparse_latent_attention",
+                    "composite_operator": True,
+                    "composite_sub_branches": "local_window,compressed_summary",
+                    "composite_residual_writes": 1,
+                    "sub_branch_combination": (
+                        "sum_of_local_window_and_compressed_summary"
+                    ),
+                    "local_window": local_window if local_window > 0 else None,
+                    "summary_stride": stride,
+                    "summary_heads": 1,
+                    "summary_head_dim": hidden,
+                    "summary_projection_style": "split_qkv_full_width",
                     "summary_reduction": "mean_over_stride_with_leading_zero_summary",
-                    "causal": True,
-                    "projection_bias": False,
-                    "position_policy": CHIMERA_OMNI_POSITION_POLICY,
-                    "operator_type": "sparse_latent_summary_attention",
-                    "compound_parent": block_kind,
-                    "compound_branch": "compressed_summary",
+                    "mixer_family": block_kind,
                     "fold_kernel_family_required": kernel_family,
                 },
             )
+            builder.edge(operator_norm, "normalized", node, "residual", EdgeKind.DATA)
             builder.edge(
-                operator_norm, "normalized", summary_node, "residual", EdgeKind.DATA
+                node, "cache_out", node, "cache_in", EdgeKind.CACHE, recurrent=True
             )
-            builder.edge(
-                summary_node,
-                "cache_out",
-                summary_node,
-                "cache_in",
-                EdgeKind.CACHE,
-                recurrent=True,
-            )
-            combine = builder.add_node(
-                f"{prefix}.operator.combine",
-                CircuitKind.RESIDUAL_ADD,
-                mixer_path,
-                layer_index=layer_index,
-                inputs=(delta_port("local_delta"), delta_port("summary_delta")),
-                outputs=(delta_port("delta"),),
-                attributes={
-                    "ordered_branch": "operator",
-                    "operation": "sum_of_local_window_and_compressed_summary",
-                    "learned_parameters": 0,
-                    "compound_parent": block_kind,
-                },
-            )
-            builder.edge(window_node, "delta", combine, "local_delta", EdgeKind.DATA)
-            builder.edge(summary_node, "delta", combine, "summary_delta", EdgeKind.DATA)
-            return combine, "delta"
+            return node, "delta"
 
         if block_kind == "kda":
             require_parameter_set(
@@ -9739,7 +9615,6 @@ class ChimeraOmniCircuitInspector:
                 block_kind=observed_kind,
                 layer_index=index,
                 geometry=geometry,
-                groups=groups,
                 normalized_port=normalized_port,
                 delta_port=delta_port,
                 require_linear=require_linear,

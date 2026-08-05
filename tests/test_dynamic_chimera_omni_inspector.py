@@ -168,32 +168,62 @@ def test_kda_is_a_recurrent_mixer_with_an_explicit_state_edge() -> None:
     assert "blocks.0.mixer.output_norm.weight" in mixers[0].parameter_paths
 
 
-def test_compressed_summary_blocks_split_into_two_attention_circuits() -> None:
+def test_compressed_summary_blocks_are_one_composite_attention_circuit() -> None:
+    """csa/hca is one operator with one residual write, not two plus an add.
+
+    ``SparseLatentAttention.forward`` computes the local window and the strided
+    compressed summary from the same normalized rows and returns their sum as
+    one value.  The earlier two-node emission put a ``RESIDUAL_ADD`` between
+    them, which encoded a residual write the model does not perform and broke
+    the family-neutral one-operator-per-branch contract
+    (``NOTES-W11B.md``, ``KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md`` §4).
+    """
+
     model = chimera_modeling.ChimeraOmniModel(chimera_config.small_test_config())
     graph = inspect_model_circuits(model, model_name="chimera-csa")
 
-    window = graph.node("layer.002.operator.local_window")
-    summary = graph.node("layer.002.operator.compressed_summary")
-    combine = graph.node("layer.002.operator.combine")
-    assert window.kind == CircuitKind.ATTENTION.value
-    assert summary.kind == CircuitKind.ATTENTION.value
-    assert combine.kind == CircuitKind.RESIDUAL_ADD.value
-    assert set(window.parameter_paths) == {
+    composite = graph.node("layer.002.operator")
+    assert composite.kind == CircuitKind.ATTENTION.value
+    # One node owns both sub-branches' tensors, including the nested local
+    # attention that used to be a circuit of its own.
+    assert set(composite.parameter_paths) == {
         f"blocks.2.mixer.local.{name}.weight"
         for name in ("q_proj", "k_proj", "v_proj", "out")
-    }
-    assert set(summary.parameter_paths) == {
+    } | {
         f"blocks.2.mixer.{name}.weight"
         for name in ("summary_q", "summary_k", "summary_v", "out")
     }
-    assert dict(summary.attributes)["compress_stride"] == 64
-    assert dict(graph.node("layer.003.operator.compressed_summary").attributes)[
-        "compress_stride"
-    ] == 1024
-    assert dict(summary.attributes)["compound_parent"] == "csa"
-    assert dict(
-        graph.node("layer.003.operator.compressed_summary").attributes
-    )["compound_parent"] == "hca"
+    attributes = dict(composite.attributes)
+    assert attributes["composite_operator"] is True
+    assert attributes["composite_sub_branches"] == "local_window,compressed_summary"
+    assert attributes["composite_residual_writes"] == 1
+    assert attributes["mixer_family"] == "csa"
+    assert attributes["summary_stride"] == 64
+    assert attributes["fold_kernel_family_required"] == "compressed_summary_attention"
+    assert dict(graph.node("layer.003.operator").attributes)["summary_stride"] == 1024
+    assert dict(graph.node("layer.003.operator").attributes)["mixer_family"] == "hca"
+
+    # The old sub-branch nodes and their synthetic residual add are gone.
+    node_ids = {value.node_id for value in graph.nodes}
+    assert not any(
+        value.startswith("layer.002.operator.") or value.startswith("layer.003.operator.")
+        for value in node_ids
+    )
+    # Exactly one ordered residual write for the whole branch, and it is fed by
+    # the composite operator itself.
+    writes = [
+        value
+        for value in graph.nodes_of_kind(CircuitKind.RESIDUAL_ADD)
+        if value.layer_index == 2
+        and dict(value.attributes).get("ordered_branch") == "operator"
+    ]
+    assert [value.node_id for value in writes] == ["layer.002.operator_residual"]
+    assert any(
+        edge.source_node == composite.node_id
+        and edge.target_node == writes[0].node_id
+        and edge.kind == EdgeKind.RESIDUAL.value
+        for edge in graph.edges
+    )
 
 
 def test_boundary_projection_is_one_shared_multi_modality_input() -> None:
@@ -363,10 +393,23 @@ def test_graph_names_the_kernel_gap_families() -> None:
         chimera_modeling.ChimeraOmniModel(chimera_config.small_test_config()),
         model_name="chimera-mixed",
     )
+    latent = inspect_model_circuits(
+        chimera_modeling.ChimeraOmniModel(chimera_config.k3_aligned_test_config()),
+        model_name="chimera-k3",
+    )
 
     assert dict(coverable.metadata)["kernel_gap_block_kinds"] == ""
     assert dict(coverable.metadata)["structurally_coverable_block_kinds"] == "local"
-    assert dict(mixed.metadata)["kernel_gap_block_kinds"] == "csa,hca,kda"
+    # kda/local/csa/hca all have a registered fold kernel now.
+    assert dict(mixed.metadata)["kernel_gap_block_kinds"] == ""
+    assert dict(mixed.metadata)["structurally_coverable_block_kinds"] == (
+        "csa,hca,kda,local"
+    )
+    # gated_mla still has none, and the graph still says so by name.
+    assert dict(latent.metadata)["kernel_gap_block_kinds"] == "gated_mla"
+    assert "compressed_latent_attention" in dict(latent.metadata)[
+        "mixer_kernel_families"
+    ]
 
 
 def test_an_unknown_sequence_mixer_fails_closed_naming_the_family() -> None:
