@@ -625,3 +625,316 @@ def test_a_bridge_must_be_a_verified_strict_artifact(lane, tmp_path) -> None:
             tmp_path / "rounds-fake-bridge",
             tokenizer_bridge=SimpleNamespace(artifact_sha256="a" * 64),
         )
+
+
+# --- cached-decode admissibility screen -------------------------------------
+#
+# A degenerate child can visit prefixes where the parent's KV-cached decode
+# logits genuinely leave the capture's envelope around the use_cache=False
+# full-prefix recompute, at the parent's own runtime precision.  The capture is
+# right to refuse to seal those.  These tests pin the round's behaviour around
+# that refusal: off by default, and when enabled it excludes exactly the
+# refused trajectories, records them, and tells the truth about the extra
+# parent forwards it spent deciding.
+
+
+def _admissibility_reports(models, *, inadmissible=()):
+    """Verdicts shaped exactly like screen_lfm2_cached_decode_admissibility."""
+
+    from neural_forge.hf_lfm2_circuit_trace_cache import _prepare_batches
+
+    prepared = _prepare_batches(torch, list(models), _capture_config())
+    reports = []
+    for position, batch in enumerate(prepared):
+        refused = position in inadmissible
+        failure = {
+            "phase": "decode.001",
+            "prefix_length": int(batch.input_ids.shape[1]) + 2,
+            "admissible": False,
+            "capture_error": (
+                "decode.001 cached logits differ from use_cache=False "
+                "full-prefix logits (maximum error 1.90625)."
+            ),
+            "max_abs_error": 1.90625,
+            "elementwise_tolerance_violations": 190,
+            "compared_elements": 65536,
+            "cached_logit_at_max_abs_error": -6.40625,
+            "full_prefix_logit_at_max_abs_error": -8.3125,
+            "logit_dtype": "bfloat16",
+        }
+        reports.append(
+            {
+                "schema": MODULE.CACHED_DECODE_ADMISSIBILITY_SCHEMA,
+                "index": batch.index,
+                "input_sha256": batch.input_sha256,
+                "admissible": not refused,
+                "cached_decode_verified": not refused,
+                "decode_trace_mode": "cached_verified",
+                "parent_forward_calls": 10,
+                "phases": [
+                    {
+                        "phase": "cached prefill",
+                        "prefix_length": int(batch.input_ids.shape[1]),
+                        "admissible": True,
+                        "max_abs_error": 0.0,
+                        "elementwise_tolerance_violations": 0,
+                        "compared_elements": 65536,
+                        "cached_logit_at_max_abs_error": 0.0,
+                        "full_prefix_logit_at_max_abs_error": 0.0,
+                        "logit_dtype": "bfloat16",
+                    },
+                    *([failure] if refused else []),
+                ],
+                "first_inadmissible_phase": failure if refused else None,
+            }
+        )
+    return tuple(reports)
+
+
+def test_screen_reports_every_batch_instead_of_failing_the_capture_closed(
+    lane,
+) -> None:
+    """The screen answers per batch where the capture refuses the whole set."""
+
+    from neural_forge import hf_lfm2_circuit_trace_cache as CACHE
+
+    batches: list[dict] = [
+        {
+            "input_ids": torch.tensor([[2, 4, 5]], dtype=torch.long),
+            "attention_mask": torch.ones((1, 3), dtype=torch.long),
+            "forced_decode_ids": torch.tensor([[11, 12]], dtype=torch.long),
+        },
+        {
+            "input_ids": torch.tensor([[2, 6, 7]], dtype=torch.long),
+            "attention_mask": torch.ones((1, 3), dtype=torch.long),
+            "forced_decode_ids": torch.tensor([[13, 14]], dtype=torch.long),
+        },
+    ]
+    reports = MODULE.screen_lfm2_cached_decode_admissibility(
+        lane.parent,
+        batches,
+        config=lane.capture_config,
+        input_device="cpu",
+    )
+    assert len(reports) == 2
+    for report in reports:
+        assert report["admissible"] is True
+        assert report["first_inadmissible_phase"] is None
+        # One uncached and one cached prefill, then two forwards per decode step.
+        assert report["parent_forward_calls"] == 2 + 2 * 2
+        assert [value["phase"] for value in report["phases"]] == [
+            "cached prefill",
+            "decode.000",
+            "decode.001",
+        ]
+
+    # The screen must not raise where the capture would: it reports the refusal
+    # and hands the caller the measured evidence behind it.  The verdict is
+    # taken from the collector's own comparison, which is what is stubbed here.
+    original = MODULE._compare_lfm2_trace_logits
+    assert original is CACHE._compare_logits
+
+    def refuse(torch_module, cached, full_prefix, *, config, name):
+        if name == "decode.001":
+            raise CACHE.Lfm2CircuitTraceCaptureError(
+                f"{name} cached logits differ from use_cache=False full-prefix "
+                "logits (maximum error 1.90625)."
+            )
+        return original(torch_module, cached, full_prefix, config=config, name=name)
+
+    MODULE._compare_lfm2_trace_logits = refuse
+    try:
+        refused = MODULE.screen_lfm2_cached_decode_admissibility(
+            lane.parent,
+            batches,
+            config=lane.capture_config,
+            input_device="cpu",
+        )
+    finally:
+        MODULE._compare_lfm2_trace_logits = original
+
+    assert [value["admissible"] for value in refused] == [False, False]
+    for report in refused:
+        failure = report["first_inadmissible_phase"]
+        assert failure["phase"] == "decode.001"
+        assert "maximum error" in failure["capture_error"]
+        assert failure["compared_elements"] > 0
+        # The chain keeps advancing after a refusal so later phases are still
+        # judged on the cache state the capture would actually hold.
+        assert [value["phase"] for value in report["phases"]] == [
+            "cached prefill",
+            "decode.000",
+            "decode.001",
+        ]
+
+
+def test_the_screen_must_not_live_in_the_collector(lane) -> None:
+    """The collector's source digest is part of every sealed cache's identity.
+
+    ``implementation_identity`` hashes ``hf_lfm2_circuit_trace_cache.py`` itself,
+    a round refuses an extension cache whose ``implementation_sha256`` differs
+    from its base cache's, so *any* edit to that file -- even a purely additive
+    one -- retires every sealed cache captured before it.  The screen therefore
+    has to live here and import the collector's helpers.
+    """
+
+    from neural_forge import hf_lfm2_circuit_trace_cache as CACHE
+
+    assert not hasattr(CACHE, "screen_lfm2_cached_decode_admissibility")
+    assert (
+        MODULE.screen_lfm2_cached_decode_admissibility.__module__
+        == "neural_forge.hf_lfm2_on_policy_evidence_round"
+    )
+    assert (
+        MODULE.CACHED_DECODE_ADMISSIBILITY_SCHEMA
+        == "neural-forge-lfm2-cached-decode-admissibility-v1"
+    )
+
+
+def test_screen_is_off_by_default_and_the_round_still_fails_closed(
+    lane, tmp_path
+) -> None:
+    result = _run(lane, tmp_path / "rounds-unscreened")
+    admissibility = result.manifest["capture"]["cached_decode_admissibility"]
+
+    assert admissibility["screened"] is False
+    assert admissibility["excluded_batch_count"] == 0
+    assert admissibility["screen_parent_forward_calls"] == 0
+    assert result.manifest["parent"]["executed_only_inside_sealed_capture"] is True
+    assert (
+        result.manifest["parent"]["executed_in_cached_decode_admissibility_screen"]
+        is False
+    )
+
+
+def test_disabled_screen_leaves_the_sealed_rollout_digest_untouched() -> None:
+    """An unscreened round keeps the digests every already sealed round has."""
+
+    unscreened = MODULE.Lfm2OnPolicyRolloutConfig(max_prompts=8, max_new_tokens=4)
+    body = unscreened.as_dict()
+    assert "screen_cached_decode_admissibility" not in body
+
+    screened = MODULE.Lfm2OnPolicyRolloutConfig(
+        max_prompts=8,
+        max_new_tokens=4,
+        screen_cached_decode_admissibility=True,
+    )
+    screened_body = screened.as_dict()
+    assert screened_body["screen_cached_decode_admissibility"] is True
+    assert screened_body["rollout_sha256"] != body["rollout_sha256"]
+
+
+def test_screened_round_excludes_and_records_the_refused_trajectory(
+    lane, tmp_path, monkeypatch
+) -> None:
+    captured = {}
+
+    def screen(model, models, *, config, input_device):
+        captured["count"] = len(models)
+        return _admissibility_reports(models, inadmissible={1})
+
+    monkeypatch.setattr(MODULE, "screen_lfm2_cached_decode_admissibility", screen)
+
+    result = _run(
+        lane,
+        tmp_path / "rounds-screened",
+        rollout=MODULE.Lfm2OnPolicyRolloutConfig(
+            max_prompts=8,
+            max_new_tokens=4,
+            max_context_tokens=64,
+            seed=0,
+            max_capture_batches=16,
+            screen_cached_decode_admissibility=True,
+        ),
+    )
+
+    assert captured["count"] == len(FIT_PROMPTS)
+    admissibility = result.manifest["capture"]["cached_decode_admissibility"]
+    assert admissibility["screened"] is True
+    assert admissibility["candidate_batch_count"] == len(FIT_PROMPTS)
+    assert admissibility["admissible_batch_count"] == len(FIT_PROMPTS) - 1
+    assert admissibility["excluded_batch_count"] == 1
+    assert admissibility["screen_parent_forward_calls"] == 10 * len(FIT_PROMPTS)
+
+    (excluded,) = admissibility["excluded"]
+    assert excluded["reason"] == "cached_decode_not_verifiable_against_full_prefix"
+    assert excluded["first_inadmissible_phase"]["phase"] == "decode.001"
+    assert excluded["first_inadmissible_phase"]["max_abs_error"] == 1.90625
+    assert excluded["forced_decode_token_ids"]
+
+    # The refused trajectory is gone from the sealed evidence, and only it.
+    assert result.batch_count == len(FIT_PROMPTS) - 1
+    assert result.manifest["capture"]["batch_count"] == len(FIT_PROMPTS) - 1
+    sealed = {
+        value["trajectory_sha256"] for value in result.manifest["capture"]["batches"]
+    }
+    assert excluded["trajectory_sha256"] not in sealed
+    assert len(sealed) == len(FIT_PROMPTS) - 1
+
+    extension = open_lfm2_circuit_trace_cache(result.extension_cache_path, verify=True)
+    assert extension.batch_count == len(FIT_PROMPTS) - 1
+
+    # Screening costs parent forwards outside the sealed capture, and the
+    # manifest says so rather than repeating the unqualified claim.
+    parent = result.manifest["parent"]
+    assert parent["executed_only_inside_sealed_capture"] is False
+    assert parent["executed_in_cached_decode_admissibility_screen"] is True
+    assert parent["screen_parent_forward_calls"] == 10 * len(FIT_PROMPTS)
+    assert parent["unchanged_by_round"] is True
+
+
+def test_screen_refuses_a_round_with_too_few_verifiable_trajectories(
+    lane, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        MODULE,
+        "screen_lfm2_cached_decode_admissibility",
+        lambda model, models, *, config, input_device: _admissibility_reports(
+            models, inadmissible=set(range(len(models)))
+        ),
+    )
+
+    with pytest.raises(
+        MODULE.Lfm2OnPolicyEvidenceRoundError,
+        match="too degenerate to extend this evidence set",
+    ):
+        _run(
+            lane,
+            tmp_path / "rounds-all-refused",
+            rollout=MODULE.Lfm2OnPolicyRolloutConfig(
+                max_prompts=8,
+                max_new_tokens=4,
+                max_context_tokens=64,
+                seed=0,
+                max_capture_batches=16,
+                screen_cached_decode_admissibility=True,
+            ),
+        )
+
+
+def test_screen_refuses_a_verdict_for_a_batch_the_round_did_not_submit(
+    lane, tmp_path, monkeypatch
+) -> None:
+    def screen(model, models, *, config, input_device):
+        reports = list(_admissibility_reports(models))
+        reports[0] = {**reports[0], "input_sha256": "f" * 64}
+        return tuple(reports)
+
+    monkeypatch.setattr(MODULE, "screen_lfm2_cached_decode_admissibility", screen)
+
+    with pytest.raises(
+        MODULE.Lfm2OnPolicyEvidenceRoundIntegrityError,
+        match="a batch the round did not submit",
+    ):
+        _run(
+            lane,
+            tmp_path / "rounds-mismatched-screen",
+            rollout=MODULE.Lfm2OnPolicyRolloutConfig(
+                max_prompts=8,
+                max_new_tokens=4,
+                max_context_tokens=64,
+                seed=0,
+                max_capture_batches=16,
+                screen_cached_decode_admissibility=True,
+            ),
+        )

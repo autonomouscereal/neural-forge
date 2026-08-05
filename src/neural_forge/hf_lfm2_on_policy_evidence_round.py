@@ -62,9 +62,19 @@ from types import MappingProxyType
 from typing import Any
 
 from neural_forge.hf_lfm2_circuit_trace_cache import (
+    FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceCaptureError,
+    _compare_logits as _compare_lfm2_trace_logits,
+    _cpu_tensor as _lfm2_cpu_tensor,
+    _forward as _lfm2_trace_forward,
+    _move_to_device as _lfm2_move_to_device,
+    _output_field as _lfm2_output_field,
+    _output_logits as _lfm2_output_logits,
     _prepare_batches as _prepare_lfm2_trace_batches,
+    _resolve_input_device as _resolve_lfm2_input_device,
+    _sample_sequence_tensor as _sample_lfm2_sequence_tensor,
     build_lfm2_circuit_trace_cache,
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
@@ -102,6 +112,9 @@ MANUAL_PROMPT_MANIFEST_SCHEMA = (
 # extra sealed block, and the consumption gate keys on that block's presence.
 ROUND_TARGET_PREIMAGE_SCHEMA = (
     "neural-forge-lfm2-on-policy-round-target-preimage-v1"
+)
+CACHED_DECODE_ADMISSIBILITY_SCHEMA = (
+    "neural-forge-lfm2-cached-decode-admissibility-v1"
 )
 ROUND_MANIFEST_FILENAME = "round-manifest.json"
 GENERATION_CACHE_FILENAME = "generation-cache.json"
@@ -461,6 +474,8 @@ class Lfm2OnPolicyRolloutConfig:
     strict_byte_identity: bool = True
     max_capture_batches: int = 256
     truncate_forced_decode_to_capture_budget: bool = False
+    screen_cached_decode_admissibility: bool = False
+    min_cached_decode_admissible_batches: int = 1
 
     def __post_init__(self) -> None:
         for name in (
@@ -468,6 +483,7 @@ class Lfm2OnPolicyRolloutConfig:
             "max_new_tokens",
             "max_context_tokens",
             "max_capture_batches",
+            "min_cached_decode_admissible_batches",
         ):
             object.__setattr__(self, name, _positive_int(getattr(self, name), name))
         object.__setattr__(self, "seed", _nonnegative_int(self.seed, "seed"))
@@ -475,6 +491,7 @@ class Lfm2OnPolicyRolloutConfig:
             "greedy",
             "strict_byte_identity",
             "truncate_forced_decode_to_capture_budget",
+            "screen_cached_decode_admissibility",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be a bool.")
@@ -517,6 +534,18 @@ class Lfm2OnPolicyRolloutConfig:
             "child_only_execution": True,
             "parent_executed_during_rollout": False,
         }
+        if self.screen_cached_decode_admissibility:
+            # Additive on the *same* rollout body: a round that does not screen
+            # is byte-identical to the pre-screen revision, so every already
+            # sealed round keeps its `rollout_sha256`, its `request_sha256`, and
+            # therefore its round directory.
+            body = {
+                **body,
+                "screen_cached_decode_admissibility": True,
+                "min_cached_decode_admissible_batches": (
+                    self.min_cached_decode_admissible_batches
+                ),
+            }
         return {**body, "rollout_sha256": _json_sha256(body)}
 
 
@@ -760,6 +789,419 @@ class _CaptureBatch:
                 [list(self.target_forced_decode_token_ids)], dtype=torch.long
             ),
         )
+
+
+def _phase_error_evidence(
+    torch: Any,
+    cached: Any,
+    full_prefix: Any,
+    *,
+    config: Lfm2CircuitTraceCaptureConfig,
+) -> dict[str, Any]:
+    """Measure one cached/full-prefix pair the way the capture gate reads it.
+
+    This only *describes* a comparison.  The admissible/inadmissible verdict is
+    always taken from the capture's own ``_compare_logits``, so the screen can
+    never drift from the gate it screens for.
+    """
+
+    cached_cpu = cached.detach().to("cpu").to(torch.float64)
+    full_cpu = full_prefix.detach().to("cpu").to(torch.float64)
+    difference = (cached_cpu - full_cpu).abs()
+    tolerance = float(config.logit_atol) + float(config.logit_rtol) * full_cpu.abs()
+    violating = difference > tolerance
+    flat_index = int(difference.reshape(-1).argmax().item())
+    return {
+        "max_abs_error": float(difference.max().item()),
+        "elementwise_tolerance_violations": int(violating.sum().item()),
+        "compared_elements": int(difference.numel()),
+        "cached_logit_at_max_abs_error": float(
+            cached_cpu.reshape(-1)[flat_index].item()
+        ),
+        "full_prefix_logit_at_max_abs_error": float(
+            full_cpu.reshape(-1)[flat_index].item()
+        ),
+        "logit_dtype": str(cached.dtype).removeprefix("torch."),
+    }
+
+
+def screen_lfm2_cached_decode_admissibility(
+    model: Any,
+    calibration_batches: Sequence[Mapping[str, Any]],
+    *,
+    config: Lfm2CircuitTraceCaptureConfig,
+    input_device: Any | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Report which batches survive the capture's cached/full-prefix gate.
+
+    ``build_lfm2_circuit_trace_cache`` fails the *whole* capture closed the
+    moment one decode phase's KV-cached logits leave the configured envelope
+    around the ``use_cache=False`` full-prefix recompute.  That is the correct
+    behaviour for the sealed capture: a cache whose cached decode is not
+    verifiable must not be sealed as if it were.  It is not a usable answer for
+    a round that assembles its own corpus from a child rollout, because one
+    inadmissible trajectory destroys an otherwise sound batch set.
+
+    This screen runs exactly the forwards and exactly the comparison the
+    capture runs -- same prepared batches, same device, same tolerances, and
+    the capture's own ``_compare_logits`` -- and returns one report per batch
+    instead of raising.  It installs no hooks, retains no traces, writes
+    nothing, and restores the model's training flags, so it observes
+    admissibility without producing evidence of its own.
+
+    It deliberately lives here rather than in the collector.  The collector's
+    source digest is part of ``implementation_identity``, which every sealed
+    cache carries and which a round requires its extension and base caches to
+    share, so adding even a purely additive function there would change the
+    identity of all future evidence.  Importing the collector's helpers keeps
+    the gate arithmetic shared while leaving that file byte-identical.
+
+    Under ``decode_trace_mode='full_prefix_canonical'`` there is no cached
+    decode to verify, so every batch is reported admissible without a forward.
+    """
+
+    torch = _torch()
+    if not isinstance(config, Lfm2CircuitTraceCaptureConfig):
+        raise TypeError("config must be Lfm2CircuitTraceCaptureConfig.")
+    prepared = _prepare_lfm2_trace_batches(torch, list(calibration_batches), config)
+    device = _resolve_lfm2_input_device(torch, model, input_device)
+    if config.decode_trace_mode == FULL_PREFIX_CANONICAL_TRACE_MODE:
+        return tuple(
+            {
+                "schema": CACHED_DECODE_ADMISSIBILITY_SCHEMA,
+                "index": batch.index,
+                "input_sha256": batch.input_sha256,
+                "admissible": True,
+                "cached_decode_verified": False,
+                "decode_trace_mode": config.decode_trace_mode,
+                "parent_forward_calls": 0,
+                "phases": [],
+                "first_inadmissible_phase": None,
+            }
+            for batch in prepared
+        )
+
+    reports: list[dict[str, Any]] = []
+    module_modes = [(module, bool(module.training)) for module in model.modules()]
+    try:
+        model.eval()
+        with torch.inference_mode():
+            for batch in prepared:
+                reports.append(
+                    _screen_one_batch(torch, model, batch, config=config, device=device)
+                )
+    finally:
+        for module, was_training in module_modes:
+            module.training = was_training
+    return tuple(reports)
+
+
+def _screen_one_batch(
+    torch: Any,
+    model: Any,
+    batch: Any,
+    *,
+    config: Lfm2CircuitTraceCaptureConfig,
+    device: Any,
+) -> dict[str, Any]:
+    """Replay one batch's cached/full-prefix comparisons without sealing it."""
+
+    input_ids = batch.input_ids.to(device=device)
+    attention_mask = batch.attention_mask.to(device=device)
+    position_ids = _lfm2_move_to_device(batch.position_ids, device)
+    forced_ids = batch.forced_decode_ids.to(device=device)
+    phases: list[dict[str, Any]] = []
+    failed: dict[str, Any] | None = None
+    forwards = 0
+
+    def record(phase: str, cached: Any, full_prefix: Any, prefix_length: int) -> None:
+        nonlocal failed
+        evidence = _phase_error_evidence(torch, cached, full_prefix, config=config)
+        try:
+            _compare_lfm2_trace_logits(
+                torch, cached, full_prefix, config=config, name=phase
+            )
+        except Lfm2CircuitTraceCaptureError as exc:
+            phases.append(
+                {
+                    "phase": phase,
+                    "prefix_length": prefix_length,
+                    "admissible": False,
+                    "capture_error": str(exc),
+                    **evidence,
+                }
+            )
+            if failed is None:
+                failed = phases[-1]
+            return
+        phases.append(
+            {
+                "phase": phase,
+                "prefix_length": prefix_length,
+                "admissible": True,
+                **evidence,
+            }
+        )
+
+    full_prefill = _lfm2_trace_forward(
+        model,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        use_cache=False,
+        past_key_values=None,
+    )
+    cached_prefill = _lfm2_trace_forward(
+        model,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        use_cache=True,
+        past_key_values=None,
+    )
+    forwards += 2
+    past = _lfm2_output_field(cached_prefill, "past_key_values")
+    if past is None:
+        raise Lfm2CircuitTraceCaptureError(
+            "The cached prefill did not return past_key_values."
+        )
+    record(
+        "cached prefill",
+        _sample_lfm2_sequence_tensor(
+            torch,
+            _lfm2_output_logits(torch, cached_prefill),
+            "cached prefill logits",
+            sequence_axis=1,
+            sample_last_tokens=config.sample_last_tokens,
+        ),
+        _sample_lfm2_sequence_tensor(
+            torch,
+            _lfm2_output_logits(torch, full_prefill),
+            "prefill logits",
+            sequence_axis=1,
+            sample_last_tokens=config.sample_last_tokens,
+        ),
+        int(input_ids.shape[1]),
+    )
+    del full_prefill, cached_prefill
+
+    prefix_ids = input_ids
+    prefix_mask = attention_mask
+    prefix_positions = position_ids
+    for step_index in range(int(forced_ids.shape[1])):
+        token = forced_ids[:, step_index : step_index + 1]
+        prefix_ids = torch.cat((prefix_ids, token), dim=1)
+        prefix_mask = torch.cat(
+            (
+                prefix_mask,
+                torch.ones(
+                    (int(prefix_mask.shape[0]), 1),
+                    dtype=prefix_mask.dtype,
+                    device=device,
+                ),
+            ),
+            dim=1,
+        )
+        step_positions = None
+        if prefix_positions is not None:
+            step_positions = prefix_positions[:, -1:] + 1
+            prefix_positions = torch.cat((prefix_positions, step_positions), dim=1)
+        # The cached chain keeps advancing after a refusal, because a later
+        # phase's verdict is only meaningful on the cache state the capture
+        # would actually be holding at that step.
+        cached_step = _lfm2_trace_forward(
+            model,
+            input_ids=token,
+            attention_mask=prefix_mask,
+            position_ids=step_positions,
+            use_cache=True,
+            past_key_values=past,
+        )
+        full_step = _lfm2_trace_forward(
+            model,
+            input_ids=prefix_ids,
+            attention_mask=prefix_mask,
+            position_ids=prefix_positions,
+            use_cache=False,
+            past_key_values=None,
+        )
+        forwards += 2
+        past = _lfm2_output_field(cached_step, "past_key_values")
+        if past is None:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Cached decode step {step_index} lost past_key_values."
+            )
+        phase = f"decode.{step_index:03d}"
+        record(
+            phase,
+            _lfm2_cpu_tensor(
+                torch,
+                _lfm2_output_logits(torch, cached_step)[:, -1:, :],
+                f"{phase} logits",
+            ),
+            _lfm2_cpu_tensor(
+                torch,
+                _lfm2_output_logits(torch, full_step)[:, -1:, :],
+                f"{phase} full-prefix logits",
+            ),
+            int(prefix_ids.shape[1]),
+        )
+        del cached_step, full_step
+
+    return {
+        "schema": CACHED_DECODE_ADMISSIBILITY_SCHEMA,
+        "index": batch.index,
+        "input_sha256": batch.input_sha256,
+        "admissible": failed is None,
+        "cached_decode_verified": failed is None,
+        "decode_trace_mode": config.decode_trace_mode,
+        "parent_forward_calls": forwards,
+        "phases": phases,
+        "first_inadmissible_phase": None if failed is None else dict(failed),
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class _CachedDecodeAdmissibility:
+    """The batch set that survived the capture's cached/full-prefix gate."""
+
+    batches: tuple[_CaptureBatch, ...]
+    models: tuple[dict[str, Any], ...]
+    inputs: tuple[str, ...]
+    evidence: dict[str, Any]
+
+
+def _screen_cached_decode_admissibility(
+    parent_model: Any,
+    batches: Sequence[_CaptureBatch],
+    models: Sequence[dict[str, Any]],
+    inputs: Sequence[str],
+    *,
+    capture_config: Lfm2CircuitTraceCaptureConfig,
+    input_device: Any,
+    rollout: Lfm2OnPolicyRolloutConfig,
+) -> _CachedDecodeAdmissibility:
+    """Drop child-visited trajectories whose cached decode is not verifiable.
+
+    The sealed capture accepts KV-cached decode logits only because it proves
+    them against a ``use_cache=False`` full-prefix recompute of the same
+    prefix.  On a degenerate child the rollout can visit prefixes where that
+    proof genuinely fails at the parent's own runtime precision -- a collapsed
+    child emits runs of control tokens, the parent's massive-activation states
+    on those tokens round differently through the cached conv/KV state than
+    through a full-prefix recompute, and the following step's normalized
+    hidden state carries that difference straight into the logits.  Nothing is
+    miscomputed; the two paths are simply not equal at that precision, and the
+    capture is right to refuse to seal one as the other.
+
+    A whole round must not die on that.  This screen measures the same gate on
+    the same prepared batches, keeps the trajectories the capture can prove,
+    and records every refusal with its measured error so the exclusion is
+    auditable rather than silent.  Excluding is the only option that preserves
+    the evidence contract: the sealed selection asserts cached decode for every
+    phase, so replaying a failing row uncached and sealing it beside the others
+    would make that assertion false for part of the cache, and base and
+    extension evidence would no longer be the homogeneous corpus a closed-form
+    writer is entitled to assume.
+
+    The screen is *opt-in*.  Left off, this round behaves exactly as before and
+    still fails closed, which keeps the refusal the default answer.
+    """
+
+    if not rollout.screen_cached_decode_admissibility:
+        return _CachedDecodeAdmissibility(
+            batches=tuple(batches),
+            models=tuple(models),
+            inputs=tuple(inputs),
+            evidence={
+                "screened": False,
+                "reason": "screen_cached_decode_admissibility is disabled",
+                "candidate_batch_count": len(batches),
+                "admissible_batch_count": len(batches),
+                "excluded_batch_count": 0,
+                "excluded": [],
+                "screen_parent_forward_calls": 0,
+            },
+        )
+
+    reports = screen_lfm2_cached_decode_admissibility(
+        parent_model,
+        list(models),
+        config=capture_config,
+        input_device=input_device,
+    )
+    if len(reports) != len(batches):
+        raise Lfm2OnPolicyEvidenceRoundIntegrityError(
+            "The cached-decode admissibility screen did not report exactly one "
+            "verdict per candidate capture batch."
+        )
+    kept_batches: list[_CaptureBatch] = []
+    kept_models: list[dict[str, Any]] = []
+    kept_inputs: list[str] = []
+    excluded: list[dict[str, Any]] = []
+    forwards = 0
+    maximum_admissible_error = 0.0
+    for batch, model_batch, input_sha256, report in zip(
+        batches, models, inputs, reports, strict=True
+    ):
+        forwards += int(report["parent_forward_calls"])
+        if str(report["input_sha256"]) != input_sha256:
+            raise Lfm2OnPolicyEvidenceRoundIntegrityError(
+                "The cached-decode admissibility screen reported a verdict for "
+                "a batch the round did not submit."
+            )
+        phase_errors = [float(value["max_abs_error"]) for value in report["phases"]]
+        if bool(report["admissible"]):
+            kept_batches.append(batch)
+            kept_models.append(model_batch)
+            kept_inputs.append(input_sha256)
+            maximum_admissible_error = max(
+                maximum_admissible_error, max(phase_errors, default=0.0)
+            )
+            continue
+        failure = dict(report["first_inadmissible_phase"])
+        excluded.append(
+            {
+                "trajectory_sha256": batch.trajectory_sha256,
+                "target_trajectory_sha256": batch.target_trajectory_sha256,
+                "input_sha256": input_sha256,
+                "origin_prompt_indices": list(batch.origin_prompt_indices),
+                "prompt_token_count": len(batch.prompt_token_ids),
+                "forced_decode_token_ids": list(batch.forced_decode_token_ids),
+                "truncated_to_capture_budget": bool(batch.truncated),
+                "reason": "cached_decode_not_verifiable_against_full_prefix",
+                "first_inadmissible_phase": failure,
+                "maximum_phase_max_abs_error": max(phase_errors, default=0.0),
+            }
+        )
+    if len(kept_batches) < rollout.min_cached_decode_admissible_batches:
+        raise Lfm2OnPolicyEvidenceRoundError(
+            f"Only {len(kept_batches)} of {len(batches)} child-visited "
+            "trajectories have cached decode the capture can verify, which is "
+            "below min_cached_decode_admissible_batches="
+            f"{rollout.min_cached_decode_admissible_batches}. The child's "
+            "rollout is too degenerate to extend this evidence set."
+        )
+    return _CachedDecodeAdmissibility(
+        batches=tuple(kept_batches),
+        models=tuple(kept_models),
+        inputs=tuple(kept_inputs),
+        evidence={
+            "schema": CACHED_DECODE_ADMISSIBILITY_SCHEMA,
+            "screened": True,
+            "candidate_batch_count": len(batches),
+            "admissible_batch_count": len(kept_batches),
+            "excluded_batch_count": len(excluded),
+            "excluded": excluded,
+            "screen_parent_forward_calls": forwards,
+            "logit_rtol": capture_config.logit_rtol,
+            "logit_atol": capture_config.logit_atol,
+            "maximum_admissible_max_abs_error": maximum_admissible_error,
+            "min_cached_decode_admissible_batches": (
+                rollout.min_cached_decode_admissible_batches
+            ),
+        },
+    )
 
 
 def _trajectory_sha256(
@@ -1994,6 +2436,19 @@ def run_lfm2_on_policy_evidence_round(
                 "On-policy capture batches are not content-distinct."
             )
 
+        admissibility = _screen_cached_decode_admissibility(
+            parent_model,
+            selected_batches,
+            selected_models,
+            selected_inputs,
+            capture_config=capture_config,
+            input_device=input_device,
+            rollout=selected,
+        )
+        selected_batches = list(admissibility.batches)
+        selected_models = list(admissibility.models)
+        selected_inputs = list(admissibility.inputs)
+
         aligned_records: tuple[Any, ...] = ()
         adapter_evidence_sha256: str | None = None
         if bridge is not None:
@@ -2113,7 +2568,19 @@ def run_lfm2_on_policy_evidence_round(
         "parent": {
             **parent_before.as_dict(),
             "unchanged_by_round": True,
-            "executed_only_inside_sealed_capture": True,
+            # A screened round runs the parent once more per *candidate* batch
+            # to decide admissibility, so the unqualified claim would be false
+            # and is reported as what actually happened instead.
+            "executed_only_inside_sealed_capture": (
+                not admissibility.evidence["screened"]
+            ),
+            "executed_in_cached_decode_admissibility_screen": bool(
+                admissibility.evidence["screened"]
+            ),
+            "screen_parent_forward_calls": int(
+                admissibility.evidence["screen_parent_forward_calls"]
+            ),
+            "executed_without_gradients_in_every_phase": True,
         },
         "prompt_corpus": prompt_corpus,
         "disjointness": disjointness,
@@ -2141,6 +2608,7 @@ def run_lfm2_on_policy_evidence_round(
             "candidate_batch_count": len(candidates),
             "prior_sealed_batch_input_count": len(prior.batch_input_source),
             "already_sealed_in_prior_evidence": already_sealed,
+            "cached_decode_admissibility": dict(admissibility.evidence),
             "batch_count": len(selected_batches),
             "batches": [
                 {

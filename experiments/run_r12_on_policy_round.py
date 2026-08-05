@@ -269,6 +269,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         truncate_forced_decode_to_capture_budget=(
             args.truncate_forced_decode_to_capture_budget
         ),
+        screen_cached_decode_admissibility=(
+            args.screen_cached_decode_admissibility
+        ),
+        min_cached_decode_admissible_batches=(
+            args.min_cached_decode_admissible_batches
+        ),
     )
     if rollout.max_new_tokens > capture_config.max_decode_steps and not (
         rollout.truncate_forced_decode_to_capture_budget
@@ -400,6 +406,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "counters": dict(manifest["counters"]),
         "rollout": dict(manifest["rollout"]),
     }
+    admissibility = manifest.get("capture", {}).get(
+        "cached_decode_admissibility"
+    )
+    if admissibility is not None:
+        body["cached_decode_admissibility"] = dict(admissibility)
     receipt = {**body, "runner_receipt_sha256": canonical_sha256(body)}
     if args.receipt is not None:
         destination = args.receipt.expanduser().absolute()
@@ -459,6 +470,25 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Truncate a re-tokenized continuation that exceeds the sealed "
             "capture budget instead of failing the round."
+        ),
+    )
+    parser.add_argument(
+        "--screen-cached-decode-admissibility",
+        action="store_true",
+        help=(
+            "Pre-screen each candidate trajectory's cached decode against a "
+            "use_cache=False full-prefix recompute with the collector's own "
+            "comparison, excluding and recording trajectories the sealed "
+            "capture gate would refuse instead of failing the round."
+        ),
+    )
+    parser.add_argument(
+        "--min-cached-decode-admissible-batches",
+        type=int,
+        default=1,
+        help=(
+            "Fail the round closed if fewer than this many capture batches "
+            "survive the cached-decode admissibility screen."
         ),
     )
     parser.add_argument("--device", default="cpu")
