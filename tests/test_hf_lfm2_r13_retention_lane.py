@@ -30,6 +30,7 @@ from neural_forge.hf_closed_form_fit import FitMetrics  # noqa: E402
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     Lfm2DynamicClosedLoopAdapterError,
     Lfm2TerminalFreeRunTripwire,
+    _durable_diagnostic_json,
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     Lfm2CachedMlpFoldCase,
@@ -848,6 +849,45 @@ def test_solver_conditioning_diagnostics_do_not_change_the_state() -> None:
     )
 
 
+def test_nonfinite_solver_diagnostics_are_durable_and_explicit() -> None:
+    encoded, marker_json = _durable_diagnostic_json(
+        {
+            "solver_conditioning": {
+                "system_condition_number": float("inf"),
+                "negative_probe": float("-inf"),
+                "undefined_probe": float("nan"),
+            }
+        },
+        "singular solver diagnostics",
+    )
+    conditioning = json.loads(encoded)["solver_conditioning"]
+    assert conditioning == {
+        "negative_probe": None,
+        "system_condition_number": None,
+        "undefined_probe": None,
+    }
+    assert marker_json is not None
+    markers = json.loads(marker_json)
+    assert markers["schema"] == "neural-forge-nonfinite-diagnostic-paths-v1"
+    assert markers["entries"] == [
+        {
+            "kind": "negative_infinity",
+            "path": ["solver_conditioning", "negative_probe"],
+        },
+        {
+            "kind": "positive_infinity",
+            "path": [
+                "solver_conditioning",
+                "system_condition_number",
+            ],
+        },
+        {
+            "kind": "nan",
+            "path": ["solver_conditioning", "undefined_probe"],
+        },
+    ]
+
+
 def test_gate_operating_point_diagnostics_do_not_change_the_state() -> None:
     baseline = _compile_toy_mlp()
     diagnostic = _compile_toy_mlp(gate_operating_point_diagnostics=True)
@@ -937,10 +977,27 @@ def test_solver_and_gate_telemetry_reach_a_toy_layer_receipt(
     )
     report = _run_toy_layers(adapter)
     for entry in report["layer_reports"]:
-        payload = adapter._downstream_payloads[
-            entry["scope"]["layer_index"]
-        ]
-        body = payload.compiled.as_dict()
+        metadata = dict(entry["downstream"]["compiled"]["metadata"])
+        completion_receipt = entry["accepted_layer_completion_receipt"]
+        sealed_metadata = dict(
+            completion_receipt["stage_preimages"]["downstream"][
+                "compiled"
+            ]["metadata"]
+        )
+        assert sealed_metadata[
+            "mlp_prior_correction_reports_json"
+        ] == metadata["mlp_prior_correction_reports_json"]
+        assert sealed_metadata[
+            "mlp_gate_operating_point_json"
+        ] == metadata["mlp_gate_operating_point_json"]
+        body = {
+            "prior_correction_reports": json.loads(
+                metadata["mlp_prior_correction_reports_json"]
+            ),
+            "gate_operating_point": json.loads(
+                metadata["mlp_gate_operating_point_json"]
+            ),
+        }
         roles = {
             value["role"]: value
             for value in body["prior_correction_reports"]
@@ -953,3 +1010,4 @@ def test_solver_and_gate_telemetry_reach_a_toy_layer_receipt(
             assert conditioning["system_condition_number"] >= 1.0
         assert "gate_operating_point" in body
         assert "drift" in body["gate_operating_point"]
+    assert not adapter._downstream_payloads

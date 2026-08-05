@@ -1050,6 +1050,69 @@ def _json_safe_diagnostic_scalar(value: JsonScalar) -> JsonScalar:
     return value
 
 
+def _durable_diagnostic_json(
+    value: Any,
+    name: str,
+) -> tuple[str, str | None]:
+    """Encode diagnostic trees without turning nonfinite math into control flow."""
+
+    nonfinite: list[dict[str, Any]] = []
+
+    def normalize(current: Any, path: tuple[str | int, ...]) -> Any:
+        if isinstance(current, Mapping):
+            normalized: dict[str, Any] = {}
+            keys = tuple(current)
+            if any(not isinstance(key, str) for key in keys):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"{name} contains a non-string mapping key."
+                )
+            for key in sorted(keys):
+                normalized[key] = normalize(current[key], (*path, key))
+            return normalized
+        if isinstance(current, (tuple, list)):
+            return [
+                normalize(item, (*path, index))
+                for index, item in enumerate(current)
+            ]
+        if type(current) is float and not math.isfinite(current):
+            kind = (
+                "nan"
+                if math.isnan(current)
+                else (
+                    "positive_infinity"
+                    if current > 0.0
+                    else "negative_infinity"
+                )
+            )
+            nonfinite.append({"path": list(path), "kind": kind})
+            return None
+        if current is None or type(current) in {bool, int, float, str}:
+            return current
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{name} contains a non-JSON diagnostic value."
+        )
+
+    normalized = normalize(value, ())
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    if not nonfinite:
+        return encoded, None
+    markers = json.dumps(
+        {
+            "schema": "neural-forge-nonfinite-diagnostic-paths-v1",
+            "entries": nonfinite,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return encoded, markers
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2DynamicClosedLoopAdapterConfig:
     """Closed-form fit and held-out acceptance policy."""
@@ -12582,6 +12645,55 @@ class Lfm2DynamicClosedLoopAdapter:
                 else {"gate_operating_point_diagnostics": True}
             ),
         )
+        durable_diagnostic_metadata: dict[str, JsonScalar] = {}
+        if self.config.mlp_solver_conditioning_diagnostics:
+            correction_reports = [
+                value.as_dict()
+                for value in compiled_mlp.prior_correction_reports
+            ]
+            correction_reports_by_role = {
+                str(value.get("role")): value
+                for value in correction_reports
+            }
+            if any(
+                "solver_conditioning"
+                not in correction_reports_by_role.get(role, {})
+                for role in ("mlp_gate", "mlp_up")
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Requested MLP solver diagnostics were not materialized."
+                )
+            correction_json, correction_nonfinite_json = (
+                _durable_diagnostic_json(
+                    correction_reports,
+                    "MLP prior-correction diagnostics",
+                )
+            )
+            durable_diagnostic_metadata[
+                "mlp_prior_correction_reports_json"
+            ] = correction_json
+            if correction_nonfinite_json is not None:
+                durable_diagnostic_metadata[
+                    "mlp_prior_correction_reports_nonfinite_json"
+                ] = correction_nonfinite_json
+        if self.config.mlp_gate_operating_point_diagnostics:
+            gate_operating_point = compiled_mlp.gate_operating_point
+            if not isinstance(gate_operating_point, Mapping):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Requested MLP gate operating-point diagnostics were not "
+                    "materialized."
+                )
+            gate_json, gate_nonfinite_json = _durable_diagnostic_json(
+                dict(gate_operating_point),
+                "MLP gate operating-point diagnostics",
+            )
+            durable_diagnostic_metadata[
+                "mlp_gate_operating_point_json"
+            ] = gate_json
+            if gate_nonfinite_json is not None:
+                durable_diagnostic_metadata[
+                    "mlp_gate_operating_point_nonfinite_json"
+                ] = gate_nonfinite_json
         offline_candidate = compute_lfm2_candidate_post_layer(
             mlp_cases,
             gate_weight=compiled_mlp.gate_weight,
@@ -12656,6 +12768,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         offline_candidate.comparison.current_fit.relative_rmse
                     ),
                     "map_sha256": self.map_sha256,
+                    **durable_diagnostic_metadata,
                     **(
                         {}
                         if input_error_evidence is None
