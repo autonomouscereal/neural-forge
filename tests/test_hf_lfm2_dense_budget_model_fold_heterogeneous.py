@@ -16,11 +16,17 @@ from neural_forge.dynamic_fold_executor import (  # noqa: E402
 )
 from neural_forge.hf_feature_fold import build_feature_fold_map  # noqa: E402
 from neural_forge.hf_lfm2_dense_budget_model_fold import (  # noqa: E402
+    Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetFoldError,
     _Lfm2DenseFoldProgress,
+    _assert_terminal_only_restart_execution_preflight,
     _factorize_short_conv_dense_writer_action,
     _fold_dense_blank_from_parent,
     _seal_short_conv_output_action_evidence,
+)
+from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
+    Lfm2ClosedLoopRestartCapsuleReference,
+    Lfm2TerminalOnlyRestartResumePolicy,
 )
 from neural_forge import hf_lfm2_dense_budget_model_fold as dense_fold_module  # noqa: E402
 from neural_forge.hf_lfm2_dynamic_blank_materializer import (  # noqa: E402
@@ -167,6 +173,89 @@ def _heterogeneous_child(*, factorized_writer: bool = False):
     )
     _zero(child)
     return child
+
+
+def _terminal_policy(tmp_path: Path) -> Lfm2TerminalOnlyRestartResumePolicy:
+    binding = "8" * 64
+    return Lfm2TerminalOnlyRestartResumePolicy(
+        capsule_reference=Lfm2ClosedLoopRestartCapsuleReference(
+            path=tmp_path / "capsule-000013-exact",
+            capsule_key="1" * 64,
+            manifest_sha256="2" * 64,
+            manifest_file_sha256="3" * 64,
+            bindings_sha256=binding,
+            child_state_sha256="4" * 64,
+            capsule_chain_sha256="5" * 64,
+            capsule_sequence=13,
+            layer_index=13,
+        ),
+        expected_child_topology_sha256="6" * 64,
+        expected_adapter_identity_sha256="7" * 64,
+        expected_run_bindings_sha256=binding,
+        expected_run_id="9" * 64,
+    )
+
+
+def test_terminal_only_dense_policy_preserves_adapter_mode_and_is_read_only(
+    tmp_path: Path,
+) -> None:
+    config = Lfm2DenseBudgetFoldConfig(
+        body_reclosure_mode="moving_gauge_v3",
+        terminal_only_restart_resume_policy=_terminal_policy(tmp_path),
+    )
+
+    compiler = config._closed_loop_compiler_config_for_execution()
+
+    assert config.body_reclosure_mode == "moving_gauge_v3"
+    assert config.restart_capsule_directory is None
+    assert config.resume_from_restart_capsule is None
+    assert compiler.fold_body_reclosure is False
+    assert compiler.fold_output_interface is True
+    assert compiler.terminal_only_restart_resume_policy == (
+        "exact_accepted_layer_terminal_only_v1"
+    )
+
+
+def test_terminal_only_dense_policy_rejects_legacy_capsule_write_root(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="read-only",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            body_reclosure_mode="moving_gauge_v3",
+            restart_capsule_directory=tmp_path / "legacy-root",
+            terminal_only_restart_resume_policy=_terminal_policy(tmp_path),
+        )
+
+
+def test_terminal_only_dense_policy_fails_early_on_action_or_dispatch_drift(
+    tmp_path: Path,
+) -> None:
+    policy = _terminal_policy(tmp_path)
+    config = Lfm2DenseBudgetFoldConfig(
+        body_reclosure_mode="moving_gauge_v3",
+        terminal_only_restart_resume_policy=policy,
+    )
+
+    _assert_terminal_only_restart_execution_preflight(
+        config,
+        action_sha256=policy.expected_run_id,
+        component_dispatch=None,
+    )
+    with pytest.raises(Lfm2DenseBudgetFoldError, match="action identity"):
+        _assert_terminal_only_restart_execution_preflight(
+            config,
+            action_sha256="a" * 64,
+            component_dispatch=None,
+        )
+    with pytest.raises(Lfm2DenseBudgetFoldError, match="component diagnostic"):
+        _assert_terminal_only_restart_execution_preflight(
+            config,
+            action_sha256=policy.expected_run_id,
+            component_dispatch=object(),
+        )
 
 
 def test_fold_uses_each_materialized_layer_physical_geometry() -> None:

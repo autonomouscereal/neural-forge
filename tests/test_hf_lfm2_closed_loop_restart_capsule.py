@@ -19,6 +19,7 @@ from neural_forge.dynamic_closed_loop_fold import (
     ParentEndpointBatch,
     TrajectoryRecord,
     TransactionReceipt,
+    TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1,
     ValidationDecision,
 )
 
@@ -31,10 +32,13 @@ from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
     Lfm2ClosedLoopRestartCapsuleBindings,
     Lfm2ClosedLoopRestartCapsuleError,
     Lfm2ClosedLoopRestartCapsuleWriter,
+    Lfm2ClosedLoopTerminalOnlyRestartWriter,
+    Lfm2TerminalOnlyRestartResumePolicy,
     authenticate_lfm2_closed_loop_restart_capsule,
     discover_lfm2_closed_loop_restart_capsules,
     latest_lfm2_closed_loop_restart_capsule,
     load_lfm2_closed_loop_restart_capsule,
+    load_lfm2_terminal_only_restart_resume_policy,
     portable_child_state_sha256,
     portable_child_topology_sha256,
 )
@@ -236,6 +240,23 @@ def _accept(
         child_state_sha256=writer.adapter.child_state_fingerprint(),
         child_topology_sha256=writer.adapter.child_topology_fingerprint(),
         trajectory_split_sha256=_split_digest(split_label),
+    )
+
+
+def _terminal_policy(reference) -> Lfm2TerminalOnlyRestartResumePolicy:
+    authentication = authenticate_lfm2_closed_loop_restart_capsule(reference)
+    return Lfm2TerminalOnlyRestartResumePolicy(
+        capsule_reference=reference,
+        expected_child_topology_sha256=authentication.manifest[
+            "child_topology_sha256"
+        ],
+        expected_adapter_identity_sha256=(
+            authentication.bindings.adapter_identity_sha256
+        ),
+        expected_run_bindings_sha256=(
+            authentication.bindings.bindings_sha256
+        ),
+        expected_run_id=authentication.bindings.run_id,
     )
 
 
@@ -607,6 +628,70 @@ def test_writer_refuses_a_resume_that_body_reclosure_cannot_support(
     )
 
 
+def test_exact_terminal_only_policy_authenticates_body_complete_capsule(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    adapter = _FakeAdapter(child, body_reclosure_mode="moving_gauge_v3")
+    writer = _writer(tmp_path, adapter, rotation_keep=3)
+    for layer_index in range(3):
+        _mutate(child, 0.1 + layer_index)
+        _accept(writer, layer_index)
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+    assert reference is not None
+    policy = _terminal_policy(reference)
+    policy_path = tmp_path / "terminal-only-policy.json"
+    _write_canonical(policy_path, policy.as_dict())
+
+    loaded_policy = load_lfm2_terminal_only_restart_resume_policy(policy_path)
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        loaded_policy.capsule_reference,
+        child_model=fresh,
+    )
+    resumed_adapter = _FakeAdapter(
+        fresh,
+        body_reclosure_mode="moving_gauge_v3",
+    )
+    terminal_writer = Lfm2ClosedLoopTerminalOnlyRestartWriter(
+        adapter=resumed_adapter,
+        resume=resume,
+        policy=loaded_policy,
+        run_id="restart-capsule-test-run",
+        child_name="tiny-restart-child",
+        trajectory_split_sha256=_split_digest(),
+        run_schema="neural-forge-dynamic-child-closed-loop-fold-v3",
+    )
+
+    admission = terminal_writer.assert_terminal_only_resume_supported(
+        completed_layer_indices=(0, 1, 2),
+        remaining_layer_indices=(),
+        selected_layer_indices=(0, 1, 2),
+        available_layer_indices=(0, 1, 2),
+        body_reclosure_enabled=False,
+        final_normalization_enabled=True,
+        output_interface_enabled=True,
+        trajectory_split_sha256=_split_digest(),
+        child_state_sha256=resumed_adapter.child_state_fingerprint(),
+        child_topology_sha256=resumed_adapter.child_topology_fingerprint(),
+    )
+
+    assert admission["phase"] == (
+        "accepted_layer_post_validation_pre_body_reclosure"
+    )
+    assert admission["remaining_layer_indices"] == []
+    assert admission["configured_adapter_body_reclosure_mode"] == (
+        "moving_gauge_v3"
+    )
+    assert admission["effective_compiler_body_reclosure_mode"] == "disabled"
+    assert admission["latest_capsule_discovery_used"] is False
+    assert admission["legacy_capsule_writes_enabled"] is False
+    writer_report = terminal_writer.as_dict()
+    assert writer_report["published_capsule_count"] == 0
+    assert writer_report["legacy_capsule_directory"] is None
+    assert writer_report["terminal_or_post_output_capsule_writes_enabled"] is False
+
+
 def test_writer_refuses_a_resume_whose_split_changed(tmp_path: Path) -> None:
     child = _TinyChild()
     writer = _writer(tmp_path, _FakeAdapter(child))
@@ -946,6 +1031,28 @@ class _ScriptedRestartWriter:
         self.admissions.append(admission)
         return admission
 
+    def assert_terminal_only_resume_supported(self, **kwargs):
+        admission = {
+            "schema": "scripted-terminal-only-admission-v1",
+            "completed_layer_indices": list(
+                kwargs["completed_layer_indices"]
+            ),
+            "remaining_layer_indices": list(
+                kwargs["remaining_layer_indices"]
+            ),
+            "selected_layer_indices": list(kwargs["selected_layer_indices"]),
+            "available_layer_indices": list(
+                kwargs["available_layer_indices"]
+            ),
+            "body_reclosure_enabled": kwargs["body_reclosure_enabled"],
+            "final_normalization_enabled": kwargs[
+                "final_normalization_enabled"
+            ],
+            "output_interface_enabled": kwargs["output_interface_enabled"],
+        }
+        self.admissions.append(admission)
+        return admission
+
     def record_accepted_layer(self, **kwargs):
         record = {
             "schema": "scripted-capsule-record-v1",
@@ -1092,6 +1199,106 @@ def test_compiler_rejects_a_resume_that_leaves_no_layer() -> None:
             _config(),
             restart_capsule_config=writer,
         ).run()
+
+
+def test_compiler_explicit_terminal_only_resume_runs_only_terminal_stages() -> None:
+    adapter = _ScriptedAdapter()
+    adapter.state["layers"] = {
+        layer_index: {
+            "producer": f"sealed-producer-{layer_index}",
+            "consumer": f"sealed-consumer-{layer_index}",
+            "downstream": f"sealed-downstream-{layer_index}",
+        }
+        for layer_index in range(3)
+    }
+    writer = _ScriptedRestartWriter(completed=(0, 1, 2))
+    events: list[tuple[str, dict[str, object]]] = []
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        _config(
+            fold_body_reclosure=False,
+            fold_output_interface=True,
+            terminal_only_restart_resume_policy=(
+                TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1
+            ),
+        ),
+        progress_sink=(
+            lambda stage, metadata: events.append((stage, dict(metadata)))
+        ),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert report["layers_executed_in_this_process"] == []
+    assert writer.records == []
+    assert writer.admissions[0]["remaining_layer_indices"] == []
+    assert report["body_reclosure_fold_enabled"] is False
+    assert report["output_interface_fold_enabled"] is True
+    receipt = report["terminal_only_restart_resume"]
+    assert receipt["completed_equals_selected_equals_available"] is True
+    assert receipt["body_layer_execution_count"] == 0
+    assert receipt["body_reclosure_executed"] is False
+    assert receipt["final_normalization_executed"] is True
+    assert receipt["output_interface_executed"] is True
+    assert receipt["legacy_restart_capsule_writes"] == 0
+    body = dict(receipt)
+    assert body.pop("receipt_sha256") == canonical_sha256(body)
+    stages = [stage for stage, _metadata in events]
+    assert "child_closed_loop_terminal_only_resume_admitted" in stages
+    assert "child_closed_loop_layer_started" not in stages
+    assert "child_closed_loop_body_reclosure_started" not in stages
+    assert "child_closed_loop_final_normalization_completed" in stages
+    assert "child_closed_loop_output_interface_completed" in stages
+
+
+@pytest.mark.parametrize(
+    ("fold_body_reclosure", "fold_output_interface", "match"),
+    (
+        (True, True, "fold_body_reclosure=False"),
+        (False, False, "fold_output_interface=True"),
+    ),
+)
+def test_compiler_terminal_only_resume_rejects_incomplete_terminal_policy(
+    fold_body_reclosure: bool,
+    fold_output_interface: bool,
+    match: str,
+) -> None:
+    writer = _ScriptedRestartWriter(completed=(0, 1, 2))
+    with pytest.raises(ClosedLoopFoldError, match=match):
+        ChildClosedLoopCompiler(
+            _ScriptedAdapter(),
+            _config(
+                fold_body_reclosure=fold_body_reclosure,
+                fold_output_interface=fold_output_interface,
+                terminal_only_restart_resume_policy=(
+                    TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1
+                ),
+            ),
+            restart_capsule_config=writer,
+        ).run()
+
+    assert writer.admissions == []
+
+
+def test_compiler_terminal_only_resume_rejects_selected_layer_subset() -> None:
+    writer = _ScriptedRestartWriter(completed=(0, 1))
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match="completed == selected == available",
+    ):
+        ChildClosedLoopCompiler(
+            _ScriptedAdapter(),
+            _config(
+                selected_layers=(0, 1),
+                fold_output_interface=True,
+                terminal_only_restart_resume_policy=(
+                    TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1
+                ),
+            ),
+            restart_capsule_config=writer,
+        ).run()
+
+    assert writer.admissions == []
 
 
 def test_compiler_rejects_a_restart_writer_that_breaks_the_protocol() -> None:

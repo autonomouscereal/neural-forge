@@ -5431,6 +5431,7 @@ def test_dense_closed_loop_replay_and_capsule_cli_defaults(tmp_path) -> None:
     assert default_config.dense_restart_capsule_root is None
     assert default_config.dense_restart_capsule_keep == 2
     assert default_config.dense_resume_from_capsule is None
+    assert default_config.dense_terminal_only_restart_policy is None
     # Capsules only exist inside the dense closed-loop body fold.
     assert default_config.dense_restart_capsule_directory is None
     assert default_config.on_policy_evidence_rounds == 0
@@ -5490,6 +5491,70 @@ def test_dense_closed_loop_replay_and_capsule_cli_defaults(tmp_path) -> None:
         (tmp_path / "capsules").absolute()
     )
     assert explicit.dense_restart_capsule_keep == 3
+
+
+def test_terminal_only_restart_policy_cli_is_exact_and_read_only(tmp_path) -> None:
+    from neural_forge.hf_lfm2_closed_loop_restart_capsule import (
+        Lfm2ClosedLoopRestartCapsuleReference,
+        Lfm2TerminalOnlyRestartResumePolicy,
+    )
+
+    bindings_sha256 = "8" * 64
+    policy = Lfm2TerminalOnlyRestartResumePolicy(
+        capsule_reference=Lfm2ClosedLoopRestartCapsuleReference(
+            path=tmp_path / "capsules" / "capsule-000013-exact",
+            capsule_key="1" * 64,
+            manifest_sha256="2" * 64,
+            manifest_file_sha256="3" * 64,
+            bindings_sha256=bindings_sha256,
+            child_state_sha256="4" * 64,
+            capsule_chain_sha256="5" * 64,
+            capsule_sequence=13,
+            layer_index=13,
+        ),
+        expected_child_topology_sha256="6" * 64,
+        expected_adapter_identity_sha256="7" * 64,
+        expected_run_bindings_sha256=bindings_sha256,
+        expected_run_id="exact-r12-run",
+    )
+    policy_path = tmp_path / "terminal-only-policy.json"
+    policy_path.write_bytes(
+        json.dumps(
+            policy.as_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("ascii")
+        + b"\n"
+    )
+    parser = MODULE.build_parser()
+
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+                "--dense-terminal-only-restart-policy",
+                str(policy_path),
+            ]
+        )
+    )
+
+    assert config.dense_terminal_only_restart_resume_policy == policy
+    assert config.dense_restart_capsule_directory is None
+    receipt = MODULE._dense_restart_capsule_policy(config)
+    assert receipt["resume_requested"] is True
+    assert receipt["root"] is None
+    assert receipt["terminal_only_exact_reference_required"] is True
+    assert receipt["terminal_only_latest_discovery_used"] is False
+    assert receipt["terminal_only_legacy_capsule_writes_enabled"] is False
+    assert receipt["terminal_only_restart_policy"]["policy_sha256"] == (
+        policy.as_dict()["policy_sha256"]
+    )
 
 
 def test_restart_capsule_options_require_the_dense_closed_loop(tmp_path) -> None:

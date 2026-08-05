@@ -117,6 +117,11 @@ from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_CLOSED_LOOP_MERGE_CAPTURE_POLICY_STAGE,
     Lfm2DenseBudgetFoldConfig,
 )
+from neural_forge.hf_lfm2_closed_loop_restart_capsule import (
+    Lfm2ClosedLoopRestartCapsuleError,
+    Lfm2TerminalOnlyRestartResumePolicy,
+    load_lfm2_terminal_only_restart_resume_policy,
+)
 from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
     Lfm2BalancedBasisPhaseCacheContext,
     Lfm2ExistingBalancedBasisPhaseReuseRequest,
@@ -1190,6 +1195,7 @@ class ProductionLfm2CatalogConfig:
     dense_restart_capsule_root: Path | None = None
     dense_restart_capsule_keep: int = 2
     dense_resume_from_capsule: Path | None = None
+    dense_terminal_only_restart_policy: Path | None = None
     on_policy_evidence_rounds: int = 0
     on_policy_max_rounds: int = DEFAULT_ON_POLICY_MAX_ROUNDS
     on_policy_child_artifact_directory: Path | None = None
@@ -1321,6 +1327,7 @@ class ProductionLfm2CatalogConfig:
             "balanced_basis_phase_hmac_key_file",
             "dense_restart_capsule_root",
             "dense_resume_from_capsule",
+            "dense_terminal_only_restart_policy",
             "on_policy_child_artifact_directory",
             "on_policy_fit_prompts",
             "on_policy_manual_prompt_manifest",
@@ -1779,11 +1786,33 @@ class ProductionLfm2CatalogConfig:
         if (
             self.dense_restart_capsule_root is not None
             or self.dense_resume_from_capsule is not None
+            or self.dense_terminal_only_restart_policy is not None
         ) and not self.dense_run_closed_loop:
             raise ProductionLfm2CatalogError(
                 "Accepted-layer restart capsules only exist inside the dense "
                 "closed-loop body fold; pass --dense-run-closed-loop."
             )
+        if self.dense_terminal_only_restart_policy is not None:
+            try:
+                self.dense_terminal_only_restart_resume_policy
+            except Lfm2ClosedLoopRestartCapsuleError as exc:
+                raise ProductionLfm2CatalogError(
+                    "The terminal-only restart policy failed authentication."
+                ) from exc
+            if self.dense_body_reclosure_mode != "moving_gauge_v3":
+                raise ProductionLfm2CatalogError(
+                    "Terminal-only restart continuation requires the sealed "
+                    "moving_gauge_v3 adapter mode."
+                )
+            if (
+                self.dense_resume_from_capsule is not None
+                or self.dense_restart_capsule_root is not None
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Terminal-only restart continuation is an exact read-only "
+                    "policy and cannot share ordinary capsule resume/write "
+                    "options."
+                )
         if (
             self.dense_closed_loop_merge_adjacent_layer_captures
             and not self.dense_run_closed_loop
@@ -2590,6 +2619,8 @@ class ProductionLfm2CatalogConfig:
 
         if not self.dense_run_closed_loop:
             return None
+        if self.dense_terminal_only_restart_policy is not None:
+            return None
         if self.dense_restart_capsule_root is not None:
             return self.dense_restart_capsule_root.expanduser().absolute()
         # The scope deliberately excludes the restart-capsule policy itself so
@@ -2603,6 +2634,17 @@ class ProductionLfm2CatalogConfig:
             self.cache_root.expanduser().absolute()
             / "closed-loop-restart-capsules"
             / f"{self.child_name}-{run_scope}"
+        )
+
+    @property
+    def dense_terminal_only_restart_resume_policy(
+        self,
+    ) -> Lfm2TerminalOnlyRestartResumePolicy | None:
+        path = self.dense_terminal_only_restart_policy
+        if path is None:
+            return None
+        return load_lfm2_terminal_only_restart_resume_policy(
+            path.expanduser().absolute()
         )
 
     @property
@@ -2946,6 +2988,17 @@ class ProductionLfm2CatalogConfig:
                     "rotation_keep": self.dense_restart_capsule_keep,
                     "resume_requested": (
                         self.dense_resume_from_capsule is not None
+                    ),
+                    **(
+                        {}
+                        if self.dense_terminal_only_restart_policy is None
+                        else {
+                            "terminal_only_restart_policy": (
+                                self
+                                .dense_terminal_only_restart_resume_policy
+                                .as_dict()
+                            )
+                        }
                     ),
                 },
                 "on_policy_evidence": {
@@ -8563,6 +8616,9 @@ def build_production_catalog_wiring(
                 resume_from_restart_capsule=(
                     config.dense_resume_from_capsule
                 ),
+                terminal_only_restart_resume_policy=(
+                    config.dense_terminal_only_restart_resume_policy
+                ),
             ),
             tokenizer_bridge_artifact=(
                 None if tokenizer_bridge is None else tokenizer_bridge.artifact
@@ -8872,14 +8928,18 @@ def _dense_restart_capsule_policy(
     """Record where accepted-layer restart capsules live for this run."""
 
     directory = config.dense_restart_capsule_directory
+    terminal_policy = config.dense_terminal_only_restart_resume_policy
     return {
-        "enabled": directory is not None,
+        "enabled": directory is not None or terminal_policy is not None,
         "root": None if directory is None else str(directory),
         "root_explicitly_configured": (
             config.dense_restart_capsule_root is not None
         ),
         "rotation_keep": config.dense_restart_capsule_keep,
-        "resume_requested": config.dense_resume_from_capsule is not None,
+        "resume_requested": (
+            config.dense_resume_from_capsule is not None
+            or terminal_policy is not None
+        ),
         "resume_root": (
             None
             if config.dense_resume_from_capsule is None
@@ -8888,6 +8948,16 @@ def _dense_restart_capsule_policy(
             )
         ),
         "mid_body_resume_requires_disabled_body_reclosure": True,
+        **(
+            {}
+            if terminal_policy is None
+            else {
+                "terminal_only_restart_policy": terminal_policy.as_dict(),
+                "terminal_only_exact_reference_required": True,
+                "terminal_only_latest_discovery_used": False,
+                "terminal_only_legacy_capsule_writes_enabled": False,
+            }
+        ),
         "restart_capsule_is_not_a_promotable_child": True,
     }
 
@@ -11768,6 +11838,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-terminal-only-restart-policy",
+        type=Path,
+        default=None,
+        help=(
+            "Canonical sealed policy file that explicitly authorizes one exact "
+            "body-complete accepted-layer capsule to continue through final "
+            "normalization and output-interface folding with the live adapter "
+            "identity preserved as moving_gauge_v3 and process-local body "
+            "reclosure disabled. The policy pins the exact capsule reference, "
+            "state/topology, adapter identity, and run binding; it never selects "
+            "latest and never writes legacy restart capsules."
+        ),
+    )
+    parser.add_argument(
         "--on-policy-evidence-rounds",
         type=int,
         default=0,
@@ -12428,6 +12512,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_restart_capsule_root=args.dense_restart_capsule_root,
         dense_restart_capsule_keep=args.dense_restart_capsule_keep,
         dense_resume_from_capsule=args.dense_resume_from_capsule,
+        dense_terminal_only_restart_policy=(
+            args.dense_terminal_only_restart_policy
+        ),
         on_policy_evidence_rounds=args.on_policy_evidence_rounds,
         on_policy_max_rounds=args.on_policy_max_rounds,
         on_policy_child_artifact_directory=(

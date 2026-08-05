@@ -83,6 +83,7 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_closed_loop_fold import (
     ClosedLoopAudit,
     ClosedLoopCompilerConfig,
+    TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1,
     deterministic_whole_trajectory_split,
 )
 from neural_forge.hf_lfm2_cpcf_resume_artifact import (
@@ -132,6 +133,15 @@ CLOSED_LOOP_RESTART_CAPSULE_WRITER_SCHEMA = (
 CLOSED_LOOP_RESTART_CAPSULE_RESUME_SCHEMA = (
     "neural-forge-lfm2-closed-loop-restart-capsule-resume-v1"
 )
+TERMINAL_ONLY_RESTART_RESUME_POLICY_SCHEMA = (
+    "neural-forge-lfm2-terminal-only-restart-resume-policy-v1"
+)
+TERMINAL_ONLY_RESTART_RESUME_ADMISSION_SCHEMA = (
+    "neural-forge-lfm2-terminal-only-restart-resume-admission-v1"
+)
+TERMINAL_ONLY_RESTART_WRITER_SCHEMA = (
+    "neural-forge-lfm2-terminal-only-restart-read-only-writer-v1"
+)
 
 CLOSED_LOOP_RESTART_CAPSULE_CHAIN_GENESIS_SHA256 = "0" * 64
 DEFAULT_RESTART_CAPSULE_ROTATION_KEEP = 2
@@ -144,6 +154,53 @@ _CHILD_STATE_FILE_ROLE = "closed-loop-restart-child-state"
 _ROOT_INVENTORY = frozenset({_MANIFEST_NAME, _CHILD_STATE_NAME})
 _STAGE_PREFIX = ".lfm2-closed-loop-restart-"
 _DIRECTORY_PREFIX = "capsule-"
+
+_CAPSULE_MANIFEST_FIELDS = frozenset(
+    {
+        "schema",
+        "artifact_kind",
+        "status",
+        "complete_child",
+        "promotion_authorized",
+        "accepted_artifact",
+        "behavior_capability_proven",
+        "training_performed",
+        "optimizer_steps",
+        "backward_calls",
+        "parent_forward_calls",
+        "parameters_pruned",
+        "parameters_quantized",
+        "parent_model_required_for_reload",
+        "bindings",
+        "bindings_sha256",
+        "adapter_identity",
+        "layer_index",
+        "layer_ordinal",
+        "completed_layer_indices",
+        "remaining_layer_indices",
+        "resume_layer_index",
+        "validation_decision_sha256",
+        "child_state_sha256",
+        "child_topology_sha256",
+        "origin_process_local_child_state_sha256",
+        "origin_process_local_child_topology_sha256",
+        "process_local_digests_are_not_portable",
+        "child_state_alias_groups",
+        "child_state_file",
+        "capsule_sequence",
+        "previous_capsule_manifest_sha256",
+        "previous_capsule_chain_sha256",
+        "resumed_from_capsule_manifest_sha256",
+        "fold_progress",
+        "accepted_layer_validation_sealed",
+        "skipped_layers_are_never_replayed_on_resume",
+        "operation_audit",
+        "capsule_key",
+        "capsule_chain_sha256",
+        "directory_name",
+        "manifest_sha256",
+    }
+)
 
 _NONPROMOTABLE_FLAGS = {
     "status": _STATUS,
@@ -770,6 +827,37 @@ class Lfm2ClosedLoopRestartCapsuleReference:
             "layer_index": self.layer_index,
         }
 
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Any,
+    ) -> "Lfm2ClosedLoopRestartCapsuleReference":
+        if not isinstance(value, Mapping) or set(value) != {
+            "path",
+            "capsule_key",
+            "manifest_sha256",
+            "manifest_file_sha256",
+            "bindings_sha256",
+            "child_state_sha256",
+            "capsule_chain_sha256",
+            "capsule_sequence",
+            "layer_index",
+        }:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only policy capsule reference is malformed."
+            )
+        return cls(
+            path=value["path"],
+            capsule_key=value["capsule_key"],
+            manifest_sha256=value["manifest_sha256"],
+            manifest_file_sha256=value["manifest_file_sha256"],
+            bindings_sha256=value["bindings_sha256"],
+            child_state_sha256=value["child_state_sha256"],
+            capsule_chain_sha256=value["capsule_chain_sha256"],
+            capsule_sequence=value["capsule_sequence"],
+            layer_index=value["layer_index"],
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Lfm2ClosedLoopRestartCapsuleAuthentication:
@@ -815,6 +903,160 @@ class Lfm2ClosedLoopRestartCapsuleResume:
             "skipped_layers_are_not_replayed": True,
         }
         return {**body, "resume_sha256": canonical_sha256(body)}
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2TerminalOnlyRestartResumePolicy:
+    """Externally pinned, explicit authority for one terminal-only resume."""
+
+    capsule_reference: Lfm2ClosedLoopRestartCapsuleReference
+    expected_child_topology_sha256: str
+    expected_adapter_identity_sha256: str
+    expected_run_bindings_sha256: str
+    expected_run_id: str
+    policy: str = TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.capsule_reference,
+            Lfm2ClosedLoopRestartCapsuleReference,
+        ):
+            raise TypeError(
+                "capsule_reference must be "
+                "Lfm2ClosedLoopRestartCapsuleReference."
+            )
+        if self.policy != (
+            TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only restart policy name is unsupported."
+            )
+        for name in (
+            "expected_child_topology_sha256",
+            "expected_adapter_identity_sha256",
+            "expected_run_bindings_sha256",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _digest(getattr(self, name), name),
+            )
+        object.__setattr__(
+            self,
+            "expected_run_id",
+            _text(self.expected_run_id, "expected_run_id"),
+        )
+        if self.capsule_reference.bindings_sha256 != (
+            self.expected_run_bindings_sha256
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only policy run-binding pin differs from its exact "
+                "capsule reference."
+            )
+
+    def as_dict(self, *, include_sha256: bool = True) -> dict[str, Any]:
+        body = {
+            "schema": TERMINAL_ONLY_RESTART_RESUME_POLICY_SCHEMA,
+            "policy": self.policy,
+            "enabled": True,
+            "capsule_reference": self.capsule_reference.as_dict(),
+            "expected_child_topology_sha256": (
+                self.expected_child_topology_sha256
+            ),
+            "expected_adapter_identity_sha256": (
+                self.expected_adapter_identity_sha256
+            ),
+            "expected_run_bindings_sha256": (
+                self.expected_run_bindings_sha256
+            ),
+            "expected_run_id": self.expected_run_id,
+            "exact_reference_required": True,
+            "latest_capsule_discovery_forbidden": True,
+            "accepted_layer_phase_required": True,
+            "terminal_or_post_output_capsule_forbidden": True,
+            "legacy_capsule_writes_forbidden": True,
+        }
+        if include_sha256:
+            body["policy_sha256"] = canonical_sha256(body)
+        return body
+
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Any,
+    ) -> "Lfm2TerminalOnlyRestartResumePolicy":
+        if not isinstance(value, Mapping) or set(value) != {
+            "schema",
+            "policy",
+            "enabled",
+            "capsule_reference",
+            "expected_child_topology_sha256",
+            "expected_adapter_identity_sha256",
+            "expected_run_bindings_sha256",
+            "expected_run_id",
+            "exact_reference_required",
+            "latest_capsule_discovery_forbidden",
+            "accepted_layer_phase_required",
+            "terminal_or_post_output_capsule_forbidden",
+            "legacy_capsule_writes_forbidden",
+            "policy_sha256",
+        }:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only restart policy has missing or unknown fields."
+            )
+        body = dict(value)
+        supplied = _digest(body.pop("policy_sha256"), "policy_sha256")
+        if canonical_sha256(body) != supplied:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only restart policy seal is invalid."
+            )
+        if (
+            body["schema"] != TERMINAL_ONLY_RESTART_RESUME_POLICY_SCHEMA
+            or body["enabled"] is not True
+            or any(
+                body[name] is not True
+                for name in (
+                    "exact_reference_required",
+                    "latest_capsule_discovery_forbidden",
+                    "accepted_layer_phase_required",
+                    "terminal_or_post_output_capsule_forbidden",
+                    "legacy_capsule_writes_forbidden",
+                )
+            )
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only restart policy contract is invalid."
+            )
+        return cls(
+            capsule_reference=(
+                Lfm2ClosedLoopRestartCapsuleReference.from_mapping(
+                    body["capsule_reference"]
+                )
+            ),
+            expected_child_topology_sha256=(
+                body["expected_child_topology_sha256"]
+            ),
+            expected_adapter_identity_sha256=(
+                body["expected_adapter_identity_sha256"]
+            ),
+            expected_run_bindings_sha256=(
+                body["expected_run_bindings_sha256"]
+            ),
+            expected_run_id=body["expected_run_id"],
+            policy=body["policy"],
+        )
+
+
+def load_lfm2_terminal_only_restart_resume_policy(
+    path: str | os.PathLike[str],
+) -> Lfm2TerminalOnlyRestartResumePolicy:
+    """Load one canonical, sealed exact-capsule execution policy."""
+
+    document, _raw = _read_canonical_json_with_raw(
+        Path(path).expanduser().absolute(),
+        name="terminal-only restart policy",
+    )
+    return Lfm2TerminalOnlyRestartResumePolicy.from_mapping(document)
 
 
 def _capsule_directory_name(*, sequence: int, capsule_key: str) -> str:
@@ -1962,6 +2204,258 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         return {**body, "writer_sha256": canonical_sha256(body)}
 
 
+class Lfm2ClosedLoopTerminalOnlyRestartWriter:
+    """Read-only admission writer for one exact accepted-layer terminal resume."""
+
+    def __init__(
+        self,
+        *,
+        adapter: Any,
+        resume: Lfm2ClosedLoopRestartCapsuleResume,
+        policy: Lfm2TerminalOnlyRestartResumePolicy,
+        run_id: str,
+        child_name: str,
+        trajectory_split_sha256: str,
+        run_schema: str,
+    ) -> None:
+        if not isinstance(resume, Lfm2ClosedLoopRestartCapsuleResume):
+            raise TypeError(
+                "resume must be Lfm2ClosedLoopRestartCapsuleResume."
+            )
+        if not isinstance(policy, Lfm2TerminalOnlyRestartResumePolicy):
+            raise TypeError(
+                "policy must be Lfm2TerminalOnlyRestartResumePolicy."
+            )
+        self.adapter = adapter
+        self.resume = resume
+        self.policy = policy
+        self.adapter_identity = lfm2_restart_capsule_adapter_identity(adapter)
+        child_layers = getattr(adapter, "child_layers", None)
+        selected = tuple(getattr(adapter, "_selected_layers", ()) or ())
+        if not isinstance(child_layers, tuple) or not child_layers:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter does not expose its child layer inventory."
+            )
+        available = tuple(range(len(child_layers)))
+        if selected != available:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only continuation requires every available layer."
+            )
+        self.bindings = Lfm2ClosedLoopRestartCapsuleBindings(
+            run_id=run_id,
+            child_name=child_name,
+            child_layer_count=len(child_layers),
+            selected_layer_indices=selected,
+            adapter_identity_sha256=self.adapter_identity[
+                "adapter_identity_sha256"
+            ],
+            trajectory_split_sha256=trajectory_split_sha256,
+            run_schema=run_schema,
+        )
+        manifest = resume.manifest
+        completed = _layer_indices(
+            manifest.get("completed_layer_indices"),
+            "completed_layer_indices",
+        )
+        remaining = _layer_indices(
+            manifest.get("remaining_layer_indices"),
+            "remaining_layer_indices",
+        )
+        forbidden_phase_fields = tuple(
+            name
+            for name in manifest
+            if (
+                "terminal" in str(name).lower()
+                or "output_interface" in str(name).lower()
+                or "post_output" in str(name).lower()
+            )
+        )
+        if (
+            resume.reference != policy.capsule_reference
+            or resume.bindings.bindings_sha256
+            != policy.expected_run_bindings_sha256
+            or self.bindings.bindings_sha256
+            != policy.expected_run_bindings_sha256
+            or resume.bindings.run_id != policy.expected_run_id
+            or self.bindings.run_id != policy.expected_run_id
+            or resume.child_topology_sha256
+            != policy.expected_child_topology_sha256
+            or self.adapter_identity["adapter_identity_sha256"]
+            != policy.expected_adapter_identity_sha256
+            or dict(manifest.get("adapter_identity", {}))
+            != dict(self.adapter_identity)
+            or manifest.get("schema") != CLOSED_LOOP_RESTART_CAPSULE_SCHEMA
+            or set(manifest) != _CAPSULE_MANIFEST_FIELDS
+            or manifest.get("artifact_kind") != _ARTIFACT_KIND
+            or manifest.get("accepted_layer_validation_sealed") is not True
+            or manifest.get("status") != _STATUS
+            or manifest.get("complete_child") is not False
+            or forbidden_phase_fields
+            or completed != selected
+            or completed != available
+            or remaining
+            or resume.resume_layer_index is not None
+            or manifest.get("layer_index") != available[-1]
+            or manifest.get("layer_ordinal") != len(available) - 1
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The exact capsule does not prove the accepted-layer terminal-"
+                "only continuation contract."
+            )
+        self._completed = completed
+        self._available = available
+        self._admission: Mapping[str, Any] | None = None
+
+    def completed_layer_indices(self) -> tuple[int, ...]:
+        return self._completed
+
+    def assert_resume_supported(self, **_kwargs: Any) -> Mapping[str, Any]:
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "The terminal-only read-only writer cannot admit ordinary resume."
+        )
+
+    def assert_terminal_only_resume_supported(
+        self,
+        *,
+        completed_layer_indices: Sequence[int],
+        remaining_layer_indices: Sequence[int],
+        selected_layer_indices: Sequence[int],
+        available_layer_indices: Sequence[int],
+        body_reclosure_enabled: bool,
+        final_normalization_enabled: bool,
+        output_interface_enabled: bool,
+        trajectory_split_sha256: str,
+        child_state_sha256: str,
+        child_topology_sha256: str,
+    ) -> Mapping[str, Any]:
+        completed = _layer_indices(
+            completed_layer_indices,
+            "completed_layer_indices",
+        )
+        remaining = _layer_indices(
+            remaining_layer_indices,
+            "remaining_layer_indices",
+        )
+        selected = _layer_indices(
+            selected_layer_indices,
+            "selected_layer_indices",
+        )
+        available = _layer_indices(
+            available_layer_indices,
+            "available_layer_indices",
+        )
+        fingerprint = getattr(self.adapter, "child_state_fingerprint", None)
+        topology_fingerprint = getattr(
+            self.adapter,
+            "child_topology_fingerprint",
+            None,
+        )
+        if (
+            completed != self._completed
+            or completed != selected
+            or selected != available
+            or available != self._available
+            or remaining
+            or body_reclosure_enabled is not False
+            or final_normalization_enabled is not True
+            or output_interface_enabled is not True
+            or _digest(trajectory_split_sha256, "trajectory_split_sha256")
+            != self.bindings.trajectory_split_sha256
+            or not callable(fingerprint)
+            or not callable(topology_fingerprint)
+            or _digest(child_state_sha256, "child_state_sha256")
+            != fingerprint()
+            or _digest(child_topology_sha256, "child_topology_sha256")
+            != topology_fingerprint()
+            or portable_child_state_sha256(self.adapter.child_model)
+            != self.resume.child_state_sha256
+            or portable_child_topology_sha256(self.adapter.child_model)
+            != self.resume.child_topology_sha256
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Live terminal-only continuation differs from its exact pins."
+            )
+        guard = getattr(self.adapter, "assert_mid_body_resume_supported", None)
+        if not callable(guard):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter cannot certify terminal-only resume support."
+            )
+        adapter_admission = guard(
+            completed_layer_indices=completed,
+            remaining_layer_indices=remaining,
+            body_reclosure_enabled=False,
+        )
+        if not isinstance(adapter_admission, Mapping):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter terminal-only admission is not a mapping."
+            )
+        body = {
+            "schema": TERMINAL_ONLY_RESTART_RESUME_ADMISSION_SCHEMA,
+            "policy": self.policy.policy,
+            "policy_sha256": self.policy.as_dict()["policy_sha256"],
+            "capsule_reference": self.resume.reference.as_dict(),
+            "capsule_child_topology_sha256": (
+                self.resume.child_topology_sha256
+            ),
+            "adapter_identity_sha256": self.adapter_identity[
+                "adapter_identity_sha256"
+            ],
+            "run_bindings_sha256": self.bindings.bindings_sha256,
+            "run_id": self.bindings.run_id,
+            "phase": "accepted_layer_post_validation_pre_body_reclosure",
+            "phase_pin_source": (
+                "r12_v1_exact_manifest_fields_plus_accepted_layer_validation_"
+                "seal_plus_empty_remaining_inventory"
+            ),
+            "accepted_layer_validation_sealed": True,
+            "completed_layer_indices": list(completed),
+            "selected_layer_indices": list(selected),
+            "available_layer_indices": list(available),
+            "remaining_layer_indices": [],
+            "completed_equals_selected_equals_available": True,
+            "configured_adapter_body_reclosure_mode": self.adapter_identity[
+                "body_reclosure_mode"
+            ],
+            "effective_compiler_body_reclosure_mode": "disabled",
+            "body_reclosure_executed": False,
+            "final_normalization_required": True,
+            "output_interface_required": True,
+            "terminal_or_post_output_capsule": False,
+            "latest_capsule_discovery_used": False,
+            "legacy_capsule_writes_enabled": False,
+            "adapter_admission": dict(adapter_admission),
+        }
+        self._admission = {
+            **body,
+            "admission_sha256": canonical_sha256(body),
+        }
+        return self._admission
+
+    def record_accepted_layer(self, **_kwargs: Any) -> Mapping[str, Any]:
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "Terminal-only continuation cannot publish legacy layer capsules."
+        )
+
+    def as_dict(self) -> Mapping[str, Any]:
+        body = {
+            "schema": TERMINAL_ONLY_RESTART_WRITER_SCHEMA,
+            "mode": "read_only_exact_capsule_admission",
+            "policy": self.policy.as_dict(),
+            "bindings": self.bindings.as_dict(),
+            "adapter_identity": dict(self.adapter_identity),
+            "resume": self.resume.as_dict(),
+            "admission": (
+                None if self._admission is None else dict(self._admission)
+            ),
+            "published_capsule_count": 0,
+            "published_capsule_keys": [],
+            "legacy_capsule_directory": None,
+            "legacy_capsule_writes_enabled": False,
+            "terminal_or_post_output_capsule_writes_enabled": False,
+        }
+        return {**body, "writer_sha256": canonical_sha256(body)}
+
+
 __all__ = [
     "CLOSED_LOOP_RESTART_CAPSULE_BINDINGS_SCHEMA",
     "CLOSED_LOOP_RESTART_CAPSULE_CHAIN_GENESIS_SHA256",
@@ -1981,6 +2475,11 @@ __all__ = [
     "Lfm2ClosedLoopRestartCapsuleReference",
     "Lfm2ClosedLoopRestartCapsuleResume",
     "Lfm2ClosedLoopRestartCapsuleWriter",
+    "Lfm2ClosedLoopTerminalOnlyRestartWriter",
+    "Lfm2TerminalOnlyRestartResumePolicy",
+    "TERMINAL_ONLY_RESTART_RESUME_ADMISSION_SCHEMA",
+    "TERMINAL_ONLY_RESTART_RESUME_POLICY_SCHEMA",
+    "TERMINAL_ONLY_RESTART_WRITER_SCHEMA",
     "Lfm2DenseFoldProgressChain",
     "authenticate_lfm2_closed_loop_restart_capsule",
     "child_state_alias_groups",
@@ -1989,6 +2488,7 @@ __all__ = [
     "lfm2_restart_capsule_adapter_identity",
     "lfm2_restart_capsule_split_sha256",
     "load_lfm2_closed_loop_restart_capsule",
+    "load_lfm2_terminal_only_restart_resume_policy",
     "portable_child_state_sha256",
     "portable_child_topology_sha256",
     "publish_lfm2_closed_loop_restart_capsule",

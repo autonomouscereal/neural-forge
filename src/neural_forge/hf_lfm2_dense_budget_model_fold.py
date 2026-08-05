@@ -37,6 +37,7 @@ from .dynamic_closed_loop_fold import (
     RUN_SCHEMA as CLOSED_LOOP_RUN_SCHEMA,
     ChildClosedLoopCompiler,
     ClosedLoopCompilerConfig,
+    TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1,
 )
 from .dynamic_fold_executor import (
     FoldDecision,
@@ -75,6 +76,8 @@ from .hf_lfm2_closed_loop_restart_capsule import (
     DEFAULT_RESTART_CAPSULE_ROTATION_KEEP,
     Lfm2ClosedLoopRestartCapsuleError,
     Lfm2ClosedLoopRestartCapsuleWriter,
+    Lfm2ClosedLoopTerminalOnlyRestartWriter,
+    Lfm2TerminalOnlyRestartResumePolicy,
     latest_lfm2_closed_loop_restart_capsule,
     lfm2_restart_capsule_split_sha256,
     load_lfm2_closed_loop_restart_capsule,
@@ -138,6 +141,9 @@ DENSE_FOLD_PROGRESS_SCHEMA = (
 DENSE_FOLD_PROGRESS_GENESIS_SHA256 = "0" * 64
 DENSE_RESTART_CAPSULE_BINDING_SCHEMA = (
     "neural-forge-lfm2-dense-fold-restart-capsule-binding-v1"
+)
+DENSE_TERMINAL_ONLY_RESTART_EXECUTION_POLICY_SCHEMA = (
+    "neural-forge-lfm2-dense-terminal-only-restart-execution-policy-v1"
 )
 # Emitted once per closed-loop body fold, after the adapter exists and before
 # any capture, so a run journal records whether an opted-in capture merge was
@@ -1715,6 +1721,9 @@ class Lfm2DenseBudgetFoldConfig:
     restart_capsule_directory: Path | None = None
     restart_capsule_rotation_keep: int = DEFAULT_RESTART_CAPSULE_ROTATION_KEEP
     resume_from_restart_capsule: Path | None = None
+    terminal_only_restart_resume_policy: (
+        Lfm2TerminalOnlyRestartResumePolicy | None
+    ) = None
 
     def __post_init__(self) -> None:
         mode = _text(self.residual_basis_mode, "residual_basis_mode")
@@ -1947,7 +1956,61 @@ class Lfm2DenseBudgetFoldConfig:
                 "every layer; resume from a restart capsule with reclosure "
                 "disabled, or re-fold the body from layer 0."
             )
+        terminal_policy = self.terminal_only_restart_resume_policy
+        if terminal_policy is not None:
+            if not isinstance(
+                terminal_policy,
+                Lfm2TerminalOnlyRestartResumePolicy,
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "terminal_only_restart_resume_policy has the wrong type."
+                )
+            if not self.run_closed_loop:
+                raise Lfm2DenseBudgetFoldError(
+                    "Terminal-only restart continuation requires "
+                    "run_closed_loop=True."
+                )
+            if self.body_reclosure_mode != (
+                LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Terminal-only restart continuation is restricted to the "
+                    "sealed moving_gauge_v3 adapter identity."
+                )
+            if (
+                self.resume_from_restart_capsule is not None
+                or self.restart_capsule_directory is not None
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Terminal-only restart continuation is read-only and "
+                    "cannot share the ordinary legacy capsule resume/write "
+                    "configuration."
+                )
+            if not self.closed_loop_compiler_config.fold_output_interface:
+                raise Lfm2DenseBudgetFoldError(
+                    "Terminal-only restart continuation requires the output "
+                    "interface stage."
+                )
 
+    def _closed_loop_compiler_config_for_execution(
+        self,
+    ) -> ClosedLoopCompilerConfig:
+        terminal_policy = self.terminal_only_restart_resume_policy
+        return replace(
+            self.closed_loop_compiler_config,
+            fold_body_reclosure=(
+                self.body_reclosure_mode
+                == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                and terminal_policy is None
+            ),
+            terminal_only_restart_resume_policy=(
+                "disabled"
+                if terminal_policy is None
+                else (
+                    TERMINAL_ONLY_RESTART_RESUME_POLICY_EXACT_ACCEPTED_LAYER_V1
+                )
+            ),
+        )
     def _resolve_closed_loop_replay_devices(self) -> None:
         """Keep one source of truth for the opt-in replay shard request.
 
@@ -2000,6 +2063,41 @@ class Lfm2DenseBudgetFoldConfig:
                     replay_devices=requested,
                 ),
             )
+
+
+def _assert_terminal_only_restart_execution_preflight(
+    config: Lfm2DenseBudgetFoldConfig,
+    *,
+    action_sha256: str,
+    component_dispatch: AuthenticatedWholeChildComponentDispatch | None,
+) -> None:
+    """Fail before expensive folding when terminal-resume identity can drift.
+
+    The sealed R12 capsule binds the original dense ``FoldAction``.  The
+    terminal-only policy is execution metadata and may not authorize a new
+    action identity.  Component-diagnostic dispatch is also forbidden here:
+    it can omit the closed-loop stage or compose a structural snapshot back
+    over the post-terminal child, either of which would make the terminal
+    execution receipt describe a state other than the final candidate.
+    """
+
+    if not isinstance(config, Lfm2DenseBudgetFoldConfig):
+        raise TypeError("config must be Lfm2DenseBudgetFoldConfig.")
+    policy = config.terminal_only_restart_resume_policy
+    if policy is None:
+        return
+    action_identity = _digest(action_sha256, "action_sha256")
+    if action_identity != policy.expected_run_id:
+        raise Lfm2DenseBudgetFoldError(
+            "Terminal-only restart action identity differs from the exact "
+            "capsule run binding."
+        )
+    if component_dispatch is not None:
+        raise Lfm2DenseBudgetFoldError(
+            "Terminal-only restart continuation cannot use a whole-child "
+            "component diagnostic dispatch because its stage composition can "
+            "bypass or overwrite the sealed terminal result."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3522,20 +3620,24 @@ class Lfm2DenseBudgetModelOperator:
         vocabulary digest into the identity bindings the capsule pins.
         """
 
+        terminal_policy = self.config.terminal_only_restart_resume_policy
         root = self.config.resume_from_restart_capsule
-        if root is None:
+        if root is None and terminal_policy is None:
             return None
-        try:
-            reference = latest_lfm2_closed_loop_restart_capsule(root)
-        except Lfm2ClosedLoopRestartCapsuleError as exc:
-            raise Lfm2DenseBudgetFoldError(
-                "Restart-capsule resume root failed authentication."
-            ) from exc
-        if reference is None:
-            raise Lfm2DenseBudgetFoldError(
-                "An explicit restart-capsule resume found no sealed capsule "
-                f"under {root}."
-            )
+        if terminal_policy is None:
+            try:
+                reference = latest_lfm2_closed_loop_restart_capsule(root)
+            except Lfm2ClosedLoopRestartCapsuleError as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Restart-capsule resume root failed authentication."
+                ) from exc
+            if reference is None:
+                raise Lfm2DenseBudgetFoldError(
+                    "An explicit restart-capsule resume found no sealed "
+                    f"capsule under {root}."
+                )
+        else:
+            reference = terminal_policy.capsule_reference
         try:
             resume = load_lfm2_closed_loop_restart_capsule(
                 reference,
@@ -3545,6 +3647,19 @@ class Lfm2DenseBudgetModelOperator:
             raise Lfm2DenseBudgetFoldError(
                 "Restart capsule failed to restore into the fresh child."
             ) from exc
+        if terminal_policy is not None and (
+            resume.reference != terminal_policy.capsule_reference
+            or resume.child_state_sha256
+            != terminal_policy.capsule_reference.child_state_sha256
+            or resume.child_topology_sha256
+            != terminal_policy.expected_child_topology_sha256
+            or resume.bindings.bindings_sha256
+            != terminal_policy.expected_run_bindings_sha256
+            or resume.bindings.run_id != terminal_policy.expected_run_id
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Terminal-only restart capsule differs from its external pins."
+            )
         fold_progress.emit(
             "dense_restart_capsule_resume_loaded",
             capsule_key=resume.reference.capsule_key,
@@ -3554,6 +3669,18 @@ class Lfm2DenseBudgetModelOperator:
             resume_layer_index=resume.resume_layer_index,
             child_state_sha256=resume.child_state_sha256,
             skipped_layers_are_not_replayed=True,
+            **(
+                {}
+                if terminal_policy is None
+                else {
+                    "terminal_only_policy": terminal_policy.policy,
+                    "policy_sha256": (
+                        terminal_policy.as_dict()["policy_sha256"]
+                    ),
+                    "exact_capsule_reference_used": True,
+                    "latest_capsule_discovery_used": False,
+                }
+            ),
         )
         return resume
 
@@ -3566,9 +3693,46 @@ class Lfm2DenseBudgetModelOperator:
         context: FoldExecutionContext,
         resume: Any | None,
         fold_progress: _Lfm2DenseFoldProgress,
-    ) -> Lfm2ClosedLoopRestartCapsuleWriter | None:
+    ) -> (
+        Lfm2ClosedLoopRestartCapsuleWriter
+        | Lfm2ClosedLoopTerminalOnlyRestartWriter
+        | None
+    ):
         """Bind one accepted-layer capsule writer to this body fold."""
 
+        terminal_policy = self.config.terminal_only_restart_resume_policy
+        if terminal_policy is not None:
+            if resume is None:
+                raise Lfm2DenseBudgetFoldError(
+                    "Terminal-only restart continuation has no loaded capsule."
+                )
+            try:
+                terminal_writer = Lfm2ClosedLoopTerminalOnlyRestartWriter(
+                    adapter=adapter,
+                    resume=resume,
+                    policy=terminal_policy,
+                    run_id=action.action_sha256,
+                    child_name=context.child_graph.model_name,
+                    trajectory_split_sha256=lfm2_restart_capsule_split_sha256(
+                        adapter,
+                        compiler_config,
+                    ),
+                    run_schema=CLOSED_LOOP_RUN_SCHEMA,
+                )
+            except Lfm2ClosedLoopRestartCapsuleError as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Terminal-only restart admission failed its exact pins."
+                ) from exc
+            fold_progress.emit(
+                "dense_terminal_only_restart_writer_bound",
+                policy=terminal_policy.policy,
+                policy_sha256=terminal_policy.as_dict()["policy_sha256"],
+                capsule_key=resume.reference.capsule_key,
+                capsule_sequence=resume.reference.capsule_sequence,
+                bindings_sha256=terminal_writer.bindings.bindings_sha256,
+                legacy_capsule_writes_enabled=False,
+            )
+            return terminal_writer
         directory = self.config.restart_capsule_directory
         if directory is None:
             if resume is not None:
@@ -3610,17 +3774,28 @@ class Lfm2DenseBudgetModelOperator:
 
     def _restart_capsule_binding(
         self,
-        writer: Lfm2ClosedLoopRestartCapsuleWriter,
+        writer: (
+            Lfm2ClosedLoopRestartCapsuleWriter
+            | Lfm2ClosedLoopTerminalOnlyRestartWriter
+        ),
         *,
         resume: Any | None,
     ) -> Mapping[str, Any]:
         """Record the capsule identities this transaction report binds to."""
 
+        terminal_only = isinstance(
+            writer,
+            Lfm2ClosedLoopTerminalOnlyRestartWriter,
+        )
         body = {
             "schema": DENSE_RESTART_CAPSULE_BINDING_SCHEMA,
             "enabled": True,
-            "directory": str(writer.directory),
-            "rotation_keep": writer.rotation_keep,
+            "directory": (
+                None if terminal_only else str(writer.directory)
+            ),
+            "rotation_keep": (
+                None if terminal_only else writer.rotation_keep
+            ),
             "bindings_sha256": writer.bindings.bindings_sha256,
             "resumed": resume is not None,
             "resumed_capsule_key": (
@@ -3637,8 +3812,85 @@ class Lfm2DenseBudgetModelOperator:
                 else [int(value) for value in resume.completed_layer_indices]
             ),
             "restart_capsule_is_not_a_promotable_child": True,
+            "terminal_only_read_only": terminal_only,
+            "legacy_capsule_writes_enabled": not terminal_only,
         }
         return MappingProxyType({**body, "binding_sha256": canonical_sha256(body)})
+
+    def _terminal_only_restart_execution_policy_receipt(
+        self,
+        *,
+        compiler_config: ClosedLoopCompilerConfig,
+        resume: Any,
+        writer: Any,
+        closed_loop_report: Mapping[str, Any],
+    ) -> Mapping[str, Any] | None:
+        policy = self.config.terminal_only_restart_resume_policy
+        if policy is None:
+            return None
+        if not isinstance(writer, Lfm2ClosedLoopTerminalOnlyRestartWriter):
+            raise Lfm2DenseBudgetFoldError(
+                "Terminal-only continuation did not use its read-only writer."
+            )
+        terminal_report = closed_loop_report.get(
+            "terminal_only_restart_resume"
+        )
+        writer_report = writer.as_dict()
+        writer_admission = writer_report.get("admission")
+        if (
+            not isinstance(terminal_report, Mapping)
+            or not isinstance(writer_admission, Mapping)
+            or terminal_report.get("policy") != policy.policy
+            or terminal_report.get("body_layer_execution_count") != 0
+            or terminal_report.get("body_reclosure_executed") is not False
+            or terminal_report.get("final_normalization_executed") is not True
+            or terminal_report.get("output_interface_executed") is not True
+            or closed_loop_report.get("body_reclosure_fold_enabled") is not False
+            or closed_loop_report.get("output_interface_fold_enabled") is not True
+            or compiler_config.fold_body_reclosure is not False
+            or writer_report.get("published_capsule_count") != 0
+            or writer_report.get("legacy_capsule_writes_enabled") is not False
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Terminal-only continuation did not execute its sealed policy."
+            )
+        body = {
+            "schema": DENSE_TERMINAL_ONLY_RESTART_EXECUTION_POLICY_SCHEMA,
+            "policy": policy.as_dict(),
+            "capsule_reference": resume.reference.as_dict(),
+            "capsule_child_topology_sha256": resume.child_topology_sha256,
+            "adapter_identity_sha256": writer.adapter_identity[
+                "adapter_identity_sha256"
+            ],
+            "run_bindings_sha256": writer.bindings.bindings_sha256,
+            "run_id": writer.bindings.run_id,
+            "configured_adapter_body_reclosure_mode": (
+                self.config.body_reclosure_mode
+            ),
+            "effective_compiler_body_reclosure_mode": "disabled",
+            "compiler_fold_body_reclosure": False,
+            "body_reclosure_executed": False,
+            "body_layer_execution_count": 0,
+            "final_normalization_required": True,
+            "final_normalization_executed": True,
+            "output_interface_required": True,
+            "output_interface_executed": True,
+            "accepted_layer_phase_authenticated": True,
+            "completed_equals_selected_equals_available": True,
+            "remaining_layer_indices": [],
+            "exact_capsule_reference_used": True,
+            "latest_capsule_discovery_used": False,
+            "terminal_or_post_output_capsule": False,
+            "legacy_capsule_root": None,
+            "legacy_capsule_writes": 0,
+            "compiler_receipt_sha256": terminal_report["receipt_sha256"],
+            "writer_admission_sha256": writer_admission[
+                "admission_sha256"
+            ],
+        }
+        return MappingProxyType(
+            {**body, "receipt_sha256": canonical_sha256(body)}
+        )
 
     def _validate_action(
         self,
@@ -3760,6 +4012,11 @@ class Lfm2DenseBudgetModelOperator:
             raise Lfm2DenseBudgetFoldError(
                 "Dense LFM2 component dispatch failed authentication."
             ) from exc
+        _assert_terminal_only_restart_execution_preflight(
+            self.config,
+            action_sha256=action.action_sha256,
+            component_dispatch=dispatch,
+        )
         if dispatch is not None:
             _component_stage_assignments(dispatch)
         return source.parent_name, parent_model, parent_graph, dispatch
@@ -3860,19 +4117,34 @@ class Lfm2DenseBudgetModelOperator:
                 )
             closed_loop_report: Mapping[str, Any] | None = None
             restart_capsule_binding: Mapping[str, Any] | None = None
+            terminal_only_restart_execution_policy: Mapping[str, Any] | None = None
             if execute_closed_loop:
+                terminal_policy = self.config.terminal_only_restart_resume_policy
+                compiler_config = (
+                    self.config._closed_loop_compiler_config_for_execution()
+                )
                 fold_progress.emit(
                     "dense_closed_loop_started",
                     layer_count=len(_layers(context.child_model)),
                     body_reclosure_enabled=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        compiler_config.fold_body_reclosure
                     ),
                     restart_capsule_enabled=(
                         self.config.restart_capsule_directory is not None
+                        or terminal_policy is not None
                     ),
                     restart_capsule_resume_requested=(
                         self.config.resume_from_restart_capsule is not None
+                        or terminal_policy is not None
+                    ),
+                    **(
+                        {}
+                        if terminal_policy is None
+                        else {
+                            "terminal_only_restart_policy": (
+                                terminal_policy.policy
+                            )
+                        }
                     ),
                 )
                 # The capsule pins the child's input-vocabulary digest through
@@ -3931,13 +4203,6 @@ class Lfm2DenseBudgetModelOperator:
                     ),
                     progress_sink=fold_progress,
                 )
-                compiler_config = replace(
-                    self.config.closed_loop_compiler_config,
-                    fold_body_reclosure=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-                    ),
-                )
                 # Requested is a configuration fact; admitted is the adapter's
                 # own decision about this exact child, replay mode, and parent
                 # evidence.  Both are reported before any capture runs so an
@@ -3984,27 +4249,63 @@ class Lfm2DenseBudgetModelOperator:
                     progress_sink=fold_progress,
                     restart_capsule_config=restart_writer,
                 ).run()
+                terminal_only_restart_execution_policy = (
+                    self._terminal_only_restart_execution_policy_receipt(
+                        compiler_config=compiler_config,
+                        resume=restart_resume,
+                        writer=restart_writer,
+                        closed_loop_report=closed_loop_report,
+                    )
+                )
                 fold_progress.emit(
                     "dense_closed_loop_completed",
                     closed_loop_run_sha256=str(
                         closed_loop_report["run_sha256"]
                     ),
                     body_reclosure_enabled=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        compiler_config.fold_body_reclosure
+                    ),
+                    **(
+                        {}
+                        if terminal_policy is None
+                        else {
+                            "configured_adapter_body_reclosure_mode": (
+                                self.config.body_reclosure_mode
+                            ),
+                            "body_reclosure_executed": False,
+                            "adapter_body_reclosure_mode_preserved": True,
+                        }
                     ),
                 )
                 if restart_writer is not None:
-                    fold_progress.emit(
-                        "dense_restart_capsule_run_completed",
-                        published_capsule_count=len(
-                            restart_writer.as_dict()["published_capsule_keys"]
-                        ),
-                        resumed=restart_resume is not None,
-                        rotation_keep=(
-                            self.config.restart_capsule_rotation_keep
-                        ),
-                    )
+                    if terminal_only_restart_execution_policy is not None:
+                        fold_progress.emit(
+                            "dense_terminal_only_restart_completed",
+                            policy=terminal_policy.policy,
+                            receipt_sha256=(
+                                terminal_only_restart_execution_policy[
+                                    "receipt_sha256"
+                                ]
+                            ),
+                            body_layer_execution_count=0,
+                            body_reclosure_executed=False,
+                            final_normalization_executed=True,
+                            output_interface_executed=True,
+                            legacy_capsule_writes=0,
+                        )
+                    else:
+                        fold_progress.emit(
+                            "dense_restart_capsule_run_completed",
+                            published_capsule_count=len(
+                                restart_writer.as_dict()[
+                                    "published_capsule_keys"
+                                ]
+                            ),
+                            resumed=restart_resume is not None,
+                            rotation_keep=(
+                                self.config.restart_capsule_rotation_keep
+                            ),
+                        )
             component_dispatch_report: Mapping[str, Any] | None = None
             if component_dispatch is not None:
                 assert structural_snapshot is not None
@@ -4126,6 +4427,15 @@ class Lfm2DenseBudgetModelOperator:
                     None
                     if restart_capsule_binding is None
                     else dict(restart_capsule_binding)
+                ),
+                **(
+                    {}
+                    if terminal_only_restart_execution_policy is None
+                    else {
+                        "terminal_only_restart_execution_policy": dict(
+                            terminal_only_restart_execution_policy
+                        )
+                    }
                 ),
                 **(
                     {
