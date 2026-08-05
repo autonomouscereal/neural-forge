@@ -14,6 +14,19 @@ block to unit RMS, so the diagonal gain is fitted against the projection the
 child actually computes, and the replayed Q/K feeding the V/O solve is the
 fully normalized one.
 
+Two policy fields extend the operator class without forking it
+(``docs/KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md`` section 1.3).
+``attention_window`` threads a hard band constraint into the same site that
+builds the causal tril mask, so chimera's ``LocalCausalAttention``
+(``chimera-omni/src/chimera_omni/modeling/layers.py:52-54``) is this kernel
+plus a band.  ``position_encoding = "nope"`` makes the RoPE application and
+inversion identity passthroughs, drops the pair contraction in favour of plain
+channel selection, and drops the even-head-dim requirement, which exists only
+to pair rotations.  **Both default to the previous behaviour and both are
+omitted from every receipt when they are at their default**, so a RoPE target
+keeps the exact bytes it had before this lane existed -- the same discipline
+the Q/K-norm lane uses.
+
 All solves are closed form.  There is no optimizer, autograd, parent model,
 parameter pruning, quantization, sharing, or runtime sidecar.
 """
@@ -144,6 +157,8 @@ class HFCausalGQATopology:
     attention_scaling: float
     query_key_norm: str = "identity"
     rms_norm_epsilon: float = 1e-6
+    attention_window: int | None = None
+    position_encoding: str = "rope"
 
     def __post_init__(self) -> None:
         for name in ("query_heads", "key_value_heads", "head_dim"):
@@ -152,8 +167,22 @@ class HFCausalGQATopology:
             raise HFCausalGQAAttentionFoldError(
                 "query_heads must be divisible by key_value_heads."
             )
-        if self.head_dim % 2:
+        encoding = str(self.position_encoding).strip().lower()
+        if encoding not in {"rope", "nope"}:
+            raise HFCausalGQAAttentionFoldError(
+                "position_encoding must be 'rope' or 'nope'."
+            )
+        object.__setattr__(self, "position_encoding", encoding)
+        # The parity requirement exists only to pair rotation channels; a NoPE
+        # operator has no pairs, so an odd head dimension is admissible there.
+        if encoding == "rope" and self.head_dim % 2:
             raise HFCausalGQAAttentionFoldError("RoPE head_dim must be even.")
+        if self.attention_window is not None:
+            object.__setattr__(
+                self,
+                "attention_window",
+                _positive_int(self.attention_window, "attention_window"),
+            )
         object.__setattr__(
             self, "rope_theta", _positive_float(self.rope_theta, "rope_theta")
         )
@@ -187,7 +216,7 @@ class HFCausalGQATopology:
         return self.query_heads // self.key_value_heads
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        body = {
             "query_heads": self.query_heads,
             "key_value_heads": self.key_value_heads,
             "head_dim": self.head_dim,
@@ -196,10 +225,25 @@ class HFCausalGQATopology:
             "query_key_norm": self.query_key_norm,
             "rms_norm_epsilon": self.rms_norm_epsilon,
         }
+        # Defaults stay off the record so an unwindowed RoPE topology serializes
+        # to exactly the bytes it did before the windowed/NoPE lane existed.
+        if self.attention_window is not None:
+            body["attention_window"] = self.attention_window
+        if self.position_encoding != "rope":
+            body["position_encoding"] = self.position_encoding
+        return body
 
 
 @dataclass(frozen=True, slots=True)
 class HFCausalGQABarycentricAssignment:
+    """Complete head assignment plus the per-KV head-dimension selection.
+
+    ``selected_rope_pairs_by_target_kv`` holds RoPE *pair* indices under
+    ``position_encoding = "rope"`` and plain *channel* indices under ``nope``,
+    where no pairing exists.  The field name is unchanged so existing receipts
+    and consumers keep their shape; the report says which reading applies.
+    """
+
     source_query_groups: tuple[tuple[int, ...], ...]
     source_key_value_groups: tuple[tuple[int, ...], ...]
     selected_rope_pairs_by_target_kv: tuple[tuple[int, ...], ...]
@@ -292,12 +336,28 @@ def _rotate_half(value: Any) -> Any:
     return _torch().cat((-value[..., half:], value[..., :half]), dim=-1)
 
 
-def apply_rope(value: Any, position_ids: Any, *, theta: float) -> Any:
+def apply_rope(
+    value: Any,
+    position_ids: Any,
+    *,
+    theta: float,
+    position_encoding: str = "rope",
+) -> Any:
+    if position_encoding == "nope":
+        return value.contiguous()
     cos, sin = _rope_cos_sin(position_ids, int(value.shape[-1]), theta)
     return (value * cos + _rotate_half(value) * sin).contiguous()
 
 
-def invert_rope(value: Any, position_ids: Any, *, theta: float) -> Any:
+def invert_rope(
+    value: Any,
+    position_ids: Any,
+    *,
+    theta: float,
+    position_encoding: str = "rope",
+) -> Any:
+    if position_encoding == "nope":
+        return value.contiguous()
     cos, sin = _rope_cos_sin(position_ids, int(value.shape[-1]), theta)
     return (value * cos - _rotate_half(value) * sin).contiguous()
 
@@ -313,8 +373,15 @@ def causal_attention_probabilities(
     *,
     attention_mask: Any,
     scaling: float,
+    attention_window: int | None = None,
 ) -> tuple[Any, Any]:
-    """Return centered scores and probabilities for one causal GQA replay."""
+    """Return centered scores and probabilities for one causal GQA replay.
+
+    ``attention_window`` is the chimera ``local_window`` convention: key ``s``
+    is visible to query ``t`` when ``0 <= t - s < window``, so the window counts
+    the query's own position (``layers.py:52-54``).  ``None`` keeps the
+    unwindowed causal mask exactly as it was.
+    """
 
     torch = _torch()
     batch, heads, sequence, _dim = query.shape
@@ -324,6 +391,12 @@ def causal_attention_probabilities(
     causal = torch.ones(sequence, sequence, dtype=torch.bool).tril().reshape(
         1, 1, sequence, sequence
     )
+    if attention_window is not None:
+        window = _positive_int(attention_window, "attention_window")
+        offsets = torch.arange(sequence).reshape(-1, 1) - torch.arange(
+            sequence
+        ).reshape(1, -1)
+        causal = causal & (offsets < window).reshape(1, 1, sequence, sequence)
     allowed = key_mask & causal
     # Invalid/padded query rows are removed from every fit metric.  Give them a
     # deterministic diagonal fallback to keep the functional replay finite.
@@ -408,10 +481,37 @@ def _select_rope_pairs(
     return tuple(sorted(int(value) for value in selected.tolist()))
 
 
+def _select_channels(
+    query_group_values: tuple[Any, ...],
+    key_values: Any,
+    value_values: Any,
+    target_dim: int,
+) -> tuple[int, ...]:
+    """Plain energy-ranked channel selection for a NoPE head."""
+
+    torch = _torch()
+    source_dim = int(key_values.shape[-1])
+    if target_dim > source_dim:
+        raise HFCausalGQAAttentionFoldError(
+            "Head dimension expansion is outside the contraction-only fold."
+        )
+    energy = torch.zeros(source_dim, dtype=torch.float64)
+    for value in (*query_group_values, key_values, value_values):
+        energy += value.square().sum(dim=tuple(range(value.ndim - 1)))
+    selected = torch.argsort(energy, descending=True, stable=True)[:target_dim]
+    return tuple(sorted(int(value) for value in selected.tolist()))
+
+
 def _contract_pairs(value: Any, selected: tuple[int, ...]) -> Any:
     torch = _torch()
     half = int(value.shape[-1]) // 2
     index = torch.tensor((*selected, *(item + half for item in selected)), dtype=torch.long)
+    return value.index_select(-1, index).contiguous()
+
+
+def _contract_channels(value: Any, selected: tuple[int, ...]) -> Any:
+    torch = _torch()
+    index = torch.tensor(selected, dtype=torch.long)
     return value.index_select(-1, index).contiguous()
 
 
@@ -517,13 +617,24 @@ class HFCausalCoupledAttentionFold:
             self.target_topology.head_dim,
             "replayed value",
         )
-        query = apply_rope(query, positions, theta=self.target_topology.rope_theta)
-        key = apply_rope(key, positions, theta=self.target_topology.rope_theta)
+        query = apply_rope(
+            query,
+            positions,
+            theta=self.target_topology.rope_theta,
+            position_encoding=self.target_topology.position_encoding,
+        )
+        key = apply_rope(
+            key,
+            positions,
+            theta=self.target_topology.rope_theta,
+            position_encoding=self.target_topology.position_encoding,
+        )
         scores, probabilities = causal_attention_probabilities(
             query,
             key,
             attention_mask=mask,
             scaling=self.target_topology.attention_scaling,
+            attention_window=self.target_topology.attention_window,
         )
         contexts = torch.matmul(probabilities, _repeat_kv(value, self.target_topology.query_heads))
         concatenated = contexts.permute(0, 2, 1, 3).reshape(
@@ -558,6 +669,19 @@ def compile_hf_causal_gqa_attention_fold(
         target_topology, HFCausalGQATopology
     ):
         raise HFCausalGQAAttentionFoldError("source/target topology types are invalid.")
+    # Changing the position-encoding class or the band is a kind translation --
+    # a NoPE child cannot synthesize a rotation ladder and a narrower window
+    # leaves parent mass with no home in the operator.  Both fail closed here.
+    if source_topology.position_encoding != target_topology.position_encoding:
+        raise HFCausalGQAAttentionFoldError(
+            "Source and target position encodings differ; that is a kind "
+            "translation, not a fold."
+        )
+    if source_topology.attention_window != target_topology.attention_window:
+        raise HFCausalGQAAttentionFoldError(
+            "Source and target attention windows differ; band restriction or "
+            "relaxation is a kind translation, not a fold."
+        )
     ridge = _nonnegative_float(ridge, "ridge")
     child = _tensor(normalized_child_sequences, "normalized_child_sequences", ndim=3)
     delta_target = _tensor(
@@ -618,16 +742,30 @@ def compile_hf_causal_gqa_attention_fold(
         raise HFCausalGQAAttentionFoldError(
             "Identity source Q/K semantics forbid norm weights."
         )
-    source_query_post = apply_rope(source_query, positions, theta=source_topology.rope_theta)
-    source_key_post = apply_rope(source_key, positions, theta=source_topology.rope_theta)
+    source_query_post = apply_rope(
+        source_query,
+        positions,
+        theta=source_topology.rope_theta,
+        position_encoding=source_topology.position_encoding,
+    )
+    source_key_post = apply_rope(
+        source_key,
+        positions,
+        theta=source_topology.rope_theta,
+        position_encoding=source_topology.position_encoding,
+    )
     _source_scores, source_probabilities = causal_attention_probabilities(
         source_query_post,
         source_key_post,
         attention_mask=mask,
         scaling=source_topology.attention_scaling,
+        attention_window=source_topology.attention_window,
     )
     query_groups, kv_groups = _build_assignment(source_topology, target_topology)
     query_groups_per_kv = target_topology.queries_per_key_value
+    nope = target_topology.position_encoding == "nope"
+    select_dimensions = _select_channels if nope else _select_rope_pairs
+    contract = _contract_channels if nope else _contract_pairs
     selected_by_kv = []
     desired_query_post: list[Any] = []
     desired_key_post: list[Any] = []
@@ -643,13 +781,13 @@ def compile_hf_causal_gqa_attention_fold(
         )
         local_key = source_key_post[:, source_kv_group, :, :].mean(dim=1)
         local_value = source_value[:, source_kv_group, :, :].mean(dim=1)
-        selected = _select_rope_pairs(
+        selected = select_dimensions(
             local_queries, local_key, local_value, target_topology.head_dim
         )
         selected_by_kv.append(selected)
-        desired_query_post.extend(_contract_pairs(value, selected) for value in local_queries)
-        desired_key_post.append(_contract_pairs(local_key, selected))
-        desired_value.append(_contract_pairs(local_value, selected))
+        desired_query_post.extend(contract(value, selected) for value in local_queries)
+        desired_key_post.append(contract(local_key, selected))
+        desired_value.append(contract(local_value, selected))
         desired_probabilities.extend(
             source_probabilities[:, group, :, :].mean(dim=1)
             for group in local_query_groups
@@ -659,10 +797,16 @@ def compile_hf_causal_gqa_attention_fold(
     desired_value_tensor = torch.stack(desired_value, dim=1)
     desired_probability_tensor = torch.stack(desired_probabilities, dim=1)
     desired_query_raw = invert_rope(
-        desired_query_post_tensor, positions, theta=target_topology.rope_theta
+        desired_query_post_tensor,
+        positions,
+        theta=target_topology.rope_theta,
+        position_encoding=target_topology.position_encoding,
     )
     desired_key_raw = invert_rope(
-        desired_key_post_tensor, positions, theta=target_topology.rope_theta
+        desired_key_post_tensor,
+        positions,
+        theta=target_topology.rope_theta,
+        position_encoding=target_topology.position_encoding,
     )
     child_fit = _masked_rows(child, fit)
 
@@ -728,17 +872,20 @@ def compile_hf_causal_gqa_attention_fold(
         pre_rope_query,
         positions,
         theta=target_topology.rope_theta,
+        position_encoding=target_topology.position_encoding,
     )
     actual_key = apply_rope(
         pre_rope_key,
         positions,
         theta=target_topology.rope_theta,
+        position_encoding=target_topology.position_encoding,
     )
     _actual_scores, actual_probabilities = causal_attention_probabilities(
         actual_query,
         actual_key,
         attention_mask=mask,
         scaling=target_topology.attention_scaling,
+        attention_window=target_topology.attention_window,
     )
     actual_value = _reshape_heads(
         child @ value_weight.T,
@@ -813,6 +960,20 @@ def compile_hf_causal_gqa_attention_fold(
         "value_weight_sha256": _tensor_sha256(value_weight),
         "output_weight_sha256": _tensor_sha256(output_weight),
     }
+    if target_topology.attention_window is not None or nope:
+        # Same rule as the Q/K-norm lane: only a topology that uses the lane
+        # carries its keys, so an unwindowed RoPE receipt is byte-identical to
+        # the one this kernel produced before the lane existed.
+        body.update(
+            {
+                "attention_window": target_topology.attention_window,
+                "position_encoding": target_topology.position_encoding,
+                "head_dimension_selection": (
+                    "channels" if nope else "rope_pairs"
+                ),
+                "rope_applied": not nope,
+            }
+        )
     query_norm_weight = None
     key_norm_weight = None
     if query_norm_fold is not None and key_norm_fold is not None:
