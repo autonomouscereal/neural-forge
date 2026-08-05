@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ from neural_forge.dynamic_circuit_ir import (
     EdgeKind,
     canonical_sha256,
 )
+from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.dynamic_fold_planner import DynamicFoldPlanner
 from neural_forge.dynamic_fold_registry import MethodStatus, default_method_registry
 from neural_forge.dynamic_fold_snapshot import DynamicFoldSnapshotConfig
@@ -871,6 +873,49 @@ def _tiny_model_loader(destination: Path):
     return model.requires_grad_(False).eval()
 
 
+@dataclass(frozen=True)
+class _GatedChild:
+    """One model a behavior gate actually decided on, recorded by identity."""
+
+    model: Any
+    state_fingerprint: str
+    accepted: bool
+    parameter_storages: frozenset[int]
+
+
+class _RecordingNativeVideoBehaviorGate(NativeVideoBehaviorGate):
+    """A video gate that also records *which* children it decided on.
+
+    ``evaluation_count`` is a bare integer.  It cannot separate "the gate
+    decided on the folded child in memory and again on a real reload of the
+    published bytes" from "the gate decided on the same object twice", and it
+    silently absorbs a publication-side cache that skips a required decision.
+    Recording every gated child lets this proof assert on the evidence set the
+    count is only a summary of.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.gated_children: list[_GatedChild] = []
+
+    def evaluate_model(self, model: Any) -> Any:
+        decision = super().evaluate_model(model)
+        # Retaining the model keeps its storages alive for the whole test, so
+        # ``data_ptr`` values cannot be recycled into a false "disjoint" or a
+        # false "same child" reading later.
+        self.gated_children.append(
+            _GatedChild(
+                model=model,
+                state_fingerprint=fingerprint_model_state(model),
+                accepted=bool(decision.accepted),
+                parameter_storages=frozenset(
+                    parameter.data_ptr() for parameter in model.parameters()
+                ),
+            )
+        )
+        return decision
+
+
 def test_native_video_fold_cache_stack_behavior_artifact_and_receipt(
     video_evidence: dict[str, Any],
     tmp_path: Path,
@@ -972,7 +1017,7 @@ def test_native_video_fold_cache_stack_behavior_artifact_and_receipt(
         == cache.cache_key
     )
 
-    behavior_gate = NativeVideoBehaviorGate(
+    behavior_gate = _RecordingNativeVideoBehaviorGate(
         behavior_cache,
         child_runner=_behavior_runner,
     )
@@ -1033,7 +1078,31 @@ def test_native_video_fold_cache_stack_behavior_artifact_and_receipt(
     assert result.published.artifact.exact_unique_parameters == expected_count
     assert result.published.artifact.fresh_reload_decision.accepted
     assert result.published.artifact.fresh_reload_parameters_frozen is True
-    assert behavior_gate.evaluation_count == 4
+    # Three decisions, and -- what the count is only shorthand for -- three
+    # decisions on the right subjects: the unmarked control this test rejected
+    # by hand, the folded child in memory, and the folded child freshly loaded
+    # back off disk.  Publication reuses its own staged fresh-reload verdict
+    # for the post-rename destination only after proving the artifact bytes,
+    # the reloaded child, the loader, the evaluator, and the gate manifest are
+    # all identical, so that fourth call would re-decide identical evidence.
+    assert behavior_gate.evaluation_count == 3
+    assert len(behavior_gate.gated_children) == 3
+    control, in_memory_child, reloaded_child = behavior_gate.gated_children
+    assert [record.accepted for record in behavior_gate.gated_children] == [
+        False,
+        True,
+        True,
+    ]
+    assert control.model is unmarked
+    assert control.state_fingerprint != in_memory_child.state_fingerprint
+    # The accepted pair must be two *different* children carrying the same
+    # folded state: a gate that only ever saw the in-memory child, or a reload
+    # step handed the in-memory object back instead of real bytes, fails here.
+    assert in_memory_child.state_fingerprint == reloaded_child.state_fingerprint
+    assert reloaded_child.model is not in_memory_child.model
+    assert in_memory_child.parameter_storages.isdisjoint(
+        reloaded_child.parameter_storages
+    )
     assert behavior_gate.last_report is not None
     assert behavior_gate.last_report["parent_forward_count"] == 0
     assert behavior_gate.last_report["failures"] == []
@@ -1043,6 +1112,8 @@ def test_native_video_fold_cache_stack_behavior_artifact_and_receipt(
     assert not any(snapshots.iterdir())
 
     reloaded = _tiny_model_loader(artifact_path / "child")
+    # The gated reload really was this artifact, not some other child.
+    assert fingerprint_model_state(reloaded) == reloaded_child.state_fingerprint
     assert all(not parameter.requires_grad for parameter in reloaded.parameters())
     parent_state = parent.state_dict()
     child_state = reloaded.state_dict()

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,6 +12,7 @@ from neural_forge.dynamic_behavior_gate import (
     WholeOutputCase,
 )
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.dynamic_fold_snapshot import DynamicFoldSnapshotConfig
 from neural_forge.dynamic_qwen_compensated_adapter import (
     Qwen3CompensatedFoldStackAdapter,
@@ -142,9 +145,23 @@ def _evidence(parent) -> Qwen3CompensatedReplayEvidence:
     )
 
 
+@dataclass(frozen=True)
+class _GatedChild:
+    """One model the behavior gate actually ran, recorded by identity."""
+
+    model: Any
+    state_fingerprint: str
+    parameter_storages: frozenset[int]
+
+
 class _ForwardGenerator:
     def __init__(self) -> None:
         self.calls = 0
+        # ``calls`` alone cannot separate "the gate ran the folded child in
+        # memory and again on a real reload of the published bytes" from "the
+        # gate ran one object twice", and it silently absorbs a caching layer
+        # that skips a required decision.  Keep the subjects themselves.
+        self.gated_children: list[_GatedChild] = []
 
     def __call__(self, model, cases):
         self.calls += 1
@@ -154,6 +171,18 @@ class _ForwardGenerator:
                 use_cache=False,
             )
         assert torch.isfinite(output.logits).all()
+        # Retaining the model keeps its storages alive for the whole test, so
+        # ``data_ptr`` values cannot be recycled into a false "disjoint" or a
+        # false "same child" reading later.
+        self.gated_children.append(
+            _GatedChild(
+                model=model,
+                state_fingerprint=fingerprint_model_state(model),
+                parameter_storages=frozenset(
+                    parameter.data_ptr() for parameter in model.parameters()
+                ),
+            )
+        )
         return {
             case.case_id: CandidateWholeOutput("A coherent answer.") for case in cases
         }
@@ -227,7 +256,24 @@ def test_tiny_real_qwen_replay_runs_through_automatic_system(
     assert result.published.artifact.exact_unique_parameters == (
         evidence.expected_target_parameters
     )
-    assert generator.calls == 3
+    # Two decisions, and -- what the count is only shorthand for -- two
+    # decisions on the right subjects: the folded child in memory, and the
+    # folded child freshly loaded back off disk.  Publication reuses its own
+    # staged fresh-reload verdict for the post-rename destination only after
+    # proving the artifact bytes, the reloaded child, the loader, the
+    # evaluator, and the gate manifest are all identical, so a third run would
+    # re-decide identical evidence.
+    assert generator.calls == 2
+    assert len(generator.gated_children) == 2
+    in_memory_child, reloaded_child = generator.gated_children
+    # The pair must be two *different* children carrying the same folded state:
+    # a gate that only ever saw the in-memory child, or a reload step handed
+    # the in-memory object back instead of real bytes, fails here.
+    assert in_memory_child.state_fingerprint == reloaded_child.state_fingerprint
+    assert reloaded_child.model is not in_memory_child.model
+    assert in_memory_child.parameter_storages.isdisjoint(
+        reloaded_child.parameter_storages
+    )
     assert before_reload_calls == ["released"]
     assert not tuple(snapshots.iterdir())
 
@@ -235,6 +281,8 @@ def test_tiny_real_qwen_replay_runs_through_automatic_system(
         destination / "child",
         device="cpu",
     )
+    # The gated reload really was this artifact, not some other child.
+    assert fingerprint_model_state(reloaded) == reloaded_child.state_fingerprint
     assert sum(value.numel() for value in reloaded.parameters()) == (
         evidence.expected_target_parameters
     )
