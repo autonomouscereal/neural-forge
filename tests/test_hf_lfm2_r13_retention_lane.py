@@ -8,6 +8,7 @@ identical compiled MLP state it produced before any of this existed.
 
 from __future__ import annotations
 
+import json
 import warnings
 from dataclasses import replace
 
@@ -214,6 +215,179 @@ def test_terminal_floor_rejects_a_depth_monotone_regression(
     assert metrics["terminal_absolute_floor_passed"] is True
 
 
+def test_intermediate_numeric_policy_keeps_finite_passing_decision_accepted(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        intermediate_layer_numeric_checks_diagnostic_only=True,
+    )
+    decision = adapter._validation_decision(
+        scope=_layer_scope(0),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.4),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+        terminal_baseline=_metrics(0.2),
+        terminal_candidate=_metrics(0.3),
+    )
+    metrics = dict(decision.metrics)
+    assert decision.accepted is True
+    assert metrics["counterfactual_performance_threshold_passed"] is True
+    assert metrics["layer_validation_is_incomplete"] is True
+    assert metrics["intermediate_layer_numeric_checks_diagnostic_only"] is True
+    assert metrics["all_layer_finite_numeric_checks_diagnostic_only"] is False
+    assert (
+        metrics[
+            "local_performance_metrics_diagnostic_only_for_this_scope"
+        ]
+        is True
+    )
+    assert (
+        metrics["finite_numeric_policy_diagnostic_only_for_this_scope"]
+        is True
+    )
+
+
+def test_intermediate_numeric_policy_records_finite_reject_and_continues(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        terminal_composition_regression_tolerance=0.0,
+        intermediate_layer_numeric_checks_diagnostic_only=True,
+    )
+    decision = adapter._validation_decision(
+        scope=_layer_scope(0),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.8),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+        terminal_baseline=_metrics(0.2),
+        terminal_candidate=_metrics(1.2),
+    )
+    metrics = dict(decision.metrics)
+    assert decision.accepted is True
+    assert metrics["counterfactual_performance_threshold_passed"] is False
+    assert metrics["terminal_composition_floor_failed"] is True
+    assert metrics["terminal_floor_failure_is_diagnostic_only"] is True
+    assert metrics["terminal_floor_has_decision_authority"] is False
+    assert "folded body is incomplete" in decision.reason
+
+
+def test_intermediate_numeric_policy_keeps_final_layer_floor_strict(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        intermediate_layer_numeric_checks_diagnostic_only=True,
+        performance_metrics_diagnostic_only=True,
+    )
+    decision = adapter._validation_decision(
+        scope=_layer_scope(1),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.4),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+        terminal_baseline=_metrics(0.2),
+        terminal_candidate=_metrics(1.2),
+    )
+    metrics = dict(decision.metrics)
+    assert decision.accepted is False
+    assert metrics["layer_validation_is_incomplete"] is False
+    assert metrics["terminal_floor_failure_is_diagnostic_only"] is False
+    assert metrics["terminal_floor_has_decision_authority"] is True
+    assert (
+        metrics[
+            "local_performance_metrics_diagnostic_only_for_this_scope"
+        ]
+        is True
+    )
+    assert (
+        metrics["finite_numeric_policy_diagnostic_only_for_this_scope"]
+        is False
+    )
+
+
+def test_all_layer_numeric_policy_records_final_finite_reject_and_continues(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        terminal_composition_regression_tolerance=0.0,
+        all_layer_finite_numeric_checks_diagnostic_only=True,
+    )
+    decision = adapter._validation_decision(
+        scope=_layer_scope(1),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.8),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+        terminal_baseline=_metrics(0.2),
+        terminal_candidate=_metrics(1.2),
+    )
+    metrics = dict(decision.metrics)
+    assert decision.accepted is True
+    assert metrics["layer_validation_is_incomplete"] is False
+    assert metrics["all_layer_finite_numeric_checks_diagnostic_only"] is True
+    assert metrics["intermediate_layer_numeric_checks_diagnostic_only"] is False
+    assert metrics["counterfactual_performance_threshold_passed"] is False
+    assert metrics["terminal_floor_failure_is_diagnostic_only"] is True
+    assert metrics["terminal_floor_has_decision_authority"] is False
+    assert (
+        metrics["finite_numeric_policy_diagnostic_only_for_this_scope"]
+        is True
+    )
+    assert "manual whole-output review" in decision.reason
+
+
+def test_all_layer_numeric_policy_still_rejects_final_nonfinite_metrics(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        all_layer_finite_numeric_checks_diagnostic_only=True,
+    )
+    nonfinite = replace(
+        _metrics(0.4),
+        rmse=float("nan"),
+        relative_rmse=float("nan"),
+        mean_cosine_similarity=float("nan"),
+        finite=False,
+    )
+    decision = adapter._validation_decision(
+        scope=_layer_scope(1),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=nonfinite,
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+        terminal_baseline=_metrics(0.2),
+        terminal_candidate=nonfinite,
+    )
+    metrics = dict(decision.metrics)
+    assert decision.accepted is False
+    assert "nonfinite" in decision.reason
+    assert metrics["performance_metrics_finite"] is False
+    assert metrics["terminal_floor_metrics_finite"] is False
+    assert metrics["terminal_floor_failure_is_diagnostic_only"] is False
+    assert metrics["terminal_floor_has_decision_authority"] is True
+
+
 def test_absolute_floor_engagement_depth_is_configurable(
     sealed_parent,
 ) -> None:
@@ -359,6 +533,7 @@ def test_a_run_headed_past_the_no_branch_baseline_fails_closed_at_the_wall(
         return _metrics(scripted[layer_index])
 
     original_producer = type(adapter).compile_producer
+    events: list[tuple[str, dict[str, object]]] = []
 
     def _tracked_producer(self, scope, *args, **kwargs):
         observed.append(int(scope.layer_index))
@@ -376,12 +551,29 @@ def test_a_run_headed_past_the_no_branch_baseline_fails_closed_at_the_wall(
                 fold_body_reclosure=False,
                 fold_output_interface=False,
             ),
+            progress_sink=(
+                lambda stage, metadata: events.append((stage, dict(metadata)))
+            ),
         ).run()
     message = str(failure.value)
     assert "no-branch baseline" in message
     assert "layer:000001 validation rejected" in message
     # Layer 0 was reached and accepted; the run stopped at the wall layer.
     assert observed == [0, 1]
+    rejected = [
+        metadata
+        for stage, metadata in events
+        if stage == "child_closed_loop_validation_decision_rejected"
+    ]
+    assert len(rejected) == 1
+    metrics = json.loads(str(rejected[0]["validation_metrics_json"]))
+    assert metrics["terminal_relative_rmse"] == pytest.approx(1.31)
+    assert metrics["terminal_baseline_relative_rmse"] is not None
+    assert metrics["terminal_relative_rmse_regression"] is not None
+    assert metrics["terminal_absolute_floor_passed"] is False
+    assert metrics["terminal_composition_floor_failed"] is True
+    assert "baseline_relative_rmse" in metrics
+    assert "candidate_relative_rmse" in metrics
 
 
 # --- item 7: errors-in-variables ridge ---------------------------------------

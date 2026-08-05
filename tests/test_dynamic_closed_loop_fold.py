@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import weakref
 
 import pytest
@@ -857,6 +858,47 @@ def test_validation_rejection_rolls_back_the_entire_ascending_run() -> None:
     assert adapter.child_state_fingerprint() == before_sha
     assert adapter.rollback_calls == 1
     assert adapter.commit_calls == 0
+    assert adapter.log[-1] == "rollback"
+    assert "final_normalization:compile" not in adapter.log
+
+
+def test_validation_rejection_emits_full_authenticated_decision_before_raise() -> None:
+    adapter = _ToyAdapter(reject_layer=1)
+    events: list[tuple[str, dict[str, object]]] = []
+
+    with pytest.raises(ClosedLoopFoldError, match="validation rejected"):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.4,
+                split_seed="rejected-validation-telemetry-test",
+            ),
+            progress_sink=(
+                lambda stage, metadata: events.append((stage, dict(metadata)))
+            ),
+        ).run()
+
+    rejected = [
+        metadata
+        for stage, metadata in events
+        if stage == "child_closed_loop_validation_decision_rejected"
+    ]
+    assert len(rejected) == 1
+    event = rejected[0]
+    assert event["scope_id"] == "layer:000001"
+    assert event["layer_index"] == 1
+    assert event["validation_accepted"] is False
+    decision = json.loads(str(event["validation_decision_json"]))
+    metrics = json.loads(str(event["validation_metrics_json"]))
+    assert decision["metrics"] == metrics == {"trajectory_score": 0.95}
+    assert decision["reason"] == "intentional held-out rejection"
+    assert canonical_sha256(decision) == event["validation_decision_sha256"]
+    assert canonical_sha256(metrics) == event["validation_metrics_sha256"]
+    # The progress callback observed the rejection before the outer
+    # transaction performed its exact rollback.
+    assert adapter.log.index("layer:000001:validate") < adapter.log.index(
+        "rollback"
+    )
     assert adapter.log[-1] == "rollback"
     assert "final_normalization:compile" not in adapter.log
 
