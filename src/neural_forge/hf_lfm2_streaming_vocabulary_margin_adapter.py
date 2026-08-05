@@ -14,6 +14,16 @@ candidate diagnostics reopen one authenticated phase at a time and release it
 before the next phase.  Consequently the retained numeric evidence is one
 ``H x H`` Gram (plus the v2 ``H`` mean while statistics are being built) and
 bounded phase-local state rather than all margin directions or residual rows.
+
+Two evidence handles are accepted, each authenticated by the same per-cache
+contract: one sealed ``Lfm2CircuitTraceCache`` with its selective session, and
+one ``Lfm2MergedSealedEvidenceCache`` over a base plus on-policy extensions.  A
+merged corpus has no sealed directory and therefore no sealed manifest or
+completion digest of its own, so nothing here invents one: every member is
+authenticated individually through the single-cache authenticator, and the
+member digests, the composition that ordered them, and two explicitly *derived*
+merged digests are sealed into one ``merged_sealed_evidence`` document that
+every record this module emits carries.
 """
 
 from __future__ import annotations
@@ -24,6 +34,7 @@ import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -38,6 +49,14 @@ from .hf_lfm2_circuit_trace_cache import (
     SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
 )
+from .hf_lfm2_sealed_evidence_set import (
+    BASE_EVIDENCE_ROLE,
+    EXTENSION_EVIDENCE_ROLE,
+    MERGED_EVIDENCE_SESSION_SCHEMA,
+    Lfm2MergedSealedEvidenceCache,
+    Lfm2MergedSealedEvidenceSession,
+)
+from . import hf_lfm2_sealed_evidence_set as _sealed_evidence_set
 from .hf_lfm2_streaming_vocabulary_margin import (
     Lfm2StreamingVocabularyMarginConfig,
     Lfm2StreamingVocabularyLogitProjection,
@@ -66,6 +85,18 @@ LFM2_STREAMING_VOCABULARY_MARGIN_INVENTORY_SCHEMA = (
 LFM2_TARGET_TOKENIZER_VOCABULARY_MARGIN_BINDING_SCHEMA = (
     "neural-forge-lfm2-target-tokenizer-vocabulary-margin-binding-v1"
 )
+LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-streaming-vocabulary-margin-merged-sealed-evidence-v1"
+)
+_LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_COMPLETION_SCHEMA = (
+    "neural-forge-lfm2-streaming-vocabulary-margin-merged-sealed-evidence-"
+    "completion-v1"
+)
+# The one identity field merged evidence adds to every record this module
+# emits.  It is a nested self-sealed document rather than a digest, so a margin
+# receipt names which members and which composition produced its evidence; the
+# digest inside it is what a consumer compares.
+_MERGED_EVIDENCE_FIELD = "merged_sealed_evidence"
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _DECODE_PHASE = re.compile(r"decode\.(?P<index>[0-9]{3})\Z")
@@ -513,6 +544,427 @@ def _authenticate_selective_session(
     return receipt
 
 
+def _module_file_sha256(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            f"Cannot locate implementation module {name}."
+        )
+    try:
+        return hashlib.sha256(
+            Path(value).resolve(strict=True).read_bytes()
+        ).hexdigest()
+    except OSError as exc:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            f"Cannot authenticate implementation module {name}."
+        ) from exc
+
+
+def _evidence_identity_fields(
+    cache_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Restate the authenticated evidence identity a sealed record carries.
+
+    One sealed cache carries its own sealed manifest and completion digests, so
+    a single-cache record is byte-identical to the pre-merge revision.  A merged
+    sealed evidence set carries neither -- no file on disk holds a merged
+    manifest body or a merged completion -- so both stay ``None`` there and the
+    nested ``merged_sealed_evidence`` document carries every member's real
+    sealed digests, the composition that ordered them, and the two derived
+    merged digests named as derived.  Restating a fabricated merged
+    ``manifest_sha256`` would let a reader believe a sealed artifact carried it.
+    """
+
+    fields: dict[str, Any] = {
+        "cache_key": cache_receipt["cache_key"],
+        "manifest_sha256": cache_receipt.get("manifest_sha256"),
+        "completion_sha256": cache_receipt.get("completion_sha256"),
+    }
+    merged = cache_receipt.get(_MERGED_EVIDENCE_FIELD)
+    if merged is not None:
+        fields[_MERGED_EVIDENCE_FIELD] = merged
+    return fields
+
+
+def _merged_member_authentication(
+    member: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Authenticate one sealed member through the single-cache authenticator.
+
+    Every member is a real sealed cache with its own selective session, so the
+    member's sealed manifest digest, completion digest, per-batch inventory and
+    authentication contract are checked by exactly the function that checks a
+    single-cache margin build.  A member whose manifest, completion, capture
+    selection, implementation, or session identity moved fails closed there, in
+    the proven authenticator, and not in new code.
+    """
+
+    session = getattr(member, "session", None)
+    if session is None:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Every merged evidence member needs its authenticated selective "
+            "session."
+        )
+    cache = member.cache
+    receipt = _authenticate_selective_session(cache, session)
+    manifest = _canonical_copy(dict(cache.manifest))
+    try:
+        lineage = {
+            "cache_key": receipt["cache_key"],
+            "manifest_sha256": receipt["manifest_sha256"],
+            "completion_sha256": receipt["completion_sha256"],
+            "selective_session_sha256": receipt["session_sha256"],
+            "parent_identity_sha256": cache.parent_fingerprint,
+            "corpus_sha256": cache.corpus_fingerprint,
+            "layer_topology_sha256": cache.layer_topology_fingerprint,
+            "implementation_sha256": cache.implementation_fingerprint,
+            "collector_source_sha256": manifest["implementation"][
+                "collector_source_sha256"
+            ],
+            "canonical_contract_source_sha256": manifest["implementation"][
+                "canonical_contract_source_sha256"
+            ],
+            "transformers_lfm2_source_sha256": manifest["implementation"][
+                "transformers_lfm2_source_sha256"
+            ],
+            "execution_sha256": manifest["execution"]["execution_sha256"],
+            "capture_selection_sha256": manifest["capture"]["selection_sha256"],
+            "batch_count": receipt["batch_count"],
+        }
+    except (KeyError, TypeError) as exc:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "A merged sealed evidence member lacks complete cache lineage."
+        ) from exc
+    ordinal = int(member.ordinal)
+    for name, value in lineage.items():
+        if name != "batch_count":
+            _digest(value, f"merged evidence member {ordinal} {name}")
+    document = {
+        "role": str(member.role),
+        "ordinal": ordinal,
+        "batch_offset": int(member.batch_offset),
+        "split_sha256": _digest(
+            member.split_sha256,
+            f"merged evidence member {ordinal} split_sha256",
+        ),
+        "round_manifest_sha256": (
+            None
+            if member.round_manifest_sha256 is None
+            else _digest(
+                member.round_manifest_sha256,
+                f"merged evidence member {ordinal} round_manifest_sha256",
+            )
+        ),
+        "target_preimage_sha256": (
+            None
+            if member.target_preimage_sha256 is None
+            else _digest(
+                member.target_preimage_sha256,
+                f"merged evidence member {ordinal} target_preimage_sha256",
+            )
+        ),
+        "all_rows_are_fit_rows": bool(member.all_rows_are_fit),
+        "trace_cache": lineage,
+    }
+    return document, receipt
+
+
+def _authenticate_merged_evidence_session(
+    trace_cache: Any,
+    selective_session: Any,
+    *,
+    heldout_record_ids: Sequence[str] = (),
+    expected_session_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Authenticate one base+extension sealed evidence set as margin evidence.
+
+    The returned receipt has the same shape the single-cache receipt has for
+    everything this module reads -- ``cache_key``, ``batch_count``,
+    ``session_sha256`` and one ``ordered_authenticated_batches`` list in merged
+    batch order -- with the two sealed digests a merged corpus does not have
+    left out, and one self-sealed ``merged_sealed_evidence`` document added.
+    That document is what makes the emitted margin evidence reconstructable:
+    which members, in which order, at which offsets, with which splits and round
+    manifests, produced it.
+
+    ``heldout_record_ids`` is the split this margin evidence is about to be
+    measured against.  Every on-policy extension row is a fit row, so a
+    child-visited batch in that set means the held-out gate would be measured
+    partly on the child's own outputs; it is refused here rather than sealed as
+    a claim.  The document records the enforced count, which is always zero.
+    """
+
+    if not isinstance(selective_session, Lfm2MergedSealedEvidenceSession):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "A merged sealed evidence cache requires its merged authenticated "
+            "session."
+        )
+    if not isinstance(trace_cache, Lfm2MergedSealedEvidenceCache):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "A merged sealed evidence session requires its merged cache view."
+        )
+    evidence_set = trace_cache.evidence_set
+    if selective_session.evidence_set is not evidence_set:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged evidence session belongs to another sealed evidence set."
+        )
+    # Reverifies every member session and rechecks each one still matches its
+    # member; the merged view opens nothing, exactly as the single-cache path.
+    verified = selective_session.verify()
+    if verified is not selective_session:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "selective_session.verify() returned another object."
+        )
+    manifest = getattr(trace_cache, "manifest", None)
+    if not isinstance(manifest, Mapping):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "trace_cache must expose its merged manifest."
+        )
+    manifest = _canonical_copy(dict(manifest))
+    if "manifest_sha256" in manifest:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "A merged evidence manifest must not claim a sealed manifest "
+            "digest."
+        )
+    cache_key = _digest(
+        getattr(trace_cache, "cache_key", None),
+        "merged evidence set cache key",
+    )
+    batch_count = _positive_int(
+        getattr(trace_cache, "batch_count", None),
+        "merged evidence batch_count",
+    )
+    if (
+        getattr(selective_session, "cache_key", None) != cache_key
+        or getattr(selective_session, "batch_count", None) != batch_count
+        or getattr(selective_session, "manifest", None) != manifest
+        or getattr(selective_session, "path", None)
+        != getattr(trace_cache, "path", None)
+    ):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged evidence session is not exactly bound to trace_cache."
+        )
+    members: list[dict[str, Any]] = []
+    receipts: list[dict[str, Any]] = []
+    for member in evidence_set.members:
+        document, receipt = _merged_member_authentication(member)
+        members.append(document)
+        receipts.append(receipt)
+    if len(members) < 2:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence needs a base and at least one on-policy "
+            "extension member."
+        )
+    base = members[0]["trace_cache"]
+    if members[0]["role"] != BASE_EVIDENCE_ROLE or any(
+        member["role"] != EXTENSION_EVIDENCE_ROLE
+        or member["round_manifest_sha256"] is None
+        or not member["all_rows_are_fit_rows"]
+        for member in members[1:]
+    ):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence is not one base plus on-policy extensions."
+        )
+    if any(
+        member["trace_cache"]["parent_identity_sha256"]
+        != base["parent_identity_sha256"]
+        or member["trace_cache"]["implementation_sha256"]
+        != base["implementation_sha256"]
+        or member["trace_cache"]["layer_topology_sha256"]
+        != base["layer_topology_sha256"]
+        for member in members[1:]
+    ):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence members disagree on parent, implementation, "
+            "or layer topology."
+        )
+    session_receipt = _canonical_copy(_thaw(selective_session.as_dict()))
+    session_sha256 = _digest(
+        session_receipt.get("session_sha256"),
+        "merged session SHA-256",
+    )
+    if (
+        session_receipt.get("schema") != MERGED_EVIDENCE_SESSION_SCHEMA
+        or session_receipt.get("cache_key") != cache_key
+        or session_receipt.get("batch_count") != batch_count
+        or session_receipt.get("merged_view_opens_no_new_session") is not True
+        or session_receipt.get("parent_forward_calls") != 0
+        or session_receipt.get("training_steps") != 0
+        or session_sha256
+        != _digest(
+            getattr(selective_session, "evidence_sha256", None),
+            "merged session evidence SHA-256",
+        )
+        or (
+            expected_session_sha256 is not None
+            and session_sha256 != expected_session_sha256
+        )
+    ):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged evidence session receipt is not bound to this exact "
+            "evidence set."
+        )
+    # The merged session digest is opaque on its own; what makes it an
+    # authentication claim is that every member session it reads through was
+    # authenticated above, so the digests it names must be exactly those.
+    if [
+        member["trace_cache"]["selective_session_sha256"] for member in members
+    ] != list(session_receipt.get("ordered_member_session_sha256") or ()):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged evidence session does not read through the member sessions "
+            "this binding authenticated."
+        )
+    if sum(
+        member["trace_cache"]["batch_count"] for member in members
+    ) != batch_count:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence member batch counts do not sum to the "
+            "merged batch count."
+        )
+    # Member batch inventories restated in merged coordinates, exactly as the
+    # merged session restates its batch references: the per-batch content
+    # hashes stay the member's own and only the batch number moves.
+    batches: list[dict[str, Any]] = []
+    for member, receipt in zip(members, receipts):
+        offset = member["batch_offset"]
+        for value in receipt["ordered_authenticated_batches"]:
+            batches.append({**value, "batch_index": offset + value["batch_index"]})
+    inventory = tuple(evidence_set.iter_batches())
+    if [value["batch_index"] for value in batches] != list(
+        range(batch_count)
+    ) or len(inventory) != batch_count:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence batches are not one canonical merged batch "
+            "order."
+        )
+    if any(
+        value.merged_index != index
+        or value.input_sha256 != batches[index]["input_sha256"]
+        for index, value in enumerate(inventory)
+    ):
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence inventory differs from the members' own "
+            "authenticated batches."
+        )
+    # Every extension row is a fit row, so no child-visited batch may be in the
+    # split this evidence will be measured against.  The basis's own split is
+    # what enforces it (``_split_records`` draws the held-out quota from the
+    # base members only); this refuses the claim rather than sealing it.
+    extension_record_ids = frozenset(
+        batches[index]["input_sha256"]
+        for index in evidence_set.extension_batch_indices
+    )
+    heldout_extension_record_ids = extension_record_ids.intersection(
+        str(value) for value in heldout_record_ids
+    )
+    if heldout_extension_record_ids:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Merged sealed evidence held out "
+            f"{len(heldout_extension_record_ids)} on-policy extension "
+            "batch(es); every extension row is a fit row, and a child-visited "
+            "state cannot be held-out evidence for the child."
+        )
+    document = _sealed(
+        {
+            "schema": LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_EVIDENCE_SCHEMA,
+            "evidence_set_cache_key": cache_key,
+            "base_cache_key": base["cache_key"],
+            "on_policy_evidence_identity_sha256": _digest(
+                evidence_set.evidence_identity_sha256,
+                "on-policy evidence identity",
+            ),
+            "member_count": int(evidence_set.member_count),
+            "round_count": int(evidence_set.round_count),
+            "batch_count": batch_count,
+            "base_batch_count": int(evidence_set.base.batch_count),
+            "extension_batch_indices": list(
+                evidence_set.extension_batch_indices
+            ),
+            "merged_corpus_sha256": _digest(
+                evidence_set.corpus_fingerprint,
+                "merged evidence corpus SHA-256",
+            ),
+            # Derived, and named derived: no file on disk carries the merged
+            # manifest body or a merged completion, so these two are computed
+            # here from what was authenticated rather than read from a seal.
+            "derived_merged_manifest_sha256": canonical_sha256(manifest),
+            "derived_merged_completion_sha256": canonical_sha256(
+                {
+                    "schema": (
+                        _LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_COMPLETION_SCHEMA
+                    ),
+                    "ordered_member_completion_sha256": [
+                        member["trace_cache"]["completion_sha256"]
+                        for member in members
+                    ],
+                }
+            ),
+            "sealed_merged_manifest_digest_exists": False,
+            "every_member_sealed_digest_authenticated": True,
+            "merged_session_sha256": session_sha256,
+            "sealed_evidence_set_source_sha256": _module_file_sha256(
+                _sealed_evidence_set.__file__,
+                "hf_lfm2_sealed_evidence_set",
+            ),
+            "ordered_members": members,
+            "all_extension_rows_are_fit_rows": True,
+            # Enforced above, not asserted: the authenticator raises before it
+            # reaches this document if any extension batch is held out.
+            "heldout_extension_batch_count": 0,
+            "extension_batches_are_never_heldout_evidence": True,
+            "merged_view_opens_no_new_session": True,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        },
+        f"{_MERGED_EVIDENCE_FIELD}_sha256",
+    )
+    return {
+        "schema": MERGED_EVIDENCE_SESSION_SCHEMA,
+        "cache_key": cache_key,
+        "session_sha256": session_sha256,
+        "batch_count": batch_count,
+        "ordered_authenticated_batches": batches,
+        _MERGED_EVIDENCE_FIELD: document,
+    }
+
+
+def _authenticate_evidence_session(
+    trace_cache: Any,
+    selective_session: Any,
+    *,
+    heldout_record_ids: Sequence[str] = (),
+    expected_session_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Authenticate the one sealed evidence handle pair this adapter reads.
+
+    Exactly two pairs are accepted: one sealed cache with its selective session,
+    whose receipt is byte-identical to the pre-merge revision, and one merged
+    sealed evidence set with its merged session, every member of which is
+    authenticated individually.  A mixed pair routes to the merged
+    authenticator, which refuses it by name; anything else fails closed in the
+    single-cache authenticator it already failed closed in.
+
+    ``heldout_record_ids`` is meaningful only for merged evidence, where it is
+    the split the margin evidence will be measured against; one sealed cache
+    has no member roles to keep out of it.
+    """
+
+    if isinstance(selective_session, Lfm2MergedSealedEvidenceSession) or isinstance(
+        trace_cache,
+        Lfm2MergedSealedEvidenceCache,
+    ):
+        return _authenticate_merged_evidence_session(
+            trace_cache,
+            selective_session,
+            heldout_record_ids=heldout_record_ids,
+            expected_session_sha256=expected_session_sha256,
+        )
+    return _authenticate_selective_session(
+        trace_cache,
+        selective_session,
+        expected_session_sha256=expected_session_sha256,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _PhaseBinding:
     descriptor: Lfm2StreamingVocabularyMarginPhaseDescriptor
@@ -726,9 +1178,7 @@ def _build_phase_inventory(
     report = _sealed(
         {
             "schema": LFM2_STREAMING_VOCABULARY_MARGIN_INVENTORY_SCHEMA,
-            "cache_key": cache_receipt["cache_key"],
-            "manifest_sha256": cache_receipt["manifest_sha256"],
-            "completion_sha256": cache_receipt["completion_sha256"],
+            **_evidence_identity_fields(cache_receipt),
             "selective_session_sha256": cache_receipt["session_sha256"],
             "sealed_batch_count": cache_receipt["batch_count"],
             "record_count": len(observed_record_ids),
@@ -1105,18 +1555,34 @@ class Lfm2StreamingVocabularyMarginGateV2:
     def _authenticate(self) -> None:
         if self.target_tokenizer_binding is not None:
             self.target_tokenizer_binding.verify()
-        receipt = _authenticate_selective_session(
-            _GateCacheView(
-                cache_key=self.cache_key,
-                batch_count=getattr(
-                    self.selective_session, "batch_count", None
+        if isinstance(self.selective_session, Lfm2MergedSealedEvidenceSession):
+            # A merged view's cache handle is the evidence set's own memoized
+            # one, so the gate re-authenticates the exact pair it was built
+            # from instead of a restated view of it.
+            receipt = _authenticate_merged_evidence_session(
+                self.selective_session.evidence_set.merged_cache(),
+                self.selective_session,
+                heldout_record_ids=self.heldout_record_ids,
+                expected_session_sha256=self.expected_session_sha256,
+            )
+            if receipt["cache_key"] != self.cache_key:
+                raise Lfm2StreamingVocabularyMarginAdapterError(
+                    "Merged sealed evidence set changed after gate "
+                    "construction."
+                )
+        else:
+            receipt = _authenticate_selective_session(
+                _GateCacheView(
+                    cache_key=self.cache_key,
+                    batch_count=getattr(
+                        self.selective_session, "batch_count", None
+                    ),
+                    manifest=getattr(self.selective_session, "manifest", None),
+                    path=getattr(self.selective_session, "path", None),
                 ),
-                manifest=getattr(self.selective_session, "manifest", None),
-                path=getattr(self.selective_session, "path", None),
-            ),
-            self.selective_session,
-            expected_session_sha256=self.expected_session_sha256,
-        )
+                self.selective_session,
+                expected_session_sha256=self.expected_session_sha256,
+            )
         if receipt["session_sha256"] != self.expected_session_sha256:
             raise Lfm2StreamingVocabularyMarginAdapterError(
                 "Selective session changed after gate construction."
@@ -1129,6 +1595,17 @@ class Lfm2StreamingVocabularyMarginGateV2:
         if report["gate_evidence_sha256"] != self.evidence_sha256:
             raise Lfm2StreamingVocabularyMarginAdapterError(
                 "Streaming vocabulary-margin gate report changed."
+            )
+        # Both sides are absent for a single sealed cache, so this compares
+        # nothing there and the whole composite there.
+        if (receipt.get(_MERGED_EVIDENCE_FIELD) or {}).get(
+            f"{_MERGED_EVIDENCE_FIELD}_sha256"
+        ) != (report.get(_MERGED_EVIDENCE_FIELD) or {}).get(
+            f"{_MERGED_EVIDENCE_FIELD}_sha256"
+        ):
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Merged sealed evidence composition changed after gate "
+                "construction."
             )
         if (
             _streaming._tensor_sha256(self.lexical_head)
@@ -1680,7 +2157,10 @@ class Lfm2StreamingVocabularyMarginAdapterResult:
 
 def build_lfm2_streaming_vocabulary_margin_adapter_v2(
     trace_cache: Any,
-    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    selective_session: (
+        Lfm2CircuitTraceSelectiveAuthenticatedSession
+        | Lfm2MergedSealedEvidenceSession
+    ),
     *,
     fit_record_ids: Sequence[str],
     heldout_record_ids: Sequence[str],
@@ -1781,9 +2261,10 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
     heldout_ids = frozenset(
         _digest(value, "held-out record ID") for value in heldout_record_ids
     )
-    cache_receipt = _authenticate_selective_session(
+    cache_receipt = _authenticate_evidence_session(
         trace_cache,
         selective_session,
+        heldout_record_ids=sorted(heldout_ids),
     )
     inventory = _build_phase_inventory(
         selective_session,
@@ -1826,18 +2307,17 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         raise Lfm2StreamingVocabularyMarginAdapterError(
             "Fit streaming statistics do not cover every declared row."
         )
-    _authenticate_selective_session(
+    _authenticate_evidence_session(
         trace_cache,
         selective_session,
+        heldout_record_ids=sorted(heldout_ids),
         expected_session_sha256=cache_receipt["session_sha256"],
     )
     provenance = _sealed(
         {
             "schema": LFM2_STREAMING_VOCABULARY_MARGIN_ADAPTER_SCHEMA,
             "kind": "fit-precomputed-observability-gram",
-            "cache_key": cache_receipt["cache_key"],
-            "manifest_sha256": cache_receipt["manifest_sha256"],
-            "completion_sha256": cache_receipt["completion_sha256"],
+            **_evidence_identity_fields(cache_receipt),
             "selective_session_sha256": cache_receipt["session_sha256"],
             "inventory_sha256": inventory.report["inventory_sha256"],
             "fit_manifest_sha256": inventory.fit_manifest.manifest_sha256,
@@ -1875,9 +2355,7 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
     gate_body = {
         "schema": LFM2_STREAMING_VOCABULARY_MARGIN_GATE_SCHEMA,
         "kind": "lazy-authenticated-heldout-rescan",
-        "cache_key": cache_receipt["cache_key"],
-        "manifest_sha256": cache_receipt["manifest_sha256"],
-        "completion_sha256": cache_receipt["completion_sha256"],
+        **_evidence_identity_fields(cache_receipt),
         "selective_session_sha256": cache_receipt["session_sha256"],
         "inventory_sha256": inventory.report["inventory_sha256"],
         "heldout_manifest": inventory.heldout_manifest.as_dict(),
@@ -1923,9 +2401,7 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
             "enabled": True,
             "opt_in_only": True,
             "cache_authentication": {
-                "cache_key": cache_receipt["cache_key"],
-                "manifest_sha256": cache_receipt["manifest_sha256"],
-                "completion_sha256": cache_receipt["completion_sha256"],
+                **_evidence_identity_fields(cache_receipt),
                 "selective_session_sha256": cache_receipt["session_sha256"],
                 "full_sealed_cache_file_and_inventory_integrity": True,
             },
@@ -2019,6 +2495,7 @@ __all__ = [
     "LFM2_STREAMING_VOCABULARY_MARGIN_ADAPTER_SCHEMA",
     "LFM2_STREAMING_VOCABULARY_MARGIN_GATE_SCHEMA",
     "LFM2_STREAMING_VOCABULARY_MARGIN_INVENTORY_SCHEMA",
+    "LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_EVIDENCE_SCHEMA",
     "LFM2_TARGET_TOKENIZER_VOCABULARY_MARGIN_BINDING_SCHEMA",
     "Lfm2StreamingVocabularyMarginAdapterError",
     "Lfm2StreamingVocabularyMarginAdapterResult",

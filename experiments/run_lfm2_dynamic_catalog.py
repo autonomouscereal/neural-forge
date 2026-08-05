@@ -13004,6 +13004,11 @@ def _on_policy_alternation_pass_config(
     same blank and topology, same counted budget, same ledger, same round root.
     The first pass keeps the operator's own destinations, so its fold identity
     is exactly the identity a single non-alternating run would have.
+
+    The balanced-basis phase *event log* is a per-pass artifact for the same
+    reason the receipt is: each pass is its own compiler run, and one event log
+    holding two run IDs is refused by ``FoldPhaseEventLog``.  The phase cache
+    root itself stays shared, which is the point of caching it.
     """
 
     consumed = tuple(consumed_round_manifests)
@@ -13027,6 +13032,14 @@ def _on_policy_alternation_pass_config(
             None
             if config.diagnostics_path is None
             else _suffixed_run_path(config.diagnostics_path, suffix)
+        ),
+        balanced_basis_phase_event_log=(
+            None
+            if config.balanced_basis_phase_event_log is None
+            else _suffixed_run_path(
+                config.balanced_basis_phase_event_log,
+                suffix,
+            )
         ),
     )
 

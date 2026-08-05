@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -24,7 +26,11 @@ from neural_forge.dynamic_fold_phase_cache import (  # noqa: E402
 from neural_forge.dynamic_model_inspector import inspect_model_circuits  # noqa: E402
 import neural_forge.dynamic_fold_phase_cache as phase_cache_module  # noqa: E402
 import neural_forge.hf_lfm2_balanced_basis_phase_cache as basis_cache  # noqa: E402
+import neural_forge.hf_lfm2_balanced_circuit_basis as balanced_basis  # noqa: E402
 import neural_forge.hf_lfm2_dense_budget_model_fold as dense_fold  # noqa: E402
+from neural_forge import (  # noqa: E402
+    hf_lfm2_streaming_vocabulary_margin_adapter as margin_adapter,
+)
 from neural_forge.hf_lfm2_balanced_basis_phase_cache import (  # noqa: E402
     LFM2_BALANCED_BASIS_PHASE,
     Lfm2BalancedBasisPhaseBuildRequest,
@@ -39,10 +45,17 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     build_lfm2_circuit_trace_cache,
 )
+from neural_forge.hf_lfm2_balanced_circuit_basis import (  # noqa: E402
+    Lfm2CircuitBalancedBasisError,
+)
 from neural_forge.hf_lfm2_dense_budget_model_fold import (  # noqa: E402
     Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetModelOperator,
     _build_residual_basis,
+)
+from neural_forge.hf_lfm2_sealed_evidence_set import (  # noqa: E402
+    Lfm2SealedEvidenceRequest,
+    Lfm2SealedEvidenceSet,
 )
 
 
@@ -1221,3 +1234,1113 @@ def test_dense_no_cache_path_performs_no_phase_source_file_io(
         ),
     )
     assert result is marker
+
+
+# --------------------------------------------------------------------------
+# Base + on-policy extension sealed evidence
+# --------------------------------------------------------------------------
+
+
+def _sealed_cache(tmp_path: Path, name: str, parent, indices):
+    return build_lfm2_circuit_trace_cache(
+        tmp_path / name,
+        parent,
+        [_batch(index) for index in indices],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=2,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+
+
+def _evidence_request(
+    cache,
+    *,
+    extension: bool,
+    manifest: str | None = None,
+    splits=None,
+):
+    splits = splits or (
+        tuple("fit" for _ in range(cache.batch_count))
+        if extension
+        else ("selection", *("fit" for _ in range(cache.batch_count - 1)))
+    )
+    return Lfm2SealedEvidenceRequest(
+        cache=cache,
+        splits=splits,
+        split_sha256=canonical_sha256(
+            {"cache_key": cache.cache_key, "splits": list(splits)}
+        ),
+        round_manifest_sha256=(
+            (manifest or _digest("round-manifest-0")) if extension else None
+        ),
+        all_rows_are_fit=extension,
+    )
+
+
+def _evidence_case(
+    tmp_path: Path,
+    *,
+    extension_indices=(10, 11),
+    extension_name: str = "extension-cache",
+    round_manifest: str | None = None,
+    base_splits=None,
+    progress=None,
+):
+    """One base+extension merged evidence handle in ``_case`` shape."""
+
+    parent = _parent()
+    graph = inspect_model_circuits(
+        parent,
+        model_name="balanced-basis-phase-parent",
+        tokenizer_fingerprint=_digest("parent-tokenizer"),
+    )
+    base = _sealed_cache(tmp_path, "base-cache", parent, range(4))
+    extension = _sealed_cache(
+        tmp_path,
+        extension_name,
+        parent,
+        extension_indices,
+    )
+    evidence = Lfm2SealedEvidenceSet.open(
+        _evidence_request(base, extension=False, splits=base_splits),
+        (
+            _evidence_request(
+                extension,
+                extension=True,
+                manifest=round_manifest,
+            ),
+        ),
+    )
+    context = Lfm2BalancedBasisPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "derived-phases"),
+        anchor_authority=PhaseAnchorAuthority(
+            key_id="merged-evidence-test-key-v1",
+            secret=_ANCHOR_SECRET,
+        ),
+        progress=progress,
+    )
+    target = {
+        "schema": "test-selected-target-v1",
+        "source_graph_fingerprint": graph.fingerprint,
+        "source_state_fingerprint": _digest("executor-state-binding"),
+        "hidden_size": 4,
+        "exact_target_unique_parameters": 1_337,
+    }
+    tokenizer = {
+        "schema": "test-tokenizer-binding-v1",
+        "parent_tokenizer_semantics_sha256": graph.tokenizer_fingerprint,
+        "child_tokenizer_semantics_sha256": graph.tokenizer_fingerprint,
+        "bridge_required": False,
+    }
+
+    def bindings():
+        return {"selected_target": target, "tokenizer": tokenizer}
+
+    build_request = Lfm2BalancedBasisPhaseBuildRequest(
+        adapter_source_sha256=_digest("test-dense-basis-adapter-source"),
+        validation_fraction=0.25,
+        split_seed="balanced-basis-phase-test-v1",
+        max_rows_per_block=8,
+    )
+    case = (
+        parent,
+        graph,
+        evidence.merged_cache(),
+        evidence.merged_session(),
+        context,
+        tmp_path / "derived-phases",
+        bindings,
+        build_request,
+    )
+    return case, evidence
+
+
+def _case_phase_key(case):
+    """The phase key one case would look up, without building a basis."""
+
+    parent, graph, cache, session, context, _root, bindings, build_request = case
+    live = basis_cache._live_bindings(
+        parent,
+        graph,
+        cache,
+        session,
+        4,
+        bindings,
+        context,
+    )
+    return basis_cache._phase_key(
+        live,
+        4,
+        basis_cache._canonical_mapping(
+            build_request.as_basis_config(),
+            "basis_config",
+        ),
+        context.anchor_authority,
+    )
+
+
+def test_plain_trace_cache_binding_is_byte_identical_to_the_pre_merge_form(
+    tmp_path: Path,
+) -> None:
+    """A single sealed cache binds exactly what it bound before merged support.
+
+    The reference body below is the pre-change ``_trace_cache_binding``
+    construction verbatim.  Every phase entry sealed by that revision stays
+    readable only while this holds.
+    """
+
+    case = _case(tmp_path)
+    cache, session = case[2], case[3]
+    try:
+        manifest = cache.manifest
+        completion = basis_cache._canonical_mapping(
+            dict(cache._completion),
+            "trace cache completion",
+        )
+        reference = {
+            "cache_key": cache.cache_key,
+            "manifest_sha256": manifest["manifest_sha256"],
+            "completion_sha256": completion["completion_sha256"],
+            "parent_identity_sha256": cache.parent_fingerprint,
+            "corpus_sha256": cache.corpus_fingerprint,
+            "layer_topology_sha256": cache.layer_topology_fingerprint,
+            "implementation_sha256": cache.implementation_fingerprint,
+            "collector_source_sha256": manifest["implementation"][
+                "collector_source_sha256"
+            ],
+            "canonical_contract_source_sha256": manifest["implementation"][
+                "canonical_contract_source_sha256"
+            ],
+            "transformers_lfm2_source_sha256": manifest["implementation"][
+                "transformers_lfm2_source_sha256"
+            ],
+            "execution_sha256": manifest["execution"]["execution_sha256"],
+            "capture_selection_sha256": manifest["capture"]["selection_sha256"],
+            "selective_session_sha256": session.evidence_sha256,
+            "batch_count": cache.batch_count,
+        }
+        binding = basis_cache._trace_cache_binding(cache, session)
+        assert canonical_json_bytes(binding) == canonical_json_bytes(reference)
+        assert basis_cache._MERGED_EVIDENCE_BINDING_FIELD not in binding
+        key = _case_phase_key(case).as_dict()
+        # The merged-evidence dependencies exist only for merged evidence, so a
+        # single-cache key keeps exactly the dependency names it always had.
+        assert basis_cache._MERGED_EVIDENCE_BINDING_FIELD not in (
+            key["dependency_sha256s"]
+        )
+        assert "on_policy_evidence_identity" not in key["dependency_sha256s"]
+    finally:
+        session.close()
+
+
+def test_merged_sealed_evidence_publishes_a_phase_binding_every_member(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The exact r13 failure shape: merged evidence through the phase cache."""
+
+    events: list[tuple[str, dict]] = []
+    case, evidence = _evidence_case(
+        tmp_path,
+        progress=lambda stage, details: events.append((stage, dict(details))),
+    )
+    phase_root = case[5]
+    try:
+        cold = _invoke(case)
+        assert cold.vocabulary_margin_gate is None
+        key = _case_phase_key(case)
+        dependencies = key.as_dict()["dependency_sha256s"]
+        assert dependencies["trace_cache"] == evidence.cache_key
+        assert (
+            dependencies["on_policy_evidence_identity"]
+            == evidence.evidence_identity_sha256
+        )
+        merged_dependency = dependencies[basis_cache._MERGED_EVIDENCE_BINDING_FIELD]
+        assert len(merged_dependency) == 64
+
+        entry = next((phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir())
+        receipt = json.loads(
+            (entry / "payload" / "receipt.json").read_text(encoding="ascii")
+        )
+        document = receipt["bindings"]["trace_cache"][
+            basis_cache._MERGED_EVIDENCE_BINDING_FIELD
+        ]
+        assert receipt["phase_key_sha256"] == key.phase_key_sha256
+        assert document["schema"] == (
+            basis_cache.LFM2_BALANCED_BASIS_MERGED_EVIDENCE_SCHEMA
+        )
+        assert document["evidence_set_cache_key"] == evidence.cache_key
+        assert document["base_cache_key"] == evidence.base_cache.cache_key
+        assert document["member_count"] == 2
+        assert document["batch_count"] == evidence.batch_count
+        assert [
+            member["trace_cache"]["cache_key"]
+            for member in document["ordered_members"]
+        ] == [member.cache_key for member in evidence.members]
+        assert [
+            member["trace_cache"]["implementation_sha256"]
+            for member in document["ordered_members"]
+        ] == [member.cache.implementation_fingerprint for member in evidence.members]
+        assert document["ordered_members"][1]["round_manifest_sha256"] == (
+            evidence.round_manifest_sha256[0]
+        )
+        assert document["ordered_members"][1]["all_rows_are_fit_rows"] is True
+        assert document["extension_batch_indices"] == list(
+            evidence.extension_batch_indices
+        )
+        assert (
+            canonical_sha256(
+                {
+                    name: value
+                    for name, value in document.items()
+                    if name
+                    != f"{basis_cache._MERGED_EVIDENCE_BINDING_FIELD}_sha256"
+                }
+            )
+            == merged_dependency
+        )
+        bound = [
+            details
+            for stage, details in events
+            if stage == "balanced_basis_merged_evidence_bound"
+        ]
+        assert bound and bound[0]["evidence_set_cache_key"] == evidence.cache_key
+        assert bound[0]["member_count"] == 2
+
+        def forbidden_builder(*_args, **_kwargs):
+            raise AssertionError("merged evidence phase hit rebuilt the basis")
+
+        monkeypatch.setattr(
+            basis_cache,
+            "build_lfm2_circuit_balanced_basis",
+            forbidden_builder,
+        )
+        hit = _invoke(case)
+        assert canonical_json_bytes(hit.as_dict()) == canonical_json_bytes(
+            cold.as_dict()
+        )
+        for name in basis_cache._TENSOR_NAMES:
+            assert torch.equal(getattr(hit, name), getattr(cold, name))
+    finally:
+        evidence.close()
+
+
+def test_merged_evidence_phase_key_binds_every_member_identity(
+    tmp_path: Path,
+) -> None:
+    """No phase entry can be reused across a different evidence composition."""
+
+    baseline, evidence = _evidence_case(tmp_path / "baseline")
+    other_extension, other_evidence = _evidence_case(
+        tmp_path / "other-extension",
+        extension_indices=(12, 13),
+    )
+    other_manifest, manifest_evidence = _evidence_case(
+        tmp_path / "other-manifest",
+        round_manifest=_digest("round-manifest-1"),
+    )
+    # The evidence-set cache key covers member cache keys and the round
+    # identity but not the split assignment, so this composition is the one
+    # that proves the binding is strictly stronger than that key alone.
+    other_split, split_evidence = _evidence_case(
+        tmp_path / "other-split",
+        base_splits=("fit", "selection", "fit", "fit"),
+    )
+    try:
+        baseline_key = _case_phase_key(baseline).phase_key_sha256
+        assert (
+            split_evidence.cache_key == evidence.cache_key
+            and split_evidence.base.split_sha256 != evidence.base.split_sha256
+        )
+        keys = {
+            "other_extension_cache": _case_phase_key(
+                other_extension
+            ).phase_key_sha256,
+            "other_round_manifest": _case_phase_key(
+                other_manifest
+            ).phase_key_sha256,
+            "other_base_split": _case_phase_key(other_split).phase_key_sha256,
+        }
+        assert baseline_key not in keys.values()
+        assert len(set(keys.values())) == len(keys)
+        # Two different compositions never collide, and neither collides with
+        # the base-only solve of the same base cache.
+        base_only = (
+            baseline[0],
+            baseline[1],
+            evidence.base_cache,
+            evidence.base.session,
+            baseline[4],
+            baseline[5],
+            baseline[6],
+            baseline[7],
+        )
+        assert _case_phase_key(base_only).phase_key_sha256 != baseline_key
+    finally:
+        evidence.close()
+        other_evidence.close()
+        manifest_evidence.close()
+        split_evidence.close()
+
+
+def test_merged_evidence_binding_fails_closed_on_a_foreign_handle_pair(
+    tmp_path: Path,
+) -> None:
+    case, evidence = _evidence_case(tmp_path)
+    merged_cache, merged_session = case[2], case[3]
+    try:
+        with pytest.raises(
+            basis_cache.Lfm2BalancedBasisPhaseCacheError,
+            match="requires its merged authenticated session",
+        ):
+            basis_cache._trace_cache_binding(merged_cache, evidence.base.session)
+        with pytest.raises(
+            basis_cache.Lfm2BalancedBasisPhaseCacheError,
+            match="A selective authenticated trace session is required",
+        ):
+            basis_cache._trace_cache_binding(evidence.base_cache, merged_session)
+        with pytest.raises(
+            basis_cache.Lfm2BalancedBasisPhaseCacheError,
+            match="trace_cache must be Lfm2CircuitTraceCache",
+        ):
+            basis_cache._trace_cache_binding(object(), merged_session)
+    finally:
+        evidence.close()
+
+
+def test_dense_residual_basis_routes_merged_evidence_through_the_phase_cache(
+    tmp_path: Path,
+) -> None:
+    """The r13 chain: resolved dense handles into the PHASE-CACHED builder.
+
+    ``_resolve_dense_evidence_handles`` hands a writer the merged cache and the
+    merged session whenever a round contributed extension evidence, and
+    ``_build_residual_basis`` routes to the phase-cached builder whenever a
+    phase-cache context exists.  That pair is what failed closed with
+    ``trace_cache must be Lfm2CircuitTraceCache``.
+    """
+
+    case, evidence = _evidence_case(tmp_path)
+    parent, graph, merged_cache, merged_session, context, phase_root = case[:6]
+    bindings = case[6]
+    try:
+        resolved_cache, resolved_session = dense_fold._resolve_dense_evidence_handles(
+            evidence.base_cache,
+            evidence.base.session,
+            evidence,
+        )
+        assert resolved_cache is merged_cache
+        assert resolved_session is merged_session
+        basis = _build_residual_basis(
+            parent,
+            graph,
+            resolved_cache,
+            4,
+            Lfm2DenseBudgetFoldConfig(
+                residual_basis_mode="circuit_balanced",
+                run_closed_loop=False,
+                circuit_validation_fraction=0.25,
+                circuit_split_seed="balanced-basis-phase-test-v1",
+                circuit_max_rows_per_block=8,
+            ),
+            selective_session=resolved_session,
+            phase_cache_context=context,
+            phase_cache_binding_provider=bindings,
+        )
+        assert basis.source_width == 8
+        assert basis.target_width == 4
+        entry = next((phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir())
+        receipt = json.loads(
+            (entry / "payload" / "receipt.json").read_text(encoding="ascii")
+        )
+        document = receipt["bindings"]["trace_cache"][
+            basis_cache._MERGED_EVIDENCE_BINDING_FIELD
+        ]
+        assert document["evidence_set_cache_key"] == evidence.cache_key
+        assert [
+            member["trace_cache"]["cache_key"]
+            for member in document["ordered_members"]
+        ] == [member.cache_key for member in evidence.members]
+    finally:
+        evidence.close()
+
+
+def test_merged_evidence_margin_modes_are_exactly_what_the_adapters_support(
+    tmp_path: Path,
+) -> None:
+    """Both margin arms run on merged evidence through the phase cache.
+
+    ``build_lfm2_streaming_vocabulary_margin_adapter_v2`` used to authenticate
+    exactly one sealed cache's ``manifest_sha256``, which a merged corpus
+    deliberately does not have, so the v2 arm was refused by name.  It now
+    authenticates every member's own sealed digest instead, so both arms publish
+    a phase entry and only a handle that is neither a sealed session nor a
+    merged one is refused.
+    """
+
+    case, evidence = _evidence_case(tmp_path)
+    parent, graph, cache, session, context = case[:5]
+    bindings = case[6]
+    try:
+        observability = load_or_build_lfm2_circuit_balanced_basis(
+            context,
+            parent,
+            cache,
+            4,
+            circuit_graph=graph,
+            selective_session=session,
+            build_request=Lfm2BalancedBasisPhaseBuildRequest(
+                adapter_source_sha256=_digest("margin-observability-adapter"),
+                validation_fraction=0.25,
+                split_seed="balanced-basis-phase-test-v1",
+                max_rows_per_block=8,
+                vocabulary_margin_observability=True,
+                vocabulary_margin_top_k=3,
+            ),
+            binding_provider=bindings,
+            live_vocabulary_candidate_gate_required=False,
+        )
+        assert observability.target_width == 4
+        streaming = load_or_build_lfm2_circuit_balanced_basis(
+            context,
+            parent,
+            cache,
+            4,
+            circuit_graph=graph,
+            selective_session=session,
+            build_request=Lfm2BalancedBasisPhaseBuildRequest(
+                adapter_source_sha256=_digest("margin-streaming-adapter"),
+                validation_fraction=0.25,
+                split_seed="balanced-basis-phase-test-v1",
+                max_rows_per_block=8,
+                vocabulary_margin_observability=True,
+                vocabulary_margin_top_k=3,
+                streaming_vocabulary_margin_v2=True,
+                streaming_vocabulary_margin_pair_chunk_size=8,
+            ),
+            binding_provider=bindings,
+            live_vocabulary_candidate_gate_required=False,
+        )
+        assert streaming.target_width == 4
+        # The two arms are different bases, so the phase cache holds two
+        # entries, and the streaming one names the evidence it was solved on.
+        assert (
+            streaming.basis_result.map_sha256
+            != observability.basis_result.map_sha256
+        )
+        margin = streaming.as_dict()["vocabulary_margin_observability"]
+        assert margin["streaming_v2"] is True
+        assert margin["adapter"]["cache_authentication"][
+            margin_adapter._MERGED_EVIDENCE_FIELD
+        ]["evidence_set_cache_key"] == evidence.cache_key
+        # Anything that is neither a sealed selective session nor a merged one
+        # is still refused by name, before any evidence is read.
+        with pytest.raises(
+            Lfm2CircuitBalancedBasisError,
+            match="one sealed cache session or one merged sealed evidence",
+        ):
+            balanced_basis.build_lfm2_circuit_balanced_basis(
+                parent,
+                cache,
+                4,
+                circuit_graph=graph,
+                selective_session=object(),
+                vocabulary_margin_observability=True,
+                vocabulary_margin_top_k=3,
+                streaming_vocabulary_margin_v2=True,
+            )
+    finally:
+        evidence.close()
+
+
+def test_plain_cache_streaming_v2_evidence_identity_is_byte_identical(
+    tmp_path: Path,
+) -> None:
+    """One sealed cache's v2 margin evidence is the pre-merge form exactly.
+
+    The reference body below is the pre-change ``cache_authentication``
+    construction verbatim.  Merged support may add one field to a merged
+    record and nothing at all to a single-cache one, because every margin
+    receipt a single sealed cache has already produced stays comparable.
+    """
+
+    case = _case(tmp_path, vocabulary_margin_observability=True)
+    parent, graph, cache, session = case[:4]
+    try:
+        result = balanced_basis.build_lfm2_circuit_balanced_basis(
+            parent,
+            cache,
+            4,
+            circuit_graph=graph,
+            selective_session=session,
+            validation_fraction=0.25,
+            split_seed="balanced-basis-phase-test-v1",
+            max_rows_per_block=8,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+            streaming_vocabulary_margin_pair_chunk_size=8,
+        )
+        adapter = result.as_dict()["vocabulary_margin_observability"]["adapter"]
+        reference = {
+            "cache_key": cache.cache_key,
+            "manifest_sha256": cache.manifest["manifest_sha256"],
+            "completion_sha256": session.as_dict()["completion_sha256"],
+            "selective_session_sha256": session.evidence_sha256,
+            "full_sealed_cache_file_and_inventory_integrity": True,
+        }
+        assert canonical_json_bytes(
+            adapter["cache_authentication"]
+        ) == canonical_json_bytes(reference)
+        for record in (
+            adapter["cache_authentication"],
+            adapter["inventory"],
+            adapter["fit"]["precomputed_observability"]["provenance"],
+            adapter["heldout"]["gate"],
+        ):
+            assert margin_adapter._MERGED_EVIDENCE_FIELD not in record
+        assert result.as_dict()["model_forward_calls"] == 0
+    finally:
+        session.close()
+
+
+def test_merged_evidence_streaming_v2_publishes_sealed_margin_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The arm the r13 refold needs: merged evidence, streaming v2, sealed."""
+
+    case, evidence = _evidence_case(tmp_path)
+    parent, graph, merged_cache, merged_session = case[:4]
+    session_type = type(merged_session)
+    original_load = session_type.load_selected_tensor_rows
+    original_release = session_type.release_selected_tensor_rows
+    row_loads: list[int] = []
+    row_releases: list[int] = []
+
+    def counted_load(self, index, row_indices):
+        row_loads.append(int(index))
+        return original_load(self, index, row_indices)
+
+    def counted_release(self, payload):
+        row_releases.append(int(payload.batch_index))
+        return original_release(self, payload)
+
+    monkeypatch.setattr(session_type, "load_selected_tensor_rows", counted_load)
+    monkeypatch.setattr(
+        session_type,
+        "release_selected_tensor_rows",
+        counted_release,
+    )
+    try:
+        result = balanced_basis.build_lfm2_circuit_balanced_basis(
+            parent,
+            merged_cache,
+            4,
+            circuit_graph=graph,
+            selective_session=merged_session,
+            validation_fraction=0.25,
+            split_seed="balanced-basis-phase-test-v1",
+            max_rows_per_block=8,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+            streaming_vocabulary_margin_pair_chunk_size=8,
+        )
+        margin = result.as_dict()["vocabulary_margin_observability"]
+        adapter = margin["adapter"]
+        authentication = adapter["cache_authentication"]
+        document = authentication[margin_adapter._MERGED_EVIDENCE_FIELD]
+
+        # The identity is the evidence set's own, and no sealed manifest or
+        # completion digest is invented for a corpus that carries neither.
+        assert authentication["cache_key"] == evidence.cache_key
+        assert authentication["manifest_sha256"] is None
+        assert authentication["completion_sha256"] is None
+        assert authentication["selective_session_sha256"] == (
+            merged_session.evidence_sha256
+        )
+        assert document["schema"] == (
+            margin_adapter.LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_EVIDENCE_SCHEMA
+        )
+        assert document["sealed_merged_manifest_digest_exists"] is False
+        assert document["every_member_sealed_digest_authenticated"] is True
+
+        # Which members, in which order, at which offsets, produced it.
+        members = document["ordered_members"]
+        assert [value["role"] for value in members] == [
+            member.role for member in evidence.members
+        ]
+        assert [value["batch_offset"] for value in members] == [
+            member.batch_offset for member in evidence.members
+        ]
+        assert [value["trace_cache"]["cache_key"] for value in members] == [
+            member.cache_key for member in evidence.members
+        ]
+        # The real sealed digests, the ones a member file actually carries.
+        assert [
+            value["trace_cache"]["manifest_sha256"] for value in members
+        ] == [
+            member.cache.manifest["manifest_sha256"]
+            for member in evidence.members
+        ]
+        assert members[1]["round_manifest_sha256"] == (
+            evidence.round_manifest_sha256[0]
+        )
+        assert members[1]["all_rows_are_fit_rows"] is True
+        assert document["extension_batch_indices"] == list(
+            evidence.extension_batch_indices
+        )
+        assert document["on_policy_evidence_identity_sha256"] == (
+            evidence.evidence_identity_sha256
+        )
+        assert document["merged_corpus_sha256"] == evidence.corpus_fingerprint
+        assert document["merged_session_sha256"] == (
+            merged_session.evidence_sha256
+        )
+        assert canonical_sha256(
+            {
+                name: value
+                for name, value in document.items()
+                if name != f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"
+            }
+        ) == document[f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"]
+
+        # Every record this adapter emits carries the same composite.
+        for record in (
+            adapter["inventory"],
+            adapter["fit"]["precomputed_observability"]["provenance"],
+            adapter["heldout"]["gate"],
+            margin["transaction_gate"],
+        ):
+            assert record[margin_adapter._MERGED_EVIDENCE_FIELD][
+                f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"
+            ] == document[f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"]
+
+        assert margin["heldout_projection_gate"]["gate_passed"] is True
+        assert margin["heldout_projection_gate"]["parent_forward_calls"] == 0
+        assert adapter["fit"]["all_declared_rows_consumed"] is True
+        assert adapter["fit"]["selection_pass"][
+            "row_cap_or_subsample_applied"
+        ] is False
+        assert result.as_dict()["model_forward_calls"] == 0
+
+        # v2's whole point: bounded row reads, every one released, and the
+        # extension member's own batches among them.
+        assert len(row_loads) == len(row_releases) > 0
+        assert set(row_loads) <= set(range(evidence.batch_count))
+        assert set(row_loads) & set(evidence.extension_batch_indices)
+    finally:
+        evidence.close()
+
+
+def test_merged_evidence_streaming_v2_composite_binds_every_member_identity(
+    tmp_path: Path,
+) -> None:
+    """No margin evidence can be mistaken for another composition's."""
+
+    baseline, evidence = _evidence_case(tmp_path / "baseline")
+    _other_extension, other_evidence = _evidence_case(
+        tmp_path / "other-extension",
+        extension_indices=(12, 13),
+    )
+    _other_manifest, manifest_evidence = _evidence_case(
+        tmp_path / "other-manifest",
+        round_manifest=_digest("round-manifest-1"),
+    )
+    _other_split, split_evidence = _evidence_case(
+        tmp_path / "other-split",
+        base_splits=("fit", "selection", "fit", "fit"),
+    )
+
+    def composite(handle) -> str:
+        receipt = margin_adapter._authenticate_merged_evidence_session(
+            handle.merged_cache(),
+            handle.merged_session(),
+        )
+        return receipt[margin_adapter._MERGED_EVIDENCE_FIELD][
+            f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"
+        ]
+
+    try:
+        baseline_composite = composite(evidence)
+        # The evidence-set cache key covers member cache keys and the round
+        # identity but not the split assignment, so this composition is the one
+        # that proves the composite is strictly stronger than that key alone.
+        assert (
+            split_evidence.cache_key == evidence.cache_key
+            and split_evidence.base.split_sha256 != evidence.base.split_sha256
+        )
+        others = {
+            "other_extension_cache": composite(other_evidence),
+            "other_round_manifest": composite(manifest_evidence),
+            "other_base_split": composite(split_evidence),
+        }
+        assert baseline_composite not in others.values()
+        assert len(set(others.values())) == len(others)
+        # Re-authenticating the same evidence reproduces the same composite.
+        assert composite(evidence) == baseline_composite
+    finally:
+        evidence.close()
+        other_evidence.close()
+        manifest_evidence.close()
+        split_evidence.close()
+
+
+def _role_blind_heldout_record_ids(
+    records,
+    *,
+    cache_key: str,
+    split_seed: str,
+    validation_fraction: float = 0.25,
+) -> set[str]:
+    """The pre-fix ranking, verbatim: no member role, no extension awareness."""
+
+    count = len(records)
+    heldout_count = max(
+        1,
+        min(count - 1, math.ceil(count * validation_fraction)),
+    )
+    ranked = sorted(
+        records,
+        key=lambda value: (
+            hashlib.sha256(
+                (
+                    split_seed
+                    + "\0"
+                    + cache_key
+                    + "\0"
+                    + value.record_id
+                ).encode("utf-8")
+            ).hexdigest(),
+            value.index,
+        ),
+    )
+    return {value.record_id for value in ranked[:heldout_count]}
+
+
+def test_plain_cache_split_is_byte_identical_to_the_role_blind_form(
+    tmp_path: Path,
+) -> None:
+    """One sealed cache splits exactly as it did before role awareness.
+
+    The reference below is the pre-change ``_split_records`` body verbatim.  A
+    single cache has no extension members, so the narrowed held-out pool is the
+    whole record set and neither the ranking nor the report may move -- every
+    basis report digest a single-cache solve has already sealed depends on it.
+    """
+
+    case = _case(tmp_path)
+    cache, session = case[2], case[3]
+    split_seed = "balanced-basis-phase-test-v1"
+    try:
+        records = tuple(
+            value.summary
+            for value in balanced_basis._selective_record_metadata(
+                session,
+                source_width=8,
+                layer_count=2,
+            )
+        )
+        count = len(records)
+        heldout_count = max(1, min(count - 1, math.ceil(count * 0.25)))
+        heldout_ids = _role_blind_heldout_record_ids(
+            records,
+            cache_key=cache.cache_key,
+            split_seed=split_seed,
+        )
+        reference_fit = tuple(
+            value for value in records if value.record_id not in heldout_ids
+        )
+        reference_heldout = tuple(
+            value for value in records if value.record_id in heldout_ids
+        )
+        reference_report = {
+            "method": "whole-record-seeded-sha256-ranking",
+            "split_seed_sha256": hashlib.sha256(
+                split_seed.encode("utf-8")
+            ).hexdigest(),
+            "requested_validation_fraction": 0.25,
+            "record_count": count,
+            "fit_record_count": len(reference_fit),
+            "heldout_record_count": len(reference_heldout),
+            "actual_heldout_fraction": len(reference_heldout) / count,
+            "fit_record_ids_sha256": canonical_sha256(
+                sorted(value.record_id for value in reference_fit)
+            ),
+            "heldout_record_ids_sha256": canonical_sha256(
+                sorted(value.record_id for value in reference_heldout)
+            ),
+            "whole_records_only": True,
+            "record_ids_disjoint": True,
+            "heldout_excluded_from_selection": True,
+        }
+        fit, heldout, report = balanced_basis._split_records(
+            records,
+            cache_key=cache.cache_key,
+            validation_fraction=0.25,
+            split_seed=split_seed,
+        )
+        assert len(heldout) == heldout_count
+        assert [value.record_id for value in fit] == [
+            value.record_id for value in reference_fit
+        ]
+        assert [value.record_id for value in heldout] == [
+            value.record_id for value in reference_heldout
+        ]
+        assert canonical_json_bytes(report) == canonical_json_bytes(
+            reference_report
+        )
+        # A single cache exposes no extension indices at all, which is what
+        # selects the unchanged branch.
+        assert balanced_basis._extension_batch_indices(cache) == frozenset()
+        assert balanced_basis._extension_batch_indices(session) == frozenset()
+    finally:
+        session.close()
+
+
+def test_merged_evidence_split_never_holds_out_a_child_visited_batch(
+    tmp_path: Path,
+) -> None:
+    """Every on-policy extension row is a fit row, in the basis split too.
+
+    The sealed evidence set refuses any non-fit split label for an extension
+    member because "validation would stop being held out"
+    (``Lfm2SealedEvidenceRequest``).  The basis's own fit/held-out ranking used
+    to ignore member roles entirely, so a child-generated batch could land in
+    the held-out projection gate and the gate would measure the child partly on
+    its own outputs.  The seed picked here is one the role-blind ranking
+    provably leaks on.
+    """
+
+    case, evidence = _evidence_case(tmp_path)
+    merged_cache, merged_session = case[2], case[3]
+    try:
+        records = tuple(
+            value.summary
+            for value in balanced_basis._selective_record_metadata(
+                merged_session,
+                source_width=8,
+                layer_count=2,
+            )
+        )
+        extension_indices = frozenset(evidence.extension_batch_indices)
+        assert extension_indices == frozenset({4, 5})
+        extension_ids = {
+            value.record_id
+            for value in records
+            if value.index in extension_indices
+        }
+        assert len(extension_ids) == 2
+
+        # Pick a seed the pre-fix ranking demonstrably leaks on, so this test
+        # fails if the fix is reverted instead of passing by luck.
+        leaking_seed = next(
+            seed
+            for seed in (f"role-blind-leak-{index}" for index in range(64))
+            if _role_blind_heldout_record_ids(
+                records,
+                cache_key=merged_cache.cache_key,
+                split_seed=seed,
+            )
+            & extension_ids
+        )
+        assert (
+            _role_blind_heldout_record_ids(
+                records,
+                cache_key=merged_cache.cache_key,
+                split_seed=leaking_seed,
+            )
+            & extension_ids
+        )
+
+        for split_seed in (leaking_seed, "balanced-basis-phase-test-v1"):
+            fit, heldout, report = balanced_basis._split_records(
+                records,
+                cache_key=merged_cache.cache_key,
+                validation_fraction=0.25,
+                split_seed=split_seed,
+                extension_batch_indices=extension_indices,
+            )
+            heldout_ids = {value.record_id for value in heldout}
+            assert heldout_ids & extension_ids == set()
+            assert extension_ids <= {value.record_id for value in fit}
+            assert heldout_ids
+            assert report["heldout_extension_record_count"] == 0
+            assert report["extension_records_are_never_heldout"] is True
+            assert report["heldout_pool"] == "base-members-only"
+            assert report["on_policy_extension_record_count"] == 2
+            assert report["heldout_eligible_record_count"] == 4
+            # Held-out is still drawn by the same ranking, only from the base
+            # members, so the requested fraction is honoured where it can be.
+            assert report["heldout_record_count"] == math.ceil(
+                len(records) * 0.25
+            )
+    finally:
+        evidence.close()
+
+
+def test_merged_evidence_streaming_v2_refuses_a_heldout_extension_batch(
+    tmp_path: Path,
+) -> None:
+    """The adapter refuses the claim rather than sealing it.
+
+    The split is what makes this impossible; this is the authenticator's own
+    check that the split it was handed really did keep every child-visited
+    batch out of the held-out set.
+    """
+
+    case, evidence = _evidence_case(tmp_path)
+    merged_cache, merged_session = case[2], case[3]
+    try:
+        batches = tuple(evidence.iter_batches())
+        extension_input = batches[
+            evidence.extension_batch_indices[0]
+        ].input_sha256
+        base_input = batches[0].input_sha256
+        with pytest.raises(
+            margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+            match="every extension row is a fit row",
+        ):
+            margin_adapter._authenticate_merged_evidence_session(
+                merged_cache,
+                merged_session,
+                heldout_record_ids=(base_input, extension_input),
+            )
+        # A base-only held-out set is exactly what the split now produces, and
+        # it authenticates to the same composite an empty set does, because the
+        # enforced count is zero either way.
+        with_base = margin_adapter._authenticate_merged_evidence_session(
+            merged_cache,
+            merged_session,
+            heldout_record_ids=(base_input,),
+        )
+        without = margin_adapter._authenticate_merged_evidence_session(
+            merged_cache,
+            merged_session,
+        )
+        field = margin_adapter._MERGED_EVIDENCE_FIELD
+        assert with_base[field][f"{field}_sha256"] == (
+            without[field][f"{field}_sha256"]
+        )
+        assert with_base[field]["heldout_extension_batch_count"] == 0
+        assert with_base[field][
+            "extension_batches_are_never_heldout_evidence"
+        ] is True
+    finally:
+        evidence.close()
+
+
+def test_merged_evidence_gate_refuses_a_changed_composition(
+    tmp_path: Path,
+) -> None:
+    """The gate's composite re-comparison is the composite's enforcement point.
+
+    A member's split assignment enters neither the merged session digest nor
+    the evidence-set cache key, so moving it after the gate was built passes
+    every other check the gate makes and is caught only by comparing the
+    composite the gate sealed against the one its live evidence now produces.
+    """
+
+    case, evidence = _evidence_case(tmp_path)
+    parent, graph, merged_cache, merged_session = case[:4]
+    try:
+        result = balanced_basis.build_lfm2_circuit_balanced_basis(
+            parent,
+            merged_cache,
+            4,
+            circuit_graph=graph,
+            selective_session=merged_session,
+            validation_fraction=0.25,
+            split_seed="balanced-basis-phase-test-v1",
+            max_rows_per_block=8,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+            streaming_vocabulary_margin_pair_chunk_size=8,
+        )
+        gate = result.vocabulary_margin_gate
+        assert gate.as_dict()["cache_key"] == evidence.cache_key
+
+        base_member = evidence.members[0]
+        original_split = base_member.split_sha256
+        object.__setattr__(base_member, "split_sha256", _digest("moved-split"))
+        try:
+            # Everything else still authenticates: the merged session digest and
+            # the evidence-set cache key do not cover a member's split.
+            assert merged_session.evidence_sha256 == (
+                gate.expected_session_sha256
+            )
+            assert merged_cache.cache_key == gate.cache_key
+            with pytest.raises(
+                margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+                match="composition changed after gate construction",
+            ):
+                gate.as_dict()
+            with pytest.raises(
+                margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+                match="composition changed after gate construction",
+            ):
+                gate.evaluate_projection(
+                    result.basis,
+                    minimum_retained_energy_fraction=0.0,
+                    minimum_sign_agreement_fraction=0.0,
+                    minimum_top_competitor_nonnegative_fraction=0.0,
+                    minimum_all_top_k_nonnegative_fraction=0.0,
+                )
+        finally:
+            object.__setattr__(base_member, "split_sha256", original_split)
+        # Restored, the same gate authenticates again.
+        assert gate.as_dict()["cache_key"] == evidence.cache_key
+    finally:
+        evidence.close()
+
+
+def test_merged_evidence_streaming_v2_fails_closed_on_a_foreign_handle_pair(
+    tmp_path: Path,
+) -> None:
+    case, evidence = _evidence_case(tmp_path)
+    merged_cache, merged_session = case[2], case[3]
+    try:
+        with pytest.raises(
+            margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+            match="requires its merged authenticated session",
+        ):
+            margin_adapter._authenticate_evidence_session(
+                merged_cache,
+                evidence.base.session,
+            )
+        with pytest.raises(
+            margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+            match="requires its merged cache view",
+        ):
+            margin_adapter._authenticate_evidence_session(
+                evidence.base_cache,
+                merged_session,
+            )
+        with pytest.raises(
+            margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+            match="requires its merged cache view",
+        ):
+            margin_adapter._authenticate_evidence_session(object(), merged_session)
+        with pytest.raises(
+            margin_adapter.Lfm2StreamingVocabularyMarginAdapterError,
+            match="must expose verify\\(\\) and as_dict\\(\\)",
+        ):
+            margin_adapter._authenticate_evidence_session(object(), object())
+        # The single-cache pair still routes to the single-cache authenticator
+        # and still binds one real sealed manifest digest.
+        receipt = margin_adapter._authenticate_evidence_session(
+            evidence.base_cache,
+            evidence.base.session,
+        )
+        assert receipt["manifest_sha256"] == (
+            evidence.base_cache.manifest["manifest_sha256"]
+        )
+        assert margin_adapter._MERGED_EVIDENCE_FIELD not in receipt
+    finally:
+        evidence.close()

@@ -621,3 +621,69 @@ def test_merged_views_are_refused_without_extension_evidence(lane) -> None:
         assert evidence.extension_batch_indices == ()
     finally:
         evidence.close()
+
+
+def test_merged_session_row_reads_are_routed_to_their_sealed_member(lane) -> None:
+    """Bounded row reads carry the member's authentication, merged numbering."""
+
+    from neural_forge.hf_lfm2_circuit_trace_row_selection import (
+        load_lfm2_circuit_trace_selected_rows,
+        release_lfm2_circuit_trace_selected_rows,
+    )
+
+    evidence = _open(
+        lane,
+        _request(lane.first, extension=True, manifest="b" * 64),
+    )
+    try:
+        session = evidence.merged_session()
+        reference = session.batch_references[3]
+        name = next(
+            value
+            for value in reference.ordered_tensor_names
+            if ".residual." in value and not value.startswith("cached_prefill.")
+        )
+        selection = {name: (0,)}
+        payload = session.load_selected_tensor_rows(3, selection)
+        try:
+            assert payload.batch_index == 3
+            assert payload.session_sha256 == session.evidence_sha256
+            assert payload.input_sha256 == (
+                lane.first.manifest["corpus"]["ordered_batch_input_sha256"][0]
+            )
+            assert dict(payload.row_indices) == {name: (0,)}
+            member_session = evidence.members[1].session
+            direct = load_lfm2_circuit_trace_selected_rows(
+                member_session,
+                0,
+                selection,
+            )
+            try:
+                assert torch.equal(payload.tensors[name], direct.tensors[name])
+            finally:
+                release_lfm2_circuit_trace_selected_rows(member_session, direct)
+        finally:
+            session.release_selected_tensor_rows(payload)
+        assert payload.released is True
+        # A payload the merged view did not hand out is refused, and a released
+        # one is never re-released through another member.
+        foreign = load_lfm2_circuit_trace_selected_rows(
+            evidence.members[1].session,
+            0,
+            selection,
+        )
+        try:
+            with pytest.raises(
+                MODULE.Lfm2SealedEvidenceSetError,
+                match="belongs to another authenticated session",
+            ):
+                session.release_selected_tensor_rows(foreign)
+            with pytest.raises(TypeError):
+                session.release_selected_tensor_rows(object())
+        finally:
+            release_lfm2_circuit_trace_selected_rows(
+                evidence.members[1].session,
+                foreign,
+            )
+    finally:
+        evidence.close()

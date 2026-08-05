@@ -669,10 +669,19 @@ def _lane_arguments(
     run: Path,
     *,
     carrier_routes: bool,
+    residual_basis_mode: str | None = None,
 ) -> list[str]:
-    """Mirror nf-launch-integrated-carrier-exact4x-r10.sh at toy scale."""
+    """Mirror nf-launch-integrated-carrier-exact4x-r10.sh at toy scale.
 
-    residual_basis_mode = "circuit_balanced" if carrier_routes else "weight_complete"
+    ``residual_basis_mode`` defaults to the mode the routing itself implies.
+    Naming it explicitly lets an unrouted lane compose the residual basis and
+    the margin observability the carrier production pin requires, which is the
+    only part of that pin the toy ABI can actually reach.
+    """
+
+    residual_basis_mode = residual_basis_mode or (
+        "circuit_balanced" if carrier_routes else "weight_complete"
+    )
     # Production keeps the derived topology and balanced-basis phase caches in
     # stable cross-run artifact roots; only per-run trees live beside them.
     stable = run.parent / "stable"
@@ -1334,6 +1343,38 @@ def _bridged_refold_lane_arguments(
     """The bridged carrier lane itself, with the alternation knobs."""
 
     arguments = _lane_arguments(pack, run, carrier_routes=False)
+    # The sealed base cache was captured with the eager attention backend, and
+    # so is the round's extension capture: causal-circuit installability
+    # evidence requires the reconstructed score/probability operator to be the
+    # one the parent actually executed.
+    arguments[arguments.index("--parent-model") + 1] = str(
+        pack.root / "parent-eager"
+    )
+    return _alternation_arguments(pack, run, arguments)
+
+
+def _bridged_balanced_refold_lane_arguments(
+    pack: _CarrierLanePack,
+    run: Path,
+) -> list[str]:
+    """The bridged lane on the carrier lane's basis and margins, with a round.
+
+    ``ProductionLfm2CatalogConfig.__post_init__`` pins carrier-routed production
+    to the circuit-balanced residual basis with
+    ``--dense-vocabulary-margin-observability`` **and**
+    ``--dense-streaming-vocabulary-margin-v2`` together.  The counted carrier ABI
+    is out of reach at toy scale, so this lane composes every other term of that
+    pin -- bridge, circuit-balanced basis, streaming-v2 margins, the
+    balanced-basis phase cache -- and adds the one-round/one-refold alternation,
+    which is the combination that had no executable configuration.
+    """
+
+    arguments = _lane_arguments(
+        pack,
+        run,
+        carrier_routes=False,
+        residual_basis_mode="circuit_balanced",
+    )
     # The sealed base cache was captured with the eager attention backend, and
     # so is the round's extension capture: causal-circuit installability
     # evidence requires the reconstructed score/probability operator to be the
@@ -2077,3 +2118,205 @@ def test_bridged_carrier_lane_alternates_fold_round_and_refold(
             )
         )
     assert str(legacy_path) in str(failure.value)
+
+
+def test_carrier_production_margin_pin_composes_through_a_round(
+    refold_prompt_pack,
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    """The r13 deadlock: streaming-v2 margins on merged on-policy evidence.
+
+    ``ProductionLfm2CatalogConfig.__post_init__`` requires
+    ``dense_vocabulary_margin_observability`` and
+    ``dense_streaming_vocabulary_margin_v2`` of every carrier-routed run, and
+    the balanced-basis builder used to refuse streaming v2 on the merged session
+    ``_resolve_dense_evidence_handles`` hands it whenever a round contributed
+    extension evidence, so a carrier-routed refold consuming a round had no
+    executable configuration in either margin setting.  This composes both pins
+    with a real round and asserts the streaming adapter authenticated the merged
+    handle it used to refuse.
+    """
+
+    pack = refold_prompt_pack
+    run = tmp_path / "run"
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            _bridged_balanced_refold_lane_arguments(pack, run)
+        )
+    )
+
+    # The two terms of the carrier production pin this lane can reach, and the
+    # round consumption that used to be mutually exclusive with them.
+    assert config.dense_residual_basis_mode == "circuit_balanced"
+    assert config.dense_vocabulary_margin_observability is True
+    assert config.dense_streaming_vocabulary_margin_v2 is True
+    assert config.uses_tokenizer_bridge is True
+    assert config.uses_balanced_basis_phase_cache is True
+    assert config.on_policy_refold_after_rounds == 1
+    assert MODULE._unconsumed_extension_evidence_reason(config) is None
+
+    # The routed configuration itself still constructs with both pins intact,
+    # so nothing here weakened the validator that named them.
+    routed = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            _alternation_arguments(
+                pack,
+                tmp_path / "routed",
+                _lane_arguments(
+                    pack,
+                    tmp_path / "routed",
+                    carrier_routes=True,
+                ),
+            )
+        )
+    )
+    assert routed.uses_carrier_routes is True
+    assert routed.dense_vocabulary_margin_observability is True
+    assert routed.dense_streaming_vocabulary_margin_v2 is True
+
+    # Observer only: the real streaming adapter still runs and still seals its
+    # own evidence; this records which handle each solve pass gave it.
+    from neural_forge import (
+        hf_lfm2_streaming_vocabulary_margin_adapter as margin_adapter,
+    )
+
+    real_adapter = (
+        margin_adapter.build_lfm2_streaming_vocabulary_margin_adapter_v2
+    )
+    margin_builds: list[dict[str, Any]] = []
+
+    def observing_adapter(trace_cache, selective_session, **kwargs):
+        result = real_adapter(trace_cache, selective_session, **kwargs)
+        authentication = result.as_dict()["cache_authentication"]
+        margin_builds.append(
+            {
+                "cache": type(trace_cache).__name__,
+                "session": type(selective_session).__name__,
+                "cache_key": authentication["cache_key"],
+                "manifest_sha256": authentication["manifest_sha256"],
+                "merged": authentication.get(
+                    margin_adapter._MERGED_EVIDENCE_FIELD
+                ),
+            }
+        )
+        return result
+
+    monkeypatch.setattr(
+        margin_adapter,
+        "build_lfm2_streaming_vocabulary_margin_adapter_v2",
+        observing_adapter,
+    )
+
+    summary = MODULE.run_production_catalog_on_policy_alternation(config)
+    rows = _progress_rows(capsys.readouterr().out)
+
+    assert summary["status"] == "complete", summary.get("failure")
+    assert summary["executed_pass_count"] == summary["expected_pass_count"] == 2
+    base_pass, refold_pass = summary["passes"]
+    assert base_pass["status"] == refold_pass["status"] == "complete", summary
+
+    base_receipt = json.loads((run / "receipt.json").read_text(encoding="ascii"))
+    refold_receipt = json.loads(
+        (run / "receipt-round-0-refold.json").read_text(encoding="ascii")
+    )
+    round_manifest = _round_manifest_document(
+        Path(base_pass["sealed_round_manifests"][0])
+    )
+    extension_batches = int(round_manifest["extension_cache"]["batch_count"])
+
+    # 1. The refold really consumed base+extension evidence.
+    evidence = refold_receipt["on_policy_evidence"]
+    assert evidence["consumed_by_this_solve_pass"] is True
+    evidence_set = evidence["evidence_set"]
+    assert evidence_set["member_count"] == 2
+    assert evidence_set["batch_count"] == len(_TRAJECTORIES) + extension_batches
+    assert evidence_set["extension_selection_or_validation_batch_count"] == 0
+    assert base_receipt["on_policy_evidence"]["evidence_identity_sha256"] is None
+    assert len(evidence["evidence_identity_sha256"]) == 64
+
+    # 2. The base pass bound one sealed cache and the refold bound the merged
+    #    evidence set -- the exact handle the adapter used to refuse by name.
+    assert len(margin_builds) == 2
+    base_build, refold_build = margin_builds
+    assert base_build["cache"] == "Lfm2CircuitTraceCache"
+    assert base_build["merged"] is None
+    assert len(base_build["manifest_sha256"]) == 64
+    assert refold_build["cache"] == "Lfm2MergedSealedEvidenceCache"
+    assert refold_build["session"] == "Lfm2MergedSealedEvidenceSession"
+    assert refold_build["cache_key"] == evidence_set["evidence_set_cache_key"]
+    # No sealed manifest digest is invented for a corpus that has none.
+    assert refold_build["manifest_sha256"] is None
+
+    # 3. The margin evidence names which members and which composition it came
+    #    from, with each member's own real sealed manifest digest.
+    document = refold_build["merged"]
+    assert document["schema"] == (
+        margin_adapter.LFM2_STREAMING_VOCABULARY_MARGIN_MERGED_EVIDENCE_SCHEMA
+    )
+    assert document["evidence_set_cache_key"] == (
+        evidence_set["evidence_set_cache_key"]
+    )
+    assert document["base_cache_key"] == refold_receipt["parent"][
+        "parent_cache_key"
+    ]
+    assert document["on_policy_evidence_identity_sha256"] == (
+        evidence["evidence_identity_sha256"]
+    )
+    assert document["member_count"] == 2
+    assert document["batch_count"] == evidence_set["batch_count"]
+    assert document["base_batch_count"] == len(_TRAJECTORIES)
+    assert [value["role"] for value in document["ordered_members"]] == [
+        "base",
+        "on_policy_extension",
+    ]
+    assert [
+        len(value["trace_cache"]["manifest_sha256"])
+        for value in document["ordered_members"]
+    ] == [64, 64]
+    assert document["ordered_members"][1]["round_manifest_sha256"] == (
+        round_manifest["manifest_sha256"]
+    )
+    assert document["ordered_members"][1]["all_rows_are_fit_rows"] is True
+    assert MODULE.canonical_sha256(
+        {
+            name: value
+            for name, value in document.items()
+            if name != f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"
+        }
+    ) == document[f"{margin_adapter._MERGED_EVIDENCE_FIELD}_sha256"]
+
+    # 4. The balanced basis was solved on that merged evidence through the phase
+    #    cache, and only the refold pass bound merged evidence.  Each pass is
+    #    its own compiler run, so each also gets its own phase event log; one
+    #    log holding both run IDs is refused by the log itself.
+    assert (run / "balanced-basis-events.jsonl").is_file()
+    assert (run / "balanced-basis-events-round-0-refold.jsonl").is_file()
+    bound = [
+        row
+        for row in rows
+        if row["stage"] == "balanced_basis_merged_evidence_bound"
+    ]
+    assert bound
+    assert {row["configuration_sha256"] for row in bound} == {
+        refold_pass["configuration_sha256"]
+    }
+    # The phase binding and the margin evidence are two independent documents
+    # over the same composition, so they agree on the identity and not on the
+    # digest.
+    assert bound[0]["evidence_set_cache_key"] == document[
+        "evidence_set_cache_key"
+    ]
+    assert bound[0]["on_policy_evidence_identity_sha256"] == document[
+        "on_policy_evidence_identity_sha256"
+    ]
+    assert bound[0]["member_count"] == document["member_count"]
+
+    # 5. Neither pass regenerated a parent trace, and both children reload.
+    for receipt in (base_receipt, refold_receipt):
+        assert receipt["parent"]["parent_forward_count_after_cache"] == 0
+        assert receipt["parent"]["parent_trace_regeneration_after_cache"] == 0
+        assert receipt["training_steps"] == 0
+        assert receipt["artifact"]["fresh_reload_accepted"] is True
+    assert "on_policy_extension_evidence_materialized" in _stages(rows)

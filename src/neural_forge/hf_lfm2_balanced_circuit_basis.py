@@ -753,17 +753,87 @@ def _load_cache_records(
     return tuple(sorted(records, key=lambda value: value.index))
 
 
+def _extension_batch_indices(handle: Any) -> frozenset[int]:
+    """Merged batch indices on-policy extensions contributed to one handle.
+
+    A single sealed cache or session has no extension members and exposes no
+    such attribute, so this is empty for every single-cache solve -- which is
+    what keeps the split below byte-identical there.
+    """
+
+    value = getattr(handle, "extension_batch_indices", None)
+    if value is None:
+        return frozenset()
+    try:
+        indices = frozenset(int(index) for index in value)
+    except (TypeError, ValueError) as exc:
+        raise Lfm2CircuitBalancedBasisError(
+            "Sealed evidence extension batch indices must be integers."
+        ) from exc
+    if any(index < 0 for index in indices):
+        raise Lfm2CircuitBalancedBasisError(
+            "Sealed evidence extension batch indices must be non-negative."
+        )
+    return indices
+
+
+def _resolved_extension_batch_indices(
+    trace_cache: Any,
+    selective_session: Any,
+) -> frozenset[int]:
+    """The one set of extension batches both handles agree this solve reads."""
+
+    cache_indices = _extension_batch_indices(trace_cache)
+    if selective_session is None:
+        return cache_indices
+    session_indices = _extension_batch_indices(selective_session)
+    if cache_indices != session_indices:
+        raise Lfm2CircuitBalancedBasisError(
+            "Sealed cache and session disagree on which batches on-policy "
+            "extensions contributed."
+        )
+    return cache_indices
+
+
 def _split_records(
     records: Sequence[_CacheRecord],
     *,
     cache_key: str,
     validation_fraction: float,
     split_seed: str,
+    extension_batch_indices: frozenset[int] = frozenset(),
 ) -> tuple[tuple[_CacheRecord, ...], tuple[_CacheRecord, ...], dict[str, Any]]:
     count = len(records)
     heldout_count = max(1, min(count - 1, math.ceil(count * validation_fraction)))
+    eligible = records
+    if extension_batch_indices:
+        # Every row an on-policy extension contributes is a fit row.  The
+        # sealed evidence set already refuses any other split label
+        # (Lfm2SealedEvidenceRequest: "validation would stop being held out"),
+        # and the same rule has to hold for the basis's own fit/held-out
+        # ranking: a child-visited state in the held-out split would have the
+        # projection gate measure the child partly on its own outputs.  The
+        # ranking is unchanged; only the pool it draws the held-out quota from
+        # is narrowed to the base members.
+        present = {int(value.index) for value in records}
+        if not extension_batch_indices <= present:
+            raise Lfm2CircuitBalancedBasisError(
+                "Sealed evidence extension batches are not among the records "
+                "this split covers."
+            )
+        eligible = tuple(
+            value
+            for value in records
+            if int(value.index) not in extension_batch_indices
+        )
+        if len(eligible) < 2:
+            raise Lfm2CircuitBalancedBasisError(
+                "A merged sealed evidence split needs at least two base "
+                "records for disjoint fit and held-out evidence."
+            )
+        heldout_count = max(1, min(len(eligible) - 1, heldout_count))
     ranked = sorted(
-        records,
+        eligible,
         key=lambda value: (
             hashlib.sha256(
                 (
@@ -801,6 +871,19 @@ def _split_records(
         "whole_records_only": True,
         "record_ids_disjoint": True,
         "heldout_excluded_from_selection": True,
+        # Present only for merged evidence, so a single-cache split report --
+        # and therefore every basis report digest it enters -- is unchanged.
+        **(
+            {}
+            if not extension_batch_indices
+            else {
+                "on_policy_extension_record_count": count - len(eligible),
+                "heldout_eligible_record_count": len(eligible),
+                "heldout_extension_record_count": 0,
+                "extension_records_are_never_heldout": True,
+                "heldout_pool": "base-members-only",
+            }
+        ),
     }
     return fit, heldout, report
 
@@ -1199,6 +1282,7 @@ def _stream_selective_cache_snapshots(
     validation_fraction: float,
     split_seed: str,
     max_rows_per_block: int,
+    extension_batch_indices: frozenset[int] | None = None,
 ) -> _StreamingSnapshotLoad:
     """Compatibility alias for bounded snapshot-Gram streaming."""
 
@@ -1210,6 +1294,7 @@ def _stream_selective_cache_snapshots(
         validation_fraction=validation_fraction,
         split_seed=split_seed,
         max_rows_per_block=max_rows_per_block,
+        extension_batch_indices=extension_batch_indices,
     )
 
 
@@ -1662,9 +1747,12 @@ def _stream_selective_cache_snapshot_grams(
     validation_fraction: float,
     split_seed: str,
     max_rows_per_block: int,
+    extension_batch_indices: frozenset[int] | None = None,
 ) -> _StreamingSnapshotLoad:
     """Build exact snapshot sufficient statistics without retaining blocks."""
 
+    if extension_batch_indices is None:
+        extension_batch_indices = _extension_batch_indices(selective_session)
     metadata = _selective_record_metadata(
         selective_session,
         source_width=source_width,
@@ -1676,6 +1764,7 @@ def _stream_selective_cache_snapshot_grams(
         cache_key=cache_key,
         validation_fraction=validation_fraction,
         split_seed=split_seed,
+        extension_batch_indices=extension_batch_indices,
     )
     fit_plan, fit_source_rows, fit_selected_rows = _global_row_selection_plan(
         fit_records,
@@ -3176,17 +3265,21 @@ def build_lfm2_circuit_balanced_basis(
             "streaming_vocabulary_margin_v2 requires a selective authenticated "
             "cache session."
         )
-    if streaming_vocabulary_margin_v2 and isinstance(
+    if streaming_vocabulary_margin_v2 and not isinstance(
         selective_session,
-        Lfm2MergedSealedEvidenceSession,
+        (
+            Lfm2CircuitTraceSelectiveAuthenticatedSession,
+            Lfm2MergedSealedEvidenceSession,
+        ),
     ):
-        # Named here rather than left to the adapter's opaque digest check: the
-        # streaming margin adapter authenticates one sealed cache manifest, and
-        # a merged corpus has no sealed manifest digest to offer it.
+        # Fail-closed dispatch, named where the configuration is composed: the
+        # streaming margin adapter authenticates one sealed cache's manifest
+        # digest, or every member digest of one merged sealed evidence set, and
+        # nothing else.  Both names are read from the module namespace for the
+        # same substitution reason the session check below states.
         raise Lfm2CircuitBalancedBasisError(
-            "The streaming vocabulary-margin adapter binds one sealed cache "
-            "manifest digest and cannot consume merged on-policy extension "
-            "evidence."
+            "The streaming vocabulary-margin adapter authenticates one sealed "
+            "cache session or one merged sealed evidence session."
         )
     if (
         target_tokenizer_vocabulary_margin_binding is not None
@@ -3283,6 +3376,12 @@ def build_lfm2_circuit_balanced_basis(
         raise Lfm2CircuitBalancedBasisError(
             "circuit_graph must be the canonical LFM2 ModelCircuitGraph."
         )
+    # One set both handles agree on, resolved once: every fit/held-out split
+    # this solve makes has to know which batches a child actually visited.
+    extension_batch_indices = _resolved_extension_batch_indices(
+        trace_cache,
+        selective_session,
+    )
     if selective_session is not None and (
         not vocabulary_margin_observability or streaming_vocabulary_margin_v2
     ):
@@ -3294,6 +3393,7 @@ def build_lfm2_circuit_balanced_basis(
             validation_fraction=validation_fraction,
             split_seed=split_seed,
             max_rows_per_block=max_rows_per_block,
+            extension_batch_indices=extension_batch_indices,
         )
         records = streaming.records
         fit_records = streaming.fit_records
@@ -3323,6 +3423,7 @@ def build_lfm2_circuit_balanced_basis(
             cache_key=cache_key,
             validation_fraction=validation_fraction,
             split_seed=split_seed,
+            extension_batch_indices=extension_batch_indices,
         )
         fit_snapshots = _snapshot_blocks(
             fit_records,
