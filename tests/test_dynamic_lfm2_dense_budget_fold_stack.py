@@ -11,6 +11,9 @@ from neural_forge.dynamic_behavior_gate import (
     expose_behavior_gate_binding,
 )
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_child_replay_phase_cache import (
+    DynamicChildReplayPhaseCacheContext,
+)
 from neural_forge.dynamic_fold_compiler import DynamicFoldingCompiler
 from neural_forge.dynamic_fold_executor import (
     FoldDecision,
@@ -516,8 +519,11 @@ def production_thousand_x_parent(tmp_path_factory):
     )
 
 
-def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
+def test_dense_budget_vocab_margin_requires_circuit_balanced_basis(
+    tmp_path,
+) -> None:
     defaults = Lfm2DenseBudgetFoldConfig()
+    assert defaults.child_replay_phase_cache_context is None
     assert defaults.macro_cell_attractor_gate_config is None
     assert defaults.streaming_vocabulary_margin_v2 is False
     assert defaults.streaming_vocabulary_margin_pair_chunk_size == 256
@@ -563,6 +569,19 @@ def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
             macro_cell_attractor_gate_config=(
                 Lfm2MacroCellAttractorGateConfig()
             ),
+        )
+    context = DynamicChildReplayPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "child-replay-phase-test-cache")
+    )
+    assert Lfm2DenseBudgetFoldConfig(
+        child_replay_phase_cache_context=context
+    ).child_replay_phase_cache_context is context
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="child_replay_phase_cache_context has the wrong type",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            child_replay_phase_cache_context=object()
         )
 
 
