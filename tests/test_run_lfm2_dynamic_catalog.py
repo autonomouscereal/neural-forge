@@ -302,6 +302,10 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.balanced_basis_phase_hmac_key_id is None
     assert config.uses_balanced_basis_phase_cache is False
     assert "balanced_basis_phase_cache" not in config.identity()
+    assert config.child_replay_phase_cache_root is None
+    assert config.uses_child_replay_phase_cache is False
+    assert "child_replay_phase_cache" not in config.identity()
+    assert MODULE._child_replay_phase_cache_context(config) is None
     assert MODULE._balanced_basis_phase_cache_receipt_fields(config) == {}
     assert MODULE._balanced_basis_phase_anchor_authority(config) is None
     assert config.dense_macro_cell_attractor_gate_enabled is False
@@ -382,6 +386,62 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--dense-minimum-hidden-size" in help_text
     assert "--required-target-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
+    assert "--child-replay-phase-cache-root" in help_text
+
+
+def test_child_replay_phase_cache_cli_is_explicit_stable_and_canonical(
+    tmp_path,
+) -> None:
+    phase_root = tmp_path / "stable" / "child-replay"
+    arguments = [
+        *_required_args(tmp_path / "run"),
+        "--dense-run-closed-loop",
+        "--child-replay-phase-cache-root",
+        str(phase_root),
+    ]
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(arguments)
+    )
+
+    assert config.uses_child_replay_phase_cache is True
+    assert config.identity()["child_replay_phase_cache"] == {
+        "enabled": True,
+        "root": str(phase_root.absolute()),
+        "canonical_prefix_replay_only": True,
+    }
+    context = MODULE._child_replay_phase_cache_context(config)
+    assert isinstance(
+        context,
+        MODULE.DynamicChildReplayPhaseCacheContext,
+    )
+    assert context.cache.root == phase_root.absolute()
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires --dense-run-closed-loop",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_required_args(tmp_path / "disabled"),
+                    "--child-replay-phase-cache-root",
+                    str(tmp_path / "stable-disabled"),
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="canonical prefix-by-prefix replay",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *arguments,
+                    "--dense-closed-loop-replay-mode",
+                    MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+                ]
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -2802,6 +2862,59 @@ class _HybridBuilder:
 
     def build_producer_first(self, _request):
         return None
+
+
+def test_wiring_constructs_opt_in_child_replay_phase_cache(
+    tmp_path,
+) -> None:
+    phase_root = tmp_path / "stable" / "child-replay"
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "run" / "parent",
+        calibration=tmp_path / "run" / "calibration.json",
+        cached_parent_outputs=tmp_path / "run" / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "run" / "cache",
+        snapshot_root=tmp_path / "run" / "snapshots",
+        publish_destination=tmp_path / "run" / "published",
+        ledger_path=tmp_path / "run" / "ledger.jsonl",
+        receipt_path=tmp_path / "run" / "receipt.json",
+        child_replay_phase_cache_root=phase_root,
+        dense_run_closed_loop=True,
+    )
+    payload = MODULE.ProductionParentCachePayload(
+        cache=_Cache(),
+        rows=_Rows(),
+        calibration_batches=(),
+        calibration_splits=(),
+        partition=SimpleNamespace(
+            selection_indices=(0,),
+            fit_indices=(1,),
+            validation_indices=(2,),
+        ),
+    )
+    wiring = MODULE.build_production_catalog_wiring(
+        config,
+        parent_cache_payload=payload,
+        tokenizer_fingerprint="c" * 64,
+        evidence_builder=lambda _request: None,
+        final_evaluator=_Accept(),
+        model_saver=lambda _model, _path: None,
+        model_loader=lambda _path: object(),
+        fresh_reload_evaluator=lambda _model: True,
+        ledger=MODULE.ExperimentLedger(),
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    context = (
+        wiring.stack_adapter.resources.dense_fold_config
+        .child_replay_phase_cache_context
+    )
+    assert isinstance(
+        context,
+        MODULE.DynamicChildReplayPhaseCacheContext,
+    )
+    assert context.cache.root == phase_root.absolute()
 
 
 def test_wiring_uses_automatic_lfm_catalog_real_bridge_and_disk_snapshots(

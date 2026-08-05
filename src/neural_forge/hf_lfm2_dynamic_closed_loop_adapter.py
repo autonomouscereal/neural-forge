@@ -32,6 +32,9 @@ from types import MappingProxyType
 from typing import Any, Protocol
 
 from .dynamic_circuit_ir import JsonScalar, canonical_sha256
+from .dynamic_child_replay_phase_cache import (
+    DynamicChildReplayPhaseCacheContext,
+)
 from .dynamic_closed_loop_fold import (
     CapturePoint,
     ChildTrajectoryCapture,
@@ -87,6 +90,9 @@ from .hf_lfm2_circuit_trace_cache import (
     capture_lfm2_child_replay,
     compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
+)
+from .hf_lfm2_child_replay_phase_cache import (
+    load_or_capture_lfm2_child_replay_phase,
 )
 from .hf_lfm2_sealed_evidence_set import (
     SEALED_EVIDENCE_CACHE_TYPES,
@@ -219,6 +225,9 @@ LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA = (
 LFM2_REPLAY_SHARDING_RESOLVED_STAGE = "child_replay_sharding_resolved"
 LFM2_REPLAY_SHARDING_COMPLETED_STAGE = "child_replay_sharding_completed"
 LFM2_REPLAY_SHARDING_ALL_DEVICES = "all"
+LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE = (
+    "child_replay_phase_cache_resolved"
+)
 
 
 _FORBIDDEN_COUNTERS = (
@@ -2982,6 +2991,9 @@ class Lfm2DynamicClosedLoopAdapter:
         progress_sink: (
             Callable[[str, Mapping[str, JsonScalar]], None] | None
         ) = None,
+        child_replay_phase_cache_context: (
+            DynamicChildReplayPhaseCacheContext | None
+        ) = None,
     ) -> None:
         # ``evidence_set`` is the additive base+extension entry point.  With no
         # extension member (or none supplied at all) every binding below is the
@@ -3058,6 +3070,20 @@ class Lfm2DynamicClosedLoopAdapter:
         if progress_sink is not None and not callable(progress_sink):
             raise TypeError("progress_sink must be callable or None.")
         self.progress_sink = progress_sink
+        if (
+            child_replay_phase_cache_context is not None
+            and not isinstance(
+                child_replay_phase_cache_context,
+                DynamicChildReplayPhaseCacheContext,
+            )
+        ):
+            raise TypeError(
+                "child_replay_phase_cache_context must be "
+                "DynamicChildReplayPhaseCacheContext or None."
+            )
+        self.child_replay_phase_cache_context = (
+            child_replay_phase_cache_context
+        )
         self._active_selected_parent_profile: (
             _SelectedParentEvidenceProfile | None
         ) = None
@@ -8123,18 +8149,64 @@ class Lfm2DynamicClosedLoopAdapter:
                 replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
                 replay_devices=replay_devices,
             )
-        replay = capture_lfm2_child_replay(
-            self.child_model,
-            sealed_batches,
-            selected_layer_indices=selected_layers,
-            config=active_replay_config,
-            input_device=self.input_device,
-            replay_capture_mode=self.config.replay_capture_mode,
-            causal_equivalence_reference=causal_equivalence_reference,
-            child_evidence_profile=child_evidence_profile,
-            replay_devices=replay_devices,
-        )
-        if replay_devices is not None:
+        replay_phase = None
+        if (
+            self.child_replay_phase_cache_context is not None
+            and self.config.replay_capture_mode
+            == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+            and causal_equivalence_reference is None
+        ):
+            replay_phase = load_or_capture_lfm2_child_replay_phase(
+                self.child_replay_phase_cache_context,
+                self.child_model,
+                sealed_batches,
+                selected_layer_indices=selected_layers,
+                config=active_replay_config,
+                input_device=self.input_device,
+                replay_capture_mode=self.config.replay_capture_mode,
+                child_evidence_profile=child_evidence_profile,
+                replay_devices=replay_devices,
+            )
+            replay = replay_phase.replay
+            self._emit_body_progress(
+                LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE,
+                scope_id=scope.scope_id,
+                capture_point=point.value,
+                phase_key_sha256=(
+                    replay_phase.entry.phase_key.phase_key_sha256
+                ),
+                completion_sha256=replay_phase.entry.completion_sha256,
+                replay_sha256=replay_phase.replay_sha256,
+                cache_hit=replay_phase.cache_hit,
+                producer_invoked=replay_phase.producer_invoked,
+                publication_race_lost=(
+                    replay_phase.publication_race_lost
+                ),
+                current_invocation_child_forwards=(
+                    replay.metadata["forward_counts"]["child"]
+                    if replay_phase.producer_invoked
+                    else 0
+                ),
+                persisted_capture_child_forwards=(
+                    replay.metadata["forward_counts"]["child"]
+                ),
+            )
+        else:
+            replay = capture_lfm2_child_replay(
+                self.child_model,
+                sealed_batches,
+                selected_layer_indices=selected_layers,
+                config=active_replay_config,
+                input_device=self.input_device,
+                replay_capture_mode=self.config.replay_capture_mode,
+                causal_equivalence_reference=causal_equivalence_reference,
+                child_evidence_profile=child_evidence_profile,
+                replay_devices=replay_devices,
+            )
+        if (
+            replay_devices is not None
+            and (replay_phase is None or replay_phase.producer_invoked)
+        ):
             self._emit_body_progress(
                 LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
                 scope_id=scope.scope_id,
@@ -13865,6 +13937,7 @@ __all__ = [
     "LFM2_BODY_RECLOSURE_DISABLED",
     "LFM2_BODY_RECLOSURE_MODES",
     "LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3",
+    "LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE",
     "LFM2_INSTALL_VERIFICATION_FINGERPRINT",
     "LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE",
     "LFM2_INSTALL_VERIFICATION_MODES",

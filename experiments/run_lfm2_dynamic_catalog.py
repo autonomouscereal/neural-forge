@@ -55,6 +55,9 @@ from neural_forge.dynamic_counted_child_state import (
     verify_counted_child_state,
 )
 from neural_forge.dynamic_closed_loop_fold import ClosedLoopCompilerConfig
+from neural_forge.dynamic_child_replay_phase_cache import (
+    DynamicChildReplayPhaseCacheContext,
+)
 from neural_forge.dynamic_fold_executor import FoldDecision
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.dynamic_fold_artifact import (
@@ -1133,6 +1136,7 @@ class ProductionLfm2CatalogConfig:
     ledger_path: Path
     receipt_path: Path
     derived_global_topology_cache_root: Path | None = None
+    child_replay_phase_cache_root: Path | None = None
     balanced_basis_phase_cache_root: Path | None = None
     balanced_basis_phase_event_log: Path | None = None
     balanced_basis_phase_hmac_key_file: Path | None = None
@@ -1378,6 +1382,7 @@ class ProductionLfm2CatalogConfig:
             "diagnostics_path",
             "sealed_parent_cache_directory",
             "derived_global_topology_cache_root",
+            "child_replay_phase_cache_root",
             "balanced_basis_phase_cache_root",
             "balanced_basis_phase_event_log",
             "balanced_basis_phase_hmac_key_file",
@@ -1391,6 +1396,38 @@ class ProductionLfm2CatalogConfig:
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, Path(value))
+        if self.child_replay_phase_cache_root is not None:
+            phase_root = (
+                self.child_replay_phase_cache_root.expanduser().absolute()
+            )
+            mutable_directory_roots = (
+                self.cache_root.expanduser().absolute(),
+                self.snapshot_root.expanduser().absolute(),
+                self.publish_destination.expanduser().absolute(),
+            )
+            if any(
+                phase_root.is_relative_to(root)
+                or root.is_relative_to(phase_root)
+                for root in mutable_directory_roots
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The child-replay phase-cache root must be a stable "
+                    "cross-run root outside per-run cache, snapshot, and "
+                    "publication trees."
+                )
+            if not self.dense_run_closed_loop:
+                raise ProductionLfm2CatalogError(
+                    "Child-replay phase caching requires "
+                    "--dense-run-closed-loop."
+                )
+            if (
+                self.resolved_dense_closed_loop_replay_capture_mode
+                != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Child-replay phase caching currently requires canonical "
+                    "prefix-by-prefix replay."
+                )
         object.__setattr__(
             self,
             "on_policy_round_manifests",
@@ -2947,6 +2984,10 @@ class ProductionLfm2CatalogConfig:
         return self.balanced_basis_phase_cache_root is not None
 
     @property
+    def uses_child_replay_phase_cache(self) -> bool:
+        return self.child_replay_phase_cache_root is not None
+
+    @property
     def final_cache_root(self) -> Path:
         return self.cache_root / "child-final"
 
@@ -3086,6 +3127,21 @@ class ProductionLfm2CatalogConfig:
             "cache_root": str(self.cache_root),
             "derived_global_topology_cache_root": str(
                 self.global_topology_phase_cache_root
+            ),
+            **(
+                {}
+                if not self.uses_child_replay_phase_cache
+                else {
+                    "child_replay_phase_cache": {
+                        "enabled": True,
+                        "root": str(
+                            self.child_replay_phase_cache_root
+                            .expanduser()
+                            .absolute()
+                        ),
+                        "canonical_prefix_replay_only": True,
+                    }
+                }
             ),
             **(
                 {}
@@ -9413,6 +9469,39 @@ def _global_topology_phase_cache_context(
     )
 
 
+def _child_replay_phase_cache_context(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    progress: _ProgressJournal | None = None,
+) -> DynamicChildReplayPhaseCacheContext | None:
+    """Build the opt-in durable cache for complete canonical child replays."""
+
+    if not config.uses_child_replay_phase_cache:
+        return None
+    assert config.child_replay_phase_cache_root is not None
+
+    def relay(stage: str, details: Mapping[str, Any]) -> None:
+        if progress is None:
+            return
+        metadata = dict(details)
+        reserved = sorted(
+            set(metadata).intersection(_ProgressJournal._RESERVED_FIELDS)
+        )
+        if reserved:
+            raise ProductionLfm2CatalogError(
+                "Child-replay phase progress contained reserved runner "
+                f"fields: {', '.join(reserved)}."
+            )
+        progress.emit(stage, **metadata)
+
+    return DynamicChildReplayPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(
+            config.child_replay_phase_cache_root.expanduser().absolute()
+        ),
+        progress=None if progress is None else relay,
+    )
+
+
 def _balanced_basis_phase_cache_receipt_fields(
     config: ProductionLfm2CatalogConfig,
 ) -> dict[str, Any]:
@@ -9785,6 +9874,12 @@ def build_production_catalog_wiring(
                 else None
             ),
             dense_fold_config=Lfm2DenseBudgetFoldConfig(
+                child_replay_phase_cache_context=(
+                    _child_replay_phase_cache_context(
+                        config,
+                        progress=progress,
+                    )
+                ),
                 residual_basis_mode=config.dense_residual_basis_mode,
                 body_reclosure_mode=config.dense_body_reclosure_mode,
                 run_closed_loop=config.dense_run_closed_loop,
@@ -13399,6 +13494,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--child-replay-phase-cache-root",
+        type=Path,
+        help=(
+            "Stable cross-run content-addressed cache root for complete "
+            "canonical child replay phases. Requires "
+            "--dense-run-closed-loop and canonical prefix replay."
+        ),
+    )
+    parser.add_argument(
         "--balanced-basis-phase-cache-root",
         type=Path,
         help=(
@@ -14445,6 +14549,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         cache_root=args.cache_root,
         derived_global_topology_cache_root=(
             args.derived_global_topology_cache_root
+        ),
+        child_replay_phase_cache_root=(
+            args.child_replay_phase_cache_root
         ),
         balanced_basis_phase_cache_root=(
             args.balanced_basis_phase_cache_root
