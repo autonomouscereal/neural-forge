@@ -2053,21 +2053,6 @@ class Lfm2DenseBudgetFoldConfig:
                 "Resuming from a restart capsule requires the restart-capsule "
                 "directory the resumed run keeps writing to."
             )
-        if (
-            self.resume_from_restart_capsule is not None
-            and self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-        ):
-            # ``compile_body_reclosure`` asserts that *this* process installed
-            # every layer.  A resumed process that skipped an accepted prefix
-            # cannot honour that claim, so the combination fails closed here
-            # instead of deep inside the compiler.  See the module docstring of
-            # ``hf_lfm2_closed_loop_restart_capsule``.
-            raise Lfm2DenseBudgetFoldError(
-                "moving_gauge_v3 body reclosure requires this process to fold "
-                "every layer; resume from a restart capsule with reclosure "
-                "disabled, or re-fold the body from layer 0."
-            )
-
     def _resolve_closed_loop_replay_devices(self) -> None:
         """Keep one source of truth for the opt-in replay shard request.
 
@@ -3211,6 +3196,43 @@ def _fold_dense_blank_from_parent(
     }
 
 
+def _initial_structural_fold_or_authenticated_resume(
+    *,
+    restart_resume: Any | None,
+    structural_fold: Callable[[], Mapping[str, Any]],
+    fold_progress: _Lfm2DenseFoldProgress,
+) -> Mapping[str, Any]:
+    """Execute structural folding only when no authenticated capsule restored it."""
+
+    if restart_resume is None:
+        report = structural_fold()
+        if not isinstance(report, Mapping):
+            raise Lfm2DenseBudgetFoldError(
+                "The initial structural fold returned no report."
+            )
+        return report
+    skipped_body = {
+        "schema": "neural-forge-lfm2-dense-structural-fold-resume-skip-v1",
+        "mode": "authenticated_restart_capsule_restore",
+        "structural_parent_to_blank_fold_executed": False,
+        "capsule_key": restart_resume.reference.capsule_key,
+        "capsule_manifest_sha256": restart_resume.reference.manifest_sha256,
+        "restored_child_state_sha256": restart_resume.child_state_sha256,
+        "restored_child_topology_sha256": restart_resume.child_topology_sha256,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    fold_progress.emit(
+        "dense_structural_fold_skipped_restart_resume",
+        capsule_key=restart_resume.reference.capsule_key,
+        structural_parent_to_blank_fold_executed=False,
+        restored_child_state_sha256=restart_resume.child_state_sha256,
+    )
+    return {**skipped_body, "report_sha256": canonical_sha256(skipped_body)}
+
+
 class Lfm2DenseBudgetModelTransaction:
     """Whole-child transaction around initial transport and closed-loop repair."""
 
@@ -3671,9 +3693,11 @@ class Lfm2DenseBudgetModelOperator:
         child_model: Any,
         fold_progress: _Lfm2DenseFoldProgress,
     ) -> Any | None:
-        """Restore the newest sealed capsule into the freshly folded child.
+        """Restore the newest sealed capsule into the fresh blank child.
 
-        The capsule is loaded before the closed-loop adapter exists because
+        The capsule is loaded before the structural fold and closed-loop
+        adapter exist because it already contains the exact structural fold
+        plus accepted layer prefix, and because
         ``Lfm2DynamicClosedLoopAdapter.__init__`` snapshots the child's input
         vocabulary digest into the identity bindings the capsule pins.
         """
@@ -3983,13 +4007,34 @@ class Lfm2DenseBudgetModelOperator:
                     else self._residual_basis_phase_bindings
                 ),
             )
-            initial_report = _fold_dense_blank_from_parent(
-                parent_model,
+            if (
+                component_dispatch is not None
+                and self.config.resume_from_restart_capsule is not None
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Accepted-layer resume cannot reconstruct the separate "
+                    "pre-closed-loop structural snapshot required by a "
+                    "component-dispatch diagnostic."
+                )
+            # A capsule already contains the structural parent-to-blank fold
+            # plus its accepted closed-loop prefix.  Restore it before any
+            # structural materialization and do not recompute work whose exact
+            # child bytes the authenticated capsule replaces.
+            restart_resume = self._load_restart_capsule_resume(
                 context.child_model,
-                basis,
-                self.tokenizer_bridge_artifact,
-                selective_session=self.selective_session,
-                progress=fold_progress,
+                fold_progress,
+            )
+            initial_report = _initial_structural_fold_or_authenticated_resume(
+                restart_resume=restart_resume,
+                structural_fold=lambda: _fold_dense_blank_from_parent(
+                    parent_model,
+                    context.child_model,
+                    basis,
+                    self.tokenizer_bridge_artifact,
+                    selective_session=self.selective_session,
+                    progress=fold_progress,
+                ),
+                fold_progress=fold_progress,
             )
             initial_state = context.child_state_fingerprint
             structural_snapshot = (
@@ -4035,13 +4080,6 @@ class Lfm2DenseBudgetModelOperator:
                         self.config.resume_from_restart_capsule is not None
                     ),
                 )
-                # The capsule pins the child's input-vocabulary digest through
-                # the adapter identity bindings, so a resume has to land in the
-                # fresh child *before* the adapter snapshots it.
-                restart_resume = self._load_restart_capsule_resume(
-                    context.child_model,
-                    fold_progress,
-                )
                 macro_cell_attractor_gate = (
                     None
                     if self.config.macro_cell_attractor_gate_config is None
@@ -4049,6 +4087,13 @@ class Lfm2DenseBudgetModelOperator:
                         self.trace_cache,
                         config=(self.config.macro_cell_attractor_gate_config),
                     )
+                )
+                compiler_config = replace(
+                    self.config.closed_loop_compiler_config,
+                    fold_body_reclosure=(
+                        self.config.body_reclosure_mode
+                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                    ),
                 )
                 adapter = Lfm2DynamicClosedLoopAdapter(
                     source_model=parent_model,
@@ -4094,13 +4139,7 @@ class Lfm2DenseBudgetModelOperator:
                     child_replay_phase_cache_context=(
                         self.config.child_replay_phase_cache_context
                     ),
-                )
-                compiler_config = replace(
-                    self.config.closed_loop_compiler_config,
-                    fold_body_reclosure=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-                    ),
+                    selected_layer_indices=compiler_config.selected_layers,
                 )
                 # Requested is a configuration fact; admitted is the adapter's
                 # own decision about this exact child, replay mode, and parent

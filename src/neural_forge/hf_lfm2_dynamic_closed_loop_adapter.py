@@ -26,7 +26,7 @@ import json
 import math
 import warnings
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import wraps
 from types import MappingProxyType
 from typing import Any, Protocol
@@ -36,6 +36,7 @@ from .dynamic_child_replay_phase_cache import (
     DynamicChildReplayPhaseCacheContext,
 )
 from .dynamic_closed_loop_fold import (
+    CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA,
     CapturePoint,
     ChildTrajectoryCapture,
     ClosedLoopAudit,
@@ -87,12 +88,17 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     Lfm2ChildEvidenceProfile,
+    _model_config as _normalized_lfm2_model_config,
     capture_lfm2_child_replay,
     compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
 )
 from .hf_lfm2_child_replay_phase_cache import (
     load_or_capture_lfm2_child_replay_phase,
+)
+from .hf_lfm2_closed_loop_restart_capsule import (
+    portable_child_state_sha256,
+    portable_child_topology_sha256,
 )
 from .hf_lfm2_sealed_evidence_set import (
     SEALED_EVIDENCE_CACHE_TYPES,
@@ -227,6 +233,27 @@ LFM2_REPLAY_SHARDING_COMPLETED_STAGE = "child_replay_sharding_completed"
 LFM2_REPLAY_SHARDING_ALL_DEVICES = "all"
 LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE = (
     "child_replay_phase_cache_resolved"
+)
+LFM2_ACCEPTED_LAYER_COMPLETION_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-accepted-layer-completion-receipt-v1"
+)
+LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA = (
+    "neural-forge-lfm2-accepted-layer-completion-ledger-v1"
+)
+LFM2_ACCEPTED_LAYER_COMPLETION_BINDING_SCHEMA = (
+    "neural-forge-lfm2-accepted-layer-completion-binding-v1"
+)
+LFM2_ACCEPTED_LAYER_COMPLETION_RESUME_PROOF_SCHEMA = (
+    "neural-forge-lfm2-accepted-layer-completion-resume-proof-v1"
+)
+LFM2_ACCEPTED_LAYER_COMPLETION_CHAIN_GENESIS_SHA256 = "0" * 64
+_ACCEPTED_LAYER_NONSEMANTIC_CONFIG_FIELDS = frozenset(
+    {
+        "install_verification_mode",
+        "mlp_gate_operating_point_diagnostics",
+        "mlp_solver_conditioning_diagnostics",
+        "replay_devices",
+    }
 )
 
 
@@ -2873,6 +2900,9 @@ class _ChildModelTransaction:
                 remove_duplicate=False
             )
         )
+        self._accepted_layer_completion_snapshot = (
+            adapter._begin_accepted_layer_completion_transaction()
+        )
         self.active = True
         self._torch = torch
 
@@ -2957,6 +2987,9 @@ class _ChildModelTransaction:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Whole-child rollback was not exact."
             )
+        self._adapter._restore_accepted_layer_completion_transaction(
+            self._accepted_layer_completion_snapshot
+        )
         self.active = False
         self._adapter._active_outer_transaction = None
         return TransactionReceipt(
@@ -3240,6 +3273,9 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Source and child must retain the same layer count."
             )
+        constructor_selected_layers_were_explicit = (
+            selected_layer_indices is not None
+        )
         if selected_layer_indices is None:
             selected = tuple(range(len(self.child_layers)))
         else:
@@ -3259,6 +3295,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     "selected_layer_indices must be unique valid indices."
                 )
         self._selected_layers = selected
+        self._constructor_selected_layers = (
+            selected if constructor_selected_layers_were_explicit else None
+        )
         if (
             self.body_reclosure_mode
             == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
@@ -3578,6 +3617,30 @@ class Lfm2DynamicClosedLoopAdapter:
         self._producer_payloads: dict[int, _ProducerPayload] = {}
         self._consumer_payloads: dict[int, _ConsumerPayload] = {}
         self._downstream_payloads: dict[int, _DownstreamPayload] = {}
+        # Row-free, canonically sealed proof that each accepted layer passed
+        # the complete producer -> consumer -> downstream -> validation
+        # lifecycle.  The old moving-gauge guard retained the three payload
+        # dictionaries solely to infer this fact from their keys; those
+        # payload values are layer-local and can be released once this ledger
+        # entry is sealed.
+        self._accepted_layer_completion_ledger: dict[
+            int, Mapping[str, Any]
+        ] = {}
+        self._accepted_layer_completion_binding: Mapping[str, Any] | None = (
+            None
+        )
+        self._accepted_layer_completion_compiler_policy: (
+            Mapping[str, Any] | None
+        ) = None
+        self._accepted_layer_completion_resume_proof: (
+            Mapping[str, Any] | None
+        ) = None
+        self._accepted_layer_completion_portable_state_sha256: str | None = (
+            None
+        )
+        self._accepted_layer_completion_portable_topology_sha256: (
+            str | None
+        ) = None
         # ``(layer_index, covariance, report)`` of the most recently accepted
         # layer's observed upstream drift.  ``None`` until the first accepted
         # layer, and never populated at all when the noise-aware lane is off.
@@ -7232,6 +7295,102 @@ class Lfm2DynamicClosedLoopAdapter:
         del audit
         return self._selected_layers
 
+    def bind_resolved_layer_selection(
+        self,
+        selected_layer_indices: Sequence[int],
+    ) -> Mapping[str, Any]:
+        """Bind the compiler's resolved selection before any child transaction.
+
+        The generic compiler is allowed to select a strict subset of an
+        adapter's discoverable layers.  Accepted-layer completion receipts,
+        however, must seal that resolved inventory rather than the adapter's
+        constructor default.  This hook is deliberately state-free and is
+        refused after any fold-local state exists.
+        """
+
+        selected = tuple(selected_layer_indices)
+        if (
+            not selected
+            or selected != tuple(sorted(set(selected)))
+            or any(
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or index < 0
+                or index >= len(self.child_layers)
+                for index in selected
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The resolved compiler layer selection must be a nonempty "
+                "ascending set of physical child layers."
+            )
+        if (
+            self._constructor_selected_layers is not None
+            and selected != self._constructor_selected_layers
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The resolved compiler layer selection differs from the "
+                "adapter's explicit constructor selection."
+            )
+        if (
+            self.body_reclosure_mode
+            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            and selected != tuple(range(len(self.child_layers)))
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 is a whole-body stage and requires every "
+                "child layer."
+            )
+        active_transaction = (
+            self._active_outer_transaction is not None
+            and self._active_outer_transaction.active
+        )
+        if (
+            active_transaction
+            or self._split_transactions
+            or self._producer_payloads
+            or self._consumer_payloads
+            or self._downstream_payloads
+            or self._accepted_layer_completion_ledger
+            or self._accepted_layer_completion_binding is not None
+            or self._accepted_layer_completion_compiler_policy is not None
+            or self._accepted_layer_completion_resume_proof is not None
+            or self._accepted_layer_completion_portable_state_sha256 is not None
+            or self._accepted_layer_completion_portable_topology_sha256 is not None
+            or self._accepted_layer_input_error is not None
+            or self._body_reclosure_payload is not None
+            or self._body_reclosure_installed_artifact_sha256 is not None
+            or self._final_payload is not None
+            or self._output_payload is not None
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The resolved compiler layer selection must be bound before "
+                "any child transaction or fold-local artifact exists."
+            )
+        state_before = self.child_state_fingerprint()
+        topology_before = self.child_topology_fingerprint()
+        previous = self._selected_layers
+        self._selected_layers = selected
+        state_after = self.child_state_fingerprint()
+        topology_after = self.child_topology_fingerprint()
+        if state_after != state_before or topology_after != topology_before:
+            self._selected_layers = previous
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Layer-selection binding mutated child state or topology."
+            )
+        body = {
+            "schema": "neural-forge-lfm2-resolved-layer-selection-binding-v1",
+            "previous_selected_layer_indices": list(previous),
+            "resolved_selected_layer_indices": list(selected),
+            "child_state_sha256": state_before,
+            "child_topology_sha256": topology_before,
+            "bound_before_child_transaction": True,
+            "child_state_or_topology_mutated": False,
+        }
+        return MappingProxyType(
+            {**body, "selection_binding_sha256": canonical_sha256(body)}
+        )
+
     def parent_trajectory_records(
         self, audit: ClosedLoopAudit
     ) -> Sequence[TrajectoryRecord]:
@@ -7258,6 +7417,1163 @@ class Lfm2DynamicClosedLoopAdapter:
     def audit_counters(self) -> Mapping[str, int]:
         return MappingProxyType(dict(self._counters))
 
+    # -- Authenticated accepted-layer completion ledger ---------------
+
+    @staticmethod
+    def _completion_config_value(value: Any, name: str) -> Any:
+        if value is None or type(value) in {bool, int, str}:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+        if isinstance(value, tuple) and all(
+            isinstance(item, str) and item for item in value
+        ):
+            return list(value)
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"Accepted-layer completion policy field {name!r} is not "
+            "portable canonical JSON."
+        )
+
+    def _authenticate_compiler_restart_policy(
+        self,
+        value: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        if not isinstance(value, Mapping):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion requires a compiler restart policy."
+            )
+        plain = _canonical_json_plain_copy(
+            value,
+            "closed-loop compiler restart policy",
+        )
+        claimed = _digest(
+            plain.pop("compiler_restart_policy_sha256", None),
+            "compiler restart policy SHA-256",
+        )
+        expected_fields = {
+            "schema",
+            "validation_fraction",
+            "split_seed",
+            "resolved_selected_layer_indices",
+            "fold_body_reclosure",
+            "fold_output_interface",
+        }
+        if (
+            set(plain) != expected_fields
+            or plain.get("schema")
+            != CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA
+            or tuple(plain.get("resolved_selected_layer_indices", ()))
+            != self._selected_layers
+            or any(
+                not isinstance(plain.get(name), bool)
+                for name in (
+                    "fold_body_reclosure",
+                    "fold_output_interface",
+                )
+            )
+            or canonical_sha256(plain) != claimed
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Closed-loop compiler restart policy is malformed, foreign, "
+                "or not canonically sealed."
+            )
+        return _deep_freeze_json(
+            {**plain, "compiler_restart_policy_sha256": claimed}
+        )
+
+    def _accepted_layer_completion_policy_binding(
+        self,
+        compiler_restart_policy: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        """Bind the complete layer-fold policy and immutable source identity."""
+
+        if compiler_restart_policy is None:
+            compiler_policy = self._accepted_layer_completion_compiler_policy
+            if compiler_policy is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion has no compiler restart policy."
+                )
+        else:
+            compiler_policy = self._authenticate_compiler_restart_policy(
+                compiler_restart_policy
+            )
+
+        config = {
+            descriptor.name: self._completion_config_value(
+                getattr(self.config, descriptor.name),
+                descriptor.name,
+            )
+            for descriptor in fields(self.config)
+            if descriptor.name not in _ACCEPTED_LAYER_NONSEMANTIC_CONFIG_FIELDS
+        }
+        gate = self.macro_cell_attractor_gate
+        gate_binding = None
+        if gate is not None:
+            gate_binding = {
+                "cache_key": _digest(
+                    getattr(gate, "_cache_key", None),
+                    "macro-cell gate cache key",
+                ),
+                "selection_sha256": _digest(
+                    gate.selection_sha256,
+                    "macro-cell gate selection SHA-256",
+                ),
+                "config": gate.config.as_dict(),
+                "config_sha256": _digest(
+                    getattr(gate, "_config_sha256", None),
+                    "macro-cell gate config SHA-256",
+                ),
+            }
+        margin_tables = []
+        if self.config.moving_gauge_margin_row_weights_enabled:
+            tables = self.moving_gauge_margin_tables
+            if tables is not None:
+                for key, value in sorted(
+                    tables.items(),
+                    key=lambda item: (int(item[0][0]), str(item[0][1])),
+                ):
+                    if (
+                        not isinstance(key, tuple)
+                        or len(key) != 2
+                        or isinstance(key[0], bool)
+                        or not isinstance(key[0], int)
+                        or key[0] < 0
+                        or not isinstance(key[1], str)
+                        or not key[1]
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "Moving-gauge margin-table keys are not portable."
+                        )
+                    margin_tables.append(
+                        {
+                            "batch_index": int(key[0]),
+                            "phase": key[1],
+                            "tensor_sha256": _tensor_sha256(value),
+                            "shape": [int(size) for size in value.shape],
+                            "dtype": str(value.dtype),
+                        }
+                    )
+        heterogeneous_receipt = self.heterogeneous_layout_selection_receipt
+        source_identity = dict(self.restart_capsule_identity_bindings())
+        replay_capture_selection = self.replay_config.as_dict()
+        replay_capture_selection_sha256 = _digest(
+            replay_capture_selection.get("selection_sha256"),
+            "replay capture selection SHA-256",
+        )
+        body = {
+            "schema": LFM2_ACCEPTED_LAYER_COMPLETION_BINDING_SCHEMA,
+            "adapter_identity": source_identity,
+            "adapter_identity_sha256": source_identity[
+                "adapter_identity_sha256"
+            ],
+            "adapter_config": config,
+            "excluded_nonsemantic_adapter_config_fields": sorted(
+                _ACCEPTED_LAYER_NONSEMANTIC_CONFIG_FIELDS
+            ),
+            "compiler_restart_policy": _canonical_json_plain_copy(
+                compiler_policy,
+                "closed-loop compiler restart policy",
+            ),
+            "compiler_restart_policy_sha256": compiler_policy[
+                "compiler_restart_policy_sha256"
+            ],
+            "replay_capture_selection": replay_capture_selection,
+            "replay_capture_selection_sha256": (
+                replay_capture_selection_sha256
+            ),
+            "macro_cell_attractor_gate": gate_binding,
+            "terminal_free_run_match_probe_present": (
+                self.terminal_free_run_match_probe is not None
+            ),
+            "moving_gauge_margin_tables": margin_tables,
+            "heterogeneous_layout_selection_receipt": (
+                None
+                if heterogeneous_receipt is None
+                else heterogeneous_receipt.as_dict()
+            ),
+            "parent_source_is_sealed_cache_only": True,
+            "parent_forward_calls_permitted": 0,
+            "training_steps_permitted": 0,
+            "optimizer_steps_permitted": 0,
+            "backward_calls_permitted": 0,
+        }
+        return _seal_immutable_json_mapping(
+            body,
+            "completion_binding_sha256",
+            "accepted-layer completion binding",
+        )
+
+    def _begin_accepted_layer_completion_transaction(
+        self,
+    ) -> tuple[Any, ...]:
+        """Snapshot proof state and bind the transaction's portable start."""
+
+        snapshot = (
+            dict(self._accepted_layer_completion_ledger),
+            self._accepted_layer_completion_binding,
+            self._accepted_layer_completion_compiler_policy,
+            self._accepted_layer_completion_resume_proof,
+            self._accepted_layer_completion_portable_state_sha256,
+            self._accepted_layer_completion_portable_topology_sha256,
+            self._accepted_layer_input_error,
+        )
+        current_state = portable_child_state_sha256(self.child_model)
+        current_topology = portable_child_topology_sha256(self.child_model)
+        if self._accepted_layer_completion_ledger:
+            ledger = self.accepted_layer_completion_ledger()
+            if (
+                ledger["portable_final_child_state_sha256"]
+                != current_state
+                or ledger["portable_child_topology_sha256"]
+                != current_topology
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A new transaction does not begin at its completion "
+                    "ledger's authenticated child state."
+                )
+        self._accepted_layer_completion_portable_state_sha256 = current_state
+        self._accepted_layer_completion_portable_topology_sha256 = (
+            current_topology
+        )
+        return snapshot
+
+    def _restore_accepted_layer_completion_transaction(
+        self,
+        snapshot: tuple[Any, ...],
+    ) -> None:
+        """Remove false completion evidence after exact child rollback."""
+
+        if not isinstance(snapshot, tuple) or len(snapshot) != 7:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion rollback snapshot is invalid."
+            )
+        errors = []
+        for producer in tuple(self._producer_payloads.values()):
+            try:
+                producer.release_operator_cases()
+            except BaseException as exc:
+                errors.append(exc)
+        self._producer_payloads.clear()
+        self._consumer_payloads.clear()
+        self._downstream_payloads.clear()
+        self._accepted_layer_completion_ledger = dict(snapshot[0])
+        self._accepted_layer_completion_binding = snapshot[1]
+        self._accepted_layer_completion_compiler_policy = snapshot[2]
+        self._accepted_layer_completion_resume_proof = snapshot[3]
+        self._accepted_layer_completion_portable_state_sha256 = snapshot[4]
+        self._accepted_layer_completion_portable_topology_sha256 = snapshot[5]
+        self._accepted_layer_input_error = snapshot[6]
+        release_closed_loop_capture_memory()
+        if errors:
+            raise ClosedLoopCleanupError(
+                "Accepted-layer completion rollback cleanup failed.",
+                errors,
+            )
+
+    @staticmethod
+    def _completion_stage_preimage(
+        compiled: CompiledFoldStage,
+        install: InstallReceipt,
+        *,
+        layer_index: int,
+        stage: CompileStage,
+    ) -> dict[str, Any]:
+        scope = FoldScope("layer", layer_index)
+        if (
+            compiled.scope != scope
+            or compiled.stage is not stage
+            or install.scope != scope
+            or install.stage is not stage
+            or install.artifact_sha256 != compiled.artifact_sha256
+            or not install.accepted
+            or not install.topology_preserved
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"Layer {layer_index} {stage.value} completion preimage is "
+                "not the accepted installed artifact."
+            )
+        return {
+            "compiled": compiled.as_dict(),
+            "install": install.as_dict(),
+        }
+
+    def record_accepted_layer_completion(
+        self,
+        *,
+        layer_index: int,
+        layer_ordinal: int,
+        selected_layer_indices: Sequence[int],
+        compiler_restart_policy: Mapping[str, Any],
+        trajectory_split_sha256: str,
+        producer: CompiledFoldStage,
+        producer_install: InstallReceipt,
+        consumer: CompiledFoldStage,
+        consumer_install: InstallReceipt,
+        downstream: CompiledFoldStage,
+        downstream_install: InstallReceipt,
+        validation: ValidationDecision,
+        audit: ClosedLoopAudit,
+    ) -> Mapping[str, Any]:
+        """Seal one accepted layer, then release every layer-local payload."""
+
+        if not isinstance(audit, ClosedLoopAudit):
+            raise TypeError("audit must be ClosedLoopAudit.")
+        audit.assert_clean()
+        selected = tuple(int(value) for value in selected_layer_indices)
+        if (
+            isinstance(layer_index, bool)
+            or not isinstance(layer_index, int)
+            or isinstance(layer_ordinal, bool)
+            or not isinstance(layer_ordinal, int)
+            or layer_ordinal < 0
+            or layer_ordinal >= len(selected)
+            or selected[layer_ordinal] != layer_index
+            or selected != self._selected_layers
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion order differs from the selected "
+                "layer inventory."
+            )
+        expected_prefix = selected[:layer_ordinal]
+        if tuple(self._accepted_layer_completion_ledger) != expected_prefix:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger is missing, duplicated, or "
+                "out of order before the new layer."
+            )
+        normalized_compiler_policy = (
+            self._authenticate_compiler_restart_policy(
+                compiler_restart_policy
+            )
+        )
+        if self._accepted_layer_completion_compiler_policy is None:
+            self._accepted_layer_completion_compiler_policy = (
+                normalized_compiler_policy
+            )
+        elif (
+            self._accepted_layer_completion_compiler_policy[
+                "compiler_restart_policy_sha256"
+            ]
+            != normalized_compiler_policy["compiler_restart_policy_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Closed-loop compiler policy changed inside one accepted-layer "
+                "transaction."
+            )
+        scope = FoldScope("layer", layer_index)
+        if (
+            validation.scope != scope
+            or not validation.accepted
+            or validation.decision_sha256
+            != validation.as_dict()["decision_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion requires the final accepted "
+                "validation decision preimage."
+            )
+        producer_payload = self._producer_payloads.get(layer_index)
+        consumer_payload = self._consumer_payloads.get(layer_index)
+        downstream_payload = self._downstream_payloads.get(layer_index)
+        if (
+            producer_payload is not producer.payload
+            or consumer_payload is not consumer.payload
+            or downstream_payload is not downstream.payload
+            or not isinstance(producer_payload, _ProducerPayload)
+            or not isinstance(consumer_payload, _ConsumerPayload)
+            or not isinstance(downstream_payload, _DownstreamPayload)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion lost a layer-local artifact binding."
+            )
+        if producer_payload.operator_cases_lease.value is not None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion cannot retain operator-case rows."
+            )
+        # Every stage recaptures the live child and therefore has its own
+        # adapter-level row split seal.  Bind all three; they are not expected
+        # to be numerically equal to one another or to the compiler's
+        # trajectory-partition seal.
+        adapter_stage_splits = {
+            "producer": _digest(
+                producer_payload.split_sha256,
+                "accepted-layer producer adapter split SHA-256",
+            ),
+            "consumer": _digest(
+                consumer_payload.split_sha256,
+                "accepted-layer consumer adapter split SHA-256",
+            ),
+            "downstream": _digest(
+                downstream_payload.split_sha256,
+                "accepted-layer downstream adapter split SHA-256",
+            ),
+        }
+        stages = {
+            "producer": self._completion_stage_preimage(
+                producer,
+                producer_install,
+                layer_index=layer_index,
+                stage=CompileStage.PRODUCER,
+            ),
+            "consumer": self._completion_stage_preimage(
+                consumer,
+                consumer_install,
+                layer_index=layer_index,
+                stage=CompileStage.CONSUMER,
+            ),
+            "downstream": self._completion_stage_preimage(
+                downstream,
+                downstream_install,
+                layer_index=layer_index,
+                stage=CompileStage.DOWNSTREAM,
+            ),
+        }
+        if (
+            consumer_install.state_sha256_before
+            != producer_install.state_sha256_after
+            or downstream_install.state_sha256_before
+            != consumer_install.state_sha256_after
+            or self.child_state_fingerprint()
+            != downstream_install.state_sha256_after
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer install receipts do not form one exact child "
+                "state chain."
+            )
+        binding = self._accepted_layer_completion_policy_binding(
+            normalized_compiler_policy
+        )
+        if self._accepted_layer_completion_binding is None:
+            self._accepted_layer_completion_binding = binding
+        elif dict(self._accepted_layer_completion_binding) != dict(binding):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion policy/source binding changed "
+                "inside one transaction."
+            )
+        prior_portable_state = (
+            self._accepted_layer_completion_portable_state_sha256
+        )
+        prior_portable_topology = (
+            self._accepted_layer_completion_portable_topology_sha256
+        )
+        if prior_portable_state is None or prior_portable_topology is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion has no transaction-start portable "
+                "state binding."
+            )
+        portable_state_after = portable_child_state_sha256(self.child_model)
+        portable_topology_after = portable_child_topology_sha256(
+            self.child_model
+        )
+        if portable_topology_after != prior_portable_topology:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion changed portable child topology."
+            )
+        previous_receipt_sha256 = (
+            LFM2_ACCEPTED_LAYER_COMPLETION_CHAIN_GENESIS_SHA256
+            if not self._accepted_layer_completion_ledger
+            else str(
+                self._accepted_layer_completion_ledger[
+                    expected_prefix[-1]
+                ]["completion_receipt_sha256"]
+            )
+        )
+        process_boundary_before = False
+        if self._accepted_layer_completion_resume_proof is not None:
+            proof_body, _proof_sha256 = _authenticate_immutable_json_mapping(
+                self._accepted_layer_completion_resume_proof,
+                "resume_proof_sha256",
+                "accepted-layer completion resume proof",
+            )
+            process_boundary_before = bool(
+                layer_ordinal == proof_body.get("seeded_prefix_count")
+            )
+        body = {
+            "schema": LFM2_ACCEPTED_LAYER_COMPLETION_RECEIPT_SCHEMA,
+            "layer_index": layer_index,
+            "layer_ordinal": layer_ordinal,
+            "selected_layer_indices": list(selected),
+            "previous_completion_receipt_sha256": (
+                previous_receipt_sha256
+            ),
+            "completion_binding_sha256": binding[
+                "completion_binding_sha256"
+            ],
+            "trajectory_split_sha256": _digest(
+                trajectory_split_sha256,
+                "accepted-layer trajectory split SHA-256",
+            ),
+            "adapter_stage_split_sha256": adapter_stage_splits,
+            "stage_preimages": stages,
+            "validation_decision": validation.as_dict(),
+            "validation_decision_sha256": validation.decision_sha256,
+            "process_local_state_chain": {
+                "layer_state_sha256_before": (
+                    producer_install.state_sha256_before
+                ),
+                "producer_state_sha256_after": (
+                    producer_install.state_sha256_after
+                ),
+                "consumer_state_sha256_after": (
+                    consumer_install.state_sha256_after
+                ),
+                "downstream_state_sha256_after": (
+                    downstream_install.state_sha256_after
+                ),
+            },
+            "portable_state_chain": {
+                "child_state_sha256_before": prior_portable_state,
+                "child_state_sha256_after": portable_state_after,
+                "child_topology_sha256_before": prior_portable_topology,
+                "child_topology_sha256_after": portable_topology_after,
+            },
+            "process_boundary_before": process_boundary_before,
+            "operator_case_rows_released_before_seal": True,
+            "producer_consumer_downstream_payloads_are_layer_local": True,
+            "execution": {
+                "parent_forward_calls": 0,
+                "parent_trace_regeneration_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "optimizer_constructions": 0,
+                "autograd_grad_calls": 0,
+            },
+        }
+        receipt = _seal_immutable_json_mapping(
+            body,
+            "completion_receipt_sha256",
+            "accepted-layer completion receipt",
+        )
+        # All semantic consumers of these payload values finished before the
+        # final validation decision.  Pop exact identities only after the
+        # receipt is complete; a mismatch cannot leave a forged ledger entry.
+        if self._producer_payloads.pop(layer_index) is not producer_payload:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Producer payload identity changed during completion release."
+            )
+        if self._consumer_payloads.pop(layer_index) is not consumer_payload:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Consumer payload identity changed during completion release."
+            )
+        if self._downstream_payloads.pop(layer_index) is not downstream_payload:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Downstream payload identity changed during completion release."
+            )
+        self._accepted_layer_completion_ledger[layer_index] = receipt
+        self._accepted_layer_completion_portable_state_sha256 = (
+            portable_state_after
+        )
+        self._accepted_layer_completion_portable_topology_sha256 = (
+            portable_topology_after
+        )
+        release_closed_loop_capture_memory()
+        return _canonical_json_plain_copy(
+            receipt,
+            "accepted-layer completion receipt",
+        )
+
+    def _authenticate_accepted_layer_completion_ledger(
+        self,
+        value: Mapping[str, Any],
+        *,
+        expected_completed_layer_indices: Sequence[int] | None = None,
+        expected_selected_layer_indices: Sequence[int] | None = None,
+        expected_trajectory_split_sha256: str | None = None,
+        expected_compiler_restart_policy: Mapping[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], tuple[Mapping[str, Any], ...]]:
+        """Authenticate every receipt, preimage, chain edge, and binding."""
+
+        body, ledger_sha256 = _authenticate_immutable_json_mapping(
+            value,
+            "completion_ledger_sha256",
+            "accepted-layer completion ledger",
+        )
+        if set(body) != {
+            "schema",
+            "selected_layer_indices",
+            "completed_layer_indices",
+            "completion_binding",
+            "receipts",
+            "receipt_chain_head_sha256",
+            "portable_initial_child_state_sha256",
+            "portable_final_child_state_sha256",
+            "portable_child_topology_sha256",
+            "resume_proof",
+            "payload_retention",
+            "execution",
+        } or body.get("schema") != LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger fields are malformed."
+            )
+        selected = tuple(body["selected_layer_indices"])
+        completed = tuple(body["completed_layer_indices"])
+        if (
+            any(
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or index < 0
+                for index in (*selected, *completed)
+            )
+            or completed != selected[: len(completed)]
+            or not completed
+            or (
+                expected_selected_layer_indices is not None
+                and selected != tuple(expected_selected_layer_indices)
+            )
+            or (
+                expected_completed_layer_indices is not None
+                and completed != tuple(expected_completed_layer_indices)
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger is not the exact selected "
+                "ascending prefix."
+            )
+        binding_value = body["completion_binding"]
+        if not isinstance(binding_value, Mapping):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger has no policy binding."
+            )
+        binding_body, binding_sha256 = _authenticate_immutable_json_mapping(
+            binding_value,
+            "completion_binding_sha256",
+            "accepted-layer completion binding",
+        )
+        embedded_compiler_policy = binding_body.get(
+            "compiler_restart_policy"
+        )
+        if not isinstance(embedded_compiler_policy, Mapping):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion binding has no compiler policy."
+            )
+        authenticated_embedded_policy = (
+            self._authenticate_compiler_restart_policy(
+                embedded_compiler_policy
+            )
+        )
+        if expected_compiler_restart_policy is not None:
+            expected_compiler_policy = (
+                self._authenticate_compiler_restart_policy(
+                    expected_compiler_restart_policy
+                )
+            )
+        elif self._accepted_layer_completion_compiler_policy is not None:
+            expected_compiler_policy = (
+                self._accepted_layer_completion_compiler_policy
+            )
+        else:
+            expected_compiler_policy = authenticated_embedded_policy
+        if (
+            authenticated_embedded_policy[
+                "compiler_restart_policy_sha256"
+            ]
+            != expected_compiler_policy["compiler_restart_policy_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger belongs to a different "
+                "closed-loop compiler continuation policy."
+            )
+        current_binding = self._accepted_layer_completion_policy_binding(
+            expected_compiler_policy
+        )
+        if (
+            binding_body.get("schema")
+            != LFM2_ACCEPTED_LAYER_COMPLETION_BINDING_SCHEMA
+            or binding_sha256
+            != current_binding["completion_binding_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger belongs to a foreign "
+                "policy or source binding."
+            )
+        receipts_value = body["receipts"]
+        if not isinstance(receipts_value, list) or len(receipts_value) != len(
+            completed
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion receipt inventory is incomplete."
+            )
+        previous_sha256 = LFM2_ACCEPTED_LAYER_COMPLETION_CHAIN_GENESIS_SHA256
+        previous_portable_after = None
+        portable_topology = _digest(
+            body["portable_child_topology_sha256"],
+            "completion ledger portable topology SHA-256",
+        )
+        resume_proof = body["resume_proof"]
+        seeded_prefix_count = 0
+        allowed_process_boundary_ordinals: set[int] = set()
+        if resume_proof is not None:
+            if not isinstance(resume_proof, Mapping):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer resume proof is malformed."
+                )
+            proof_body, _proof_sha256 = _authenticate_immutable_json_mapping(
+                resume_proof,
+                "resume_proof_sha256",
+                "accepted-layer completion resume proof",
+            )
+            if proof_body.get("schema") != (
+                LFM2_ACCEPTED_LAYER_COMPLETION_RESUME_PROOF_SCHEMA
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion resume proof schema changed."
+                )
+            seeded_prefix_count = int(proof_body["seeded_prefix_count"])
+            raw_boundary_ordinals = proof_body.get(
+                "process_boundary_ordinals"
+            )
+            if (
+                seeded_prefix_count <= 0
+                or seeded_prefix_count > len(completed)
+                or tuple(proof_body["completed_layer_indices"])
+                != completed[:seeded_prefix_count]
+                or not isinstance(raw_boundary_ordinals, list)
+                or not raw_boundary_ordinals
+                or any(
+                    isinstance(ordinal, bool)
+                    or not isinstance(ordinal, int)
+                    or ordinal <= 0
+                    or ordinal > len(selected)
+                    for ordinal in raw_boundary_ordinals
+                )
+                or raw_boundary_ordinals
+                != sorted(set(raw_boundary_ordinals))
+                or raw_boundary_ordinals[-1] != seeded_prefix_count
+                or proof_body.get("compiler_restart_policy_sha256")
+                != authenticated_embedded_policy[
+                    "compiler_restart_policy_sha256"
+                ]
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion resume proof prefix is invalid."
+                )
+            allowed_process_boundary_ordinals = set(raw_boundary_ordinals)
+        authenticated = []
+        process_boundary_count = 0
+        for ordinal, (layer_index, raw_receipt) in enumerate(
+            zip(completed, receipts_value, strict=True)
+        ):
+            if not isinstance(raw_receipt, Mapping):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion receipt is not a mapping."
+                )
+            receipt, receipt_sha256 = _authenticate_immutable_json_mapping(
+                raw_receipt,
+                "completion_receipt_sha256",
+                "accepted-layer completion receipt",
+            )
+            if set(receipt) != {
+                "schema",
+                "layer_index",
+                "layer_ordinal",
+                "selected_layer_indices",
+                "previous_completion_receipt_sha256",
+                "completion_binding_sha256",
+                "trajectory_split_sha256",
+                "adapter_stage_split_sha256",
+                "stage_preimages",
+                "validation_decision",
+                "validation_decision_sha256",
+                "process_local_state_chain",
+                "portable_state_chain",
+                "process_boundary_before",
+                "operator_case_rows_released_before_seal",
+                "producer_consumer_downstream_payloads_are_layer_local",
+                "execution",
+            }:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion receipt fields are malformed."
+                )
+            decision = receipt["validation_decision"]
+            stages = receipt["stage_preimages"]
+            state_chain = receipt["process_local_state_chain"]
+            portable_chain = receipt["portable_state_chain"]
+            if (
+                receipt.get("schema")
+                != LFM2_ACCEPTED_LAYER_COMPLETION_RECEIPT_SCHEMA
+                or receipt.get("layer_index") != layer_index
+                or receipt.get("layer_ordinal") != ordinal
+                or tuple(receipt.get("selected_layer_indices", ()))
+                != selected
+                or receipt.get("previous_completion_receipt_sha256")
+                != previous_sha256
+                or receipt.get("completion_binding_sha256")
+                != binding_sha256
+                or not isinstance(decision, Mapping)
+                or decision.get("accepted") is not True
+                or decision.get("decision_sha256")
+                != receipt.get("validation_decision_sha256")
+                or canonical_sha256(
+                    {
+                        name: decision[name]
+                        for name in decision
+                        if name != "decision_sha256"
+                    }
+                )
+                != decision.get("decision_sha256")
+                or not isinstance(stages, Mapping)
+                or set(stages) != {"producer", "consumer", "downstream"}
+                or not isinstance(state_chain, Mapping)
+                or not isinstance(portable_chain, Mapping)
+                or receipt.get("operator_case_rows_released_before_seal")
+                is not True
+                or receipt.get(
+                    "producer_consumer_downstream_payloads_are_layer_local"
+                )
+                is not True
+                or receipt.get("execution")
+                != {
+                    "parent_forward_calls": 0,
+                    "parent_trace_regeneration_calls": 0,
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                    "optimizer_constructions": 0,
+                    "autograd_grad_calls": 0,
+                }
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion receipt failed its canonical "
+                    "lifecycle binding."
+                )
+            split_sha256 = _digest(
+                receipt["trajectory_split_sha256"],
+                "completion receipt trajectory split SHA-256",
+            )
+            adapter_stage_splits = receipt["adapter_stage_split_sha256"]
+            if (
+                not isinstance(adapter_stage_splits, Mapping)
+                or set(adapter_stage_splits)
+                != {"producer", "consumer", "downstream"}
+                or any(
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(character not in "0123456789abcdef" for character in value)
+                    for value in adapter_stage_splits.values()
+                )
+                or (
+                expected_trajectory_split_sha256 is not None
+                and split_sha256 != expected_trajectory_split_sha256
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer completion receipt has an invalid or "
+                    "foreign split binding."
+                )
+            stage_order = (
+                ("producer", CompileStage.PRODUCER),
+                ("consumer", CompileStage.CONSUMER),
+                ("downstream", CompileStage.DOWNSTREAM),
+            )
+            stage_installs = []
+            expected_scope = FoldScope("layer", layer_index).as_dict()
+            for name, stage in stage_order:
+                preimage = stages.get(name)
+                if not isinstance(preimage, Mapping) or set(preimage) != {
+                    "compiled",
+                    "install",
+                }:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Accepted-layer stage preimage is incomplete."
+                    )
+                compiled = preimage["compiled"]
+                install = preimage["install"]
+                if (
+                    not isinstance(compiled, Mapping)
+                    or not isinstance(install, Mapping)
+                    or compiled.get("scope") != expected_scope
+                    or install.get("scope") != compiled.get("scope")
+                    or compiled.get("stage") != stage.value
+                    or install.get("stage") != stage.value
+                    or compiled.get("artifact_sha256")
+                    != install.get("artifact_sha256")
+                    or install.get("accepted") is not True
+                    or install.get("topology_preserved") is not True
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Accepted-layer compile/install preimage is invalid."
+                    )
+                stage_installs.append(install)
+            if (
+                stage_installs[0]["state_sha256_after"]
+                != stage_installs[1]["state_sha256_before"]
+                or stage_installs[1]["state_sha256_after"]
+                != stage_installs[2]["state_sha256_before"]
+                or state_chain
+                != {
+                    "layer_state_sha256_before": stage_installs[0][
+                        "state_sha256_before"
+                    ],
+                    "producer_state_sha256_after": stage_installs[0][
+                        "state_sha256_after"
+                    ],
+                    "consumer_state_sha256_after": stage_installs[1][
+                        "state_sha256_after"
+                    ],
+                    "downstream_state_sha256_after": stage_installs[2][
+                        "state_sha256_after"
+                    ],
+                }
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer install preimages broke their state chain."
+                )
+            portable_before = _digest(
+                portable_chain.get("child_state_sha256_before"),
+                "completion receipt portable state before",
+            )
+            portable_after = _digest(
+                portable_chain.get("child_state_sha256_after"),
+                "completion receipt portable state after",
+            )
+            if (
+                portable_chain.get("child_topology_sha256_before")
+                != portable_topology
+                or portable_chain.get("child_topology_sha256_after")
+                != portable_topology
+                or (
+                    previous_portable_after is not None
+                    and portable_before != previous_portable_after
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer portable child state/topology chain broke."
+                )
+            process_boundary = receipt.get("process_boundary_before")
+            if not isinstance(process_boundary, bool):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Accepted-layer process-boundary marker is not boolean."
+                )
+            if process_boundary:
+                process_boundary_count += 1
+                if ordinal not in allowed_process_boundary_ordinals:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Accepted-layer process boundary is out of order."
+                    )
+            elif ordinal > 0 and ordinal != seeded_prefix_count:
+                prior_state = authenticated[-1]["process_local_state_chain"]
+                if (
+                    state_chain["layer_state_sha256_before"]
+                    != prior_state["downstream_state_sha256_after"]
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Accepted-layer process-local state chain broke without "
+                        "a sealed process boundary."
+                    )
+            previous_sha256 = receipt_sha256
+            previous_portable_after = portable_after
+            authenticated.append(receipt)
+        if (
+            body["receipt_chain_head_sha256"] != previous_sha256
+            or body["portable_initial_child_state_sha256"]
+            != authenticated[0]["portable_state_chain"][
+                "child_state_sha256_before"
+            ]
+            or body["portable_final_child_state_sha256"]
+            != previous_portable_after
+            or body["payload_retention"]
+            != {
+                "producer_payload_count": 0,
+                "consumer_payload_count": 0,
+                "downstream_payload_count": 0,
+                "operator_case_rows_retained": 0,
+            }
+            or body["execution"]
+            != {
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+            }
+            or process_boundary_count
+            != len(
+                {
+                    ordinal
+                    for ordinal in allowed_process_boundary_ordinals
+                    if ordinal < len(authenticated)
+                }
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer completion ledger terminal proof is invalid."
+            )
+        return body, tuple(
+            _deep_freeze_json({**receipt, "completion_receipt_sha256": raw[
+                "completion_receipt_sha256"
+            ]})
+            for receipt, raw in zip(
+                authenticated, receipts_value, strict=True
+            )
+        )
+
+    def accepted_layer_completion_ledger(self) -> Mapping[str, Any]:
+        """Return the complete row-free prefix ledger for capsule sealing."""
+
+        completed = tuple(self._accepted_layer_completion_ledger)
+        if not completed or self._accepted_layer_completion_binding is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "No accepted-layer completion ledger is available."
+            )
+        receipts = [
+            dict(self._accepted_layer_completion_ledger[index])
+            for index in completed
+        ]
+        first_portable = receipts[0]["portable_state_chain"]
+        last_portable = receipts[-1]["portable_state_chain"]
+        body = {
+            "schema": LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA,
+            "selected_layer_indices": list(self._selected_layers),
+            "completed_layer_indices": list(completed),
+            "completion_binding": dict(
+                self._accepted_layer_completion_binding
+            ),
+            "receipts": receipts,
+            "receipt_chain_head_sha256": receipts[-1][
+                "completion_receipt_sha256"
+            ],
+            "portable_initial_child_state_sha256": first_portable[
+                "child_state_sha256_before"
+            ],
+            "portable_final_child_state_sha256": last_portable[
+                "child_state_sha256_after"
+            ],
+            "portable_child_topology_sha256": last_portable[
+                "child_topology_sha256_after"
+            ],
+            "resume_proof": (
+                None
+                if self._accepted_layer_completion_resume_proof is None
+                else dict(self._accepted_layer_completion_resume_proof)
+            ),
+            "payload_retention": {
+                "producer_payload_count": len(self._producer_payloads),
+                "consumer_payload_count": len(self._consumer_payloads),
+                "downstream_payload_count": len(self._downstream_payloads),
+                "operator_case_rows_retained": sum(
+                    int(producer.operator_cases_lease.value is not None)
+                    for producer in self._producer_payloads.values()
+                ),
+            },
+            "execution": {
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+            },
+        }
+        ledger = _seal_immutable_json_mapping(
+            body,
+            "completion_ledger_sha256",
+            "accepted-layer completion ledger",
+        )
+        self._authenticate_accepted_layer_completion_ledger(
+            ledger,
+            expected_completed_layer_indices=completed,
+            expected_selected_layer_indices=self._selected_layers,
+            expected_trajectory_split_sha256=str(
+                receipts[-1]["trajectory_split_sha256"]
+            ),
+        )
+        return _canonical_json_plain_copy(
+            ledger,
+            "accepted-layer completion ledger",
+        )
+
+    def authenticate_accepted_layer_completion_ledger_for_publication(
+        self,
+        value: Mapping[str, Any],
+        *,
+        expected_completed_layer_indices: Sequence[int],
+        expected_selected_layer_indices: Sequence[int],
+        expected_trajectory_split_sha256: str,
+        expected_compiler_restart_policy: Mapping[str, Any],
+        expected_validation_decision_sha256: str,
+        expected_portable_child_state_sha256: str,
+        expected_portable_child_topology_sha256: str,
+    ) -> Mapping[str, Any]:
+        """Authenticate current live ledger content before capsule staging."""
+
+        supplied = _canonical_json_plain_copy(
+            value,
+            "accepted-layer completion ledger for publication",
+        )
+        current = self.accepted_layer_completion_ledger()
+        if supplied != current:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer capsule publication supplied a foreign or "
+                "stale completion ledger instead of the adapter's current "
+                "ledger."
+            )
+        completed = tuple(expected_completed_layer_indices)
+        selected = tuple(expected_selected_layer_indices)
+        split_sha256 = _digest(
+            expected_trajectory_split_sha256,
+            "publication trajectory split SHA-256",
+        )
+        compiler_policy = self._authenticate_compiler_restart_policy(
+            expected_compiler_restart_policy
+        )
+        body, receipts = self._authenticate_accepted_layer_completion_ledger(
+            supplied,
+            expected_completed_layer_indices=completed,
+            expected_selected_layer_indices=selected,
+            expected_trajectory_split_sha256=split_sha256,
+            expected_compiler_restart_policy=compiler_policy,
+        )
+        validation_sha256 = _digest(
+            expected_validation_decision_sha256,
+            "publication validation decision SHA-256",
+        )
+        portable_state_sha256 = _digest(
+            expected_portable_child_state_sha256,
+            "publication portable child state SHA-256",
+        )
+        portable_topology_sha256 = _digest(
+            expected_portable_child_topology_sha256,
+            "publication portable child topology SHA-256",
+        )
+        if (
+            not receipts
+            or receipts[-1]["validation_decision_sha256"]
+            != validation_sha256
+            or body["portable_final_child_state_sha256"]
+            != portable_state_sha256
+            or body["portable_child_topology_sha256"]
+            != portable_topology_sha256
+            or portable_child_state_sha256(self.child_model)
+            != portable_state_sha256
+            or portable_child_topology_sha256(self.child_model)
+            != portable_topology_sha256
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Accepted-layer capsule publication does not terminate at "
+                "the exact live child, topology, and validation decision."
+            )
+        receipt_body = {
+            "schema": (
+                "neural-forge-lfm2-accepted-layer-ledger-publication-auth-v1"
+            ),
+            "completion_ledger_sha256": supplied[
+                "completion_ledger_sha256"
+            ],
+            "completed_layer_indices": list(completed),
+            "selected_layer_indices": list(selected),
+            "trajectory_split_sha256": split_sha256,
+            "compiler_restart_policy_sha256": compiler_policy[
+                "compiler_restart_policy_sha256"
+            ],
+            "validation_decision_sha256": validation_sha256,
+            "portable_child_state_sha256": portable_state_sha256,
+            "portable_child_topology_sha256": portable_topology_sha256,
+            "current_adapter_ledger_exactly_matched": True,
+            "authenticated_before_capsule_staging": True,
+        }
+        return MappingProxyType(
+            {
+                **receipt_body,
+                "publication_auth_sha256": canonical_sha256(receipt_body),
+            }
+        )
+
     # -- Accepted-layer restart capsule hooks --------------------------
 
     def restart_capsule_identity_bindings(self) -> Mapping[str, Any]:
@@ -7270,6 +8586,16 @@ class Lfm2DynamicClosedLoopAdapter:
         adapter differs in any of them is refused.
         """
 
+        try:
+            child_runtime_config = _normalized_lfm2_model_config(
+                self.child_model
+            )
+        except Exception as exc:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The child runtime config cannot be normalized for restart "
+                "identity."
+            ) from exc
+        replay_capture_selection = self.replay_config.as_dict()
         body = {
             "schema": "neural-forge-lfm2-closed-loop-restart-capsule-bindings-v1",
             "adapter_schema": LFM2_ADAPTER_SCHEMA,
@@ -7281,10 +8607,25 @@ class Lfm2DynamicClosedLoopAdapter:
             "parent_cache_key": self.parent_cache.cache_key,
             "parent_identity_sha256": self.parent_cache.parent_fingerprint,
             "source_graph_fingerprint": self.source_graph_fingerprint,
+            "child_runtime_config_sha256": canonical_sha256(
+                child_runtime_config
+            ),
+            "replay_capture_selection_sha256": _digest(
+                replay_capture_selection.get("selection_sha256"),
+                "replay capture selection SHA-256",
+            ),
             "tokenizer_bridge_artifact_sha256": (
                 None
                 if self.tokenizer_bridge_artifact is None
                 else self.tokenizer_bridge_artifact.artifact_sha256
+            ),
+            "tokenizer_bridge_trace_adapter_evidence_sha256": (
+                None
+                if self.tokenizer_bridge_trace_adapter is None
+                else _digest(
+                    self.tokenizer_bridge_trace_adapter.evidence_sha256,
+                    "tokenizer bridge trace-adapter evidence SHA-256",
+                )
             ),
             "identity_tokenizer_evidence_sha256": (
                 self.identity_tokenizer_evidence_sha256
@@ -7310,16 +8651,20 @@ class Lfm2DynamicClosedLoopAdapter:
         completed_layer_indices: Sequence[int],
         remaining_layer_indices: Sequence[int],
         body_reclosure_enabled: bool,
+        compiler_restart_policy: Mapping[str, Any] | None = None,
+        accepted_layer_completion_ledger: Mapping[str, Any] | None = None,
+        resume_capsule_key: str | None = None,
+        resume_capsule_manifest_sha256: str | None = None,
+        resume_capsule_manifest_file_sha256: str | None = None,
+        resume_capsule_chain_sha256: str | None = None,
+        resume_capsule_sequence: int | None = None,
+        resume_capsule_bindings_sha256: str | None = None,
+        resume_validation_decision_sha256: str | None = None,
+        restored_portable_child_state_sha256: str | None = None,
+        restored_portable_child_topology_sha256: str | None = None,
+        trajectory_split_sha256: str | None = None,
     ) -> Mapping[str, Any]:
-        """Admit or refuse one mid-body resume for this exact adapter.
-
-        ``compile_body_reclosure`` in ``moving_gauge_v3`` mode asserts that
-        every child layer has a live ``_downstream_payloads`` entry.  That is a
-        precondition claim that *this* process compiled and installed the whole
-        stack, not a data dependency, so a resumed process that skipped an
-        accepted prefix cannot satisfy it honestly and must fail closed rather
-        than fabricate placeholder payloads.
-        """
+        """Authenticate and seed an exact accepted-prefix completion ledger."""
 
         if any(
             isinstance(value, bool) or not isinstance(value, int) or value < 0
@@ -7334,8 +8679,7 @@ class Lfm2DynamicClosedLoopAdapter:
             completed != tuple(sorted(set(completed)))
             or remaining != tuple(sorted(set(remaining)))
             or set(completed) & set(remaining)
-            or not set(completed) | set(remaining)
-            <= set(self._selected_layers)
+            or completed + remaining != self._selected_layers
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "The mid-body resume layer inventory is not an exact partition "
@@ -7349,11 +8693,182 @@ class Lfm2DynamicClosedLoopAdapter:
         reclosure_requires_full_stack = (
             self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
         )
-        if bool(body_reclosure_enabled) and reclosure_requires_full_stack:
+        authenticated_ledger_sha256 = None
+        resume_proof = None
+        if (
+            remaining
+            and
+            self.config.mlp_input_error_covariance_enabled
+            and self.config.mlp_input_error_robustness_multiplier != 0.0
+        ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "moving_gauge_v3 body reclosure requires this process to have "
-                "compiled and installed every child layer; a mid-body restart "
-                "resume cannot satisfy that precondition."
+                "Accepted-layer EIV covariance is cross-layer tensor state "
+                "and is not yet persisted in restart capsules; a partial-"
+                "prefix resume fails closed while another layer can consume "
+                "it."
+            )
+        if (
+            self.config.terminal_free_run_tripwire_enabled
+            and self.terminal_free_run_match_probe is not None
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A process-local terminal free-run probe cannot be "
+                "authenticated across a restart boundary."
+            )
+        if accepted_layer_completion_ledger is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Exact mid-body restart requires an authenticated accepted-"
+                "layer completion ledger with its compiler continuation "
+                "policy; legacy layer-number-only capsules fail closed."
+            )
+        else:
+            if compiler_restart_policy is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "An accepted-layer ledger resume requires the exact "
+                    "closed-loop compiler continuation policy."
+                )
+            normalized_compiler_policy = (
+                self._authenticate_compiler_restart_policy(
+                    compiler_restart_policy
+                )
+            )
+            split_sha256 = _digest(
+                trajectory_split_sha256,
+                "resume trajectory split SHA-256",
+            )
+            ledger_body, receipts = (
+                self._authenticate_accepted_layer_completion_ledger(
+                    accepted_layer_completion_ledger,
+                    expected_completed_layer_indices=completed,
+                    expected_selected_layer_indices=self._selected_layers,
+                    expected_trajectory_split_sha256=split_sha256,
+                    expected_compiler_restart_policy=(
+                        normalized_compiler_policy
+                    ),
+                )
+            )
+            authenticated_ledger_sha256 = _digest(
+                accepted_layer_completion_ledger.get(
+                    "completion_ledger_sha256"
+                ),
+                "resumed completion ledger SHA-256",
+            )
+            capsule_state = _digest(
+                restored_portable_child_state_sha256,
+                "restored portable child state SHA-256",
+            )
+            capsule_topology = _digest(
+                restored_portable_child_topology_sha256,
+                "restored portable child topology SHA-256",
+            )
+            capsule_validation = _digest(
+                resume_validation_decision_sha256,
+                "resume validation decision SHA-256",
+            )
+            if (
+                ledger_body["portable_final_child_state_sha256"]
+                != capsule_state
+                or ledger_body["portable_child_topology_sha256"]
+                != capsule_topology
+                or receipts[-1]["validation_decision_sha256"]
+                != capsule_validation
+                or self._accepted_layer_completion_portable_state_sha256
+                != capsule_state
+                or self._accepted_layer_completion_portable_topology_sha256
+                != capsule_topology
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The accepted-layer completion ledger does not terminate "
+                    "at the exact capsule-restored child."
+                )
+            prior_proof = ledger_body.get("resume_proof")
+            prior_boundary_ordinals = []
+            if isinstance(prior_proof, Mapping):
+                prior_body, _prior_sha256 = (
+                    _authenticate_immutable_json_mapping(
+                        prior_proof,
+                        "resume_proof_sha256",
+                        "prior accepted-layer completion resume proof",
+                    )
+                )
+                prior_boundary_ordinals = list(
+                    prior_body.get("process_boundary_ordinals", [])
+                )
+            proof_body = {
+                "schema": (
+                    LFM2_ACCEPTED_LAYER_COMPLETION_RESUME_PROOF_SCHEMA
+                ),
+                "resume_capsule_key": _digest(
+                    resume_capsule_key,
+                    "resume capsule key",
+                ),
+                "resume_capsule_manifest_sha256": _digest(
+                    resume_capsule_manifest_sha256,
+                    "resume capsule manifest SHA-256",
+                ),
+                "resume_capsule_manifest_file_sha256": _digest(
+                    resume_capsule_manifest_file_sha256,
+                    "resume capsule manifest file SHA-256",
+                ),
+                "resume_capsule_chain_sha256": _digest(
+                    resume_capsule_chain_sha256,
+                    "resume capsule chain SHA-256",
+                ),
+                "resume_capsule_sequence": _nonnegative_int(
+                    resume_capsule_sequence,
+                    "resume capsule sequence",
+                ),
+                "resume_capsule_bindings_sha256": _digest(
+                    resume_capsule_bindings_sha256,
+                    "resume capsule bindings SHA-256",
+                ),
+                "resume_validation_decision_sha256": capsule_validation,
+                "restored_portable_child_state_sha256": capsule_state,
+                "restored_portable_child_topology_sha256": capsule_topology,
+                "trajectory_split_sha256": split_sha256,
+                "compiler_restart_policy_sha256": (
+                    normalized_compiler_policy[
+                        "compiler_restart_policy_sha256"
+                    ]
+                ),
+                "seeded_prefix_count": len(completed),
+                "completed_layer_indices": list(completed),
+                "seeded_ledger_sha256": authenticated_ledger_sha256,
+                "seeded_receipt_chain_head_sha256": ledger_body[
+                    "receipt_chain_head_sha256"
+                ],
+                "process_boundary_ordinals": [
+                    *prior_boundary_ordinals,
+                    len(completed),
+                ],
+                "prior_resume_proof": (
+                    None if prior_proof is None else dict(prior_proof)
+                ),
+                "capsule_manifest_chain_and_live_child_authenticated_before_seed": (
+                    True
+                ),
+            }
+            resume_proof = _seal_immutable_json_mapping(
+                proof_body,
+                "resume_proof_sha256",
+                "accepted-layer completion resume proof",
+            )
+            self._accepted_layer_completion_ledger = {
+                int(receipt["layer_index"]): receipt
+                for receipt in receipts
+            }
+            self._accepted_layer_completion_binding = _deep_freeze_json(
+                dict(ledger_body["completion_binding"])
+            )
+            self._accepted_layer_completion_compiler_policy = (
+                normalized_compiler_policy
+            )
+            self._accepted_layer_completion_resume_proof = resume_proof
+            self._accepted_layer_completion_portable_state_sha256 = (
+                capsule_state
+            )
+            self._accepted_layer_completion_portable_topology_sha256 = (
+                capsule_topology
             )
         body = {
             "schema": (
@@ -7366,12 +8881,31 @@ class Lfm2DynamicClosedLoopAdapter:
             "body_reclosure_requires_full_installed_stack": (
                 reclosure_requires_full_stack
             ),
+            "accepted_layer_completion_ledger_seeded": (
+                accepted_layer_completion_ledger is not None
+            ),
+            "accepted_layer_completion_ledger_sha256": (
+                authenticated_ledger_sha256
+            ),
+            "accepted_layer_completion_resume_proof_sha256": (
+                None
+                if resume_proof is None
+                else resume_proof["resume_proof_sha256"]
+            ),
+            "compiler_restart_policy_sha256": (
+                None
+                if compiler_restart_policy is None
+                else compiler_restart_policy.get(
+                    "compiler_restart_policy_sha256"
+                )
+            ),
             "cross_layer_producer_consumer_downstream_payloads_are_layer_local": (
                 True
             ),
             "coordinate_map_is_run_immutable": True,
             "moving_gauge_chart_state_is_body_stage_local": True,
             "heterogeneous_certification_registry_is_a_rebuildable_cache": True,
+            "eiv_covariance_resume_requires_persisted_tensor_state": True,
             "skipped_layers_are_not_replayed": True,
         }
         return MappingProxyType(
@@ -9283,6 +10817,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 producer.release_operator_cases()
             except BaseException as exc:
                 errors.append(exc)
+        # Producer, consumer, and downstream payloads are strictly
+        # layer-local.  Accepted layers remove them when their completion
+        # receipt is sealed; cleanup must also remove any partial layer left
+        # behind by a failed run so it cannot masquerade as completion in a
+        # later transaction.
+        self._producer_payloads.clear()
+        self._consumer_payloads.clear()
+        self._downstream_payloads.clear()
         try:
             self._release_idle_selected_parent_profile()
         except BaseException as exc:
@@ -10379,6 +11921,11 @@ class Lfm2DynamicClosedLoopAdapter:
                         else attention_score_validation
                         .relative_margin_floor_retention_fraction
                     ),
+                    "attention_score_state_sha256": (
+                        getattr(compiled, "score_state_sha256", None)
+                        if operator_kind == "full_attention"
+                        else None
+                    ),
                     "attention_score_numeric_weight_matching_used": False,
                     "attention_score_parent_forward_calls": 0,
                     "short_conv_writer_topology": (
@@ -10718,6 +12265,29 @@ class Lfm2DynamicClosedLoopAdapter:
                         self.config.attention_consumer_mode
                         if producer.operator_kind == "full_attention"
                         else "not-applicable"
+                    ),
+                    "attention_fixed_query_key_sha256": getattr(
+                        compiled_consumer,
+                        "fixed_query_key_sha256",
+                        None,
+                    ),
+                    "attention_score_path_fixed": (
+                        compiled_consumer.as_dict().get("score_path_fixed")
+                        if isinstance(
+                            compiled_consumer,
+                            Lfm2CompiledStructuralAttentionValueOutputFold,
+                        )
+                        else None
+                    ),
+                    "attention_value_context_solver": getattr(
+                        compiled_consumer,
+                        "value_context_solver",
+                        None,
+                    ),
+                    "attention_fit_nonincreasing": getattr(
+                        compiled_consumer,
+                        "fit_nonincreasing",
+                        None,
                     ),
                 }
             ),
@@ -11400,16 +12970,41 @@ class Lfm2DynamicClosedLoopAdapter:
                 report=report,
             )
         else:
-            expected_layers = set(range(len(self.child_layers)))
+            expected_layers = tuple(range(len(self.child_layers)))
+            completion_ledger = self.accepted_layer_completion_ledger()
+            completion_body, completion_receipts = (
+                self._authenticate_accepted_layer_completion_ledger(
+                    completion_ledger,
+                    expected_completed_layer_indices=expected_layers,
+                    expected_selected_layer_indices=expected_layers,
+                )
+            )
+            current_portable_state_sha256 = portable_child_state_sha256(
+                self.child_model
+            )
+            current_portable_topology_sha256 = portable_child_topology_sha256(
+                self.child_model
+            )
             if (
-                set(self._downstream_payloads) != expected_layers
-                or tuple(capture.paired.selected_layer_indices)
-                != tuple(range(len(self.child_layers)))
+                tuple(capture.paired.selected_layer_indices) != expected_layers
+                or completion_body["portable_final_child_state_sha256"]
+                != current_portable_state_sha256
+                or completion_body["portable_child_topology_sha256"]
+                != current_portable_topology_sha256
+                or self._accepted_layer_completion_portable_state_sha256
+                != current_portable_state_sha256
+                or self._accepted_layer_completion_portable_topology_sha256
+                != current_portable_topology_sha256
+                or len(completion_receipts) != len(expected_layers)
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "moving_gauge_v3 requires a freshly installed and recaptured "
-                    "complete child layer stack."
+                    "moving_gauge_v3 requires an authenticated, ordered, "
+                    "complete accepted-layer ledger terminating at the live "
+                    "recaptured child stack."
                 )
+            completion_ledger_sha256 = str(
+                completion_ledger["completion_ledger_sha256"]
+            )
             manifest, fit_weights, row_alignment_sha256 = (
                 self._moving_gauge_row_manifest(
                     capture.paired,
@@ -11727,6 +13322,19 @@ class Lfm2DynamicClosedLoopAdapter:
                 "parent_residual_operator_manifest_sha256": (
                     self.parent_residual_operator_manifest_sha256
                 ),
+                "accepted_layer_completion_ledger_sha256": (
+                    completion_ledger_sha256
+                ),
+                "accepted_layer_completion_receipt_chain_head_sha256": (
+                    completion_body["receipt_chain_head_sha256"]
+                ),
+                "accepted_layer_completion_portable_child_state_sha256": (
+                    completion_body["portable_final_child_state_sha256"]
+                ),
+                "accepted_layer_completion_portable_child_topology_sha256": (
+                    completion_body["portable_child_topology_sha256"]
+                ),
+                "accepted_layer_completion_is_complete_ordered_prefix": True,
                 "moving_gauge_replacement_state_sha256": (
                     replacement_state.report["report_sha256"]
                 ),
@@ -13595,6 +15203,8 @@ class Lfm2DynamicClosedLoopAdapter:
                         candidate_weight_sha256
                     ),
                     "transform_sha256": transform_sha256,
+                    "output_interface_mode": "fit-transform",
+                    "identity_skip": False,
                     "fp64_solve": True,
                     "trace_scaled_ridge": True,
                     "ridge_effective": ridge_effective,

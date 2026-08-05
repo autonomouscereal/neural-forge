@@ -43,22 +43,39 @@ Provably not carried across layers:
   the entries it needs; the only cost is one canonical reference replay for the
   first capture at each new child state.
 * ``_producer_payloads[L]``, ``_consumer_payloads[L]`` and
-  ``_downstream_payloads[L]`` are written and read within layer L only --
-  with one exception, below.
+  ``_downstream_payloads[L]`` are written and read within layer L only.  Once
+  the final held-out validation accepts layer L, a canonical completion
+  receipt binds the producer/consumer/downstream compile and install
+  preimages, their state chain, the validation decision, compiler policy,
+  adapter/source identity, split, and portable child state.  The bulky
+  payloads and operator-row lease are then released.
 
-Carried across layers and NOT reconstructible from a capsule:
+Authenticated cross-layer state:
 
-* ``compile_body_reclosure`` in ``moving_gauge_v3`` mode asserts
-  ``set(self._downstream_payloads) == set(range(len(self.child_layers)))``.
-  That is not a data dependency on the payload values; it is a precondition
-  claim that *this process* compiled and installed every layer of the stack.
-  A resumed process that skipped a prefix cannot honestly satisfy it, and
-  fabricating placeholder payloads would forge that claim.  Therefore
-  :meth:`Lfm2ClosedLoopRestartCapsuleWriter.assert_resume_supported` fails
-  closed when a mid-body resume is combined with an enabled body-reclosure
-  stage on an adapter whose reclosure mode requires the complete freshly
-  installed stack.  Resuming with ``fold_body_reclosure`` disabled, or with the
-  adapter in ``disabled`` reclosure mode, is admitted.
+* Every accepted-layer capsule embeds the complete ordered row-free receipt
+  ledger through its own layer.  Capsule open authenticates the manifest,
+  chain, live restored child, ledger endpoint, and topology before the adapter
+  may seed that prefix.  ``moving_gauge_v3`` body reclosure requires the ledger
+  to cover every selected layer; it no longer infers completion from retained
+  payload-dictionary keys.
+* The ledger binds the full closed-loop compiler continuation policy.  A
+  restart cannot silently change body reclosure, output-interface folding,
+  selected layers/paths, or split policy.  Merged capture scheduling, replay
+  device sharding, and install-verification strategy are execution-only and
+  intentionally non-authoritative because they do not change published child
+  bytes.
+* Legacy layer-number-only capsules carry neither the completion ledger nor
+  the compiler-policy preimage and are therefore not resumable.  Terminal
+  post-output capsules are also refused by this accepted-layer path; terminal
+  result rehydration is a separate protocol.
+
+Cross-layer tensor/callable state not yet persisted:
+
+* Effective MLP input-error covariance cannot be reconstructed from a capsule,
+  so a partial-prefix resume fails closed when another layer could consume it.
+  A completed-prefix resume may proceed because body/final/output stages do not
+  read that covariance.  A process-local terminal free-run probe is always
+  refused across a restart boundary because final validation still consumes it.
 
 Because the capsule stores the exact post-accept child state, no replay of the
 skipped layers is required or performed.  The resumed transaction's rollback
@@ -118,7 +135,7 @@ CLOSED_LOOP_RESTART_CAPSULE_CHILD_STATE_SCHEMA = (
     "neural-forge-lfm2-closed-loop-restart-capsule-child-state-v1"
 )
 CLOSED_LOOP_RESTART_CAPSULE_TOPOLOGY_SCHEMA = (
-    "neural-forge-lfm2-closed-loop-restart-capsule-child-topology-v1"
+    "neural-forge-lfm2-closed-loop-restart-capsule-child-topology-v2"
 )
 CLOSED_LOOP_RESTART_CAPSULE_PROGRESS_SCHEMA = (
     "neural-forge-lfm2-closed-loop-restart-capsule-fold-progress-v1"
@@ -134,6 +151,9 @@ CLOSED_LOOP_RESTART_CAPSULE_RESUME_SCHEMA = (
 )
 CLOSED_LOOP_RESTART_CAPSULE_TERMINAL_PHASE_SCHEMA = (
     "neural-forge-lfm2-closed-loop-restart-capsule-terminal-phase-v1"
+)
+LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA = (
+    "neural-forge-lfm2-accepted-layer-completion-ledger-v1"
 )
 
 CLOSED_LOOP_RESTART_CAPSULE_CHAIN_GENESIS_SHA256 = "0" * 64
@@ -190,7 +210,10 @@ _ADAPTER_IDENTITY_FIELDS = (
     "parent_cache_key",
     "parent_identity_sha256",
     "source_graph_fingerprint",
+    "child_runtime_config_sha256",
+    "replay_capture_selection_sha256",
     "tokenizer_bridge_artifact_sha256",
+    "tokenizer_bridge_trace_adapter_evidence_sha256",
     "identity_tokenizer_evidence_sha256",
     "parent_residual_operator_manifest_sha256",
     "body_reclosure_mode",
@@ -402,9 +425,19 @@ def portable_child_topology_sha256(model: Any) -> str:
     state = _child_state_dict(model)
     parameters = tuple(model.named_parameters(remove_duplicate=False))
     buffers = tuple(model.named_buffers(remove_duplicate=False))
+    modules = tuple(model.named_modules(remove_duplicate=False))
     body = {
         "schema": CLOSED_LOOP_RESTART_CAPSULE_TOPOLOGY_SCHEMA,
         "model_class": f"{type(model).__module__}.{type(model).__qualname__}",
+        "named_module_classes": [
+            {
+                "name": name,
+                "module_class": (
+                    f"{type(module).__module__}.{type(module).__qualname__}"
+                ),
+            }
+            for name, module in sorted(modules, key=lambda item: item[0])
+        ],
         "state": [
             {
                 "name": name,
@@ -983,6 +1016,73 @@ def _validate_terminal_phase(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
+def _validate_accepted_layer_completion_ledger(
+    value: Any,
+    *,
+    completed_layer_indices: Sequence[int],
+    selected_layer_indices: Sequence[int],
+    validation_decision_sha256: str,
+    child_state_sha256: str,
+    child_topology_sha256: str,
+) -> dict[str, Any]:
+    """Authenticate the portable prefix ledger embedded in one capsule."""
+
+    ledger = _verify_seal(
+        value,
+        field_name="completion_ledger_sha256",
+        label="accepted-layer completion ledger",
+    )
+    completed = _layer_indices(
+        completed_layer_indices,
+        "completion ledger completed layers",
+    )
+    selected = _layer_indices(
+        selected_layer_indices,
+        "completion ledger selected layers",
+    )
+    receipts = ledger.get("receipts")
+    if (
+        ledger.get("schema") != LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA
+        or tuple(ledger.get("completed_layer_indices", ())) != completed
+        or tuple(ledger.get("selected_layer_indices", ())) != selected
+        or not isinstance(receipts, list)
+        or len(receipts) != len(completed)
+        or not receipts
+        or any(not isinstance(receipt, Mapping) for receipt in receipts)
+        or tuple(receipt.get("layer_index") for receipt in receipts)
+        != completed
+        or receipts[-1].get("validation_decision_sha256")
+        != _digest(
+            validation_decision_sha256,
+            "completion ledger validation decision SHA-256",
+        )
+        or ledger.get("portable_final_child_state_sha256")
+        != _digest(
+            child_state_sha256,
+            "completion ledger final child state SHA-256",
+        )
+        or ledger.get("portable_child_topology_sha256")
+        != _digest(
+            child_topology_sha256,
+            "completion ledger child topology SHA-256",
+        )
+        or ledger.get("receipt_chain_head_sha256")
+        != receipts[-1].get("completion_receipt_sha256")
+        or ledger.get("payload_retention")
+        != {
+            "producer_payload_count": 0,
+            "consumer_payload_count": 0,
+            "downstream_payload_count": 0,
+            "operator_case_rows_retained": 0,
+        }
+    ):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "Accepted-layer completion ledger does not bind the exact capsule "
+            "prefix, validation decision, or portable child state."
+        )
+    return ledger
+
+
 def _capsule_body(
     *,
     bindings: Lfm2ClosedLoopRestartCapsuleBindings,
@@ -1003,6 +1103,7 @@ def _capsule_body(
     previous_capsule_chain_sha256: str,
     resumed_from_capsule_manifest_sha256: str | None,
     fold_progress: Mapping[str, Any],
+    accepted_layer_completion_ledger: Mapping[str, Any] | None = None,
     capsule_phase: str = _ACCEPTED_LAYER_PHASE,
     terminal_phase: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -1015,6 +1116,15 @@ def _capsule_body(
             "capsule_phase": capsule_phase,
             "terminal_phase": dict(terminal_phase or {}),
         }
+    completion_fields = (
+        {}
+        if accepted_layer_completion_ledger is None
+        else {
+            "accepted_layer_completion_ledger": dict(
+                accepted_layer_completion_ledger
+            )
+        }
+    )
     return {
         "schema": CLOSED_LOOP_RESTART_CAPSULE_SCHEMA,
         "artifact_kind": _ARTIFACT_KIND,
@@ -1051,6 +1161,7 @@ def _capsule_body(
             resumed_from_capsule_manifest_sha256
         ),
         "fold_progress": dict(fold_progress),
+        **completion_fields,
         "accepted_layer_validation_sealed": True,
         "skipped_layers_are_never_replayed_on_resume": True,
         "operation_audit": dict(_ZERO_OPERATION_AUDIT),
@@ -1223,11 +1334,26 @@ def _open_capsule(
         manifest.get("child_state_sha256"),
         "child_state_sha256",
     )
-    _digest(manifest.get("child_topology_sha256"), "child_topology_sha256")
-    _digest(
+    child_topology_sha256 = _digest(
+        manifest.get("child_topology_sha256"),
+        "child_topology_sha256",
+    )
+    validation_decision_sha256 = _digest(
         manifest.get("validation_decision_sha256"),
         "validation_decision_sha256",
     )
+    completion_ledger = manifest.get(
+        "accepted_layer_completion_ledger"
+    )
+    if completion_ledger is not None:
+        _validate_accepted_layer_completion_ledger(
+            completion_ledger,
+            completed_layer_indices=completed,
+            selected_layer_indices=bindings.selected_layer_indices,
+            validation_decision_sha256=validation_decision_sha256,
+            child_state_sha256=child_state_sha256,
+            child_topology_sha256=child_topology_sha256,
+        )
     record = manifest.get("child_state_file")
     if not isinstance(record, Mapping) or record.get("path") != (
         _CHILD_STATE_NAME
@@ -1562,6 +1688,7 @@ def publish_lfm2_closed_loop_restart_capsule(
     previous_capsule_chain_sha256: str,
     resumed_from_capsule_manifest_sha256: str | None,
     fold_progress: Mapping[str, Any],
+    accepted_layer_completion_ledger: Mapping[str, Any] | None = None,
     capsule_phase: str = _ACCEPTED_LAYER_PHASE,
     terminal_phase: Mapping[str, Any] | None = None,
 ) -> Lfm2ClosedLoopRestartCapsuleReference:
@@ -1580,6 +1707,14 @@ def publish_lfm2_closed_loop_restart_capsule(
     if (terminal_phase is not None) != (phase == _TERMINAL_PHASE):
         raise Lfm2ClosedLoopRestartCapsuleError(
             "Only a terminal restart capsule carries a sealed terminal phase."
+        )
+    if (
+        phase == _ACCEPTED_LAYER_PHASE
+        and accepted_layer_completion_ledger is None
+    ):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "A newly published accepted-layer capsule requires its "
+            "authenticated completion ledger."
         )
     normalized_terminal_phase = (
         None if terminal_phase is None else _validate_terminal_phase(terminal_phase)
@@ -1612,6 +1747,22 @@ def publish_lfm2_closed_loop_restart_capsule(
     )
     child_state_sha256 = portable_child_state_sha256(child_model)
     child_topology_sha256 = portable_child_topology_sha256(child_model)
+    normalized_completion_ledger = None
+    if accepted_layer_completion_ledger is not None:
+        if phase != _ACCEPTED_LAYER_PHASE:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Only accepted-layer capsules carry a layer completion ledger."
+            )
+        normalized_completion_ledger = (
+            _validate_accepted_layer_completion_ledger(
+                accepted_layer_completion_ledger,
+                completed_layer_indices=completed,
+                selected_layer_indices=bindings.selected_layer_indices,
+                validation_decision_sha256=validation_decision_sha256,
+                child_state_sha256=child_state_sha256,
+                child_topology_sha256=child_topology_sha256,
+            )
+        )
     stage = Path(
         tempfile.mkdtemp(prefix=_STAGE_PREFIX, dir=str(root))
     ).absolute()
@@ -1667,6 +1818,9 @@ def publish_lfm2_closed_loop_restart_capsule(
                 "resumed_from_capsule_manifest_sha256",
             ),
             fold_progress=progress,
+            accepted_layer_completion_ledger=(
+                normalized_completion_ledger
+            ),
             capsule_phase=phase,
             terminal_phase=normalized_terminal_phase,
         )
@@ -1884,6 +2038,77 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
     def completed_layer_indices(self) -> tuple[int, ...]:
         return self._completed
 
+    def bind_resolved_layer_selection(
+        self,
+        selected_layer_indices: Sequence[int],
+    ) -> Mapping[str, Any]:
+        """Rebind a fresh writer after the adapter's pre-transaction selection."""
+
+        selected = _layer_indices(
+            selected_layer_indices,
+            "resolved selected_layer_indices",
+        )
+        if (
+            not selected
+            or any(index >= self.bindings.child_layer_count for index in selected)
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The resolved restart-capsule layer selection is invalid."
+            )
+        if self._published or self._records or self._terminal_reference is not None:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Restart-capsule layer selection cannot change after "
+                "publication."
+            )
+        previous_bindings_sha256 = self.bindings.bindings_sha256
+        current_identity = lfm2_restart_capsule_adapter_identity(self.adapter)
+        if tuple(current_identity["selected_layer_indices"]) != selected:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The writer and adapter resolved different layer selections."
+            )
+        if self.resume is not None:
+            if (
+                selected != self.bindings.selected_layer_indices
+                or dict(current_identity) != dict(self.adapter_identity)
+            ):
+                raise Lfm2ClosedLoopRestartCapsuleError(
+                    "A loaded restart capsule cannot be rebound to a different "
+                    "layer selection or adapter identity."
+                )
+        else:
+            self.adapter_identity = current_identity
+            self.bindings = Lfm2ClosedLoopRestartCapsuleBindings(
+                run_id=self.bindings.run_id,
+                child_name=self.bindings.child_name,
+                child_layer_count=self.bindings.child_layer_count,
+                selected_layer_indices=selected,
+                adapter_identity_sha256=current_identity[
+                    "adapter_identity_sha256"
+                ],
+                trajectory_split_sha256=(
+                    self.bindings.trajectory_split_sha256
+                ),
+                run_schema=self.bindings.run_schema,
+            )
+        body = {
+            "schema": (
+                "neural-forge-lfm2-restart-capsule-selection-binding-v1"
+            ),
+            "resolved_selected_layer_indices": list(selected),
+            "previous_bindings_sha256": previous_bindings_sha256,
+            "resolved_bindings_sha256": self.bindings.bindings_sha256,
+            "adapter_identity_sha256": self.adapter_identity[
+                "adapter_identity_sha256"
+            ],
+            "bound_before_capsule_publication": True,
+        }
+        return MappingProxyType(
+            {
+                **body,
+                "writer_selection_binding_sha256": canonical_sha256(body),
+            }
+        )
+
     def assert_resume_supported(
         self,
         *,
@@ -1894,6 +2119,7 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         trajectory_split_sha256: str,
         child_state_sha256: str,
         child_topology_sha256: str,
+        compiler_restart_policy: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         """Admit one mid-body resume or fail closed with a precise reason."""
 
@@ -1928,6 +2154,11 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "A mid-body resume requires a loaded restart capsule."
             )
+        if self.resume.capsule_phase != _ACCEPTED_LAYER_PHASE:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The accepted-layer resume path refuses terminal-phase "
+                "capsules; terminal result rehydration is a separate protocol."
+            )
         fingerprint = getattr(self.adapter, "child_state_fingerprint", None)
         if not callable(fingerprint):
             raise Lfm2ClosedLoopRestartCapsuleError(
@@ -1951,11 +2182,51 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "The adapter cannot certify mid-body resume support."
             )
-        adapter_admission = guard(
-            completed_layer_indices=completed,
-            remaining_layer_indices=remaining,
-            body_reclosure_enabled=bool(body_reclosure_enabled),
+        completion_ledger = self.resume.manifest.get(
+            "accepted_layer_completion_ledger"
         )
+        if completion_ledger is None:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Exact accepted-layer restart requires an authenticated "
+                "completion ledger; legacy layer-number-only capsules are "
+                "not resumable."
+            )
+        guard_kwargs = {
+            "completed_layer_indices": completed,
+            "remaining_layer_indices": remaining,
+            "body_reclosure_enabled": bool(body_reclosure_enabled),
+            "compiler_restart_policy": compiler_restart_policy,
+        }
+        guard_kwargs.update(
+            {
+                "accepted_layer_completion_ledger": completion_ledger,
+                "resume_capsule_key": self.resume.reference.capsule_key,
+                "resume_capsule_manifest_sha256": (
+                    self.resume.reference.manifest_sha256
+                ),
+                "resume_capsule_manifest_file_sha256": (
+                    self.resume.reference.manifest_file_sha256
+                ),
+                "resume_capsule_chain_sha256": (
+                    self.resume.reference.capsule_chain_sha256
+                ),
+                "resume_capsule_sequence": (
+                    self.resume.reference.capsule_sequence
+                ),
+                "resume_capsule_bindings_sha256": (
+                    self.resume.bindings.bindings_sha256
+                ),
+                "resume_validation_decision_sha256": (
+                    self.resume.validation_decision_sha256
+                ),
+                "restored_portable_child_state_sha256": live_state,
+                "restored_portable_child_topology_sha256": live_topology,
+                "trajectory_split_sha256": (
+                    self.bindings.trajectory_split_sha256
+                ),
+            }
+        )
+        adapter_admission = guard(**guard_kwargs)
         if not isinstance(adapter_admission, Mapping):
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "The adapter mid-body resume admission is not a mapping."
@@ -1998,8 +2269,21 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         child_state_sha256: str,
         child_topology_sha256: str,
         trajectory_split_sha256: str,
+        compiler_restart_policy: Mapping[str, Any] | None = None,
+        accepted_layer_completion_ledger: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """Publish and rotate one sealed capsule for one accepted layer."""
+
+        if accepted_layer_completion_ledger is None:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Accepted-layer capsule publication requires an authenticated "
+                "completion ledger."
+            )
+        if compiler_restart_policy is None:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Accepted-layer capsule publication requires the exact "
+                "closed-loop compiler continuation policy."
+            )
 
         completed = _layer_indices(
             completed_layer_indices,
@@ -2023,6 +2307,59 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "The accepted-layer inventory differs from the sealed run "
                 "identity."
+            )
+        portable_state_sha256 = portable_child_state_sha256(
+            self.adapter.child_model
+        )
+        portable_topology_sha256 = portable_child_topology_sha256(
+            self.adapter.child_model
+        )
+        publication_authenticator = getattr(
+            self.adapter,
+            "authenticate_accepted_layer_completion_ledger_for_publication",
+            None,
+        )
+        if not callable(publication_authenticator):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter cannot fully authenticate its accepted-layer "
+                "completion ledger before capsule publication."
+            )
+        try:
+            publication_auth = publication_authenticator(
+                accepted_layer_completion_ledger,
+                expected_completed_layer_indices=completed,
+                expected_selected_layer_indices=selected,
+                expected_trajectory_split_sha256=trajectory_split_sha256,
+                expected_compiler_restart_policy=compiler_restart_policy,
+                expected_validation_decision_sha256=(
+                    validation_decision_sha256
+                ),
+                expected_portable_child_state_sha256=portable_state_sha256,
+                expected_portable_child_topology_sha256=(
+                    portable_topology_sha256
+                ),
+            )
+        except Exception as exc:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter refused accepted-layer completion-ledger "
+                "publication authentication."
+            ) from exc
+        if (
+            not isinstance(publication_auth, Mapping)
+            or publication_auth.get("completion_ledger_sha256")
+            != accepted_layer_completion_ledger.get(
+                "completion_ledger_sha256"
+            )
+            or publication_auth.get("authenticated_before_capsule_staging")
+            is not True
+            or not isinstance(
+                publication_auth.get("publication_auth_sha256"),
+                str,
+            )
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Accepted-layer ledger publication authentication returned "
+                "an invalid receipt."
             )
         progress = (
             unavailable_fold_progress_chain(
@@ -2061,6 +2398,9 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
                 else None
             ),
             fold_progress=progress,
+            accepted_layer_completion_ledger=(
+                accepted_layer_completion_ledger
+            ),
         )
         self._completed = completed
         self._sequence += 1
@@ -2084,6 +2424,17 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             ],
             "rotation_keep": self.rotation_keep,
             "fold_progress": dict(progress),
+            **(
+                {}
+                if accepted_layer_completion_ledger is None
+                else {
+                    "accepted_layer_completion_ledger_sha256": (
+                        accepted_layer_completion_ledger[
+                            "completion_ledger_sha256"
+                        ]
+                    )
+                }
+            ),
             "restart_capsule_is_not_a_promotable_child": True,
         }
         record = {**body, "record_sha256": canonical_sha256(body)}

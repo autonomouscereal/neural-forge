@@ -79,6 +79,9 @@ TERMINAL_CAPSULE_DECISION_SCHEMA = (
 MERGED_CAPTURE_REQUEST_SCHEMA = (
     "neural-forge-dynamic-closed-loop-merged-capture-request-v1"
 )
+CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA = (
+    "neural-forge-dynamic-closed-loop-compiler-restart-policy-v1"
+)
 _FORBIDDEN_COUNTERS = (
     "parent_forward_calls",
     "parent_trace_regeneration_calls",
@@ -1144,6 +1147,7 @@ class AcceptedLayerRestartCapsuleWriter(Protocol):
         trajectory_split_sha256: str,
         child_state_sha256: str,
         child_topology_sha256: str,
+        compiler_restart_policy: Mapping[str, Any],
     ) -> Mapping[str, Any]: ...
 
     def record_accepted_layer(
@@ -1158,6 +1162,8 @@ class AcceptedLayerRestartCapsuleWriter(Protocol):
         child_state_sha256: str,
         child_topology_sha256: str,
         trajectory_split_sha256: str,
+        compiler_restart_policy: Mapping[str, Any],
+        accepted_layer_completion_ledger: Mapping[str, Any] | None,
     ) -> Mapping[str, Any]: ...
 
     def record_terminal_phase(
@@ -1252,6 +1258,36 @@ class ClosedLoopCompilerConfig:
             raise ClosedLoopFoldError(
                 "merge_adjacent_layer_captures must be boolean."
             )
+
+
+def closed_loop_compiler_restart_policy(
+    config: ClosedLoopCompilerConfig,
+    resolved_selected_layer_indices: Sequence[int],
+) -> dict[str, Any]:
+    """Seal every compiler choice that changes exact restart continuation."""
+
+    if not isinstance(config, ClosedLoopCompilerConfig):
+        raise TypeError("config must be ClosedLoopCompilerConfig.")
+    selected = tuple(
+        _layer_index(value, "resolved selected layer")
+        for value in resolved_selected_layer_indices
+    )
+    if not selected or selected != tuple(sorted(set(selected))):
+        raise ClosedLoopFoldError(
+            "Resolved restart-policy layers must be a nonempty ascending set."
+        )
+    body = {
+        "schema": CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA,
+        "validation_fraction": config.validation_fraction,
+        "split_seed": config.split_seed,
+        "resolved_selected_layer_indices": list(selected),
+        "fold_body_reclosure": config.fold_body_reclosure,
+        "fold_output_interface": config.fold_output_interface,
+    }
+    return {
+        **body,
+        "compiler_restart_policy_sha256": canonical_sha256(body),
+    }
 
 
 class ChildClosedLoopCompiler:
@@ -1677,6 +1713,9 @@ class ChildClosedLoopCompiler:
         split: TrajectorySplit,
         audit: ClosedLoopAudit,
         *,
+        layer_ordinal: int,
+        selected_layer_indices: Sequence[int],
+        compiler_restart_policy: Mapping[str, Any],
         run_topology_sha256: str,
         next_layer_index: int | None = None,
     ) -> dict[str, Any]:
@@ -1996,7 +2035,60 @@ class ChildClosedLoopCompiler:
             validation_decision_sha256=validation.decision_sha256,
             validation_accepted=validation.accepted,
         )
-        return {
+        completion_receipt = None
+        completion_hook = getattr(
+            self.adapter,
+            "record_accepted_layer_completion",
+            None,
+        )
+        if callable(completion_hook):
+            completion_state = self._state()
+            completion_topology = self._topology()
+            completion_receipt = self._call(
+                audit,
+                f"{scope.scope_id}:record_accepted_layer_completion",
+                lambda: completion_hook(
+                    layer_index=layer_index,
+                    layer_ordinal=layer_ordinal,
+                    selected_layer_indices=selected_layer_indices,
+                    compiler_restart_policy=compiler_restart_policy,
+                    trajectory_split_sha256=split.split_sha256,
+                    producer=producer,
+                    producer_install=producer_install,
+                    consumer=consumer,
+                    consumer_install=consumer_install,
+                    downstream=downstream,
+                    downstream_install=downstream_install,
+                    validation=validation,
+                    audit=audit,
+                ),
+            )
+            if (
+                not isinstance(completion_receipt, Mapping)
+                or completion_receipt.get("layer_index") != layer_index
+                or completion_receipt.get("layer_ordinal") != layer_ordinal
+                or completion_receipt.get("validation_decision_sha256")
+                != validation.decision_sha256
+                or not isinstance(
+                    completion_receipt.get("completion_receipt_sha256"),
+                    str,
+                )
+                or self._state() != completion_state
+                or self._topology() != completion_topology
+            ):
+                raise ClosedLoopFoldError(
+                    f"{scope.scope_id} accepted-layer completion receipt "
+                    "changed child state/topology or lost its lifecycle bind."
+                )
+            self._emit_progress(
+                "child_closed_loop_layer_completion_sealed",
+                layer_index=layer_index,
+                layer_ordinal=layer_ordinal,
+                completion_receipt_sha256=str(
+                    completion_receipt["completion_receipt_sha256"]
+                ),
+            )
+        report = {
             "scope": scope.as_dict(),
             "fit_parent_endpoints": fit_endpoints.as_dict(),
             "validation_parent_endpoints": validation_endpoints.as_dict(),
@@ -2036,6 +2128,11 @@ class ChildClosedLoopCompiler:
             },
             "executed_in_this_process": True,
         }
+        if completion_receipt is not None:
+            report["accepted_layer_completion_receipt"] = dict(
+                completion_receipt
+            )
+        return report
 
     def _run_final_normalization(
         self,
@@ -2593,6 +2690,105 @@ class ChildClosedLoopCompiler:
 
     def _execute_guarded(self, audit: ClosedLoopAudit) -> dict[str, Any]:
         self._adapter_audit(audit, "run:entry")
+        selection_state_before = self._state()
+        selection_topology_before = self._topology()
+        raw_layers = self._call(
+            audit,
+            "layers:discover",
+            lambda: self.adapter.layer_indices(audit),
+        )
+        raw_layers = tuple(raw_layers)
+        available_layers = tuple(
+            sorted(
+                {
+                    _layer_index(value, "available layer")
+                    for value in raw_layers
+                }
+            )
+        )
+        if not available_layers or len(available_layers) != len(raw_layers):
+            raise ClosedLoopFoldError(
+                "Adapter layers must be nonempty and unique."
+            )
+        if self.config.selected_layers is None:
+            selected_layers = available_layers
+        else:
+            selected_layers = self.config.selected_layers
+            if not set(selected_layers).issubset(available_layers):
+                raise ClosedLoopFoldError(
+                    "selected_layers contains an unavailable layer."
+                )
+        selection_hook = getattr(
+            self.adapter,
+            "bind_resolved_layer_selection",
+            None,
+        )
+        if callable(selection_hook):
+            selection_receipt = self._call(
+                audit,
+                "layers:bind_resolved_selection",
+                lambda: selection_hook(selected_layers),
+            )
+            if (
+                not isinstance(selection_receipt, Mapping)
+                or tuple(
+                    selection_receipt.get(
+                        "resolved_selected_layer_indices",
+                        (),
+                    )
+                )
+                != selected_layers
+                or not isinstance(
+                    selection_receipt.get("selection_binding_sha256"),
+                    str,
+                )
+                or self._state() != selection_state_before
+                or self._topology() != selection_topology_before
+            ):
+                raise ClosedLoopFoldError(
+                    "Resolved layer-selection binding mutated the child or "
+                    "returned an invalid receipt."
+                )
+            writer = self.restart_capsule_config
+            if writer is not None:
+                writer_selection_hook = getattr(
+                    writer,
+                    "bind_resolved_layer_selection",
+                    None,
+                )
+                if not callable(writer_selection_hook):
+                    raise ClosedLoopFoldError(
+                        "The restart-capsule writer cannot bind the adapter's "
+                        "resolved layer selection."
+                    )
+                writer_selection_receipt = self._call(
+                    audit,
+                    "restart_capsule:bind_resolved_layer_selection",
+                    lambda: writer_selection_hook(selected_layers),
+                )
+                if (
+                    not isinstance(writer_selection_receipt, Mapping)
+                    or tuple(
+                        writer_selection_receipt.get(
+                            "resolved_selected_layer_indices",
+                            (),
+                        )
+                    )
+                    != selected_layers
+                    or not isinstance(
+                        writer_selection_receipt.get(
+                            "writer_selection_binding_sha256"
+                        ),
+                        str,
+                    )
+                    or self._state() != selection_state_before
+                    or self._topology() != selection_topology_before
+                ):
+                    raise ClosedLoopFoldError(
+                        "Restart-capsule layer-selection binding mutated the "
+                        "child or returned an invalid receipt."
+                    )
+        self._adapter_audit(audit, "run:selection_bound")
         state_before = self._state()
         topology_before = self._topology()
         transaction = self._call(
@@ -2618,34 +2814,10 @@ class ChildClosedLoopCompiler:
                     "Child transaction did not bind the exact initial "
                     "state/topology."
                 )
-            raw_layers = self._call(
-                audit,
-                "layers:discover",
-                lambda: self.adapter.layer_indices(audit),
+            compiler_restart_policy = closed_loop_compiler_restart_policy(
+                self.config,
+                selected_layers,
             )
-            raw_layers = tuple(raw_layers)
-            available_layers = tuple(
-                sorted(
-                    {
-                        _layer_index(value, "available layer")
-                        for value in raw_layers
-                    }
-                )
-            )
-            if not available_layers or len(available_layers) != len(
-                raw_layers
-            ):
-                raise ClosedLoopFoldError(
-                    "Adapter layers must be nonempty and unique."
-                )
-            if self.config.selected_layers is None:
-                selected_layers = available_layers
-            else:
-                selected_layers = self.config.selected_layers
-                if not set(selected_layers).issubset(available_layers):
-                    raise ClosedLoopFoldError(
-                        "selected_layers contains an unavailable layer."
-                    )
 
             records = tuple(
                 self._call(
@@ -2678,10 +2850,6 @@ class ChildClosedLoopCompiler:
                     )
             executed_layers = tuple(selected_layers[len(completed_layers):])
             if writer is not None and completed_layers:
-                if not executed_layers:
-                    raise ClosedLoopFoldError(
-                        "A restart-capsule resume left no layer to execute."
-                    )
                 resume_admission = writer.assert_resume_supported(
                     completed_layer_indices=completed_layers,
                     remaining_layer_indices=executed_layers,
@@ -2690,6 +2858,7 @@ class ChildClosedLoopCompiler:
                     trajectory_split_sha256=split.split_sha256,
                     child_state_sha256=state_before,
                     child_topology_sha256=topology_before,
+                    compiler_restart_policy=compiler_restart_policy,
                 )
                 if not isinstance(resume_admission, Mapping):
                     raise ClosedLoopFoldError(
@@ -2699,7 +2868,9 @@ class ChildClosedLoopCompiler:
                     "child_closed_loop_restart_capsule_resume_admitted",
                     completed_layer_count=len(completed_layers),
                     remaining_layer_count=len(executed_layers),
-                    resume_layer_index=executed_layers[0],
+                    resume_layer_index=(
+                        executed_layers[0] if executed_layers else None
+                    ),
                     resumed_child_state_sha256=state_before,
                 )
             self._emit_progress(
@@ -2747,6 +2918,9 @@ class ChildClosedLoopCompiler:
                         layer_index,
                         split,
                         audit,
+                        layer_ordinal=layer_ordinal,
+                        selected_layer_indices=selected_layers,
+                        compiler_restart_policy=compiler_restart_policy,
                         run_topology_sha256=topology_before,
                         next_layer_index=(
                             remaining_after[0] if remaining_after else None
@@ -2762,6 +2936,23 @@ class ChildClosedLoopCompiler:
                     )
                     capsule_state = self._state()
                     capsule_topology = self._topology()
+                    completion_ledger = None
+                    completion_ledger_hook = getattr(
+                        self.adapter,
+                        "accepted_layer_completion_ledger",
+                        None,
+                    )
+                    if callable(completion_ledger_hook):
+                        completion_ledger = self._call(
+                            audit,
+                            "accepted_layer_completion_ledger:seal",
+                            completion_ledger_hook,
+                        )
+                        if not isinstance(completion_ledger, Mapping):
+                            raise ClosedLoopFoldError(
+                                "Accepted-layer completion ledger hook did "
+                                "not return a mapping."
+                            )
                     record = writer.record_accepted_layer(
                         layer_index=layer_index,
                         layer_ordinal=layer_ordinal,
@@ -2776,6 +2967,10 @@ class ChildClosedLoopCompiler:
                         child_state_sha256=capsule_state,
                         child_topology_sha256=capsule_topology,
                         trajectory_split_sha256=split.split_sha256,
+                        compiler_restart_policy=compiler_restart_policy,
+                        accepted_layer_completion_ledger=(
+                            completion_ledger
+                        ),
                     )
                     if not isinstance(record, Mapping):
                         raise ClosedLoopFoldError(
@@ -2948,6 +3143,7 @@ class ChildClosedLoopCompiler:
             return {
                 "schema": RUN_SCHEMA,
                 "trajectory_split": split.as_dict(),
+                "compiler_restart_policy": dict(compiler_restart_policy),
                 "available_layers": list(available_layers),
                 "selected_layers": list(selected_layers),
                 "default_all_layers": selected_layers == available_layers,
@@ -3046,6 +3242,7 @@ __all__ = [
     "ChildClosedLoopFoldAdapter",
     "ChildStateTransaction",
     "ChildTrajectoryCapture",
+    "CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA",
     "ClosedLoopAudit",
     "ClosedLoopAuditTripwire",
     "ClosedLoopCompilerConfig",
@@ -3068,5 +3265,6 @@ __all__ = [
     "TrajectorySplit",
     "TransactionReceipt",
     "ValidationDecision",
+    "closed_loop_compiler_restart_policy",
     "deterministic_whole_trajectory_split",
 ]

@@ -6136,26 +6136,26 @@ def test_on_policy_extension_evidence_changes_every_derived_phase_key(
     assert all_fit_digest not in {base_digest, extended_digest}
 
 
-def test_mid_body_capsule_resume_is_refused_under_moving_gauge_reclosure(
+def test_authenticated_capsule_resume_is_configurable_with_moving_gauge_reclosure(
     tmp_path,
 ) -> None:
-    """``compile_body_reclosure`` claims this process installed every layer."""
+    """The accepted-layer ledger now proves the complete installed stack."""
 
     from neural_forge.hf_lfm2_dense_budget_model_fold import (
         Lfm2DenseBudgetFoldConfig,
         Lfm2DenseBudgetFoldError,
     )
 
-    with pytest.raises(
-        Lfm2DenseBudgetFoldError,
-        match="requires this process to fold every layer",
-    ):
-        Lfm2DenseBudgetFoldConfig(
-            body_reclosure_mode="moving_gauge_v3",
-            run_closed_loop=True,
-            restart_capsule_directory=tmp_path / "capsules",
-            resume_from_restart_capsule=tmp_path / "capsules",
-        )
+    config = Lfm2DenseBudgetFoldConfig(
+        body_reclosure_mode="moving_gauge_v3",
+        run_closed_loop=True,
+        restart_capsule_directory=tmp_path / "capsules",
+        resume_from_restart_capsule=tmp_path / "capsules",
+    )
+    assert config.body_reclosure_mode == "moving_gauge_v3"
+    assert config.resume_from_restart_capsule == (
+        tmp_path / "capsules"
+    ).absolute()
     with pytest.raises(
         Lfm2DenseBudgetFoldError,
         match="requires the restart-capsule directory",
