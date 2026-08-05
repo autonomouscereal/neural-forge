@@ -91,8 +91,8 @@ from .hf_lfm2_circuit_trace_cache import (
     compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
 )
-from .hf_lfm2_child_replay_phase_cache import (
-    load_or_capture_lfm2_child_replay_phase,
+from .hf_lfm2_child_replay_batch_checkpoint import (
+    load_or_capture_lfm2_child_replay_phase_resumable,
 )
 from .hf_lfm2_sealed_evidence_set import (
     SEALED_EVIDENCE_CACHE_TYPES,
@@ -3690,6 +3690,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
         wall_seconds = float(sharding.get("replay_wall_seconds", 0.0) or 0.0)
         devices = sharding.get("devices")
+        planned_batch_indices = sharding.get("planned_batch_indices")
+        original_batch_assignment = sharding.get(
+            "original_batch_assignment"
+        )
         return {
             "replay_sharding_devices": (
                 ",".join(str(value) for value in devices)
@@ -3712,6 +3716,24 @@ class Lfm2DynamicClosedLoopAdapter:
             "replay_sharding_worker_peak_capture_bytes": peak_capture_bytes,
             "replay_sharding_resident_child_bytes_total": sharding.get(
                 "resident_child_bytes_total"
+            ),
+            "replay_sharding_planned_batch_indices": (
+                ",".join(str(value) for value in planned_batch_indices)
+                if isinstance(planned_batch_indices, Sequence)
+                and not isinstance(planned_batch_indices, (str, bytes))
+                else None
+            ),
+            "replay_sharding_original_batch_assignment": (
+                ",".join(
+                    f"{int(row['batch_index'])}:{int(row['worker_index'])}"
+                    for row in original_batch_assignment
+                    if isinstance(row, Mapping)
+                    and "batch_index" in row
+                    and "worker_index" in row
+                )
+                if isinstance(original_batch_assignment, Sequence)
+                and not isinstance(original_batch_assignment, (str, bytes))
+                else None
             ),
         }
 
@@ -8324,7 +8346,7 @@ class Lfm2DynamicClosedLoopAdapter:
             == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
             and causal_equivalence_reference is None
         ):
-            replay_phase = load_or_capture_lfm2_child_replay_phase(
+            replay_phase = load_or_capture_lfm2_child_replay_phase_resumable(
                 self.child_replay_phase_cache_context,
                 self.child_model,
                 sealed_batches,
@@ -8336,6 +8358,21 @@ class Lfm2DynamicClosedLoopAdapter:
                 replay_devices=replay_devices,
             )
             replay = replay_phase.replay
+            replay_timing = replay.capture_timing
+            raw_checkpoint_resume = replay_timing.get(
+                "batch_checkpoint_resume"
+            )
+            checkpoint_resume = (
+                raw_checkpoint_resume
+                if isinstance(raw_checkpoint_resume, Mapping)
+                else {}
+            )
+            resumed_batch_count = int(
+                checkpoint_resume.get("resumed_batch_count", 0) or 0
+            )
+            captured_batch_count = int(
+                checkpoint_resume.get("captured_batch_count", 0) or 0
+            )
             self._emit_body_progress(
                 LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE,
                 scope_id=scope.scope_id,
@@ -8351,12 +8388,24 @@ class Lfm2DynamicClosedLoopAdapter:
                     replay_phase.publication_race_lost
                 ),
                 current_invocation_child_forwards=(
-                    replay.metadata["forward_counts"]["child"]
+                    checkpoint_resume.get(
+                        "current_invocation_child_forwards",
+                        replay.metadata["forward_counts"]["child"],
+                    )
                     if replay_phase.producer_invoked
                     else 0
                 ),
                 persisted_capture_child_forwards=(
                     replay.metadata["forward_counts"]["child"]
+                ),
+                batch_checkpoint_resume_available=bool(checkpoint_resume),
+                batch_checkpoint_resumed_batch_count=resumed_batch_count,
+                batch_checkpoint_captured_batch_count=captured_batch_count,
+                batch_checkpoint_reconstruction_only=bool(
+                    replay_phase.producer_invoked
+                    and checkpoint_resume
+                    and resumed_batch_count == len(replay)
+                    and captured_batch_count == 0
                 ),
             )
         else:
@@ -8371,15 +8420,17 @@ class Lfm2DynamicClosedLoopAdapter:
                 child_evidence_profile=child_evidence_profile,
                 replay_devices=replay_devices,
             )
+        sharding_completion = self._replay_sharding_completion(replay)
         if (
             replay_devices is not None
             and (replay_phase is None or replay_phase.producer_invoked)
+            and sharding_completion
         ):
             self._emit_body_progress(
                 LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
                 scope_id=scope.scope_id,
                 capture_point=point.value,
-                **self._replay_sharding_completion(replay),
+                **sharding_completion,
             )
         if len(replay) != len(self.parent_cache):
             raise Lfm2DynamicClosedLoopAdapterError(
