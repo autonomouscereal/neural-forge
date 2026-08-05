@@ -1382,6 +1382,89 @@ def default_method_registry() -> FoldMethodRegistry:
             "and every unproven crossing fails closed.",
         ),
         _method(
+            "causal_windowed_nope_attention_layer",
+            "family_neutral_causal_windowed_nope_attention_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("causal_windowed_nope_attention_branch",),
+            ("causal_windowed_nope_attention_branch",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "residual_branch_input",
+                "attention_norm_output",
+                "query_projection_output",
+                "key_projection_output",
+                "value_projection_output",
+                "attention_delta",
+                "depth_source_stack",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_windowed_nope_q_k_v_o_residual_write",
+                "q_k_v_o",
+                "gqa_group",
+                "nope_position_transport",
+            ),
+            "Policy variant of the coupled GQA branch fold for windowed NoPE "
+            "local attention: the rotary transport degenerates to the identity "
+            "and the causal mask carries a band. Both sides must declare the "
+            "same NoPE policy, the same window, split Q/K/V/O and an even head "
+            "dimension; a rotary requirement anywhere, a window change, or a "
+            "band the installed kernel cannot express fails closed.",
+        ),
+        _method(
+            "causal_fused_gate_up_mlp_layer",
+            "family_neutral_causal_fused_gate_up_mlp_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("causal_fused_gate_up_mlp_branch",),
+            ("causal_fused_gate_up_mlp_branch",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "residual_branch_input",
+                "mlp_norm_output",
+                "fused_gate_up_output",
+                "mlp_delta",
+                "depth_source_stack",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_fused_gate_up_swiglu_down_residual_write",
+                "fused_gate_up_down",
+            ),
+            "Coupled SwiGLU branch fold for a dense gated MLP whose gate and "
+            "up projections share one fused [2 * intermediate, hidden] tensor. "
+            "The declared chunk-two split is applied and re-fused inside one "
+            "transaction; a split gate/up target, a non-SiLU gate, a biased "
+            "projection or an undeclared layout fails closed.",
+        ),
+        _method(
+            "native_residual_chart_interface",
+            "native_residual_chart_interface",
+            MethodStatus.EXPERIMENTAL,
+            ("native_residual_chart_interface_group",),
+            ("native_residual_chart_interface_group",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "interface_module_input",
+                "interface_module_output",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            ("residual_chart_projected_interface",),
+            "Global interface circuits carried across one contraction-only "
+            "residual chart: one-hot-fed row tables and residual-producing "
+            "boundary projections transport exactly, residual-consuming heads "
+            "and normalization gains are refit closed-form against live child "
+            "rows, and learned depth-source selectors are refit against the "
+            "depth stack the child really compares. Any other interface class, "
+            "or a square tensor whose orientation shape cannot decide, fails "
+            "closed.",
+        ),
+        _method(
             "ordered_residual_span_compose",
             "ordered_depth",
             MethodStatus.EXPERIMENTAL,

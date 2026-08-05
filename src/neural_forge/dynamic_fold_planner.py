@@ -39,7 +39,56 @@ CAUSAL_LAYER_BRANCH_METHODS = (
     CAUSAL_ATTENTION_BRANCH_METHOD,
     CAUSAL_GATED_MLP_BRANCH_METHOD,
 )
+#: The same coupled kernel under a NoPE policy: windowed local attention whose
+#: RoPE transport is the identity rather than a rotation, and a dense gated MLP
+#: whose gate and up projections share one fused tensor.  These are separate
+#: method ids, not a relaxation of the RoPE pair, because the operator that
+#: executes them is a different executable with a different proven envelope.
+CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD = "causal_windowed_nope_attention_layer"
+CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD = "causal_fused_gate_up_mlp_layer"
+NATIVE_CAUSAL_LAYER_BRANCH_METHODS = (
+    CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
+    CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+)
+#: Global interface circuits whose only difference is the residual coordinate
+#: system a contraction chart already covers.
+NATIVE_RESIDUAL_CHART_INTERFACE_METHOD = "native_residual_chart_interface"
 _CAUSAL_DECODER_INSPECTOR = "hf-causal-decoder"
+#: Inspectors whose graphs describe a causal decoder trunk that carries order
+#: without any rotary position encoding.  Membership is not a courtesy: a graph
+#: in this set must still satisfy every branch role contract node by node, and
+#: the RoPE lane stays reserved for graphs that really do rotate.
+_NATIVE_DECODER_INSPECTORS = frozenset({"chimera-omni-native-decoder"})
+#: Attribute keys that only a rotary implementation can honour.  A NoPE fold
+#: refuses any node that declares one instead of pretending the rotation is
+#: absent.
+_ROPE_SPECIFIC_ATTRIBUTES = (
+    "rope_theta",
+    "rope_type",
+    "rope_scaling",
+    "rope_variants",
+    "partial_rotary_factor",
+    "rotary_dim",
+    "rotary_emb_base",
+)
+#: The mixer/channel-mixer kernel families the IR knows how to name but this
+#: repository cannot yet execute.  The planner reports the missing capability
+#: by name rather than collapsing every uncovered layer into one generic gap.
+_NATIVE_KERNEL_FAMILY_GAPS = {
+    "bounded_gated_delta_recurrence": (
+        "bounded_gated_delta_recurrence_layer_operator"
+    ),
+    "compressed_summary_attention": "compressed_summary_attention_layer_operator",
+    "compressed_latent_attention": (
+        "compressed_latent_kv_attention_layer_operator"
+    ),
+    "stable_latent_moe_router": "stable_latent_moe_channel_mixer_operator",
+    "stable_latent_moe_expert": "stable_latent_moe_channel_mixer_operator",
+}
+#: Ordered-branch labels for the two causal branches.  ``operator`` and
+#: ``feed_forward`` are the native-trunk spellings of ``attention`` and ``mlp``.
+_ATTENTION_BRANCH_LABELS = ("attention", "operator")
+_MLP_BRANCH_LABELS = ("mlp", "feed_forward")
 _NATIVE_AUDIO_FAMILY = "native_audio_chat"
 _NATIVE_AUDIO_MODALITIES = frozenset({MODALITY_AUDIO, MODALITY_TEXT})
 _NATIVE_VIDEO_FAMILY = "native_video_chat"
@@ -431,6 +480,199 @@ def _residual_width_substituted_contract(
     }
 
 
+#: The interface classes one global residual chart can carry, and what the
+#: registered operator actually does with each of them.
+_RESIDUAL_ROW_TABLE = "residual_row_table"
+_RESIDUAL_PRODUCER_PROJECTION = "residual_producer_projection"
+_RESIDUAL_CONSUMER_HEAD = "residual_consumer_head"
+_RESIDUAL_NORM_GAIN = "residual_norm_gain"
+_DEPTH_SOURCE_SELECTOR = "depth_source_selector"
+
+
+def _residual_width_restated_contract(
+    node: CircuitNode,
+    substitution: tuple[int, int],
+) -> dict[str, Any]:
+    """Restate one node contract, including its tensors, at the child width.
+
+    This is deliberately weaker than
+    :func:`_residual_width_substituted_contract`, which refuses to touch a node
+    that owns a tensor because an exact copy must stay exact.  A chart-projected
+    interface is *not* an exact copy: it is a different tensor, compiled by a
+    registered operator, and the only claim this contract makes is that the
+    child circuit is the parent circuit restated at the contracted residual
+    width.  Every shape the operator installs is re-derived from the live child
+    parameter, so this comparison decides plannability, never correctness.
+    """
+
+    source_width, target_width = substitution
+    contract = _node_semantic_contract(node)
+
+    def rewrite_dimensions(values: Sequence[Any]) -> list[Any]:
+        return [target_width if value == source_width else value for value in values]
+
+    return {
+        **contract,
+        "inputs": [
+            {**port, "dimensions": rewrite_dimensions(port["dimensions"])}
+            for port in contract["inputs"]
+        ],
+        "outputs": [
+            {**port, "dimensions": rewrite_dimensions(port["dimensions"])}
+            for port in contract["outputs"]
+        ],
+        "parameters": [
+            {**parameter, "shape": rewrite_dimensions(parameter["shape"])}
+            for parameter in contract["parameters"]
+        ],
+        "attributes": {
+            key: target_width
+            if isinstance(value, int)
+            and not isinstance(value, bool)
+            and value == source_width
+            else value
+            for key, value in contract["attributes"].items()
+        },
+    }
+
+
+def _native_chart_interface_class(
+    node: CircuitNode,
+    width: int,
+) -> str | None:
+    """Classify one global interface circuit for chart-projected folding."""
+
+    parameters = tuple(node.parameters)
+    attributes = _node_attributes(node)
+    if node.kind == CircuitKind.RESIDUAL_ADD.value:
+        if not _depth_source_selector_contract(node) or len(parameters) != 2:
+            return None
+        shapes = sorted(
+            tuple(int(size) for size in value.shape) for value in parameters
+        )
+        roles = " ".join(sorted(_semantic_name(value.role) for value in parameters))
+        if (
+            shapes != [(width,), (width,)]
+            or "norm" not in roles
+            or "query" not in roles
+        ):
+            return None
+        return _DEPTH_SOURCE_SELECTOR
+    if len(parameters) != 1:
+        return None
+    shape = tuple(int(size) for size in parameters[0].shape)
+    if node.kind == CircuitKind.NORM.value:
+        if (
+            shape != (width,)
+            or attributes.get("norm_kind") != "rms_norm"
+            or attributes.get("weight_kind") != "direct_scale"
+        ):
+            return None
+        return _RESIDUAL_NORM_GAIN
+    if len(shape) != 2 or shape[0] == shape[1]:
+        # A square interface tensor cannot be told apart from its transpose by
+        # shape alone, so it is refused rather than guessed at.
+        return None
+    if node.kind in {
+        CircuitKind.OUTPUT_HEAD.value,
+        CircuitKind.MODALITY_OUTPUT.value,
+    }:
+        return _RESIDUAL_CONSUMER_HEAD if shape[1] == width else None
+    if node.kind == CircuitKind.TOKEN_EMBEDDING.value:
+        return _RESIDUAL_ROW_TABLE if shape[1] == width else None
+    if node.kind in {
+        CircuitKind.MODALITY_INPUT.value,
+        CircuitKind.POSITION_ENCODING.value,
+    }:
+        if shape[1] == width:
+            return _RESIDUAL_ROW_TABLE
+        if shape[0] == width:
+            return _RESIDUAL_PRODUCER_PROJECTION
+    return None
+
+
+def _native_chart_interface_classes(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> tuple[str, ...] | None:
+    width = dict(graph.metadata).get("hidden_size")
+    if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+        return None
+    classes = []
+    for node in nodes:
+        value = _native_chart_interface_class(node, width)
+        if value is None:
+            return None
+        classes.append(value)
+    if not classes:
+        return None
+    return tuple(sorted(set(classes)))
+
+
+def _native_chart_interface_group_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    return _native_chart_interface_classes(graph, nodes) is not None
+
+
+def _native_chart_interface_crossing(
+    parent: ModelCircuitGraph,
+    source_nodes: Sequence[CircuitNode],
+    child: ModelCircuitGraph,
+    target_nodes: Sequence[CircuitNode],
+    substitution: tuple[int, int],
+) -> tuple[str, ...] | None:
+    """Prove one global interface group is the parent's, restated narrower."""
+
+    classes = _native_chart_interface_classes(child, target_nodes)
+    if classes is None or _native_chart_interface_classes(parent, source_nodes) is None:
+        return None
+    source_by_id = {value.node_id: value for value in source_nodes}
+    target_by_id = {value.node_id: value for value in target_nodes}
+    if set(source_by_id) != set(target_by_id) or len(source_by_id) != len(
+        tuple(source_nodes)
+    ):
+        return None
+    for node_id, source in source_by_id.items():
+        if _residual_width_restated_contract(
+            source, substitution
+        ) != _node_semantic_contract(target_by_id[node_id]):
+            return None
+    return classes
+
+
+def _native_kernel_family_gaps(
+    nodes: Sequence[CircuitNode],
+) -> tuple[tuple[str, str], ...]:
+    """Name every declared mixer kernel family this repository cannot execute.
+
+    The IR already states what each operator needs
+    (``fold_kernel_family_required``).  Reporting that name is the difference
+    between "no operator covers this layer" and "the bounded gated delta
+    recurrence has no kernel yet", and only the second one tells the next
+    implementer what to build.
+    """
+
+    found: dict[str, list[str]] = {}
+    for node in nodes:
+        family = _node_attributes(node).get("fold_kernel_family_required")
+        if not isinstance(family, str):
+            continue
+        capability = _NATIVE_KERNEL_FAMILY_GAPS.get(family)
+        if capability is None:
+            continue
+        found.setdefault(family, []).append(node.node_id)
+    return tuple(
+        (
+            _NATIVE_KERNEL_FAMILY_GAPS[family],
+            f"No registered fold operator implements the {family!r} kernel "
+            "family required by " + ", ".join(sorted(found[family])) + ".",
+        )
+        for family in sorted(found)
+    )
+
+
 def _same_parameter_contract(
     source_graph: ModelCircuitGraph,
     source_nodes: Sequence[CircuitNode],
@@ -734,6 +976,31 @@ def _ordered_residual_contract(
     )
 
 
+def _depth_source_selector_contract(node: CircuitNode) -> bool:
+    """Prove one learned depth-source selector on a block-attnres trunk.
+
+    A ``block_attnres`` branch reads a learned softmax mixture of checkpointed
+    depth sources instead of the running residual, so its bundle carries a
+    second ``RESIDUAL_ADD`` node that owns the pseudo-query and the depth-source
+    normalization.  Admitting that node is not a relaxation of the branch
+    contract: it is still exactly one normalization, one operator and one
+    ordered residual write, plus the selector that names the branch input.
+    """
+
+    attributes = _node_attributes(node)
+    count = attributes.get("depth_source_count")
+    return bool(
+        node.kind == CircuitKind.RESIDUAL_ADD.value
+        and attributes.get("residual_mode") == "block_attnres"
+        and attributes.get("learned_pseudo_query") is True
+        and attributes.get("selection")
+        == "learned_softmax_over_rms_normalized_depth_sources"
+        and isinstance(count, int)
+        and not isinstance(count, bool)
+        and count >= 0
+    )
+
+
 def _causal_branch_contract(
     graph: ModelCircuitGraph,
     nodes: Sequence[CircuitNode],
@@ -744,7 +1011,9 @@ def _causal_branch_contract(
 
     This is the family-neutral unit the promoted causal kernels install: one
     input normalization, one complete coupled operator, and the one ordered
-    residual write that operator owns.  Nothing here inspects a model family.
+    residual write that operator owns, optionally preceded by the learned depth
+    selector that chooses which residual the normalization reads.  Nothing here
+    inspects a model family.
     """
 
     nodes = tuple(nodes)
@@ -753,6 +1022,7 @@ def _causal_branch_contract(
         node for node in nodes if node.kind == CircuitKind.RESIDUAL_ADD.value
     )
     if branch == "attention":
+        labels = _ATTENTION_BRANCH_LABELS
         operators = tuple(
             node for node in nodes if node.kind == CircuitKind.ATTENTION.value
         )
@@ -764,25 +1034,36 @@ def _causal_branch_contract(
             require_o=True,
         )
     elif branch == "mlp":
+        labels = _MLP_BRANCH_LABELS
         operators = tuple(
             node for node in nodes if node.kind == CircuitKind.GATED_MLP.value
         )
-        operator_proven = _gated_mlp_contract(operators, require_swiglu=True)
+        operator_proven = _gated_mlp_contract(
+            operators, require_swiglu=True
+        ) or _fused_gate_up_mlp_contract(operators)
     else:
         return False
+    writes = tuple(
+        node
+        for node in residuals
+        if _node_attributes(node).get("ordered_branch") in labels
+    )
+    write_ids = {node.node_id for node in writes}
+    selectors = tuple(node for node in residuals if node.node_id not in write_ids)
     if (
-        len(nodes) != 3
+        len(nodes) != 3 + len(selectors)
         or len(norms) != 1
         or len(operators) != 1
-        or len(residuals) != 1
-        or _node_attributes(residuals[0]).get("ordered_branch") != branch
+        or len(writes) != 1
+        or any(not _depth_source_selector_contract(node) for node in selectors)
     ):
         return False
     return bool(
         operator_proven
-        and norms[0].order < operators[0].order < residuals[0].order
+        and all(node.order < norms[0].order for node in selectors)
+        and norms[0].order < operators[0].order < writes[0].order
         and _has_edge(graph, norms, operators)
-        and _has_edge(graph, operators, residuals)
+        and _has_edge(graph, operators, writes)
     )
 
 
@@ -797,7 +1078,7 @@ def _causal_layer_branch_split(
         node
         for node in ordered
         if node.kind == CircuitKind.RESIDUAL_ADD.value
-        and _node_attributes(node).get("ordered_branch") == "attention"
+        and _node_attributes(node).get("ordered_branch") in _ATTENTION_BRANCH_LABELS
     )
     if not _complete_layer_bundle(graph, ordered) or len(boundaries) != 1:
         return None
@@ -858,14 +1139,147 @@ def _cross_width_boundary_chart_crossing(
     if widths is None:
         return False
     source, target = widths
-    parent_metadata = dict(parent.metadata)
-    child_metadata = dict(child.metadata)
-    return (
+    return bool(
         target < source
-        and parent_metadata.get("inspector") == _CAUSAL_DECODER_INSPECTOR
-        and child_metadata.get("inspector") == _CAUSAL_DECODER_INSPECTOR
-        and parent_metadata.get("position_policy") == "rope"
-        and child_metadata.get("position_policy") == "rope"
+        and _causal_layer_position_transport(
+            dict(parent.metadata),
+            dict(child.metadata),
+        )
+        is not None
+    )
+
+
+def _causal_layer_position_transport(
+    parent_metadata: Mapping[str, Any],
+    child_metadata: Mapping[str, Any],
+) -> str | None:
+    """Name the position transport both graphs can honestly share, or refuse.
+
+    ``rope`` is the promoted lane: two ``hf-causal-decoder`` graphs that both
+    rotate, where the kernel transports queries and keys through a real
+    rotation.  ``nope`` is the second lane: two graphs from the *same* native
+    decoder inspector that both declare they carry order without any rotary
+    encoding, where the RoPE transport degenerates to the identity.  A mixed
+    pair has no honest transport at all -- there is no evidence that says what
+    a rotated parent's key would have been at an unrotated child's position --
+    so it keeps the planner's explicit operator gap.
+    """
+
+    parent_inspector = parent_metadata.get("inspector")
+    child_inspector = child_metadata.get("inspector")
+    parent_policy = parent_metadata.get("position_policy")
+    child_policy = child_metadata.get("position_policy")
+    if (
+        parent_inspector == _CAUSAL_DECODER_INSPECTOR
+        and child_inspector == _CAUSAL_DECODER_INSPECTOR
+        and parent_policy == "rope"
+        and child_policy == "rope"
+    ):
+        return "rope"
+    if (
+        parent_inspector == child_inspector
+        and parent_inspector in _NATIVE_DECODER_INSPECTORS
+        and parent_policy == "nope"
+        and child_policy == "nope"
+    ):
+        return "nope"
+    return None
+
+
+def _declares_rope_requirement(attributes: Mapping[str, JsonScalar]) -> bool:
+    """True when a node needs something only a rotary implementation provides."""
+
+    if any(
+        attributes.get(name) not in (None, "", False)
+        for name in _ROPE_SPECIFIC_ATTRIBUTES
+    ):
+        return True
+    for name in ("position_policy", "position_encoding"):
+        value = attributes.get(name)
+        if isinstance(value, str) and _semantic_name(value) not in {"nope", ""}:
+            return True
+    return False
+
+
+def _windowed_nope_attention_contract(nodes: Sequence[CircuitNode]) -> bool:
+    """Prove one windowed NoPE grouped-query attention operator.
+
+    The design contract is ``docs/KDA_CSA_HCA_FOLD_KERNEL_DESIGN_2026-08-04.md``
+    section 1.3: local attention is the deployed GQA operator class minus the
+    rotation plus a band mask, so the same coupled kernel runs it under two
+    policy fields.  Everything that makes that true is checked here -- split
+    Q/K/V/O, no projection bias, an even head dimension the kernel can pair,
+    a declared NoPE policy on the node itself, and no rotary requirement
+    anywhere -- and anything else is refused rather than approximated.
+    """
+
+    operators = tuple(
+        node for node in nodes if node.kind == CircuitKind.ATTENTION.value
+    )
+    if len(operators) != 1:
+        return False
+    attributes = _node_attributes(operators[0])
+    window = attributes.get("sliding_window")
+    head_dim = attributes.get("head_dim")
+    return bool(
+        attributes.get("position_policy") == "nope"
+        and not _declares_rope_requirement(attributes)
+        and attributes.get("projection_style") == "split_qkv"
+        and attributes.get("projection_bias") is False
+        and attributes.get("causal") is True
+        and attributes.get("fold_kernel_family_required")
+        == "causal_sliding_window_split_qkv_attention"
+        and isinstance(head_dim, int)
+        and not isinstance(head_dim, bool)
+        and head_dim % 2 == 0
+        and (
+            window is None
+            or (
+                isinstance(window, int)
+                and not isinstance(window, bool)
+                and window > 0
+            )
+        )
+        and _projection_role_contract(
+            operators,
+            require_q=True,
+            require_k=True,
+            require_v=True,
+            require_o=True,
+        )
+    )
+
+
+def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
+    """Prove one dense SiLU-gated MLP whose gate and up share one tensor.
+
+    ``CausalGatedMLPBranchOperator`` matches ``gate_proj``/``up_proj``/
+    ``down_proj``; a fused ``[2 * intermediate, hidden]`` layout is a different
+    tensor set for the same function, which is why the coverage document
+    records it as a mismatch rather than a near miss.  The split point is a
+    declared attribute, not an assumption: only a node that says it chunks the
+    fused output in two on the last dimension qualifies.
+    """
+
+    mlps = tuple(node for node in nodes if node.kind == CircuitKind.GATED_MLP.value)
+    if len(mlps) != 1:
+        return False
+    roles = _parameter_roles(mlps, {CircuitKind.GATED_MLP.value})
+    attributes = _node_attributes(mlps[0])
+    intermediate = attributes.get("intermediate_size")
+    return bool(
+        _roles_contain(roles, ("up_weight",))
+        and _roles_contain(roles, ("down_weight",))
+        and not _roles_contain(roles, ("gate_proj", "gate_weight"))
+        and attributes.get("fused_gate_up_projection") is True
+        and attributes.get("gate_up_split") == "chunk_two_on_last_dimension"
+        and attributes.get("projection_layout") == "fused_gate_up_then_down"
+        and attributes.get("channel_mixer") == "dense"
+        and attributes.get("projection_bias") is False
+        and _semantic_name(attributes.get("activation", "")) in {"silu", "swish"}
+        and isinstance(intermediate, int)
+        and not isinstance(intermediate, bool)
+        and intermediate > 0
     )
 
 
@@ -881,10 +1295,18 @@ def _family_neutral_causal_layer_contract(
     """Prove one contraction-only causal layer transfer without family equality.
 
     Both sides must be inspectable causal decoders whose layer decomposes into
-    the two ordered causal branches, share the residual coordinate width the
-    promoted kernels fit in, and describe a contraction rather than an
-    expansion.  Anything else returns ``None`` so the planner keeps its
-    explicit operator gap.
+    the two ordered causal branches, share one position transport, share the
+    residual coordinate width the promoted kernels fit in (or an authenticated
+    chart crossing), and describe a contraction rather than an expansion.
+    Anything else returns ``None`` so the planner keeps its explicit operator
+    gap.
+
+    Two transports are proven, and they select *different executables*: the
+    RoPE lane installs the coupled GQA/RoPE kernel, the NoPE lane installs the
+    windowed-NoPE policy variant whose rotation is the identity.  A relaxation
+    that let a NoPE graph reach the RoPE operator would plan a transaction the
+    operator could not run, which is the failure this contract exists to
+    prevent.
     """
 
     source = _causal_layer_branch_split(parent, source_nodes)
@@ -893,12 +1315,8 @@ def _family_neutral_causal_layer_contract(
         return None
     parent_metadata = dict(parent.metadata)
     child_metadata = dict(child.metadata)
-    if (
-        parent_metadata.get("inspector") != _CAUSAL_DECODER_INSPECTOR
-        or child_metadata.get("inspector") != _CAUSAL_DECODER_INSPECTOR
-        or parent_metadata.get("position_policy") != "rope"
-        or child_metadata.get("position_policy") != "rope"
-    ):
+    transport = _causal_layer_position_transport(parent_metadata, child_metadata)
+    if transport is None:
         return None
     hidden = parent_metadata.get("hidden_size")
     if isinstance(hidden, bool) or not isinstance(hidden, int):
@@ -937,23 +1355,58 @@ def _family_neutral_causal_layer_contract(
             or target_width > source_width
         ):
             return None
-    if source_attention.get("sliding_window") is not None or target_attention.get(
-        "sliding_window"
-    ) is not None:
+    if transport == "rope":
+        if (
+            source_attention.get("sliding_window") is not None
+            or target_attention.get("sliding_window") is not None
+        ):
+            # The promoted RoPE kernel builds a full causal mask and a real
+            # rotation; a declared window is a different operator class.
+            return None
+        attention_branch = (
+            CAUSAL_ATTENTION_BRANCH_METHOD,
+            "cached_parent_endpoint_coupled_gqa_rope_qk_softmax_vo",
+        )
+    else:
+        if not _windowed_nope_attention_contract(
+            source[0]
+        ) or not _windowed_nope_attention_contract(target[0]):
+            return None
+        if source_attention.get("sliding_window") != target_attention.get(
+            "sliding_window"
+        ):
+            # A window is a contract constant, not a fold coordinate: changing
+            # which keys exist changes the operator, and no evidence says what
+            # the parent would have attended to under a different band.
+            return None
+        attention_branch = (
+            CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
+            "cached_parent_endpoint_coupled_windowed_nope_gqa_qk_softmax_vo",
+        )
+    source_fused = _fused_gate_up_mlp_contract(source[1])
+    target_fused = _fused_gate_up_mlp_contract(target[1])
+    if source_fused != target_fused:
+        # One side stores gate/up fused and the other stores them split.  Both
+        # layouts are foldable, but no registered operator crosses between them
+        # in one transaction, so the crossing keeps its gap.
+        return None
+    if source_fused:
+        mlp_branch = (
+            CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+            "cached_parent_endpoint_coupled_fused_gate_up_swiglu_residual_write",
+        )
+    elif _gated_mlp_contract(
+        source[1], require_swiglu=True
+    ) and _gated_mlp_contract(target[1], require_swiglu=True):
+        mlp_branch = (
+            CAUSAL_GATED_MLP_BRANCH_METHOD,
+            "cached_parent_endpoint_coupled_swiglu_residual_write",
+        )
+    else:
         return None
     return (
-        (
-            CAUSAL_ATTENTION_BRANCH_METHOD,
-            source[0],
-            target[0],
-            "cached_parent_endpoint_coupled_gqa_rope_qk_softmax_vo",
-        ),
-        (
-            CAUSAL_GATED_MLP_BRANCH_METHOD,
-            source[1],
-            target[1],
-            "cached_parent_endpoint_coupled_swiglu_residual_write",
-        ),
+        (attention_branch[0], source[0], target[0], attention_branch[1]),
+        (mlp_branch[0], source[1], target[1], mlp_branch[1]),
     )
 
 
@@ -1586,6 +2039,16 @@ def _bundle_kind_contract(
         )
     if requirement == "residual":
         return CircuitKind.RESIDUAL_ADD.value in kinds
+    if requirement == "causal_windowed_nope_attention_branch":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _windowed_nope_attention_contract(nodes)
+    if requirement == "causal_fused_gate_up_mlp_branch":
+        return _causal_branch_contract(
+            graph, nodes, branch="mlp"
+        ) and _fused_gate_up_mlp_contract(nodes)
+    if requirement == "native_residual_chart_interface_group":
+        return _native_chart_interface_group_contract(graph, nodes)
     if requirement == "lfm2_layer":
         return _lfm2_layer_contract(graph, nodes)
     if requirement in {
@@ -1753,7 +2216,9 @@ def _projection_role_contract(
         (require_q, ("q_proj", "query_proj")),
         (require_k, ("k_proj", "key_proj")),
         (require_v, ("v_proj", "value_proj")),
-        (require_o, ("o_proj", "out_proj", "output_proj")),
+        # ``out_weight`` is the native-trunk spelling of the output projection
+        # (chimera's ``mixer.out``); no other inspector emits that role.
+        (require_o, ("o_proj", "out_proj", "output_proj", "out_weight")),
     )
     return bool(roles) and all(
         not required or _roles_contain(roles, alternatives)
@@ -1981,6 +2446,44 @@ def _coupled_role_contract(
         return _causal_branch_contract(graph, nodes, branch="attention")
     if role == "input_norm_gate_up_post_swiglu_down_residual_write":
         return _causal_branch_contract(graph, nodes, branch="mlp")
+    if role == "input_norm_windowed_nope_q_k_v_o_residual_write":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _windowed_nope_attention_contract(nodes)
+    if role == "input_norm_fused_gate_up_swiglu_down_residual_write":
+        return _causal_branch_contract(
+            graph, nodes, branch="mlp"
+        ) and _fused_gate_up_mlp_contract(nodes)
+    if role == "fused_gate_up_down":
+        return _fused_gate_up_mlp_contract(nodes)
+    if role == "nope_position_transport":
+        operators = tuple(
+            node
+            for node in nodes
+            if node.kind
+            in {
+                CircuitKind.ATTENTION.value,
+                CircuitKind.RECURRENT_MIXER.value,
+                CircuitKind.SHORT_CONV.value,
+            }
+        )
+        return bool(operators) and all(
+            _node_attributes(node).get("position_policy") == "nope"
+            and not _declares_rope_requirement(_node_attributes(node))
+            for node in operators
+        )
+    if role == "learned_depth_source_selection":
+        selectors = tuple(
+            node
+            for node in nodes
+            if node.kind == CircuitKind.RESIDUAL_ADD.value
+            and _node_attributes(node).get("residual_mode") == "block_attnres"
+        )
+        return bool(selectors) and all(
+            _depth_source_selector_contract(node) for node in selectors
+        )
+    if role == "residual_chart_projected_interface":
+        return _native_chart_interface_group_contract(graph, nodes)
     if role == "embedding_tokenizer_output_head_tying":
         return _token_interface_tying_contract(graph, nodes)
     if role == "embedding_tokenizer_output_head_interface":
@@ -3109,6 +3612,24 @@ class DynamicFoldPlanner:
                     fit_objective = "exact_role_copy"
                     substitution = cross_width_substitution
                     boundary_chart_required = True
+                elif cross_width_substitution is not None and (
+                    interface_classes := _native_chart_interface_crossing(
+                        parents[0],
+                        source_groups[0][1],
+                        child,
+                        target_bundle,
+                        cross_width_substitution,
+                    )
+                ):
+                    # A learned global interface circuit that is the parent's,
+                    # restated at the contracted residual width.  The tensor
+                    # itself is compiled by a registered chart operator, so
+                    # nothing here claims an exact copy.
+                    method_id = NATIVE_RESIDUAL_CHART_INTERFACE_METHOD
+                    fit_objective = "chart_projected_" + "_and_".join(
+                        interface_classes
+                    )
+                    boundary_chart_required = True
                 else:
                     gaps.append(
                         FoldPlanGap(
@@ -3234,21 +3755,21 @@ class DynamicFoldPlanner:
                 configuration["fit_objective"] = "exact_role_copy"
             causal_branches = None
             cross_width_crossing = False
-            if (
-                method_id is None
-                and len(parents) == 1
-                and len(spans[0]) == 1
-                and all(
-                    value in self.enabled_experimental_method_ids
-                    for value in CAUSAL_LAYER_BRANCH_METHODS
-                )
-            ):
+            if method_id is None and len(parents) == 1 and len(spans[0]) == 1:
                 causal_branches = _family_neutral_causal_layer_contract(
                     parents[0],
                     source_groups[0][1],
                     child,
                     target_nodes,
                 )
+                if causal_branches is not None and not all(
+                    branch_method_id in self.enabled_experimental_method_ids
+                    for branch_method_id, _source, _target, _fit in causal_branches
+                ):
+                    # Both branches of a layer are opted into together: a layer
+                    # whose attention half has no owning transaction cannot be
+                    # closed by folding its MLP half alone.
+                    causal_branches = None
                 cross_width_crossing = causal_branches is not None and bool(
                     _cross_width_boundary_chart_crossing(parents[0], child)
                 )
@@ -3293,13 +3814,26 @@ class DynamicFoldPlanner:
                     dependency = (action.action_id,)
                 continue
             if method_id is None:
-                gaps.append(
-                    FoldPlanGap(
-                        tuple(value.node_id for value in target_nodes),
-                        "No registered complete-layer operator covers this source/target topology.",
-                        "cross_family_closed_loop_layer_operator",
+                node_ids = tuple(value.node_id for value in target_nodes)
+                named = _native_kernel_family_gaps(target_nodes)
+                if not named:
+                    named = _native_kernel_family_gaps(
+                        tuple(
+                            value
+                            for _graph, nodes in source_groups
+                            for value in nodes
+                        )
                     )
-                )
+                if not named:
+                    named = (
+                        (
+                            "cross_family_closed_loop_layer_operator",
+                            "No registered complete-layer operator covers this "
+                            "source/target topology.",
+                        ),
+                    )
+                for capability, reason in named:
+                    gaps.append(FoldPlanGap(node_ids, reason, capability))
                 gapped.update(
                     path for value in target_nodes for path in value.parameter_paths
                 )
@@ -3405,8 +3939,12 @@ def plan_dynamic_fold(
 
 __all__ = [
     "CAUSAL_ATTENTION_BRANCH_METHOD",
+    "CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD",
     "CAUSAL_GATED_MLP_BRANCH_METHOD",
     "CAUSAL_LAYER_BRANCH_METHODS",
+    "CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD",
+    "NATIVE_CAUSAL_LAYER_BRANCH_METHODS",
+    "NATIVE_RESIDUAL_CHART_INTERFACE_METHOD",
     "DynamicFoldPlan",
     "DynamicFoldPlanner",
     "DynamicFoldPlanningError",
