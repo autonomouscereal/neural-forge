@@ -286,3 +286,43 @@ def test_staged_runner_rebuilds_the_r12_base_capture_selection() -> None:
     mutated = {**sealed, "max_decode_steps": 16}
     with pytest.raises(runner.R12OnPolicyRoundError):
         runner._capture_config_from_sealed_manifest(mutated)
+
+
+def test_runner_receipt_thaws_frozen_manifest_rows_deeply() -> None:
+    """A sealed round manifest is deep-frozen; the receipt writer must thaw
+    it deeply or json.dumps dies on nested mappingproxy rows.  The first
+    round with non-empty rejected_prompts/admissibility rows failed exactly
+    there after a complete, sealed capture."""
+
+    from types import MappingProxyType
+
+    from experiments import run_r12_on_policy_round as runner
+
+    frozen = MappingProxyType(
+        {
+            "rejected_prompts": (
+                MappingProxyType(
+                    {"fit_prompt_index": 4, "reason": "re-tokenization"}
+                ),
+            ),
+            "excluded": (
+                MappingProxyType(
+                    {
+                        "batch_index": 0,
+                        "first_inadmissible_phase": "decode.001",
+                        "max_abs_error": 1.90625,
+                    }
+                ),
+            ),
+        }
+    )
+    thawed = runner._deep_thaw(frozen)
+    json.dumps(thawed, ensure_ascii=True, sort_keys=True)
+
+    # The receipt body must never shallow-thaw a manifest value again: a
+    # top-level dict() call leaves every nested row frozen.
+    source = (ROOT / "experiments" / "run_r12_on_policy_round.py").read_text(
+        encoding="utf-8"
+    )
+    assert "dict(manifest[" not in source
+    assert "dict(admissibility)" not in source

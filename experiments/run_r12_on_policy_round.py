@@ -62,6 +62,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 from neural_forge.hf_lfm2_on_policy_evidence_round import (  # noqa: E402
     Lfm2OnPolicyEvidenceRoundError,
     Lfm2OnPolicyRolloutConfig,
+    _deep_thaw,
     run_lfm2_on_policy_evidence_round,
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
@@ -372,7 +373,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "parent_identity_sha256": parent_fingerprint,
         "parent_load_dtype": parent_dtype,
-        "execution_identity": dict(execution),
+        "execution_identity": _deep_thaw(execution),
         "sealed_execution_identity_sha256": (
             sealed_execution["execution_sha256"]
         ),
@@ -390,7 +391,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "manual_prompt_manifest_path": str(
             args.manual_prompt_manifest.expanduser().resolve(strict=True)
         ),
-        "disjointness": dict(manifest["disjointness"]),
+        # _deep_thaw, not dict(): the loaded manifest is deep-frozen, and a
+        # shallow dict() leaves nested mappingproxy rows that json.dumps
+        # refuses -- the first round with non-empty nested rows proved it.
+        "disjointness": _deep_thaw(manifest["disjointness"]),
         "round_index": executed.round_index,
         "max_rounds": executed.max_rounds,
         "round_manifest_path": str(executed.manifest_path),
@@ -403,14 +407,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "target_preimage_bridge_artifact_sha256": (
             executed.target_preimage_bridge_artifact_sha256
         ),
-        "counters": dict(manifest["counters"]),
-        "rollout": dict(manifest["rollout"]),
+        "counters": _deep_thaw(manifest["counters"]),
+        "rollout": _deep_thaw(manifest["rollout"]),
     }
     admissibility = manifest.get("capture", {}).get(
         "cached_decode_admissibility"
     )
     if admissibility is not None:
-        body["cached_decode_admissibility"] = dict(admissibility)
+        body["cached_decode_admissibility"] = _deep_thaw(admissibility)
     receipt = {**body, "runner_receipt_sha256": canonical_sha256(body)}
     if args.receipt is not None:
         destination = args.receipt.expanduser().absolute()
