@@ -70,6 +70,7 @@ from neural_forge.hf_lfm2_dense_budget_model_fold import (
     Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetFoldError,
     _build_residual_basis,
+    _initial_structural_fold_or_authenticated_resume,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
@@ -347,6 +348,46 @@ def sealed_parent(tmp_path_factory):
         input_device="cpu",
     )
     return parent, cache
+
+
+def test_authenticated_resume_skips_structural_fold_while_fresh_executes_it() -> None:
+    calls = []
+    events = []
+
+    class _Progress:
+        def emit(self, stage, **metadata):
+            events.append((stage, dict(metadata)))
+
+    def structural_fold():
+        calls.append("structural-fold")
+        return {"schema": "fresh-structural-fold-report"}
+
+    fresh = _initial_structural_fold_or_authenticated_resume(
+        restart_resume=None,
+        structural_fold=structural_fold,
+        fold_progress=_Progress(),
+    )
+    assert fresh == {"schema": "fresh-structural-fold-report"}
+    assert calls == ["structural-fold"]
+
+    resume = SimpleNamespace(
+        reference=SimpleNamespace(
+            capsule_key="capsule-key",
+            manifest_sha256="a" * 64,
+        ),
+        child_state_sha256="b" * 64,
+        child_topology_sha256="c" * 64,
+    )
+    resumed = _initial_structural_fold_or_authenticated_resume(
+        restart_resume=resume,
+        structural_fold=structural_fold,
+        fold_progress=_Progress(),
+    )
+    assert calls == ["structural-fold"]
+    assert resumed["structural_parent_to_blank_fold_executed"] is False
+    assert resumed["capsule_key"] == "capsule-key"
+    assert resumed["parent_forward_calls"] == 0
+    assert events[-1][0] == "dense_structural_fold_skipped_restart_resume"
 
 
 @pytest.fixture(scope="module")

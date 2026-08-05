@@ -32,6 +32,7 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     ClosedLoopFoldError,
     FoldScope,
     TrajectoryRecord,
+    closed_loop_compiler_restart_policy,
     deterministic_whole_trajectory_split,
 )
 from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache  # noqa: E402
@@ -70,6 +71,7 @@ from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (  # noqa: E402
     Lfm2MacroCellAttractorGate,
+    Lfm2MacroCellAttractorGateConfig,
 )
 
 
@@ -331,6 +333,8 @@ def _adapter(
     replay_devices=None,
     child_replay_phase_cache_context=None,
     install_verification_mode=LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
+    replay_config_override=None,
+    selected_layer_indices=None,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
@@ -349,7 +353,11 @@ def _adapter(
         initial_child_basis_sha256=mapping.map_sha256,
         body_reclosure_mode=body_reclosure_mode,
         parent_residual_operators=parent_residual_operators,
-        replay_config=replay_config,
+        replay_config=(
+            replay_config
+            if replay_config_override is None
+            else replay_config_override
+        ),
         input_device="cpu",
         config=Lfm2DynamicClosedLoopAdapterConfig(
             ridge=1e-5,
@@ -411,6 +419,7 @@ def _adapter(
         child_replay_phase_cache_context=(
             child_replay_phase_cache_context
         ),
+        selected_layer_indices=selected_layer_indices,
     )
     return adapter, child, mapping
 
@@ -459,6 +468,12 @@ class _ScriptedAttractorGate(Lfm2MacroCellAttractorGate):
     def __init__(self, *, accepted):
         self.accepted = bool(accepted)
         self.phases = []
+        self._config = Lfm2MacroCellAttractorGateConfig()
+        self._config_sha256 = canonical_sha256(self._config.as_dict())
+        self._cache_key = canonical_sha256({"scripted_gate_cache": "v1"})
+        self._selection_sha256 = canonical_sha256(
+            {"scripted_gate_selection": "v1"}
+        )
 
     def capture(self, child_model, *, phase):
         del child_model
@@ -539,6 +554,10 @@ def test_outer_transaction_restores_exact_state_parameter_and_gradient(
     assert not receipt.accepted
     assert adapter.child_state_fingerprint() == state_before
     assert adapter.child_topology_fingerprint() == topology_before
+    assert adapter._accepted_layer_completion_ledger == {}
+    assert adapter._producer_payloads == {}
+    assert adapter._consumer_payloads == {}
+    assert adapter._downstream_payloads == {}
     assert id(parameter) == parameter_id
     assert id(parameter.grad) == gradient_id
     assert torch.equal(parameter.grad, gradient_before)
@@ -1366,6 +1385,10 @@ def test_moving_gauge_cleanup_releases_every_capture_and_rolls_back(
     assert len(cleanup_attempts) > 1
     assert adapter.child_state_fingerprint() == state_before
     assert adapter.child_topology_fingerprint() == topology_before
+    assert adapter._accepted_layer_completion_ledger == {}
+    assert adapter._producer_payloads == {}
+    assert adapter._consumer_payloads == {}
+    assert adapter._downstream_payloads == {}
 
 
 def test_tensor_sha256_memoryview_preserves_the_legacy_digest_contract() -> None:
@@ -2432,26 +2455,26 @@ def test_adapter_opt_in_coupled_attention_value_output_path(
         ),
     ).run()
 
-    producer = adapter._producer_payloads[1]
-    attention_consumer = adapter._consumer_payloads[1].compiled
-    assert producer.attention_score_fit is not None
-    assert producer.attention_score_validation is not None
-    assert producer.attention_score_validation.accepted
-    assert attention_consumer.fixed_query_key_sha256 == (
-        producer.compiled.score_state_sha256
-    )
-    assert attention_consumer.as_dict()["score_path_fixed"]
-    assert attention_consumer.value_context_solver == (
-        "exact-live-context-head-local-value-transport"
-    )
-    assert attention_consumer.fit_nonincreasing
+    assert adapter._producer_payloads == {}
+    assert adapter._consumer_payloads == {}
     assert report["audit"]["training_steps"] == 0
     assert report["audit"]["backward_calls"] == 0
     assert report["audit"]["optimizer_steps"] == 0
     attention_layer = report["layer_reports"][1]
     score_metadata = attention_layer["producer"]["compiled"]["metadata"]
+    consumer_metadata = attention_layer["consumer"]["compiled"]["metadata"]
     assert score_metadata["attention_score_candidate_gate_enabled"]
     assert score_metadata["attention_score_candidate_gate_accepted"]
+    assert score_metadata["attention_score_fit_report_sha256"] is not None
+    assert score_metadata["attention_score_validation_report_sha256"] is not None
+    assert consumer_metadata["attention_fixed_query_key_sha256"] == (
+        score_metadata["attention_score_state_sha256"]
+    )
+    assert consumer_metadata["attention_score_path_fixed"]
+    assert consumer_metadata["attention_value_context_solver"] == (
+        "exact-live-context-head-local-value-transport"
+    )
+    assert consumer_metadata["attention_fit_nonincreasing"]
     assert score_metadata["attention_score_parent_forward_calls"] == 0
     assert score_metadata[
         "attention_score_numeric_weight_matching_used"
@@ -3721,34 +3744,227 @@ def test_mid_body_resume_is_refused_when_body_reclosure_needs_the_stack(
     )
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
-        match="mid-body restart resume cannot satisfy",
+        match="authenticated accepted-layer completion ledger",
     ):
         adapter.assert_mid_body_resume_supported(
             completed_layer_indices=(0,),
             remaining_layer_indices=(1,),
             body_reclosure_enabled=True,
         )
-    admission = adapter.assert_mid_body_resume_supported(
-        completed_layer_indices=(0,),
-        remaining_layer_indices=(1,),
-        body_reclosure_enabled=False,
-    )
-    assert admission["body_reclosure_requires_full_installed_stack"] is True
-    assert admission["skipped_layers_are_not_replayed"] is True
-    body = {
-        name: value
-        for name, value in admission.items()
-        if name != "admission_sha256"
-    }
-    assert admission["admission_sha256"] == canonical_sha256(body)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="legacy layer-number-only capsules fail closed",
+    ):
+        adapter.assert_mid_body_resume_supported(
+            completed_layer_indices=(0,),
+            remaining_layer_indices=(1,),
+            body_reclosure_enabled=False,
+        )
 
     disabled_adapter, _c, _m = _adapter(sealed_parent)
-    enabled = disabled_adapter.assert_mid_body_resume_supported(
-        completed_layer_indices=(0,),
-        remaining_layer_indices=(1,),
-        body_reclosure_enabled=True,
+    for body_reclosure_enabled in (False, True):
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="compiler continuation policy",
+        ):
+            disabled_adapter.assert_mid_body_resume_supported(
+                completed_layer_indices=(0,),
+                remaining_layer_indices=(1,),
+                body_reclosure_enabled=body_reclosure_enabled,
+            )
+
+    eiv_adapter, _c, _m = _adapter(sealed_parent)
+    eiv_adapter.config = replace(
+        eiv_adapter.config,
+        mlp_input_error_covariance_enabled=True,
+        mlp_input_error_robustness_multiplier=1.0,
     )
-    assert enabled["body_reclosure_requires_full_installed_stack"] is False
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="partial-prefix resume fails closed",
+    ):
+        eiv_adapter.assert_mid_body_resume_supported(
+            completed_layer_indices=(0,),
+            remaining_layer_indices=(1,),
+            body_reclosure_enabled=False,
+        )
+
+
+def test_compiler_binds_a_strict_layer_subset_before_the_transaction(
+    sealed_parent,
+) -> None:
+    adapter, child, _mapping = _adapter(sealed_parent)
+    state_before = portable_child_state_sha256(child)
+    topology_before = portable_child_topology_sha256(child)
+    config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-pretransaction-subset-binding-v1",
+        selected_layers=(0,),
+        fold_body_reclosure=False,
+        fold_output_interface=False,
+    )
+
+    report = ChildClosedLoopCompiler(adapter, config).run()
+
+    assert report["available_layers"] == [0, 1]
+    assert report["selected_layers"] == [0]
+    assert [
+        value["scope"]["layer_index"] for value in report["layer_reports"]
+    ] == [0]
+    assert adapter._selected_layers == (0,)
+    assert adapter._constructor_selected_layers is None
+    assert portable_child_state_sha256(child) != state_before
+    assert portable_child_topology_sha256(child) == topology_before
+    assert adapter._producer_payloads == {}
+    assert adapter._consumer_payloads == {}
+    assert adapter._downstream_payloads == {}
+
+
+def test_moving_gauge_refuses_a_strict_resolved_layer_subset(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    state_before = portable_child_state_sha256(child)
+    topology_before = portable_child_topology_sha256(child)
+
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="whole-body stage",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(selected_layers=(0,)),
+        ).run()
+
+    assert portable_child_state_sha256(child) == state_before
+    assert portable_child_topology_sha256(child) == topology_before
+    assert adapter._active_outer_transaction is None
+
+
+def test_completed_subset_resume_with_eiv_reaches_terminal_stages_exactly(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-completed-subset-eiv-resume-v1",
+        selected_layers=(0,),
+        fold_body_reclosure=False,
+        fold_output_interface=True,
+    )
+    cold_adapter, cold_child, mapping = _adapter(sealed_parent)
+    cold_adapter.config = replace(
+        cold_adapter.config,
+        mlp_input_error_covariance_enabled=True,
+        mlp_input_error_robustness_multiplier=1.0,
+    )
+    cold_root = tmp_path / "completed-subset-eiv-cold"
+    cold_root.mkdir()
+    split_sha256 = lfm2_restart_capsule_split_sha256(cold_adapter, config)
+    cold_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=cold_adapter,
+        directory=cold_root,
+        run_id="lfm2-completed-subset-eiv-run",
+        child_name="lfm2-completed-subset-eiv-child",
+        trajectory_split_sha256=split_sha256,
+        run_schema=RUN_SCHEMA,
+    )
+    cold_report = ChildClosedLoopCompiler(
+        cold_adapter,
+        config,
+        restart_capsule_config=cold_writer,
+    ).run()
+    cold_state = portable_child_state_sha256(cold_child)
+    cold_topology = portable_child_topology_sha256(cold_child)
+
+    reference = discover_lfm2_closed_loop_restart_capsules(cold_root)[0]
+    resumed_child = _model(hidden=4, intermediate=6, heads=1, seed=1811)
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=resumed_child,
+    )
+    resumed_adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_child=resumed_child,
+        existing_mapping=mapping,
+        selected_layer_indices=(0,),
+    )
+    resumed_adapter.config = replace(
+        resumed_adapter.config,
+        mlp_input_error_covariance_enabled=True,
+        mlp_input_error_robustness_multiplier=1.0,
+    )
+    layer_capture_calls = 0
+    original_capture = resumed_adapter.replay_and_capture_child
+
+    def observe_capture(self, scope, point, records, audit):
+        nonlocal layer_capture_calls
+        if scope.kind == "layer":
+            layer_capture_calls += 1
+        return original_capture(scope, point, records, audit)
+
+    resumed_adapter.replay_and_capture_child = MethodType(
+        observe_capture,
+        resumed_adapter,
+    )
+    resumed_root = tmp_path / "completed-subset-eiv-resumed"
+    resumed_root.mkdir()
+    resumed_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=resumed_adapter,
+        directory=resumed_root,
+        run_id="lfm2-completed-subset-eiv-run",
+        child_name="lfm2-completed-subset-eiv-child",
+        trajectory_split_sha256=split_sha256,
+        run_schema=RUN_SCHEMA,
+        resume=resume,
+    )
+    resumed_config = resumed_adapter.config
+    resumed_adapter.config = replace(
+        resumed_config,
+        terminal_free_run_tripwire_enabled=True,
+    )
+    resumed_adapter.terminal_free_run_match_probe = lambda *_args: None
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="process-local terminal free-run probe",
+    ):
+        resumed_adapter.assert_mid_body_resume_supported(
+            completed_layer_indices=(0,),
+            remaining_layer_indices=(),
+            body_reclosure_enabled=False,
+            compiler_restart_policy=closed_loop_compiler_restart_policy(
+                config,
+                (0,),
+            ),
+            accepted_layer_completion_ledger=resume.manifest[
+                "accepted_layer_completion_ledger"
+            ],
+        )
+    resumed_adapter.terminal_free_run_match_probe = None
+    resumed_adapter.config = resumed_config
+    resumed_report = ChildClosedLoopCompiler(
+        resumed_adapter,
+        config,
+        restart_capsule_config=resumed_writer,
+    ).run()
+
+    assert resumed_report["restart_capsule_resumed_layers"] == [0]
+    assert resumed_report["layers_executed_in_this_process"] == []
+    assert layer_capture_calls == 0
+    assert resumed_report["audit"]["producer_compile_calls"] == 0
+    assert resumed_report["audit"]["body_reclosure_compile_calls"] == 0
+    assert resumed_report["audit"]["final_normalization_compile_calls"] == 1
+    assert resumed_report["audit"]["output_interface_compile_calls"] == 1
+    assert cold_report["selected_layers"] == [0]
+    assert portable_child_state_sha256(resumed_child) == cold_state
+    assert portable_child_topology_sha256(resumed_child) == cold_topology
 
 
 def test_restart_capsule_resume_reproduces_the_uninterrupted_fold(
@@ -3813,14 +4029,33 @@ def test_restart_capsule_resume_reproduces_the_uninterrupted_fold(
         resume=resume,
         run_schema=RUN_SCHEMA,
     )
+    restored_state = portable_child_state_sha256(resumed_child)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="different closed-loop compiler continuation policy",
+    ):
+        ChildClosedLoopCompiler(
+            resumed_adapter,
+            replace(
+                config,
+                fold_output_interface=not config.fold_output_interface,
+            ),
+            restart_capsule_config=resumed_writer,
+        ).run()
+    assert portable_child_state_sha256(resumed_child) == restored_state
+    assert resumed_adapter._accepted_layer_completion_ledger == {}
+    assert resumed_adapter._producer_payloads == {}
+    assert resumed_adapter._consumer_payloads == {}
+    assert resumed_adapter._downstream_payloads == {}
     resumed = ChildClosedLoopCompiler(
         resumed_adapter,
-        config,
+        replace(config, merge_adjacent_layer_captures=True),
         restart_capsule_config=resumed_writer,
     ).run()
 
     assert resumed["restart_capsule_resumed_layers"] == [0]
     assert resumed["layers_executed_in_this_process"] == [1]
+    assert resumed["merge_adjacent_layer_captures_requested"] is True
     assert resumed["restart_capsule"]["capsules_written"] == 1
     assert resumed["restart_capsule"]["resume_admission"][
         "resume_layer_index"
@@ -3842,6 +4077,394 @@ def test_restart_capsule_resume_reproduces_the_uninterrupted_fold(
     assert portable_child_topology_sha256(
         resumed_child
     ) == portable_child_topology_sha256(cold_child)
+
+
+def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    parent, _cache, replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-moving-gauge-restart-ledger-v1",
+        fold_body_reclosure=True,
+        fold_output_interface=True,
+    )
+    capsule_root = tmp_path / "moving-gauge-cold"
+    capsule_root.mkdir()
+    cold_adapter, cold_child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    split_sha256 = lfm2_restart_capsule_split_sha256(cold_adapter, config)
+    cold_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=cold_adapter,
+        directory=capsule_root,
+        run_id="lfm2-moving-gauge-restart-ledger-run",
+        child_name="lfm2-moving-gauge-restart-ledger-child",
+        trajectory_split_sha256=split_sha256,
+        run_schema=RUN_SCHEMA,
+    )
+    cold = ChildClosedLoopCompiler(
+        cold_adapter,
+        config,
+        restart_capsule_config=cold_writer,
+    ).run()
+    cold_state = portable_child_state_sha256(cold_child)
+    cold_topology = portable_child_topology_sha256(cold_child)
+    assert cold_adapter._producer_payloads == {}
+    assert cold_adapter._consumer_payloads == {}
+    assert cold_adapter._downstream_payloads == {}
+
+    layer_zero = discover_lfm2_closed_loop_restart_capsules(capsule_root)[0]
+    resumed_child = _model(hidden=4, intermediate=6, heads=1, seed=1803)
+    resume = load_lfm2_closed_loop_restart_capsule(
+        layer_zero,
+        child_model=resumed_child,
+    )
+    resumed_adapter, _resumed_child, _mapping = _adapter(
+        sealed_parent,
+        existing_child=resumed_child,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    resumed_root = tmp_path / "moving-gauge-resumed"
+    resumed_root.mkdir()
+    resumed_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=resumed_adapter,
+        directory=resumed_root,
+        run_id="lfm2-moving-gauge-restart-ledger-run",
+        child_name="lfm2-moving-gauge-restart-ledger-child",
+        trajectory_split_sha256=split_sha256,
+        resume=resume,
+        run_schema=RUN_SCHEMA,
+    )
+    resumed = ChildClosedLoopCompiler(
+        resumed_adapter,
+        config,
+        restart_capsule_config=resumed_writer,
+    ).run()
+
+    assert resumed["restart_capsule_resumed_layers"] == [0]
+    assert resumed["layers_executed_in_this_process"] == [1]
+    assert resumed["layer_reports"][0]["executed_in_this_process"] is False
+    assert resumed["layer_reports"][1]["executed_in_this_process"] is True
+    assert (
+        cold["audit"]["child_replay_capture_calls"]
+        - resumed["audit"]["child_replay_capture_calls"]
+        == 4
+    )
+    assert resumed["audit"]["producer_compile_calls"] == 1
+    assert resumed["audit"]["parent_forward_calls"] == 0
+    assert resumed["audit"]["training_steps"] == 0
+    assert resumed["audit"]["backward_calls"] == 0
+    assert resumed["audit"]["optimizer_steps"] == 0
+    assert portable_child_state_sha256(resumed_child) == cold_state
+    assert portable_child_topology_sha256(resumed_child) == cold_topology
+    assert resumed_adapter._producer_payloads == {}
+    assert resumed_adapter._consumer_payloads == {}
+    assert resumed_adapter._downstream_payloads == {}
+
+    # A final accepted-layer capsule is the critical handoff for a process
+    # that dies immediately before body reclosure.  It must skip every layer
+    # callback yet still reproduce the uninterrupted body/final result.
+    layer_one = discover_lfm2_closed_loop_restart_capsules(capsule_root)[1]
+    final_resume_child = _model(hidden=4, intermediate=6, heads=1, seed=1804)
+    final_resume = load_lfm2_closed_loop_restart_capsule(
+        layer_one,
+        child_model=final_resume_child,
+    )
+    assert final_resume.completed_layer_indices == (0, 1)
+    assert final_resume.resume_layer_index is None
+    assert final_resume.manifest["remaining_layer_indices"] == []
+    final_adapter, _final_child, _final_mapping = _adapter(
+        sealed_parent,
+        existing_child=final_resume_child,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    layer_capture_calls = 0
+    original_final_capture = final_adapter.replay_and_capture_child
+
+    def observe_final_resume_capture(self, scope, point, records, audit):
+        nonlocal layer_capture_calls
+        if scope.kind == "layer":
+            layer_capture_calls += 1
+        return original_final_capture(scope, point, records, audit)
+
+    final_adapter.replay_and_capture_child = MethodType(
+        observe_final_resume_capture,
+        final_adapter,
+    )
+    final_root = tmp_path / "moving-gauge-final-resumed"
+    final_root.mkdir()
+    final_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=final_adapter,
+        directory=final_root,
+        run_id="lfm2-moving-gauge-restart-ledger-run",
+        child_name="lfm2-moving-gauge-restart-ledger-child",
+        trajectory_split_sha256=split_sha256,
+        resume=final_resume,
+        run_schema=RUN_SCHEMA,
+    )
+    final_report = ChildClosedLoopCompiler(
+        final_adapter,
+        config,
+        restart_capsule_config=final_writer,
+    ).run()
+    assert final_report["restart_capsule_resumed_layers"] == [0, 1]
+    assert final_report["layers_executed_in_this_process"] == []
+    assert all(
+        layer["executed_in_this_process"] is False
+        for layer in final_report["layer_reports"]
+    )
+    assert layer_capture_calls == 0
+    assert final_report["audit"]["producer_compile_calls"] == 0
+    assert final_report["audit"]["consumer_fit_calls"] == 0
+    assert final_report["audit"]["downstream_compile_calls"] == 0
+    assert final_report["audit"]["body_reclosure_compile_calls"] == 1
+    assert final_report["audit"]["final_normalization_compile_calls"] == 1
+    assert final_report["audit"]["output_interface_compile_calls"] == 1
+    assert final_report["audit"]["install_calls"] == 3
+    assert final_report["audit"]["validation_calls"] == 3
+    assert final_report["output_interface_fold_enabled"] is True
+    assert final_report["output_interface"]["install"] is not None
+    assert final_report["output_interface"]["compiled"]["metadata"][
+        "identity_skip"
+    ] is False
+    assert cold["output_interface"]["compiled"]["metadata"][
+        "identity_skip"
+    ] is False
+    assert final_report["audit"]["parent_forward_calls"] == 0
+    assert final_report["audit"]["training_steps"] == 0
+    assert portable_child_state_sha256(final_resume_child) == cold_state
+    assert portable_child_topology_sha256(final_resume_child) == cold_topology
+    cold_state_dict = cold_child.state_dict()
+    final_state_dict = final_resume_child.state_dict()
+    assert sorted(final_state_dict) == sorted(cold_state_dict)
+    assert all(
+        torch.equal(final_state_dict[name], cold_state_dict[name])
+        for name in cold_state_dict
+    )
+
+    full_ledger = cold_adapter.accepted_layer_completion_ledger()
+    cold_adapter._authenticate_accepted_layer_completion_ledger(
+        full_ledger,
+        expected_completed_layer_indices=(0, 1),
+        expected_selected_layer_indices=(0, 1),
+        expected_trajectory_split_sha256=split_sha256,
+    )
+
+    tampered = json.loads(json.dumps(full_ledger))
+    tampered["receipts"][0]["validation_decision_sha256"] = "f" * 64
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="canonical seal",
+    ):
+        cold_adapter._authenticate_accepted_layer_completion_ledger(tampered)
+
+    missing = json.loads(json.dumps(full_ledger))
+    missing.pop("completion_ledger_sha256")
+    missing["receipts"].pop()
+    missing["completion_ledger_sha256"] = canonical_sha256(missing)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="receipt inventory",
+    ):
+        cold_adapter._authenticate_accepted_layer_completion_ledger(missing)
+
+    reordered = json.loads(json.dumps(full_ledger))
+    reordered.pop("completion_ledger_sha256")
+    reordered["receipts"].reverse()
+    reordered["completion_ledger_sha256"] = canonical_sha256(reordered)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="lifecycle binding",
+    ):
+        cold_adapter._authenticate_accepted_layer_completion_ledger(reordered)
+
+    foreign_adapter, _foreign_child, _foreign_mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    foreign_adapter.config = replace(foreign_adapter.config, ridge=2e-5)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="foreign policy or source binding",
+    ):
+        foreign_adapter._authenticate_accepted_layer_completion_ledger(
+            full_ledger
+        )
+
+    equivalent_replay_adapter, _equivalent_child, _equivalent_mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        replay_config_override=replace(replay_config),
+    )
+    equivalent_replay_adapter._authenticate_accepted_layer_completion_ledger(
+        full_ledger
+    )
+    changed_replay_adapter, _changed_child, _changed_mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        replay_config_override=replace(
+            replay_config,
+            sample_last_tokens=replay_config.sample_last_tokens + 1,
+            max_decode_steps=replay_config.max_decode_steps + 1,
+        ),
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="foreign policy or source binding",
+    ):
+        changed_replay_adapter._authenticate_accepted_layer_completion_ledger(
+            full_ledger
+        )
+
+    relocated_config_adapter, _relocated_child, _relocated_mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    relocated_config_adapter.child_model.config._name_or_path = (
+        "C:/relocated/equivalent-lfm2-child"
+    )
+    relocated_config_adapter._authenticate_accepted_layer_completion_ledger(
+        full_ledger
+    )
+    relocated_config_adapter.child_model.config.hidden_act = "relu"
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="foreign policy or source binding",
+    ):
+        relocated_config_adapter._authenticate_accepted_layer_completion_ledger(
+            full_ledger
+        )
+
+    trace_evidence_adapter, _trace_child, _trace_mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    trace_evidence_adapter.tokenizer_bridge_trace_adapter = SimpleNamespace(
+        evidence_sha256="a" * 64
+    )
+    first_trace_identity = lfm2_restart_capsule_adapter_identity(
+        trace_evidence_adapter
+    )
+    trace_evidence_adapter.tokenizer_bridge_trace_adapter = SimpleNamespace(
+        evidence_sha256="a" * 64
+    )
+    assert lfm2_restart_capsule_adapter_identity(
+        trace_evidence_adapter
+    ) == first_trace_identity
+    trace_evidence_adapter.tokenizer_bridge_trace_adapter = SimpleNamespace(
+        evidence_sha256="b" * 64
+    )
+    assert lfm2_restart_capsule_adapter_identity(
+        trace_evidence_adapter
+    )["adapter_identity_sha256"] != first_trace_identity[
+        "adapter_identity_sha256"
+    ]
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="foreign policy or source binding",
+    ):
+        trace_evidence_adapter._authenticate_accepted_layer_completion_ledger(
+            full_ledger
+        )
+
+    mismatched_compiler_configs = (
+        replace(config, fold_body_reclosure=False),
+        replace(config, fold_output_interface=False),
+    )
+    for mismatched_config in mismatched_compiler_configs:
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="different closed-loop compiler continuation policy",
+        ):
+            cold_adapter._authenticate_accepted_layer_completion_ledger(
+                full_ledger,
+                expected_compiler_restart_policy=(
+                    closed_loop_compiler_restart_policy(
+                        mismatched_config,
+                        (0, 1),
+                    )
+                ),
+            )
+
+    # Capture merging and device sharding change scheduling/cost only.  They
+    # are deliberately absent from the semantic continuation identity.
+    execution_adapter, _execution_child, _execution_mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    execution_adapter.config = replace(
+        execution_adapter.config,
+        install_verification_mode=LFM2_INSTALL_VERIFICATION_FINGERPRINT,
+        mlp_gate_operating_point_diagnostics=True,
+        mlp_solver_conditioning_diagnostics=True,
+        replay_devices=("cuda:99",),
+    )
+    execution_adapter._authenticate_accepted_layer_completion_ledger(
+        full_ledger,
+        expected_compiler_restart_policy=(
+            closed_loop_compiler_restart_policy(
+                replace(
+                    config,
+                    merge_adjacent_layer_captures=True,
+                    selected_paths=("lfm2.full_prefix",),
+                    selected_layers=(0, 1),
+                ),
+                (0, 1),
+            )
+        ),
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="malformed, foreign",
+    ):
+        execution_adapter._authenticate_accepted_layer_completion_ledger(
+            full_ledger,
+            expected_compiler_restart_policy=(
+                closed_loop_compiler_restart_policy(config, (0,))
+            ),
+        )
+
+    malformed_boundary_proof = json.loads(
+        json.dumps(resumed_adapter.accepted_layer_completion_ledger())
+    )
+    malformed_boundary_proof.pop("completion_ledger_sha256")
+    proof = malformed_boundary_proof["resume_proof"]
+    proof.pop("resume_proof_sha256")
+    proof["process_boundary_ordinals"] = []
+    proof["resume_proof_sha256"] = canonical_sha256(proof)
+    malformed_boundary_proof["completion_ledger_sha256"] = canonical_sha256(
+        malformed_boundary_proof
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="resume proof prefix is invalid",
+    ):
+        resumed_adapter._authenticate_accepted_layer_completion_ledger(
+            malformed_boundary_proof
+        )
+
 
 def test_moving_gauge_writer_reclosure_acceptance_config_threads_the_policy() -> None:
     """NOTES-W13B section 8 item 3: the guard is opt-in and digest-preserving."""

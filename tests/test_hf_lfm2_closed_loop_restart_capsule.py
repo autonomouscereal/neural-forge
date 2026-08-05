@@ -20,6 +20,7 @@ from neural_forge.dynamic_closed_loop_fold import (
     TrajectoryRecord,
     TransactionReceipt,
     ValidationDecision,
+    closed_loop_compiler_restart_policy,
 )
 
 
@@ -65,6 +66,10 @@ class _TinyChild(torch.nn.Module):
         self.eval()
 
 
+class _AlternateLinear(torch.nn.Linear):
+    """State-compatible module with a distinct forward implementation type."""
+
+
 class _FakeLayer:
     def __init__(self, index: int) -> None:
         self.index = index
@@ -84,6 +89,7 @@ class _FakeAdapter:
         self.child_layers = tuple(_FakeLayer(index) for index in range(layer_count))
         self._selected_layers = tuple(range(layer_count))
         self.body_reclosure_mode = body_reclosure_mode
+        self._current_completion_ledger = None
 
     def child_state_fingerprint(self) -> str:
         # Mirrors the real adapter: process-local Parameter object identity is
@@ -124,7 +130,14 @@ class _FakeAdapter:
             "parent_cache_key": canonical_sha256({"cache": "fake"}),
             "parent_identity_sha256": canonical_sha256({"parent": "fake"}),
             "source_graph_fingerprint": None,
+            "child_runtime_config_sha256": canonical_sha256(
+                {"fake_child_runtime_config": "v1"}
+            ),
+            "replay_capture_selection_sha256": canonical_sha256(
+                {"fake_replay_capture_selection": "v1"}
+            ),
             "tokenizer_bridge_artifact_sha256": None,
+            "tokenizer_bridge_trace_adapter_evidence_sha256": None,
             "identity_tokenizer_evidence_sha256": None,
             "parent_residual_operator_manifest_sha256": None,
             "body_reclosure_mode": self.body_reclosure_mode,
@@ -135,22 +148,65 @@ class _FakeAdapter:
         }
         return {**body, "adapter_identity_sha256": canonical_sha256(body)}
 
+    def authenticate_accepted_layer_completion_ledger_for_publication(
+        self,
+        value,
+        *,
+        expected_completed_layer_indices,
+        expected_selected_layer_indices,
+        expected_trajectory_split_sha256,
+        expected_compiler_restart_policy,
+        expected_validation_decision_sha256,
+        expected_portable_child_state_sha256,
+        expected_portable_child_topology_sha256,
+    ):
+        if value != self._current_completion_ledger:
+            raise ValueError("foreign current completion ledger")
+        completed = tuple(expected_completed_layer_indices)
+        if (
+            tuple(value["completed_layer_indices"]) != completed
+            or tuple(value["selected_layer_indices"])
+            != tuple(expected_selected_layer_indices)
+            or value["receipts"][-1]["validation_decision_sha256"]
+            != expected_validation_decision_sha256
+            or value["portable_final_child_state_sha256"]
+            != expected_portable_child_state_sha256
+            or value["portable_child_topology_sha256"]
+            != expected_portable_child_topology_sha256
+            or expected_trajectory_split_sha256 != _split_digest()
+            or expected_compiler_restart_policy[
+                "compiler_restart_policy_sha256"
+            ]
+            != _compiler_policy(
+                layer_count=len(tuple(expected_selected_layer_indices))
+            )["compiler_restart_policy_sha256"]
+        ):
+            raise ValueError("foreign completion ledger publication context")
+        body = {
+            "completion_ledger_sha256": value["completion_ledger_sha256"],
+            "authenticated_before_capsule_staging": True,
+            "completed_layer_indices": list(completed),
+        }
+        return {**body, "publication_auth_sha256": canonical_sha256(body)}
+
     def assert_mid_body_resume_supported(
         self,
         *,
         completed_layer_indices,
         remaining_layer_indices,
         body_reclosure_enabled,
+        compiler_restart_policy,
+        **_kwargs,
     ):
-        if body_reclosure_enabled and self.body_reclosure_mode != "disabled":
-            raise Lfm2ClosedLoopRestartCapsuleError(
-                "moving_gauge_v3 body reclosure requires a full installed stack."
-            )
+        assert isinstance(_kwargs["accepted_layer_completion_ledger"], dict)
         body = {
             "schema": "fake-mid-body-resume-admission-v1",
             "completed_layer_indices": list(completed_layer_indices),
             "remaining_layer_indices": list(remaining_layer_indices),
             "body_reclosure_enabled": bool(body_reclosure_enabled),
+            "compiler_restart_policy_sha256": compiler_restart_policy[
+                "compiler_restart_policy_sha256"
+            ],
         }
         return {**body, "admission_sha256": canonical_sha256(body)}
 
@@ -196,6 +252,57 @@ def _decision_digest(layer_index: int) -> str:
     return canonical_sha256({"validation": layer_index})
 
 
+def _compiler_policy(
+    *,
+    layer_count: int = 3,
+    **overrides,
+) -> dict:
+    return closed_loop_compiler_restart_policy(
+        ClosedLoopCompilerConfig(**overrides),
+        tuple(range(layer_count)),
+    )
+
+
+def _fake_completion_ledger(
+    writer: Lfm2ClosedLoopRestartCapsuleWriter,
+    completed: tuple[int, ...],
+    *,
+    layer_count: int,
+) -> dict:
+    receipts = [
+        {
+            "layer_index": layer_index,
+            "validation_decision_sha256": _decision_digest(layer_index),
+            "completion_receipt_sha256": canonical_sha256(
+                {"fake_completion_layer_index": layer_index}
+            ),
+        }
+        for layer_index in completed
+    ]
+    body = {
+        "schema": "neural-forge-lfm2-accepted-layer-completion-ledger-v1",
+        "selected_layer_indices": list(range(layer_count)),
+        "completed_layer_indices": list(completed),
+        "receipts": receipts,
+        "receipt_chain_head_sha256": receipts[-1][
+            "completion_receipt_sha256"
+        ],
+        "portable_final_child_state_sha256": portable_child_state_sha256(
+            writer.adapter.child_model
+        ),
+        "portable_child_topology_sha256": portable_child_topology_sha256(
+            writer.adapter.child_model
+        ),
+        "payload_retention": {
+            "producer_payload_count": 0,
+            "consumer_payload_count": 0,
+            "downstream_payload_count": 0,
+            "operator_case_rows_retained": 0,
+        },
+    }
+    return {**body, "completion_ledger_sha256": canonical_sha256(body)}
+
+
 def _writer(
     tmp_path: Path,
     adapter: _FakeAdapter,
@@ -229,9 +336,20 @@ def _accept(
     *,
     layer_count: int = 3,
     split_label: str = "restart-capsule-split",
+    with_completion_ledger: bool = True,
 ):
     completed = tuple(range(layer_index + 1))
     remaining = tuple(range(layer_index + 1, layer_count))
+    ledger = (
+        _fake_completion_ledger(
+            writer,
+            completed,
+            layer_count=layer_count,
+        )
+        if with_completion_ledger
+        else None
+    )
+    writer.adapter._current_completion_ledger = ledger
     return writer.record_accepted_layer(
         layer_index=layer_index,
         layer_ordinal=layer_index,
@@ -242,6 +360,8 @@ def _accept(
         child_state_sha256=writer.adapter.child_state_fingerprint(),
         child_topology_sha256=writer.adapter.child_topology_fingerprint(),
         trajectory_split_sha256=_split_digest(split_label),
+        compiler_restart_policy=_compiler_policy(layer_count=layer_count),
+        accepted_layer_completion_ledger=ledger,
     )
 
 
@@ -249,6 +369,78 @@ def _mutate(model: torch.nn.Module, value: float) -> None:
     with torch.no_grad():
         model.block.weight.add_(value)
         model.embed.weight.add_(value / 2.0)
+
+
+def test_writer_refuses_accepted_layer_publication_without_ledger(
+    tmp_path: Path,
+) -> None:
+    writer = _writer(tmp_path, _FakeAdapter(_TinyChild()))
+
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="publication requires an authenticated completion ledger",
+    ):
+        _accept(writer, 0, with_completion_ledger=False)
+
+    assert discover_lfm2_closed_loop_restart_capsules(writer.directory) == ()
+
+
+def test_portable_topology_binds_named_module_classes() -> None:
+    baseline = _TinyChild()
+    alternate = _TinyChild()
+    replacement = _AlternateLinear(4, 4, bias=True)
+    replacement.load_state_dict(alternate.block.state_dict())
+    alternate.block = replacement
+    alternate.eval()
+
+    assert portable_child_state_sha256(alternate) == portable_child_state_sha256(
+        baseline
+    )
+    assert portable_child_topology_sha256(
+        alternate
+    ) != portable_child_topology_sha256(baseline)
+
+
+def test_writer_refuses_a_foreign_resealed_ledger_before_staging(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    adapter = _FakeAdapter(child)
+    writer = _writer(tmp_path, adapter)
+    current = _fake_completion_ledger(writer, (0,), layer_count=3)
+    adapter._current_completion_ledger = current
+    foreign = json.loads(json.dumps(current))
+    foreign.pop("completion_ledger_sha256")
+    foreign["foreign_self_consistent_extension"] = {
+        "source": canonical_sha256({"foreign": True})
+    }
+    foreign["completion_ledger_sha256"] = canonical_sha256(foreign)
+    state_before = portable_child_state_sha256(child)
+    topology_before = portable_child_topology_sha256(child)
+
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="refused accepted-layer completion-ledger publication",
+    ):
+        writer.record_accepted_layer(
+            layer_index=0,
+            layer_ordinal=0,
+            completed_layer_indices=(0,),
+            remaining_layer_indices=(1, 2),
+            selected_layer_indices=(0, 1, 2),
+            validation_decision_sha256=_decision_digest(0),
+            child_state_sha256=adapter.child_state_fingerprint(),
+            child_topology_sha256=adapter.child_topology_fingerprint(),
+            trajectory_split_sha256=_split_digest(),
+            compiler_restart_policy=_compiler_policy(),
+            accepted_layer_completion_ledger=foreign,
+        )
+
+    assert discover_lfm2_closed_loop_restart_capsules(writer.directory) == ()
+    assert tuple(writer.directory.iterdir()) == ()
+    assert portable_child_state_sha256(child) == state_before
+    assert portable_child_topology_sha256(child) == topology_before
+    assert writer.completed_layer_indices() == ()
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +756,7 @@ def test_capsule_load_refuses_a_structurally_different_child(
         )
 
 
-def test_writer_refuses_a_resume_that_body_reclosure_cannot_support(
+def test_writer_admits_a_resume_with_authenticated_completion_ledger(
     tmp_path: Path,
 ) -> None:
     child = _TinyChild()
@@ -588,29 +780,16 @@ def test_writer_refuses_a_resume_that_body_reclosure_cannot_support(
         "trajectory_split_sha256": _split_digest(),
         "child_state_sha256": resumed_adapter.child_state_fingerprint(),
         "child_topology_sha256": resumed_adapter.child_topology_fingerprint(),
+        "compiler_restart_policy": _compiler_policy(),
     }
-    with pytest.raises(
-        Lfm2ClosedLoopRestartCapsuleError,
-        match="full installed stack",
-    ):
-        resumed_writer.assert_resume_supported(
-            body_reclosure_enabled=True,
-            **admission_kwargs,
-        )
-
     admission = resumed_writer.assert_resume_supported(
-        body_reclosure_enabled=False,
+        body_reclosure_enabled=True,
         **admission_kwargs,
     )
     assert admission["resume_layer_index"] == 1
-    assert admission["skipped_layers_are_not_replayed"] is True
-    assert admission["admission_sha256"] == canonical_sha256(
-        {
-            name: value
-            for name, value in admission.items()
-            if name != "admission_sha256"
-        }
-    )
+    assert admission["adapter_admission"][
+        "body_reclosure_enabled"
+    ] is True
 
 
 def test_writer_refuses_a_resume_whose_split_changed(tmp_path: Path) -> None:
@@ -640,6 +819,7 @@ def test_writer_refuses_a_resume_whose_split_changed(tmp_path: Path) -> None:
             child_topology_sha256=(
                 resumed_adapter.child_topology_fingerprint()
             ),
+            compiler_restart_policy=_compiler_policy(),
         )
 
 
@@ -673,6 +853,7 @@ def test_writer_refuses_a_resume_whose_live_child_moved(
             child_topology_sha256=(
                 resumed_adapter.child_topology_fingerprint()
             ),
+            compiler_restart_policy=_compiler_policy(),
         )
 
 
@@ -1148,6 +1329,33 @@ def test_terminal_capsule_publishes_and_restores_the_finished_child(
     assert writer.as_dict()["terminal_capsule_published"] is True
     assert writer.as_dict()["terminal_capsule_key"] == reference.capsule_key
 
+    resumed_adapter = _FakeAdapter(fresh)
+    resumed_writer = _writer(
+        tmp_path,
+        resumed_adapter,
+        resume=resume,
+        directory="terminal-resume",
+    )
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="refuses terminal-phase capsules",
+    ):
+        resumed_writer.assert_resume_supported(
+            completed_layer_indices=(0, 1, 2),
+            remaining_layer_indices=(),
+            selected_layer_indices=(0, 1, 2),
+            body_reclosure_enabled=False,
+            trajectory_split_sha256=_split_digest(),
+            child_state_sha256=resumed_adapter.child_state_fingerprint(),
+            child_topology_sha256=(
+                resumed_adapter.child_topology_fingerprint()
+            ),
+            compiler_restart_policy=closed_loop_compiler_restart_policy(
+                ClosedLoopCompilerConfig(),
+                (0, 1, 2),
+            ),
+        )
+
 
 def test_terminal_capsule_requires_every_selected_layer(tmp_path: Path) -> None:
     child = _TinyChild()
@@ -1385,16 +1593,34 @@ def test_compiler_rejects_completed_layers_that_are_not_the_prefix() -> None:
         ).run()
 
 
-def test_compiler_rejects_a_resume_that_leaves_no_layer() -> None:
+def test_compiler_continues_after_a_fully_completed_layer_prefix() -> None:
     adapter = _ScriptedAdapter()
+    for layer_index in range(3):
+        adapter.state["layers"][layer_index] = {
+            "producer": f"{layer_index + 1}" * 64,
+            "consumer": f"{layer_index + 4}" * 64,
+            "downstream": f"{layer_index + 7}" * 64,
+        }
     writer = _ScriptedRestartWriter(completed=(0, 1, 2))
 
-    with pytest.raises(ClosedLoopFoldError, match="no layer to execute"):
-        ChildClosedLoopCompiler(
-            adapter,
-            _config(),
-            restart_capsule_config=writer,
-        ).run()
+    report = ChildClosedLoopCompiler(
+        adapter,
+        _config(),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert report["restart_capsule_resumed_layers"] == [0, 1, 2]
+    assert report["layers_executed_in_this_process"] == []
+    assert all(
+        layer["executed_in_this_process"] is False
+        for layer in report["layer_reports"]
+    )
+    assert writer.admissions[0]["remaining_layer_indices"] == []
+    assert writer.records == []
+    assert not any(entry.startswith("layer:") for entry in adapter.log)
+    assert report["audit"]["producer_compile_calls"] == 0
+    assert report["audit"]["consumer_fit_calls"] == 0
+    assert report["audit"]["downstream_compile_calls"] == 0
 
 
 def test_compiler_rejects_a_restart_writer_that_breaks_the_protocol() -> None:
