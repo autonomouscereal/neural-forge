@@ -1626,7 +1626,8 @@ def _extract_missing_prefix(
     total = _checkpoint_count(request)
     if len(completed) >= total:
         return tuple(completed)
-    drafts: list[dict[str, Any]] = []
+    added = 0
+    unpublished: dict[str, Any] | None = None
     try:
         with sources.child_session_factory() as session:
             names_by_batch, phases_by_batch = _session_plan(
@@ -1641,64 +1642,52 @@ def _extract_missing_prefix(
                     names_by_batch,
                     completed,
                 )
-            while len(completed) + len(drafts) < total:
-                if maximum_new_shards is not None and len(drafts) >= maximum_new_shards:
+            while len(completed) < total:
+                if maximum_new_shards is not None and added >= maximum_new_shards:
                     break
-                ordinal = len(completed) + len(drafts)
+                ordinal = len(completed)
                 start, stop = _checkpoint_range(request, ordinal)
                 previous = (
                     _ZERO_SHA256
-                    if not completed and not drafts
-                    else (
-                        drafts[-1]["checkpoint_hmac_sha256"]
-                        if drafts
-                        else completed[-1]["checkpoint_hmac_sha256"]
-                    )
+                    if not completed
+                    else completed[-1]["checkpoint_hmac_sha256"]
                 )
-                drafts.append(
-                    _extract_one_shard(
-                        request,
-                        session,
-                        boundary_rows,
-                        names_by_batch,
-                        phases_by_batch,
-                        checkpoint_ordinal=ordinal,
-                        batch_start=start,
-                        batch_stop=stop,
-                        previous_hmac=previous,
-                        work_root=work_root,
-                        authority=authority,
-                    )
+                unpublished = _extract_one_shard(
+                    request,
+                    session,
+                    boundary_rows,
+                    names_by_batch,
+                    phases_by_batch,
+                    checkpoint_ordinal=ordinal,
+                    batch_start=start,
+                    batch_stop=stop,
+                    previous_hmac=previous,
+                    work_root=work_root,
+                    authority=authority,
                 )
-            _verify_source_session_complete(session)
+                # Publish one independently authenticated shard before moving
+                # to the next configured range.  Reuse the open session so the
+                # source cache is not rehashed once per shard.
+                _verify_source_session_complete(session)
+                checkpoint = _authenticate_checkpoint(
+                    unpublished,
+                    request=request,
+                    authority=authority,
+                    expected_ordinal=ordinal,
+                    expected_previous_hmac=previous,
+                    shard_root=work_root / "shards",
+                )
+                _write_json(
+                    _checkpoint_path(work_root, ordinal),
+                    checkpoint,
+                )
+                unpublished = None
+                completed.append(checkpoint)
+                added += 1
     except BaseException:
-        _discard_unverified_session_drafts(work_root, drafts)
+        if unpublished is not None:
+            _discard_unverified_session_drafts(work_root, (unpublished,))
         raise
-    verified_drafts: list[dict[str, Any]] = []
-    previous = (
-        _ZERO_SHA256 if not completed else completed[-1]["checkpoint_hmac_sha256"]
-    )
-    try:
-        for offset, checkpoint in enumerate(drafts):
-            verified = _authenticate_checkpoint(
-                checkpoint,
-                request=request,
-                authority=authority,
-                expected_ordinal=len(completed) + offset,
-                expected_previous_hmac=previous,
-                shard_root=work_root / "shards",
-            )
-            verified_drafts.append(verified)
-            previous = verified["checkpoint_hmac_sha256"]
-    except BaseException:
-        _discard_unverified_session_drafts(work_root, drafts)
-        raise
-    for checkpoint in verified_drafts:
-        _write_json(
-            _checkpoint_path(work_root, int(checkpoint["checkpoint_ordinal"])),
-            checkpoint,
-        )
-        completed.append(checkpoint)
     return tuple(completed)
 
 

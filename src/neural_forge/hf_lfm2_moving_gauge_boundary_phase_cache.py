@@ -2091,7 +2091,7 @@ def _extract_missing_prefix(
             request, len(completed)
         )
         factory = getattr(sources, f"{next_side}_session_factory")
-        session_drafts: list[dict[str, Any]] = []
+        unpublished: dict[str, Any] | None = None
         try:
             with factory() as session:
                 all_rows, names_by_batch, phases_by_batch = _session_plan(
@@ -2103,13 +2103,13 @@ def _extract_missing_prefix(
                 )
                 per_side = _checkpoint_count(request)
                 side_limit = per_side if next_side == "parent" else total
-                while len(completed) + len(session_drafts) < side_limit:
+                while len(completed) < side_limit:
                     if (
                         maximum_new_shards is not None
-                        and added + len(session_drafts) >= maximum_new_shards
+                        and added >= maximum_new_shards
                     ):
                         break
-                    next_ordinal = len(completed) + len(session_drafts)
+                    next_ordinal = len(completed)
                     side, side_ordinal, start, stop = _checkpoint_side_and_range(
                         request, next_ordinal
                     )
@@ -2124,14 +2124,10 @@ def _extract_missing_prefix(
                             )
                     previous = (
                         _ZERO_SHA256
-                        if not completed and not session_drafts
-                        else (
-                            session_drafts[-1]["checkpoint_hmac_sha256"]
-                            if session_drafts
-                            else completed[-1]["checkpoint_hmac_sha256"]
-                        )
+                        if not completed
+                        else completed[-1]["checkpoint_hmac_sha256"]
                     )
-                    checkpoint = _extract_one_shard(
+                    unpublished = _extract_one_shard(
                         request,
                         session,
                         records,
@@ -2147,21 +2143,33 @@ def _extract_missing_prefix(
                         work_root=work_root,
                         authority=authority,
                     )
-                    session_drafts.append(checkpoint)
-                _verify_source_session_complete(session)
+                    # Admit exactly one configured shard at a time.  Rechecking
+                    # the still-open selective session before admission keeps
+                    # the single source hash pass per side while ensuring an
+                    # interruption cannot discard already verified work.
+                    _verify_source_session_complete(session)
+                    checkpoint = _authenticate_checkpoint(
+                        unpublished,
+                        request=request,
+                        authority=authority,
+                        expected_ordinal=next_ordinal,
+                        expected_previous_hmac=previous,
+                        shard_root=work_root / "shards",
+                    )
+                    _write_json(
+                        _checkpoint_path(work_root, next_ordinal),
+                        checkpoint,
+                    )
+                    unpublished = None
+                    completed.append(checkpoint)
+                    added += 1
         except BaseException:
-            _discard_unverified_session_drafts(
-                work_root,
-                drafts=session_drafts,
-            )
+            if unpublished is not None:
+                _discard_unverified_session_drafts(
+                    work_root,
+                    drafts=(unpublished,),
+                )
             raise
-        for checkpoint in session_drafts:
-            _write_json(
-                _checkpoint_path(work_root, int(checkpoint["checkpoint_ordinal"])),
-                checkpoint,
-            )
-            completed.append(checkpoint)
-        added += len(session_drafts)
         if maximum_new_shards is not None and added >= maximum_new_shards:
             break
     return tuple(completed)

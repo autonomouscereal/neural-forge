@@ -180,6 +180,30 @@ class _RejectingSession:
         raise RuntimeError("synthetic selective-session verification failure")
 
 
+class _RejectAfterSuccessfulVerifications:
+    def __init__(self, inner, successful_verifications: int) -> None:
+        self.inner = inner
+        self.successful_verifications = successful_verifications
+        self.verify_calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def __enter__(self):
+        self.inner.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self.inner.__exit__(*args)
+
+    def verify(self):
+        if self.verify_calls >= self.successful_verifications:
+            raise RuntimeError("synthetic failure after durable shard verification")
+        self.verify_calls += 1
+        self.inner.verify()
+        return self
+
+
 class _PoisoningSession:
     def __init__(self, inner) -> None:
         self.inner = inner
@@ -1122,6 +1146,63 @@ def test_unverified_session_never_admits_a_resumable_checkpoint(tmp_path) -> Non
     )
     assert isinstance(completed, AuthenticatedLfm2MovingGaugeBoundaryPhase)
     assert completed.verify_authentication()
+
+
+def test_each_verified_boundary_shard_is_durable_before_later_failure(
+    tmp_path,
+) -> None:
+    request, provider, _calls = _case(tmp_path)
+    valid_sources = provider()
+    failing_sources = replace(
+        valid_sources,
+        parent_session_factory=lambda: _RejectAfterSuccessfulVerifications(
+            valid_sources.parent_session_factory(),
+            successful_verifications=1,
+        ),
+    )
+    cache = DynamicFoldPhaseCache(tmp_path / "durable-phase-cache")
+    checkpoint_root = tmp_path / "durable-checkpoints"
+    authority = Lfm2MovingGaugeBoundaryPhaseAuthority(
+        key_id=request.checkpoint_hmac_key_id,
+        secret=b"durable-boundary-shard-secret-32",
+    )
+
+    with pytest.raises(RuntimeError, match="after durable shard verification"):
+        load_or_extract_lfm2_moving_gauge_boundary_phase(
+            cache,
+            request,
+            authority=authority,
+            checkpoint_root=checkpoint_root,
+            source_provider=lambda: failing_sources,
+        )
+
+    work_root = checkpoint_root / request.phase_key.phase_key_sha256
+    checkpoint_paths = tuple(sorted((work_root / "checkpoints").glob("*.json")))
+    assert tuple(path.name for path in checkpoint_paths) == ("checkpoint-0000.json",)
+    admitted_checkpoint_bytes = checkpoint_paths[0].read_bytes()
+    admitted = json.loads(admitted_checkpoint_bytes)
+    assert admitted["checkpoint_ordinal"] == 0
+    admitted_shard_path = work_root / "shards" / admitted["shard"]["filename"]
+    admitted_shard_bytes = admitted_shard_path.read_bytes()
+    assert hashlib.sha256(admitted_shard_bytes).hexdigest() == admitted["shard"][
+        "file_sha256"
+    ]
+    assert len(tuple((work_root / "shards").glob("*.safetensors"))) == 1
+
+    resumed = load_or_extract_lfm2_moving_gauge_boundary_phase(
+        cache,
+        request,
+        authority=authority,
+        checkpoint_root=checkpoint_root,
+        source_provider=provider,
+    )
+    assert isinstance(resumed, AuthenticatedLfm2MovingGaugeBoundaryPhase)
+    assert resumed.verify_authentication()
+    assert checkpoint_paths[0].read_bytes() == admitted_checkpoint_bytes
+    assert admitted_shard_path.read_bytes() == admitted_shard_bytes
+    assert resumed.receipt["ordered_checkpoints"][0]["checkpoint_hmac_sha256"] == (
+        admitted["checkpoint_hmac_sha256"]
+    )
 
 
 def test_parameter_counts_must_match_authenticated_v3_budget(tmp_path) -> None:

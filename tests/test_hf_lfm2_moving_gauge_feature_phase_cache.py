@@ -378,6 +378,55 @@ def test_unverified_source_session_never_admits_checkpoint(tmp_path) -> None:
     )
 
 
+def test_each_verified_feature_shard_is_durable_before_later_failure(tmp_path) -> None:
+    request, provider, _calls, _boundary, _cache, _refs, _tensors = _case(tmp_path)
+    valid_sources = provider()
+    failing_sources = replace(
+        valid_sources,
+        child_session_factory=lambda: boundary_test._RejectAfterSuccessfulVerifications(
+            valid_sources.child_session_factory(),
+            successful_verifications=1,
+        ),
+    )
+    cache = DynamicFoldPhaseCache(tmp_path / "durable-feature-cache")
+    checkpoint_root = tmp_path / "durable-feature-checkpoints"
+    authority = _authority(request)
+
+    with pytest.raises(RuntimeError, match="after durable shard verification"):
+        load_or_extract_lfm2_moving_gauge_feature_phase(
+            cache,
+            request,
+            authority=authority,
+            checkpoint_root=checkpoint_root,
+            source_provider=lambda: failing_sources,
+        )
+
+    work_root = checkpoint_root / request.phase_key.phase_key_sha256
+    checkpoint_paths = tuple(sorted((work_root / "checkpoints").glob("*.json")))
+    assert tuple(path.name for path in checkpoint_paths) == ("checkpoint-0000.json",)
+    admitted_checkpoint_bytes = checkpoint_paths[0].read_bytes()
+    admitted = json.loads(admitted_checkpoint_bytes)
+    assert admitted["checkpoint_ordinal"] == 0
+    admitted_shard_path = work_root / "shards" / admitted["shard"]["filename"]
+    admitted_shard_bytes = admitted_shard_path.read_bytes()
+    assert len(tuple((work_root / "shards").glob("*.safetensors"))) == 1
+
+    resumed = load_or_extract_lfm2_moving_gauge_feature_phase(
+        cache,
+        request,
+        authority=authority,
+        checkpoint_root=checkpoint_root,
+        source_provider=provider,
+    )
+    assert isinstance(resumed, AuthenticatedLfm2MovingGaugeFeaturePhase)
+    assert resumed.verify_authentication()
+    assert checkpoint_paths[0].read_bytes() == admitted_checkpoint_bytes
+    assert admitted_shard_path.read_bytes() == admitted_shard_bytes
+    assert resumed.receipt["ordered_checkpoints"][0]["checkpoint_hmac_sha256"] == (
+        admitted["checkpoint_hmac_sha256"]
+    )
+
+
 def test_wrong_writer_topology_rejected_before_selective_session_open(tmp_path) -> None:
     request, provider, calls, _boundary, _cache, _refs, _tensors = _case(tmp_path)
     wrong = replace(
