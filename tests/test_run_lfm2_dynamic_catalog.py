@@ -7042,3 +7042,125 @@ def test_tiny_real_catalog_alternates_fold_round_and_refold(
     assert base_pass["configuration_sha256"] != (
         refold_pass["configuration_sha256"]
     )
+
+def test_moving_gauge_writer_reclosure_acceptance_defaults_to_unguarded(
+    tmp_path,
+) -> None:
+    """NOTES-W13B section 8 item 3: opt-in boundary guard for the reclosure."""
+
+    parser = MODULE.build_parser()
+    default_config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+            ]
+        )
+    )
+    assert default_config.dense_moving_gauge_writer_reclosure_acceptance == (
+        "unguarded"
+    )
+    assert (
+        default_config.dense_moving_gauge_boundary_regression_tolerance == 0.0
+    )
+    # An unset run keeps its exact configuration digest: a guarded reclosure
+    # publishes different writers and is the only case that appears here.
+    assert (
+        "dense_moving_gauge_writer_reclosure_acceptance"
+        not in default_config.identity()["target"]
+    )
+    assert (
+        "dense_moving_gauge_boundary_regression_tolerance"
+        not in default_config.identity()["target"]
+    )
+
+    guarded_config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+                "--dense-moving-gauge-writer-reclosure-acceptance",
+                "require_boundary_improvement",
+                "--dense-moving-gauge-boundary-regression-tolerance",
+                "0.05",
+            ]
+        )
+    )
+    assert guarded_config.dense_moving_gauge_writer_reclosure_acceptance == (
+        "require_boundary_improvement"
+    )
+    assert guarded_config.identity()["target"][
+        "dense_moving_gauge_writer_reclosure_acceptance"
+    ] == "require_boundary_improvement"
+    assert guarded_config.identity()["target"][
+        "dense_moving_gauge_boundary_regression_tolerance"
+    ] == pytest.approx(0.05)
+
+    fail_closed_config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+                "--dense-moving-gauge-writer-reclosure-acceptance",
+                "require_boundary_improvement_fail_closed",
+            ]
+        )
+    )
+    assert fail_closed_config.identity()["target"][
+        "dense_moving_gauge_writer_reclosure_acceptance"
+    ] == "require_boundary_improvement_fail_closed"
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="only applies to moving_gauge_v3 body reclosure",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-moving-gauge-writer-reclosure-acceptance",
+                    "require_boundary_improvement",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="only applies to a guarded",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-body-reclosure-mode",
+                    "moving_gauge_v3",
+                    "--dense-moving-gauge-boundary-regression-tolerance",
+                    "0.25",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="finite nonnegative",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-body-reclosure-mode",
+                    "moving_gauge_v3",
+                    "--dense-moving-gauge-writer-reclosure-acceptance",
+                    "require_boundary_improvement",
+                    "--dense-moving-gauge-boundary-regression-tolerance",
+                    "-0.5",
+                ]
+            )
+        )

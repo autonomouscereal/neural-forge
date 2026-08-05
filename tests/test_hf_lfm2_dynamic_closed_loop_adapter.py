@@ -3682,3 +3682,62 @@ def test_restart_capsule_resume_reproduces_the_uninterrupted_fold(
     assert portable_child_topology_sha256(
         resumed_child
     ) == portable_child_topology_sha256(cold_child)
+
+def test_moving_gauge_writer_reclosure_acceptance_config_threads_the_policy() -> None:
+    """NOTES-W13B section 8 item 3: the guard is opt-in and digest-preserving."""
+
+    from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
+        Lfm2MovingGaugeReclosurePolicy,
+    )
+
+    def policy_for(config):
+        return Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=(
+                config.moving_gauge_writer_reclosure_acceptance
+            ),
+            boundary_regression_tolerance=(
+                config.moving_gauge_boundary_regression_tolerance
+            ),
+        )
+
+    default_config = Lfm2DynamicClosedLoopAdapterConfig()
+    guarded_config = Lfm2DynamicClosedLoopAdapterConfig(
+        moving_gauge_writer_reclosure_acceptance="require_boundary_improvement",
+        moving_gauge_boundary_regression_tolerance=0.05,
+    )
+
+    assert default_config.moving_gauge_writer_reclosure_acceptance == (
+        "unguarded"
+    )
+    assert default_config.moving_gauge_boundary_regression_tolerance == 0.0
+    # The default lane must build the exact policy the r12 reclosure sealed.
+    assert policy_for(default_config).authentication_sha256 == (
+        Lfm2MovingGaugeReclosurePolicy().authentication_sha256
+    )
+    assert policy_for(guarded_config).authentication_sha256 != (
+        Lfm2MovingGaugeReclosurePolicy().authentication_sha256
+    )
+    assert policy_for(guarded_config).as_dict()[
+        "boundary_regression_tolerance"
+    ] == pytest.approx(0.05)
+
+    with pytest.raises(ValueError, match="must be one of"):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            moving_gauge_writer_reclosure_acceptance="whatever",
+        )
+    with pytest.raises(ValueError, match="only applies to a guarded"):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            moving_gauge_boundary_regression_tolerance=0.25,
+        )
+    # Numeric config fields go through the adapter's own ``_nonnegative_float``
+    # exactly as ``ridge``/``norm_ridge`` do, so they raise the adapter error.
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="finite and non-negative",
+    ):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            moving_gauge_writer_reclosure_acceptance=(
+                "require_boundary_improvement"
+            ),
+            moving_gauge_boundary_regression_tolerance=-1.0,
+        )

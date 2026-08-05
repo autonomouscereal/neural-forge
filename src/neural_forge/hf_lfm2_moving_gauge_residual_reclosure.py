@@ -23,6 +23,19 @@ the reverse solves are anchored on that measured downstream response instead of
 the identity assumption.  That mode is a distinct sealed policy; the sealed
 digest of every prior forward-only run is unchanged.
 
+Both sweeps optimize objectives that are not the boundary's own write, so
+either can replace a healthy writer with one that agrees with the child's own
+downstream error instead.  ``writer_reclosure_acceptance`` selects the guard:
+before any proposed writer is kept, incumbent and proposal are scored against
+the same branch-write target frame the boundary's own solve used, on the same
+rows the sweep being guarded solves on, and a proposal that regresses that
+boundary beyond ``boundary_regression_tolerance`` is refused - the incumbent
+writer is kept and the refusal is recorded with both metrics and both write
+norms.  The reclosure becomes per-boundary monotone instead of free to trade a
+first-layer catastrophe for a terminal objective.  ``unguarded`` is the default
+and is a distinct sealed policy from either guarded mode, so the sealed digest
+of every prior unguarded run is unchanged.
+
 This is analytic folding, not training.  There is no autograd graph, backward
 call, optimizer, parent recapture, parent model forward, pruning, quantization,
 or numeric quality gate.  The optional mid-sweep child recapture is executed by
@@ -58,6 +71,9 @@ LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA = (
 LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA = (
     "neural-forge-lfm2-moving-gauge-residual-reclosure-recaptured-reverse-v2"
 )
+LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA = (
+    "neural-forge-lfm2-moving-gauge-residual-reclosure-boundary-acceptance-v1"
+)
 _IMPLEMENTATION = (
     "neural_forge.hf_lfm2_moving_gauge_residual_reclosure."
     "cycle-coupled-polar-forward-reverse-dense-replacement.v1"
@@ -68,6 +84,34 @@ _TRANSITION_MODES = frozenset({"moving_gauge", "forced_identity_diagnostic"})
 _REVERSE_SWEEP_MODES = frozenset(
     {"forward_only_identity_transport", "recaptured_terminal_anchored"}
 )
+LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED = "unguarded"
+LFM2_MOVING_GAUGE_WRITER_RECLOSURE_REQUIRE_IMPROVEMENT = (
+    "require_boundary_improvement"
+)
+LFM2_MOVING_GAUGE_WRITER_RECLOSURE_FAIL_CLOSED = (
+    "require_boundary_improvement_fail_closed"
+)
+LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES = (
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED,
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_REQUIRE_IMPROVEMENT,
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_FAIL_CLOSED,
+)
+_ACCEPTANCE_UNGUARDED = LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+_ACCEPTANCE_SKIP = LFM2_MOVING_GAUGE_WRITER_RECLOSURE_REQUIRE_IMPROVEMENT
+_ACCEPTANCE_FAIL_CLOSED = LFM2_MOVING_GAUGE_WRITER_RECLOSURE_FAIL_CLOSED
+_WRITER_RECLOSURE_ACCEPTANCE_MODES = frozenset(
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES
+)
+_BOUNDARY_ACCEPTANCE_METRIC = "weighted_relative_l2_branch_write_error"
+# Writer evidence carries exactly one aligned design-row set per site, so the
+# acceptance measurement is taken on the same rows the sweep it guards solves
+# on: the sealed FIT rows for the forward sweep and the authenticated mid-sweep
+# recapture for the recaptured reverse sweep.  Naming the frame in every
+# decision keeps the receipt honest about which rows produced the number.
+_FIT_ROW_FRAME = "aligned_fit_writer_input_rows"
+_RECAPTURED_ROW_FRAME = "recaptured_writer_input_rows"
+_FORWARD_SWEEP_NAME = "forward"
+_REVERSE_SWEEP_NAME = "reverse"
 _IDENTITY_TRANSPORT_KIND = "exact_physical_identity_skip_under_frozen_writer_inputs"
 _TERMINAL_BOUNDARY_TRANSPORT_KIND = "exact_physical_identity_at_terminal_boundary"
 _MEASURED_TRANSPORT_KIND = "measured_recaptured_child_downstream_response"
@@ -1078,6 +1122,8 @@ class Lfm2MovingGaugeReclosurePolicy:
     transition_mode: str = "moving_gauge"
     reverse_sweep_mode: str = "forward_only_identity_transport"
     recaptured_step_ridge_ratio: float = 1e-2
+    writer_reclosure_acceptance: str = _ACCEPTANCE_UNGUARDED
+    boundary_regression_tolerance: float = 0.0
     authentication_sha256: str = ""
 
     def __post_init__(self) -> None:
@@ -1088,6 +1134,7 @@ class Lfm2MovingGaugeReclosurePolicy:
             "reverse_transport_ridge_ratio",
             "recaptured_step_ridge_ratio",
             "orthogonality_tolerance",
+            "boundary_regression_tolerance",
         ):
             object.__setattr__(
                 self,
@@ -1115,6 +1162,22 @@ class Lfm2MovingGaugeReclosurePolicy:
                 "recaptured_terminal_anchored."
             )
         object.__setattr__(self, "reverse_sweep_mode", reverse_mode)
+        acceptance = str(self.writer_reclosure_acceptance).strip().lower()
+        if acceptance not in _WRITER_RECLOSURE_ACCEPTANCE_MODES:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "writer_reclosure_acceptance must be unguarded, "
+                "require_boundary_improvement, or "
+                "require_boundary_improvement_fail_closed."
+            )
+        object.__setattr__(self, "writer_reclosure_acceptance", acceptance)
+        if (
+            acceptance == _ACCEPTANCE_UNGUARDED
+            and self.boundary_regression_tolerance != 0.0
+        ):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "boundary_regression_tolerance only applies to a guarded "
+                "writer_reclosure_acceptance mode."
+            )
         expected = _sha256(self.authentication_body())
         supplied = str(self.authentication_sha256).strip().lower()
         if supplied and supplied != expected:
@@ -1140,19 +1203,40 @@ class Lfm2MovingGaugeReclosurePolicy:
             "numeric_quality_gate": False,
             "execution": dict(_ZERO_EXECUTION),
         }
-        if self.reverse_sweep_mode == "forward_only_identity_transport":
-            # The forward-only body is pinned byte-for-byte: every reclosure
-            # sealed before the recaptured mode existed keeps its policy digest.
+        if self.reverse_sweep_mode != "forward_only_identity_transport":
+            body = {
+                **body,
+                "policy_schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
+                "reverse_sweep_mode": self.reverse_sweep_mode,
+                "recaptured_step_ridge_ratio": self.recaptured_step_ridge_ratio,
+                "mid_sweep_child_recapture_count": 1,
+                "reverse_downstream_transport_kind": _MEASURED_TRANSPORT_KIND,
+                "frozen_writer_input_identity_transport": False,
+                "reverse_writer_inputs_measured_after_forward_publication": (
+                    True
+                ),
+            }
+        if self.writer_reclosure_acceptance == _ACCEPTANCE_UNGUARDED:
+            # Both default lanes are pinned byte-for-byte: the forward-only
+            # body keeps the policy digest of every reclosure sealed before the
+            # recaptured mode existed, and an unguarded body keeps the digest of
+            # every reclosure sealed before this acceptance gate existed.
             return body
         return {
             **body,
-            "policy_schema": LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA,
-            "reverse_sweep_mode": self.reverse_sweep_mode,
-            "recaptured_step_ridge_ratio": self.recaptured_step_ridge_ratio,
-            "mid_sweep_child_recapture_count": 1,
-            "reverse_downstream_transport_kind": _MEASURED_TRANSPORT_KIND,
-            "frozen_writer_input_identity_transport": False,
-            "reverse_writer_inputs_measured_after_forward_publication": True,
+            "acceptance_schema": LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA,
+            "writer_reclosure_acceptance": self.writer_reclosure_acceptance,
+            "boundary_regression_tolerance": (self.boundary_regression_tolerance),
+            "boundary_acceptance_metric": _BOUNDARY_ACCEPTANCE_METRIC,
+            "boundary_acceptance_guards_every_writer_overwrite": True,
+            "boundary_acceptance_refusal_keeps_incumbent_writer": (
+                self.writer_reclosure_acceptance == _ACCEPTANCE_SKIP
+            ),
+            "boundary_acceptance_refusal_aborts_reclosure": (
+                self.writer_reclosure_acceptance == _ACCEPTANCE_FAIL_CLOSED
+            ),
+            "per_boundary_monotone_writer_reclosure": True,
+            "terminal_objective_may_overwrite_a_regressed_boundary": False,
         }
 
     def verify_authentication(self) -> bool:
@@ -4116,6 +4200,176 @@ def _split_cast_replacements(
     return MappingProxyType(result)
 
 
+def _receipt_float(value: float) -> float | None:
+    """Canonical JSON forbids non-finite numbers; record them as ``None``."""
+
+    result = float(value)
+    return result if math.isfinite(result) else None
+
+
+def _receipt_ratio(numerator: float, denominator: float) -> float | None:
+    if not math.isfinite(numerator) or not math.isfinite(denominator):
+        return None
+    if denominator == 0.0:
+        return None
+    return numerator / denominator
+
+
+def _weight_frobenius_norms(
+    sites: Sequence[Lfm2MovingGaugeWriterEvidence],
+    weights: Mapping[str, Any],
+) -> dict[str, float | None]:
+    torch = _torch()
+    return {
+        site.parameter_id: _receipt_float(
+            float(
+                torch.linalg.matrix_norm(
+                    weights[site.parameter_id].to(dtype=torch.float64)
+                ).item()
+            )
+        )
+        for site in sites
+    }
+
+
+def _boundary_acceptance_decision(
+    sites: Sequence[Lfm2MovingGaugeWriterEvidence],
+    *,
+    sweep: str,
+    transition_index: int,
+    boundary_id: str,
+    row_frame: str,
+    incumbent_stage: str,
+    features: Any,
+    target: Any,
+    row_weights: Any,
+    incumbent_group: Any,
+    proposed_group: Any,
+    incumbent_weights: Mapping[str, Any],
+    proposed_weights: Mapping[str, Any],
+    policy: Lfm2MovingGaugeReclosurePolicy,
+) -> tuple[bool, dict[str, Any]]:
+    """Score one proposed writer overwrite against the boundary it overwrites.
+
+    Both writers are measured against the *same* branch-write target frame the
+    boundary's own solve used, on the same rows the sweep being guarded solves
+    on, with that boundary's own row weights.  No new evidence path is opened:
+    the target comes from the module's existing residual-write machinery and the
+    metric is the module's existing weighted relative error.
+    """
+
+    torch = _torch()
+    incumbent_write = features @ incumbent_group.T
+    proposed_write = features @ proposed_group.T
+    incumbent_metric = _relative_rmse(incumbent_write, target, row_weights)
+    proposed_metric = _relative_rmse(proposed_write, target, row_weights)
+    tolerance = policy.boundary_regression_tolerance
+    threshold = incumbent_metric * (1.0 + tolerance)
+    accepted = bool(
+        math.isfinite(proposed_metric)
+        and (
+            not math.isfinite(incumbent_metric) or proposed_metric <= threshold
+        )
+    )
+    incumbent_norm = float(torch.linalg.matrix_norm(incumbent_write).item())
+    proposed_norm = float(torch.linalg.matrix_norm(proposed_write).item())
+    incumbent_frobenius = _weight_frobenius_norms(sites, incumbent_weights)
+    proposed_frobenius = _weight_frobenius_norms(sites, proposed_weights)
+    decision = {
+        "sweep": sweep,
+        "transition_index": int(transition_index),
+        "boundary_id": boundary_id,
+        "parameter_ids": [site.parameter_id for site in sites],
+        "metric": _BOUNDARY_ACCEPTANCE_METRIC,
+        "row_frame": row_frame,
+        "rows": int(features.shape[0]),
+        "incumbent_stage": incumbent_stage,
+        "accepted": accepted,
+        "refused": not accepted,
+        "regression_tolerance": tolerance,
+        "acceptance_threshold": _receipt_float(threshold),
+        "incumbent_relative_write_error": _receipt_float(incumbent_metric),
+        "proposed_relative_write_error": _receipt_float(proposed_metric),
+        "accepted_relative_write_error": _receipt_float(
+            proposed_metric if accepted else incumbent_metric
+        ),
+        "relative_write_error_ratio": _receipt_ratio(
+            proposed_metric,
+            incumbent_metric,
+        ),
+        "incumbent_write_l2_norm": _receipt_float(incumbent_norm),
+        "proposed_write_l2_norm": _receipt_float(proposed_norm),
+        "accepted_write_l2_norm": _receipt_float(
+            proposed_norm if accepted else incumbent_norm
+        ),
+        "write_norm_ratio": _receipt_ratio(proposed_norm, incumbent_norm),
+        "incumbent_weight_frobenius_norm_by_parameter": incumbent_frobenius,
+        "proposed_weight_frobenius_norm_by_parameter": proposed_frobenius,
+        "accepted_weight_frobenius_norm_by_parameter": (
+            proposed_frobenius if accepted else incumbent_frobenius
+        ),
+        "weight_frobenius_norm_ratio_by_parameter": {
+            site.parameter_id: (
+                None
+                if incumbent_frobenius[site.parameter_id] is None
+                or proposed_frobenius[site.parameter_id] is None
+                else _receipt_ratio(
+                    proposed_frobenius[site.parameter_id],
+                    incumbent_frobenius[site.parameter_id],
+                )
+            )
+            for site in sites
+        },
+    }
+    if not accepted and policy.writer_reclosure_acceptance == (
+        _ACCEPTANCE_FAIL_CLOSED
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "The moving-gauge "
+            f"{sweep} sweep regressed boundary {boundary_id}: relative write "
+            f"error {proposed_metric} exceeds the incumbent {incumbent_metric} "
+            f"at tolerance {tolerance}."
+        )
+    return accepted, decision
+
+
+def _recaptured_boundary_write_target(
+    charts: Sequence[Lfm2MovingGaugeBoundaryChart],
+    boundaries: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    index: int,
+    *,
+    recaptured_pre_state: Any,
+    recaptured_post_state: Any,
+    incumbent_writer_output: Any,
+    transition_mode: str,
+) -> Any:
+    """Rebuild the forward sweep's branch-write target on recaptured states.
+
+    Identical arithmetic to the forward sweep, with every child-side quantity
+    replaced by the mid-sweep recapture the reverse sweep already solves
+    against: the pre-state, the realized branch write, and the incumbent
+    writer's own share of it.  Parent endpoints are cached evidence and do not
+    move, so the desired total write is the same chart target as before.
+    """
+
+    upstream = boundaries[index]
+    downstream = boundaries[index + 1]
+    if transition_mode == "moving_gauge":
+        _endpoint, desired_total_write = charts[
+            index + 1
+        ].chart.residual_write_target(
+            actual_child_pre_state=recaptured_pre_state,
+            parent_endpoint=downstream.fit_parent_rows,
+        )
+    else:
+        desired_total_write = charts[index].chart.encode(
+            downstream.fit_parent_rows - upstream.fit_parent_rows
+        )
+    live_branch_write = recaptured_post_state - recaptured_pre_state
+    fixed_other_write = live_branch_write - incumbent_writer_output
+    return (desired_total_write - fixed_other_write).contiguous()
+
+
 def _terminal_anchored_composed_ridge(
     design: Any,
     downstream_transport: Any,
@@ -4333,9 +4587,11 @@ def _recaptured_terminal_anchored_reverse_sweep(
     grouped: Mapping[int, Sequence[Lfm2MovingGaugeWriterEvidence]],
     current: dict[str, Any],
     *,
+    charts: Sequence[Lfm2MovingGaugeBoundaryChart],
     terminal_target: Any,
     recaptured: Lfm2MovingGaugeRecapturedChildState,
     policy: Lfm2MovingGaugeReclosurePolicy,
+    acceptance_decisions: list[dict[str, Any]] | None,
 ) -> tuple[list[dict[str, Any]], Any]:
     """Re-solve writers back-to-front against the measured downstream response.
 
@@ -4404,6 +4660,9 @@ def _recaptured_terminal_anchored_reverse_sweep(
             absolute_ridge_floor=policy.absolute_ridge_floor,
         )
         previous_group = current_group
+        previous_weights = {
+            site.parameter_id: current[site.parameter_id] for site in sites
+        }
         split = _split_cast_replacements(
             sites,
             replacement_columns.T,
@@ -4411,6 +4670,41 @@ def _recaptured_terminal_anchored_reverse_sweep(
         )
         current.update(split)
         _, new_group, _ = _recaptured_writer_group(sites, current, recaptured)
+        if acceptance_decisions is not None:
+            # Both writers are scored on the recaptured rows this sweep already
+            # solves against, so the guard and the solve see one child state.
+            accepted, decision = _boundary_acceptance_decision(
+                sites,
+                sweep=_REVERSE_SWEEP_NAME,
+                transition_index=index,
+                boundary_id=boundaries[index + 1].boundary_id,
+                row_frame=_RECAPTURED_ROW_FRAME,
+                incumbent_stage="post_forward_sweep",
+                features=features,
+                target=_recaptured_boundary_write_target(
+                    charts,
+                    boundaries,
+                    index,
+                    recaptured_pre_state=measured[index],
+                    recaptured_post_state=measured[index + 1],
+                    incumbent_writer_output=features @ previous_group.T,
+                    transition_mode=policy.transition_mode,
+                ),
+                row_weights=boundaries[index].fit_weights,
+                incumbent_group=previous_group,
+                proposed_group=new_group,
+                incumbent_weights=previous_weights,
+                proposed_weights=current,
+                policy=policy,
+            )
+            acceptance_decisions.append(decision)
+            if not accepted:
+                current.update(previous_weights)
+                _, new_group, _ = _recaptured_writer_group(
+                    sites,
+                    current,
+                    recaptured,
+                )
         local_realized = features @ (new_group - previous_group).T
         terminal_realized = local_realized @ row_transport
         local_norm = float(torch.linalg.vector_norm(local_realized).item())
@@ -4482,6 +4776,10 @@ def compile_lfm2_moving_gauge_residual_reclosure(
     recaptured_reverse = (
         isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
         and active_policy.reverse_sweep_mode == "recaptured_terminal_anchored"
+    )
+    guarded_acceptance = (
+        isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
+        and active_policy.writer_reclosure_acceptance != _ACCEPTANCE_UNGUARDED
     )
     if recaptured_reverse != (mid_sweep_recapture_provider is not None) or (
         mid_sweep_recapture_provider is not None
@@ -4570,7 +4868,11 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         Mapping[str, Any],
         Mapping[str, Any],
         Lfm2MovingGaugeRecapturedChildState | None,
+        Mapping[str, Any] | None,
     ]:
+        acceptance_decisions: list[dict[str, Any]] | None = (
+            [] if guarded_acceptance else None
+        )
         initial_charts = tuple(
             fit_lfm2_cycle_coupled_moving_gauge_boundary(
                 value,
@@ -4610,6 +4912,11 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         }
         state = boundaries_input[0].fit_child_rows.clone()
         forward_steps = []
+        # The boundary each transition's writers are solved against, kept in the
+        # module's own target frame so the reverse sweep is scored against the
+        # exact frame the boundary's own solve used.
+        boundary_write_targets: dict[int, Any] = {}
+        seed_boundary_error: dict[int, float] = {}
         for index in range(layer_count):
             upstream = boundaries_input[index]
             downstream = boundaries_input[index + 1]
@@ -4652,6 +4959,33 @@ def compile_lfm2_moving_gauge_residual_reclosure(
             previous = {site.parameter_id: current[site.parameter_id] for site in sites}
             current.update(split)
             features_after, group_after, _ = _writer_group(sites, current)
+            boundary_write_targets[index] = target_writer_output
+            if acceptance_decisions is not None:
+                seed_boundary_error[index] = _relative_rmse(
+                    existing_writer_output,
+                    target_writer_output,
+                    upstream.fit_weights,
+                )
+                accepted, decision = _boundary_acceptance_decision(
+                    sites,
+                    sweep=_FORWARD_SWEEP_NAME,
+                    transition_index=index,
+                    boundary_id=downstream.boundary_id,
+                    row_frame=_FIT_ROW_FRAME,
+                    incumbent_stage="pre_reclosure_seed",
+                    features=features,
+                    target=target_writer_output,
+                    row_weights=upstream.fit_weights,
+                    incumbent_group=seed_group,
+                    proposed_group=group_after,
+                    incumbent_weights=previous,
+                    proposed_weights=current,
+                    policy=active_policy,
+                )
+                acceptance_decisions.append(decision)
+                if not accepted:
+                    current.update(previous)
+                    features_after, group_after, _ = _writer_group(sites, current)
             actual_writer_output = features_after @ group_after.T
             state = (state + fixed_other_write + actual_writer_output).contiguous()
             full = transitions[index].full_transition
@@ -4711,9 +5045,11 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                     boundaries_input,
                     grouped,
                     current,
+                    charts=charts,
                     terminal_target=terminal_target,
                     recaptured=recaptured,
                     policy=active_policy,
+                    acceptance_decisions=acceptance_decisions,
                 )
             )
         else:
@@ -4754,6 +5090,10 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                     absolute_ridge_floor=active_policy.absolute_ridge_floor,
                 )
                 previous_group = current_group
+                previous_weights = {
+                    site.parameter_id: current[site.parameter_id]
+                    for site in sites
+                }
                 split = _split_cast_replacements(
                     sites,
                     replacement_columns.T,
@@ -4761,6 +5101,30 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                 )
                 current.update(split)
                 _, new_group, _ = _writer_group(sites, current)
+                if acceptance_decisions is not None:
+                    # The terminal objective may not pay for itself with this
+                    # boundary's own write: score the proposal against the frame
+                    # the forward solve targeted, on the same FIT rows.
+                    accepted, decision = _boundary_acceptance_decision(
+                        sites,
+                        sweep=_REVERSE_SWEEP_NAME,
+                        transition_index=index,
+                        boundary_id=boundaries_input[index + 1].boundary_id,
+                        row_frame=_FIT_ROW_FRAME,
+                        incumbent_stage="post_forward_sweep",
+                        features=features,
+                        target=boundary_write_targets[index],
+                        row_weights=boundaries_input[index].fit_weights,
+                        incumbent_group=previous_group,
+                        proposed_group=new_group,
+                        incumbent_weights=previous_weights,
+                        proposed_weights=current,
+                        policy=active_policy,
+                    )
+                    acceptance_decisions.append(decision)
+                    if not accepted:
+                        current.update(previous_weights)
+                        _, new_group, _ = _writer_group(sites, current)
                 local_realized = features @ (new_group - previous_group).T
                 terminal_realized = local_realized @ row_transport
                 terminal_residual = (terminal_residual - terminal_realized).contiguous()
@@ -4787,6 +5151,99 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                     }
                 )
         endpoint = terminal_target - terminal_residual
+        acceptance: Mapping[str, Any] | None = None
+        if acceptance_decisions is not None:
+            # One end-to-end line per boundary, always in the FIT frame the
+            # boundary's own solve used, so a receipt reader can check the
+            # monotonicity claim without replaying either sweep.
+            per_boundary = []
+            for index in range(layer_count):
+                sites = tuple(grouped[index])
+                features, final_group, _widths = _writer_group(sites, current)
+                final_error = _relative_rmse(
+                    features @ final_group.T,
+                    boundary_write_targets[index],
+                    boundaries_input[index].fit_weights,
+                )
+                seed_error = seed_boundary_error[index]
+                per_boundary.append(
+                    {
+                        "transition_index": index,
+                        "boundary_id": boundaries_input[index + 1].boundary_id,
+                        "parameter_ids": [site.parameter_id for site in sites],
+                        "row_frame": _FIT_ROW_FRAME,
+                        "seed_relative_write_error": _receipt_float(seed_error),
+                        "published_relative_write_error": _receipt_float(
+                            final_error
+                        ),
+                        "relative_write_error_ratio": _receipt_ratio(
+                            final_error,
+                            seed_error,
+                        ),
+                        "published_no_worse_than_seed": bool(
+                            math.isfinite(final_error)
+                            and (
+                                not math.isfinite(seed_error)
+                                or final_error
+                                <= seed_error
+                                * (
+                                    1.0
+                                    + active_policy.boundary_regression_tolerance
+                                )
+                                ** 2
+                            )
+                        ),
+                    }
+                )
+            refused = [
+                value for value in acceptance_decisions if not value["accepted"]
+            ]
+            acceptance = _seal(
+                {
+                    "schema": LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA,
+                    "kind": "moving_gauge_boundary_acceptance_ledger",
+                    "writer_reclosure_acceptance": (
+                        active_policy.writer_reclosure_acceptance
+                    ),
+                    "boundary_regression_tolerance": (
+                        active_policy.boundary_regression_tolerance
+                    ),
+                    "metric": _BOUNDARY_ACCEPTANCE_METRIC,
+                    "reverse_sweep_mode": active_policy.reverse_sweep_mode,
+                    "reverse_row_frame": (
+                        _RECAPTURED_ROW_FRAME
+                        if recaptured_reverse
+                        else _FIT_ROW_FRAME
+                    ),
+                    "evaluated_writer_overwrites": len(acceptance_decisions),
+                    "accepted_writer_overwrites": (
+                        len(acceptance_decisions) - len(refused)
+                    ),
+                    "refused_writer_overwrites": len(refused),
+                    "refused_by_sweep": {
+                        _FORWARD_SWEEP_NAME: sum(
+                            1
+                            for value in refused
+                            if value["sweep"] == _FORWARD_SWEEP_NAME
+                        ),
+                        _REVERSE_SWEEP_NAME: sum(
+                            1
+                            for value in refused
+                            if value["sweep"] == _REVERSE_SWEEP_NAME
+                        ),
+                    },
+                    "refused_transition_indices": sorted(
+                        {int(value["transition_index"]) for value in refused}
+                    ),
+                    "decisions": list(acceptance_decisions),
+                    "per_boundary": per_boundary,
+                    "every_published_boundary_no_worse_than_seed": all(
+                        value["published_no_worse_than_seed"]
+                        for value in per_boundary
+                    ),
+                    "quality_gate": False,
+                }
+            )
         diagnostics_body = {
             "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
             "kind": "moving_gauge_forward_reverse_diagnostics",
@@ -4849,11 +5306,20 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                     },
                 }
             )
+        if acceptance is not None:
+            diagnostics_body["boundary_acceptance"] = dict(acceptance)
         diagnostics = _seal(diagnostics_body)
-        return charts, transitions, MappingProxyType(current), diagnostics, recaptured
+        return (
+            charts,
+            transitions,
+            MappingProxyType(current),
+            diagnostics,
+            recaptured,
+            acceptance,
+        )
 
     (
-        (charts, transitions, replacements, diagnostics, recaptured),
+        (charts, transitions, replacements, diagnostics, recaptured, acceptance),
         guard,
     ) = run_fold_only_callback(
         operation,
@@ -4961,6 +5427,39 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                 },
             }
         )
+    if acceptance is not None:
+        # The full per-boundary ledger lives once, inside the sealed
+        # diagnostics; the publication body carries its digest and the counts a
+        # receipt reader needs before deciding to open it.
+        body.update(
+            {
+                "acceptance_schema": (
+                    LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA
+                ),
+                "writer_reclosure_acceptance": (
+                    active_policy.writer_reclosure_acceptance
+                ),
+                "boundary_regression_tolerance": (
+                    active_policy.boundary_regression_tolerance
+                ),
+                "boundary_acceptance_sha256": acceptance["report_sha256"],
+                "boundary_acceptance_summary": {
+                    key: acceptance[key]
+                    for key in (
+                        "metric",
+                        "reverse_row_frame",
+                        "evaluated_writer_overwrites",
+                        "accepted_writer_overwrites",
+                        "refused_writer_overwrites",
+                        "refused_by_sweep",
+                        "refused_transition_indices",
+                        "every_published_boundary_no_worse_than_seed",
+                    )
+                },
+                "per_boundary_monotone_writer_reclosure": True,
+                "terminal_objective_may_overwrite_a_regressed_boundary": False,
+            }
+        )
     return Lfm2MovingGaugeDenseReplacementState(
         parameter_ids=ids,
         replacement_weights=values,
@@ -4971,8 +5470,13 @@ def compile_lfm2_moving_gauge_residual_reclosure(
 
 
 __all__ = [
+    "LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA",
     "LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA",
     "LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA",
+    "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES",
+    "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_FAIL_CLOSED",
+    "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_REQUIRE_IMPROVEMENT",
+    "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED",
     "Lfm2MovingGaugeBaseCausalEndpointChart",
     "Lfm2MovingGaugeBoundaryChart",
     "Lfm2MovingGaugeBoundaryEvidence",

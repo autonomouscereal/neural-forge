@@ -114,6 +114,8 @@ from .hf_lfm2_moving_gauge_input_producer_reclosure import (
     compile_lfm2_moving_gauge_input_producer_reclosure,
 )
 from .hf_lfm2_moving_gauge_residual_reclosure import (
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES,
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED,
     Lfm2MovingGaugeBoundaryEvidence,
     Lfm2MovingGaugeDenseReplacementState,
     Lfm2MovingGaugeReclosurePolicy,
@@ -1110,6 +1112,16 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     # default is the historical full capture chain, so an unset run is
     # byte-identical to the r12 lane; see LFM2_INSTALL_VERIFICATION_MODES.
     install_verification_mode: str = LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
+    # NOTES-W13B section 8 item 3: make the moving-gauge body reclosure prove it
+    # improved every boundary it overwrites.  ``unguarded`` is the r12 lane and
+    # stays the default, so an unset run keeps the reclosure policy digest and
+    # every published byte; the guarded modes refuse (or abort on) a writer
+    # replacement that regresses its own boundary's held write beyond the
+    # tolerance.
+    moving_gauge_writer_reclosure_acceptance: str = (
+        LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+    )
+    moving_gauge_boundary_regression_tolerance: float = 0.0
     # Execution-only: a shard request changes how long a capture takes, never
     # what it seals.  ``None`` is the serial path and is byte-identical to
     # every honoured shard plan, so this never enters a fold identity.
@@ -1473,6 +1485,32 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             raise ValueError(
                 "install_verification_mode must be 'full-recapture' or "
                 "'fingerprint'."
+            )
+        if (
+            not isinstance(self.moving_gauge_writer_reclosure_acceptance, str)
+            or self.moving_gauge_writer_reclosure_acceptance
+            not in frozenset(LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES)
+        ):
+            raise ValueError(
+                "moving_gauge_writer_reclosure_acceptance must be one of "
+                f"{list(LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES)}."
+            )
+        object.__setattr__(
+            self,
+            "moving_gauge_boundary_regression_tolerance",
+            _nonnegative_float(
+                self.moving_gauge_boundary_regression_tolerance,
+                "moving_gauge_boundary_regression_tolerance",
+            ),
+        )
+        if (
+            self.moving_gauge_writer_reclosure_acceptance
+            == LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+            and self.moving_gauge_boundary_regression_tolerance != 0.0
+        ):
+            raise ValueError(
+                "moving_gauge_boundary_regression_tolerance only applies to a "
+                "guarded moving_gauge_writer_reclosure_acceptance mode."
             )
         object.__setattr__(
             self,
@@ -3065,6 +3103,14 @@ class Lfm2DynamicClosedLoopAdapter:
         # Validated by the config dataclass; mirrored here because the install
         # sweep reads it on every published group.
         self.install_verification_mode = self.config.install_verification_mode
+        # Validated by the config dataclass; mirrored here because the body
+        # reclosure reads it when it builds its sealed policy.
+        self.moving_gauge_writer_reclosure_acceptance = (
+            self.config.moving_gauge_writer_reclosure_acceptance
+        )
+        self.moving_gauge_boundary_regression_tolerance = (
+            self.config.moving_gauge_boundary_regression_tolerance
+        )
         self.parent_residual_operators = operators
         if (
             macro_cell_attractor_gate is not None
@@ -11283,7 +11329,16 @@ class Lfm2DynamicClosedLoopAdapter:
             replacement_state = compile_lfm2_moving_gauge_residual_reclosure(
                 tuple(boundaries),
                 tuple(writer_evidence),
-                policy=Lfm2MovingGaugeReclosurePolicy(),
+                policy=Lfm2MovingGaugeReclosurePolicy(
+                    # Defaults reproduce ``Lfm2MovingGaugeReclosurePolicy()``
+                    # exactly, digest included.
+                    writer_reclosure_acceptance=(
+                        self.moving_gauge_writer_reclosure_acceptance
+                    ),
+                    boundary_regression_tolerance=(
+                        self.moving_gauge_boundary_regression_tolerance
+                    ),
+                ),
             )
             del writer_evidence
             del logical_weight
@@ -13813,6 +13868,8 @@ __all__ = [
     "LFM2_INSTALL_VERIFICATION_FINGERPRINT",
     "LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE",
     "LFM2_INSTALL_VERIFICATION_MODES",
+    "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES",
+    "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED",
     "LFM2_TRAJECTORY_PATH",
     "Lfm2DynamicClosedLoopAdapter",
     "Lfm2DynamicClosedLoopAdapterConfig",

@@ -2414,3 +2414,582 @@ def test_mutated_evidence_fails_closed_before_reclosure() -> None:
             (boundary0, boundary1),
             (writer,),
         )
+
+# ---------------------------------------------------------------------------
+# NOTES-W13B section 8 item 3: the body reclosure must prove it improved every
+# boundary it overwrites.  At r12's layer 0 the reclosure left ``in_proj``
+# byte-identical, multiplied the writer's Frobenius norm by 4.73x, and took the
+# composed post-operator residual from 0.494 to 0.836.  These tests are that
+# arithmetic in miniature.
+# ---------------------------------------------------------------------------
+
+REQUIRE_IMPROVEMENT = (
+    moving_gauge_reclosure.LFM2_MOVING_GAUGE_WRITER_RECLOSURE_REQUIRE_IMPROVEMENT
+)
+ACCEPTANCE_FAIL_CLOSED = (
+    moving_gauge_reclosure.LFM2_MOVING_GAUGE_WRITER_RECLOSURE_FAIL_CLOSED
+)
+UNGUARDED = moving_gauge_reclosure.LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+# Large enough that no boundary can ever regress past it, so the guarded lane
+# evaluates every overwrite and accepts every one of them.
+UNBOUNDED_TOLERANCE = 1e9
+
+
+def _converging_single_transition_fold(seed: int = 11):
+    """One transition whose reverse sweep re-solves the forward sweep's target.
+
+    With a single transition the terminal residual *is* the boundary's own
+    remaining write error, so the reverse anchored ridge re-solves the identical
+    weighted problem anchored at the forward answer and can only improve it.
+    The design is deliberately over-determined (64 rows against 4 features) so
+    the residual sits far above the FP32 publication-cast noise floor.
+    """
+
+    generator = torch.Generator().manual_seed(seed)
+    rows, width, features_width = 64, 3, 4
+    parent0 = torch.randn(rows, width, generator=generator, dtype=torch.float64)
+    parent1 = torch.tanh(
+        parent0
+        @ torch.randn(width, width, generator=generator, dtype=torch.float64)
+    )
+    child0 = parent0.clone()
+    child1 = parent1 + 0.3 * torch.randn(
+        rows,
+        width,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    features = torch.randn(
+        rows,
+        features_width,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    seed_weight = (
+        0.4
+        * torch.randn(
+            width,
+            features_width,
+            generator=generator,
+            dtype=torch.float64,
+        )
+    ).to(dtype=torch.float32)
+    writer = Lfm2MovingGaugeWriterEvidence(
+        parameter_id="model.layers.0.conv.out_proj.weight",
+        transition_index=0,
+        seed_weight=seed_weight,
+        fit_input_rows=features,
+        row_alignment_sha256=ALIGNMENT_SHA,
+        live_child_recapture_sha256=LIVE_CHILD_SHA,
+    )
+    boundaries = (
+        _boundary(0, parent0, child0, role="input", locked=True),
+        _boundary(1, parent1, child1, role="terminal", locked=True),
+    )
+    return boundaries, (writer,)
+
+
+def _acceptance_ledger(state) -> dict:
+    return state.report["diagnostics"]["boundary_acceptance"]
+
+
+def _decision(ledger: dict, sweep: str, transition_index: int) -> dict:
+    matches = [
+        value
+        for value in ledger["decisions"]
+        if value["sweep"] == sweep
+        and value["transition_index"] == transition_index
+    ]
+    assert len(matches) == 1, (sweep, transition_index, matches)
+    return matches[0]
+
+
+def test_unguarded_boundary_acceptance_is_the_sealed_default() -> None:
+    policy = Lfm2MovingGaugeReclosurePolicy()
+    guarded = Lfm2MovingGaugeReclosurePolicy(
+        writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+    )
+    fail_closed = Lfm2MovingGaugeReclosurePolicy(
+        writer_reclosure_acceptance=ACCEPTANCE_FAIL_CLOSED,
+    )
+    tolerant = Lfm2MovingGaugeReclosurePolicy(
+        writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        boundary_regression_tolerance=0.25,
+    )
+    recaptured_guarded = Lfm2MovingGaugeReclosurePolicy(
+        reverse_sweep_mode="recaptured_terminal_anchored",
+        writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+    )
+
+    # The unguarded body is pinned byte-for-byte against the digest every
+    # reclosure sealed before this gate existed.
+    assert policy.writer_reclosure_acceptance == UNGUARDED
+    assert policy.boundary_regression_tolerance == 0.0
+    assert policy.authentication_sha256 == FORWARD_ONLY_POLICY_SHA256
+    assert "writer_reclosure_acceptance" not in policy.authentication_body()
+    assert "acceptance_schema" not in policy.authentication_body()
+    assert "boundary_regression_tolerance" not in policy.authentication_body()
+
+    digests = {
+        value.authentication_sha256
+        for value in (
+            policy,
+            guarded,
+            fail_closed,
+            tolerant,
+            recaptured_guarded,
+            Lfm2MovingGaugeReclosurePolicy(
+                reverse_sweep_mode="recaptured_terminal_anchored",
+            ),
+        )
+    }
+    assert len(digests) == 6
+    assert guarded.as_dict()["acceptance_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA
+    )
+    assert guarded.as_dict()[
+        "boundary_acceptance_refusal_keeps_incumbent_writer"
+    ] is True
+    assert guarded.as_dict()[
+        "boundary_acceptance_refusal_aborts_reclosure"
+    ] is False
+    assert fail_closed.as_dict()[
+        "boundary_acceptance_refusal_aborts_reclosure"
+    ] is True
+    # Both extensions compose additively in one policy body.
+    assert recaptured_guarded.as_dict()["policy_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA
+    )
+    assert recaptured_guarded.as_dict()["acceptance_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA
+    )
+    assert all(
+        value.verify_authentication()
+        for value in (policy, guarded, fail_closed, tolerant, recaptured_guarded)
+    )
+
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        Lfm2MovingGaugeReclosurePolicy(writer_reclosure_acceptance="whatever")
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        # A tolerance without a gate would silently claim a guard that is off.
+        Lfm2MovingGaugeReclosurePolicy(boundary_regression_tolerance=0.25)
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=-1.0,
+        )
+
+
+def test_boundary_gate_accepts_a_reclosure_that_improves_every_boundary() -> None:
+    boundaries, writers = _converging_single_transition_fold()
+    unguarded = compile_lfm2_moving_gauge_residual_reclosure(boundaries, writers)
+    guarded = compile_lfm2_moving_gauge_residual_reclosure(
+        boundaries,
+        writers,
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+    ledger = _acceptance_ledger(guarded)
+
+    # Every overwrite is measured and every one of them is kept, so the guarded
+    # publication is the unguarded publication, byte for byte.
+    assert ledger["evaluated_writer_overwrites"] == 2
+    assert ledger["refused_writer_overwrites"] == 0
+    assert ledger["refused_transition_indices"] == []
+    assert guarded.report["replacement_weight_sha256"] == (
+        unguarded.report["replacement_weight_sha256"]
+    )
+    assert guarded.verify_authentication()
+    forward = _decision(ledger, "forward", 0)
+    reverse = _decision(ledger, "reverse", 0)
+    assert forward["incumbent_stage"] == "pre_reclosure_seed"
+    assert reverse["incumbent_stage"] == "post_forward_sweep"
+    assert (
+        forward["proposed_relative_write_error"]
+        < forward["incumbent_relative_write_error"]
+    )
+    assert (
+        reverse["proposed_relative_write_error"]
+        <= reverse["incumbent_relative_write_error"]
+    )
+    assert reverse["incumbent_relative_write_error"] == pytest.approx(
+        forward["proposed_relative_write_error"]
+    )
+    assert ledger["every_published_boundary_no_worse_than_seed"] is True
+    assert ledger["per_boundary"][0][
+        "published_relative_write_error"
+    ] == pytest.approx(reverse["accepted_relative_write_error"])
+
+    # A small tolerance changes nothing when nothing regresses.
+    tolerant = compile_lfm2_moving_gauge_residual_reclosure(
+        boundaries,
+        writers,
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=1e-6,
+        ),
+    )
+    assert tolerant.report["replacement_weight_sha256"] == (
+        unguarded.report["replacement_weight_sha256"]
+    )
+
+
+@pytest.mark.parametrize("recaptured_reverse", [False, True])
+def test_boundary_gate_is_a_pure_filter_at_unbounded_tolerance(
+    recaptured_reverse: bool,
+) -> None:
+    """Accepting every proposal must reproduce the unguarded run exactly.
+
+    This is what makes a refusal attributable: the gate adds no solve, no
+    reordering and no numerical perturbation of its own, so any difference
+    between the guarded and unguarded publications is a refusal and nothing
+    else.
+    """
+
+    unguarded_fold = _toy_fold(7)
+    guarded_fold = _toy_fold(7)
+    extra = (
+        {"reverse_sweep_mode": "recaptured_terminal_anchored"}
+        if recaptured_reverse
+        else {}
+    )
+    unguarded = compile_lfm2_moving_gauge_residual_reclosure(
+        unguarded_fold["boundaries"],
+        unguarded_fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(**extra),
+        mid_sweep_recapture_provider=(
+            unguarded_fold["provider"] if recaptured_reverse else None
+        ),
+    )
+    permissive = compile_lfm2_moving_gauge_residual_reclosure(
+        guarded_fold["boundaries"],
+        guarded_fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=UNBOUNDED_TOLERANCE,
+            **extra,
+        ),
+        mid_sweep_recapture_provider=(
+            guarded_fold["provider"] if recaptured_reverse else None
+        ),
+    )
+    ledger = _acceptance_ledger(permissive)
+
+    assert permissive.report["replacement_weight_sha256"] == (
+        unguarded.report["replacement_weight_sha256"]
+    )
+    assert ledger["evaluated_writer_overwrites"] == 2 * TOY_LAYERS
+    assert ledger["refused_writer_overwrites"] == 0
+    assert len(guarded_fold["provider_calls"]) == (1 if recaptured_reverse else 0)
+    assert unguarded.report.get("boundary_acceptance_sha256") is None
+    assert "boundary_acceptance" not in unguarded.report["diagnostics"]
+
+
+def test_boundary_gate_refuses_the_regression_the_layer0_study_convicted() -> None:
+    """The 0.836 -> 0.494 arithmetic of NOTES-W13B section 6, in miniature.
+
+    The depth toy's reverse sweep optimizes a terminal objective that conflicts
+    with the first two boundaries' own writes.  Unguarded, it publishes writers
+    that regress those boundaries.  Guarded, it keeps the incumbents and every
+    published boundary is strictly better.
+    """
+
+    unguarded_fold = _toy_fold(7)
+    permissive_fold = _toy_fold(7)
+    guarded_fold = _toy_fold(7)
+    unguarded = compile_lfm2_moving_gauge_residual_reclosure(
+        unguarded_fold["boundaries"],
+        unguarded_fold["writers"],
+    )
+    # The unguarded lane reproduced exactly, but with the ledger attached so its
+    # per-boundary write errors are readable without a second measurement path.
+    permissive = compile_lfm2_moving_gauge_residual_reclosure(
+        permissive_fold["boundaries"],
+        permissive_fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=UNBOUNDED_TOLERANCE,
+        ),
+    )
+    guarded = compile_lfm2_moving_gauge_residual_reclosure(
+        guarded_fold["boundaries"],
+        guarded_fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+    assert permissive.report["replacement_weight_sha256"] == (
+        unguarded.report["replacement_weight_sha256"]
+    )
+    unguarded_ledger = _acceptance_ledger(permissive)
+    guarded_ledger = _acceptance_ledger(guarded)
+
+    assert guarded_ledger["refused_transition_indices"] == [0, 1]
+    assert guarded_ledger["refused_by_sweep"] == {"forward": 0, "reverse": 2}
+    assert guarded.report["replacement_weight_sha256"] != (
+        unguarded.report["replacement_weight_sha256"]
+    )
+
+    unguarded_published = {
+        row["transition_index"]: row["published_relative_write_error"]
+        for row in unguarded_ledger["per_boundary"]
+    }
+    guarded_published = {
+        row["transition_index"]: row["published_relative_write_error"]
+        for row in guarded_ledger["per_boundary"]
+    }
+    # Refused boundaries are strictly better; the accepted one is untouched.
+    for index in (0, 1):
+        assert guarded_published[index] < unguarded_published[index], (
+            index,
+            guarded_published,
+            unguarded_published,
+        )
+    assert guarded_published[TOY_LAYERS - 1] == pytest.approx(
+        unguarded_published[TOY_LAYERS - 1]
+    )
+    # The r12 signature: the refused proposal both regressed the boundary and
+    # inflated the write it publishes.
+    for index in (0, 1):
+        refusal = _decision(guarded_ledger, "reverse", index)
+        assert refusal["accepted"] is False
+        assert (
+            refusal["proposed_relative_write_error"]
+            > refusal["incumbent_relative_write_error"]
+        )
+        assert refusal["relative_write_error_ratio"] > 1.0
+        assert refusal["write_norm_ratio"] > 1.0
+        assert refusal["accepted_relative_write_error"] == pytest.approx(
+            refusal["incumbent_relative_write_error"]
+        )
+        assert refusal["accepted_write_l2_norm"] == pytest.approx(
+            refusal["incumbent_write_l2_norm"]
+        )
+        assert refusal["accepted_weight_frobenius_norm_by_parameter"] == (
+            refusal["incumbent_weight_frobenius_norm_by_parameter"]
+        )
+        # A refusal publishes nothing, so the reverse step realizes no change.
+        step = next(
+            value
+            for value in guarded.report["diagnostics"]["reverse_steps"]
+            if value["transition_index"] == index
+        )
+        assert step["realized_terminal_l2_norm"] == 0.0
+    assert guarded_ledger["every_published_boundary_no_worse_than_seed"] is True
+    assert guarded_ledger["metric"] == "weighted_relative_l2_branch_write_error"
+    assert guarded_ledger["reverse_row_frame"] == "aligned_fit_writer_input_rows"
+    assert guarded.report["boundary_acceptance_sha256"] == (
+        guarded_ledger["report_sha256"]
+    )
+    assert verify_lfm2_moving_gauge_report(guarded_ledger)
+    assert (
+        guarded.report["boundary_acceptance_summary"]["refused_writer_overwrites"]
+        == 2
+    )
+    assert guarded.report["writer_reclosure_acceptance"] == REQUIRE_IMPROVEMENT
+    assert guarded.report["boundary_regression_tolerance"] == 0.0
+    assert guarded.report["per_boundary_monotone_writer_reclosure"] is True
+    assert guarded.verify_authentication()
+
+
+def test_boundary_gate_tolerance_admits_a_bounded_regression() -> None:
+    strict_fold = _toy_fold(2031)
+    loose_fold = _toy_fold(2031)
+    strict = compile_lfm2_moving_gauge_residual_reclosure(
+        strict_fold["boundaries"],
+        strict_fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+    strict_ledger = _acceptance_ledger(strict)
+    refusal = _decision(strict_ledger, "reverse", 1)
+    # Seed 2031's transition 1 regresses by a bounded ratio; a tolerance just
+    # above it must admit the proposal, and the strict lane must still refuse.
+    ratio = refusal["relative_write_error_ratio"]
+    loose = compile_lfm2_moving_gauge_residual_reclosure(
+        loose_fold["boundaries"],
+        loose_fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=ratio - 1.0 + 1e-9,
+        ),
+    )
+    loose_ledger = _acceptance_ledger(loose)
+
+    assert 1.0 < ratio < 2.0
+    assert refusal["accepted"] is False
+    assert _decision(loose_ledger, "reverse", 1)["accepted"] is True
+    assert loose_ledger["refused_writer_overwrites"] < (
+        strict_ledger["refused_writer_overwrites"]
+    )
+
+
+def test_boundary_gate_fail_closed_aborts_instead_of_skipping() -> None:
+    fold = _toy_fold(7)
+    skipping = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+
+    assert _acceptance_ledger(skipping)["refused_writer_overwrites"] == 2
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError) as excinfo:
+        compile_lfm2_moving_gauge_residual_reclosure(
+            fold["boundaries"],
+            fold["writers"],
+            policy=Lfm2MovingGaugeReclosurePolicy(
+                writer_reclosure_acceptance=ACCEPTANCE_FAIL_CLOSED,
+            ),
+        )
+    message = str(excinfo.value)
+    assert "reverse sweep regressed boundary" in message
+    assert "toy:boundary:" in message
+    # The fail-closed mode is not simply unusable: a fold whose reclosure does
+    # improve every boundary compiles under it.
+    boundaries, writers = _converging_single_transition_fold()
+    converging = compile_lfm2_moving_gauge_residual_reclosure(
+        boundaries,
+        writers,
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=ACCEPTANCE_FAIL_CLOSED,
+        ),
+    )
+    assert _acceptance_ledger(converging)["refused_writer_overwrites"] == 0
+
+
+def test_boundary_gate_measures_the_recaptured_states_the_sweep_solves_on() -> None:
+    """Composition with ``recaptured_terminal_anchored``.
+
+    When both are on, the acceptance measurement must be taken on the same
+    mid-sweep recapture the reverse sweep solves against, not on the stale FIT
+    rows.  The check is an independent recomputation of one decision straight
+    from the recapture the provider handed back.
+    """
+
+    fold = _toy_fold(7)
+    captured: dict[str, object] = {}
+
+    def provider(request):
+        recaptured = fold["provider"](request)
+        captured["request"] = request
+        captured["recaptured"] = recaptured
+        return recaptured
+
+    guarded = compile_lfm2_moving_gauge_residual_reclosure(
+        fold["boundaries"],
+        fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            reverse_sweep_mode="recaptured_terminal_anchored",
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=UNBOUNDED_TOLERANCE,
+        ),
+        mid_sweep_recapture_provider=provider,
+    )
+    forward_only = _acceptance_ledger(
+        compile_lfm2_moving_gauge_residual_reclosure(
+            _toy_fold(7)["boundaries"],
+            _toy_fold(7)["writers"],
+            policy=Lfm2MovingGaugeReclosurePolicy(
+                writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+                boundary_regression_tolerance=UNBOUNDED_TOLERANCE,
+            ),
+        )
+    )
+    ledger = _acceptance_ledger(guarded)
+    index = TOY_LAYERS - 1
+    decision = _decision(ledger, "reverse", index)
+    parameter_id = _toy_parameter_id(index)
+
+    assert ledger["reverse_sweep_mode"] == "recaptured_terminal_anchored"
+    assert ledger["reverse_row_frame"] == "recaptured_writer_input_rows"
+    assert decision["row_frame"] == "recaptured_writer_input_rows"
+    assert _decision(ledger, "forward", index)["row_frame"] == (
+        "aligned_fit_writer_input_rows"
+    )
+    # The forward decisions are identical because the forward sweep is; only
+    # the reverse frame moved, which is the whole point.
+    assert _decision(ledger, "forward", index) == (
+        _decision(forward_only, "forward", index)
+    )
+    assert decision["incumbent_relative_write_error"] != pytest.approx(
+        _decision(forward_only, "reverse", index)[
+            "incumbent_relative_write_error"
+        ]
+    )
+
+    # Independent recomputation from the recapture the provider returned.
+    recaptured = captured["recaptured"]
+    incumbent = captured["request"]["forward_replacement_weights"][parameter_id]
+    features = recaptured.writer_input_rows[parameter_id]
+    pre_state = recaptured.boundary_child_rows[index]
+    post_state = recaptured.boundary_child_rows[index + 1]
+    writer_output = features @ incumbent.to(dtype=torch.float64).T
+    _endpoint, desired_write = guarded.boundaries[
+        index + 1
+    ].chart.residual_write_target(
+        actual_child_pre_state=pre_state,
+        parent_endpoint=fold["boundaries"][index + 1].fit_parent_rows,
+    )
+    fixed_other_write = (post_state - pre_state) - writer_output
+    expected = moving_gauge_reclosure._relative_rmse(
+        writer_output,
+        desired_write - fixed_other_write,
+        fold["boundaries"][index].fit_weights,
+    )
+
+    assert decision["rows"] == int(features.shape[0])
+    assert decision["incumbent_relative_write_error"] == pytest.approx(
+        expected,
+        rel=1e-12,
+        abs=1e-12,
+    )
+    assert guarded.report["policy_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA
+    )
+    assert guarded.report["acceptance_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA
+    )
+    assert guarded.report["mid_sweep_recapture_sha256"] == (
+        recaptured.report["report_sha256"]
+    )
+    assert guarded.report["execution"]["backward_calls"] == 0
+    assert guarded.report["execution"]["optimizer_steps"] == 0
+    assert guarded.report["execution"]["parent_model_forward_calls"] == 0
+    assert guarded.verify_authentication()
+
+
+def test_recaptured_boundary_gate_refuses_and_keeps_the_incumbent() -> None:
+    fold = _toy_fold(7)
+    guarded = compile_lfm2_moving_gauge_residual_reclosure(
+        fold["boundaries"],
+        fold["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            reverse_sweep_mode="recaptured_terminal_anchored",
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+        mid_sweep_recapture_provider=fold["provider"],
+    )
+    ledger = _acceptance_ledger(guarded)
+    refusals = [value for value in ledger["decisions"] if not value["accepted"]]
+
+    assert len(fold["provider_calls"]) == 1
+    assert refusals, ledger["decisions"]
+    for refusal in refusals:
+        assert refusal["sweep"] == "reverse"
+        assert refusal["row_frame"] == "recaptured_writer_input_rows"
+        assert (
+            refusal["proposed_relative_write_error"]
+            > refusal["incumbent_relative_write_error"]
+        )
+        step = next(
+            value
+            for value in guarded.report["diagnostics"]["reverse_steps"]
+            if value["transition_index"] == refusal["transition_index"]
+        )
+        assert step["realized_local_l2_norm"] == 0.0
+        assert step["realized_terminal_l2_norm"] == 0.0
+    assert guarded.verify_authentication()

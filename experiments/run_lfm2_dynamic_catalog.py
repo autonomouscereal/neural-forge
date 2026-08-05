@@ -137,6 +137,8 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
     LFM2_INSTALL_VERIFICATION_MODES,
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES,
+    LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED,
     LFM2_REPLAY_SHARDING_ALL_DEVICES,
     LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
     LFM2_REPLAY_SHARDING_RESOLVED_STAGE,
@@ -1207,6 +1209,14 @@ class ProductionLfm2CatalogConfig:
     dense_moving_gauge_install_verification: str = (
         LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
     )
+    # NOTES-W13B section 8 item 3: whether the moving-gauge body reclosure has
+    # to prove it improved every boundary it overwrites.  ``unguarded`` is the
+    # r12 lane and stays the default, so an unset run keeps the reclosure policy
+    # digest and every published byte.
+    dense_moving_gauge_writer_reclosure_acceptance: str = (
+        LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+    )
+    dense_moving_gauge_boundary_regression_tolerance: float = 0.0
     dense_run_closed_loop: bool = False
     dense_closed_loop_performance_metrics_diagnostic_only: bool = False
     dense_closed_loop_replay_capture_mode: str = (
@@ -1762,6 +1772,53 @@ class ProductionLfm2CatalogConfig:
             self,
             "dense_moving_gauge_install_verification",
             install_verification,
+        )
+        writer_reclosure_acceptance = str(
+            self.dense_moving_gauge_writer_reclosure_acceptance
+        ).strip().lower()
+        if writer_reclosure_acceptance not in set(
+            LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_moving_gauge_writer_reclosure_acceptance must be one of "
+                f"{list(LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES)}."
+            )
+        if (
+            writer_reclosure_acceptance
+            != LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+            and body_reclosure_mode != "moving_gauge_v3"
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_moving_gauge_writer_reclosure_acceptance only applies to "
+                "moving_gauge_v3 body reclosure."
+            )
+        regression_tolerance = float(
+            self.dense_moving_gauge_boundary_regression_tolerance
+        )
+        if not math.isfinite(regression_tolerance) or regression_tolerance < 0.0:
+            raise ProductionLfm2CatalogError(
+                "dense_moving_gauge_boundary_regression_tolerance must be a "
+                "finite nonnegative number."
+            )
+        if (
+            writer_reclosure_acceptance
+            == LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+            and regression_tolerance != 0.0
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_moving_gauge_boundary_regression_tolerance only applies "
+                "to a guarded dense_moving_gauge_writer_reclosure_acceptance "
+                "mode."
+            )
+        object.__setattr__(
+            self,
+            "dense_moving_gauge_writer_reclosure_acceptance",
+            writer_reclosure_acceptance,
+        )
+        object.__setattr__(
+            self,
+            "dense_moving_gauge_boundary_regression_tolerance",
+            regression_tolerance,
         )
         attention_consumer_mode = str(
             self.dense_attention_consumer_mode
@@ -3117,6 +3174,23 @@ class ProductionLfm2CatalogConfig:
                         "dense_moving_gauge_install_verification": (
                             self.dense_moving_gauge_install_verification
                         )
+                    }
+                ),
+                # Same discipline: recorded only when the reclosure is guarded,
+                # so every existing run keeps its exact configuration digest.  A
+                # guarded run publishes different writers and must say so here.
+                **(
+                    {}
+                    if self.dense_moving_gauge_writer_reclosure_acceptance
+                    == LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+                    else {
+                        "dense_moving_gauge_writer_reclosure_acceptance": (
+                            self.dense_moving_gauge_writer_reclosure_acceptance
+                        ),
+                        "dense_moving_gauge_boundary_regression_tolerance": (
+                            self
+                            .dense_moving_gauge_boundary_regression_tolerance
+                        ),
                     }
                 ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
@@ -9765,6 +9839,14 @@ def build_production_catalog_wiring(
                             config
                             .dense_moving_gauge_install_verification
                         ),
+                        moving_gauge_writer_reclosure_acceptance=(
+                            config
+                            .dense_moving_gauge_writer_reclosure_acceptance
+                        ),
+                        moving_gauge_boundary_regression_tolerance=(
+                            config
+                            .dense_moving_gauge_boundary_regression_tolerance
+                        ),
                         attention_consumer_mode=(
                             config.dense_attention_consumer_mode
                         ),
@@ -13523,6 +13605,36 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-moving-gauge-writer-reclosure-acceptance",
+        choices=LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES,
+        default=LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED,
+        help=(
+            "Whether the moving-gauge body reclosure must prove it improved "
+            "every boundary it overwrites. unguarded is the r12 lane and the "
+            "default: a writer replacement is published whatever it does to "
+            "its own boundary's write. require_boundary_improvement measures "
+            "the incumbent and the proposed writer against the same branch- "
+            "write target the boundary's own solve used, keeps the incumbent "
+            "when the proposal regresses it beyond "
+            "--dense-moving-gauge-boundary-regression-tolerance, and records "
+            "both metrics plus the write-norm ratio in the receipt. "
+            "require_boundary_improvement_fail_closed aborts the reclosure at "
+            "the first regressed boundary instead of skipping it."
+        ),
+    )
+    parser.add_argument(
+        "--dense-moving-gauge-boundary-regression-tolerance",
+        type=float,
+        default=0.0,
+        help=(
+            "Relative slack a guarded moving-gauge reclosure allows on a "
+            "boundary's held write error before it refuses the replacement "
+            "(proposed <= incumbent * (1 + tolerance)). Default 0.0: no "
+            "regression at all. Only valid with a guarded "
+            "--dense-moving-gauge-writer-reclosure-acceptance."
+        ),
+    )
+    parser.add_argument(
         "--dense-closed-loop-replay-mode",
         choices=(
             DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
@@ -14375,6 +14487,12 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_body_reclosure_mode=args.dense_body_reclosure_mode,
         dense_moving_gauge_install_verification=(
             args.dense_moving_gauge_install_verification
+        ),
+        dense_moving_gauge_writer_reclosure_acceptance=(
+            args.dense_moving_gauge_writer_reclosure_acceptance
+        ),
+        dense_moving_gauge_boundary_regression_tolerance=(
+            args.dense_moving_gauge_boundary_regression_tolerance
         ),
         dense_run_closed_loop=args.dense_run_closed_loop,
         dense_closed_loop_performance_metrics_diagnostic_only=(
