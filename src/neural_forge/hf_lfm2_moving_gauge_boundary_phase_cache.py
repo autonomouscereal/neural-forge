@@ -1018,7 +1018,7 @@ def _authenticate_balanced_basis_budget_authority(
         "parent_parameter_count": parent_parameter_count,
         "dense_parameter_count": dense_parameter_count,
         "child_parameter_count": restored_plan.target_total_parameter_elements,
-        "route_artifact_sha256": route_artifact,
+        "continuous_route_source_artifact_sha256": route_artifact,
         "counted_plan_fingerprint": restored_plan.fingerprint,
     }
 
@@ -1260,8 +1260,6 @@ def _verify_adapter_and_inputs(
         or basis_identity.get("target_width") != request.child_width
         or basis_authority["parent_parameter_count"] != request.parent_parameter_count
         or basis_authority["child_parameter_count"] != request.child_parameter_count
-        or basis_authority["route_artifact_sha256"]
-        != request.provenance_sha256s["route_package"]
         or v3_request.get("request_sha256") != request.provenance_sha256s["v3_request"]
         or v3_ledger.get("ledger_sha256") != request.provenance_sha256s["v3_ledger"]
         or v3_ledger.get("batch_count") != request.expected_batch_count

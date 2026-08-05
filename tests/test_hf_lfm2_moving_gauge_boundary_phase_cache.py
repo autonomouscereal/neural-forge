@@ -470,7 +470,10 @@ def _counted_plan(
     input_elements: int = 2,
     output_elements: int = 3,
 ):
-    artifact = provenance["route_package"]
+    # The continuous carrier-route source is counted as child state but is not
+    # the later published route package used by the v3 runtime.
+    artifact = _sha("continuous-carrier-route-source")
+    assert artifact != provenance["route_package"]
     return build_counted_child_state_plan(
         parent_unique_parameters=100,
         target_total_parameter_elements=25,
@@ -509,7 +512,9 @@ def _authenticated_basis_phase(provenance, records, counted_plan, phase_cache):
         "inventory_sha256": canonical_sha256(inventory_body),
     }
     external = {
-        "carrier_route_artifact": provenance["route_package"],
+        "carrier_route_artifact": (
+            counted_plan.continuous_allocations[0].artifact_sha256
+        ),
         "counted_child_state_plan": counted_plan.fingerprint,
     }
     phase_key = FoldPhaseKey(
