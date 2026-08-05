@@ -15,12 +15,15 @@ nor the final receipt serialize them.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
+import hmac
 import json
 import os
 import re
 import stat
 import sys
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,8 +77,9 @@ from neural_forge.lfm2_carrier_child_package import (
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-LAUNCH_SCHEMA = "neural-forge-lfm2-exact4x-moving-gauge-v5-r12-launch-v1"
-RECEIPT_SCHEMA = "neural-forge-lfm2-exact4x-moving-gauge-v5-r12-receipt-v1"
+LAUNCH_SCHEMA = "neural-forge-lfm2-exact4x-moving-gauge-v5-r12-launch-v2"
+RECEIPT_SCHEMA = "neural-forge-lfm2-exact4x-moving-gauge-v5-r12-receipt-v2"
+RECEIPT_HMAC_DOMAIN = b"neural-forge-lfm2-exact4x-v5-r12-receipt-v2\0"
 TARGET_CALIBRATION_SCHEMA = "neural-forge-lfm2-target-tokenized-trajectory-v1"
 CATALOG_BRIDGE_REFERENCE_SCHEMA = "neural-forge-catalog-tokenizer-bridge-reference-v1"
 AUTHORITY_ROLES = (
@@ -83,6 +87,41 @@ AUTHORITY_ROLES = (
     "boundary_phase",
     "feature_phase",
     "conditioned_recapture",
+    "launch_receipt",
+)
+_RECEIPT_BODY_FIELDS = frozenset(
+    {
+        "schema",
+        "launch_manifest_sha256",
+        "v5_request_sha256",
+        "runtime_surface_result_sha256",
+        "local_preflight_result_sha256",
+        "phase_machine_result_sha256",
+        "phase_order",
+        "phase_artifact_sha256s",
+        "phase_outcomes",
+        "r12_child_package_sha256",
+        "counted_child_state_plan_sha256",
+        "v3_request_sha256",
+        "v3_ledger_sha256",
+        "basis_phase_key_sha256",
+        "basis_completion_sha256",
+        "basis_map_sha256",
+        "basis_split_sha256",
+        "basis_split_counts",
+        "trace_adapter_sha256",
+        "trace_record_ids_sha256",
+        "target_calibration_file_sha256",
+        "all_nine_handlers_executed_via_v5_phase_machine",
+        "parent_model_loaded",
+        "parent_forward_calls",
+        "hugging_face_loader_used",
+        "network_access",
+        "authority_objects_serialized",
+        "authority_key_path_serialized",
+        "authority_key_bytes_serialized",
+        "receipt_hmac_key_id",
+    }
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]*\Z")
@@ -139,7 +178,10 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _read_canonical_json(path: Path, name: str) -> dict[str, Any] | list[Any]:
+def _read_canonical_json_with_sha256(
+    path: Path,
+    name: str,
+) -> tuple[dict[str, Any] | list[Any], str]:
     source = _absolute_local_path(path, name)
     try:
         metadata = source.lstat()
@@ -172,6 +214,11 @@ def _read_canonical_json(path: Path, name: str) -> dict[str, Any] | list[Any]:
         raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
             f"{name} must use canonical JSON encoding."
         )
+    return value, hashlib.sha256(raw).hexdigest()
+
+
+def _read_canonical_json(path: Path, name: str) -> dict[str, Any] | list[Any]:
+    value, _sha256 = _read_canonical_json_with_sha256(path, name)
     return value
 
 
@@ -276,6 +323,24 @@ def _read_authority_key(path: Path) -> bytes:
     return secret
 
 
+def _receipt_hmac_sha256(
+    secret: bytes,
+    *,
+    key_id: str,
+    receipt_without_hmac: Mapping[str, Any],
+) -> str:
+    """Authenticate one receipt under a receipt-only domain and key identity."""
+
+    identifier = _identifier(key_id, "launch receipt key ID")
+    payload = (
+        RECEIPT_HMAC_DOMAIN
+        + identifier.encode("ascii")
+        + b"\0"
+        + canonical_json_bytes(dict(receipt_without_hmac))
+    )
+    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
+
+
 def seal_r12_v5_launch_manifest(body: Mapping[str, Any]) -> dict[str, Any]:
     """Seal a complete launch body; the HMAC key path is intentionally absent."""
 
@@ -292,6 +357,7 @@ def _authenticate_launch_manifest(value: Mapping[str, Any]) -> Mapping[str, Any]
     required = {
         "schema",
         "local_paths",
+        "materialized_child_output_root",
         "tokenizer_bridge_root",
         "target_calibration",
         "lineage_sha256s",
@@ -313,6 +379,17 @@ def _authenticate_launch_manifest(value: Mapping[str, Any]) -> Mapping[str, Any]
             "R12 launch manifest seal is invalid."
         )
     paths = dict(v5.normalize_v5_local_paths(row["local_paths"]))
+    materialized_supplied = _absolute_local_path(
+        row["materialized_child_output_root"],
+        "materialized child output root",
+    )
+    if materialized_supplied.exists() and (
+        materialized_supplied.is_symlink() or not materialized_supplied.is_dir()
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "Materialized child output root must be absent or one real directory."
+        )
+    materialized_root = materialized_supplied.resolve(strict=False)
     bridge_root_supplied = _absolute_local_path(
         row["tokenizer_bridge_root"], "tokenizer bridge root"
     )
@@ -326,9 +403,27 @@ def _authenticate_launch_manifest(value: Mapping[str, Any]) -> Mapping[str, Any]
         raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
             "Tokenizer bridge root must be one real local directory."
         )
+    protected_roots = {
+        name: Path(value).resolve(strict=False) for name, value in paths.items()
+    }
+    protected_roots["tokenizer_bridge_root"] = bridge_root
+    for name, protected in protected_roots.items():
+        if (
+            materialized_root == protected
+            or materialized_root in protected.parents
+            or protected in materialized_root.parents
+        ):
+            raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+                "Materialized child output root overlaps protected launch path "
+                f"{name!r}."
+            )
     for name in v5.MUTABLE_OUTPUT_PATH_KEYS:
         mutable = Path(paths[name]).resolve(strict=False)
-        if mutable == bridge_root or bridge_root in mutable.parents:
+        if (
+            mutable == bridge_root
+            or bridge_root in mutable.parents
+            or mutable in bridge_root.parents
+        ):
             raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
                 f"Mutable root {name!r} would alter the tokenizer bridge input."
             )
@@ -413,6 +508,7 @@ def _authenticate_launch_manifest(value: Mapping[str, Any]) -> Mapping[str, Any]
     normalized = {
         **body,
         "local_paths": paths,
+        "materialized_child_output_root": str(materialized_root),
         "tokenizer_bridge_root": str(bridge_root),
         "target_calibration": {
             "path": str(target_path),
@@ -461,12 +557,15 @@ def _target_records(
     *,
     expected_file_sha256: str,
 ) -> tuple[Lfm2TargetTokenizedRecord, ...]:
-    value = _read_canonical_json(path, "target-tokenized calibration")
+    value, observed_sha256 = _read_canonical_json_with_sha256(
+        path,
+        "target-tokenized calibration",
+    )
     if not isinstance(value, list) or len(value) != v5.EXPECTED_BATCH_COUNT:
         raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
             "Target calibration must contain exactly 256 canonical rows."
         )
-    if _file_sha256(path) != expected_file_sha256:
+    if observed_sha256 != expected_file_sha256:
         raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
             "Target calibration differs from its launch-manifest file seal."
         )
@@ -844,21 +943,212 @@ def _write_receipt_noreplace(path: Path, value: Mapping[str, Any]) -> None:
         raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
             "Receipt output root is link-like or not a directory."
         )
+    temporary = destination.parent / f".{destination.name}.{uuid.uuid4().hex}.tmp"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(getattr(os, "O_BINARY", 0))
+    temporary_owned = False
     try:
-        descriptor = os.open(destination, flags, 0o600)
-    except FileExistsError as exc:
-        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
-            "Refusing to replace an existing R12 V5 launch receipt."
-        ) from exc
-    try:
+        descriptor = os.open(temporary, flags, 0o600)
+        temporary_owned = True
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(canonical_json_bytes(dict(value)) + b"\n")
             handle.flush()
             os.fsync(handle.fileno())
+        _rename_noreplace(temporary, destination)
+        temporary_owned = False
+        _fsync_directory(destination.parent)
+    except FileExistsError as exc:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "Refusing to replace an existing R12 V5 launch receipt."
+        ) from exc
     except BaseException:
-        destination.unlink(missing_ok=True)
         raise
+    finally:
+        if temporary_owned:
+            temporary.unlink(missing_ok=True)
+
+
+def _rename_noreplace(source: Path, destination: Path) -> None:
+    """Atomically publish one same-filesystem file without replacement."""
+
+    if os.name == "nt":
+        os.rename(source, destination)
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "This POSIX runtime lacks atomic rename-without-replacement support."
+        )
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    if renameat2(
+        -100,
+        os.fsencode(source),
+        -100,
+        os.fsencode(destination),
+        1,
+    ) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), destination)
+
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    flags = os.O_RDONLY | int(getattr(os, "O_DIRECTORY", 0))
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def read_r12_v5_launch_receipt(
+    launch_manifest: Mapping[str, Any],
+    *,
+    authority_key_path: Path,
+    request: v5.Lfm2Exact4xMovingGaugeV5Request,
+) -> Mapping[str, Any]:
+    """Authenticate the HMAC-bound final receipt and its complete phase chain."""
+
+    manifest = _authenticate_launch_manifest(launch_manifest)
+    expected_manifest = manifest["launch_manifest_sha256"]
+    if (
+        not isinstance(request, v5.Lfm2Exact4xMovingGaugeV5Request)
+        or not request.verify_authentication()
+        or dict(request.local_paths) != dict(manifest["local_paths"])
+        or dict(request.lineage_sha256s) != dict(manifest["lineage_sha256s"])
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "Receipt request differs from the authenticated launch manifest."
+        )
+    value = _read_canonical_json(
+        Path(manifest["receipt_path"]),
+        "R12 V5 launch receipt",
+    )
+    if not isinstance(value, dict) or set(value) != (
+        _RECEIPT_BODY_FIELDS | {"receipt_sha256", "receipt_hmac_sha256"}
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 launch receipt fields changed."
+        )
+    receipt = dict(value)
+    claimed_hmac = _digest(
+        receipt.pop("receipt_hmac_sha256"),
+        "receipt HMAC SHA-256",
+    )
+    secret = _read_authority_key(authority_key_path)
+    expected_hmac = _receipt_hmac_sha256(
+        secret,
+        key_id=str(receipt.get("receipt_hmac_key_id")),
+        receipt_without_hmac=receipt,
+    )
+    if not hmac.compare_digest(claimed_hmac, expected_hmac):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 launch receipt HMAC is invalid."
+        )
+    body = dict(receipt)
+    claimed_receipt = _digest(body.pop("receipt_sha256"), "receipt SHA-256")
+    if canonical_sha256(body) != claimed_receipt:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 launch receipt content seal is invalid."
+        )
+    for name in (
+        "runtime_surface_result_sha256",
+        "local_preflight_result_sha256",
+        "phase_machine_result_sha256",
+        "basis_split_sha256",
+        "trace_record_ids_sha256",
+    ):
+        _digest(body.get(name), name)
+    lineage = manifest["lineage_sha256s"]
+    provenance = manifest["provenance_sha256s"]
+    expected_scalars = {
+        "schema": RECEIPT_SCHEMA,
+        "launch_manifest_sha256": expected_manifest,
+        "v5_request_sha256": request.request_sha256,
+        "r12_child_package_sha256": lineage["r12_child_package"],
+        "counted_child_state_plan_sha256": (
+            request.counted_child_state_plan.fingerprint
+        ),
+        "v3_request_sha256": lineage["v3_request"],
+        "v3_ledger_sha256": lineage["v3_ledger"],
+        "basis_phase_key_sha256": lineage["basis_phase_key"],
+        "basis_completion_sha256": lineage["basis_phase_completion"],
+        "basis_map_sha256": provenance["basis_map"],
+        "trace_adapter_sha256": provenance["bridge_trace_adapter"],
+        "target_calibration_file_sha256": manifest["target_calibration"][
+            "file_sha256"
+        ],
+        "receipt_hmac_key_id": manifest["authority_key_ids"]["launch_receipt"],
+    }
+    if any(body.get(name) != expected for name, expected in expected_scalars.items()):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 launch receipt lineage differs from its manifest."
+        )
+    fixed_claims = {
+        "all_nine_handlers_executed_via_v5_phase_machine": True,
+        "parent_model_loaded": False,
+        "parent_forward_calls": 0,
+        "hugging_face_loader_used": False,
+        "network_access": False,
+        "authority_objects_serialized": False,
+        "authority_key_path_serialized": False,
+        "authority_key_bytes_serialized": False,
+    }
+    if any(body.get(name) != expected for name, expected in fixed_claims.items()) or (
+        isinstance(body.get("parent_forward_calls"), bool)
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 launch receipt operation claims changed."
+        )
+    if body.get("basis_split_counts") != {
+        "fit": v5.FIT_BATCH_COUNT,
+        "heldout": v5.HELDOUT_BATCH_COUNT,
+    } or body.get("trace_record_ids_sha256") != canonical_sha256(
+        [f"batch-{index:06d}" for index in range(v5.EXPECTED_BATCH_COUNT)]
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 launch receipt split or record inventory changed."
+        )
+    try:
+        authenticated_outcomes = v5.authenticate_v5_phase_outcomes(
+            request,
+            body["phase_outcomes"],
+        )
+        reconstructed_run = v5.build_authenticated_v5_run_receipt(
+            request,
+            authenticated_outcomes,
+        )
+    except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 persisted phase outcomes are invalid."
+        ) from exc
+    phase_hashes = {
+        name: authenticated_outcomes[name].artifact_sha256 for name in v5.PHASE_ORDER
+    }
+    if (
+        body.get("phase_order") != list(v5.PHASE_ORDER)
+        or body.get("phase_artifact_sha256s") != phase_hashes
+        or body.get("phase_machine_result_sha256")
+        != reconstructed_run["result_sha256"]
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "R12 V5 phase-chain duplicate bindings differ."
+        )
+    return MappingProxyType(
+        {
+            **body,
+            "receipt_sha256": claimed_receipt,
+            "receipt_hmac_sha256": claimed_hmac,
+        }
+    )
 
 
 def execute_r12_v5_launch(
@@ -1040,6 +1330,26 @@ def execute_r12_v5_launch(
         raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
             "V5 phase machine did not complete all nine phases in order."
         )
+    try:
+        phase_outcomes = {
+            name: outcomes[name].as_dict() for name in v5.PHASE_ORDER
+        }
+        authenticated_outcomes = v5.authenticate_v5_phase_outcomes(
+            request,
+            phase_outcomes,
+        )
+        reconstructed_run_receipt = v5.build_authenticated_v5_run_receipt(
+            request,
+            authenticated_outcomes,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "V5 phase machine did not return a persistable authenticated chain."
+        ) from exc
+    if dict(reconstructed_run_receipt) != dict(run_receipt):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "V5 phase machine receipt differs from its persisted outcomes."
+        )
     split_rows = [
         {
             "batch_index": index,
@@ -1057,8 +1367,10 @@ def execute_r12_v5_launch(
         "phase_machine_result_sha256": run_receipt["result_sha256"],
         "phase_order": list(v5.PHASE_ORDER),
         "phase_artifact_sha256s": {
-            name: outcomes[name].artifact_sha256 for name in v5.PHASE_ORDER
+            name: authenticated_outcomes[name].artifact_sha256
+            for name in v5.PHASE_ORDER
         },
+        "phase_outcomes": phase_outcomes,
         "r12_child_package_sha256": package.package_sha256,
         "counted_child_state_plan_sha256": counted_plan.fingerprint,
         "v3_request_sha256": v3_request["request_sha256"],
@@ -1084,11 +1396,23 @@ def execute_r12_v5_launch(
         "authority_objects_serialized": False,
         "authority_key_path_serialized": False,
         "authority_key_bytes_serialized": False,
+        "receipt_hmac_key_id": authority_ids["launch_receipt"],
     }
     for field in ("runtime_surface_result_sha256", "local_preflight_result_sha256"):
         _digest(receipt_body[field], field)
+    sealed_receipt = {
+        **receipt_body,
+        "receipt_sha256": canonical_sha256(receipt_body),
+    }
     receipt = MappingProxyType(
-        {**receipt_body, "receipt_sha256": canonical_sha256(receipt_body)}
+        {
+            **sealed_receipt,
+            "receipt_hmac_sha256": _receipt_hmac_sha256(
+                secret,
+                key_id=authority_ids["launch_receipt"],
+                receipt_without_hmac=sealed_receipt,
+            ),
+        }
     )
     _write_receipt_noreplace(Path(manifest["receipt_path"]), receipt)
     return receipt
@@ -1130,10 +1454,12 @@ __all__ = [
     "AUTHORITY_ROLES",
     "LAUNCH_SCHEMA",
     "RECEIPT_SCHEMA",
+    "RECEIPT_HMAC_DOMAIN",
     "Lfm2Exact4xMovingGaugeV5R12LaunchError",
     "R12V5LaunchDependencies",
     "derive_authoritative_basis_split",
     "execute_r12_v5_launch",
     "read_r12_v5_launch_manifest",
+    "read_r12_v5_launch_receipt",
     "seal_r12_v5_launch_manifest",
 ]

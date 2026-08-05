@@ -16,6 +16,8 @@ fold when live model wiring is unavailable.
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import importlib
 import inspect
@@ -23,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -295,6 +298,142 @@ def _file_sha256(path: Path) -> str:
         while chunk := handle.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_link_like(path: Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or bool(callable(is_junction) and is_junction())
+
+
+def _stable_file_sha256_and_size(path: Path, name: str) -> tuple[str, int]:
+    """Hash one ordinary, unlinked file and reject a concurrent path swap."""
+
+    if _is_link_like(path):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            f"{name} must be one ordinary, unlinked file."
+        )
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode) or getattr(before, "st_nlink", 1) != 1:
+                raise Lfm2Exact4xMovingGaugeV5Error(
+                    f"{name} must be one ordinary, unlinked file."
+                )
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+            after = os.fstat(handle.fileno())
+        current = path.stat()
+    except (FileNotFoundError, OSError) as exc:
+        raise Lfm2Exact4xMovingGaugeV5Error(f"{name} is unreadable.") from exc
+    identity_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    if (
+        _is_link_like(path)
+        or any(getattr(before, field) != getattr(after, field) for field in identity_fields)
+        or any(getattr(after, field) != getattr(current, field) for field in identity_fields)
+        or getattr(current, "st_nlink", 1) != 1
+    ):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            f"{name} changed while it was being authenticated."
+        )
+    return digest.hexdigest(), int(after.st_size)
+
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    flags = os.O_RDONLY | int(getattr(os, "O_DIRECTORY", 0))
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _rename_directory_noreplace(source: Path, destination: Path) -> None:
+    """Atomically publish one same-filesystem directory without replacement."""
+
+    if os.name == "nt":
+        os.rename(source, destination)
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "This POSIX runtime lacks atomic rename-without-replacement support."
+        )
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    if renameat2(-100, os.fsencode(source), -100, os.fsencode(destination), 1) != 0:
+        error = ctypes.get_errno()
+        if error in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise FileExistsError(error, os.strerror(error), destination)
+        raise OSError(error, os.strerror(error), destination)
+
+
+def _authenticate_existing_candidate_pack(
+    destination: Path,
+    *,
+    output_root: Path,
+    receipt: Mapping[str, Any],
+    tensor_file_sha256: str,
+    tensor_file_size: int,
+) -> None:
+    """Authenticate an idempotent content-addressed publication in place."""
+
+    try:
+        resolved_root = output_root.resolve(strict=True)
+        resolved_destination = destination.resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Existing candidate pack is missing or unreadable."
+        ) from exc
+    if (
+        _is_link_like(destination)
+        or not resolved_destination.is_dir()
+        or resolved_destination.parent != resolved_root
+        or resolved_destination.name != receipt["candidate_pack_sha256"]
+    ):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Existing candidate pack destination is link-like or misplaced."
+        )
+    try:
+        entries = tuple(resolved_destination.iterdir())
+    except OSError as exc:
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Existing candidate pack cannot be enumerated."
+        ) from exc
+    expected_names = {"receipt.json", "replacement-tensors.safetensors"}
+    if {entry.name for entry in entries} != expected_names:
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Existing candidate pack must contain exactly two files."
+        )
+    receipt_path = resolved_destination / "receipt.json"
+    receipt_sha256, receipt_size = _stable_file_sha256_and_size(
+        receipt_path, "existing candidate receipt"
+    )
+    expected_receipt_bytes = canonical_json_bytes(dict(receipt)) + b"\n"
+    if (
+        receipt_size != len(expected_receipt_bytes)
+        or receipt_sha256 != hashlib.sha256(expected_receipt_bytes).hexdigest()
+    ):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Existing candidate receipt is noncanonical or differs."
+        )
+    observed_sha256, observed_size = _stable_file_sha256_and_size(
+        resolved_destination / "replacement-tensors.safetensors",
+        "existing candidate tensor file",
+    )
+    if observed_sha256 != tensor_file_sha256 or observed_size != tensor_file_size:
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Existing candidate tensor file differs from this content address."
+        )
 
 
 def _absolute_local_path(value: Any, name: str) -> str:
@@ -608,15 +747,21 @@ def authenticate_v5_local_preflight(
             path = supplied.resolve(strict=False)
         resolved[name] = path
     mutable_values = [resolved[name] for name in sorted(MUTABLE_OUTPUT_PATH_KEYS)]
-    if len(set(mutable_values)) != len(mutable_values):
-        raise Lfm2Exact4xMovingGaugeV5Error(
-            "Phase, checkpoint, and output roots must be distinct."
-        )
+    for index, left in enumerate(mutable_values):
+        for right in mutable_values[index + 1 :]:
+            if left == right or left in right.parents or right in left.parents:
+                raise Lfm2Exact4xMovingGaugeV5Error(
+                    "Phase, checkpoint, and output roots must not overlap."
+                )
     for mutable_name in MUTABLE_OUTPUT_PATH_KEYS:
         mutable = resolved[mutable_name]
         for input_name in IMMUTABLE_INPUT_PATH_KEYS:
             immutable = resolved[input_name]
-            if mutable == immutable or immutable in mutable.parents:
+            if (
+                mutable == immutable
+                or immutable in mutable.parents
+                or mutable in immutable.parents
+            ):
                 raise Lfm2Exact4xMovingGaugeV5Error(
                     f"Mutable root {mutable_name!r} would alter immutable "
                     f"input {input_name!r}."
@@ -1204,6 +1349,70 @@ class V5PhaseOutcome:
     def as_dict(self) -> dict[str, Any]:
         return {**self._body(), "artifact_sha256": self.artifact_sha256}
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> V5PhaseOutcome:
+        """Reconstruct one outcome while rejecting unknown or changed fields."""
+
+        row = _canonical_mapping(value, "V5 phase outcome")
+        required = {
+            "schema",
+            "phase_name",
+            "phase_sha256",
+            "upstream_artifact_sha256s",
+            "evidence",
+            "child_forward_count",
+            "parent_forward_count",
+            "heldout_rows_read",
+            "temporary_child_mutation_performed",
+            "child_state_restored",
+            "child_state_before_sha256",
+            "child_state_after_sha256",
+            "installed",
+            "ready_for_atomic_apply",
+            "authenticated_checkpoint_reuse",
+            "operation_audit",
+            "artifact_sha256",
+        }
+        if (
+            set(row) != required
+            or row.get("schema") != PHASE_OUTCOME_SCHEMA
+            or row.get("operation_audit") != dict(FORBIDDEN_OPERATION_AUDIT)
+        ):
+            raise Lfm2Exact4xMovingGaugeV5Error(
+                "V5 phase outcome field or operation contract changed."
+            )
+        try:
+            outcome = cls(
+                phase_name=row["phase_name"],
+                phase_sha256=row["phase_sha256"],
+                upstream_artifact_sha256s=row["upstream_artifact_sha256s"],
+                evidence=row["evidence"],
+                child_forward_count=row["child_forward_count"],
+                parent_forward_count=row["parent_forward_count"],
+                heldout_rows_read=row["heldout_rows_read"],
+                temporary_child_mutation_performed=row[
+                    "temporary_child_mutation_performed"
+                ],
+                child_state_restored=row["child_state_restored"],
+                child_state_before_sha256=row["child_state_before_sha256"],
+                child_state_after_sha256=row["child_state_after_sha256"],
+                installed=row["installed"],
+                ready_for_atomic_apply=row["ready_for_atomic_apply"],
+                authenticated_checkpoint_reuse=row[
+                    "authenticated_checkpoint_reuse"
+                ],
+                artifact_sha256=row["artifact_sha256"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise Lfm2Exact4xMovingGaugeV5Error(
+                "V5 phase outcome fields are malformed."
+            ) from exc
+        if outcome.as_dict() != row:
+            raise Lfm2Exact4xMovingGaugeV5Error(
+                "V5 phase outcome contains stale or noncanonical fields."
+            )
+        return outcome
+
 
 V5PhaseHandler = Callable[
     [Mapping[str, Any], Mapping[str, V5PhaseOutcome]],
@@ -1299,6 +1508,69 @@ def _validate_phase_outcome(
         )
 
 
+def authenticate_v5_phase_outcomes(
+    request: Lfm2Exact4xMovingGaugeV5Request,
+    values: Mapping[str, Mapping[str, Any]],
+) -> Mapping[str, V5PhaseOutcome]:
+    """Authenticate a persisted complete phase chain without executing handlers."""
+
+    if not isinstance(request, Lfm2Exact4xMovingGaugeV5Request) or not (
+        request.verify_authentication()
+    ):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Persisted outcomes require an authenticated V5 request."
+        )
+    rows = _canonical_mapping(values, "persisted V5 phase outcomes")
+    if set(rows) != set(PHASE_ORDER):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Persisted V5 phase outcome inventory is incomplete."
+        )
+    plan = build_v5_phase_plan(request)
+    completed: dict[str, V5PhaseOutcome] = {}
+    for phase in plan["phases"]:
+        name = str(phase["name"])
+        outcome = V5PhaseOutcome.from_dict(rows[name])
+        _validate_phase_outcome(phase, outcome, completed)
+        completed[name] = outcome
+    return MappingProxyType(completed)
+
+
+def build_authenticated_v5_run_receipt(
+    request: Lfm2Exact4xMovingGaugeV5Request,
+    outcomes: Mapping[str, V5PhaseOutcome],
+) -> Mapping[str, Any]:
+    """Seal the small run receipt from one already authenticated phase chain."""
+
+    supplied = dict(outcomes)
+    if tuple(supplied) != PHASE_ORDER or any(
+        not isinstance(value, V5PhaseOutcome) for value in supplied.values()
+    ):
+        raise Lfm2Exact4xMovingGaugeV5Error(
+            "Run receipt requires all nine authenticated outcomes in order."
+        )
+    authenticated = authenticate_v5_phase_outcomes(
+        request,
+        {name: supplied[name].as_dict() for name in PHASE_ORDER},
+    )
+    plan = build_v5_phase_plan(request)
+    body = {
+        "schema": RUN_SCHEMA,
+        "request_sha256": request.request_sha256,
+        "phase_plan_sha256": plan["plan_sha256"],
+        "phase_order": list(PHASE_ORDER),
+        "phase_artifact_sha256s": {
+            name: authenticated[name].artifact_sha256 for name in PHASE_ORDER
+        },
+        "all_phases_executed_once": True,
+        "source_r12_mutated": False,
+        "candidate_packs_installed": False,
+        "candidate_packs_ready_for_atomic_apply": True,
+        "manual_semantic_review_pending": True,
+        "operation_audit": dict(FORBIDDEN_OPERATION_AUDIT),
+    }
+    return MappingProxyType(_sealed(body, "result_sha256"))
+
+
 def _emit(event: str, **details: Any) -> None:
     row = {
         "schema": RUN_SCHEMA,
@@ -1358,22 +1630,7 @@ def run_v5_phase_machine(
             child_forward_count=outcome.child_forward_count,
             parent_forward_count=outcome.parent_forward_count,
         )
-    body = {
-        "schema": RUN_SCHEMA,
-        "request_sha256": request.request_sha256,
-        "phase_plan_sha256": plan["plan_sha256"],
-        "phase_order": list(PHASE_ORDER),
-        "phase_artifact_sha256s": {
-            name: completed[name].artifact_sha256 for name in PHASE_ORDER
-        },
-        "all_phases_executed_once": True,
-        "source_r12_mutated": False,
-        "candidate_packs_installed": False,
-        "candidate_packs_ready_for_atomic_apply": True,
-        "manual_semantic_review_pending": True,
-        "operation_audit": dict(FORBIDDEN_OPERATION_AUDIT),
-    }
-    receipt = MappingProxyType(_sealed(body, "result_sha256"))
+    receipt = build_authenticated_v5_run_receipt(request, completed)
     logger("run_complete", result_sha256=receipt["result_sha256"])
     return MappingProxyType(completed), receipt
 
@@ -1459,8 +1716,9 @@ def stage_atomic_candidate_pack(
         }
     output_root = Path(request.local_paths["output_root"])
     output_root.mkdir(parents=True, exist_ok=True)
-    if output_root.is_symlink() or not output_root.is_dir():
+    if _is_link_like(output_root) or not output_root.is_dir():
         raise Lfm2Exact4xMovingGaugeV5Error("Candidate output root is unsafe.")
+    output_root = output_root.resolve(strict=True)
     temporary = output_root / f".candidate-{uuid.uuid4().hex}.tmp"
     temporary.mkdir()
     try:
@@ -1469,16 +1727,21 @@ def stage_atomic_candidate_pack(
             tensors,
             str(tensor_path),
             metadata={
-                "schema": CANDIDATE_PACK_SCHEMA,
-                "request_sha256": request.request_sha256,
-                "chart_mode": chart_mode,
-                "target_arm": target_arm,
-                "installed": "false",
+                "neural_forge": canonical_json_bytes(
+                    {
+                        "schema": CANDIDATE_PACK_SCHEMA,
+                        "request_sha256": request.request_sha256,
+                        "chart_mode": chart_mode,
+                        "target_arm": target_arm,
+                        "installed": False,
+                    }
+                ).decode("ascii")
             },
         )
         with tensor_path.open("r+b") as handle:
             os.fsync(handle.fileno())
         tensor_file_sha256 = _file_sha256(tensor_path)
+        tensor_file_size = tensor_path.stat().st_size
         body = {
             "schema": CANDIDATE_PACK_SCHEMA,
             "request_sha256": request.request_sha256,
@@ -1493,7 +1756,7 @@ def stage_atomic_candidate_pack(
             "tensor_file": {
                 "filename": tensor_path.name,
                 "sha256": tensor_file_sha256,
-                "size_bytes": tensor_path.stat().st_size,
+                "size_bytes": tensor_file_size,
             },
             "upstream_receipt_sha256s": receipts,
             "child_state_before_sha256": before,
@@ -1517,21 +1780,19 @@ def stage_atomic_candidate_pack(
         receipt_path.write_bytes(canonical_json_bytes(receipt) + b"\n")
         with receipt_path.open("r+b") as handle:
             os.fsync(handle.fileno())
+        _fsync_directory(temporary)
         destination = output_root / receipt["candidate_pack_sha256"]
         try:
-            temporary.rename(destination)
+            _rename_directory_noreplace(temporary, destination)
+            _fsync_directory(output_root)
         except FileExistsError:
-            existing_receipt = destination / "receipt.json"
-            existing_tensors = destination / tensor_path.name
-            if (
-                not existing_receipt.is_file()
-                or json.loads(existing_receipt.read_text("ascii")) != receipt
-                or not existing_tensors.is_file()
-                or _file_sha256(existing_tensors) != tensor_file_sha256
-            ):
-                raise Lfm2Exact4xMovingGaugeV5Error(
-                    "Existing candidate pack differs from this content address."
-                )
+            _authenticate_existing_candidate_pack(
+                destination,
+                output_root=output_root,
+                receipt=receipt,
+                tensor_file_sha256=tensor_file_sha256,
+                tensor_file_size=tensor_file_size,
+            )
             shutil.rmtree(temporary)
         return destination, MappingProxyType(receipt)
     except BaseException:

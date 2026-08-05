@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -52,6 +53,10 @@ def _write_json(path: Path, value: Any) -> None:
     path.write_bytes(canonical_json_bytes(value) + b"\n")
 
 
+def _canonical_copy(value: Any) -> Any:
+    return json.loads(canonical_json_bytes(dict(value)))
+
+
 def _calibration_rows() -> list[dict[str, Any]]:
     rows = []
     for index in range(v5.EXPECTED_BATCH_COUNT):
@@ -97,6 +102,7 @@ class _Fixture:
         self.calls: list[str] = []
         self.authorities: list[_Authority] = []
         self.handler_calls: list[str] = []
+        self.request: v5.Lfm2Exact4xMovingGaugeV5Request | None = None
         self.plan = _exact_plan()
         self.package = SimpleNamespace(
             package_sha256=_digest("child-package"),
@@ -231,6 +237,7 @@ class _Fixture:
                 "boundary_phase": "boundary-key-id",
                 "feature_phase": "feature-key-id",
                 "conditioned_recapture": "conditioned-key-id",
+                "launch_receipt": "launch-receipt-key-id",
             },
             "replay": {
                 "devices": ["cuda:0"],
@@ -250,6 +257,9 @@ class _Fixture:
             },
             "receipt_path": str(
                 (Path(local_paths["output_root"]) / "r12-v5-receipt.json").absolute()
+            ),
+            "materialized_child_output_root": str(
+                (tmp_path / "materialized-candidates").absolute()
             ),
         }
         self.manifest = launch.seal_r12_v5_launch_manifest(body)
@@ -376,15 +386,38 @@ class _Fixture:
             return {name: handler(name) for name in v5.PHASE_ORDER}
 
         def run_machine(
-            _request: Any,
+            request: Any,
             handlers: dict[str, Any],
             **_kwargs: Any,
         ) -> Any:
             self.calls.append("phase-machine")
-            outcomes = {}
-            for name in v5.PHASE_ORDER:
-                outcomes[name] = handlers[name]({}, outcomes)
-            return outcomes, {"result_sha256": _digest("phase-machine")}
+            self.request = request
+            outcomes: dict[str, v5.V5PhaseOutcome] = {}
+            phase_plan = v5.build_v5_phase_plan(request)
+            for phase in phase_plan["phases"]:
+                name = str(phase["name"])
+                handlers[name](phase, outcomes)
+                recapture = name == "checkpoint_conditioned_child_recapture"
+                outcomes[name] = v5.V5PhaseOutcome(
+                    phase_name=name,
+                    phase_sha256=phase["phase_sha256"],
+                    upstream_artifact_sha256s={
+                        dependency: outcomes[dependency].artifact_sha256
+                        for dependency in phase["dependencies"]
+                    },
+                    evidence={"phase": name, "authenticated": True},
+                    heldout_rows_read=(
+                        name == "compare_frozen_candidates_on_heldout"
+                    ),
+                    authenticated_checkpoint_reuse=recapture,
+                    ready_for_atomic_apply=(
+                        name == "stage_atomic_candidate_packs"
+                    ),
+                )
+            return outcomes, v5.build_authenticated_v5_run_receipt(
+                request,
+                outcomes,
+            )
 
         return launch.R12V5LaunchDependencies(
             verify_runtime_surface=verify_runtime_surface,
@@ -439,6 +472,14 @@ def test_manifest_launch_rebuilds_exact_records_split_and_executes_nine(
     )
     receipt_path = Path(manifest["receipt_path"])
     assert receipt_path.read_bytes() == canonical_json_bytes(dict(receipt)) + b"\n"
+    assert fixture.request is not None
+    authenticated_receipt = launch.read_r12_v5_launch_receipt(
+        manifest,
+        authority_key_path=fixture.key_path,
+        request=fixture.request,
+    )
+    assert authenticated_receipt == receipt
+    assert set(authenticated_receipt["phase_outcomes"]) == set(v5.PHASE_ORDER)
 
 
 def test_secret_authorities_and_key_path_are_never_serialized(tmp_path: Path) -> None:
@@ -459,6 +500,102 @@ def test_secret_authorities_and_key_path_are_never_serialized(tmp_path: Path) ->
     assert receipt["authority_objects_serialized"] is False
     assert receipt["authority_key_path_serialized"] is False
     assert receipt["authority_key_bytes_serialized"] is False
+
+
+def test_receipt_hmac_rejects_resealed_phase_outcome_forgery(tmp_path: Path) -> None:
+    fixture = _Fixture(tmp_path)
+    receipt = launch.execute_r12_v5_launch(
+        fixture.manifest,
+        authority_key_path=fixture.key_path,
+        dependencies=fixture.dependencies(),
+    )
+    assert fixture.request is not None
+    forged = _canonical_copy(receipt)
+    phase_name = v5.PHASE_ORDER[-1]
+    forged["phase_outcomes"][phase_name]["evidence"]["forged"] = True
+    original_hmac = forged.pop("receipt_hmac_sha256")
+    forged.pop("receipt_sha256")
+    forged["receipt_sha256"] = launch.canonical_sha256(forged)
+    forged["receipt_hmac_sha256"] = original_hmac
+    _write_json(Path(fixture.manifest["receipt_path"]), forged)
+
+    with pytest.raises(
+        launch.Lfm2Exact4xMovingGaugeV5R12LaunchError,
+        match="receipt HMAC is invalid",
+    ):
+        launch.read_r12_v5_launch_receipt(
+            fixture.manifest,
+            authority_key_path=fixture.key_path,
+            request=fixture.request,
+        )
+
+
+def test_receipt_rejects_hmac_signed_invalid_phase_chain(tmp_path: Path) -> None:
+    fixture = _Fixture(tmp_path)
+    receipt = launch.execute_r12_v5_launch(
+        fixture.manifest,
+        authority_key_path=fixture.key_path,
+        dependencies=fixture.dependencies(),
+    )
+    assert fixture.request is not None
+    forged = _canonical_copy(receipt)
+    phase_name = v5.PHASE_ORDER[-1]
+    phase = forged["phase_outcomes"][phase_name]
+    phase["ready_for_atomic_apply"] = False
+    phase.pop("artifact_sha256")
+    phase["artifact_sha256"] = launch.canonical_sha256(phase)
+    forged["phase_artifact_sha256s"][phase_name] = phase["artifact_sha256"]
+    forged.pop("receipt_hmac_sha256")
+    forged.pop("receipt_sha256")
+    forged["receipt_sha256"] = launch.canonical_sha256(forged)
+    forged["receipt_hmac_sha256"] = launch._receipt_hmac_sha256(
+        fixture.key_bytes,
+        key_id=fixture.manifest["authority_key_ids"]["launch_receipt"],
+        receipt_without_hmac=forged,
+    )
+    _write_json(Path(fixture.manifest["receipt_path"]), forged)
+
+    with pytest.raises(
+        launch.Lfm2Exact4xMovingGaugeV5R12LaunchError,
+        match="persisted phase outcomes are invalid",
+    ):
+        launch.read_r12_v5_launch_receipt(
+            fixture.manifest,
+            authority_key_path=fixture.key_path,
+            request=fixture.request,
+        )
+
+
+def test_manifest_rejects_materialized_root_overlapping_source(tmp_path: Path) -> None:
+    fixture = _Fixture(tmp_path)
+    body = dict(fixture.manifest)
+    body.pop("launch_manifest_sha256")
+    body["materialized_child_output_root"] = body["local_paths"]["published_child"]
+    _write_json(fixture.manifest_path, launch.seal_r12_v5_launch_manifest(body))
+
+    with pytest.raises(
+        launch.Lfm2Exact4xMovingGaugeV5R12LaunchError,
+        match="overlaps protected launch path",
+    ):
+        launch.read_r12_v5_launch_manifest(fixture.manifest_path)
+
+
+def test_manifest_rejects_mutable_root_ancestor_of_tokenizer_bridge(
+    tmp_path: Path,
+) -> None:
+    fixture = _Fixture(tmp_path)
+    body = dict(fixture.manifest)
+    body.pop("launch_manifest_sha256")
+    bridge = Path(body["local_paths"]["output_root"]) / "nested-bridge"
+    bridge.mkdir()
+    body["tokenizer_bridge_root"] = str(bridge)
+    _write_json(fixture.manifest_path, launch.seal_r12_v5_launch_manifest(body))
+
+    with pytest.raises(
+        launch.Lfm2Exact4xMovingGaugeV5R12LaunchError,
+        match="would alter the tokenizer bridge input",
+    ):
+        launch.read_r12_v5_launch_manifest(fixture.manifest_path)
 
 
 def test_runtime_api_failure_precedes_artifact_or_key_access(tmp_path: Path) -> None:
@@ -529,6 +666,23 @@ def test_existing_receipt_rejects_before_any_runtime_work(tmp_path: Path) -> Non
             dependencies=dependencies,
         )
     assert fixture.calls == []
+
+
+def test_atomic_receipt_publish_cleans_owned_temporary_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "receipt.json"
+
+    def fail_publish(_source: Path, _destination: Path) -> None:
+        raise OSError("simulated atomic publish failure")
+
+    monkeypatch.setattr(launch, "_rename_noreplace", fail_publish)
+    with pytest.raises(OSError, match="simulated atomic publish failure"):
+        launch._write_receipt_noreplace(destination, {"status": "complete"})
+
+    assert not destination.exists()
+    assert tuple(tmp_path.iterdir()) == ()
 
 
 def test_launch_surface_has_no_parent_hf_or_network_dependency() -> None:

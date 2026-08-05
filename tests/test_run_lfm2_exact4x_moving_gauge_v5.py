@@ -260,6 +260,40 @@ def test_local_preflight_keeps_all_mutable_roots_outside_r12(
     ):
         runner.authenticate_v5_local_preflight(bad_request)
 
+    immutable_parent = tmp_path / "immutable-parent"
+    nested_source = immutable_parent / "published-child"
+    nested_source.mkdir(parents=True)
+    ancestor_paths = {
+        **request.local_paths,
+        "published_child": str(nested_source),
+        "output_root": str(immutable_parent),
+    }
+    ancestor_request = runner.Lfm2Exact4xMovingGaugeV5Request(
+        local_paths=ancestor_paths,
+        lineage_sha256s=request.lineage_sha256s,
+        counted_child_state_plan=request.counted_child_state_plan,
+    )
+    with pytest.raises(
+        runner.Lfm2Exact4xMovingGaugeV5Error,
+        match="would alter immutable input",
+    ):
+        runner.authenticate_v5_local_preflight(ancestor_request)
+
+    nested_mutable_paths = {
+        **request.local_paths,
+        "output_root": str(Path(request.local_paths["phase_cache"]) / "nested"),
+    }
+    nested_mutable_request = runner.Lfm2Exact4xMovingGaugeV5Request(
+        local_paths=nested_mutable_paths,
+        lineage_sha256s=request.lineage_sha256s,
+        counted_child_state_plan=request.counted_child_state_plan,
+    )
+    with pytest.raises(
+        runner.Lfm2Exact4xMovingGaugeV5Error,
+        match="must not overlap",
+    ):
+        runner.authenticate_v5_local_preflight(nested_mutable_request)
+
 
 def test_phase_machine_rejects_missing_handlers_before_any_execution(
     tmp_path: Path,
@@ -330,6 +364,30 @@ def test_phase_machine_enforces_child_only_recapture_and_heldout_barrier(
     assert receipt["candidate_packs_installed"] is False
     assert receipt["candidate_packs_ready_for_atomic_apply"] is True
     assert receipt["operation_audit"] == dict(runner.FORBIDDEN_OPERATION_AUDIT)
+
+    persisted = {name: outcomes[name].as_dict() for name in runner.PHASE_ORDER}
+    authenticated = runner.authenticate_v5_phase_outcomes(request, persisted)
+    assert tuple(authenticated) == runner.PHASE_ORDER
+    assert (
+        runner.build_authenticated_v5_run_receipt(request, authenticated)
+        == receipt
+    )
+
+    mutated = {name: dict(value) for name, value in persisted.items()}
+    mutated[runner.PHASE_ORDER[-1]]["ready_for_atomic_apply"] = False
+    mutated[runner.PHASE_ORDER[-1]].pop("artifact_sha256")
+    mutated[runner.PHASE_ORDER[-1]]["artifact_sha256"] = runner.canonical_sha256(
+        {
+            key: value
+            for key, value in mutated[runner.PHASE_ORDER[-1]].items()
+            if key != "artifact_sha256"
+        }
+    )
+    with pytest.raises(
+        runner.Lfm2Exact4xMovingGaugeV5Error,
+        match="candidate readiness",
+    ):
+        runner.authenticate_v5_phase_outcomes(request, mutated)
 
 
 def test_phase_machine_rejects_heldout_read_before_candidate_freeze(
@@ -456,6 +514,18 @@ def test_candidate_pack_is_atomic_two_tensor_staging_not_install(
     assert receipt["source_child_state_preserved"] is True
     assert receipt["manual_semantic_review_status"] == "pending"
 
+    repeated_path, repeated_receipt = runner.stage_atomic_candidate_pack(
+        request,
+        chart_mode="E0A",
+        target_arm="sequential_conditioned",
+        replacements=replacements,
+        upstream_receipt_sha256s=receipts,
+        child_state_before_sha256="c" * 64,
+        child_state_after_sha256="c" * 64,
+    )
+    assert repeated_path == path
+    assert dict(repeated_receipt) == dict(receipt)
+
     with pytest.raises(
         runner.Lfm2Exact4xMovingGaugeV5Error,
         match="negative control cannot be packaged",
@@ -469,6 +539,47 @@ def test_candidate_pack_is_atomic_two_tensor_staging_not_install(
             child_state_before_sha256="c" * 64,
             child_state_after_sha256="c" * 64,
         )
+
+
+def test_existing_candidate_pack_rejects_noncanonical_or_extra_content(
+    tmp_path: Path,
+) -> None:
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("safetensors")
+    request = _request(tmp_path)
+    replacements = {
+        runner.REPLACEMENT_TENSOR_NAMES[0]: torch.eye(2, dtype=torch.float32),
+        runner.REPLACEMENT_TENSOR_NAMES[1]: torch.ones((2, 3), dtype=torch.float32),
+    }
+    receipts = {
+        name: f"{index + 20:064x}"
+        for index, name in enumerate(
+            (
+                "chart",
+                "heldout_comparison",
+                "lineage",
+                "mlp_solution",
+                "operator_solution",
+                "target_plan",
+            )
+        )
+    }
+    kwargs = {
+        "chart_mode": "E0A",
+        "target_arm": "sequential_conditioned",
+        "replacements": replacements,
+        "upstream_receipt_sha256s": receipts,
+        "child_state_before_sha256": "c" * 64,
+        "child_state_after_sha256": "c" * 64,
+    }
+    path, _receipt = runner.stage_atomic_candidate_pack(request, **kwargs)
+    (path / "unexpected.txt").write_text("foreign", encoding="ascii")
+
+    with pytest.raises(
+        runner.Lfm2Exact4xMovingGaugeV5Error,
+        match="exactly two files",
+    ):
+        runner.stage_atomic_candidate_pack(request, **kwargs)
 
 
 def test_runner_has_no_parent_loader_network_or_training_substitute() -> None:
