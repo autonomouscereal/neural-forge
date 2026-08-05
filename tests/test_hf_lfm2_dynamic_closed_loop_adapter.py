@@ -16,6 +16,10 @@ pytest.importorskip("safetensors")
 transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_dynamic_closed_loop_adapter as adapter_module  # noqa: E402
+import neural_forge.hf_lfm2_child_replay_phase_cache as replay_phase_module  # noqa: E402
+from neural_forge.dynamic_child_replay_phase_cache import (  # noqa: E402
+    DynamicChildReplayPhaseCacheContext,
+)
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     RUN_SCHEMA,
@@ -29,6 +33,7 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     TrajectoryRecord,
     deterministic_whole_trajectory_split,
 )
+from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache  # noqa: E402
 from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
     Lfm2ClosedLoopRestartCapsuleWriter,
     discover_lfm2_closed_loop_restart_capsules,
@@ -322,6 +327,7 @@ def _adapter(
     parent_residual_operators=None,
     progress_sink=None,
     replay_devices=None,
+    child_replay_phase_cache_context=None,
     install_verification_mode=LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
 ):
     parent, cache, replay_config = sealed_parent
@@ -397,6 +403,9 @@ def _adapter(
         macro_cell_attractor_gate=macro_cell_attractor_gate,
         selective_session=selective_session,
         progress_sink=progress_sink,
+        child_replay_phase_cache_context=(
+            child_replay_phase_cache_context
+        ),
     )
     return adapter, child, mapping
 
@@ -2916,6 +2925,69 @@ def test_two_cpu_shard_workers_seal_the_adapter_capture_bytes(
             value is None or isinstance(value, (bool, int, float, str))
             for value in metadata.values()
         )
+
+
+def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
+    sealed_parent,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    context = DynamicChildReplayPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "child-replays")
+    )
+    capture_calls = []
+    pairing_calls = []
+    original_capture = replay_phase_module.capture_lfm2_child_replay
+    original_pair = adapter_module.pair_lfm2_parent_child_replay
+
+    def observed_capture(*args, **kwargs):
+        capture_calls.append(True)
+        return original_capture(*args, **kwargs)
+
+    def observed_pair(*args, **kwargs):
+        pairing_calls.append(True)
+        return original_pair(*args, **kwargs)
+
+    monkeypatch.setattr(
+        replay_phase_module,
+        "capture_lfm2_child_replay",
+        observed_capture,
+    )
+    monkeypatch.setattr(
+        adapter_module,
+        "pair_lfm2_parent_child_replay",
+        observed_pair,
+    )
+    events = []
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        child_replay_phase_cache_context=context,
+        progress_sink=lambda stage, metadata: events.append(
+            (stage, dict(metadata))
+        ),
+    )
+    scope = FoldScope("layer", 0)
+    point = CapturePoint.PRE_PRODUCER
+
+    cold = _capture_one_point(adapter, scope=scope, point=point)
+    hot = _capture_one_point(adapter, scope=scope, point=point)
+
+    assert hot == cold
+    assert len(capture_calls) == 1
+    assert len(pairing_calls) == 2
+    cache_events = [
+        metadata
+        for stage, metadata in events
+        if stage
+        == adapter_module.LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE
+    ]
+    assert [event["cache_hit"] for event in cache_events] == [False, True]
+    assert cache_events[0]["current_invocation_child_forwards"] > 0
+    assert cache_events[1]["current_invocation_child_forwards"] == 0
+    assert (
+        cache_events[1]["persisted_capture_child_forwards"]
+        == cache_events[0]["persisted_capture_child_forwards"]
+    )
 
 
 def test_sharded_adapter_capture_matches_serial_under_a_selective_session(

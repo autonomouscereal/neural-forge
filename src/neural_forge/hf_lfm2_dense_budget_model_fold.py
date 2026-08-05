@@ -33,6 +33,9 @@ from types import MappingProxyType
 from typing import Any, Protocol
 
 from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
+from .dynamic_child_replay_phase_cache import (
+    DynamicChildReplayPhaseCacheContext,
+)
 from .dynamic_closed_loop_fold import (
     RUN_SCHEMA as CLOSED_LOOP_RUN_SCHEMA,
     ChildClosedLoopCompiler,
@@ -1808,6 +1811,9 @@ class Lfm2DenseBudgetFoldConfig:
     # serial path; every honoured shard plan seals identical bytes, so this
     # knob changes the wall clock and nothing else (NOTES-2B).
     closed_loop_replay_devices: tuple[str, ...] | None = None
+    child_replay_phase_cache_context: (
+        DynamicChildReplayPhaseCacheContext | None
+    ) = field(default=None, compare=False, repr=False)
     macro_cell_attractor_gate_config: Lfm2MacroCellAttractorGateConfig | None = None
     restart_capsule_directory: Path | None = None
     restart_capsule_rotation_keep: int = DEFAULT_RESTART_CAPSULE_ROTATION_KEEP
@@ -1980,6 +1986,16 @@ class Lfm2DenseBudgetFoldConfig:
         ):
             raise Lfm2DenseBudgetFoldError(
                 "closed_loop_compiler_config has the wrong type."
+            )
+        if (
+            self.child_replay_phase_cache_context is not None
+            and not isinstance(
+                self.child_replay_phase_cache_context,
+                DynamicChildReplayPhaseCacheContext,
+            )
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "child_replay_phase_cache_context has the wrong type."
             )
         self._resolve_closed_loop_replay_devices()
         if self.macro_cell_attractor_gate_config is not None and not isinstance(
@@ -4075,6 +4091,9 @@ class Lfm2DenseBudgetModelOperator:
                     ),
                     evidence_set=self.evidence_set,
                     progress_sink=fold_progress,
+                    child_replay_phase_cache_context=(
+                        self.config.child_replay_phase_cache_context
+                    ),
                 )
                 compiler_config = replace(
                     self.config.closed_loop_compiler_config,
