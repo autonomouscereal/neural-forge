@@ -312,6 +312,7 @@ def _adapter(
     minimum_output_improvement=-1_000_000.0,
     output_validation_tolerance=1_000_000.0,
     performance_metrics_diagnostic_only=False,
+    all_layer_finite_numeric_checks_diagnostic_only=False,
     replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     attention_consumer_mode="output-only",
     output_interface_mode="fit-transform",
@@ -375,6 +376,9 @@ def _adapter(
             ),
             performance_metrics_diagnostic_only=(
                 performance_metrics_diagnostic_only
+            ),
+            all_layer_finite_numeric_checks_diagnostic_only=(
+                all_layer_finite_numeric_checks_diagnostic_only
             ),
             replay_capture_mode=replay_capture_mode,
             attention_consumer_mode=attention_consumer_mode,
@@ -2704,6 +2708,39 @@ def test_performance_diagnostic_only_accepts_finite_layer_final_and_output(
     assert output_metrics[
         "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"
     ] is False
+
+
+def test_all_layer_numeric_policy_accepts_finite_layer_final_and_output(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        minimum_improvement=1_000_000_000.0,
+        minimum_output_improvement=1_000_000_000.0,
+        output_validation_tolerance=0.0,
+        all_layer_finite_numeric_checks_diagnostic_only=True,
+    )
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-all-layer-numeric-diagnostic-only-v1",
+        ),
+    ).run()
+
+    decisions = [layer["validation"] for layer in report["layer_reports"]]
+    decisions.append(report["final_normalization"]["validation"])
+    decisions.append(report["output_interface"]["validation"])
+    for decision in decisions:
+        metrics = decision["metrics"]
+        assert decision["accepted"] is True
+        assert metrics["performance_metrics_diagnostic_only"] is True
+        assert metrics["performance_metrics_are_decision_authority"] is False
+        assert metrics["performance_metrics_finite"] is True
+        assert metrics["counterfactual_performance_threshold_passed"] is False
+        assert metrics["all_layer_finite_numeric_checks_diagnostic_only"] is True
+        assert metrics["global_performance_metrics_diagnostic_only"] is False
 
 
 @pytest.mark.parametrize(

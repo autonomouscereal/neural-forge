@@ -54,7 +54,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
-from .dynamic_circuit_ir import JsonScalar, canonical_sha256
+from .dynamic_circuit_ir import (
+    JsonScalar,
+    canonical_json_bytes,
+    canonical_sha256,
+)
 from .dynamic_fold_executor import run_fold_only_callback
 
 
@@ -1635,6 +1639,32 @@ class ChildClosedLoopCompiler:
                 "whole trajectories."
             )
         if not decision.accepted:
+            # A rejected decision used to raise before any progress event was
+            # emitted, throwing away the only live copy of its held-out
+            # metrics.  Publish the complete, canonically encoded decision
+            # first.  The digest authenticates the JSON body and the separate
+            # metrics digest lets a monitor index the measurements without
+            # trusting an unsealed log rendering.
+            decision_body = decision.as_dict()
+            decision_body.pop("decision_sha256")
+            metrics = dict(decision.metrics)
+            self._emit_progress(
+                "child_closed_loop_validation_decision_rejected",
+                scope_id=scope.scope_id,
+                scope_kind=scope.kind,
+                layer_index=scope.layer_index,
+                validation_record_count=len(decision.validation_record_keys),
+                validation_accepted=False,
+                validation_reason=decision.reason,
+                validation_decision_sha256=decision.decision_sha256,
+                validation_decision_json=(
+                    canonical_json_bytes(decision_body).decode("ascii")
+                ),
+                validation_metrics_sha256=canonical_sha256(metrics),
+                validation_metrics_json=(
+                    canonical_json_bytes(metrics).decode("ascii")
+                ),
+            )
             raise ClosedLoopFoldError(
                 f"{scope.scope_id} validation rejected the folded child: "
                 f"{decision.reason}"
