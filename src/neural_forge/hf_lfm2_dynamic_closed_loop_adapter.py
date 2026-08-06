@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
@@ -77,6 +78,7 @@ from .hf_lfm2_child_closed_loop_refinement import (
     compute_lfm2_candidate_post_operator,
     extract_lfm2_actual_child_contexts,
     pair_lfm2_parent_child_replay,
+    preverify_lfm2_parent_child_tokenizer_bridge_input_pairs,
     project_lfm2_paired_parent_logits,
     split_lfm2_replay_batches,
 )
@@ -90,8 +92,11 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    Lfm2ChildReplay,
     Lfm2ChildEvidenceProfile,
+    SELECTIVE_BATCH_PAYLOAD_SCHEMA,
     _model_config as _normalized_lfm2_model_config,
+    _tensor_sha256 as _lfm2_circuit_tensor_sha256,
     capture_lfm2_child_replay,
     compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
@@ -174,6 +179,7 @@ from .hf_lfm2_structural_residual_attention_fold import (
     rollback_lfm2_structural_split_install,
 )
 from .hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2PreverifiedTokenizerBridgeInputPairLedger,
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
 )
@@ -1732,9 +1738,98 @@ def _capture_envelope_sha256(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _SelectedParentComponentKey:
+    """Complete immutable identity of one cached selected-parent tensor."""
+
+    session_sha256: str
+    cache_key: str
+    batch_index: int
+    input_sha256: str
+    tensor_name: str
+    tensor_descriptor_sha256: str
+
+
+@dataclass(slots=True)
+class _SelectedParentTensorComponent:
+    """One independently evictable tensor from an authenticated selection."""
+
+    key: _SelectedParentComponentKey
+    tensor: Any = field(repr=False)
+    logical_bytes: int
+    source_ordered_tensor_names: tuple[str, ...]
+    source_selection_sha256: str
+    _authenticated_source_ordered_tensor_names: tuple[str, ...]
+    _authenticated_source_selection_sha256: str
+    tensor_object_id: int
+    tensor_version: int
+    profile_reference_count: int = 0
+    released: bool = False
+
+
+class _SelectedParentBatchPayloadView:
+    """Exact profile-local view composed from cached immutable components."""
+
+    __slots__ = (
+        "batch_index",
+        "input_sha256",
+        "logical_bytes",
+        "ordered_tensor_names",
+        "selection_sha256",
+        "session_sha256",
+        "_component_keys",
+        "_authenticated_logical_bytes",
+        "_authenticated_selection_sha256",
+        "_released",
+        "_tensors",
+    )
+
+    def __init__(
+        self,
+        *,
+        batch_index: int,
+        input_sha256: str,
+        ordered_tensor_names: tuple[str, ...],
+        logical_bytes: int,
+        session_sha256: str,
+        selection_sha256: str,
+        component_keys: tuple[_SelectedParentComponentKey, ...],
+        tensors: Mapping[str, Any],
+    ) -> None:
+        self.batch_index = batch_index
+        self.input_sha256 = input_sha256
+        self.ordered_tensor_names = ordered_tensor_names
+        self.logical_bytes = logical_bytes
+        self.session_sha256 = session_sha256
+        self.selection_sha256 = selection_sha256
+        self._component_keys = component_keys
+        self._authenticated_logical_bytes = logical_bytes
+        self._authenticated_selection_sha256 = selection_sha256
+        self._tensors: dict[str, Any] = dict(tensors)
+        self._released = False
+
+    @property
+    def released(self) -> bool:
+        return self._released
+
+    @property
+    def tensors(self) -> Mapping[str, Any]:
+        if self._released:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile batch view was already released."
+            )
+        return MappingProxyType(self._tensors)
+
+    def _release(self) -> None:
+        if self._released:
+            return
+        self._tensors.clear()
+        self._released = True
+
+
 @dataclass(slots=True)
 class _SelectedParentEvidenceProfile:
-    """One exact authenticated parent-tensor inventory resident at a time."""
+    """One exact authenticated view over bounded cached parent components."""
 
     profile_sha256: str
     profile_role: str
@@ -1742,8 +1837,11 @@ class _SelectedParentEvidenceProfile:
     allowed_capture_points: tuple[str, ...]
     ordered_tensor_names_by_batch: tuple[tuple[str, ...], ...]
     payload_selection_sha256: tuple[str, ...]
-    payloads: tuple[Any, ...] = field(repr=False)
+    payloads: tuple[_SelectedParentBatchPayloadView, ...] = field(repr=False)
     batches: tuple[Lfm2CircuitTraceBatch, ...] = field(repr=False)
+    components_by_batch: tuple[
+        tuple[_SelectedParentTensorComponent, ...], ...
+    ] = field(repr=False)
     borrow_count: int = 0
 
 
@@ -1764,6 +1862,7 @@ class _SelectedParentProfileBorrow:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent evidence borrow was already released."
             )
+        self.owner._verify_live_selected_parent_profile_borrow(self)
         return self.profile.batches
 
     def release(self) -> None:
@@ -3167,6 +3266,25 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             self.parent_cache = parent_cache
         self.selective_session = selective_session
+        # Keep the exact authenticated objects, not merely their deterministic
+        # digests.  Two sessions opened over the same cache intentionally seal
+        # to the same evidence SHA, but a live profile may never migrate to
+        # that foreign session (or cache handle) after admission.
+        self._selected_parent_bound_session = selective_session
+        self._selected_parent_bound_cache = self.parent_cache
+        self._selected_parent_bound_session_evidence_sha256 = (
+            None
+            if selective_session is None
+            else selective_session.evidence_sha256
+        )
+        self._selected_parent_bound_reference_ids = (
+            ()
+            if selective_session is None
+            else tuple(
+                id(reference)
+                for reference in selective_session.batch_references
+            )
+        )
         self.evidence_set = evidence_set
         # Every batch an on-policy round contributed is a fit batch.  This
         # adapter's fit/validation split is derived from trajectory identity,
@@ -3204,6 +3322,33 @@ class Lfm2DynamicClosedLoopAdapter:
         self._active_selected_parent_profile: (
             _SelectedParentEvidenceProfile | None
         ) = None
+        # Profile views are exact, but their overlapping immutable tensor
+        # components survive a view switch.  A successful admission trims the
+        # cache to the newly authorized inventory, so layer replay retains at
+        # most the current/next/terminal horizon named by that profile instead
+        # of accumulating the full parent across the run.
+        self._selected_parent_component_cache: dict[
+            _SelectedParentComponentKey,
+            _SelectedParentTensorComponent,
+        ] = {}
+        self._selected_parent_component_cache_logical_bytes = 0
+        self._selected_parent_component_cache_peak_logical_bytes = 0
+        self._selected_parent_component_load_count = 0
+        # Cumulative diagnostics deliberately survive transient-cache cleanup.
+        # They make component reuse and its exact-byte trust-boundary cost
+        # observable without changing either the authenticated cache contract
+        # or the tensors retained by it.
+        self._selected_parent_component_source_load_count = 0
+        self._selected_parent_component_source_loaded_logical_bytes = 0
+        self._selected_parent_component_source_load_wall_seconds = 0.0
+        self._selected_parent_component_exact_hash_boundary_count = 0
+        self._selected_parent_component_exact_hash_tensor_count = 0
+        self._selected_parent_component_exact_hash_logical_bytes = 0
+        self._selected_parent_component_exact_hash_wall_seconds = 0.0
+        self._selected_parent_profile_contract_cache: dict[
+            tuple[str, str, str, tuple[int, ...], tuple[str, ...]],
+            tuple[str, tuple[tuple[str, ...], ...]],
+        ] = {}
         # A merged capture defers one consumer to the next layer, so exactly
         # those borrows are allowed to outlive the layer that created them.
         self._deferred_merged_parent_borrows: list[
@@ -3594,6 +3739,14 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
         self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
         self.tokenizer_bridge_trace_adapter = tokenizer_bridge_trace_adapter
+        # The parent/child input corpus is invariant for the lifetime of one
+        # adapter even though every child replay contains new activations and
+        # weights.  Authenticate the expensive tokenizer remap once on first
+        # use, then retain only its immutable evidence ledger while the exact
+        # parent selective session remains open.
+        self._tokenizer_bridge_input_pair_ledger: (
+            Lfm2PreverifiedTokenizerBridgeInputPairLedger | None
+        ) = None
         self.identity_tokenizer_evidence_sha256 = identity_tokenizer_evidence_sha256
         self._child_input_vocabulary_sha256 = _tensor_sha256(
             child_input_vocabulary
@@ -4185,6 +4338,54 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         return tuple(sorted(selected))
 
+    def _verify_live_selected_parent_session(
+        self,
+        *,
+        verify_session: bool,
+    ) -> Any:
+        """Authenticate the exact still-open session/cache object binding."""
+
+        session = self.selective_session
+        if (
+            session is None
+            or self._selected_parent_bound_session is None
+            or session is not self._selected_parent_bound_session
+            or self.parent_cache is not self._selected_parent_bound_cache
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent evidence migrated to a foreign session or "
+                "cache binding."
+            )
+        if session.closed:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent evidence session is closed."
+            )
+        if verify_session:
+            try:
+                session.verify()
+            except Exception as exc:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Selected parent evidence session failed live "
+                    "verification."
+                ) from exc
+        references = session.batch_references
+        if (
+            session.closed
+            or session.evidence_sha256
+            != self._selected_parent_bound_session_evidence_sha256
+            or session.path != self.parent_cache.path
+            or session.cache_key != self.parent_cache.cache_key
+            or session.batch_count != self.parent_cache.batch_count
+            or len(references) != session.batch_count
+            or tuple(id(reference) for reference in references)
+            != self._selected_parent_bound_reference_ids
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent evidence session changed its exact live "
+                "binding."
+            )
+        return session
+
     def _selected_parent_profile_contract(
         self,
         scope: FoldScope,
@@ -4207,6 +4408,23 @@ class Lfm2DynamicClosedLoopAdapter:
             body_internal=body_internal,
             merged_requests=merged_requests,
         )
+        contract_key = (
+            self.selective_session.evidence_sha256,
+            self.parent_cache.cache_key,
+            profile_role,
+            selected_layer_indices,
+            allowed_points,
+        )
+        cached_contract = self._selected_parent_profile_contract_cache.get(
+            contract_key
+        )
+        if cached_contract is not None:
+            return (
+                cached_contract[0],
+                profile_role,
+                allowed_points,
+                cached_contract[1],
+            )
         inventories = tuple(
             self._selective_parent_tensor_names(
                 reference,
@@ -4215,14 +4433,43 @@ class Lfm2DynamicClosedLoopAdapter:
             )
             for reference in self.selective_session.batch_references
         )
-        profile_sha256 = canonical_sha256(
+        profile_sha256 = self._selected_parent_profile_sha256(
+            profile_role=profile_role,
+            selected_layer_indices=selected_layer_indices,
+            allowed_capture_points=allowed_points,
+            inventories=inventories,
+        )
+        self._selected_parent_profile_contract_cache[contract_key] = (
+            profile_sha256,
+            inventories,
+        )
+        while len(self._selected_parent_profile_contract_cache) > 3:
+            oldest = next(
+                iter(self._selected_parent_profile_contract_cache)
+            )
+            self._selected_parent_profile_contract_cache.pop(oldest)
+        return profile_sha256, profile_role, allowed_points, inventories
+
+    def _selected_parent_profile_sha256(
+        self,
+        *,
+        profile_role: str,
+        selected_layer_indices: tuple[int, ...],
+        allowed_capture_points: tuple[str, ...],
+        inventories: tuple[tuple[str, ...], ...],
+    ) -> str:
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profiles require a selective session."
+            )
+        return canonical_sha256(
             {
                 "schema": "neural-forge-lfm2-selected-parent-profile-v1",
                 "session_sha256": self.selective_session.evidence_sha256,
                 "cache_key": self.parent_cache.cache_key,
                 "profile_role": profile_role,
                 "selected_layer_indices": list(selected_layer_indices),
-                "allowed_capture_points": list(allowed_points),
+                "allowed_capture_points": list(allowed_capture_points),
                 "ordered_batches": [
                     {
                         "batch_index": reference.index,
@@ -4239,7 +4486,571 @@ class Lfm2DynamicClosedLoopAdapter:
                 "full_cache_batch_loads": 0,
             }
         )
-        return profile_sha256, profile_role, allowed_points, inventories
+
+    def _selected_parent_selection_sha256(
+        self,
+        reference: Any,
+        tensor_names: tuple[str, ...],
+        *,
+        inventory: Mapping[str, Any] | None = None,
+    ) -> tuple[str, int]:
+        """Reproduce the sealed-session selection identity without a reload."""
+
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent components require a selective session."
+            )
+        if (
+            not tensor_names
+            or tensor_names != tuple(sorted(set(tensor_names)))
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent component names are not canonical."
+            )
+        descriptors = (
+            self._selected_parent_reference_inventory(reference)
+            if inventory is None
+            else inventory
+        )
+        if any(name not in descriptors for name in tensor_names):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent component descriptor inventory changed."
+            )
+        logical_bytes = sum(
+            int(descriptors[name]["size_bytes"]) for name in tensor_names
+        )
+        body = {
+            "schema": SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+            "session_sha256": self.selective_session.evidence_sha256,
+            "cache_key": self.parent_cache.cache_key,
+            "batch_index": reference.index,
+            "input_sha256": reference.input_sha256,
+            "record_sha256": reference.record_sha256,
+            "ordered_tensor_names": list(tensor_names),
+            "ordered_tensor_descriptors": [
+                dict(descriptors[name]) for name in tensor_names
+            ],
+            "logical_bytes": logical_bytes,
+        }
+        return canonical_sha256(body), logical_bytes
+
+    @staticmethod
+    def _selected_parent_reference_inventory(
+        reference: Any,
+    ) -> Mapping[str, Any]:
+        # The selective session already owns this immutable authenticated
+        # record.  Reading its public ``record`` property would serialize and
+        # deserialize the complete descriptor inventory on every component
+        # check, recreating the very repeated work this cache removes.
+        record = getattr(reference, "_record", None)
+        inventory = (
+            None if not isinstance(record, Mapping) else record.get("tensors")
+        )
+        if not isinstance(inventory, Mapping):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent reference lost its descriptor inventory."
+            )
+        return inventory
+
+    def _selected_parent_component_key(
+        self,
+        reference: Any,
+        tensor_name: str,
+        *,
+        descriptor: Mapping[str, Any] | None = None,
+    ) -> _SelectedParentComponentKey:
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent components require a selective session."
+            )
+        resolved_descriptor = descriptor
+        if resolved_descriptor is None:
+            inventory = self._selected_parent_reference_inventory(reference)
+            resolved_descriptor = inventory.get(tensor_name)
+        if not isinstance(resolved_descriptor, Mapping):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent tensor has no authenticated descriptor."
+            )
+        return _SelectedParentComponentKey(
+            session_sha256=self.selective_session.evidence_sha256,
+            cache_key=self.parent_cache.cache_key,
+            batch_index=int(reference.index),
+            input_sha256=str(reference.input_sha256),
+            tensor_name=tensor_name,
+            tensor_descriptor_sha256=canonical_sha256(
+                dict(resolved_descriptor)
+            ),
+        )
+
+    @staticmethod
+    def _selected_parent_tensor_version(tensor: Any) -> int:
+        version = getattr(tensor, "_version", 0)
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent tensor has no stable mutation version."
+            )
+        return int(version)
+
+    @staticmethod
+    def _selected_parent_tensor_matches_descriptor(
+        tensor: Any,
+        descriptor: Mapping[str, Any],
+    ) -> bool:
+        try:
+            return (
+                str(tensor.dtype).replace("torch.", "")
+                == descriptor["dtype"]
+                and [int(size) for size in tensor.shape]
+                == descriptor["shape"]
+                and int(tensor.numel()) == int(descriptor["numel"])
+                and int(tensor.numel() * tensor.element_size())
+                == int(descriptor["size_bytes"])
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return False
+
+    def _verify_selected_parent_component(
+        self,
+        cache_key: _SelectedParentComponentKey,
+        component: _SelectedParentTensorComponent,
+        reference: Any,
+        *,
+        inventory: Mapping[str, Any] | None = None,
+    ) -> None:
+        descriptors = (
+            self._selected_parent_reference_inventory(reference)
+            if inventory is None
+            else inventory
+        )
+        expected_key = self._selected_parent_component_key(
+            reference,
+            cache_key.tensor_name,
+            descriptor=descriptors.get(cache_key.tensor_name),
+        )
+        if (
+            component.key != cache_key
+            or cache_key != expected_key
+            or component.released
+            or component.tensor is None
+            or component.source_ordered_tensor_names
+            != component._authenticated_source_ordered_tensor_names
+            or component.source_selection_sha256
+            != component._authenticated_source_selection_sha256
+            or cache_key.tensor_name
+            not in component.source_ordered_tensor_names
+            or id(component.tensor) != component.tensor_object_id
+            or self._selected_parent_tensor_version(component.tensor)
+            != component.tensor_version
+            or isinstance(component.profile_reference_count, bool)
+            or component.profile_reference_count < 0
+            or component.logical_bytes
+            != int(descriptors[cache_key.tensor_name]["size_bytes"])
+            or not self._selected_parent_tensor_matches_descriptor(
+                component.tensor,
+                descriptors[cache_key.tensor_name],
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent tensor component changed after authenticated "
+                "load."
+            )
+
+    def _verify_selected_parent_component_cache(
+        self,
+        *,
+        session_verified: bool = False,
+        exact_tensor_bytes: bool = True,
+    ) -> None:
+        if self.selective_session is None:
+            if self._selected_parent_component_cache:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A full-cache adapter retained selected parent components."
+                )
+            return
+        session = self._verify_live_selected_parent_session(
+            verify_session=not session_verified,
+        )
+        references = {
+            int(reference.index): reference
+            for reference in session.batch_references
+        }
+        inventories = {
+            batch_index: self._selected_parent_reference_inventory(reference)
+            for batch_index, reference in references.items()
+        }
+        torch = _torch() if exact_tensor_bytes else None
+        tensor_sha256_by_object: dict[int, str] = {}
+        exact_hash_started = (
+            time.perf_counter() if exact_tensor_bytes else None
+        )
+        exact_hash_tensor_count = 0
+        exact_hash_logical_bytes = 0
+        logical_bytes = 0
+        for cache_key, component in (
+            self._selected_parent_component_cache.items()
+        ):
+            reference = references.get(cache_key.batch_index)
+            if reference is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Selected parent component belongs to a foreign batch."
+                )
+            self._verify_selected_parent_component(
+                cache_key,
+                component,
+                reference,
+                inventory=inventories[cache_key.batch_index],
+            )
+            if exact_tensor_bytes:
+                tensor_object_id = id(component.tensor)
+                tensor_sha256 = tensor_sha256_by_object.get(tensor_object_id)
+                if tensor_sha256 is None:
+                    assert torch is not None
+                    tensor_sha256 = _lfm2_circuit_tensor_sha256(
+                        torch,
+                        component.tensor,
+                    )
+                    tensor_sha256_by_object[tensor_object_id] = tensor_sha256
+                    exact_hash_tensor_count += 1
+                    exact_hash_logical_bytes += component.logical_bytes
+                if (
+                    tensor_sha256
+                    != inventories[cache_key.batch_index][
+                        cache_key.tensor_name
+                    ]["sha256"]
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Selected parent tensor component changed after "
+                        "authenticated load."
+                    )
+            logical_bytes += component.logical_bytes
+        if (
+            isinstance(
+                self._selected_parent_component_cache_logical_bytes,
+                bool,
+            )
+            or self._selected_parent_component_cache_logical_bytes
+            != logical_bytes
+            or isinstance(
+                self._selected_parent_component_cache_peak_logical_bytes,
+                bool,
+            )
+            or self._selected_parent_component_cache_peak_logical_bytes
+            < logical_bytes
+            or isinstance(self._selected_parent_component_load_count, bool)
+            or self._selected_parent_component_load_count < 0
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent component cache accounting changed."
+            )
+        if exact_tensor_bytes:
+            assert exact_hash_started is not None
+            self._selected_parent_component_exact_hash_boundary_count += 1
+            self._selected_parent_component_exact_hash_tensor_count += (
+                exact_hash_tensor_count
+            )
+            self._selected_parent_component_exact_hash_logical_bytes += (
+                exact_hash_logical_bytes
+            )
+            self._selected_parent_component_exact_hash_wall_seconds += (
+                time.perf_counter() - exact_hash_started
+            )
+        self._verify_live_selected_parent_session(verify_session=False)
+
+    def _discard_selected_parent_components(
+        self,
+        component_keys: Sequence[_SelectedParentComponentKey],
+    ) -> None:
+        if not component_keys:
+            return
+        errors = []
+        for component_key in component_keys:
+            component = self._selected_parent_component_cache.pop(
+                component_key,
+                None,
+            )
+            if component is None:
+                continue
+            if component.profile_reference_count != 0:
+                errors.append(
+                    Lfm2DynamicClosedLoopAdapterError(
+                        "Cannot evict a selected parent component with a live "
+                        "profile view."
+                    )
+                )
+            self._selected_parent_component_cache_logical_bytes -= (
+                component.logical_bytes
+            )
+            component.tensor = None
+            component.released = True
+        if self._selected_parent_component_cache_logical_bytes < 0:
+            self._selected_parent_component_cache_logical_bytes = 0
+            errors.append(
+                Lfm2DynamicClosedLoopAdapterError(
+                    "Selected parent component byte accounting underflowed."
+                )
+            )
+        release_closed_loop_capture_memory()
+        if errors:
+            raise ClosedLoopCleanupError(
+                "Selected parent component eviction failed.",
+                errors,
+            )
+
+    def _clear_selected_parent_component_cache(self) -> None:
+        errors = []
+        if self._active_selected_parent_profile is not None:
+            errors.append(
+                Lfm2DynamicClosedLoopAdapterError(
+                    "Cannot clear selected parent components with an active "
+                    "profile."
+                )
+            )
+        for component in self._selected_parent_component_cache.values():
+            if component.profile_reference_count != 0:
+                errors.append(
+                    Lfm2DynamicClosedLoopAdapterError(
+                        "Selected parent component cleanup found a live view."
+                    )
+                )
+            component.tensor = None
+            component.released = True
+        self._selected_parent_component_cache.clear()
+        self._selected_parent_component_cache_logical_bytes = 0
+        release_closed_loop_capture_memory()
+        if errors:
+            raise ClosedLoopCleanupError(
+                "Selected parent component cache cleanup failed.",
+                errors,
+            )
+
+    def _admit_selected_parent_components(
+        self,
+        inventories: tuple[tuple[str, ...], ...],
+    ) -> tuple[tuple[_SelectedParentComponentKey, ...], ...]:
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent components require a selective session."
+            )
+        # This is an internal admission step, not a consumer boundary.  Check
+        # identities/accounting now; the exact-byte pass runs once after the
+        # final authorized view is assembled and before it is borrowed.
+        self._verify_selected_parent_component_cache(
+            session_verified=True,
+            exact_tensor_bytes=False,
+        )
+        descriptor_inventories = tuple(
+            self._selected_parent_reference_inventory(reference)
+            for reference in self.selective_session.batch_references
+        )
+        required_by_batch = tuple(
+            tuple(
+                self._selected_parent_component_key(
+                    reference,
+                    name,
+                    descriptor=descriptor_inventory.get(name),
+                )
+                for name in names
+            )
+            for reference, names, descriptor_inventory in zip(
+                self.selective_session.batch_references,
+                inventories,
+                descriptor_inventories,
+                strict=True,
+            )
+        )
+        newly_admitted: list[_SelectedParentComponentKey] = []
+        try:
+            for reference, names, component_keys, descriptor_inventory in zip(
+                self.selective_session.batch_references,
+                inventories,
+                required_by_batch,
+                descriptor_inventories,
+                strict=True,
+            ):
+                missing_names = tuple(
+                    name
+                    for name, component_key in zip(
+                        names,
+                        component_keys,
+                        strict=True,
+                    )
+                    if component_key
+                    not in self._selected_parent_component_cache
+                )
+                if not missing_names:
+                    continue
+                expected_selection_sha256, expected_bytes = (
+                    self._selected_parent_selection_sha256(
+                        reference,
+                        missing_names,
+                        inventory=descriptor_inventory,
+                    )
+                )
+                payload = None
+                tensors: dict[str, Any] = {}
+                primary_error: BaseException | None = None
+                source_load_started = time.perf_counter()
+                source_load_wall_seconds = 0.0
+                try:
+                    payload = self.selective_session.load_selected_tensors(
+                        reference.index,
+                        missing_names,
+                    )
+                    source_load_wall_seconds = (
+                        time.perf_counter() - source_load_started
+                    )
+                    if (
+                        payload.released
+                        or payload.batch_index != reference.index
+                        or payload.input_sha256 != reference.input_sha256
+                        or payload.session_sha256
+                        != self.selective_session.evidence_sha256
+                        or payload.ordered_tensor_names != missing_names
+                        or payload.selection_sha256
+                        != expected_selection_sha256
+                        or payload.logical_bytes != expected_bytes
+                        or tuple(sorted(payload.tensors)) != missing_names
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "Selected parent component payload changed after "
+                            "authenticated load."
+                        )
+                    tensors = dict(payload.tensors)
+                    if any(
+                        not self._selected_parent_tensor_matches_descriptor(
+                            tensors[name],
+                            descriptor_inventory[name],
+                        )
+                        for name in missing_names
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "Selected parent component tensor descriptor "
+                            "changed during authenticated load."
+                        )
+                except BaseException as exc:
+                    primary_error = exc
+                release_error: BaseException | None = None
+                if payload is not None:
+                    try:
+                        self.selective_session.release_selected_tensors(
+                            payload
+                        )
+                    except BaseException as exc:
+                        release_error = exc
+                        emergency_release = getattr(payload, "_release", None)
+                        if callable(emergency_release):
+                            try:
+                                emergency_release()
+                            except BaseException as emergency_exc:
+                                release_error.add_note(
+                                    "Emergency selected payload release also "
+                                    "failed: "
+                                    f"{type(emergency_exc).__qualname__}: "
+                                    f"{emergency_exc}"
+                                )
+                    if not payload.released and release_error is None:
+                        release_error = Lfm2DynamicClosedLoopAdapterError(
+                            "Selected parent component source payload did not "
+                            "release."
+                        )
+                if primary_error is not None:
+                    tensors.clear()
+                    if release_error is not None:
+                        raise primary_error from ClosedLoopCleanupError(
+                            "Selected parent component load cleanup failed.",
+                            [release_error],
+                        )
+                    raise primary_error
+                if release_error is not None:
+                    tensors.clear()
+                    raise release_error
+                self._selected_parent_component_source_load_count += 1
+                self._selected_parent_component_source_loaded_logical_bytes += (
+                    expected_bytes
+                )
+                self._selected_parent_component_source_load_wall_seconds += (
+                    source_load_wall_seconds
+                )
+                pending = []
+                for name in missing_names:
+                    component_key = self._selected_parent_component_key(
+                        reference,
+                        name,
+                        descriptor=descriptor_inventory.get(name),
+                    )
+                    tensor = tensors[name]
+                    pending.append(
+                        _SelectedParentTensorComponent(
+                            key=component_key,
+                            tensor=tensor,
+                            logical_bytes=int(
+                                descriptor_inventory[name]["size_bytes"]
+                            ),
+                            source_ordered_tensor_names=missing_names,
+                            source_selection_sha256=(
+                                expected_selection_sha256
+                            ),
+                            _authenticated_source_ordered_tensor_names=(
+                                missing_names
+                            ),
+                            _authenticated_source_selection_sha256=(
+                                expected_selection_sha256
+                            ),
+                            tensor_object_id=id(tensor),
+                            tensor_version=(
+                                self._selected_parent_tensor_version(tensor)
+                            ),
+                        )
+                    )
+                for component in pending:
+                    if component.key in self._selected_parent_component_cache:
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "Selected parent component was admitted twice."
+                        )
+                    self._selected_parent_component_cache[
+                        component.key
+                    ] = component
+                    newly_admitted.append(component.key)
+                    self._selected_parent_component_cache_logical_bytes += (
+                        component.logical_bytes
+                    )
+                    self._selected_parent_component_load_count += 1
+                self._selected_parent_component_cache_peak_logical_bytes = max(
+                    self._selected_parent_component_cache_peak_logical_bytes,
+                    self._selected_parent_component_cache_logical_bytes,
+                )
+            return required_by_batch
+        except BaseException as primary_error:
+            cleanup_error = None
+            try:
+                self._discard_selected_parent_components(newly_admitted)
+            except BaseException as exc:
+                cleanup_error = exc
+            if cleanup_error is not None:
+                raise primary_error from cleanup_error
+            raise
+
+    def _trim_selected_parent_component_cache(
+        self,
+        required_by_batch: tuple[
+            tuple[_SelectedParentComponentKey, ...], ...
+        ],
+    ) -> None:
+        required = {
+            component_key
+            for batch_keys in required_by_batch
+            for component_key in batch_keys
+        }
+        if not required.issubset(self._selected_parent_component_cache):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent component horizon is incomplete."
+            )
+        stale = tuple(
+            component_key
+            for component_key in self._selected_parent_component_cache
+            if component_key not in required
+        )
+        self._discard_selected_parent_components(stale)
 
     def _verify_selected_parent_profile(
         self,
@@ -4250,12 +5061,16 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         allowed_capture_points: tuple[str, ...],
         inventories: tuple[tuple[str, ...], ...],
+        session_verified: bool = False,
     ) -> None:
-        if self.selective_session is None:
-            raise Lfm2DynamicClosedLoopAdapterError(
-                "Selected parent profile lost its authenticated session."
-            )
-        references = self.selective_session.batch_references
+        session = self._verify_live_selected_parent_session(
+            verify_session=not session_verified,
+        )
+        self._verify_selected_parent_component_cache(
+            session_verified=True,
+            exact_tensor_bytes=True,
+        )
+        references = session.batch_references
         if (
             profile.profile_sha256 != profile_sha256
             or profile.profile_role != profile_role
@@ -4265,20 +5080,76 @@ class Lfm2DynamicClosedLoopAdapter:
             or len(profile.payloads) != len(references)
             or len(profile.batches) != len(references)
             or len(profile.payload_selection_sha256) != len(references)
+            or len(profile.components_by_batch) != len(references)
             or isinstance(profile.borrow_count, bool)
             or profile.borrow_count < 0
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent profile changed its authenticated inventory."
             )
-        for reference, names, selection_sha256, payload, batch in zip(
+        recomputed_profile_sha256 = self._selected_parent_profile_sha256(
+            profile_role=profile_role,
+            selected_layer_indices=selected_layer_indices,
+            allowed_capture_points=allowed_capture_points,
+            inventories=inventories,
+        )
+        if recomputed_profile_sha256 != profile_sha256:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile identity changed."
+            )
+        descriptor_inventories = tuple(
+            self._selected_parent_reference_inventory(reference)
+            for reference in references
+        )
+        expected_cache_keys = {
+            self._selected_parent_component_key(
+                reference,
+                name,
+                descriptor=descriptor_inventory.get(name),
+            )
+            for reference, names, descriptor_inventory in zip(
+                references,
+                inventories,
+                descriptor_inventories,
+                strict=True,
+            )
+            for name in names
+        }
+        if set(self._selected_parent_component_cache) != expected_cache_keys:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent component cache exceeded its authenticated "
+                "profile horizon."
+            )
+        for (
+            reference,
+            names,
+            selection_sha256,
+            payload,
+            batch,
+            components,
+            descriptor_inventory,
+        ) in zip(
             references,
             inventories,
             profile.payload_selection_sha256,
             profile.payloads,
             profile.batches,
+            profile.components_by_batch,
+            descriptor_inventories,
             strict=True,
         ):
+            expected_bytes = sum(
+                int(descriptor_inventory[name]["size_bytes"])
+                for name in names
+            )
+            expected_keys = tuple(
+                self._selected_parent_component_key(
+                    reference,
+                    name,
+                    descriptor=descriptor_inventory.get(name),
+                )
+                for name in names
+            )
             if (
                 payload.released
                 or payload.batch_index != reference.index
@@ -4287,13 +5158,37 @@ class Lfm2DynamicClosedLoopAdapter:
                 != self.selective_session.evidence_sha256
                 or payload.ordered_tensor_names != names
                 or payload.selection_sha256 != selection_sha256
+                or payload._authenticated_selection_sha256
+                != selection_sha256
+                or payload.logical_bytes != expected_bytes
+                or payload._authenticated_logical_bytes != expected_bytes
+                or payload._component_keys != expected_keys
                 or batch.index != reference.index
                 or batch.input_sha256 != reference.input_sha256
                 or tuple(sorted(batch.tensors)) != names
+                or tuple(sorted(payload.tensors)) != names
+                or len(components) != len(names)
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Selected parent payload changed after authenticated load."
                 )
+            for name, component_key, component in zip(
+                names,
+                expected_keys,
+                components,
+                strict=True,
+            ):
+                if (
+                    self._selected_parent_component_cache.get(component_key)
+                    is not component
+                    or component.profile_reference_count != 1
+                    or payload.tensors[name] is not component.tensor
+                    or batch.tensors[name] is not component.tensor
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Selected parent profile lost a cached tensor component."
+                    )
+        self._verify_live_selected_parent_session(verify_session=False)
 
     def _release_selected_parent_profile(
         self,
@@ -4307,22 +5202,36 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent profile is not the adapter's active profile."
             )
-        release_error = None
+        release_errors = []
         try:
-            for payload in reversed(profile.payloads):
-                try:
-                    self.selective_session.release_selected_tensors(payload)
-                except BaseException as exc:
-                    if release_error is None:
-                        release_error = exc
+            for payload, components in reversed(
+                tuple(zip(profile.payloads, profile.components_by_batch, strict=True))
+            ):
+                for component in components:
+                    if component.profile_reference_count != 1:
+                        release_errors.append(
+                            Lfm2DynamicClosedLoopAdapterError(
+                                "Selected parent component view refcount changed."
+                            )
+                        )
+                    elif component.profile_reference_count > 0:
+                        component.profile_reference_count -= 1
+                payload._release()
         finally:
             profile.payloads = ()
             profile.batches = ()
+            profile.components_by_batch = ()
             self._active_selected_parent_profile = None
-            release_closed_loop_capture_memory()
-        if release_error is not None:
-            raise release_error
-        self.selective_session.verify()
+            # These are shallow views over intentionally resident immutable
+            # components.  Refcount teardown is sufficient here; the
+            # expensive global GC/device-cache purge remains at the actual
+            # component eviction and terminal cache-clear boundaries.
+        if release_errors:
+            raise ClosedLoopCleanupError(
+                "Selected parent profile view release failed.",
+                release_errors,
+            )
+        self._verify_live_selected_parent_session(verify_session=True)
 
     def _acquire_selected_parent_profile(
         self,
@@ -4339,7 +5248,7 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent batches require a selective session."
             )
-        self.selective_session.verify()
+        self._verify_live_selected_parent_session(verify_session=True)
         (
             profile_sha256,
             profile_role,
@@ -4362,21 +5271,54 @@ class Lfm2DynamicClosedLoopAdapter:
             self._release_selected_parent_profile(active)
             active = None
         if active is None:
-            payloads = []
-            batches = []
+            payloads: list[_SelectedParentBatchPayloadView] = []
+            batches: list[Lfm2CircuitTraceBatch] = []
+            components_by_batch: list[
+                tuple[_SelectedParentTensorComponent, ...]
+            ] = []
             try:
-                for reference, names in zip(
+                required_by_batch = self._admit_selected_parent_components(
+                    inventories
+                )
+                for reference, names, component_keys in zip(
                     self.selective_session.batch_references,
                     inventories,
+                    required_by_batch,
                     strict=True,
                 ):
-                    payload = self.selective_session.load_selected_tensors(
-                        reference.index,
-                        names,
+                    components = tuple(
+                        self._selected_parent_component_cache[component_key]
+                        for component_key in component_keys
                     )
+                    selection_sha256, logical_bytes = (
+                        self._selected_parent_selection_sha256(
+                            reference,
+                            names,
+                        )
+                    )
+                    payload = _SelectedParentBatchPayloadView(
+                        batch_index=reference.index,
+                        input_sha256=reference.input_sha256,
+                        ordered_tensor_names=names,
+                        logical_bytes=logical_bytes,
+                        session_sha256=(
+                            self.selective_session.evidence_sha256
+                        ),
+                        selection_sha256=selection_sha256,
+                        component_keys=component_keys,
+                        tensors={
+                            name: component.tensor
+                            for name, component in zip(
+                                names,
+                                components,
+                                strict=True,
+                            )
+                        },
+                    )
+                    for component in components:
+                        component.profile_reference_count += 1
                     payloads.append(payload)
-                    # Keep the payload mapping itself.  Copying this mapping
-                    # would leave every tensor resident after payload release.
+                    components_by_batch.append(components)
                     batches.append(
                         Lfm2CircuitTraceBatch(
                             index=reference.index,
@@ -4385,7 +5327,9 @@ class Lfm2DynamicClosedLoopAdapter:
                             _record=MappingProxyType(reference.record),
                         )
                     )
-                self.selective_session.verify()
+                self._verify_live_selected_parent_session(
+                    verify_session=True
+                )
                 active = _SelectedParentEvidenceProfile(
                     profile_sha256=profile_sha256,
                     profile_role=profile_role,
@@ -4397,8 +5341,12 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     payloads=tuple(payloads),
                     batches=tuple(batches),
+                    components_by_batch=tuple(components_by_batch),
                 )
                 self._active_selected_parent_profile = active
+                self._trim_selected_parent_component_cache(
+                    required_by_batch
+                )
                 self._verify_selected_parent_profile(
                     active,
                     profile_sha256=profile_sha256,
@@ -4406,6 +5354,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     selected_layer_indices=selected_layer_indices,
                     allowed_capture_points=allowed_points,
                     inventories=inventories,
+                    session_verified=True,
                 )
             except BaseException as primary_error:
                 release_errors = []
@@ -4417,14 +5366,24 @@ class Lfm2DynamicClosedLoopAdapter:
                         self._release_selected_parent_profile(active)
                     except BaseException as exc:
                         release_errors.append(exc)
-                else:
-                    for payload in reversed(payloads):
-                        try:
-                            self.selective_session.release_selected_tensors(
-                                payload
+                elif payloads:
+                    for payload, components in reversed(
+                        tuple(
+                            zip(
+                                payloads,
+                                components_by_batch,
+                                strict=True,
                             )
-                        except BaseException as exc:
-                            release_errors.append(exc)
+                        )
+                    ):
+                        for component in components:
+                            if component.profile_reference_count > 0:
+                                component.profile_reference_count -= 1
+                        payload._release()
+                try:
+                    self._clear_selected_parent_component_cache()
+                except BaseException as exc:
+                    release_errors.append(exc)
                 release_closed_loop_capture_memory()
                 if release_errors:
                     raise primary_error from ClosedLoopCleanupError(
@@ -4440,6 +5399,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=selected_layer_indices,
                 allowed_capture_points=allowed_points,
                 inventories=inventories,
+                session_verified=True,
             )
         active.borrow_count += 1
         borrow_sha256 = canonical_sha256(
@@ -4456,6 +5416,59 @@ class Lfm2DynamicClosedLoopAdapter:
             capture_point=point.value,
             selected_layer_indices=selected_layer_indices,
             borrow_sha256=borrow_sha256,
+        )
+
+    def _verify_live_selected_parent_profile_borrow(
+        self,
+        borrow: _SelectedParentProfileBorrow,
+    ) -> None:
+        profile = borrow.profile
+        self._verify_live_selected_parent_session(verify_session=True)
+        # Admission already derived this exact inventory from the authenticated
+        # references.  Re-scanning every full reference for every borrow use
+        # would repeat the same global name search hundreds of times; the
+        # profile seal below authenticates the stored canonical inventory.
+        inventories = profile.ordered_tensor_names_by_batch
+        profile_sha256 = self._selected_parent_profile_sha256(
+            profile_role=profile.profile_role,
+            selected_layer_indices=profile.selected_layer_indices,
+            allowed_capture_points=profile.allowed_capture_points,
+            inventories=inventories,
+        )
+        expected_borrow_sha256 = canonical_sha256(
+            {
+                "schema": (
+                    "neural-forge-lfm2-selected-parent-profile-borrow-v1"
+                ),
+                "profile_sha256": profile.profile_sha256,
+                "capture_point": borrow.capture_point,
+                "selected_layer_indices": list(
+                    borrow.selected_layer_indices
+                ),
+            }
+        )
+        if (
+            borrow.owner is not self
+            or borrow.released
+            or self._active_selected_parent_profile is not profile
+            or borrow.borrow_sha256 != expected_borrow_sha256
+            or borrow.capture_point not in profile.allowed_capture_points
+            or borrow.selected_layer_indices
+            != profile.selected_layer_indices
+            or profile.borrow_count <= 0
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile borrow lost ownership or "
+                "authentication."
+            )
+        self._verify_selected_parent_profile(
+            profile,
+            profile_sha256=profile_sha256,
+            profile_role=profile.profile_role,
+            selected_layer_indices=profile.selected_layer_indices,
+            allowed_capture_points=profile.allowed_capture_points,
+            inventories=inventories,
+            session_verified=True,
         )
 
     def _release_selected_parent_profile_borrow(
@@ -9836,6 +10849,92 @@ class Lfm2DynamicClosedLoopAdapter:
                 parent_profile_borrow.release()
             raise
 
+    def _pair_child_replay_with_cached_bridge_inputs(
+        self,
+        replay: Lfm2ChildReplay,
+        *,
+        parent_profile_borrow: _SelectedParentProfileBorrow | None,
+    ) -> Lfm2PairedReplay:
+        """Pair one replay while authenticating invariant bridge inputs once."""
+
+        if (self.selective_session is None) != (
+            parent_profile_borrow is None
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A child replay parent-profile borrow must match the "
+                "adapter's selective parent session."
+            )
+        parent_batches = (
+            None
+            if parent_profile_borrow is None
+            else parent_profile_borrow.batches
+        )
+        bridge_adapter = self.tokenizer_bridge_trace_adapter
+        if bridge_adapter is None:
+            if self._tokenizer_bridge_input_pair_ledger is not None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "An unbridged adapter retained tokenizer input-pair "
+                    "evidence."
+                )
+            return pair_lfm2_parent_child_replay(
+                self.parent_cache,
+                replay,
+                parent_batches=parent_batches,
+            )
+
+        ledger = self._tokenizer_bridge_input_pair_ledger
+        if ledger is None:
+            ledger = (
+                preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+                    self.parent_cache,
+                    replay,
+                    tokenizer_bridge_trace_adapter=bridge_adapter,
+                    parent_batches=parent_batches,
+                    parent_cache_session=self.selective_session,
+                )
+            )
+            self._tokenizer_bridge_input_pair_ledger = ledger
+        return pair_lfm2_parent_child_replay(
+            self.parent_cache,
+            replay,
+            tokenizer_bridge_trace_adapter=bridge_adapter,
+            parent_batches=parent_batches,
+            tokenizer_bridge_input_pair_ledger=ledger,
+            parent_cache_session=self.selective_session,
+        )
+
+    def _release_tokenizer_bridge_input_pair_ledger(self) -> None:
+        """Authenticate and drop the fold-lifetime ledger before its session."""
+
+        ledger = self._tokenizer_bridge_input_pair_ledger
+        self._tokenizer_bridge_input_pair_ledger = None
+        if ledger is None:
+            return
+        bridge_adapter = self.tokenizer_bridge_trace_adapter
+        if bridge_adapter is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Tokenizer input-pair evidence lost its bridge adapter."
+            )
+        ledger.verify_replay_binding(
+            bridge_adapter,
+            parent_cache_key=self.parent_cache.cache_key,
+            parent_cache_session=self.selective_session,
+            parent_cache_session_sha256=(
+                None
+                if self.selective_session is None
+                else self.selective_session.evidence_sha256
+            ),
+            parent_identity_sha256=self.parent_cache.parent_fingerprint,
+            parent_corpus_fingerprint=self.parent_cache.corpus_fingerprint,
+            child_corpus_fingerprint=ledger.child_corpus_fingerprint,
+            record_count=len(self.parent_cache),
+        )
+        ledger.to_evidence_dict()
+        # Replay uses the preverified in-memory mapping by design.  Re-run the
+        # full bridge verifier exactly once at fold teardown so tokenizer-file
+        # drift cannot survive acceptance/publication.
+        bridge_adapter.verify()
+
     def _replay_and_capture_child_with_parent_profile(
         self,
         scope: FoldScope,
@@ -10498,17 +11597,9 @@ class Lfm2DynamicClosedLoopAdapter:
         if causal_equivalence_reference is not None:
             del causal_equivalence_reference
             release_closed_loop_capture_memory()
-        paired = pair_lfm2_parent_child_replay(
-            self.parent_cache,
+        paired = self._pair_child_replay_with_cached_bridge_inputs(
             replay,
-            tokenizer_bridge_trace_adapter=(
-                self.tokenizer_bridge_trace_adapter
-            ),
-            parent_batches=(
-                None
-                if self.selective_session is None
-                else parent_profile_borrow.batches
-            ),
+            parent_profile_borrow=parent_profile_borrow,
         )
         payload = _CapturePayload(
             replay_sha256=replay.replay_sha256,
@@ -10667,6 +11758,8 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child capture lost its selected parent profile borrow binding."
             )
+        if self.selective_session is not None:
+            self._verify_live_selected_parent_profile_borrow(parent_borrow)
         certification_sha256 = None
         certification_body = None
         certification_registry_key = None
@@ -10969,9 +12062,18 @@ class Lfm2DynamicClosedLoopAdapter:
         self._consumer_payloads.clear()
         self._downstream_payloads.clear()
         try:
+            self._release_tokenizer_bridge_input_pair_ledger()
+        except BaseException as exc:
+            errors.append(exc)
+        try:
             self._release_idle_selected_parent_profile()
         except BaseException as exc:
             errors.append(exc)
+        try:
+            self._clear_selected_parent_component_cache()
+        except BaseException as exc:
+            errors.append(exc)
+        self._selected_parent_profile_contract_cache.clear()
         release_closed_loop_capture_memory()
         if errors:
             raise ClosedLoopCleanupError(

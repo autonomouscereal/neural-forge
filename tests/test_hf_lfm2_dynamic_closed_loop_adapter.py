@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import shutil
+import time
 import weakref
 from dataclasses import replace
 from types import MethodType, SimpleNamespace
@@ -1887,6 +1888,153 @@ def test_shared_selective_session_is_evidence_equivalent_without_full_reads(
         assert all(payload.released for payload in selected_payloads)
 
 
+def test_dynamic_bridge_input_ledger_is_built_once_reused_and_dropped(
+    monkeypatch,
+) -> None:
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+
+    class _ParentCacheProbe:
+        cache_key = "1" * 64
+        parent_fingerprint = "2" * 64
+        corpus_fingerprint = "3" * 64
+
+        def __len__(self):
+            return 2
+
+    parent_cache = _ParentCacheProbe()
+    session = SimpleNamespace(evidence_sha256="4" * 64)
+    replay = object()
+    borrow = SimpleNamespace(batches=("batch-0", "batch-1"))
+    calls = []
+
+    class _BridgeProbe:
+        def verify(self):
+            calls.append(("bridge_verify",))
+            return self
+
+    bridge = _BridgeProbe()
+
+    class _LedgerProbe:
+        child_corpus_fingerprint = "5" * 64
+
+        def verify_replay_binding(self, observed_bridge, **kwargs):
+            calls.append(("verify", observed_bridge, kwargs))
+            return self
+
+        def to_evidence_dict(self):
+            calls.append(("evidence",))
+            return {"evidence_sha256": "6" * 64}
+
+    ledger = _LedgerProbe()
+
+    def preverify(observed_cache, observed_replay, **kwargs):
+        calls.append(("preverify", observed_cache, observed_replay, kwargs))
+        return ledger
+
+    def pair(observed_cache, observed_replay, **kwargs):
+        calls.append(("pair", observed_cache, observed_replay, kwargs))
+        return (observed_cache, observed_replay, kwargs)
+
+    monkeypatch.setattr(
+        adapter_module,
+        "preverify_lfm2_parent_child_tokenizer_bridge_input_pairs",
+        preverify,
+    )
+    monkeypatch.setattr(
+        adapter_module,
+        "pair_lfm2_parent_child_replay",
+        pair,
+    )
+    adapter.parent_cache = parent_cache
+    adapter.selective_session = session
+    adapter.tokenizer_bridge_trace_adapter = bridge
+    adapter._tokenizer_bridge_input_pair_ledger = None
+
+    first = adapter._pair_child_replay_with_cached_bridge_inputs(
+        replay,
+        parent_profile_borrow=borrow,
+    )
+    second = adapter._pair_child_replay_with_cached_bridge_inputs(
+        replay,
+        parent_profile_borrow=borrow,
+    )
+
+    preverify_calls = [call for call in calls if call[0] == "preverify"]
+    pair_calls = [call for call in calls if call[0] == "pair"]
+    assert len(preverify_calls) == 1
+    assert len(pair_calls) == 2
+    assert first == second
+    assert preverify_calls[0][3]["parent_batches"] is borrow.batches
+    assert preverify_calls[0][3]["parent_cache_session"] is session
+    assert all(
+        call[3]["tokenizer_bridge_input_pair_ledger"] is ledger
+        and call[3]["parent_cache_session"] is session
+        for call in pair_calls
+    )
+
+    adapter._release_tokenizer_bridge_input_pair_ledger()
+    assert adapter._tokenizer_bridge_input_pair_ledger is None
+    verify_call = next(call for call in calls if call[0] == "verify")
+    assert verify_call[1] is bridge
+    assert verify_call[2]["parent_cache_session"] is session
+    assert verify_call[2]["parent_cache_session_sha256"] == "4" * 64
+    assert ("evidence",) in calls
+    assert calls[-1] == ("bridge_verify",)
+
+
+def test_dynamic_bridge_input_ledger_failures_do_not_leave_stale_evidence(
+    monkeypatch,
+) -> None:
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    adapter.parent_cache = object()
+    adapter.selective_session = object()
+    adapter.tokenizer_bridge_trace_adapter = object()
+    adapter._tokenizer_bridge_input_pair_ledger = None
+    borrow = SimpleNamespace(batches=("batch",))
+
+    def fail_preverify(*_args, **_kwargs):
+        raise RuntimeError("scripted bridge ledger admission failure")
+
+    monkeypatch.setattr(
+        adapter_module,
+        "preverify_lfm2_parent_child_tokenizer_bridge_input_pairs",
+        fail_preverify,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="scripted bridge ledger admission failure",
+    ):
+        adapter._pair_child_replay_with_cached_bridge_inputs(
+            object(),
+            parent_profile_borrow=borrow,
+        )
+    assert adapter._tokenizer_bridge_input_pair_ledger is None
+
+    class _BadLedger:
+        child_corpus_fingerprint = "7" * 64
+
+        def verify_replay_binding(self, *_args, **_kwargs):
+            raise RuntimeError("scripted final ledger verification failure")
+
+    class _ParentCacheProbe:
+        cache_key = "1" * 64
+        parent_fingerprint = "2" * 64
+        corpus_fingerprint = "3" * 64
+
+        def __len__(self):
+            return 1
+
+    adapter.parent_cache = _ParentCacheProbe()
+    adapter.selective_session = SimpleNamespace(evidence_sha256="4" * 64)
+    adapter._tokenizer_bridge_input_pair_ledger = _BadLedger()
+    with pytest.raises(
+        RuntimeError,
+        match="scripted final ledger verification failure",
+    ):
+        adapter._release_tokenizer_bridge_input_pair_ledger()
+    assert adapter._tokenizer_bridge_input_pair_ledger is None
+
+
 def test_selected_parent_profiles_are_exact_refcounted_and_switch_fail_closed(
     sealed_parent,
     monkeypatch,
@@ -2055,7 +2203,411 @@ def test_selected_parent_profiles_are_exact_refcounted_and_switch_fail_closed(
         output_post.release()
         adapter._release_idle_selected_parent_profile()
         assert adapter._active_selected_parent_profile is None
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
         assert not selective_session.closed
+
+
+def test_selected_parent_component_cache_reuses_exact_layer_horizon_once(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=session,
+        )
+        session_type = Lfm2CircuitTraceSelectiveAuthenticatedSession
+        original_load = session_type.load_selected_tensors
+        load_selections = []
+        source_payloads = []
+        component_hash_calls = []
+        original_component_hash = (
+            adapter_module._lfm2_circuit_tensor_sha256
+        )
+
+        def observed_load(self, index, tensor_names):
+            payload = original_load(self, index, tensor_names)
+            if self is session:
+                load_selections.append((index, tuple(tensor_names)))
+                source_payloads.append(payload)
+            return payload
+
+        monkeypatch.setattr(
+            session_type,
+            "load_selected_tensors",
+            observed_load,
+        )
+
+        def observed_component_hash(torch_module, value):
+            component_hash_calls.append(id(value))
+            return original_component_hash(torch_module, value)
+
+        monkeypatch.setattr(
+            adapter_module,
+            "_lfm2_circuit_tensor_sha256",
+            observed_component_hash,
+        )
+
+        layer0 = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            (0,),
+            body_internal=False,
+        )
+        layer0_profile = layer0.profile
+        layer0_names = layer0_profile.ordered_tensor_names_by_batch
+        expected_layer0_sha256 = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-selected-parent-profile-v1",
+                "session_sha256": session.evidence_sha256,
+                "cache_key": cache.cache_key,
+                "profile_role": "layer.000",
+                "selected_layer_indices": [0],
+                "allowed_capture_points": [
+                    CapturePoint.PRE_PRODUCER.value,
+                    CapturePoint.POST_PRODUCER.value,
+                    CapturePoint.POST_CONSUMER.value,
+                    CapturePoint.POST_DOWNSTREAM.value,
+                ],
+                "ordered_batches": [
+                    {
+                        "batch_index": reference.index,
+                        "input_sha256": reference.input_sha256,
+                        "ordered_tensor_names": list(names),
+                    }
+                    for reference, names in zip(
+                        session.batch_references,
+                        layer0_names,
+                        strict=True,
+                    )
+                ],
+                "parent_forward_calls": 0,
+                "full_cache_batch_loads": 0,
+            }
+        )
+        assert layer0_profile.profile_sha256 == expected_layer0_sha256
+        assert all(payload.released for payload in source_payloads)
+        layer0_components = tuple(
+            adapter._selected_parent_component_cache.values()
+        )
+        assert len(component_hash_calls) == len(layer0_components)
+        assert len(set(component_hash_calls)) == len(layer0_components)
+        layer0.release()
+        adapter._release_idle_selected_parent_profile()
+        assert adapter._active_selected_parent_profile is None
+        assert all(not component.released for component in layer0_components)
+
+        merged_requests = (
+            (FoldScope("layer", 0), CapturePoint.POST_DOWNSTREAM),
+            (FoldScope("layer", 1), CapturePoint.PRE_PRODUCER),
+        )
+        hash_offset = len(component_hash_calls)
+        merged = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 1),
+            CapturePoint.PRE_PRODUCER,
+            (0, 1),
+            body_internal=False,
+            merged_requests=merged_requests,
+        )
+        merged_names = merged.profile.ordered_tensor_names_by_batch
+        merged_components = tuple(
+            adapter._selected_parent_component_cache.values()
+        )
+        merged_hash_calls = component_hash_calls[hash_offset:]
+        assert len(merged_hash_calls) == len(merged_components)
+        assert len(set(merged_hash_calls)) == len(merged_components)
+        assert all(
+            tuple(sorted(payload.tensors)) == names
+            for payload, names in zip(
+                merged.profile.payloads,
+                merged_names,
+                strict=True,
+            )
+        )
+        merged.release()
+        adapter._release_idle_selected_parent_profile()
+
+        hash_offset = len(component_hash_calls)
+        layer1 = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 1),
+            CapturePoint.PRE_PRODUCER,
+            (1,),
+            body_internal=False,
+        )
+        layer1_names = layer1.profile.ordered_tensor_names_by_batch
+        visible_pairs = {
+            (reference.index, name)
+            for reference, names in zip(
+                session.batch_references,
+                layer1_names,
+                strict=True,
+            )
+            for name in names
+        }
+        resident_pairs = {
+            (key.batch_index, key.tensor_name)
+            for key in adapter._selected_parent_component_cache
+        }
+        layer1_hash_calls = component_hash_calls[hash_offset:]
+        assert len(layer1_hash_calls) == len(resident_pairs)
+        assert len(set(layer1_hash_calls)) == len(resident_pairs)
+        assert resident_pairs == visible_pairs
+        assert len(adapter._selected_parent_profile_contract_cache) == 3
+
+        observed_counts = {}
+        for batch_index, names in load_selections:
+            for name in names:
+                key = (batch_index, name)
+                observed_counts[key] = observed_counts.get(key, 0) + 1
+        expected_unique_pairs = {
+            (reference.index, name)
+            for reference, names in zip(
+                session.batch_references,
+                merged_names,
+                strict=True,
+            )
+            for name in names
+        }
+        assert set(observed_counts) == expected_unique_pairs
+        assert set(observed_counts.values()) == {1}
+        assert adapter._selected_parent_component_load_count == len(
+            expected_unique_pairs
+        )
+
+        expected_unique_bytes = 0
+        expected_layer1_bytes = 0
+        for reference, union_names, current_names in zip(
+            session.batch_references,
+            merged_names,
+            layer1_names,
+            strict=True,
+        ):
+            inventory = reference.record["tensors"]
+            expected_unique_bytes += sum(
+                int(inventory[name]["size_bytes"]) for name in union_names
+            )
+            expected_layer1_bytes += sum(
+                int(inventory[name]["size_bytes"]) for name in current_names
+            )
+        assert (
+            adapter._selected_parent_component_cache_peak_logical_bytes
+            == expected_unique_bytes
+        )
+        assert (
+            adapter._selected_parent_component_cache_logical_bytes
+            == expected_layer1_bytes
+        )
+
+        layer1.release()
+        adapter._release_idle_selected_parent_profile()
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
+        assert adapter._selected_parent_component_cache_logical_bytes == 0
+        assert adapter._selected_parent_profile_contract_cache == {}
+        assert all(
+            component.released and component.tensor is None
+            for component in layer0_components + merged_components
+        )
+
+
+def test_selected_parent_component_cache_reports_reload_and_hash_cost(
+    sealed_parent,
+) -> None:
+    """Compare bounded reuse with the former whole-profile reload pattern."""
+
+    _parent, cache, _replay_config = sealed_parent
+    layer0_points = (
+        CapturePoint.PRE_PRODUCER,
+        CapturePoint.POST_PRODUCER,
+        CapturePoint.POST_CONSUMER,
+        CapturePoint.POST_DOWNSTREAM,
+    )
+    merged_requests = (
+        (FoldScope("layer", 0), CapturePoint.POST_DOWNSTREAM),
+        (FoldScope("layer", 1), CapturePoint.PRE_PRODUCER),
+    )
+    profile_inventories = []
+    with cache.selective_authenticated_session() as session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=session,
+        )
+        new_started = time.perf_counter()
+        for point in layer0_points:
+            borrow = adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                point,
+                (0,),
+                body_internal=False,
+            )
+            profile_inventories.append(
+                borrow.profile.ordered_tensor_names_by_batch
+            )
+            borrow.release()
+            adapter._release_idle_selected_parent_profile()
+
+        merged = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 1),
+            CapturePoint.PRE_PRODUCER,
+            (0, 1),
+            body_internal=False,
+            merged_requests=merged_requests,
+        )
+        merged_inventory = merged.profile.ordered_tensor_names_by_batch
+        merged_descriptor_inventories = tuple(
+            reference.record["tensors"]
+            for reference in session.batch_references
+        )
+        profile_inventories.append(merged_inventory)
+        merged.release()
+        adapter._release_idle_selected_parent_profile()
+
+        layer1 = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 1),
+            CapturePoint.PRE_PRODUCER,
+            (1,),
+            body_internal=False,
+        )
+        profile_inventories.append(
+            layer1.profile.ordered_tensor_names_by_batch
+        )
+        layer1.release()
+        adapter._release_idle_selected_parent_profile()
+        new_wall_seconds = time.perf_counter() - new_started
+
+        new_source_load_count = (
+            adapter._selected_parent_component_source_load_count
+        )
+        new_source_loaded_logical_bytes = (
+            adapter._selected_parent_component_source_loaded_logical_bytes
+        )
+        new_source_load_wall_seconds = (
+            adapter._selected_parent_component_source_load_wall_seconds
+        )
+        exact_hash_boundary_count = (
+            adapter._selected_parent_component_exact_hash_boundary_count
+        )
+        exact_hash_tensor_count = (
+            adapter._selected_parent_component_exact_hash_tensor_count
+        )
+        exact_hash_logical_bytes = (
+            adapter._selected_parent_component_exact_hash_logical_bytes
+        )
+        exact_hash_wall_seconds = (
+            adapter._selected_parent_component_exact_hash_wall_seconds
+        )
+        unique_component_load_count = (
+            adapter._selected_parent_component_load_count
+        )
+        adapter.release_transient_fold_evidence()
+
+    legacy_load_count = 0
+    legacy_loaded_logical_bytes = 0
+    legacy_source_load_wall_seconds = 0.0
+    with cache.selective_authenticated_session() as legacy_session:
+        legacy_started = time.perf_counter()
+        for inventory_by_batch in profile_inventories:
+            legacy_session.verify()
+            payloads = []
+            for reference, names in zip(
+                legacy_session.batch_references,
+                inventory_by_batch,
+                strict=True,
+            ):
+                source_load_started = time.perf_counter()
+                payload = legacy_session.load_selected_tensors(
+                    reference.index,
+                    names,
+                )
+                legacy_source_load_wall_seconds += (
+                    time.perf_counter() - source_load_started
+                )
+                legacy_load_count += 1
+                legacy_loaded_logical_bytes += payload.logical_bytes
+                payloads.append(payload)
+            legacy_session.verify()
+            for payload in payloads:
+                legacy_session.release_selected_tensors(payload)
+            # The historical whole-profile release purged global capture
+            # memory after dropping every newly cloned tensor payload.
+            adapter_module.release_closed_loop_capture_memory()
+            legacy_session.verify()
+        legacy_wall_seconds = time.perf_counter() - legacy_started
+
+    expected_profile_count = len(layer0_points) + 2
+    expected_legacy_load_count = expected_profile_count * cache.batch_count
+    expected_hash_tensor_count = sum(
+        len(names)
+        for inventory_by_batch in profile_inventories
+        for names in inventory_by_batch
+    )
+    expected_unique_component_count = sum(
+        len(names) for names in merged_inventory
+    )
+    expected_unique_component_bytes = sum(
+        int(descriptors[name]["size_bytes"])
+        for descriptors, names in zip(
+            merged_descriptor_inventories,
+            merged_inventory,
+            strict=True,
+        )
+        for name in names
+    )
+    assert exact_hash_boundary_count == expected_profile_count
+    assert exact_hash_tensor_count == expected_hash_tensor_count
+    assert exact_hash_logical_bytes == legacy_loaded_logical_bytes
+    assert legacy_load_count == expected_legacy_load_count
+    assert new_source_load_count == 2 * cache.batch_count
+    assert new_source_load_count < legacy_load_count
+    assert unique_component_load_count == expected_unique_component_count
+    assert (
+        new_source_loaded_logical_bytes
+        == expected_unique_component_bytes
+    )
+    assert new_source_loaded_logical_bytes < legacy_loaded_logical_bytes
+    assert new_wall_seconds > 0.0
+    assert legacy_wall_seconds > 0.0
+    assert new_source_load_wall_seconds > 0.0
+    assert legacy_source_load_wall_seconds > 0.0
+    assert exact_hash_wall_seconds > 0.0
+
+    report = {
+        "exact_hash": {
+            "boundaries": exact_hash_boundary_count,
+            "logical_bytes": exact_hash_logical_bytes,
+            "tensor_hashes": exact_hash_tensor_count,
+            "wall_seconds": exact_hash_wall_seconds,
+        },
+        "legacy_reload": {
+            "logical_bytes": legacy_loaded_logical_bytes,
+            "source_load_calls": legacy_load_count,
+            "source_load_wall_seconds": legacy_source_load_wall_seconds,
+            "wall_seconds": legacy_wall_seconds,
+        },
+        "reused_component_cache": {
+            "logical_bytes": new_source_loaded_logical_bytes,
+            "source_load_calls": new_source_load_count,
+            "source_load_wall_seconds": new_source_load_wall_seconds,
+            "unique_tensor_components": unique_component_load_count,
+            "wall_seconds": new_wall_seconds,
+        },
+        "schema": "neural-forge-selected-parent-cache-benchmark-v1",
+        "savings": {
+            "end_to_end_wall_ratio": (
+                legacy_wall_seconds / new_wall_seconds
+            ),
+            "logical_byte_reload_ratio": (
+                legacy_loaded_logical_bytes
+                / new_source_loaded_logical_bytes
+            ),
+            "source_load_call_ratio": (
+                legacy_load_count / new_source_load_count
+            ),
+        },
+    }
+    print("SELECTED_PARENT_CACHE_BENCHMARK=" + json.dumps(report, sort_keys=True))
 
 
 def test_selected_parent_profile_partial_load_releases_and_tamper_fails_closed(
@@ -2095,6 +2647,8 @@ def test_selected_parent_profile_partial_load_releases_and_tamper_fails_closed(
         assert partial_payloads
         assert all(payload.released for payload in partial_payloads)
         assert adapter._active_selected_parent_profile is None
+        assert adapter._selected_parent_component_cache == {}
+        assert adapter._selected_parent_component_cache_logical_bytes == 0
         assert not selective_session.closed
 
         monkeypatch.setattr(
@@ -2125,7 +2679,244 @@ def test_selected_parent_profile_partial_load_releases_and_tamper_fails_closed(
         borrow.release()
         adapter._release_idle_selected_parent_profile()
         assert payload.released
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
         assert not selective_session.closed
+
+
+def test_selected_parent_component_foreign_and_mutated_state_fails_closed(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=session,
+        )
+        borrow = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            (0,),
+            body_internal=False,
+        )
+        component = next(
+            value
+            for value in adapter._selected_parent_component_cache.values()
+            if value.tensor.is_floating_point() and value.tensor.numel() > 0
+        )
+
+        source_selection_sha256 = component.source_selection_sha256
+        component.source_selection_sha256 = "0" * 64
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        component.source_selection_sha256 = source_selection_sha256
+
+        component_key = component.key
+        component.key = replace(
+            component_key,
+            session_sha256="1" * 64,
+        )
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        component.key = replace(
+            component_key,
+            cache_key="foreign-cache-key",
+        )
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        component.key = component_key
+
+        component.released = True
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        component.released = False
+
+        # These three writes all change the storage bytes without changing the
+        # original Tensor's version counter.  Shape/dtype/_version checks alone
+        # therefore cannot authenticate a reused component.
+        tensor = component.tensor
+        authenticated = tensor.detach().clone()
+        tensor_version = int(tensor._version)
+
+        tensor.data.reshape(-1)[0].add_(1)
+        assert int(tensor._version) == tensor_version
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        tensor.data.copy_(authenticated)
+        assert int(tensor._version) == tensor_version
+
+        numpy_alias = tensor.detach().numpy()
+        numpy_alias.reshape(-1)[0] += 1
+        assert int(tensor._version) == tensor_version
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        numpy_alias[...] = authenticated.numpy()
+        assert int(tensor._version) == tensor_version
+
+        storage_alias = torch.empty(0, dtype=tensor.dtype).set_(
+            tensor.untyped_storage(),
+            tensor.storage_offset(),
+            tensor.size(),
+            tensor.stride(),
+        )
+        storage_alias.reshape(-1)[0].add_(1)
+        assert int(tensor._version) == tensor_version
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        storage_alias.copy_(authenticated)
+        assert int(tensor._version) == tensor_version
+
+        with torch.no_grad():
+            component.tensor.add_(1)
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="tensor component changed",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+
+        borrow.release()
+        adapter._release_idle_selected_parent_profile()
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
+
+
+def test_selected_parent_profile_rejects_foreign_and_closed_live_session(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    session = cache.selective_authenticated_session()
+    foreign_session = cache.selective_authenticated_session()
+    try:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=session,
+        )
+        borrow = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            (0,),
+            body_internal=False,
+        )
+        profile = borrow.profile
+
+        # A second session over identical files has the same deterministic
+        # cache/evidence metadata, but it is not the exact object that admitted
+        # these components.
+        assert foreign_session.evidence_sha256 == session.evidence_sha256
+        adapter.selective_session = foreign_session
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="foreign session or cache binding",
+        ):
+            adapter._verify_selected_parent_component_cache()
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="foreign session or cache binding",
+        ):
+            _ = borrow.batches
+        adapter.selective_session = session
+        foreign_session.close()
+
+        session.close()
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="session is closed",
+        ):
+            adapter._verify_selected_parent_component_cache()
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="session is closed",
+        ):
+            adapter._verify_selected_parent_profile(
+                profile,
+                profile_sha256=profile.profile_sha256,
+                profile_role=profile.profile_role,
+                selected_layer_indices=profile.selected_layer_indices,
+                allowed_capture_points=profile.allowed_capture_points,
+                inventories=profile.ordered_tensor_names_by_batch,
+            )
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="session is closed",
+        ):
+            _ = borrow.batches
+
+        borrow.release()
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="session is closed",
+        ):
+            adapter._release_idle_selected_parent_profile()
+        assert adapter._active_selected_parent_profile is None
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
+    finally:
+        adapter_session = locals().get("adapter")
+        if adapter_session is not None:
+            adapter_session.selective_session = session
+        foreign_session.close()
+        session.close()
 
 
 def test_selected_parent_profile_failed_admission_releases_every_payload(
@@ -2166,9 +2957,14 @@ def test_selected_parent_profile_failed_admission_releases_every_payload(
                 body_internal=False,
             )
 
-        assert len(loaded_payloads) == len(selective_session.batch_references)
+        # Component admission validates and releases each bounded source
+        # selection immediately, so malformed batch zero fails before any
+        # unrelated batch is read.
+        assert len(loaded_payloads) == 1
         assert all(payload.released for payload in loaded_payloads)
         assert adapter._active_selected_parent_profile is None
+        assert adapter._selected_parent_component_cache == {}
+        assert adapter._selected_parent_component_cache_logical_bytes == 0
         assert not selective_session.closed
 
 
@@ -2931,6 +3727,7 @@ def _capture_one_point(adapter, *, scope, point, selective=False):
         adapter._release_capture_lease(capture)
         if selective:
             adapter._release_idle_selected_parent_profile()
+            adapter.release_transient_fold_evidence()
     return seals
 
 
@@ -3551,6 +4348,8 @@ def test_merged_captures_take_a_two_role_selected_parent_profile(
         adapter._release_idle_selected_parent_profile()
         assert adapter._active_selected_parent_profile is None
         assert adapter._deferred_merged_parent_borrows == []
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
 
 
 def test_a_leaked_capture_borrow_still_fails_the_terminal_idle_release(
@@ -3581,6 +4380,8 @@ def test_a_leaked_capture_borrow_still_fails_the_terminal_idle_release(
             adapter._release_capture_lease(capture)
         adapter._release_idle_selected_parent_profile()
         assert adapter._active_selected_parent_profile is None
+        adapter.release_transient_fold_evidence()
+        assert adapter._selected_parent_component_cache == {}
 
 
 def test_merged_selective_captures_reproduce_the_unmerged_selective_fold(

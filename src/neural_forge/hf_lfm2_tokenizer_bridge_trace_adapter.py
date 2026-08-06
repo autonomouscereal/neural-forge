@@ -33,11 +33,17 @@ from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeError,
     strict_tokenizer_bridge_target_package_fingerprint,
 )
+from neural_forge.hf_lfm2_sealed_evidence_set import (
+    SEALED_EVIDENCE_SESSION_TYPES,
+)
 
 
 TRACE_ADAPTER_SCHEMA = "neural-forge-lfm2-strict-tokenizer-trace-adapter-v1"
 ALIGNED_RECORD_SCHEMA = "neural-forge-lfm2-strict-tokenizer-aligned-record-v1"
 PAIRED_INPUT_SCHEMA = "neural-forge-lfm2-strict-tokenizer-paired-input-v1"
+INPUT_PAIR_LEDGER_SCHEMA = (
+    "neural-forge-lfm2-strict-tokenizer-input-pair-ledger-v1"
+)
 LOGIT_PROJECTION_SCHEMA = (
     "neural-forge-lfm2-strict-tokenizer-logit-projection-v1"
 )
@@ -1427,6 +1433,756 @@ def authenticate_lfm2_bridge_input_pair(
     )
 
 
+def _ledger_record_tensor_snapshots(
+    record: Lfm2BridgeAlignedRecord,
+) -> tuple[tuple[str, Any | None, Any | None], ...]:
+    snapshots = []
+    for name in (
+        "_target_input_ids",
+        "_donor_input_ids",
+        "_attention_mask",
+        "_target_forced_decode_ids",
+        "_donor_forced_decode_ids",
+        "_position_ids",
+    ):
+        tensor = getattr(record, name)
+        snapshots.append(
+            (
+                name,
+                tensor,
+                (
+                    None
+                    if tensor is None
+                    else tensor.detach().to(device="cpu").contiguous().clone()
+                ),
+            )
+        )
+    return tuple(snapshots)
+
+
+def _ledger_record_scalar_guard(
+    record: Lfm2BridgeAlignedRecord,
+) -> tuple[Any, ...]:
+    return (
+        record.ordinal,
+        record.record_id,
+        record.split,
+        record.bridge_artifact_sha256,
+        record.transport_profile_fingerprint,
+        record.target_cache_input_sha256,
+        record.donor_cache_input_sha256,
+        record.numerically_different_token_count,
+        record.physical_padding_token_count,
+        record.special_token_role_counts,
+        record.alignment_sha256,
+    )
+
+
+def _ledger_profile_guard(
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+) -> tuple[Any, ...]:
+    bridge = adapter._bridge
+    profile = bridge.transport_profile
+    return (
+        (
+            profile.donor_tokenizer_class,
+            profile.target_tokenizer_class,
+            profile.donor_vocab_size,
+            profile.target_vocab_size,
+            profile.donor_row_capacity,
+            profile.target_row_capacity,
+            profile.alignment_fingerprint,
+            profile.alignment_resolution,
+        ),
+        tuple(
+            (
+                row,
+                row.target_row_index,
+                row.donor_row_index,
+                row.resolution,
+                row.special_token_roles,
+            )
+            for row in profile.row_mappings
+        ),
+        tuple(
+            (
+                record,
+                record.relative_path,
+                record.size_bytes,
+                record.sha256,
+            )
+            for record in bridge.target_files
+        ),
+        (
+            bridge.root_dir,
+            bridge.donor_tokenizer_semantics_sha256,
+            bridge.target_tokenizer_semantics_sha256,
+            bridge.artifact_sha256,
+        ),
+    )
+
+
+def _ledger_exact_integer_tensor(
+    observed: Any,
+    expected: Any,
+    *,
+    allow_bool: bool,
+) -> bool:
+    torch = _torch()
+    return bool(
+        torch.is_tensor(observed)
+        and (
+            _is_integer_tensor(torch, observed)
+            or (allow_bool and observed.dtype == torch.bool)
+        )
+        and observed.layout == torch.strided
+        and observed.device.type == "cpu"
+        and not observed.requires_grad
+        and torch.equal(observed, expected)
+    )
+
+
+def _ledger_record_binding(
+    record: Lfm2BridgeAlignedRecord,
+    evidence: Lfm2PairedInputAlignmentEvidence,
+) -> tuple[Any, ...]:
+    return (
+        record.ordinal,
+        record.record_id,
+        record.split,
+        record.bridge_artifact_sha256,
+        record.transport_profile_fingerprint,
+        record.alignment_sha256,
+        record.donor_cache_input_sha256,
+        record.target_cache_input_sha256,
+        record.numerically_different_token_count,
+        evidence.evidence_sha256,
+    )
+
+
+def _ledger_body(
+    *,
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    parent_cache_key: str,
+    parent_cache_session_sha256: str | None,
+    parent_identity_sha256: str,
+    parent_corpus_fingerprint: str,
+    child_corpus_fingerprint: str,
+    ordered_bindings: tuple[tuple[Any, ...], ...],
+) -> dict[str, Any]:
+    return {
+        "schema": INPUT_PAIR_LEDGER_SCHEMA,
+        "bridge_artifact_sha256": adapter.bridge_artifact_sha256,
+        "bridge_trace_evidence_sha256": adapter.evidence_sha256,
+        "transport_profile_fingerprint": (
+            adapter.transport_profile_fingerprint
+        ),
+        "parent_cache_key": parent_cache_key,
+        "parent_cache_session_sha256": parent_cache_session_sha256,
+        "parent_identity_sha256": parent_identity_sha256,
+        "parent_corpus_fingerprint": parent_corpus_fingerprint,
+        "child_corpus_fingerprint": child_corpus_fingerprint,
+        "record_count": len(ordered_bindings),
+        "ordered_records": [
+            {
+                "ordinal": binding[0],
+                "record_id": binding[1],
+                "split": binding[2],
+                "alignment_sha256": binding[5],
+                "donor_cache_input_sha256": binding[6],
+                "target_cache_input_sha256": binding[7],
+                "pair_evidence_sha256": binding[9],
+            }
+            for binding in ordered_bindings
+        ],
+        "reuse_contract": {
+            "fold_lifetime_input_pair_authentication": True,
+            "child_activation_and_weight_changes_permitted": True,
+            "ordered_record_and_input_sha_binding_required_per_replay": True,
+            "actual_input_value_binding_required_per_replay": True,
+            "adapter_full_verification_per_replay": False,
+            "runtime_row_remap_per_replay": False,
+            "runtime_input_hash_per_replay": False,
+            "runtime_input_clone_per_replay": False,
+        },
+        "model_operations": {
+            "parent_model_calls": 0,
+            "child_model_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+        },
+    }
+
+
+class Lfm2PreverifiedTokenizerBridgeInputPairLedger:
+    """Fold-lifetime authentication of one immutable tokenizer input corpus.
+
+    Construction performs the conservative adapter and runtime-pair traversal
+    exactly once.  Replays then retain exact value and order checks without
+    rebuilding the target-to-donor map, normalizing/cloning inputs, hashing
+    their bytes, or invoking the full adapter verifier.  The child model and
+    all non-input replay tensors may change between uses.
+    """
+
+    __slots__ = (
+        "_adapter_guards",
+        "_context",
+        "_evidence_sha256",
+        "_ordered_bindings",
+        "_pair_evidence",
+        "_profile_guard",
+        "_record_guards",
+        "_storage_canary",
+    )
+
+    def __setattr__(self, _name: str, _value: Any) -> None:
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Preverified tokenizer bridge input-pair ledgers are immutable."
+        )
+
+    @property
+    def adapter(self) -> Lfm2StrictTokenizerBridgeTraceAdapter:
+        self._verify_storage()
+        return self._adapter_guards[0]
+
+    @property
+    def evidence_sha256(self) -> str:
+        self._verify_storage()
+        return self._evidence_sha256
+
+    @property
+    def record_count(self) -> int:
+        self._verify_storage()
+        return len(self._ordered_bindings)
+
+    @property
+    def authenticated_record_count(self) -> int:
+        return self.record_count
+
+    @property
+    def parent_cache_key(self) -> str:
+        self._verify_storage()
+        return self._context[0]
+
+    @property
+    def parent_cache_session_sha256(self) -> str | None:
+        self._verify_storage()
+        return self._context[1]
+
+    @property
+    def parent_corpus_fingerprint(self) -> str:
+        self._verify_storage()
+        return self._context[3]
+
+    @property
+    def child_corpus_fingerprint(self) -> str:
+        self._verify_storage()
+        return self._context[4]
+
+    def _verify_storage(self) -> None:
+        canary = self._storage_canary
+        if (
+            id(self._adapter_guards) != canary[0]
+            or id(self._context) != canary[1]
+            or id(self._ordered_bindings) != canary[2]
+            or id(self._pair_evidence) != canary[3]
+            or id(self._profile_guard) != canary[4]
+            or id(self._record_guards) != canary[5]
+            or self._evidence_sha256 != canary[6]
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified tokenizer bridge input-pair ledger storage changed."
+            )
+
+    def _verify_adapter_binding(self) -> None:
+        self._verify_storage()
+        (
+            adapter,
+            bridge,
+            records,
+            profile,
+            row_mappings,
+            bridge_artifact_sha256,
+            profile_fingerprint,
+            adapter_evidence_sha256,
+        ) = self._adapter_guards
+        if (
+            adapter._bridge is not bridge
+            or adapter._records is not records
+            or bridge.transport_profile is not profile
+            or profile.row_mappings is not row_mappings
+            or adapter.bridge_artifact_sha256 != bridge_artifact_sha256
+            or adapter.transport_profile_fingerprint != profile_fingerprint
+            or adapter.evidence_sha256 != adapter_evidence_sha256
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified input-pair ledger bridge binding changed."
+            )
+        (
+            profile_scalars,
+            guarded_rows,
+            guarded_files,
+            bridge_scalars,
+        ) = self._profile_guard
+        if (
+            (
+                profile.donor_tokenizer_class,
+                profile.target_tokenizer_class,
+                profile.donor_vocab_size,
+                profile.target_vocab_size,
+                profile.donor_row_capacity,
+                profile.target_row_capacity,
+                profile.alignment_fingerprint,
+                profile.alignment_resolution,
+            )
+            != profile_scalars
+            or len(row_mappings) != len(guarded_rows)
+            or any(
+                observed is not guarded[0]
+                or observed.target_row_index != guarded[1]
+                or observed.donor_row_index != guarded[2]
+                or observed.resolution != guarded[3]
+                or observed.special_token_roles != guarded[4]
+                for observed, guarded in zip(
+                    row_mappings,
+                    guarded_rows,
+                    strict=True,
+                )
+            )
+            or len(bridge.target_files) != len(guarded_files)
+            or any(
+                observed is not guarded[0]
+                or observed.relative_path != guarded[1]
+                or observed.size_bytes != guarded[2]
+                or observed.sha256 != guarded[3]
+                for observed, guarded in zip(
+                    bridge.target_files,
+                    guarded_files,
+                    strict=True,
+                )
+            )
+            or (
+                bridge.root_dir,
+                bridge.donor_tokenizer_semantics_sha256,
+                bridge.target_tokenizer_semantics_sha256,
+                bridge.artifact_sha256,
+            )
+            != bridge_scalars
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified input-pair ledger nested bridge evidence changed."
+            )
+
+    def verify_replay_binding(
+        self,
+        adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+        *,
+        parent_cache_key: str,
+        parent_cache_session: object | None,
+        parent_cache_session_sha256: str | None,
+        parent_identity_sha256: str,
+        parent_corpus_fingerprint: str,
+        child_corpus_fingerprint: str,
+        record_count: int,
+    ) -> Lfm2PreverifiedTokenizerBridgeInputPairLedger:
+        """Check shallow fold/cache/session/corpus identity bindings."""
+
+        self._verify_adapter_binding()
+        (
+            bound_adapter,
+            bound_bridge,
+            bound_records,
+            bound_profile,
+            bound_row_mappings,
+            bridge_artifact_sha256,
+            profile_fingerprint,
+            adapter_evidence_sha256,
+        ) = self._adapter_guards
+        context = self._context
+        bound_session = context[5]
+        if bound_session is not None and (
+            not isinstance(bound_session, SEALED_EVIDENCE_SESSION_TYPES)
+            or getattr(bound_session, "closed", False)
+            or bound_session.cache_key != context[0]
+            or bound_session.batch_count != len(self._ordered_bindings)
+            or bound_session.evidence_sha256 != context[1]
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified input-pair ledger parent session changed or closed."
+            )
+        if (
+            adapter is not bound_adapter
+            or adapter._bridge is not bound_bridge
+            or adapter._records is not bound_records
+            or adapter._bridge.transport_profile is not bound_profile
+            or bound_profile.row_mappings is not bound_row_mappings
+            or adapter.bridge_artifact_sha256 != bridge_artifact_sha256
+            or adapter.transport_profile_fingerprint != profile_fingerprint
+            or adapter.evidence_sha256 != adapter_evidence_sha256
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified input-pair ledger bridge binding changed."
+            )
+        observed_session_sha = (
+            None
+            if parent_cache_session_sha256 is None
+            else _sha256(
+                parent_cache_session_sha256,
+                "parent_cache_session_sha256",
+            )
+        )
+        if (
+            _sha256(parent_cache_key, "parent_cache_key") != context[0]
+            or observed_session_sha != context[1]
+            or parent_cache_session is not context[5]
+            or _sha256(parent_identity_sha256, "parent_identity_sha256")
+            != context[2]
+            or _sha256(
+                parent_corpus_fingerprint,
+                "parent_corpus_fingerprint",
+            )
+            != context[3]
+            or _sha256(
+                child_corpus_fingerprint,
+                "child_corpus_fingerprint",
+            )
+            != context[4]
+            or isinstance(record_count, bool)
+            or not isinstance(record_count, int)
+            or record_count != len(self._ordered_bindings)
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified input-pair ledger cache, session, corpus, or "
+                "record-count binding changed."
+            )
+        return self
+
+    def replay_record_evidence(
+        self,
+        *,
+        index: int,
+        record_id: str,
+        parent_cache_input_sha256: str,
+        target_cache_input_sha256: str,
+        parent_cache_batch: Mapping[str, Any],
+        child_replay_batch: Mapping[str, Any],
+    ) -> Lfm2PairedInputAlignmentEvidence:
+        """Rebind one standalone pair after a complete bridge guard check."""
+
+        self._verify_adapter_binding()
+        return self._replay_record_evidence_prebound(
+            index=index,
+            record_id=record_id,
+            parent_cache_input_sha256=parent_cache_input_sha256,
+            target_cache_input_sha256=target_cache_input_sha256,
+            parent_cache_batch=parent_cache_batch,
+            child_replay_batch=child_replay_batch,
+        )
+
+    def _replay_record_evidence_prebound(
+        self,
+        *,
+        index: int,
+        record_id: str,
+        parent_cache_input_sha256: str,
+        target_cache_input_sha256: str,
+        parent_cache_batch: Mapping[str, Any],
+        child_replay_batch: Mapping[str, Any],
+    ) -> Lfm2PairedInputAlignmentEvidence:
+        """Rebind one replay pair without mapping, hashing, or cloning it."""
+
+        self._verify_storage()
+        ordinal = _nonnegative_int(index, "index")
+        if ordinal >= len(self._ordered_bindings):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger index is outside its ordered corpus."
+            )
+        binding = self._ordered_bindings[ordinal]
+        selected_id = _text(record_id, "record_id")
+        parent_sha = _sha256(
+            parent_cache_input_sha256,
+            "parent_cache_input_sha256",
+        )
+        target_sha = _sha256(
+            target_cache_input_sha256,
+            "target_cache_input_sha256",
+        )
+        if (
+            binding[0] != ordinal
+            or binding[1] != selected_id
+            or binding[6] != parent_sha
+            or binding[7] != target_sha
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger replay order, record, or exact input "
+                "binding changed."
+            )
+
+        record, scalar_guard, tensor_snapshots = self._record_guards[ordinal]
+        if (
+            self._adapter_guards[2][ordinal] is not record
+            or _ledger_record_scalar_guard(record) != scalar_guard
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger aligned-record evidence changed."
+            )
+        for name, bound_tensor, expected_tensor in tensor_snapshots:
+            observed_tensor = getattr(record, name)
+            if expected_tensor is None:
+                unchanged = observed_tensor is bound_tensor is None
+            else:
+                unchanged = bool(
+                    observed_tensor is bound_tensor
+                    and _ledger_exact_integer_tensor(
+                        observed_tensor,
+                        expected_tensor,
+                        allow_bool=name == "_attention_mask",
+                    )
+                )
+            if not unchanged:
+                raise Lfm2StrictTokenizerBridgeTraceError(
+                    "Input-pair ledger aligned-record tensors changed."
+                )
+
+        parent = parent_cache_batch
+        child = child_replay_batch
+        required = {"input_ids", "attention_mask", _FORCED_IDS}
+        if (
+            not isinstance(parent, Mapping)
+            or not isinstance(child, Mapping)
+            or set(parent) not in (required, required | {"position_ids"})
+            or set(child) not in (required, required | {"position_ids"})
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger replay inputs are incomplete or unsupported."
+            )
+        (
+            target_input_ids,
+            donor_input_ids,
+            attention_mask,
+            target_forced_decode_ids,
+            donor_forced_decode_ids,
+            position_ids,
+        ) = tuple(snapshot for _name, _bound, snapshot in tensor_snapshots)
+        exact_pairs = (
+            (parent["input_ids"], donor_input_ids, False),
+            (parent["attention_mask"], attention_mask, True),
+            (parent[_FORCED_IDS], donor_forced_decode_ids, False),
+            (child["input_ids"], target_input_ids, False),
+            (child["attention_mask"], attention_mask, True),
+            (child[_FORCED_IDS], target_forced_decode_ids, False),
+        )
+        if any(
+            not _ledger_exact_integer_tensor(
+                observed,
+                expected,
+                allow_bool=allow_bool,
+            )
+            for observed, expected, allow_bool in exact_pairs
+        ) or not (
+            parent.get("position_ids") is position_ids is None
+            or _ledger_exact_integer_tensor(
+                parent.get("position_ids"),
+                position_ids,
+                allow_bool=False,
+            )
+        ) or not (
+            child.get("position_ids") is position_ids is None
+            or _ledger_exact_integer_tensor(
+                child.get("position_ids"),
+                position_ids,
+                allow_bool=False,
+            )
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger replay values changed from their "
+                "preverified exact inputs."
+            )
+
+        evidence = self._pair_evidence[ordinal]
+        if (
+            evidence.record_id != binding[1]
+            or evidence.split != binding[2]
+            or evidence.bridge_artifact_sha256 != binding[3]
+            or evidence.alignment_sha256 != binding[5]
+            or evidence.donor_cache_input_sha256 != binding[6]
+            or evidence.target_cache_input_sha256 != binding[7]
+            or evidence.numerically_different_token_count != binding[8]
+            or evidence.numeric_token_id_equality_required is not False
+            or evidence.parent_child_geometry_equal is not True
+            or evidence.masks_equal is not True
+            or evidence.positions_equal is not True
+            or evidence.forced_decode_mapped is not True
+            or evidence.evidence_sha256 != binding[9]
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger runtime evidence changed."
+            )
+        return evidence
+
+    def to_evidence_dict(self) -> dict[str, Any]:
+        self._verify_adapter_binding()
+        body = _ledger_body(
+            adapter=self._adapter_guards[0],
+            parent_cache_key=self._context[0],
+            parent_cache_session_sha256=self._context[1],
+            parent_identity_sha256=self._context[2],
+            parent_corpus_fingerprint=self._context[3],
+            child_corpus_fingerprint=self._context[4],
+            ordered_bindings=self._ordered_bindings,
+        )
+        if _canonical_sha256(body) != self._evidence_sha256:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Input-pair ledger evidence seal changed."
+            )
+        return {**body, "evidence_sha256": self._evidence_sha256}
+
+
+def _build_preverified_lfm2_tokenizer_bridge_input_pair_ledger(
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    *,
+    parent_cache_key: str,
+    parent_cache_session: object | None,
+    parent_cache_session_sha256: str | None,
+    parent_identity_sha256: str,
+    parent_corpus_fingerprint: str,
+    child_corpus_fingerprint: str,
+    parent_cache_batches: Iterable[Mapping[str, Any]],
+    child_replay_batches: Iterable[Mapping[str, Any]],
+) -> Lfm2PreverifiedTokenizerBridgeInputPairLedger:
+    """Authenticate and freeze every ordered runtime input pair once."""
+
+    if not isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Input-pair ledgers require a strict trace adapter."
+        )
+    cache_key = _sha256(parent_cache_key, "parent_cache_key")
+    session_sha = (
+        None
+        if parent_cache_session_sha256 is None
+        else _sha256(
+            parent_cache_session_sha256,
+            "parent_cache_session_sha256",
+        )
+    )
+    if (parent_cache_session is None) != (session_sha is None):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Parent cache session object and digest must be supplied together."
+        )
+    if parent_cache_session is not None and (
+        not isinstance(parent_cache_session, SEALED_EVIDENCE_SESSION_TYPES)
+        or getattr(parent_cache_session, "closed", False)
+        or parent_cache_session.cache_key != cache_key
+        or parent_cache_session.batch_count != adapter.record_count
+        or parent_cache_session.evidence_sha256 != session_sha
+    ):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Parent cache session is not a live authenticated session bound "
+            "to this cache key, digest, and record count."
+        )
+    parent_identity = _sha256(
+        parent_identity_sha256,
+        "parent_identity_sha256",
+    )
+    parent_corpus = _sha256(
+        parent_corpus_fingerprint,
+        "parent_corpus_fingerprint",
+    )
+    child_corpus = _sha256(
+        child_corpus_fingerprint,
+        "child_corpus_fingerprint",
+    )
+    try:
+        parent_batches = tuple(parent_cache_batches)
+        child_batches = tuple(child_replay_batches)
+    except TypeError as exc:
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Input-pair ledger batches must be ordered iterables."
+        ) from exc
+    if (
+        len(parent_batches) != adapter.record_count
+        or len(child_batches) != adapter.record_count
+    ):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Input-pair ledger batch count differs from its adapter."
+        )
+
+    session = Lfm2PreverifiedTokenizerBridgeTraceSession(adapter)
+    evidence = tuple(
+        session.authenticate_input_pair(
+            record_id=record.record_id,
+            parent_cache_batch=parent_batches[index],
+            child_replay_batch=child_batches[index],
+        )
+        for index, record in enumerate(adapter.records)
+    )
+    session.verify_complete()
+    ordered_bindings = tuple(
+        _ledger_record_binding(record, evidence[record.ordinal])
+        for record in adapter.records
+    )
+    record_guards = tuple(
+        (
+            record,
+            _ledger_record_scalar_guard(record),
+            _ledger_record_tensor_snapshots(record),
+        )
+        for record in adapter.records
+    )
+    profile_guard = _ledger_profile_guard(adapter)
+    profile = adapter._bridge.transport_profile
+    adapter_guards = (
+        adapter,
+        adapter._bridge,
+        adapter._records,
+        profile,
+        profile.row_mappings,
+        adapter.bridge_artifact_sha256,
+        adapter.transport_profile_fingerprint,
+        adapter.evidence_sha256,
+    )
+    context = (
+        cache_key,
+        session_sha,
+        parent_identity,
+        parent_corpus,
+        child_corpus,
+        parent_cache_session,
+    )
+    body = _ledger_body(
+        adapter=adapter,
+        parent_cache_key=cache_key,
+        parent_cache_session_sha256=session_sha,
+        parent_identity_sha256=parent_identity,
+        parent_corpus_fingerprint=parent_corpus,
+        child_corpus_fingerprint=child_corpus,
+        ordered_bindings=ordered_bindings,
+    )
+    result = object.__new__(Lfm2PreverifiedTokenizerBridgeInputPairLedger)
+    object.__setattr__(result, "_adapter_guards", adapter_guards)
+    object.__setattr__(result, "_context", context)
+    object.__setattr__(result, "_ordered_bindings", ordered_bindings)
+    object.__setattr__(result, "_pair_evidence", evidence)
+    object.__setattr__(result, "_profile_guard", profile_guard)
+    object.__setattr__(result, "_record_guards", record_guards)
+    object.__setattr__(result, "_evidence_sha256", _canonical_sha256(body))
+    object.__setattr__(
+        result,
+        "_storage_canary",
+        (
+            id(adapter_guards),
+            id(context),
+            id(ordered_bindings),
+            id(evidence),
+            id(profile_guard),
+            id(record_guards),
+            result._evidence_sha256,
+        ),
+    )
+    result.to_evidence_dict()
+    return result
+
+
 def _float_logits(value: Any, donor_capacity: int, batch_size: int) -> Any:
     torch = _torch()
     if (
@@ -1950,10 +2706,12 @@ def project_lfm2_cached_parent_logits(
 
 __all__ = [
     "ALIGNED_RECORD_SCHEMA",
+    "INPUT_PAIR_LEDGER_SCHEMA",
     "LOGIT_PROJECTION_SCHEMA",
     "Lfm2BridgeAlignedRecord",
     "Lfm2PairedInputAlignmentEvidence",
     "Lfm2PreverifiedCachedParentProjectionSession",
+    "Lfm2PreverifiedTokenizerBridgeInputPairLedger",
     "Lfm2PreverifiedTokenizerBridgeTraceSession",
     "Lfm2ProjectedCachedParentLogits",
     "Lfm2StrictTokenizerBridgeTraceAdapter",

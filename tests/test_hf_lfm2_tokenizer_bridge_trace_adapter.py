@@ -11,7 +11,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter as bridge_trace  # noqa: E402
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
+    Lfm2PreverifiedTokenizerBridgeInputPairLedger,
     Lfm2PreverifiedCachedParentProjectionSession,
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
@@ -162,6 +164,22 @@ def _scaled_cross_records(count: int) -> tuple[Lfm2TargetTokenizedRecord, ...]:
             forced_decode_ids=torch.tensor([[1, 2]], dtype=torch.int32),
         )
         for index in range(count)
+    )
+
+
+def _input_pair_ledger(
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+) -> Lfm2PreverifiedTokenizerBridgeInputPairLedger:
+    return bridge_trace._build_preverified_lfm2_tokenizer_bridge_input_pair_ledger(
+        adapter,
+        parent_cache_key="a" * 64,
+        parent_cache_session=None,
+        parent_cache_session_sha256=None,
+        parent_identity_sha256="b" * 64,
+        parent_corpus_fingerprint="c" * 64,
+        child_corpus_fingerprint="d" * 64,
+        parent_cache_batches=adapter.parent_cache_batches(),
+        child_replay_batches=adapter.child_replay_batches(),
     )
 
 
@@ -451,6 +469,403 @@ def test_preverified_session_rejects_selected_record_tensor_tampering(
             child_replay_batch=child,
         )
     assert session.authenticated_record_count == 0
+
+
+def test_input_pair_ledger_preserves_pair_evidence_and_sealed_context(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    baseline = tuple(
+        authenticate_lfm2_bridge_input_pair(
+            adapter,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        ).to_dict()
+        for record in adapter.records
+    )
+
+    ledger = _input_pair_ledger(adapter)
+    observed = tuple(
+        ledger.replay_record_evidence(
+            index=record.ordinal,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        ).to_dict()
+        for record in adapter.records
+    )
+
+    assert observed == baseline
+    assert ledger.record_count == ledger.authenticated_record_count == 2
+    evidence = ledger.to_evidence_dict()
+    assert evidence["parent_cache_key"] == "a" * 64
+    assert evidence["parent_cache_session_sha256"] is None
+    assert evidence["parent_corpus_fingerprint"] == "c" * 64
+    assert evidence["child_corpus_fingerprint"] == "d" * 64
+    assert [value["record_id"] for value in evidence["ordered_records"]] == [
+        "cal-0",
+        "gen-0",
+    ]
+
+
+def test_input_pair_ledger_authenticates_256_once_then_avoids_heavy_pair_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _scaled_cross_records(256),
+    )
+    calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal calls
+        calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+    ledger = _input_pair_ledger(adapter)
+    assert calls == 2
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("replay repeated preverified bridge-pair math")
+
+    monkeypatch.setattr(bridge_trace, "_normalized_runtime_batch", forbidden)
+    monkeypatch.setattr(bridge_trace, "_map_target_ids", forbidden)
+    monkeypatch.setattr(bridge_trace, "_cache_input_sha256", forbidden)
+    for _ in range(3):
+        ledger.verify_replay_binding(
+            adapter,
+            parent_cache_key="a" * 64,
+            parent_cache_session=None,
+            parent_cache_session_sha256=None,
+            parent_identity_sha256="b" * 64,
+            parent_corpus_fingerprint="c" * 64,
+            child_corpus_fingerprint="d" * 64,
+            record_count=256,
+        )
+        for record in adapter.records:
+            ledger.replay_record_evidence(
+                index=record.ordinal,
+                record_id=record.record_id,
+                parent_cache_input_sha256=record.donor_cache_input_sha256,
+                target_cache_input_sha256=record.target_cache_input_sha256,
+                parent_cache_batch=record.as_parent_cache_batch(),
+                child_replay_batch=record.as_child_replay_batch(),
+            )
+    assert calls == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("record_id", "gen-0", "order, record, or exact input"),
+        ("parent_cache_input_sha256", "e" * 64, "exact input"),
+        ("target_cache_input_sha256", "f" * 64, "exact input"),
+    ],
+)
+def test_input_pair_ledger_rejects_order_record_and_input_sha_changes(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    match: str,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    ledger = _input_pair_ledger(adapter)
+    record = adapter.records[0]
+    kwargs = {
+        "index": 0,
+        "record_id": record.record_id,
+        "parent_cache_input_sha256": record.donor_cache_input_sha256,
+        "target_cache_input_sha256": record.target_cache_input_sha256,
+        "parent_cache_batch": record.as_parent_cache_batch(),
+        "child_replay_batch": record.as_child_replay_batch(),
+    }
+    kwargs[field] = value
+
+    with pytest.raises(Lfm2StrictTokenizerBridgeTraceError, match=match):
+        ledger.replay_record_evidence(**kwargs)
+
+
+def test_input_pair_ledger_rejects_runtime_input_and_adapter_tensor_mutation(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    ledger = _input_pair_ledger(adapter)
+    record = adapter.records[0]
+    parent = record.as_parent_cache_batch()
+    child = record.as_child_replay_batch()
+    child["input_ids"][0, 1] += 1
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="replay values changed",
+    ):
+        ledger.replay_record_evidence(
+            index=0,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=parent,
+            child_replay_batch=child,
+        )
+
+    record._donor_input_ids[0, 0] = 0
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="aligned-record tensors changed",
+    ):
+        ledger.replay_record_evidence(
+            index=0,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=parent,
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("side", "field"),
+    [
+        ("parent", "input_ids"),
+        ("parent", "attention_mask"),
+        ("parent", "forced_decode_ids"),
+        ("parent", "position_ids"),
+        ("child", "input_ids"),
+        ("child", "attention_mask"),
+        ("child", "forced_decode_ids"),
+        ("child", "position_ids"),
+    ],
+)
+def test_input_pair_ledger_rejects_float_runtime_integer_fields(
+    tmp_path: Path,
+    side: str,
+    field: str,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    ledger = _input_pair_ledger(adapter)
+    record = adapter.records[0]
+    parent = record.as_parent_cache_batch()
+    child = record.as_child_replay_batch()
+    selected = parent if side == "parent" else child
+    selected[field] = selected[field].to(dtype=torch.float32)
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="replay values changed",
+    ):
+        ledger.replay_record_evidence(
+            index=0,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=parent,
+            child_replay_batch=child,
+        )
+
+
+def test_input_pair_ledger_rejects_aliased_data_mutation_without_version_bump(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records()[:1],
+    )
+    record = adapter.records[0]
+    parent = {
+        "input_ids": record._donor_input_ids,
+        "attention_mask": record._attention_mask,
+        "forced_decode_ids": record._donor_forced_decode_ids,
+        "position_ids": record._position_ids,
+    }
+    child = {
+        "input_ids": record._target_input_ids,
+        "attention_mask": record._attention_mask,
+        "forced_decode_ids": record._target_forced_decode_ids,
+        "position_ids": record._position_ids,
+    }
+    ledger = bridge_trace._build_preverified_lfm2_tokenizer_bridge_input_pair_ledger(
+        adapter,
+        parent_cache_key="a" * 64,
+        parent_cache_session=None,
+        parent_cache_session_sha256=None,
+        parent_identity_sha256="b" * 64,
+        parent_corpus_fingerprint="c" * 64,
+        child_corpus_fingerprint="d" * 64,
+        parent_cache_batches=(parent,),
+        child_replay_batches=(child,),
+    )
+    version = int(record._attention_mask._version)
+    record._attention_mask.data[0, 0] = 0
+    assert int(record._attention_mask._version) == version
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="aligned-record tensors changed",
+    ):
+        ledger.replay_record_evidence(
+            index=0,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=parent,
+            child_replay_batch=child,
+        )
+
+
+def test_input_pair_ledger_rejects_nested_row_mapping_mutation_everywhere(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    ledger = _input_pair_ledger(adapter)
+    record = adapter.records[0]
+    row = adapter._bridge.transport_profile.row_mappings[0]
+    object.__setattr__(
+        row,
+        "donor_row_index",
+        (row.donor_row_index + 1) % adapter.donor_row_capacity,
+    )
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="nested bridge evidence changed",
+    ):
+        ledger.verify_replay_binding(
+            adapter,
+            parent_cache_key="a" * 64,
+            parent_cache_session=None,
+            parent_cache_session_sha256=None,
+            parent_identity_sha256="b" * 64,
+            parent_corpus_fingerprint="c" * 64,
+            child_corpus_fingerprint="d" * 64,
+            record_count=2,
+        )
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="nested bridge evidence changed",
+    ):
+        ledger.replay_record_evidence(
+            index=0,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="nested bridge evidence changed",
+    ):
+        ledger.to_evidence_dict()
+
+
+def test_low_level_input_pair_ledger_builder_is_private_and_rejects_fake_session(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    assert (
+        "build_preverified_lfm2_tokenizer_bridge_input_pair_ledger"
+        not in bridge_trace.__all__
+    )
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="live authenticated session",
+    ):
+        bridge_trace._build_preverified_lfm2_tokenizer_bridge_input_pair_ledger(
+            adapter,
+            parent_cache_key="a" * 64,
+            parent_cache_session=object(),
+            parent_cache_session_sha256="e" * 64,
+            parent_identity_sha256="b" * 64,
+            parent_corpus_fingerprint="c" * 64,
+            child_corpus_fingerprint="d" * 64,
+            parent_cache_batches=adapter.parent_cache_batches(),
+            child_replay_batches=adapter.child_replay_batches(),
+        )
+
+
+def test_input_pair_ledger_rejects_context_bridge_and_evidence_tampering(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    ledger = _input_pair_ledger(adapter)
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="cache, session, corpus, or record-count",
+    ):
+        ledger.verify_replay_binding(
+            adapter,
+            parent_cache_key="a" * 64,
+            parent_cache_session=None,
+            parent_cache_session_sha256=None,
+            parent_identity_sha256="b" * 64,
+            parent_corpus_fingerprint="0" * 64,
+            child_corpus_fingerprint="d" * 64,
+            record_count=2,
+        )
+
+    original_evidence_sha256 = adapter.evidence_sha256
+    object.__setattr__(adapter, "evidence_sha256", "1" * 64)
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="bridge binding changed",
+    ):
+        ledger.verify_replay_binding(
+            adapter,
+            parent_cache_key="a" * 64,
+            parent_cache_session=None,
+            parent_cache_session_sha256=None,
+            parent_identity_sha256="b" * 64,
+            parent_corpus_fingerprint="c" * 64,
+            child_corpus_fingerprint="d" * 64,
+            record_count=2,
+        )
+    object.__setattr__(adapter, "evidence_sha256", original_evidence_sha256)
+
+    evidence = ledger._pair_evidence[0]
+    object.__setattr__(evidence, "record_id", "forged")
+    record = adapter.records[0]
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="aligned-record evidence changed|runtime evidence changed",
+    ):
+        ledger.replay_record_evidence(
+            index=0,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            target_cache_input_sha256=record.target_cache_input_sha256,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        )
 
 
 def test_actual_parent_child_pair_uses_mapping_not_numeric_id_equality(

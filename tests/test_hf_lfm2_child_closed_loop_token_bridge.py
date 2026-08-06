@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from types import MappingProxyType
@@ -15,6 +16,7 @@ transformers = pytest.importorskip("transformers")
 from neural_forge.hf_lfm2_child_closed_loop_refinement import (  # noqa: E402
     Lfm2ChildClosedLoopRefinementError,
     pair_lfm2_parent_child_replay,
+    preverify_lfm2_parent_child_tokenizer_bridge_input_pairs,
     project_lfm2_paired_parent_logits,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
@@ -242,6 +244,222 @@ def test_pairing_uses_two_full_bridge_verifications_for_all_batches(
 
     assert len(paired) == adapter.record_count == 2
     assert calls == 2
+
+
+def test_legacy_bridge_pairing_rejects_unconsumed_parent_session(
+    bridged_replay,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    with parent_cache.selective_authenticated_session() as session:
+        with pytest.raises(
+            Lfm2ChildClosedLoopRefinementError,
+            match="accepted only with a preverified",
+        ):
+            pair_lfm2_parent_child_replay(
+                parent_cache,
+                child_replay,
+                tokenizer_bridge_trace_adapter=adapter,
+                parent_cache_session=session,
+            )
+
+
+def test_fold_lifetime_input_pair_ledger_preserves_pairing_hash_parity(
+    bridged_replay,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    baseline = pair_lfm2_parent_child_replay(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+    ledger = preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+    reused = pair_lfm2_parent_child_replay(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+        tokenizer_bridge_input_pair_ledger=ledger,
+    )
+
+    assert reused.tokenizer_bridge_input_pair_ledger is ledger
+    assert reused.pairing_sha256 == baseline.pairing_sha256
+    assert reused.corpus_fingerprint == baseline.corpus_fingerprint
+    assert (
+        reused.tokenizer_bridge_evidence_sha256
+        == baseline.tokenizer_bridge_evidence_sha256
+    )
+    assert [
+        batch.tokenizer_bridge_input_evidence.to_dict()
+        for batch in reused.batches
+    ] == [
+        batch.tokenizer_bridge_input_evidence.to_dict()
+        for batch in baseline.batches
+    ]
+
+
+def test_fold_lifetime_input_pair_ledger_avoids_full_reverification_per_replay(
+    bridged_replay,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal calls
+        calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+    ledger = preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+    assert calls == 2
+
+    for _ in range(5):
+        paired = pair_lfm2_parent_child_replay(
+            parent_cache,
+            child_replay,
+            tokenizer_bridge_trace_adapter=adapter,
+            tokenizer_bridge_input_pair_ledger=ledger,
+        )
+        assert len(paired) == 2
+    assert calls == 2
+
+
+def test_fold_lifetime_input_pair_ledger_allows_changed_child_weights(
+    bridged_replay,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    ledger = preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+    config = Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=2,
+        max_decode_steps=1,
+        decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+    )
+    changed_replay = capture_lfm2_child_replay(
+        _model(vocab_size=4, seed=2202),
+        adapter.child_replay_batches(),
+        selected_layer_indices=[1],
+        config=config,
+        input_device="cpu",
+    )
+    assert changed_replay.corpus_fingerprint == child_replay.corpus_fingerprint
+    assert changed_replay.child_fingerprint != child_replay.child_fingerprint
+
+    paired = pair_lfm2_parent_child_replay(
+        parent_cache,
+        changed_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+        tokenizer_bridge_input_pair_ledger=ledger,
+    )
+    assert paired.child_replay_sha256 == changed_replay.replay_sha256
+    assert paired.tokenizer_bridge_input_pair_ledger is ledger
+
+
+def test_fold_lifetime_input_pair_ledger_rejects_input_and_order_mutation(
+    bridged_replay,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    ledger = preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+    child_replay.batches[0].input_ids[0, 1] += 1
+    with pytest.raises(
+        Lfm2ChildClosedLoopRefinementError,
+        match="input-pair ledger|does not satisfy",
+    ):
+        pair_lfm2_parent_child_replay(
+            parent_cache,
+            child_replay,
+            tokenizer_bridge_trace_adapter=adapter,
+            tokenizer_bridge_input_pair_ledger=ledger,
+        )
+
+    reversed_batches = tuple(
+        dataclasses.replace(batch, index=index)
+        for index, batch in enumerate(reversed(child_replay.batches))
+    )
+    reordered = dataclasses.replace(
+        child_replay,
+        _batches=reversed_batches,
+    )
+    with pytest.raises(
+        Lfm2ChildClosedLoopRefinementError,
+        match="hashes do not match|input-pair ledger",
+    ):
+        pair_lfm2_parent_child_replay(
+            parent_cache,
+            reordered,
+            tokenizer_bridge_trace_adapter=adapter,
+            tokenizer_bridge_input_pair_ledger=ledger,
+        )
+
+
+def test_fold_lifetime_input_pair_ledger_binds_exact_parent_session(
+    bridged_replay,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    with parent_cache.selective_authenticated_session() as first_session:
+        ledger = preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+            parent_cache,
+            child_replay,
+            tokenizer_bridge_trace_adapter=adapter,
+            parent_cache_session=first_session,
+        )
+        paired = pair_lfm2_parent_child_replay(
+            parent_cache,
+            child_replay,
+            tokenizer_bridge_trace_adapter=adapter,
+            tokenizer_bridge_input_pair_ledger=ledger,
+            parent_cache_session=first_session,
+        )
+        assert len(paired) == 2
+
+        with parent_cache.selective_authenticated_session() as second_session:
+            assert (
+                second_session.evidence_sha256
+                == first_session.evidence_sha256
+            )
+            with pytest.raises(
+                Lfm2ChildClosedLoopRefinementError,
+                match="ledger failed authentication",
+            ):
+                pair_lfm2_parent_child_replay(
+                    parent_cache,
+                    child_replay,
+                    tokenizer_bridge_trace_adapter=adapter,
+                    tokenizer_bridge_input_pair_ledger=ledger,
+                    parent_cache_session=second_session,
+                )
+
+    assert first_session.closed
+    with pytest.raises(
+        Lfm2ChildClosedLoopRefinementError,
+        match="parent session is closed",
+    ):
+        pair_lfm2_parent_child_replay(
+            parent_cache,
+            child_replay,
+            tokenizer_bridge_trace_adapter=adapter,
+            tokenizer_bridge_input_pair_ledger=ledger,
+            parent_cache_session=first_session,
+        )
 
 
 def test_selected_parent_batches_preserve_bridged_pairing_without_full_load(
