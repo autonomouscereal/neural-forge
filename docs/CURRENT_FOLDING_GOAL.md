@@ -1,6 +1,32 @@
 # Neural Forge current folding goal
 
-Updated: 2026-07-30
+Updated: 2026-08-06 (staged-escalation policy added per Cyril's direct
+instruction; objective and fold-only rules below unchanged)
+
+## Staged escalation policy (Cyril, 2026-08-06)
+
+The program maximizes compute savings by exhausting each cheaper technique
+before unlocking the next, in strict order:
+
+1. **Fold-only, to its proven ceiling.** All current work stays under the
+   fold-only contract below. This stage ends only when we can state, with
+   sealed evidence, the folding ceiling: the best composed retention
+   achievable at each compaction level (1.35x, ~2x, 4x, ...) with every
+   procedural remedy exhausted (per-boundary gates, terminal floor,
+   on-policy evidence rounds, EIV/margin arms, reclosure modes, layout
+   arms) — i.e. "there is literally no fold-only path forward" is itself a
+   proven, documented claim, not a feeling.
+2. **Fold + classical distillation.** Only after stage 1's ceiling is
+   sealed: fold-as-initialization plus the minimum distillation (teacher
+   logits / short recovery finetune) needed to hit the target — measured
+   against distillation-from-scratch so the fold's compute savings are
+   quantified, not assumed.
+3. **Fold + distillation + training.** Only after stage 2's ceiling is
+   sealed: whatever additional training closes the last gap.
+
+Nothing in stages 2-3 may be started, prototyped, or wired into production
+lanes while stage 1 is open. The fold-only prohibitions below bind until a
+sealed stage-1 ceiling report says otherwise.
 
 ## Objective
 
