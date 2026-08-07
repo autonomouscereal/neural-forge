@@ -28,9 +28,18 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
 )
 from neural_forge.hf_closed_form_fit import FitMetrics  # noqa: E402
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
+    LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+    Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterError,
     Lfm2TerminalFreeRunTripwire,
     _durable_diagnostic_json,
+)
+from neural_forge.hf_lfm2_macro_cell_attractor_gate import (  # noqa: E402
+    Lfm2MacroCellAttractorGate,
+    Lfm2MacroCellAttractorGateConfig,
+)
+from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
+    build_lfm2_weight_complete_basis,
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     Lfm2CachedMlpFoldCase,
@@ -479,6 +488,223 @@ def test_free_run_tripwire_stays_silent_above_chance(sealed_parent) -> None:
     assert dict(decision.metrics)["terminal_free_run_tripwire_tripped"] is False
 
 
+# --- W13P item 5: the tripwire that never evaluated ---------------------------
+#
+# Through the whole sealed r13 run this clause reported
+# ``terminal_free_run_tripwire_evaluated: false`` at all fourteen layers, cause
+# unrecorded, while the run's own free-run sat at chance (0.102%).  Nothing in
+# any production path has ever assigned ``terminal_free_run_match_probe``, so
+# the clause could only ever record its own configuration.  It now reads the
+# one counterfactual child-only rollout the adapter already performs, and when
+# there is no rollout to read it says so in the sealed decision.
+
+
+def test_disabled_free_run_tripwire_writes_no_metrics(sealed_parent) -> None:
+    """An off tripwire seals nothing, probe assigned or not."""
+
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.terminal_free_run_match_probe = lambda layer_index: 0.0
+    decision = adapter._validation_decision(
+        scope=_layer_scope(1),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.4),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+        free_run_match_observation=0.0,
+    )
+    metrics = dict(decision.metrics)
+    assert not [
+        name for name in metrics if name.startswith("terminal_free_run")
+    ]
+
+
+def test_free_run_tripwire_names_why_it_could_not_evaluate(
+    sealed_parent,
+) -> None:
+    """The r13 silence is now self-diagnosing from the run's own evidence."""
+
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_free_run_tripwire_enabled=True,
+    )
+    assert adapter.terminal_free_run_match_probe is None
+    assert adapter.macro_cell_attractor_gate is None
+    decision = adapter._validation_decision(
+        scope=_layer_scope(1),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.4),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+    )
+    metrics = dict(decision.metrics)
+    assert decision.accepted is True
+    assert metrics["terminal_free_run_tripwire_evaluated"] is False
+    assert metrics["terminal_free_run_tripwire_observed"] is None
+    assert metrics["terminal_free_run_tripwire_observation_source"] == "none"
+    assert "no free-run observation source" in str(
+        metrics["terminal_free_run_tripwire_unevaluated_reason"]
+    )
+
+
+def test_free_run_tripwire_names_an_assigned_probe_that_observed_nothing(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_free_run_tripwire_enabled=True,
+    )
+    adapter.terminal_free_run_match_probe = lambda layer_index: None
+    decision = adapter._validation_decision(
+        scope=_layer_scope(1),
+        records=_RECORDS,
+        baseline=_metrics(0.5),
+        candidate=_metrics(0.4),
+        minimum_improvement=0.0,
+        endpoint="post-layer residual",
+    )
+    metrics = dict(decision.metrics)
+    assert metrics["terminal_free_run_tripwire_evaluated"] is False
+    assert "assigned free-run probe" in str(
+        metrics["terminal_free_run_tripwire_unevaluated_reason"]
+    )
+
+
+def test_an_assigned_probe_outranks_the_supplied_rollout(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    adapter.config = replace(
+        adapter.config,
+        terminal_free_run_tripwire_enabled=True,
+        terminal_free_run_chance_match_fraction=0.01,
+    )
+    adapter.terminal_free_run_match_probe = lambda layer_index: 0.4
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Lfm2TerminalFreeRunTripwire)
+        decision = adapter._validation_decision(
+            scope=_layer_scope(1),
+            records=_RECORDS,
+            baseline=_metrics(0.5),
+            candidate=_metrics(0.4),
+            minimum_improvement=0.0,
+            endpoint="post-layer residual",
+            free_run_match_observation=0.0,
+        )
+    metrics = dict(decision.metrics)
+    assert metrics["terminal_free_run_tripwire_observed"] == pytest.approx(0.4)
+    assert metrics["terminal_free_run_tripwire_observation_source"] == (
+        "assigned_probe"
+    )
+    assert metrics["terminal_free_run_tripwire_tripped"] is False
+
+
+def test_the_macro_cell_rollout_is_read_as_the_free_run_observation() -> None:
+    """The gate's own diagnostic is the observation the tripwire was spec'd on."""
+
+    class _Snapshot:
+        metrics = {
+            "diagnostic_mean_parent_top1_exact_token_match_fraction": 0.375,
+        }
+
+    read = Lfm2DynamicClosedLoopAdapter._macro_cell_free_run_match
+    assert read(None) is None
+    assert read(_Snapshot()) == pytest.approx(0.375)
+
+
+def _permissive_attractor_gate(cache):
+    """A real rollout gate whose comparison cannot refuse a toy layer."""
+
+    return Lfm2MacroCellAttractorGate(
+        cache,
+        config=Lfm2MacroCellAttractorGateConfig(
+            maximum_records=2,
+            maximum_steps=2,
+            maximum_entropy_parent_distance_regression=1e9,
+            maximum_repetition_excess_regression=1e9,
+            maximum_dominant_token_excess_regression=1e9,
+            maximum_eos_position_error_regression=1e9,
+            maximum_new_collapsed_records=1_000_000,
+        ),
+    )
+
+
+def test_the_free_run_tripwire_evaluates_inside_a_real_toy_fold(
+    sealed_parent,
+) -> None:
+    """End to end: enabled tripwire, real rollout, an observation at every layer."""
+
+    _parent, cache, _replay_config = sealed_parent
+    gate = _permissive_attractor_gate(cache)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        macro_cell_attractor_gate=gate,
+    )
+    adapter.config = replace(
+        adapter.config,
+        terminal_free_run_tripwire_enabled=True,
+    )
+    with warnings.catch_warnings():
+        # The toy child free-runs at chance, so the advisory clause fires --
+        # which is the whole point of it and must not stop the fold.
+        warnings.simplefilter("ignore", Lfm2TerminalFreeRunTripwire)
+        report = _run_toy_layers(adapter)
+    layer_reports = report["layer_reports"]
+    assert layer_reports
+    for entry in layer_reports:
+        metrics = dict(entry["validation"]["metrics"])
+        assert entry["validation"]["accepted"] is True
+        assert metrics["terminal_free_run_tripwire_enabled"] is True
+        assert metrics["terminal_free_run_tripwire_evaluated"] is True
+        assert metrics["terminal_free_run_tripwire_observation_source"] == (
+            "macro_cell_attractor_free_rollout"
+        )
+        assert isinstance(
+            metrics["terminal_free_run_tripwire_observed"], float
+        )
+        assert "terminal_free_run_tripwire_unevaluated_reason" not in metrics
+        # Advisory only: the clause records and shouts, it never promotes or
+        # demotes.  The gate next to it is the acceptance authority here.
+        assert metrics["terminal_free_run_tripwire_is_advisory"] is True
+        assert metrics["macro_cell_attractor_gate_accepted"] is True
+
+
+def test_the_tripwire_rollout_is_the_gate_rollout_not_a_second_one(
+    sealed_parent,
+) -> None:
+    """One child rollout per layer serves both instruments."""
+
+    _parent, cache, _replay_config = sealed_parent
+    gate = _permissive_attractor_gate(cache)
+    phases: list[str] = []
+    original_capture = gate.capture
+
+    def _counted_capture(child_model, *, phase):
+        phases.append(phase)
+        return original_capture(child_model, phase=phase)
+
+    gate.capture = _counted_capture
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        macro_cell_attractor_gate=gate,
+    )
+    adapter.config = replace(
+        adapter.config,
+        terminal_free_run_tripwire_enabled=True,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", Lfm2TerminalFreeRunTripwire)
+        report = _run_toy_layers(adapter)
+    layers = len(report["layer_reports"])
+    # Exactly one pre-cell and one post-cell capture per layer, unchanged from
+    # the tripwire-off lane: the hoisted snapshot is reused, never re-taken.
+    assert sum(1 for phase in phases if phase.startswith("pre-")) == layers
+    assert sum(1 for phase in phases if phase.startswith("post-")) == layers
+
+
 def test_terminal_floor_widens_the_layer_capture_selection(
     sealed_parent,
 ) -> None:
@@ -575,6 +801,155 @@ def test_a_run_headed_past_the_no_branch_baseline_fails_closed_at_the_wall(
     assert metrics["terminal_composition_floor_failed"] is True
     assert "baseline_relative_rmse" in metrics
     assert "candidate_relative_rmse" in metrics
+
+
+# --- W13P item 4: the A12 rule ported over the body reclosure ----------------
+#
+# A12 sealed the rule "reject any joint rewrite set whose closure regresses the
+# preserved proven baseline" at the token interface on 2026-07-30.  The body
+# reclosure was never covered by it: in the sealed r13 run it moved the composed
+# held-out terminal from 0.806258 to 0.971148 -- 0.165 worse -- and was accepted,
+# because the non-regression tolerance only guarded layer installs.  These three
+# tests are that hole, closed.
+
+
+def _toy_body_reclosure(sealed_parent, **config_overrides):
+    """Run one real toy moving-gauge reclosure end to end and return the report."""
+
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    adapter.config = replace(adapter.config, **config_overrides)
+    return ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-moving-gauge-v3-contract-v1",
+            fold_body_reclosure=True,
+            fold_output_interface=False,
+        ),
+    ).run()
+
+
+def test_body_reclosure_terminal_regression_is_absent_with_the_floor_off(
+    sealed_parent,
+) -> None:
+    """The unwired lane seals no terminal evidence at the reclosure at all."""
+
+    report = _toy_body_reclosure(
+        sealed_parent,
+        terminal_composition_floor_enabled=False,
+    )
+    validation = report["body_reclosure"]["validation"]
+    metrics = dict(validation["metrics"])
+    assert validation["accepted"] is True
+    assert not [
+        name
+        for name in metrics
+        if name.startswith("body_reclosure_terminal_")
+    ]
+
+
+def test_body_reclosure_records_a_terminal_regression_inside_tolerance(
+    sealed_parent,
+) -> None:
+    """Within the arm's own 0.25 tolerance the reclosure stands, measured."""
+
+    report = _toy_body_reclosure(
+        sealed_parent,
+        terminal_composition_floor_enabled=True,
+        # The exact tolerance the sealed r13 arm ran.
+        terminal_composition_regression_tolerance=0.25,
+    )
+    validation = report["body_reclosure"]["validation"]
+    metrics = dict(validation["metrics"])
+    before = metrics["body_reclosure_terminal_baseline_relative_rmse"]
+    after = metrics["body_reclosure_terminal_relative_rmse"]
+    assert validation["accepted"] is True
+    # This toy reproduces r13's shape: the reclosure makes the composed
+    # terminal endpoint worse, just not by enough to be refused.
+    assert after > before
+    assert metrics["body_reclosure_terminal_relative_rmse_regression"] == (
+        pytest.approx(after - before)
+    )
+    assert metrics["body_reclosure_terminal_non_regression_engaged"] is True
+    assert metrics["body_reclosure_terminal_non_regression_passed"] is True
+    assert metrics["body_reclosure_terminal_composition_floor_failed"] is False
+    assert metrics["body_reclosure_terminal_non_regression_tolerance"] == 0.25
+    # The absolute no-branch clause is a per-install bound keyed on layer
+    # depth; the ported rule is the non-regression one, and only that one.
+    assert metrics["body_reclosure_terminal_absolute_floor_engaged"] is False
+    assert metrics[
+        "body_reclosure_terminal_non_regression_is_the_ported_a12_rule"
+    ] is True
+    assert metrics[
+        "body_reclosure_terminal_non_regression_has_decision_authority"
+    ] is True
+
+
+def test_body_reclosure_fails_closed_on_a_terminal_regression(
+    sealed_parent,
+) -> None:
+    """Beyond tolerance the run stops, naming both values and the stage."""
+
+    events: list[tuple[str, dict[str, object]]] = []
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        # The toy reclosure regresses the terminal by ~0.0865; 0.05 refuses it.
+        terminal_composition_regression_tolerance=0.05,
+    )
+    with pytest.raises(ClosedLoopFoldError) as failure:
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-moving-gauge-v3-contract-v1",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+            ),
+            progress_sink=(
+                lambda stage, metadata: events.append((stage, dict(metadata)))
+            ),
+        ).run()
+    message = str(failure.value)
+    assert "body_reclosure validation rejected" in message
+    assert "body reclosure refused" in message
+    assert "before the reclosure" in message
+    assert "after it" in message
+    # The refusal keeps its evidence: the compiler publishes the complete
+    # decision before it raises.
+    rejected = [
+        metadata
+        for stage, metadata in events
+        if stage == "child_closed_loop_validation_decision_rejected"
+    ]
+    assert len(rejected) == 1
+    assert rejected[0]["scope_kind"] == "body_reclosure"
+    metrics = json.loads(str(rejected[0]["validation_metrics_json"]))
+    before = metrics["body_reclosure_terminal_baseline_relative_rmse"]
+    after = metrics["body_reclosure_terminal_relative_rmse"]
+    assert after > before
+    assert metrics["body_reclosure_terminal_non_regression_passed"] is False
+    assert metrics["body_reclosure_terminal_composition_floor_failed"] is True
+    # Both numbers appear in the message a human reads, not only in the keys.
+    assert f"{float(before):.9g}" in message
+    assert f"{float(after):.9g}" in message
 
 
 # --- item 7: errors-in-variables ridge ---------------------------------------

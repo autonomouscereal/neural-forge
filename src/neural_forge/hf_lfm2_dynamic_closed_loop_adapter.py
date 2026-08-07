@@ -1059,6 +1059,14 @@ def _json_safe_diagnostic_scalar(value: JsonScalar) -> JsonScalar:
     return value
 
 
+def _terminal_relative_rmse_text(metrics: FitMetrics | None) -> str:
+    """Render one composed terminal endpoint for a human-readable refusal."""
+
+    if metrics is None:
+        return "unmeasured"
+    return f"{float(metrics.relative_rmse):.9g}"
+
+
 def _durable_diagnostic_json(
     value: Any,
     name: str,
@@ -3140,6 +3148,10 @@ class _BodyReclosurePayload:
     causal_w2_step_receipts: tuple[Mapping[str, Any], ...]
     fit_batch_indices: tuple[int, ...]
     report: Mapping[str, Any]
+    # Pre-reclosure composed endpoint, retained only when the terminal
+    # composition floor is enabled and the reclosure will actually rewrite
+    # the body.  ``None`` is the unwired lane and the identity lane.
+    terminal_baseline: FitMetrics | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -8182,18 +8194,54 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         return True, tuple(reasons), metrics
 
+    @staticmethod
+    def _macro_cell_free_run_match(
+        snapshot: Lfm2MacroCellAttractorSnapshot | None,
+    ) -> float | None:
+        """Read one free-run token match out of a macro-cell rollout snapshot.
+
+        ``diagnostic_mean_parent_top1_exact_token_match_fraction`` is the mean
+        positional agreement between the child's own greedy rollout and the
+        sealed parent-greedy rollout it was seeded from -- the same
+        construction the run-level ``free_run.token_match_fraction`` uses, and
+        exactly the observation the terminal tripwire was specified against.
+        It is a diagnostic inside the gate and it stays a diagnostic here.
+        """
+
+        if snapshot is None:
+            return None
+        observed = snapshot.metrics.get(
+            "diagnostic_mean_parent_top1_exact_token_match_fraction"
+        )
+        if isinstance(observed, bool) or not isinstance(
+            observed,
+            (int, float),
+        ):
+            return None
+        return float(observed)
+
     def _terminal_free_run_tripwire(
         self,
         *,
         layer_index: int | None,
+        free_run_match_observation: float | None = None,
     ) -> tuple[tuple[str, ...], dict[str, JsonScalar]]:
         """Shout when the child's own free-run match has fallen to chance.
 
-        Advisory by construction and off by default at both rungs.  The
-        observation is supplied by the caller through
+        Advisory by construction and off by default at both rungs.  Two
+        observation sources, in order: an explicitly assigned
         ``terminal_free_run_match_probe`` -- a callable taking the layer index
         and returning the counterfactual free-run token-match fraction, or
-        ``None`` when it has none.  The adapter never generates here.
+        ``None`` when it has none -- and otherwise the rollout the caller
+        already ran, handed in as ``free_run_match_observation``.  The adapter
+        never generates here.
+
+        NOTES-W13P item 5: through the whole sealed r13 run this clause wrote
+        ``terminal_free_run_tripwire_evaluated: false`` at all fourteen layers
+        with no stated cause, because no production path has ever assigned the
+        probe.  When there is still no observation the reason is now sealed
+        alongside the flag, so a silent tripwire can never again be
+        undiagnosable from the run's own evidence.
         """
 
         if not self.config.terminal_free_run_tripwire_enabled:
@@ -8212,12 +8260,31 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
         }
         probe = self.terminal_free_run_match_probe
-        observed = None if probe is None else probe(layer_index)
+        probed = None if probe is None else probe(layer_index)
+        # An explicitly assigned probe outranks the rollout the adapter
+        # happens to own: the caller that assigned it chose its own subject.
+        observed = probed if probed is not None else free_run_match_observation
+        if probed is not None:
+            source = "assigned_probe"
+        elif free_run_match_observation is not None:
+            source = "macro_cell_attractor_free_rollout"
+        else:
+            source = "none"
+        metrics["terminal_free_run_tripwire_observation_source"] = source
         if observed is None or not isinstance(observed, (int, float)) or (
             isinstance(observed, bool)
         ):
             metrics["terminal_free_run_tripwire_observed"] = None
             metrics["terminal_free_run_tripwire_evaluated"] = False
+            metrics["terminal_free_run_tripwire_unevaluated_reason"] = (
+                "the assigned free-run probe returned no usable observation"
+                if probe is not None
+                else (
+                    "no free-run observation source: no probe is assigned and "
+                    "the macro-cell attractor free rollout is not running, so "
+                    "this run carries no counterfactual free-run measurement"
+                )
+            )
             return (), metrics
         observed = float(observed)
         chance = (
@@ -8286,6 +8353,7 @@ class Lfm2DynamicClosedLoopAdapter:
         endpoint: str,
         terminal_baseline: FitMetrics | None = None,
         terminal_candidate: FitMetrics | None = None,
+        free_run_match_observation: float | None = None,
     ) -> ValidationDecision:
         improvement = (
             float(baseline.relative_rmse)
@@ -8486,6 +8554,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         tripwire_reasons, tripwire_metrics = self._terminal_free_run_tripwire(
             layer_index=scope.layer_index,
+            free_run_match_observation=free_run_match_observation,
         )
         metrics.update(tripwire_metrics)
         blocking = tuple(blocking_floor_reasons) + tuple(tripwire_reasons)
@@ -14179,6 +14248,26 @@ class Lfm2DynamicClosedLoopAdapter:
             capture.paired,
             batch_indices=indices,
         )
+        gate = self.macro_cell_attractor_gate
+        attractor_baseline = producer.attractor_baseline
+        # NOTES-W13P item 5.  The free-run tripwire has to hold its
+        # observation while the decision is still open, and the macro-cell
+        # attractor gate already runs the only counterfactual child-only
+        # rollout this adapter performs.  Taking that one snapshot here rather
+        # than after the decision is what gives the tripwire something to
+        # read; the gate then compares this same snapshot below, so the child
+        # is rolled out once, not twice.  Nothing between here and the compare
+        # touches the child, and the whole hoist is gated on the tripwire flag
+        # so an unwired run keeps the exact call order it had before.
+        attractor_candidate = (
+            gate.capture(
+                self.child_model,
+                phase=f"post-macro-cell-layer-{layer_index:06d}",
+            )
+            if gate is not None
+            and self.config.terminal_free_run_tripwire_enabled
+            else None
+        )
         endpoint_decision = self._validation_decision(
             scope=scope,
             records=validation_records,
@@ -14190,6 +14279,9 @@ class Lfm2DynamicClosedLoopAdapter:
             endpoint="post-layer residual",
             terminal_baseline=producer.terminal_baseline,
             terminal_candidate=terminal_candidate,
+            free_run_match_observation=self._macro_cell_free_run_match(
+                attractor_candidate
+            ),
         )
         if endpoint_decision.accepted:
             # Seal the drift this layer hands downstream while its post-install
@@ -14200,8 +14292,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 layer_index=layer_index,
                 batch_indices=indices,
             )
-        gate = self.macro_cell_attractor_gate
-        attractor_baseline = producer.attractor_baseline
         if gate is None:
             if attractor_baseline is not None:
                 raise Lfm2DynamicClosedLoopAdapterError(
@@ -14212,10 +14302,11 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Layer validation has no pre-cell attractor baseline."
             )
-        attractor_candidate = gate.capture(
-            self.child_model,
-            phase=f"post-macro-cell-layer-{layer_index:06d}",
-        )
+        if attractor_candidate is None:
+            attractor_candidate = gate.capture(
+                self.child_model,
+                phase=f"post-macro-cell-layer-{layer_index:06d}",
+            )
         attractor_decision = gate.compare(
             attractor_baseline,
             attractor_candidate,
@@ -14453,6 +14544,21 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             completion_ledger_sha256 = str(
                 completion_ledger["completion_ledger_sha256"]
+            )
+            # The A12 carrier-replant rule -- reject any joint rewrite set
+            # whose closure regresses the preserved proven baseline -- ported
+            # from the token interface to the body
+            # (``docs/OVERLAP_AUDIT_2026-08-07.md`` realignment item 4).  This
+            # is the identical composed endpoint the per-layer floor guards,
+            # read on the identical held-out rows, taken here while the child
+            # is still exactly what the accepted layers left behind.
+            # ``validate_body_reclosure`` measures it again afterwards and
+            # refuses a reclosure that regressed it beyond the configured
+            # terminal tolerance.  ``None`` whenever the floor is off, so the
+            # unwired lane pays nothing and seals nothing.
+            terminal_baseline = self._heldout_terminal_metrics(
+                capture.paired,
+                batch_indices=split.validation_batch_indices,
             )
             manifest, fit_weights, row_alignment_sha256 = (
                 self._moving_gauge_row_manifest(
@@ -14927,6 +15033,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 causal_w2_step_receipts=causal_w2_step_receipts,
                 fit_batch_indices=fit_indices,
                 report=report,
+                terminal_baseline=terminal_baseline,
             )
 
         self._body_reclosure_payload = payload
@@ -15957,6 +16064,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 "A published moving-gauge causal parameter differs from its "
                 "artifact."
             )
+        # The post-reclosure half of the ported A12 rule.  Same construction,
+        # same held-out rows, same terminal endpoint as the pre-reclosure
+        # baseline ``compile_body_reclosure`` sealed -- read off this fresh
+        # full-child recapture before it is released.
+        terminal_candidate = self._heldout_terminal_metrics(
+            capture.paired,
+            batch_indices=indices,
+        )
         manifest, weights, _ = self._moving_gauge_row_manifest(
             capture.paired,
             indices,
@@ -15985,16 +16100,79 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge heldout terminal diagnostic is non-finite."
             )
+        (
+            floor_engaged,
+            floor_reasons,
+            floor_metrics,
+        ) = self._terminal_composition_floor(
+            # ``layer_index=None`` engages the depth-monotone non-regression
+            # bound and only that bound.  The absolute no-branch floor is a
+            # per-install clause keyed on layer depth, and the rule being
+            # ported here is A12's *non-regression* rule -- a reclosure that
+            # merely fails to improve an already-poor terminal is not what
+            # A12 convicted; a reclosure that makes it worse is.
+            layer_index=None,
+            baseline=payload.terminal_baseline,
+            candidate=terminal_candidate,
+        )
+        reason = (
+            "moving_gauge_v3 structural authentication passed on a fresh "
+            "heldout full-child recapture; numeric fit is diagnostic only"
+        )
+        accepted = True
+        if floor_reasons:
+            # Fail closed.  There is no rollback path: the install receipt for
+            # this stage is already sealed against the post-reclosure child,
+            # and no pre-reclosure tensor survives compilation -- the payload
+            # keeps digests of the seed weights, not the weights.  The
+            # compiler publishes this complete decision, metrics included,
+            # before it raises, so the refusal keeps its evidence.
+            before = _terminal_relative_rmse_text(payload.terminal_baseline)
+            after = _terminal_relative_rmse_text(terminal_candidate)
+            tolerance = (
+                self.config.terminal_composition_regression_tolerance
+            )
+            accepted = False
+            reason = "; ".join(
+                (
+                    reason,
+                    "body reclosure refused: the composed held-out terminal "
+                    f"relative RMSE moved from {before} before the reclosure "
+                    f"to {after} after it, beyond the terminal "
+                    f"non-regression tolerance {tolerance:.9g}",
+                    *floor_reasons,
+                )
+            )
+        terminal_metrics: dict[str, JsonScalar] = {
+            f"body_reclosure_{name}": value
+            for name, value in floor_metrics.items()
+        }
+        if floor_engaged:
+            terminal_metrics.update(
+                {
+                    "body_reclosure_terminal_composition_floor_failed": bool(
+                        floor_reasons
+                    ),
+                    # The per-layer floor yields to the finite-numeric
+                    # diagnostic policies while the body is incomplete.  The
+                    # body is complete by definition at this stage, so this
+                    # clause keeps hard authority and says so.
+                    "body_reclosure_terminal_non_regression_has_decision_authority": (
+                        True
+                    ),
+                    "body_reclosure_terminal_non_regression_is_the_ported_a12_rule": (
+                        True
+                    ),
+                }
+            )
         return ValidationDecision(
             scope=scope,
-            accepted=True,
+            accepted=accepted,
             validation_record_keys=_record_keys(validation_records),
-            reason=(
-                "moving_gauge_v3 structural authentication passed on a fresh "
-                "heldout full-child recapture; numeric fit is diagnostic only"
-            ),
+            reason=reason,
             metrics=_scalar_metadata(
                 {
+                    **terminal_metrics,
                     "body_reclosure_mode": payload.mode,
                     "identity_preservation": False,
                     "actual_full_child_recaptured": True,
