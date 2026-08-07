@@ -28,6 +28,26 @@ Nothing in stages 2-3 may be started, prototyped, or wired into production
 lanes while stage 1 is open. The fold-only prohibitions below bind until a
 sealed stage-1 ceiling report says otherwise.
 
+## Closed-path additions from the 2026-08-07 overlap audit
+
+(docs/OVERLAP_AUDIT_2026-08-07.md is the sealed evidence; these bind like the
+Closed paths section below.)
+
+- Never gate any rewrite pass on a cached boundary-local fit metric — the
+  metric class is twice-sealed non-predictive (A12 carrier replant 2026-07-30;
+  W13M gate-inert run 2026-08-07).
+- Never report teacher-forced top-1 without its calibration band (below ~65%
+  it has only ever coexisted with incoherence; ~80%+ is necessary, never
+  sufficient, even at 1.35x). Never in an acceptance path or headline.
+- Never launch a reclosure variant without an explicit step/norm bound
+  (W12B toy physics + W13M production measurement).
+- Never run an on-policy evidence arm while an unconstrained reclosure sits
+  downstream of the solves (W13A ordering; r13's item-1 read is confounded
+  for exactly this reason).
+- The only rollout-level numeric progress signals are free-run token
+  match/lcp; above them, the frozen whole-response manual review. Terminal
+  floor passage is a wreck detector, never progress.
+
 ## Objective
 
 Build one automatic compiler that folds one or more parent models into a
