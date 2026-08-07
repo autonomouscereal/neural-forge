@@ -1863,6 +1863,43 @@ def test_carrier_route_smoke_is_structural_and_enforces_every_count(
         "model"
     )
     assert len(installs) == 1
+    assert evaluator.events[0]["subject"] == (
+        MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT
+    )
+    assert evaluator.events[0]["runtime_source"] == (
+        MODULE.CARRIER_SMOKE_BUILD_TIME_RUNTIME
+    )
+
+    # The published final destination is smoked on its own routes, so the
+    # evaluator must not re-register the build-time runtime over them.
+    published_reload = object()
+    published = evaluator.evaluate_published_child_reload(published_reload)
+
+    assert published.accepted
+    assert len(installs) == 1
+    assert evaluator.events[1]["phase"] == (
+        MODULE.CARRIER_SMOKE_FRESH_RELOAD_PHASE
+    )
+    assert evaluator.events[1]["subject"] == (
+        MODULE.CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT
+    )
+    assert evaluator.events[1]["runtime_source"] == (
+        MODULE.CARRIER_SMOKE_PUBLISHED_PACKAGE_RUNTIME
+    )
+
+    # Handing it the build-time registered child instead of a standalone
+    # reload is the mistake this subject exists to rule out.
+    monkeypatch.setattr(
+        ArtifactIO, "has_packaged_runtime", staticmethod(lambda _model: True)
+    )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="standalone reload",
+    ):
+        evaluator.evaluate_published_child_reload(object())
+    monkeypatch.setattr(
+        ArtifactIO, "has_packaged_runtime", staticmethod(lambda _model: False)
+    )
 
     report["effective_child_parameter_count"] = 57_420_143
     with pytest.raises(
@@ -1872,27 +1909,128 @@ def test_carrier_route_smoke_is_structural_and_enforces_every_count(
         evaluator.evaluate_model(object(), phase="freshly_reloaded_child")
 
 
+def _smoke_event(subject: str, **overrides: object) -> dict[str, object]:
+    phase = (
+        MODULE.CARRIER_SMOKE_IN_MEMORY_PHASE
+        if subject == MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT
+        else MODULE.CARRIER_SMOKE_FRESH_RELOAD_PHASE
+    )
+    return {
+        "phase": phase,
+        "subject": subject,
+        "runtime_source": (
+            MODULE.CARRIER_SMOKE_PUBLISHED_PACKAGE_RUNTIME
+            if subject == MODULE.CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT
+            else MODULE.CARRIER_SMOKE_BUILD_TIME_RUNTIME
+        ),
+        "route_smoke_accepted": True,
+        **overrides,
+    }
+
+
 def test_carrier_smoke_coverage_requires_memory_stage_and_final_reload() -> None:
-    coverage = MODULE._verify_carrier_route_smoke_phase_coverage(
-        (
-            {"phase": "accepted_in_memory_child"},
-            {"phase": "freshly_reloaded_child"},
-            {"phase": "freshly_reloaded_child"},
-        )
+    """Coverage is decided by which subjects were smoked, never by a count.
+
+    Both shapes below cover every subject: the first is a publisher that
+    evaluated its stage and final-destination reloads separately, the second is
+    a publisher whose final-destination evaluation was legitimately reused from
+    the stage decision by 3f71c6ac's fresh-reload dedup.  The old count-of-two
+    assertion passed the first and failed the second even though the catalog
+    had smoked the published final destination itself in both.
+    """
+
+    both_publisher_reloads = (
+        _smoke_event(MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT),
+        _smoke_event(MODULE.CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT),
+        _smoke_event(MODULE.CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT),
+        _smoke_event(MODULE.CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT),
+    )
+    deduped_publisher_reload = (
+        _smoke_event(MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT),
+        _smoke_event(MODULE.CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT),
+        _smoke_event(MODULE.CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT),
     )
 
-    assert coverage["accepted_in_memory_child_smokes"] == 1
-    assert coverage["freshly_reloaded_child_smokes"] == 2
-    assert coverage["in_memory_stage_and_final_reload_covered"] is True
+    full = MODULE._verify_carrier_route_smoke_phase_coverage(
+        both_publisher_reloads
+    )
+    deduped = MODULE._verify_carrier_route_smoke_phase_coverage(
+        deduped_publisher_reload
+    )
 
+    assert full["accepted_in_memory_child_smokes"] == 1
+    assert full["publisher_fresh_reload_smokes"] == 2
+    assert full["final_destination_reload_smokes"] == 1
+    assert full["publisher_final_reload_reused_by_proof"] is False
+    assert full["in_memory_stage_and_final_reload_covered"] is True
+    assert full["subjects_covered"] == full["required_subjects"]
+
+    # The deduped run is accepted and says so, and the two runs are still
+    # distinguishable in the sealed receipt rather than silently equal.
+    assert deduped["publisher_fresh_reload_smokes"] == 1
+    assert deduped["final_destination_reload_smokes"] == 1
+    assert deduped["publisher_final_reload_reused_by_proof"] is True
+    assert deduped["subjects_covered"] == deduped["required_subjects"]
+    assert deduped["coverage_sha256"] != full["coverage_sha256"]
+
+    # A widened dedup that skipped the final-destination subject entirely --
+    # the regression the old count could not tell apart from the legitimate
+    # one -- still fails closed, and names the subject it lost.
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
-        match="in-memory child, stage reload, and final reload",
+        match="published_child_final_destination_reload",
+    ):
+        MODULE._verify_carrier_route_smoke_phase_coverage(
+            (
+                _smoke_event(MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT),
+                _smoke_event(
+                    MODULE.CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT
+                ),
+                _smoke_event(
+                    MODULE.CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT
+                ),
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="publisher_fresh_reload",
+    ):
+        MODULE._verify_carrier_route_smoke_phase_coverage(
+            (
+                _smoke_event(MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT),
+                _smoke_event(
+                    MODULE.CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT
+                ),
+            )
+        )
+    # An unlabelled ledger (a subject that never named itself) is not quietly
+    # promoted to coverage.
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="did not execute on every required subject",
     ):
         MODULE._verify_carrier_route_smoke_phase_coverage(
             (
                 {"phase": "accepted_in_memory_child"},
                 {"phase": "freshly_reloaded_child"},
+                {"phase": "freshly_reloaded_child"},
+            )
+        )
+    # A recorded-but-rejected subject is a failure, not coverage.
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="recorded a subject it did not accept",
+    ):
+        MODULE._verify_carrier_route_smoke_phase_coverage(
+            (
+                _smoke_event(MODULE.CARRIER_SMOKE_IN_MEMORY_SUBJECT),
+                _smoke_event(
+                    MODULE.CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT
+                ),
+                _smoke_event(
+                    MODULE.CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT,
+                    route_smoke_accepted=False,
+                ),
             )
         )
 

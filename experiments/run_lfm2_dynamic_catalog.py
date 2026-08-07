@@ -348,6 +348,35 @@ LFM2_CARRIER_HIDDEN_SIZE = 816
 LFM2_CARRIER_SMOKE_MAXIMUM_NEW_TOKENS = 2
 LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS = 1_024
 LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS = 2_048
+# The routed smoke's subjects.  The publisher labels every reload it hands the
+# evaluator with one phase string, so the subject -- not the phase, and never a
+# count of the phase -- is what the coverage receipt asserts on.
+CARRIER_SMOKE_IN_MEMORY_PHASE = "accepted_in_memory_child"
+CARRIER_SMOKE_FRESH_RELOAD_PHASE = "freshly_reloaded_child"
+CARRIER_SMOKE_IN_MEMORY_SUBJECT = "accepted_in_memory_child"
+CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT = "publisher_fresh_reload"
+CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT = (
+    "published_child_final_destination_reload"
+)
+CARRIER_SMOKE_SUBJECT_BY_PHASE = MappingProxyType(
+    {
+        CARRIER_SMOKE_IN_MEMORY_PHASE: CARRIER_SMOKE_IN_MEMORY_SUBJECT,
+        CARRIER_SMOKE_FRESH_RELOAD_PHASE: (
+            CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT
+        ),
+    }
+)
+CARRIER_SMOKE_REQUIRED_SUBJECTS = frozenset(
+    {
+        CARRIER_SMOKE_IN_MEMORY_SUBJECT,
+        CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT,
+        CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT,
+    }
+)
+# Which routes the smoked model was carrying: the build-time registration the
+# compiler bound, or the package that was actually written to disk.
+CARRIER_SMOKE_BUILD_TIME_RUNTIME = "build_time_registration"
+CARRIER_SMOKE_PUBLISHED_PACKAGE_RUNTIME = "published_child_package"
 LFM2_SEMANTIC_SOURCE_TOKENIZER_DIRECTORY = "semantic-source-tokenizer"
 LFM2_ROUTED_MANUAL_DOSSIER_SCHEMA = (
     "neural-forge-lfm2-routed-manual-dossier-v1"
@@ -8537,7 +8566,49 @@ class CarrierRouteSmokeBehaviorEvaluator:
         self.artifact_io.register_in_memory(model)
 
     def evaluate_model(self, model: Any, *, phase: str) -> FoldDecision:
+        """Smoke a publisher-supplied subject through the build-time routes."""
+
         self._register_in_memory_runtime(model)
+        return self._route_smoke(
+            model,
+            phase=phase,
+            subject=CARRIER_SMOKE_SUBJECT_BY_PHASE.get(phase, phase),
+            runtime_source=CARRIER_SMOKE_BUILD_TIME_RUNTIME,
+        )
+
+    def evaluate_published_child_reload(self, model: Any) -> FoldDecision:
+        """Smoke a standalone reload of the published final destination.
+
+        The publisher's own final-destination behaviour evaluation may be
+        collapsed into the stage-path decision once every input that could
+        change it is proven identical (``dynamic_fold_artifact``'s fresh-reload
+        dedup).  That proof is sound, but it leaves the routed smoke with two
+        executed subjects, so the final-destination subject is smoked here
+        instead -- on a model this evaluator never registered, carrying the
+        routes that were actually written to disk rather than the build-time
+        registration.  One prompt, ``routed_smoke_max_new_tokens`` new tokens.
+        """
+
+        if self.artifact_io.has_packaged_runtime(model):
+            raise ProductionLfm2CatalogError(
+                "Final-destination route smoke needs a standalone reload, not "
+                "the build-time registered child."
+            )
+        return self._route_smoke(
+            model,
+            phase=CARRIER_SMOKE_FRESH_RELOAD_PHASE,
+            subject=CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT,
+            runtime_source=CARRIER_SMOKE_PUBLISHED_PACKAGE_RUNTIME,
+        )
+
+    def _route_smoke(
+        self,
+        model: Any,
+        *,
+        phase: str,
+        subject: str,
+        runtime_source: str,
+    ) -> FoldDecision:
         report = run_lfm2_carrier_route_smoke(
             model,
             self.prompts,
@@ -8586,6 +8657,8 @@ class CarrierRouteSmokeBehaviorEvaluator:
         self.events.append(
             {
                 "phase": phase,
+                "subject": subject,
+                "runtime_source": runtime_source,
                 "summary": summary,
                 "route_smoke_accepted": True,
                 "numeric_intelligence_gate": False,
@@ -8612,18 +8685,61 @@ class CarrierRouteSmokeBehaviorEvaluator:
 def _verify_carrier_route_smoke_phase_coverage(
     events: Sequence[Mapping[str, Any]],
 ) -> Mapping[str, Any]:
-    phases = tuple(str(value.get("phase")) for value in events)
-    in_memory = phases.count("accepted_in_memory_child")
-    fresh_reload = phases.count("freshly_reloaded_child")
-    if in_memory < 1 or fresh_reload < 2:
+    """Prove which distinct subjects the routed smoke actually executed on.
+
+    The old form counted ``freshly_reloaded_child`` phases and demanded two,
+    which read the publisher's two reload paths off one ambiguous label.  It
+    went stale the moment ``dynamic_fold_artifact``'s fresh-reload dedup
+    (3f71c6ac) legitimately collapsed the byte-identical final-destination
+    evaluation into the stage-path decision: the smoke had covered every
+    subject that exists, and the raw count still said 2 of 3.  The same
+    stale-count class a8b65e15 fixed in the native lanes' tests, here in
+    production code.
+
+    So the assertion names the subjects instead.  The in-memory child and the
+    publisher's fresh reload are the publisher's to supply; the published
+    final-destination reload is smoked by the catalog itself on a standalone
+    reload, which is why it is required unconditionally and why the dedup can
+    no longer move this decision.  The counts are still sealed, because
+    ``publisher_fresh_reload_smokes`` is exactly how a receipt reader learns
+    whether the publisher's second evaluation executed or was reused by proof.
+    """
+
+    subjects = tuple(
+        str(value.get("subject") or value.get("phase")) for value in events
+    )
+    in_memory = subjects.count(CARRIER_SMOKE_IN_MEMORY_SUBJECT)
+    publisher_fresh_reload = subjects.count(
+        CARRIER_SMOKE_PUBLISHER_FRESH_RELOAD_SUBJECT
+    )
+    final_destination = subjects.count(
+        CARRIER_SMOKE_FINAL_DESTINATION_SUBJECT
+    )
+    covered = frozenset(subjects) & CARRIER_SMOKE_REQUIRED_SUBJECTS
+    if covered != CARRIER_SMOKE_REQUIRED_SUBJECTS:
+        missing = ", ".join(sorted(CARRIER_SMOKE_REQUIRED_SUBJECTS - covered))
         raise ProductionLfm2CatalogError(
-            "Carrier route smoke did not execute on the in-memory child, "
-            "stage reload, and final reload."
+            "Carrier route smoke did not execute on every required subject; "
+            f"missing: {missing}."
+        )
+    if not all(bool(value.get("route_smoke_accepted")) for value in events):
+        raise ProductionLfm2CatalogError(
+            "Carrier route smoke recorded a subject it did not accept."
         )
     body = {
-        "schema": "neural-forge-lfm2-carrier-smoke-phase-coverage-v1",
+        "schema": "neural-forge-lfm2-carrier-smoke-phase-coverage-v2",
         "accepted_in_memory_child_smokes": in_memory,
-        "freshly_reloaded_child_smokes": fresh_reload,
+        "publisher_fresh_reload_smokes": publisher_fresh_reload,
+        "final_destination_reload_smokes": final_destination,
+        # 2 means the publisher evaluated stage and final destination
+        # separately; 1 means its final-destination evaluation was reused from
+        # the stage decision after every deciding input was proven identical.
+        "publisher_final_reload_reused_by_proof": (
+            publisher_fresh_reload < 2
+        ),
+        "subjects_covered": sorted(set(subjects)),
+        "required_subjects": sorted(CARRIER_SMOKE_REQUIRED_SUBJECTS),
+        "final_destination_reload_smoked_by_catalog": True,
         "in_memory_stage_and_final_reload_covered": True,
     }
     return MappingProxyType(
@@ -12312,11 +12428,6 @@ def run_production_catalog(
             assert carrier_behavior_evaluator is not None
             assert carrier_counted_plan is not None
             assert carrier_prompts is not None
-            carrier_smoke_coverage = (
-                _verify_carrier_route_smoke_phase_coverage(
-                    carrier_behavior_evaluator.events
-                )
-            )
             final_child_directory = (
                 Path(artifact.path).expanduser().resolve(strict=True) / "child"
             )
@@ -12486,6 +12597,40 @@ def run_production_catalog(
                         portable_runtime_review_identity_sha256
                     ),
                 )
+            # The third smoke subject.  The publisher may reuse its stage-path
+            # decision for the final destination once every deciding input is
+            # proven identical, so the final-destination reload is smoked here
+            # instead -- one prompt, two new tokens, on the standalone child
+            # this run just authenticated, through the routes on disk.  It runs
+            # after the portable receipt so it cannot move that identity, and
+            # before the dossier so coverage fails closed on the cheap proof
+            # rather than the expensive one.
+            carrier_behavior_evaluator.evaluate_published_child_reload(
+                final_routed_child
+            )
+            carrier_smoke_coverage = (
+                _verify_carrier_route_smoke_phase_coverage(
+                    carrier_behavior_evaluator.events
+                )
+            )
+            progress.emit(
+                "carrier_route_smoke_coverage_verified",
+                accepted_in_memory_child_smokes=(
+                    carrier_smoke_coverage["accepted_in_memory_child_smokes"]
+                ),
+                publisher_fresh_reload_smokes=(
+                    carrier_smoke_coverage["publisher_fresh_reload_smokes"]
+                ),
+                final_destination_reload_smokes=(
+                    carrier_smoke_coverage["final_destination_reload_smokes"]
+                ),
+                publisher_final_reload_reused_by_proof=(
+                    carrier_smoke_coverage[
+                        "publisher_final_reload_reused_by_proof"
+                    ]
+                ),
+                coverage_sha256=carrier_smoke_coverage["coverage_sha256"],
+            )
             progress.emit(
                 "standalone_child_authenticated",
                 counted_state_verified=True,
@@ -12956,7 +13101,24 @@ def run_production_catalog(
                         "route_smoke_phase_coverage": dict(
                             carrier_smoke_coverage
                         ),
-                        "in_memory_stage_and_final_reload_smoke_expected": 3,
+                        "in_memory_stage_and_final_reload_smoke_subjects": (
+                            sorted(CARRIER_SMOKE_REQUIRED_SUBJECTS)
+                        ),
+                        # 2 when the publisher evaluated both of its reload
+                        # paths, 1 when its final-destination evaluation was
+                        # reused after every deciding input was proven
+                        # identical.  Either way the final destination itself
+                        # was smoked, by the catalog, on a standalone reload.
+                        "publisher_fresh_reload_smokes": (
+                            carrier_smoke_coverage[
+                                "publisher_fresh_reload_smokes"
+                            ]
+                        ),
+                        "publisher_final_reload_reused_by_proof": (
+                            carrier_smoke_coverage[
+                                "publisher_final_reload_reused_by_proof"
+                            ]
+                        ),
                         "high_cap_review_runs_after_publication": 1,
                         "high_cap_manual_dossier_path": str(
                             config.routed_manual_dossier_path
