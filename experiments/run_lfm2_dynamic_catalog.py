@@ -1250,6 +1250,12 @@ class ProductionLfm2CatalogConfig:
         LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
     )
     dense_moving_gauge_boundary_regression_tolerance: float = 0.0
+    # NOTES-W13M section 1.2: the acceptance gate above measures one boundary's
+    # own write error, which r13's 82 rewrites (81 upward, median 33x, 974x at
+    # layer 7) all passed.  ``None`` is every lane sealed before this ceiling
+    # and is byte-identical to it; a float refuses a rewrite whose write-norm
+    # ratio exceeds it whatever its boundary metric did.
+    dense_moving_gauge_writer_norm_ratio_ceiling: float | None = None
     dense_run_closed_loop: bool = False
     dense_closed_loop_performance_metrics_diagnostic_only: bool = False
     dense_closed_loop_replay_capture_mode: str = (
@@ -1889,6 +1895,29 @@ class ProductionLfm2CatalogConfig:
             "dense_moving_gauge_boundary_regression_tolerance",
             regression_tolerance,
         )
+        if self.dense_moving_gauge_writer_norm_ratio_ceiling is not None:
+            norm_ratio_ceiling = float(
+                self.dense_moving_gauge_writer_norm_ratio_ceiling
+            )
+            if not math.isfinite(norm_ratio_ceiling) or norm_ratio_ceiling <= 0.0:
+                raise ProductionLfm2CatalogError(
+                    "dense_moving_gauge_writer_norm_ratio_ceiling must be a "
+                    "finite positive number."
+                )
+            if (
+                writer_reclosure_acceptance
+                == LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+            ):
+                raise ProductionLfm2CatalogError(
+                    "dense_moving_gauge_writer_norm_ratio_ceiling only applies "
+                    "to a guarded dense_moving_gauge_writer_reclosure_"
+                    "acceptance mode."
+                )
+            object.__setattr__(
+                self,
+                "dense_moving_gauge_writer_norm_ratio_ceiling",
+                norm_ratio_ceiling,
+            )
         attention_consumer_mode = str(
             self.dense_attention_consumer_mode
         ).strip()
@@ -3302,6 +3331,19 @@ class ProductionLfm2CatalogConfig:
                             self
                             .dense_moving_gauge_boundary_regression_tolerance
                         ),
+                    }
+                ),
+                # And again one level down: a run that sets the norm-ratio
+                # ceiling publishes different writers than a guarded run
+                # without it, so it says so; an unset ceiling keeps the
+                # configuration digest of every guarded run before it.
+                **(
+                    {}
+                    if self.dense_moving_gauge_writer_norm_ratio_ceiling is None
+                    else {
+                        "dense_moving_gauge_writer_norm_ratio_ceiling": (
+                            self.dense_moving_gauge_writer_norm_ratio_ceiling
+                        )
                     }
                 ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
@@ -10120,6 +10162,10 @@ def build_production_catalog_wiring(
                             config
                             .dense_moving_gauge_boundary_regression_tolerance
                         ),
+                        moving_gauge_writer_reclosure_norm_ratio_ceiling=(
+                            config
+                            .dense_moving_gauge_writer_norm_ratio_ceiling
+                        ),
                         attention_consumer_mode=(
                             config.dense_attention_consumer_mode
                         ),
@@ -10918,9 +10964,30 @@ def _prepublication_gate_evidence(
     }
 
 
+def _closed_loop_transaction_report(run: Any) -> Mapping[str, Any] | None:
+    """Find the closed-loop report on the fold attempt that carries it.
+
+    NOTES-W13M section 3: the depth telemetry used to read
+    ``plan.report["closed_loop"]``, and ``DynamicFoldPlan`` is a ``slots=True``
+    frozen dataclass with no ``report`` field at all, so the read returned
+    ``None`` on every run.  The closed-loop report is sealed onto the fold
+    attempt's ``transaction_report`` -- the same place the vocabulary-margin
+    candidate gate is read from at the call site.
+    """
+
+    for attempt in getattr(run, "attempts", ()) or ():
+        transaction_report = getattr(attempt, "transaction_report", None)
+        if not isinstance(transaction_report, Mapping):
+            continue
+        closed_loop = transaction_report.get("closed_loop")
+        if isinstance(closed_loop, Mapping):
+            return closed_loop
+    return None
+
+
 def _closed_loop_depth_telemetry(
     config: ProductionLfm2CatalogConfig,
-    plan: Any,
+    run: Any,
     evaluator: CombinedLfm2FinalEvaluator | None,
 ) -> dict[str, Any] | None:
     """Reconstruct the run's depth-degradation profile for the receipt.
@@ -10942,12 +11009,11 @@ def _closed_loop_depth_telemetry(
         return None
     layers: list[dict[str, Any]] = []
     body_reclosure: dict[str, Any] | None = None
-    report = getattr(plan, "report", None)
-    closed_loop = (
-        report.get("closed_loop") if isinstance(report, Mapping) else None
-    )
+    closed_loop = _closed_loop_transaction_report(run)
     if isinstance(closed_loop, Mapping):
-        for entry in closed_loop.get("layers") or ():
+        # ``layer_reports`` is the key the closed-loop compiler emits; the
+        # ``layers`` this used to read never existed (NOTES-W13M section 3).
+        for entry in closed_loop.get("layer_reports") or ():
             if not isinstance(entry, Mapping):
                 continue
             validation = entry.get("validation")
@@ -12781,9 +12847,10 @@ def run_production_catalog(
             event["phase"]: event["summary"] for event in evaluator.events
         }
         # R13 item 8: the depth tables the r12 receipt could not reconstruct.
+        # The fold run, not the plan: the plan has no report to read.
         depth_telemetry = _closed_loop_depth_telemetry(
             config,
-            result.published.compilation.plan,
+            run,
             evaluator,
         )
         receipt = _sealed_receipt(
@@ -14029,6 +14096,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-moving-gauge-writer-norm-ratio-ceiling",
+        type=float,
+        default=None,
+        help=(
+            "Ceiling on a proposed writer's write-norm ratio "
+            "(proposed / incumbent branch-write L2 norm). The acceptance "
+            "modes above score a boundary's own write error, which r13's 82 "
+            "rewrites -- 81 upward, median 33x, 974x at layer 7 -- all "
+            "passed; this refuses a proposal above the ceiling whatever its "
+            "boundary metric did, keeps the incumbent writer, and records the "
+            "refusal under its own reason. Unset by default, which is "
+            "byte-identical to every guarded run before it. Only valid with a "
+            "guarded --dense-moving-gauge-writer-reclosure-acceptance."
+        ),
+    )
+    parser.add_argument(
         "--dense-closed-loop-replay-mode",
         choices=(
             DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
@@ -14925,6 +15008,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_moving_gauge_boundary_regression_tolerance=(
             args.dense_moving_gauge_boundary_regression_tolerance
+        ),
+        dense_moving_gauge_writer_norm_ratio_ceiling=(
+            args.dense_moving_gauge_writer_norm_ratio_ceiling
         ),
         dense_run_closed_loop=args.dense_run_closed_loop,
         dense_closed_loop_performance_metrics_diagnostic_only=(

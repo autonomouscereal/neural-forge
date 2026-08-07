@@ -1122,6 +1122,129 @@ def _durable_diagnostic_json(
     return encoded, markers
 
 
+_BOUNDARY_ACCEPTANCE_LIFT_SCHEMA = (
+    "neural-forge-lfm2-body-reclosure-boundary-acceptance-lift-v1"
+)
+
+
+def _lifted_boundary_acceptance_ledger(
+    report: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Lift the moving-gauge reclosure's sealed acceptance ledger, or nothing.
+
+    NOTES-W13M section 1.1: the reclosure seals every per-boundary decision --
+    both write errors, the write-norm ratio, the per-parameter Frobenius ratios
+    and the refused transition indices -- into its own diagnostics, and this
+    artifact used to lift only the parent report's digest.  A sealed run
+    therefore carried ``82a51fbe...`` with no preimage anywhere on disk.
+
+    The ledger only exists when the acceptance mode is guarded, so an unguarded
+    run gets ``None`` here and its artifact stays byte-identical.
+    """
+
+    diagnostics = report.get("diagnostics")
+    ledger = (
+        diagnostics.get("boundary_acceptance")
+        if isinstance(diagnostics, Mapping)
+        else None
+    )
+    if ledger is None:
+        return None
+    if (
+        not isinstance(ledger, Mapping)
+        or not isinstance(report.get("boundary_acceptance_summary"), Mapping)
+        or report.get("boundary_acceptance_sha256")
+        != ledger.get("report_sha256")
+    ):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "The moving-gauge acceptance ledger is not the one its reclosure "
+            "publication sealed."
+        )
+    lifted = {
+        "boundary_acceptance_lift_schema": _BOUNDARY_ACCEPTANCE_LIFT_SCHEMA,
+        "boundary_acceptance_schema": report["acceptance_schema"],
+        "writer_reclosure_acceptance": (
+            report["writer_reclosure_acceptance"]
+        ),
+        "boundary_regression_tolerance": (
+            report["boundary_regression_tolerance"]
+        ),
+        "boundary_acceptance_sha256": report["boundary_acceptance_sha256"],
+        "boundary_acceptance_summary": dict(
+            report["boundary_acceptance_summary"]
+        ),
+        # The full ledger, not a rewrite of it: the decisions and per-boundary
+        # rows exactly as the reclosure sealed them, so the digest above is
+        # verifiable against the body it names.
+        "boundary_acceptance": dict(ledger),
+    }
+    if "writer_reclosure_norm_ratio_ceiling" in report:
+        lifted["writer_reclosure_norm_ratio_ceiling"] = (
+            report["writer_reclosure_norm_ratio_ceiling"]
+        )
+    return lifted
+
+
+def _boundary_acceptance_metadata(
+    report: Mapping[str, Any] | None,
+) -> dict[str, JsonScalar]:
+    """Flatten one lifted ledger into the compiled stage's scalar metadata.
+
+    ``CompiledFoldStage.as_dict`` publishes ``metadata`` and nothing else, so
+    this is the only surface that reaches the sealed run report.  Counts and
+    digests go in as scalars; the per-boundary decisions go in as one canonical
+    JSON string, the same shape the MLP solver diagnostics already use.
+    """
+
+    if report is None or "boundary_acceptance" not in report:
+        return {}
+    ledger = report["boundary_acceptance"]
+    summary = report["boundary_acceptance_summary"]
+    decisions_json, decisions_nonfinite_json = _durable_diagnostic_json(
+        {
+            "decisions": ledger["decisions"],
+            "per_boundary": ledger["per_boundary"],
+        },
+        "moving-gauge boundary acceptance ledger",
+    )
+    metadata: dict[str, JsonScalar] = {
+        "writer_reclosure_acceptance": report["writer_reclosure_acceptance"],
+        "boundary_regression_tolerance": (
+            report["boundary_regression_tolerance"]
+        ),
+        "boundary_acceptance_sha256": report["boundary_acceptance_sha256"],
+        "boundary_acceptance_evaluated_writer_overwrites": (
+            summary["evaluated_writer_overwrites"]
+        ),
+        "boundary_acceptance_accepted_writer_overwrites": (
+            summary["accepted_writer_overwrites"]
+        ),
+        "boundary_acceptance_refused_writer_overwrites": (
+            summary["refused_writer_overwrites"]
+        ),
+        "boundary_acceptance_refused_transition_indices_json": json.dumps(
+            list(summary["refused_transition_indices"]),
+            separators=(",", ":"),
+        ),
+        "boundary_acceptance_decisions_json": decisions_json,
+    }
+    if decisions_nonfinite_json is not None:
+        metadata["boundary_acceptance_decisions_nonfinite_json"] = (
+            decisions_nonfinite_json
+        )
+    if "writer_reclosure_norm_ratio_ceiling" in report:
+        metadata["writer_reclosure_norm_ratio_ceiling"] = (
+            report["writer_reclosure_norm_ratio_ceiling"]
+        )
+        metadata["boundary_acceptance_norm_ceiling_refusals"] = (
+            summary["norm_ratio_ceiling_refused_writer_overwrites"]
+        )
+        metadata["boundary_acceptance_maximum_accepted_write_norm_ratio"] = (
+            summary["maximum_accepted_write_norm_ratio"]
+        )
+    return metadata
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2DynamicClosedLoopAdapterConfig:
     """Closed-form fit and held-out acceptance policy."""
@@ -1246,6 +1369,11 @@ class Lfm2DynamicClosedLoopAdapterConfig:
         LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
     )
     moving_gauge_boundary_regression_tolerance: float = 0.0
+    # NOTES-W13M section 1.2: the boundary clause above measures one boundary's
+    # own write error, which a 974x rewrite can still improve.  ``None`` is
+    # every lane sealed before this ceiling existed and is byte-identical to it;
+    # a float refuses any proposal whose write-norm ratio exceeds it.
+    moving_gauge_writer_reclosure_norm_ratio_ceiling: float | None = None
     # Execution-only: a shard request changes how long a capture takes, never
     # what it seals.  ``None`` is the serial path and is byte-identical to
     # every honoured shard plan, so this never enters a fold identity.
@@ -1638,6 +1766,29 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                 "moving_gauge_boundary_regression_tolerance only applies to a "
                 "guarded moving_gauge_writer_reclosure_acceptance mode."
             )
+        if self.moving_gauge_writer_reclosure_norm_ratio_ceiling is not None:
+            object.__setattr__(
+                self,
+                "moving_gauge_writer_reclosure_norm_ratio_ceiling",
+                _nonnegative_float(
+                    self.moving_gauge_writer_reclosure_norm_ratio_ceiling,
+                    "moving_gauge_writer_reclosure_norm_ratio_ceiling",
+                ),
+            )
+            if self.moving_gauge_writer_reclosure_norm_ratio_ceiling <= 0.0:
+                raise ValueError(
+                    "moving_gauge_writer_reclosure_norm_ratio_ceiling must be "
+                    "positive."
+                )
+            if (
+                self.moving_gauge_writer_reclosure_acceptance
+                == LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
+            ):
+                raise ValueError(
+                    "moving_gauge_writer_reclosure_norm_ratio_ceiling only "
+                    "applies to a guarded "
+                    "moving_gauge_writer_reclosure_acceptance mode."
+                )
         object.__setattr__(
             self,
             "replay_devices",
@@ -3398,6 +3549,9 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         self.moving_gauge_boundary_regression_tolerance = (
             self.config.moving_gauge_boundary_regression_tolerance
+        )
+        self.moving_gauge_writer_reclosure_norm_ratio_ceiling = (
+            self.config.moving_gauge_writer_reclosure_norm_ratio_ceiling
         )
         self.parent_residual_operators = operators
         if (
@@ -14468,6 +14622,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     boundary_regression_tolerance=(
                         self.moving_gauge_boundary_regression_tolerance
                     ),
+                    writer_reclosure_norm_ratio_ceiling=(
+                        self.moving_gauge_writer_reclosure_norm_ratio_ceiling
+                    ),
                 ),
             )
             del writer_evidence
@@ -14588,6 +14745,20 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "moving_gauge_v3 causal completion did not cover every layer."
                 )
+            # NOTES-W13M section 1.1: the reclosure seals a complete
+            # per-boundary acceptance ledger and this artifact used to lift only
+            # its parent report's digest, so a sealed run carried the ledger's
+            # sha256 with no preimage anywhere on disk and W13M had to
+            # reconstruct the gate's outcome from capsule tensors.  The ledger
+            # only exists when the acceptance mode is guarded
+            # (``hf_lfm2_moving_gauge_residual_reclosure.py`` builds it at
+            # ``[] if guarded_acceptance else None`` and seals it only when that
+            # list is not None), so this lift is presence-conditional and an
+            # unguarded run's artifact -- and every digest downstream of it --
+            # is byte-identical to the one it sealed before.
+            boundary_acceptance = _lifted_boundary_acceptance_ledger(
+                replacement_state.report
+            )
             body = {
                 "schema": "neural-forge-lfm2-body-reclosure-artifact-v1",
                 "mode": LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
@@ -14720,6 +14891,8 @@ class Lfm2DynamicClosedLoopAdapter:
                     "optimizer_steps": 0,
                 },
             }
+            if boundary_acceptance is not None:
+                body.update(boundary_acceptance)
             report = _seal_immutable_json_mapping(
                 body,
                 "report_sha256",
@@ -14810,6 +14983,12 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     "parent_forward_calls": 0,
                     "training_steps": 0,
+                    # Additive and empty unless the reclosure ran guarded, so an
+                    # unguarded run's compiled metadata is byte-identical.  This
+                    # is the only surface ``CompiledFoldStage.as_dict`` puts in
+                    # the sealed run report, which is why W13M found no gate
+                    # decisions anywhere in the run directory.
+                    **_boundary_acceptance_metadata(payload.report),
                 }
             ),
         )

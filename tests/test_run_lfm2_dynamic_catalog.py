@@ -7561,3 +7561,77 @@ def test_moving_gauge_writer_reclosure_acceptance_defaults_to_unguarded(
                 ]
             )
         )
+
+
+def test_moving_gauge_writer_norm_ratio_ceiling_is_unset_by_default(
+    tmp_path,
+) -> None:
+    """NOTES-W13M section 1.2: the norm-ratio ceiling is opt-in and additive."""
+
+    parser = MODULE.build_parser()
+    guarded_args = [
+        *_required_args(tmp_path),
+        "--dense-run-closed-loop",
+        "--dense-body-reclosure-mode",
+        "moving_gauge_v3",
+        "--dense-moving-gauge-writer-reclosure-acceptance",
+        "require_boundary_improvement",
+    ]
+    guarded_config = MODULE.config_from_args(parser.parse_args(guarded_args))
+    capped_config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *guarded_args,
+                "--dense-moving-gauge-writer-norm-ratio-ceiling",
+                "1.5",
+            ]
+        )
+    )
+
+    assert guarded_config.dense_moving_gauge_writer_norm_ratio_ceiling is None
+    # An unset ceiling keeps the exact configuration digest of every guarded
+    # run before it; a set one publishes different writers and must say so.
+    assert (
+        "dense_moving_gauge_writer_norm_ratio_ceiling"
+        not in guarded_config.identity()["target"]
+    )
+    assert capped_config.identity()["target"][
+        "dense_moving_gauge_writer_norm_ratio_ceiling"
+    ] == pytest.approx(1.5)
+    assert capped_config.identity()["target"][
+        "dense_moving_gauge_writer_reclosure_acceptance"
+    ] == "require_boundary_improvement"
+    assert MODULE.canonical_sha256(guarded_config.identity()) != (
+        MODULE.canonical_sha256(capped_config.identity())
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="only applies to a guarded",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-run-closed-loop",
+                    "--dense-body-reclosure-mode",
+                    "moving_gauge_v3",
+                    "--dense-moving-gauge-writer-norm-ratio-ceiling",
+                    "1.5",
+                ]
+            )
+        )
+    for invalid in ("0", "-1.5", "nan", "inf"):
+        with pytest.raises(
+            MODULE.ProductionLfm2CatalogError,
+            match="finite positive",
+        ):
+            MODULE.config_from_args(
+                parser.parse_args(
+                    [
+                        *guarded_args,
+                        "--dense-moving-gauge-writer-norm-ratio-ceiling",
+                        invalid,
+                    ]
+                )
+            )

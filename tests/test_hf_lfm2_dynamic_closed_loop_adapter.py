@@ -67,6 +67,8 @@ from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterConfig,
     Lfm2DynamicClosedLoopAdapterError,
+    _boundary_acceptance_metadata,
+    _lifted_boundary_acceptance_ledger,
 )
 from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
     build_lfm2_weight_complete_basis,
@@ -337,6 +339,9 @@ def _adapter(
     install_verification_mode=LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
     replay_config_override=None,
     selected_layer_indices=None,
+    moving_gauge_writer_reclosure_acceptance="unguarded",
+    moving_gauge_boundary_regression_tolerance=0.0,
+    moving_gauge_writer_reclosure_norm_ratio_ceiling=None,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
@@ -414,6 +419,15 @@ def _adapter(
             output_interface_mode=output_interface_mode,
             replay_devices=replay_devices,
             install_verification_mode=install_verification_mode,
+            moving_gauge_writer_reclosure_acceptance=(
+                moving_gauge_writer_reclosure_acceptance
+            ),
+            moving_gauge_boundary_regression_tolerance=(
+                moving_gauge_boundary_regression_tolerance
+            ),
+            moving_gauge_writer_reclosure_norm_ratio_ceiling=(
+                moving_gauge_writer_reclosure_norm_ratio_ceiling
+            ),
         ),
         macro_cell_attractor_gate=macro_cell_attractor_gate,
         selective_session=selective_session,
@@ -5395,3 +5409,284 @@ def test_moving_gauge_writer_reclosure_acceptance_config_threads_the_policy() ->
             ),
             moving_gauge_boundary_regression_tolerance=-1.0,
         )
+
+
+def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> (
+    None
+):
+    """NOTES-W13M section 1.2: the ceiling is opt-in and digest-preserving."""
+
+    from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
+        Lfm2MovingGaugeReclosurePolicy,
+    )
+
+    def policy_for(config):
+        return Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=(
+                config.moving_gauge_writer_reclosure_acceptance
+            ),
+            boundary_regression_tolerance=(
+                config.moving_gauge_boundary_regression_tolerance
+            ),
+            writer_reclosure_norm_ratio_ceiling=(
+                config.moving_gauge_writer_reclosure_norm_ratio_ceiling
+            ),
+        )
+
+    guarded_config = Lfm2DynamicClosedLoopAdapterConfig(
+        moving_gauge_writer_reclosure_acceptance="require_boundary_improvement",
+    )
+    capped_config = Lfm2DynamicClosedLoopAdapterConfig(
+        moving_gauge_writer_reclosure_acceptance="require_boundary_improvement",
+        moving_gauge_writer_reclosure_norm_ratio_ceiling=1.5,
+    )
+
+    assert (
+        Lfm2DynamicClosedLoopAdapterConfig()
+        .moving_gauge_writer_reclosure_norm_ratio_ceiling
+        is None
+    )
+    # An unset ceiling builds the exact guarded policy sealed before it existed.
+    assert policy_for(guarded_config).authentication_sha256 == (
+        Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance="require_boundary_improvement",
+        ).authentication_sha256
+    )
+    assert policy_for(capped_config).authentication_sha256 != (
+        policy_for(guarded_config).authentication_sha256
+    )
+    assert policy_for(capped_config).as_dict()[
+        "writer_reclosure_norm_ratio_ceiling"
+    ] == pytest.approx(1.5)
+    # And the default lane is still the r12 unguarded policy, untouched.
+    assert policy_for(
+        Lfm2DynamicClosedLoopAdapterConfig()
+    ).authentication_sha256 == (
+        Lfm2MovingGaugeReclosurePolicy().authentication_sha256
+    )
+
+    with pytest.raises(ValueError, match="only applies to a guarded"):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            moving_gauge_writer_reclosure_norm_ratio_ceiling=1.5,
+        )
+    with pytest.raises(ValueError, match="must be positive"):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            moving_gauge_writer_reclosure_acceptance=(
+                "require_boundary_improvement"
+            ),
+            moving_gauge_writer_reclosure_norm_ratio_ceiling=0.0,
+        )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="finite and non-negative",
+    ):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            moving_gauge_writer_reclosure_acceptance=(
+                "require_boundary_improvement"
+            ),
+            moving_gauge_writer_reclosure_norm_ratio_ceiling=-1.0,
+        )
+
+
+# The 15 keys an unguarded moving_gauge_v3 body reclosure published before the
+# acceptance ledger was lifted, measured on the unmodified tree.  The lift is
+# presence-conditional on a ledger the unguarded lane never builds, so this set
+# is the byte-identity contract for every default run.
+_UNGUARDED_BODY_RECLOSURE_METADATA_KEYS = (
+    "body_coordinate_completion_result_sha256",
+    "body_reclosure_mode",
+    "causal_action_aware_factor_writer_count",
+    "causal_operator_consumer_reclosure_count",
+    "causal_w2_reclosure_count",
+    "factor_writer_artifact_sha256",
+    "factor_writer_count",
+    "identity_preservation",
+    "input_producer_reclosure_state_sha256",
+    "moving_gauge_replacement_state_sha256",
+    "parent_forward_calls",
+    "physical_writer_count",
+    "row_alignment_sha256",
+    "split_sha256",
+    "training_steps",
+)
+
+
+def _moving_gauge_v3_body_reclosure(sealed_parent, **overrides):
+    """Run one complete moving_gauge_v3 body reclosure and return its report."""
+
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+        **overrides,
+    )
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-moving-gauge-v3-contract-v1",
+            fold_body_reclosure=True,
+            fold_output_interface=False,
+        ),
+    ).run()
+    return adapter, report["body_reclosure"]
+
+
+def test_unguarded_body_reclosure_lifts_no_acceptance_keys(
+    sealed_parent,
+) -> None:
+    """The default lane is byte-identical: there is no ledger to lift.
+
+    ``compile_lfm2_moving_gauge_residual_reclosure`` builds its decision list as
+    ``[] if guarded_acceptance else None`` and seals the ledger only when that
+    list exists, so an unguarded run has no ledger at all -- nothing is dropped
+    and nothing moves.
+    """
+
+    adapter, body = _moving_gauge_v3_body_reclosure(sealed_parent)
+    payload = adapter._body_reclosure_payload
+
+    assert tuple(sorted(body["compiled"]["metadata"])) == (
+        _UNGUARDED_BODY_RECLOSURE_METADATA_KEYS
+    )
+    assert "boundary_acceptance" not in payload.report
+    assert "boundary_acceptance_sha256" not in payload.report
+    assert (
+        "boundary_acceptance"
+        not in payload.replacement_state.report["diagnostics"]
+    )
+    assert _lifted_boundary_acceptance_ledger(
+        payload.replacement_state.report
+    ) is None
+    assert _boundary_acceptance_metadata(payload.report) == {}
+
+
+def test_guarded_body_reclosure_lifts_the_sealed_acceptance_ledger(
+    sealed_parent,
+) -> None:
+    """NOTES-W13M section 1.1: the run report carries the gate's decisions.
+
+    The reclosure has always sealed a complete per-boundary ledger; this
+    artifact used to lift only its parent report's digest, so the sealed run
+    carried a sha256 with no preimage on disk and the gate's outcome had to be
+    reconstructed from capsule tensors.
+    """
+
+    adapter, body = _moving_gauge_v3_body_reclosure(
+        sealed_parent,
+        moving_gauge_writer_reclosure_acceptance=(
+            "require_boundary_improvement"
+        ),
+        moving_gauge_boundary_regression_tolerance=1e9,
+    )
+    payload = adapter._body_reclosure_payload
+    sealed_ledger = payload.replacement_state.report["diagnostics"][
+        "boundary_acceptance"
+    ]
+    metadata = body["compiled"]["metadata"]
+    lifted = payload.report["boundary_acceptance"]
+
+    # The full ledger, bound to the digest the reclosure published for it.
+    assert payload.report["boundary_acceptance_sha256"] == (
+        sealed_ledger["report_sha256"]
+    )
+    assert lifted["report_sha256"] == sealed_ledger["report_sha256"]
+    assert payload.report["writer_reclosure_acceptance"] == (
+        "require_boundary_improvement"
+    )
+    assert len(lifted["decisions"]) == 4
+    assert len(lifted["per_boundary"]) == 2
+    for decision in lifted["decisions"]:
+        for key in (
+            "sweep",
+            "transition_index",
+            "boundary_id",
+            "accepted",
+            "incumbent_relative_write_error",
+            "proposed_relative_write_error",
+            "write_norm_ratio",
+            "weight_frobenius_norm_ratio_by_parameter",
+        ):
+            assert key in decision, key
+
+    # ``CompiledFoldStage.as_dict`` publishes ``metadata`` and nothing else, so
+    # this is the surface W13M grepped and found empty.
+    assert metadata["boundary_acceptance_sha256"] == (
+        sealed_ledger["report_sha256"]
+    )
+    assert metadata["writer_reclosure_acceptance"] == (
+        "require_boundary_improvement"
+    )
+    assert metadata["boundary_acceptance_evaluated_writer_overwrites"] == 4
+    assert metadata["boundary_acceptance_accepted_writer_overwrites"] == 4
+    assert metadata["boundary_acceptance_refused_writer_overwrites"] == 0
+    assert json.loads(
+        metadata["boundary_acceptance_refused_transition_indices_json"]
+    ) == []
+    replayed = json.loads(metadata["boundary_acceptance_decisions_json"])
+    assert [value["write_norm_ratio"] for value in replayed["decisions"]] == [
+        value["write_norm_ratio"] for value in lifted["decisions"]
+    ]
+    assert [
+        value["accepted"] for value in replayed["decisions"]
+    ] == [value["accepted"] for value in lifted["decisions"]]
+    # Nothing ceiling-shaped unless a ceiling was configured.
+    assert "writer_reclosure_norm_ratio_ceiling" not in metadata
+    assert "boundary_acceptance_norm_ceiling_refusals" not in metadata
+    assert set(_UNGUARDED_BODY_RECLOSURE_METADATA_KEYS) < set(metadata)
+
+
+def test_body_reclosure_norm_ratio_ceiling_refuses_and_records_the_refusal(
+    sealed_parent,
+) -> None:
+    """The ceiling reaches the run report through the same additive lift."""
+
+    permissive_adapter, _permissive = _moving_gauge_v3_body_reclosure(
+        sealed_parent,
+        moving_gauge_writer_reclosure_acceptance=(
+            "require_boundary_improvement"
+        ),
+        moving_gauge_boundary_regression_tolerance=1e9,
+    )
+    permissive_ratios = [
+        value["write_norm_ratio"]
+        for value in permissive_adapter._body_reclosure_payload.report[
+            "boundary_acceptance"
+        ]["decisions"]
+    ]
+    adapter, body = _moving_gauge_v3_body_reclosure(
+        sealed_parent,
+        moving_gauge_writer_reclosure_acceptance=(
+            "require_boundary_improvement"
+        ),
+        moving_gauge_boundary_regression_tolerance=1e9,
+        moving_gauge_writer_reclosure_norm_ratio_ceiling=1.5,
+    )
+    metadata = body["compiled"]["metadata"]
+    ledger = adapter._body_reclosure_payload.report["boundary_acceptance"]
+
+    # The metric clause accepts every overwrite at this tolerance, so every
+    # refusal below is the ceiling's and nothing else.
+    assert max(permissive_ratios) > 1.5
+    assert ledger["boundary_metric_refused_writer_overwrites"] == 0
+    assert ledger["norm_ratio_ceiling_refused_writer_overwrites"] >= 1
+    assert ledger["refused_writer_overwrites"] == (
+        ledger["norm_ratio_ceiling_refused_writer_overwrites"]
+    )
+    assert all(
+        value["refusal_reason"] == "write_norm_ratio_above_ceiling"
+        for value in ledger["decisions"]
+        if not value["accepted"]
+    )
+    assert ledger["maximum_accepted_write_norm_ratio"] <= 1.5
+    assert metadata["writer_reclosure_norm_ratio_ceiling"] == 1.5
+    assert metadata["boundary_acceptance_norm_ceiling_refusals"] == (
+        ledger["norm_ratio_ceiling_refused_writer_overwrites"]
+    )
+    assert metadata[
+        "boundary_acceptance_maximum_accepted_write_norm_ratio"
+    ] <= 1.5

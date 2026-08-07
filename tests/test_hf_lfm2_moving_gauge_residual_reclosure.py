@@ -2433,6 +2433,19 @@ UNGUARDED = moving_gauge_reclosure.LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED
 # Large enough that no boundary can ever regress past it, so the guarded lane
 # evaluates every overwrite and accepts every one of them.
 UNBOUNDED_TOLERANCE = 1e9
+# Pinned at the commit that introduced the write-norm ratio ceiling, measured on
+# the unmodified tree: an unset ceiling must keep every one of these bytes.
+GUARDED_POLICY_SHA256 = (
+    "a433e5ba74f70cf1399075228ec4cbaf6ec20e36658f8d00d3fb95f17df671af"
+)
+TOY7_GUARDED_REPORT_SHA256 = (
+    "dadcd627668a4d43050cf05a6ac8e5790450ba70f41268a9b1ecef99aa25c07e"
+)
+TOY7_GUARDED_LEDGER_SHA256 = (
+    "c5a68e9fbdb091822fd4d50e8d3c0b02f65f87533638a14e9f4d77743e434bdc"
+)
+CEILING_REFUSAL = "write_norm_ratio_above_ceiling"
+BOUNDARY_REFUSAL = "boundary_write_error_regressed"
 
 
 def _converging_single_transition_fold(seed: int = 11):
@@ -2993,3 +3006,371 @@ def test_recaptured_boundary_gate_refuses_and_keeps_the_incumbent() -> None:
         assert step["realized_local_l2_norm"] == 0.0
         assert step["realized_terminal_l2_norm"] == 0.0
     assert guarded.verify_authentication()
+
+
+# ---------------------------------------------------------------------------
+# NOTES-W13M section 1.2: the boundary clause above is local to one solve frame.
+# r13's body reclosure rewrote 82 weights, 81 of them upward, median norm ratio
+# 33.1x and 974x at layer 7, and the gate refused nothing -- because a proposal
+# can cut its own boundary's write error while multiplying the write it
+# publishes.  The norm-ratio ceiling is the clause that reads the growth itself.
+# ---------------------------------------------------------------------------
+
+
+def test_norm_ratio_ceiling_is_unset_by_default_and_additive_in_the_digest() -> (
+    None
+):
+    guarded = Lfm2MovingGaugeReclosurePolicy(
+        writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+    )
+    explicit_none = Lfm2MovingGaugeReclosurePolicy(
+        writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        writer_reclosure_norm_ratio_ceiling=None,
+    )
+    capped = Lfm2MovingGaugeReclosurePolicy(
+        writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        writer_reclosure_norm_ratio_ceiling=1.5,
+    )
+
+    # The unset ceiling keeps the exact guarded digest sealed before it existed.
+    assert guarded.writer_reclosure_norm_ratio_ceiling is None
+    assert guarded.authentication_sha256 == GUARDED_POLICY_SHA256
+    assert explicit_none.authentication_sha256 == GUARDED_POLICY_SHA256
+    assert "norm_ceiling_schema" not in guarded.authentication_body()
+    assert (
+        "writer_reclosure_norm_ratio_ceiling"
+        not in guarded.authentication_body()
+    )
+    # And the unguarded default is still the pre-acceptance-gate digest.
+    assert Lfm2MovingGaugeReclosurePolicy().authentication_sha256 == (
+        FORWARD_ONLY_POLICY_SHA256
+    )
+
+    # Set, it is a distinct sealed policy, additively, per value.
+    assert capped.authentication_sha256 != GUARDED_POLICY_SHA256
+    assert capped.as_dict()["norm_ceiling_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA
+    )
+    assert capped.as_dict()["writer_reclosure_norm_ratio_ceiling"] == 1.5
+    assert capped.as_dict()["acceptance_schema"] == (
+        moving_gauge_reclosure.LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA
+    )
+    assert capped.as_dict()[
+        "write_norm_ratio_ceiling_refuses_any_boundary_metric"
+    ] is True
+    assert capped.verify_authentication()
+    digests = {
+        value.authentication_sha256
+        for value in (
+            guarded,
+            capped,
+            Lfm2MovingGaugeReclosurePolicy(
+                writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+                writer_reclosure_norm_ratio_ceiling=2.0,
+            ),
+            Lfm2MovingGaugeReclosurePolicy(
+                writer_reclosure_acceptance=ACCEPTANCE_FAIL_CLOSED,
+                writer_reclosure_norm_ratio_ceiling=1.5,
+            ),
+            Lfm2MovingGaugeReclosurePolicy(
+                reverse_sweep_mode="recaptured_terminal_anchored",
+                writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+                writer_reclosure_norm_ratio_ceiling=1.5,
+            ),
+        )
+    }
+    assert len(digests) == 5
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="only applies to a guarded",
+    ):
+        # A ceiling without a gate would claim a clause that can never run.
+        Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_norm_ratio_ceiling=1.5,
+        )
+    for invalid in (0.0, -1.0, float("inf"), float("nan"), True, "1.5"):
+        with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+            Lfm2MovingGaugeReclosurePolicy(
+                writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+                writer_reclosure_norm_ratio_ceiling=invalid,
+            )
+
+
+def _norm_exploding_proposal():
+    """One writer that strictly improves its boundary and still grows 8x.
+
+    This is the r12/r13 signature isolated: the proposal moves the write from
+    1x to 8x of a 10x target, so its relative write error falls by 4.5x while
+    the write it publishes grows by exactly 8x.  No boundary metric can refuse
+    it, which is precisely why the ceiling exists.
+    """
+
+    generator = torch.Generator().manual_seed(913)
+    features = torch.randn(8, 2, generator=generator, dtype=torch.float64)
+    direction = torch.randn(2, 2, generator=generator, dtype=torch.float64)
+    incumbent = direction.clone()
+    proposed = 8.0 * direction
+    return {
+        "sites": (_writer(0, features, 2),),
+        "features": features,
+        "target": 10.0 * (features @ direction.T),
+        "row_weights": torch.ones(8, dtype=torch.float64),
+        "incumbent_group": incumbent,
+        "proposed_group": proposed,
+        "incumbent_weights": {"model.layers.0.writer.weight": incumbent},
+        "proposed_weights": {"model.layers.0.writer.weight": proposed},
+    }
+
+
+def _score(case, policy):
+    return moving_gauge_reclosure._boundary_acceptance_decision(
+        case["sites"],
+        sweep="reverse",
+        transition_index=0,
+        boundary_id="boundary:1",
+        row_frame="aligned_fit_writer_input_rows",
+        incumbent_stage="post_forward_sweep",
+        features=case["features"],
+        target=case["target"],
+        row_weights=case["row_weights"],
+        incumbent_group=case["incumbent_group"],
+        proposed_group=case["proposed_group"],
+        incumbent_weights=case["incumbent_weights"],
+        proposed_weights=case["proposed_weights"],
+        policy=policy,
+    )
+
+
+def test_norm_ratio_ceiling_refuses_a_rewrite_the_boundary_metric_accepts() -> (
+    None
+):
+    case = _norm_exploding_proposal()
+    accepted, without = _score(
+        case,
+        Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+    refused, with_ceiling = _score(
+        case,
+        Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            writer_reclosure_norm_ratio_ceiling=1.5,
+        ),
+    )
+
+    # The boundary metric strictly improves and the write still grows 8x.
+    assert (
+        without["proposed_relative_write_error"]
+        < without["incumbent_relative_write_error"]
+    )
+    assert without["relative_write_error_ratio"] == pytest.approx(2.0 / 9.0)
+    assert without["write_norm_ratio"] == pytest.approx(8.0)
+    assert accepted is True
+    assert without["accepted"] is True
+    # An unset ceiling adds no key at all, so the ledger stays byte-identical.
+    assert "refusal_reason" not in without
+    assert "write_norm_ratio_ceiling" not in without
+
+    assert refused is False
+    assert with_ceiling["accepted"] is False
+    assert with_ceiling["refused"] is True
+    assert with_ceiling["refusal_reason"] == CEILING_REFUSAL
+    assert with_ceiling["boundary_metric_accepted"] is True
+    assert with_ceiling["write_norm_ratio_ceiling_exceeded"] is True
+    assert with_ceiling["write_norm_ratio_measured"] is True
+    assert with_ceiling["write_norm_ratio_ceiling"] == 1.5
+    # A refusal publishes the incumbent, so the accepted quantities are its own.
+    assert with_ceiling["accepted_relative_write_error"] == pytest.approx(
+        with_ceiling["incumbent_relative_write_error"]
+    )
+    assert with_ceiling["accepted_write_l2_norm"] == pytest.approx(
+        with_ceiling["incumbent_write_l2_norm"]
+    )
+    # A ceiling above the ratio keeps the same proposal the metric accepted.
+    kept, decision = _score(
+        case,
+        Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            writer_reclosure_norm_ratio_ceiling=8.0,
+        ),
+    )
+    assert kept is True
+    assert decision["refusal_reason"] is None
+    assert decision["write_norm_ratio_ceiling_exceeded"] is False
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="exceeds the ceiling",
+    ):
+        _score(
+            case,
+            Lfm2MovingGaugeReclosurePolicy(
+                writer_reclosure_acceptance=ACCEPTANCE_FAIL_CLOSED,
+                writer_reclosure_norm_ratio_ceiling=1.5,
+            ),
+        )
+
+
+def test_norm_ratio_ceiling_refuses_the_toys_terminal_absorbing_rewrites() -> (
+    None
+):
+    """The depth toy at unbounded tolerance: only the ceiling can refuse.
+
+    With the boundary tolerance unbounded the metric clause accepts every
+    overwrite, so the guarded publication is the unguarded publication byte for
+    byte.  The toy's reverse sweep still inflates transitions 1 and 0 by 2.15x
+    and 3.33x, and a 1.5x ceiling refuses exactly those two.
+    """
+
+    unguarded = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+    )
+    permissive = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=UNBOUNDED_TOLERANCE,
+        ),
+    )
+    capped = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            boundary_regression_tolerance=UNBOUNDED_TOLERANCE,
+            writer_reclosure_norm_ratio_ceiling=1.5,
+        ),
+    )
+    permissive_ledger = _acceptance_ledger(permissive)
+    ledger = _acceptance_ledger(capped)
+
+    # The metric clause refuses nothing here, in either lane.
+    assert permissive.report["replacement_weight_sha256"] == (
+        unguarded.report["replacement_weight_sha256"]
+    )
+    assert permissive_ledger["refused_writer_overwrites"] == 0
+    assert ledger["boundary_metric_refused_writer_overwrites"] == 0
+
+    # The ceiling refuses the two the unguarded lane published at 2.15x/3.33x.
+    assert _decision(permissive_ledger, "reverse", 1)[
+        "write_norm_ratio"
+    ] == pytest.approx(2.154190835053946)
+    assert ledger["refused_writer_overwrites"] == 2
+    assert ledger["norm_ratio_ceiling_refused_writer_overwrites"] == 2
+    assert ledger["norm_ratio_ceiling_refused_transition_indices"] == [0, 1]
+    assert ledger["refused_by_sweep"] == {"forward": 0, "reverse": 2}
+    assert ledger["writer_reclosure_norm_ratio_ceiling"] == 1.5
+    for index, ratio in ((1, 2.154190835053946), (0, 3.32656502559521)):
+        refusal = _decision(ledger, "reverse", index)
+        assert refusal["accepted"] is False
+        assert refusal["refusal_reason"] == CEILING_REFUSAL
+        assert refusal["boundary_metric_accepted"] is True
+        assert refusal["write_norm_ratio"] == pytest.approx(ratio)
+        assert refusal["write_norm_ratio"] > 1.5
+        step = next(
+            value
+            for value in capped.report["diagnostics"]["reverse_steps"]
+            if value["transition_index"] == index
+        )
+        assert step["realized_terminal_l2_norm"] == 0.0
+    # Nothing the ceiling kept is above it, and the toy's from-zero seed writers
+    # have no measurable ratio at all -- counted, never silently skipped.
+    assert ledger["maximum_accepted_write_norm_ratio"] <= 1.5
+    assert ledger["unmeasured_write_norm_ratio_writer_overwrites"] == 3
+    assert all(
+        value["write_norm_ratio_measured"] is False
+        for value in ledger["decisions"]
+        if value["sweep"] == "forward"
+    )
+    assert capped.report["replacement_weight_sha256"] != (
+        unguarded.report["replacement_weight_sha256"]
+    )
+    assert capped.report["boundary_acceptance_sha256"] == (
+        ledger["report_sha256"]
+    )
+    assert capped.report["boundary_acceptance_summary"][
+        "norm_ratio_ceiling_refused_transition_indices"
+    ] == [0, 1]
+    assert capped.report["writer_reclosure_norm_ratio_ceiling"] == 1.5
+    assert verify_lfm2_moving_gauge_report(ledger)
+    assert capped.verify_authentication()
+
+
+def test_norm_ratio_ceiling_composes_with_require_boundary_improvement() -> None:
+    """Both clauses on: each refusal is attributed to the clause that fired."""
+
+    metric_only = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+    both = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            writer_reclosure_norm_ratio_ceiling=1.5,
+        ),
+    )
+    ledger = _acceptance_ledger(both)
+
+    # Here the metric clause already refuses both, so the ceiling adds nothing
+    # to the publication and says so: same weights, zero ceiling refusals.
+    assert both.report["replacement_weight_sha256"] == (
+        metric_only.report["replacement_weight_sha256"]
+    )
+    assert ledger["refused_transition_indices"] == [0, 1]
+    assert ledger["boundary_metric_refused_writer_overwrites"] == 2
+    assert ledger["norm_ratio_ceiling_refused_writer_overwrites"] == 0
+    assert ledger["norm_ratio_ceiling_refused_transition_indices"] == []
+    for index in (0, 1):
+        assert _decision(ledger, "reverse", index)["refusal_reason"] == (
+            BOUNDARY_REFUSAL
+        )
+    # The two clauses are independent, so the composed policy is its own digest.
+    assert both.report["policy_sha256"] != metric_only.report["policy_sha256"]
+    assert both.verify_authentication()
+
+
+def test_unset_norm_ratio_ceiling_publishes_the_pinned_guarded_bytes() -> None:
+    """Default ``None`` is byte-identical, not merely behaviourally equal."""
+
+    guarded = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+        ),
+    )
+    explicit_none = compile_lfm2_moving_gauge_residual_reclosure(
+        _toy_fold(7)["boundaries"],
+        _toy_fold(7)["writers"],
+        policy=Lfm2MovingGaugeReclosurePolicy(
+            writer_reclosure_acceptance=REQUIRE_IMPROVEMENT,
+            writer_reclosure_norm_ratio_ceiling=None,
+        ),
+    )
+    ledger = _acceptance_ledger(guarded)
+
+    assert guarded.report["report_sha256"] == TOY7_GUARDED_REPORT_SHA256
+    assert explicit_none.report["report_sha256"] == TOY7_GUARDED_REPORT_SHA256
+    assert ledger["report_sha256"] == TOY7_GUARDED_LEDGER_SHA256
+    # Not one ceiling key anywhere in the sealed bodies.
+    for key in (
+        "norm_ceiling_schema",
+        "writer_reclosure_norm_ratio_ceiling",
+        "norm_ratio_ceiling_refused_writer_overwrites",
+        "unmeasured_write_norm_ratio_writer_overwrites",
+    ):
+        assert key not in guarded.report
+        assert key not in ledger
+    for decision in ledger["decisions"]:
+        assert "refusal_reason" not in decision
+        assert "write_norm_ratio_ceiling" not in decision
+        assert "boundary_metric_accepted" not in decision

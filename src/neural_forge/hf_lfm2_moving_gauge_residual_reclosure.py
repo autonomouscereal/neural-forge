@@ -36,6 +36,15 @@ first-layer catastrophe for a terminal objective.  ``unguarded`` is the default
 and is a distinct sealed policy from either guarded mode, so the sealed digest
 of every prior unguarded run is unchanged.
 
+That guard measures one boundary's own write error and nothing else, so a
+proposal is free to improve its local frame while multiplying the write it
+publishes - NOTES-W13M section 1.2 measured 82 accepted rewrites, 81 of them
+upward, median 33x and one at 974x, with the guard refusing nothing.
+``writer_reclosure_norm_ratio_ceiling`` is the second clause: a proposal whose
+write-norm ratio exceeds the ceiling is refused whatever its boundary metric
+did, recorded under its own refusal reason.  ``None`` is the default and keeps
+the sealed digest of every guarded run that predates it.
+
 This is analytic folding, not training.  There is no autograd graph, backward
 call, optimizer, parent recapture, parent model forward, pruning, quantization,
 or numeric quality gate.  The optional mid-sweep child recapture is executed by
@@ -74,6 +83,9 @@ LFM2_MOVING_GAUGE_RECAPTURED_REVERSE_SCHEMA = (
 LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA = (
     "neural-forge-lfm2-moving-gauge-residual-reclosure-boundary-acceptance-v1"
 )
+LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA = (
+    "neural-forge-lfm2-moving-gauge-residual-reclosure-write-norm-ceiling-v1"
+)
 _IMPLEMENTATION = (
     "neural_forge.hf_lfm2_moving_gauge_residual_reclosure."
     "cycle-coupled-polar-forward-reverse-dense-replacement.v1"
@@ -103,6 +115,7 @@ _WRITER_RECLOSURE_ACCEPTANCE_MODES = frozenset(
     LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES
 )
 _BOUNDARY_ACCEPTANCE_METRIC = "weighted_relative_l2_branch_write_error"
+_WRITE_NORM_RATIO_METRIC = "proposed_over_incumbent_branch_write_l2_norm"
 # Writer evidence carries exactly one aligned design-row set per site, so the
 # acceptance measurement is taken on the same rows the sweep it guards solves
 # on: the sealed FIT rows for the forward sweep and the authenticated mid-sweep
@@ -112,6 +125,12 @@ _FIT_ROW_FRAME = "aligned_fit_writer_input_rows"
 _RECAPTURED_ROW_FRAME = "recaptured_writer_input_rows"
 _FORWARD_SWEEP_NAME = "forward"
 _REVERSE_SWEEP_NAME = "reverse"
+# NOTES-W13M section 1.2: the boundary metric is local to one solve frame, so a
+# proposal can cut its own write error while multiplying the write it publishes
+# by 974x.  The two refusal reasons are kept apart so a receipt reader can count
+# exactly what the norm ceiling added on top of the boundary clause.
+_REFUSAL_BOUNDARY_REGRESSION = "boundary_write_error_regressed"
+_REFUSAL_WRITE_NORM_CEILING = "write_norm_ratio_above_ceiling"
 _IDENTITY_TRANSPORT_KIND = "exact_physical_identity_skip_under_frozen_writer_inputs"
 _TERMINAL_BOUNDARY_TRANSPORT_KIND = "exact_physical_identity_at_terminal_boundary"
 _MEASURED_TRANSPORT_KIND = "measured_recaptured_child_downstream_response"
@@ -1124,6 +1143,10 @@ class Lfm2MovingGaugeReclosurePolicy:
     recaptured_step_ridge_ratio: float = 1e-2
     writer_reclosure_acceptance: str = _ACCEPTANCE_UNGUARDED
     boundary_regression_tolerance: float = 0.0
+    # NOTES-W13M section 1.2: ``None`` is every lane sealed before this ceiling
+    # existed and is byte-identical to it.  A float refuses any proposed writer
+    # whose write-norm ratio exceeds it, whatever its boundary metric did.
+    writer_reclosure_norm_ratio_ceiling: float | None = None
     authentication_sha256: str = ""
 
     def __post_init__(self) -> None:
@@ -1178,6 +1201,22 @@ class Lfm2MovingGaugeReclosurePolicy:
                 "boundary_regression_tolerance only applies to a guarded "
                 "writer_reclosure_acceptance mode."
             )
+        if self.writer_reclosure_norm_ratio_ceiling is not None:
+            object.__setattr__(
+                self,
+                "writer_reclosure_norm_ratio_ceiling",
+                _finite_positive(
+                    self.writer_reclosure_norm_ratio_ceiling,
+                    "writer_reclosure_norm_ratio_ceiling",
+                ),
+            )
+            if acceptance == _ACCEPTANCE_UNGUARDED:
+                # The unguarded lane never scores a proposal, so a ceiling there
+                # would claim a refusal clause that can never run.
+                raise Lfm2MovingGaugeResidualReclosureError(
+                    "writer_reclosure_norm_ratio_ceiling only applies to a "
+                    "guarded writer_reclosure_acceptance mode."
+                )
         expected = _sha256(self.authentication_body())
         supplied = str(self.authentication_sha256).strip().lower()
         if supplied and supplied != expected:
@@ -1222,7 +1261,7 @@ class Lfm2MovingGaugeReclosurePolicy:
             # recaptured mode existed, and an unguarded body keeps the digest of
             # every reclosure sealed before this acceptance gate existed.
             return body
-        return {
+        body = {
             **body,
             "acceptance_schema": LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA,
             "writer_reclosure_acceptance": self.writer_reclosure_acceptance,
@@ -1237,6 +1276,26 @@ class Lfm2MovingGaugeReclosurePolicy:
             ),
             "per_boundary_monotone_writer_reclosure": True,
             "terminal_objective_may_overwrite_a_regressed_boundary": False,
+        }
+        if self.writer_reclosure_norm_ratio_ceiling is None:
+            # Same discipline one level down: an unset ceiling keeps the policy
+            # digest of every guarded reclosure sealed before it existed.
+            return body
+        return {
+            **body,
+            "norm_ceiling_schema": LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA,
+            "writer_reclosure_norm_ratio_ceiling": (
+                self.writer_reclosure_norm_ratio_ceiling
+            ),
+            "write_norm_ratio_ceiling_metric": _WRITE_NORM_RATIO_METRIC,
+            "write_norm_ratio_ceiling_refuses_any_boundary_metric": True,
+            "write_norm_ratio_ceiling_refusal_keeps_incumbent_writer": (
+                self.writer_reclosure_acceptance == _ACCEPTANCE_SKIP
+            ),
+            "write_norm_ratio_ceiling_refusal_aborts_reclosure": (
+                self.writer_reclosure_acceptance == _ACCEPTANCE_FAIL_CLOSED
+            ),
+            "unmeasurable_write_norm_ratio_is_not_above_the_ceiling": True,
         }
 
     def verify_authentication(self) -> bool:
@@ -4256,6 +4315,11 @@ def _boundary_acceptance_decision(
     on, with that boundary's own row weights.  No new evidence path is opened:
     the target comes from the module's existing residual-write machinery and the
     metric is the module's existing weighted relative error.
+
+    The optional norm-ratio ceiling is a second, independent clause on the same
+    two writes.  It reads the ``write_norm_ratio`` this decision already records
+    and refuses whatever the boundary metric decided, which is the only clause
+    that can catch a locally-improving, globally-destructive rewrite.
     """
 
     torch = _torch()
@@ -4265,7 +4329,7 @@ def _boundary_acceptance_decision(
     proposed_metric = _relative_rmse(proposed_write, target, row_weights)
     tolerance = policy.boundary_regression_tolerance
     threshold = incumbent_metric * (1.0 + tolerance)
-    accepted = bool(
+    boundary_accepted = bool(
         math.isfinite(proposed_metric)
         and (
             not math.isfinite(incumbent_metric) or proposed_metric <= threshold
@@ -4273,6 +4337,27 @@ def _boundary_acceptance_decision(
     )
     incumbent_norm = float(torch.linalg.matrix_norm(incumbent_write).item())
     proposed_norm = float(torch.linalg.matrix_norm(proposed_write).item())
+    write_norm_ratio = _receipt_ratio(proposed_norm, incumbent_norm)
+    # A ratio the receipt could not measure -- an incumbent that writes exactly
+    # zero, or a nonfinite norm -- is not above any ceiling.  Refusing it would
+    # freeze a from-zero seed writer permanently; the ledger counts these
+    # separately so the clause can never quietly skip a boundary.
+    ceiling = policy.writer_reclosure_norm_ratio_ceiling
+    ceiling_exceeded = bool(
+        ceiling is not None
+        and write_norm_ratio is not None
+        and write_norm_ratio > ceiling
+    )
+    accepted = bool(boundary_accepted and not ceiling_exceeded)
+    refusal_reason = (
+        None
+        if accepted
+        else (
+            _REFUSAL_BOUNDARY_REGRESSION
+            if not boundary_accepted
+            else _REFUSAL_WRITE_NORM_CEILING
+        )
+    )
     incumbent_frobenius = _weight_frobenius_norms(sites, incumbent_weights)
     proposed_frobenius = _weight_frobenius_norms(sites, proposed_weights)
     decision = {
@@ -4302,7 +4387,7 @@ def _boundary_acceptance_decision(
         "accepted_write_l2_norm": _receipt_float(
             proposed_norm if accepted else incumbent_norm
         ),
-        "write_norm_ratio": _receipt_ratio(proposed_norm, incumbent_norm),
+        "write_norm_ratio": write_norm_ratio,
         "incumbent_weight_frobenius_norm_by_parameter": incumbent_frobenius,
         "proposed_weight_frobenius_norm_by_parameter": proposed_frobenius,
         "accepted_weight_frobenius_norm_by_parameter": (
@@ -4321,9 +4406,31 @@ def _boundary_acceptance_decision(
             for site in sites
         },
     }
+    if ceiling is not None:
+        # Additive: an unset ceiling leaves every decision byte-identical to the
+        # ledger the boundary clause sealed before this clause existed.
+        decision.update(
+            {
+                "norm_ceiling_schema": (
+                    LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA
+                ),
+                "write_norm_ratio_ceiling": ceiling,
+                "write_norm_ratio_metric": _WRITE_NORM_RATIO_METRIC,
+                "write_norm_ratio_measured": write_norm_ratio is not None,
+                "write_norm_ratio_ceiling_exceeded": ceiling_exceeded,
+                "boundary_metric_accepted": boundary_accepted,
+                "refusal_reason": refusal_reason,
+            }
+        )
     if not accepted and policy.writer_reclosure_acceptance == (
         _ACCEPTANCE_FAIL_CLOSED
     ):
+        if refusal_reason == _REFUSAL_WRITE_NORM_CEILING:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The moving-gauge "
+                f"{sweep} sweep inflated boundary {boundary_id}: write-norm "
+                f"ratio {write_norm_ratio} exceeds the ceiling {ceiling}."
+            )
         raise Lfm2MovingGaugeResidualReclosureError(
             "The moving-gauge "
             f"{sweep} sweep regressed boundary {boundary_id}: relative write "
@@ -5198,52 +5305,97 @@ def compile_lfm2_moving_gauge_residual_reclosure(
             refused = [
                 value for value in acceptance_decisions if not value["accepted"]
             ]
-            acceptance = _seal(
-                {
-                    "schema": LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA,
-                    "kind": "moving_gauge_boundary_acceptance_ledger",
-                    "writer_reclosure_acceptance": (
-                        active_policy.writer_reclosure_acceptance
+            acceptance_body = {
+                "schema": LFM2_MOVING_GAUGE_BOUNDARY_ACCEPTANCE_SCHEMA,
+                "kind": "moving_gauge_boundary_acceptance_ledger",
+                "writer_reclosure_acceptance": (
+                    active_policy.writer_reclosure_acceptance
+                ),
+                "boundary_regression_tolerance": (
+                    active_policy.boundary_regression_tolerance
+                ),
+                "metric": _BOUNDARY_ACCEPTANCE_METRIC,
+                "reverse_sweep_mode": active_policy.reverse_sweep_mode,
+                "reverse_row_frame": (
+                    _RECAPTURED_ROW_FRAME
+                    if recaptured_reverse
+                    else _FIT_ROW_FRAME
+                ),
+                "evaluated_writer_overwrites": len(acceptance_decisions),
+                "accepted_writer_overwrites": (
+                    len(acceptance_decisions) - len(refused)
+                ),
+                "refused_writer_overwrites": len(refused),
+                "refused_by_sweep": {
+                    _FORWARD_SWEEP_NAME: sum(
+                        1
+                        for value in refused
+                        if value["sweep"] == _FORWARD_SWEEP_NAME
                     ),
-                    "boundary_regression_tolerance": (
-                        active_policy.boundary_regression_tolerance
+                    _REVERSE_SWEEP_NAME: sum(
+                        1
+                        for value in refused
+                        if value["sweep"] == _REVERSE_SWEEP_NAME
                     ),
-                    "metric": _BOUNDARY_ACCEPTANCE_METRIC,
-                    "reverse_sweep_mode": active_policy.reverse_sweep_mode,
-                    "reverse_row_frame": (
-                        _RECAPTURED_ROW_FRAME
-                        if recaptured_reverse
-                        else _FIT_ROW_FRAME
+                },
+                "refused_transition_indices": sorted(
+                    {int(value["transition_index"]) for value in refused}
+                ),
+                "decisions": list(acceptance_decisions),
+                "per_boundary": per_boundary,
+                "every_published_boundary_no_worse_than_seed": all(
+                    value["published_no_worse_than_seed"]
+                    for value in per_boundary
+                ),
+                "quality_gate": False,
+            }
+            if active_policy.writer_reclosure_norm_ratio_ceiling is not None:
+                # Additive, and split by reason so the ceiling's own effect is
+                # countable: how many overwrites it refused that the boundary
+                # metric would have kept, and how many ratios it could not
+                # measure at all.
+                ceiling_refused = [
+                    value
+                    for value in refused
+                    if value["refusal_reason"] == _REFUSAL_WRITE_NORM_CEILING
+                ]
+                acceptance_body = {
+                    **acceptance_body,
+                    "norm_ceiling_schema": (
+                        LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA
                     ),
-                    "evaluated_writer_overwrites": len(acceptance_decisions),
-                    "accepted_writer_overwrites": (
-                        len(acceptance_decisions) - len(refused)
+                    "writer_reclosure_norm_ratio_ceiling": (
+                        active_policy.writer_reclosure_norm_ratio_ceiling
                     ),
-                    "refused_writer_overwrites": len(refused),
-                    "refused_by_sweep": {
-                        _FORWARD_SWEEP_NAME: sum(
-                            1
-                            for value in refused
-                            if value["sweep"] == _FORWARD_SWEEP_NAME
+                    "write_norm_ratio_metric": _WRITE_NORM_RATIO_METRIC,
+                    "norm_ratio_ceiling_refused_writer_overwrites": len(
+                        ceiling_refused
+                    ),
+                    "norm_ratio_ceiling_refused_transition_indices": sorted(
+                        {
+                            int(value["transition_index"])
+                            for value in ceiling_refused
+                        }
+                    ),
+                    "boundary_metric_refused_writer_overwrites": (
+                        len(refused) - len(ceiling_refused)
+                    ),
+                    "unmeasured_write_norm_ratio_writer_overwrites": sum(
+                        1
+                        for value in acceptance_decisions
+                        if not value["write_norm_ratio_measured"]
+                    ),
+                    "maximum_accepted_write_norm_ratio": max(
+                        (
+                            value["write_norm_ratio"]
+                            for value in acceptance_decisions
+                            if value["accepted"]
+                            and value["write_norm_ratio"] is not None
                         ),
-                        _REVERSE_SWEEP_NAME: sum(
-                            1
-                            for value in refused
-                            if value["sweep"] == _REVERSE_SWEEP_NAME
-                        ),
-                    },
-                    "refused_transition_indices": sorted(
-                        {int(value["transition_index"]) for value in refused}
+                        default=None,
                     ),
-                    "decisions": list(acceptance_decisions),
-                    "per_boundary": per_boundary,
-                    "every_published_boundary_no_worse_than_seed": all(
-                        value["published_no_worse_than_seed"]
-                        for value in per_boundary
-                    ),
-                    "quality_gate": False,
                 }
-            )
+            acceptance = _seal(acceptance_body)
         diagnostics_body = {
             "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
             "kind": "moving_gauge_forward_reverse_diagnostics",
@@ -5460,6 +5612,39 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                 "terminal_objective_may_overwrite_a_regressed_boundary": False,
             }
         )
+        if active_policy.writer_reclosure_norm_ratio_ceiling is not None:
+            body.update(
+                {
+                    "norm_ceiling_schema": (
+                        LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA
+                    ),
+                    "writer_reclosure_norm_ratio_ceiling": (
+                        active_policy.writer_reclosure_norm_ratio_ceiling
+                    ),
+                    "boundary_acceptance_summary": {
+                        **body["boundary_acceptance_summary"],
+                        **{
+                            key: acceptance[key]
+                            for key in (
+                                "norm_ratio_ceiling_refused_writer_overwrites",
+                                (
+                                    "norm_ratio_ceiling_refused_transition_"
+                                    "indices"
+                                ),
+                                "boundary_metric_refused_writer_overwrites",
+                                (
+                                    "unmeasured_write_norm_ratio_writer_"
+                                    "overwrites"
+                                ),
+                                "maximum_accepted_write_norm_ratio",
+                            )
+                        },
+                    },
+                    "write_norm_ratio_ceiling_refuses_any_boundary_metric": (
+                        True
+                    ),
+                }
+            )
     return Lfm2MovingGaugeDenseReplacementState(
         parameter_ids=ids,
         replacement_weights=values,
@@ -5477,6 +5662,7 @@ __all__ = [
     "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_FAIL_CLOSED",
     "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_REQUIRE_IMPROVEMENT",
     "LFM2_MOVING_GAUGE_WRITER_RECLOSURE_UNGUARDED",
+    "LFM2_MOVING_GAUGE_WRITE_NORM_CEILING_SCHEMA",
     "Lfm2MovingGaugeBaseCausalEndpointChart",
     "Lfm2MovingGaugeBoundaryChart",
     "Lfm2MovingGaugeBoundaryEvidence",
