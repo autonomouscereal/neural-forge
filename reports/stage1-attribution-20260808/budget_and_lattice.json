@@ -1,0 +1,171 @@
+{
+ "schema": "neural-forge-stage-a-budget-lattice-v1",
+ "exact_unique_parameters": 53552368,
+ "by_kind": {
+  "token_embedding": 3342336,
+  "position_encoding": 0,
+  "norm": 23664,
+  "short_conv": 23910400,
+  "residual_add": 0,
+  "gated_mlp": 11025792,
+  "attention": 11907840,
+  "output_head": 3342336
+ },
+ "operator_stack": 35818240,
+ "mlp_stack": 11025792,
+ "token_interface": 6684672,
+ "per_layer_mlp_intermediate_width": {
+  "0": 321,
+  "1": 323,
+  "2": 320,
+  "3": 330,
+  "4": 320,
+  "5": 330,
+  "6": 320,
+  "7": 320,
+  "8": 320,
+  "9": 320,
+  "10": 320,
+  "11": 320,
+  "12": 320,
+  "13": 320
+ },
+ "cost_per_intermediate_unit_per_layer": 2448,
+ "freed_by_narrow_short_conv_rung": 5510656,
+ "uniform_width_bought_by_that_move": 160,
+ "uniform_width_costs": {
+  "483": 5527584,
+  "578": 8783424,
+  "1280": 32842368,
+  "1920": 54776448,
+  "2559": 76676256
+ },
+ "absolute_arithmetic_ceiling_width": 1366,
+ "layer0_mlp_capacity_risks": [
+  {
+   "collision_fraction": 0.875,
+   "downstream_weighted_tail_fraction": 0.7046110994177817,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 320,
+   "post_swiglu_tail_fraction": 0.6958449586637064,
+   "predicted_defect": 0.09651781161091731,
+   "signed_regime_tail_fraction": 0.6991539889405948,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.7069795287428807
+  },
+  {
+   "collision_fraction": 0.874609375,
+   "downstream_weighted_tail_fraction": 0.7040688638539713,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 321,
+   "post_swiglu_tail_fraction": 0.695309649004564,
+   "predicted_defect": 0.09644620716541973,
+   "signed_regime_tail_fraction": 0.6986567147440699,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.7064247798731884
+  },
+  {
+   "collision_fraction": 0.87421875,
+   "downstream_weighted_tail_fraction": 0.7034434324754673,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 322,
+   "post_swiglu_tail_fraction": 0.6946998390795025,
+   "predicted_defect": 0.09637523502393863,
+   "signed_regime_tail_fraction": 0.6981834397498828,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.7060271445501517
+  },
+  {
+   "collision_fraction": 0.873828125,
+   "downstream_weighted_tail_fraction": 0.702908027819737,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 323,
+   "post_swiglu_tail_fraction": 0.694153624304394,
+   "predicted_defect": 0.09630380150872604,
+   "signed_regime_tail_fraction": 0.6975733521407849,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.7055717532919559
+  },
+  {
+   "collision_fraction": 0.87109375,
+   "downstream_weighted_tail_fraction": 0.6991118099871235,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 330,
+   "post_swiglu_tail_fraction": 0.6903352394744126,
+   "predicted_defect": 0.0958053405913537,
+   "signed_regime_tail_fraction": 0.6935837605500305,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.7022487976745996
+  },
+  {
+   "collision_fraction": 0.86171875,
+   "downstream_weighted_tail_fraction": 0.6866736516864186,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 354,
+   "post_swiglu_tail_fraction": 0.6779068288210187,
+   "predicted_defect": 0.09412240969156876,
+   "signed_regime_tail_fraction": 0.6806297799306813,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.6898032807919879
+  },
+  {
+   "collision_fraction": 0.811328125,
+   "downstream_weighted_tail_fraction": 0.6240560888354569,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 483,
+   "post_swiglu_tail_fraction": 0.6152533377722179,
+   "predicted_defect": 0.08566644854393131,
+   "signed_regime_tail_fraction": 0.6145670162973618,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.6290351337628336
+  },
+  {
+   "collision_fraction": 0.5,
+   "downstream_weighted_tail_fraction": 0.3236997599373632,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 1280,
+   "post_swiglu_tail_fraction": 0.31798066096576716,
+   "predicted_defect": 0.04529925296033578,
+   "signed_regime_tail_fraction": 0.30928647714589796,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.34462919219206045
+  },
+  {
+   "collision_fraction": 0.25,
+   "downstream_weighted_tail_fraction": 0.13790573304447173,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 1920,
+   "post_swiglu_tail_fraction": 0.13532571362025636,
+   "predicted_defect": 0.019856466717461878,
+   "signed_regime_tail_fraction": 0.130614088314714,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.15690811560605056
+  },
+  {
+   "collision_fraction": 0.000390625,
+   "downstream_weighted_tail_fraction": 0.00010924727783612198,
+   "fold_method_id": "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1",
+   "intermediate_size": 2559,
+   "post_swiglu_tail_fraction": 0.00010777276657747414,
+   "predicted_defect": 1.910018864475082e-05,
+   "signed_regime_tail_fraction": 0.00010644204726706352,
+   "source_intermediate_size": 2560,
+   "tangent_tail_fraction": 0.00018206517410468415
+  }
+ ],
+ "layer0_short_conv_writer_risks": [
+  {
+   "fold_method_id": "lfm2-cached-short-conv-output-action-streamed-covariance-v2",
+   "observed_effective_rank": 2.53553246714168,
+   "output_action_tail_fraction": 0.1353453723958629,
+   "predicted_defect": 0.3678931535050128,
+   "regularized_tail_fraction": 0.1353453723958629,
+   "sampled_output_row_count": 67583,
+   "sampling_uncertainty_fraction": 0.0,
+   "source_output_width": 1024,
+   "writer_rank": 40
+  }
+ ],
+ "layer0_operator_delta_energy_fraction": 0.8795861563139843,
+ "layer0_mlp_delta_energy_fraction": 0.4511088560561983
+}

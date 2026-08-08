@@ -1,0 +1,812 @@
+{
+ "audit": {
+  "adapter_counter_checks": 452,
+  "autograd_grad_calls": 0,
+  "backward_calls": 0,
+  "body_reclosure_compile_calls": 1,
+  "child_replay_capture_calls": 108,
+  "consumer_fit_calls": 14,
+  "downstream_compile_calls": 14,
+  "final_normalization_compile_calls": 1,
+  "install_calls": 45,
+  "optimizer_constructions": 0,
+  "optimizer_steps": 0,
+  "output_interface_compile_calls": 1,
+  "parent_endpoint_bridge_calls": 34,
+  "parent_forward_calls": 0,
+  "parent_trace_regeneration_calls": 0,
+  "producer_compile_calls": 14,
+  "torch_fold_only_guard_passed": true,
+  "training_steps": 0,
+  "validation_calls": 17,
+  "zero_parent_forward_tripwire_passed": true,
+  "zero_training_tripwire_passed": true
+ },
+ "available_layers": {
+  "__list__": 14,
+  "first": 0
+ },
+ "backward_calls": 0,
+ "body_reclosure": {
+  "captures": {
+   "post_body_reclosure_validation": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   },
+   "pre_body_reclosure_fit": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   }
+  },
+  "compiled": {
+   "artifact_sha256": "str[64]",
+   "fit_record_keys": {
+    "__list__": 205,
+    "first": "..."
+   },
+   "metadata": {
+    "body_coordinate_completion_result_sha256": "...",
+    "body_reclosure_mode": "...",
+    "boundary_acceptance_accepted_writer_overwrites": "...",
+    "boundary_acceptance_decisions_json": "...",
+    "boundary_acceptance_evaluated_writer_overwrites": "...",
+    "boundary_acceptance_maximum_accepted_write_norm_ratio": "...",
+    "boundary_acceptance_norm_ceiling_refusals": "...",
+    "boundary_acceptance_refused_transition_indices_json": "...",
+    "boundary_acceptance_refused_writer_overwrites": "...",
+    "boundary_acceptance_sha256": "...",
+    "boundary_regression_tolerance": "...",
+    "causal_action_aware_factor_writer_count": "...",
+    "causal_operator_consumer_reclosure_count": "...",
+    "causal_w2_reclosure_count": "...",
+    "factor_writer_artifact_sha256": "...",
+    "factor_writer_count": "...",
+    "identity_preservation": "...",
+    "input_producer_reclosure_state_sha256": "...",
+    "moving_gauge_replacement_state_sha256": "...",
+    "parent_forward_calls": "...",
+    "physical_writer_count": "...",
+    "row_alignment_sha256": "...",
+    "split_sha256": "...",
+    "training_steps": "...",
+    "writer_reclosure_acceptance": "...",
+    "writer_reclosure_norm_ratio_ceiling": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "stage": "str[14]"
+  },
+  "fit_parent_endpoints": {
+   "batch_sha256": "str[64]",
+   "record_keys": {
+    "__list__": 205,
+    "first": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   }
+  },
+  "fit_validation_trajectory_leakage": false,
+  "fold_enabled": true,
+  "install": {
+   "accepted": true,
+   "artifact_sha256": "str[64]",
+   "metadata": {
+    "action_aware_factor_writer_count": "...",
+    "body_reclosure_mode": "...",
+    "causal_installation_step_count": "...",
+    "changed_physical_parameter_count": "...",
+    "exact_unique_parameter_count": "...",
+    "factor_writer_count": "...",
+    "final_causal_recapture_sha256": "...",
+    "forward_sweep_count": "...",
+    "fresh_full_child_recapture_required": "...",
+    "fresh_primal_operator_consumer_reclosure_count": "...",
+    "fresh_primal_w2_reclosure_count": "...",
+    "identity_preservation": "...",
+    "input_producer_count": "...",
+    "install_fingerprint_group_count": "...",
+    "install_verification_chain_sha256": "...",
+    "install_verification_mode": "...",
+    "physical_contract_preserved": "...",
+    "physical_writer_count": "...",
+    "physical_writer_parameter_count": "...",
+    "reverse_reconciliation_sweep_count": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "stage": "str[14]",
+   "state_sha256_after": "str[64]",
+   "state_sha256_before": "str[64]",
+   "topology_preserved": true
+  },
+  "mode": "str[23]",
+  "runs_after_all_ascending_layers": true,
+  "runs_before_final_normalization": true,
+  "scope": {
+   "kind": "str[14]",
+   "layer_index": null,
+   "scope_id": "str[14]"
+  },
+  "validation": {
+   "accepted": true,
+   "decision_sha256": "str[64]",
+   "metrics": {
+    "action_aware_factor_writer_count": "...",
+    "actual_full_child_recaptured": "...",
+    "body_reclosure_mode": "...",
+    "boundary_count": "...",
+    "exact_unique_parameter_count": "...",
+    "factor_writer_count": "...",
+    "fresh_primal_operator_consumer_reclosure_count": "...",
+    "fresh_primal_w2_reclosure_count": "...",
+    "heldout_terminal_relative_rmse": "...",
+    "identity_preservation": "...",
+    "input_producer_count": "...",
+    "input_producer_reclosure_complete": "...",
+    "manual_whole_output_review_required": "...",
+    "parent_forward_calls": "...",
+    "per_layer_causal_recapture_complete": "...",
+    "performance_metrics_are_decision_authority": "...",
+    "performance_metrics_diagnostic_only": "...",
+    "physical_writer_count": "...",
+    "training_steps": "...",
+    "transition_count": "..."
+   },
+   "reason": "str[120]",
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "validation_record_keys": {
+    "__list__": 51,
+    "first": "..."
+   }
+  },
+  "validation_parent_endpoints": {
+   "batch_sha256": "str[64]",
+   "record_keys": {
+    "__list__": 51,
+    "first": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   }
+  }
+ },
+ "body_reclosure_executed": true,
+ "body_reclosure_fold_enabled": true,
+ "child_state_sha256_after": "str[64]",
+ "child_state_sha256_before": "str[64]",
+ "child_topology_preserved": true,
+ "child_topology_sha256": "str[64]",
+ "compiler_restart_policy": {
+  "compiler_restart_policy_sha256": "str[64]",
+  "fold_body_reclosure": true,
+  "fold_output_interface": true,
+  "resolved_selected_layer_indices": {
+   "__list__": 14,
+   "first": 0
+  },
+  "schema": "str[59]",
+  "split_seed": "str[27]",
+  "validation_fraction": 0.2
+ },
+ "default_all_layers": true,
+ "external_whole_output_behavior_gate_required_for_promotion": true,
+ "fallible_progress_callbacks_after_commit": 0,
+ "final_normalization": {
+  "captures": {
+   "post_final_normalization_validation": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   },
+   "pre_final_normalization_fit": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   }
+  },
+  "compiled": {
+   "artifact_sha256": "str[64]",
+   "fit_record_keys": {
+    "__list__": 205,
+    "first": "..."
+   },
+   "metadata": {
+    "fit_report_sha256": "...",
+    "map_sha256": "...",
+    "parent_final_norm_executed_analytically": "...",
+    "parent_model_forward_calls": "...",
+    "runs_after_all_selected_layers": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "stage": "str[19]"
+  },
+  "fit_parent_endpoints": {
+   "batch_sha256": "str[64]",
+   "record_keys": {
+    "__list__": 205,
+    "first": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   }
+  },
+  "install": {
+   "accepted": true,
+   "artifact_sha256": "str[64]",
+   "metadata": {
+    "final_norm_installed_after_layers": "...",
+    "fit_report_sha256": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "stage": "str[19]",
+   "state_sha256_after": "str[64]",
+   "state_sha256_before": "str[64]",
+   "topology_preserved": true
+  },
+  "runs_after_all_ascending_layers": true,
+  "scope": {
+   "kind": "str[19]",
+   "layer_index": null,
+   "scope_id": "str[19]"
+  },
+  "validation": {
+   "accepted": true,
+   "decision_sha256": "str[64]",
+   "metrics": {
+    "baseline_finite": "...",
+    "baseline_relative_rmse": "...",
+    "candidate_finite": "...",
+    "candidate_mean_cosine_similarity": "...",
+    "candidate_relative_rmse": "...",
+    "counterfactual_performance_threshold_passed": "...",
+    "heldout_endpoint_compared_to_projected_parent": "...",
+    "minimum_required_improvement": "...",
+    "performance_metrics_are_decision_authority": "...",
+    "performance_metrics_diagnostic_only": "...",
+    "performance_metrics_finite": "...",
+    "relative_rmse_improvement": "...",
+    "terminal_composition_floor_enabled": "...",
+    "terminal_composition_floor_engaged": "...",
+    "terminal_free_run_chance_match_fraction": "...",
+    "terminal_free_run_tripwire_enabled": "...",
+    "terminal_free_run_tripwire_evaluated": "...",
+    "terminal_free_run_tripwire_is_advisory": "...",
+    "terminal_free_run_tripwire_observed": "...",
+    "terminal_free_run_tripwire_stops_acceptance": "...",
+    "validation_tolerance": "..."
+   },
+   "reason": "str[57]",
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "validation_record_keys": {
+    "__list__": 51,
+    "first": "..."
+   }
+  },
+  "validation_parent_endpoints": {
+   "batch_sha256": "str[64]",
+   "record_keys": {
+    "__list__": 51,
+    "first": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   }
+  }
+ },
+ "layer_reports": {
+  "__list__": 14,
+  "first": {
+   "accepted_layer_completion_receipt": {
+    "adapter_stage_split_sha256": "...",
+    "completion_binding_sha256": "...",
+    "completion_receipt_sha256": "...",
+    "execution": "...",
+    "layer_index": "...",
+    "layer_ordinal": "...",
+    "operator_case_rows_released_before_seal": "...",
+    "portable_state_chain": "...",
+    "previous_completion_receipt_sha256": "...",
+    "process_boundary_before": "...",
+    "process_local_state_chain": "...",
+    "producer_consumer_downstream_payloads_are_layer_local": "...",
+    "schema": "...",
+    "selected_layer_indices": "...",
+    "stage_preimages": "...",
+    "trajectory_split_sha256": "...",
+    "validation_decision": "...",
+    "validation_decision_sha256": "..."
+   },
+   "captures": {
+    "post_consumer_fit": "...",
+    "post_downstream_validation": "...",
+    "post_producer_fit": "...",
+    "pre_producer_fit": "..."
+   },
+   "child_closed_loop": true,
+   "consumer": {
+    "compiled": "...",
+    "fitted_after_installed_producer_recapture": "...",
+    "install": "..."
+   },
+   "downstream": {
+    "compiled": "...",
+    "compiled_after_installed_consumer_recapture": "...",
+    "install": "..."
+   },
+   "executed_in_this_process": true,
+   "fit_parent_endpoints": {
+    "batch_sha256": "...",
+    "record_keys": "...",
+    "scope": "..."
+   },
+   "fit_validation_trajectory_leakage": false,
+   "merged_captures": {
+    "merged_next_layer_index": "...",
+    "merged_points_observe_one_child_state": "...",
+    "post_downstream_served_next_layer_pre_producer": "...",
+    "pre_producer_served_by_merged_replay": "...",
+    "schema": "..."
+   },
+   "producer": {
+    "compiled": "...",
+    "install": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "validation": {
+    "accepted": "...",
+    "decision_sha256": "...",
+    "metrics": "...",
+    "reason": "...",
+    "scope": "...",
+    "validation_record_keys": "..."
+   },
+   "validation_parent_endpoints": {
+    "batch_sha256": "...",
+    "record_keys": "...",
+    "scope": "..."
+   }
+  }
+ },
+ "layers_executed_in_ascending_order": true,
+ "layers_executed_in_this_process": {
+  "__list__": 14,
+  "first": 0
+ },
+ "merge_adjacent_layer_captures_enabled": true,
+ "merge_adjacent_layer_captures_requested": true,
+ "optimizer_steps": 0,
+ "output_interface": {
+  "captures": {
+   "post_output_interface_validation_live_child": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   },
+   "pre_output_interface_fit": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   },
+   "pre_output_interface_validation_baseline": {
+    "capture_sha256": "...",
+    "point": "...",
+    "record_keys": "...",
+    "scope": "..."
+   }
+  },
+  "compiled": {
+   "artifact_sha256": "str[64]",
+   "fit_record_keys": {
+    "__list__": 205,
+    "first": "..."
+   },
+   "metadata": {
+    "all_vocabulary_rows_transformed_together": "...",
+    "backward_calls": "...",
+    "base_weight_sha256": "...",
+    "body_latent_relative_rmse": "...",
+    "candidate_weight_sha256": "...",
+    "external_whole_output_behavior_gate_required_for_promotion": "...",
+    "fit_rows": "...",
+    "fp64_solve": "...",
+    "global_latent_transform": "...",
+    "identity_skip": "...",
+    "input_embedding_bytes_unchanged": "...",
+    "interpolation_alpha": "...",
+    "materialized_delta_ratio": "...",
+    "maximum_delta_ratio": "...",
+    "maximum_transform_condition_number": "...",
+    "minimum_transform_singular_value": "...",
+    "optimizer_steps": "...",
+    "output_interface_mode": "...",
+    "output_subspace_relative_rmse": "...",
+    "parent_model_forward_calls": "...",
+    "per_token_row_fitting": "...",
+    "raw_delta_ratio": "...",
+    "ridge_effective": "...",
+    "source_binding_sha256": "...",
+    "source_weights_and_sealed_cache_only": "...",
+    "target_width": "...",
+    "teacher_forced_terminal_acceptance_is_necessary_not_sufficient": "...",
+    "trace_scaled_ridge": "...",
+    "training_steps": "...",
+    "transform_condition_number": "...",
+    "transform_min_singular_value": "...",
+    "transform_sha256": "...",
+    "untied_output_parameter_only": "...",
+    "vocabulary_size": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "stage": "str[16]"
+  },
+  "external_whole_output_behavior_gate_required_for_promotion": true,
+  "fit_parent_endpoints": {
+   "batch_sha256": "str[64]",
+   "record_keys": {
+    "__list__": 205,
+    "first": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   }
+  },
+  "install": {
+   "accepted": true,
+   "artifact_sha256": "str[64]",
+   "metadata": {
+    "candidate_weight_sha256": "...",
+    "global_transform_materialized_into_existing_parameter": "...",
+    "gradient_identity_preserved": "...",
+    "identity_skip": "...",
+    "input_embedding_and_output_head_share_parameter": "...",
+    "input_embedding_bytes_unchanged": "...",
+    "output_interface_mode": "...",
+    "parameter_id_preserved": "...",
+    "same_tied_parameter_object_preserved": "...",
+    "untied_output_parameter_only": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "stage": "str[16]",
+   "state_sha256_after": "str[64]",
+   "state_sha256_before": "str[64]",
+   "topology_preserved": true
+  },
+  "post_install_full_live_child_replayed": true,
+  "pre_install_heldout_baseline_captured": true,
+  "promotion_authority": "str[44]",
+  "runs_after_final_normalization": true,
+  "scope": {
+   "kind": "str[16]",
+   "layer_index": null,
+   "scope_id": "str[16]"
+  },
+  "teacher_forced_terminal_acceptance_is_necessary_not_sufficient": true,
+  "validation": {
+   "accepted": true,
+   "decision_sha256": "str[64]",
+   "metrics": {
+    "backward_calls": "...",
+    "baseline_eos_margin_rmse": "...",
+    "baseline_eos_token_id_available": "...",
+    "baseline_finite": "...",
+    "baseline_full_vocabulary_logit_relative_rmse": "...",
+    "baseline_full_vocabulary_not_sparse_anchor_only": "...",
+    "baseline_full_vocabulary_parent_distribution_nll": "...",
+    "baseline_full_vocabulary_parent_entropy": "...",
+    "baseline_full_vocabulary_parent_kl": "...",
+    "baseline_known_sequence_token_nll": "...",
+    "baseline_known_sequence_token_rows": "...",
+    "baseline_parent_winner_mean_margin": "...",
+    "baseline_parent_winner_nll": "...",
+    "baseline_parent_winner_positive_margin_fraction": "...",
+    "baseline_parent_winner_top1_agreement": "...",
+    "baseline_rows": "...",
+    "baseline_teacher_forced": "...",
+    "baseline_vocabulary_size": "...",
+    "counterfactual_performance_threshold_passed": "...",
+    "eos_margin_rmse_regression": "...",
+    "exact_token_match_is_not_promotion_authority": "...",
+    "external_whole_output_behavior_gate_required_for_promotion": "...",
+    "failed_gate_count": "...",
+    "failed_gates": "...",
+    "full_vocabulary_kl_improvement": "...",
+    "full_vocabulary_metrics": "...",
+    "identity_replay_exact": "...",
+    "identity_skip": "...",
+    "input_embedding_and_output_head_share_parameter": "...",
+    "input_embedding_bytes_unchanged": "...",
+    "input_embedding_replay_included": "...",
+    "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates": "...",
+    "known_sequence_nll_improvement": "...",
+    "live_candidate_eos_margin_rmse": "...",
+    "live_candidate_eos_token_id_available": "...",
+    "live_candidate_finite": "...",
+    "live_candidate_full_vocabulary_logit_relative_rmse": "...",
+    "live_candidate_full_vocabulary_not_sparse_anchor_only": "...",
+    "live_candidate_full_vocabulary_parent_distribution_nll": "...",
+    "live_candidate_full_vocabulary_parent_entropy": "...",
+    "live_candidate_full_vocabulary_parent_kl": "...",
+    "live_candidate_known_sequence_token_nll": "...",
+    "live_candidate_known_sequence_token_rows": "...",
+    "live_candidate_parent_winner_mean_margin": "...",
+    "live_candidate_parent_winner_nll": "...",
+    "live_candidate_parent_winner_positive_margin_fraction": "...",
+    "live_candidate_parent_winner_top1_agreement": "...",
+    "live_candidate_rows": "...",
+    "live_candidate_teacher_forced": "...",
+    "live_candidate_vocabulary_size": "...",
+    "maximum_output_eos_margin_rmse_regression": "...",
+    "minimum_output_kl_improvement": "...",
+    "minimum_output_known_sequence_nll_improvement": "...",
+    "nonfinite_metric_count": "...",
+    "nonfinite_metrics": "...",
+    "offline_candidate_eos_margin_rmse": "...",
+    "offline_candidate_eos_token_id_available": "...",
+    "offline_candidate_finite": "...",
+    "offline_candidate_full_vocabulary_logit_relative_rmse": "...",
+    "offline_candidate_full_vocabulary_not_sparse_anchor_only": "...",
+    "offline_candidate_full_vocabulary_parent_distribution_nll": "...",
+    "offline_candidate_full_vocabulary_parent_entropy": "...",
+    "offline_candidate_full_vocabulary_parent_kl": "...",
+    "offline_candidate_known_sequence_token_nll": "...",
+    "offline_candidate_known_sequence_token_rows": "...",
+    "offline_candidate_parent_winner_mean_margin": "...",
+    "offline_candidate_parent_winner_nll": "...",
+    "offline_candidate_parent_winner_positive_margin_fraction": "...",
+    "offline_candidate_parent_winner_top1_agreement": "...",
+    "offline_candidate_rows": "...",
+    "offline_candidate_teacher_forced": "...",
+    "offline_candidate_vocabulary_size": "...",
+    "offline_vs_live_post_install_replayed_through_input_embedding": "...",
+    "offline_vs_live_relative_rmse": "...",
+    "offline_vs_live_rows": "...",
+    "offline_vs_live_top1_agreement": "...",
+    "optimizer_steps": "...",
+    "output_interface_mode": "...",
+    "output_parameter_bytes_unchanged": "...",
+    "output_validation_tolerance": "...",
+    "parent_distribution_cross_entropy_is_redundant_with_kl": "...",
+    "parent_forward_calls": "...",
+    "parent_winner_top1_and_margin_are_diagnostics": "...",
+    "performance_metrics_are_decision_authority": "...",
+    "performance_metrics_diagnostic_only": "...",
+    "performance_metrics_finite": "...",
+    "post_install_full_live_child_replay": "...",
+    "pre_install_heldout_baseline": "...",
+    "promotion_authority": "...",
+    "teacher_forced_terminal_acceptance_is_necessary_not_sufficient": "...",
+    "training_steps": "...",
+    "untied_output_parameter_only": "..."
+   },
+   "reason": "str[122]",
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   },
+   "validation_record_keys": {
+    "__list__": 51,
+    "first": "..."
+   }
+  },
+  "validation_parent_endpoints": {
+   "batch_sha256": "str[64]",
+   "record_keys": {
+    "__list__": 51,
+    "first": "..."
+   },
+   "scope": {
+    "kind": "...",
+    "layer_index": "...",
+    "scope_id": "..."
+   }
+  }
+ },
+ "output_interface_fold_enabled": true,
+ "parent_forward_calls": 0,
+ "parent_trajectory_source": "str[20]",
+ "promotion_authority": "str[44]",
+ "restart_capsule": {
+  "capsule_records": {
+   "__list__": 14,
+   "first": {
+    "accepted_layer_completion_ledger_sha256": "...",
+    "capsule": "...",
+    "completed_layer_indices": "...",
+    "fold_progress": "...",
+    "layer_index": "...",
+    "layer_ordinal": "...",
+    "record_sha256": "...",
+    "remaining_layer_indices": "...",
+    "restart_capsule_is_not_a_promotable_child": "...",
+    "retained_capsule_keys": "...",
+    "rotation_keep": "...",
+    "schema": "..."
+   }
+  },
+  "capsule_written_after_every_accepted_layer": true,
+  "capsules_written": 14,
+  "completed_layer_indices_on_entry": {
+   "__list__": 0,
+   "first": null
+  },
+  "completed_layers_are_the_ascending_selected_prefix": true,
+  "layer_indices_executed": {
+   "__list__": 14,
+   "first": 0
+  },
+  "mode": "str[30]",
+  "report_sha256": "str[64]",
+  "restart_capsule_enabled": true,
+  "restart_capsule_is_not_a_promotable_child": true,
+  "resume_admission": null,
+  "resumed": false,
+  "schema": "str[55]",
+  "writer": {
+   "adapter_identity": {
+    "adapter_identity_sha256": "...",
+    "adapter_schema": "...",
+    "body_coordinate_completion_recipe": "...",
+    "body_reclosure_mode": "...",
+    "child_basis_sha256": "...",
+    "child_input_vocabulary_sha256": "...",
+    "child_layer_count": "...",
+    "child_runtime_config_sha256": "...",
+    "coordinate_map_sha256": "...",
+    "identity_tokenizer_evidence_sha256": "...",
+    "parent_cache_key": "...",
+    "parent_identity_sha256": "...",
+    "parent_residual_operator_manifest_sha256": "...",
+    "replay_capture_mode": "...",
+    "replay_capture_selection_sha256": "...",
+    "schema": "...",
+    "selected_layer_indices": "...",
+    "source_graph_fingerprint": "...",
+    "tokenizer_bridge_artifact_sha256": "...",
+    "tokenizer_bridge_trace_adapter_evidence_sha256": "..."
+   },
+   "bindings": {
+    "adapter_identity_sha256": "...",
+    "bindings_sha256": "...",
+    "child_layer_count": "...",
+    "child_name": "...",
+    "run_id": "...",
+    "run_schema": "...",
+    "schema": "...",
+    "selected_layer_indices": "...",
+    "trajectory_split_sha256": "..."
+   },
+   "directory": "str[157]",
+   "fold_progress_chain_bound": true,
+   "next_capsule_sequence": 14,
+   "published_capsule_count": 14,
+   "published_capsule_keys": {
+    "__list__": 14,
+    "first": "..."
+   },
+   "restart_capsule_is_not_a_promotable_child": true,
+   "resumed": false,
+   "resumed_from": null,
+   "rotation_keep": 2,
+   "schema": "str[55]",
+   "writer_sha256": "str[64]"
+  }
+ },
+ "restart_capsule_enabled": true,
+ "restart_capsule_resumed_layers": {
+  "__list__": 0,
+  "first": null
+ },
+ "run_sha256": "str[64]",
+ "schema": "str[46]",
+ "selected_layers": {
+  "__list__": 14,
+  "first": 0
+ },
+ "teacher_forced_terminal_acceptance_is_necessary_not_sufficient": true,
+ "training_steps": 0,
+ "trajectory_split": {
+  "available_paths": {
+   "__list__": 1,
+   "first": "str[16]"
+  },
+  "default_all_paths": true,
+  "fit_record_keys": {
+   "__list__": 205,
+   "first": {
+    "__list__": 2,
+    "first": "..."
+   }
+  },
+  "fit_trajectory_ids": {
+   "__list__": 205,
+   "first": "str[12]"
+  },
+  "schema": "str[53]",
+  "selected_paths": {
+   "__list__": 1,
+   "first": "str[16]"
+  },
+  "split_seed": "str[27]",
+  "split_sha256": "str[64]",
+  "validation_fraction": 0.2,
+  "validation_record_keys": {
+   "__list__": 51,
+   "first": {
+    "__list__": 2,
+    "first": "..."
+   }
+  },
+  "validation_trajectory_ids": {
+   "__list__": 51,
+   "first": "str[12]"
+  },
+  "whole_trajectory_isolation": true
+ },
+ "transaction": {
+  "accepted": true,
+  "action": "str[6]",
+  "exact": true,
+  "metadata": {
+   "topology_sha256": "str[64]",
+   "whole_child_transaction": true
+  },
+  "state_sha256_after": "str[64]",
+  "state_sha256_before": "str[64]"
+ },
+ "transaction_committed": true,
+ "transaction_rolls_back_precommit_failure": true
+}
