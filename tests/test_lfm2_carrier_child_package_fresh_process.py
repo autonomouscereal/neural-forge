@@ -24,11 +24,20 @@ from neural_forge.lfm2_carrier_bridge_publication import (
     STANDALONE_BRIDGE_SCHEMA,
     carrier_materialization_tensor_sha256,
 )
+from neural_forge.dynamic_counted_child_state import (
+    ContinuousChildStateAllocation,
+)
 from neural_forge.lfm2_carrier_child_package import (
+    ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES,
     CARRIER_CHILD_PACKAGE_RECEIPT,
+    CURRENT_LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS,
+    LFM2_CARRIER_EXACT_2X_COUNTED_ABI,
+    LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
     Lfm2CarrierChildCheckpointIO,
     Lfm2CarrierChildPackageError,
     Lfm2CarrierChildPackageRegistration,
+    Lfm2CarrierCountedAbiProfile,
+    admitted_lfm2_carrier_counted_abi_profile,
     load_authenticated_lfm2_carrier_child_package,
 )
 
@@ -402,6 +411,142 @@ def test_child_local_outer_inventory_rejects_receipt_tampering(
         Lfm2CarrierChildCheckpointIO.from_child_directory(
             base=_BaseCheckpointIO(None),
             child_directory=child_directory,
+        )
+
+
+def _production_route_registration(
+    *,
+    route_elements: int = CURRENT_LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS,
+) -> Lfm2CarrierChildPackageRegistration:
+    """A registration whose route allocations are stated rather than loaded.
+
+    The counted re-pin is arithmetic over the published route sizes; this
+    isolates that arithmetic from the publication loader so both admitted
+    budgets can be exercised against the real 1,933,888-element channels.
+    """
+
+    class _StatedRoutes(Lfm2CarrierChildPackageRegistration):
+        def allocations(self):
+            return (
+                ContinuousChildStateAllocation(
+                    state_id="semantic-carrier-route.c_in",
+                    parameter_elements=route_elements,
+                    tensor_sha256="8" * 64,
+                    artifact_sha256="9" * 64,
+                ),
+                ContinuousChildStateAllocation(
+                    state_id="semantic-carrier-route.c_out",
+                    parameter_elements=route_elements,
+                    tensor_sha256="a" * 64,
+                    artifact_sha256="9" * 64,
+                ),
+            )
+
+    return _StatedRoutes(
+        publication_directory=Path("carrier-route"),
+        expected_artifact_sha256="4" * 64,
+        span_evidence_json=Path("spans.json"),
+        expected_span_evidence_sha256="5" * 64,
+        expected_span_evidence_file_sha256="6" * 64,
+        expected_target_rows=4_096,
+        expected_hidden_size=816,
+        expected_input_route_elements=route_elements,
+        expected_output_route_elements=route_elements,
+    )
+
+
+def test_counted_plan_re_pin_admits_both_sealed_carrier_budgets() -> None:
+    """The runtime re-pin follows the run's admitted tuple, not one constant."""
+
+    registration = _production_route_registration()
+
+    exact_4x = registration.admitted_counted_plan(
+        LFM2_CARRIER_EXACT_4X_COUNTED_ABI
+    )
+    exact_2x = registration.admitted_counted_plan(
+        LFM2_CARRIER_EXACT_2X_COUNTED_ABI
+    )
+
+    assert exact_4x.target_total_parameter_elements == 57_420_144
+    assert exact_4x.dense_model_parameter_elements == 53_552_368
+    assert exact_2x.target_total_parameter_elements == 114_846_592
+    assert exact_2x.dense_model_parameter_elements == 110_978_816
+    for plan in (exact_4x, exact_2x):
+        assert plan.parent_unique_parameters == 229_693_184
+        assert plan.continuous_parameter_elements == 3_867_776
+    # The exact-4x wrapper the carrier lane has always called is the same
+    # object, so nothing about the proven lane moved.
+    assert registration.current_exact4x_counted_plan() == exact_4x
+
+
+def test_counted_plan_re_pin_refuses_a_mismatched_package() -> None:
+    """Routes of the wrong size no longer reserve either admitted body."""
+
+    mismatched = _production_route_registration(route_elements=1_933_889)
+
+    for profile in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES:
+        with pytest.raises(
+            Lfm2CarrierChildPackageError,
+            match="did not reserve its exact H816 dense body",
+        ):
+            mismatched.admitted_counted_plan(profile)
+
+
+def test_counted_plan_re_pin_refuses_an_unlisted_profile() -> None:
+    """An equal-looking tuple assembled by a caller is not admitted."""
+
+    registration = _production_route_registration()
+    forged = Lfm2CarrierCountedAbiProfile(
+        profile_id="exact-4x-h816",
+        compression_ratio=4.0,
+        counted_target_total_parameter_elements=57_420_144,
+        counted_dense_body_parameter_elements=53_552_368,
+        hidden_size=816,
+    )
+
+    assert forged == LFM2_CARRIER_EXACT_4X_COUNTED_ABI
+    with pytest.raises(
+        Lfm2CarrierChildPackageError,
+        match="sealed to the admitted carrier ABI",
+    ):
+        registration.admitted_counted_plan(forged)
+
+
+def test_admitted_carrier_abi_lookup_is_coherent_not_per_field() -> None:
+    """Every field has to come from the same admitted profile."""
+
+    admitted = {
+        (4.0, 57_420_144, 53_552_368, 816): "exact-4x-h816",
+        (2.0, 114_846_592, 110_978_816, 816): "exact-2x-h816",
+    }
+    for tuple_, profile_id in admitted.items():
+        ratio, total, body, hidden = tuple_
+        profile = admitted_lfm2_carrier_counted_abi_profile(
+            compression_ratio=ratio,
+            counted_target_total_parameter_elements=total,
+            counted_dense_body_parameter_elements=body,
+            hidden_size=hidden,
+        )
+        assert profile is not None
+        assert profile.profile_id == profile_id
+
+    refused = (
+        (2.0, 57_420_144, 53_552_368, 816),      # 2x ratio, 4x budget
+        (4.0, 114_846_592, 110_978_816, 816),    # 4x ratio, 2x budget
+        (2.0, 114_846_592, 110_978_816, 1_024),  # 2x budget, H1024
+        (4.0, 57_420_144, 110_978_816, 816),     # mixed totals
+        (None, 57_420_144, 53_552_368, 816),     # no declared ratio
+        (4.0, 57_423_296, 53_555_520, 816),      # the exact quarter
+    )
+    for ratio, total, body, hidden in refused:
+        assert (
+            admitted_lfm2_carrier_counted_abi_profile(
+                compression_ratio=ratio,
+                counted_target_total_parameter_elements=total,
+                counted_dense_body_parameter_elements=body,
+                hidden_size=hidden,
+            )
+            is None
         )
 
 

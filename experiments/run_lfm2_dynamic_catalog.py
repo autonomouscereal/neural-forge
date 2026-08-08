@@ -238,9 +238,14 @@ from neural_forge.lfm2_carrier_bridge_publication import (
     load_lfm2_carrier_bridge_publication,
 )
 from neural_forge.lfm2_carrier_child_package import (
+    ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES,
     CARRIER_CHILD_PACKAGE_RECEIPT,
+    LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
     Lfm2CarrierChildCheckpointIO,
     Lfm2CarrierChildPackageRegistration,
+    Lfm2CarrierCountedAbiProfile,
+    admitted_lfm2_carrier_counted_abi_profile,
+    describe_admitted_lfm2_carrier_counted_abi,
     load_authenticated_lfm2_carrier_child_package,
 )
 from neural_forge.lfm2_carrier_route_runtime import (
@@ -339,12 +344,22 @@ PORTABLE_RUNTIME_DTYPES = MappingProxyType(
 
 # The current production carrier route has two independent 1,933,888-element
 # FP32 channels.  They are child state, so the physical H816 body receives the
-# remainder of the sealed 57,420,144-element target rather than that total.
-LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS = 57_420_144
-LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS = 53_552_368
+# remainder of the requested counted target rather than that total, and the
+# subtraction is fixed -- the channels are donor-side coefficients over the
+# 4,096 target rows, so they neither scale with the budget nor with the
+# residual width.  The constants below stay the 4x lane's numbers because they
+# are this runner's argparse and dataclass defaults; the *admitted* set is
+# ``ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES``, which also carries the
+# exact-2x tuple (NOTES-W13T §2, NOTES-W13U).
+LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS = (
+    LFM2_CARRIER_EXACT_4X_COUNTED_ABI.counted_target_total_parameter_elements
+)
+LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS = (
+    LFM2_CARRIER_EXACT_4X_COUNTED_ABI.counted_dense_body_parameter_elements
+)
 LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE = 1_933_888
 LFM2_CARRIER_TARGET_ROWS = 4_096
-LFM2_CARRIER_HIDDEN_SIZE = 816
+LFM2_CARRIER_HIDDEN_SIZE = LFM2_CARRIER_EXACT_4X_COUNTED_ABI.hidden_size
 LFM2_CARRIER_SMOKE_MAXIMUM_NEW_TOKENS = 2
 LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS = 1_024
 LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS = 2_048
@@ -568,6 +583,14 @@ def _process_memory_progress_metadata() -> dict[str, int]:
     return result
 
 
+# The generic closed-loop fold's rejected-decision event.  Named here rather
+# than imported because the emitting module publishes the string inline; this
+# runner only reads it.
+CHILD_CLOSED_LOOP_VALIDATION_REJECTED_STAGE = (
+    "child_closed_loop_validation_decision_rejected"
+)
+
+
 class _ProgressJournal:
     """Emit small, immediately flushed, tensor-free phase records."""
 
@@ -610,6 +633,59 @@ class _ProgressJournal:
             "maximum_worker_peak_capture_bytes": 0,
         }
         self._merged_capture_policy: dict[str, Any] | None = None
+        # A layer the terminal floor refuses publishes no restart capsule and
+        # no completion receipt, so its per-solve prior-correction reports used
+        # to die with the process (NOTES-W13S §6.4).  The adapter now attaches
+        # them to the rejected validation decision, and that decision passes
+        # through this journal on its way to the log -- so, exactly like the
+        # replay-shard telemetry above, the failure receipt reads them from
+        # here instead of threading a second sink through the wiring.
+        self._refused_layer_solver_diagnostics: dict[str, Any] | None = None
+
+    def _observe_refused_layer_solver_diagnostics(
+        self,
+        stage: str,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        if stage != CHILD_CLOSED_LOOP_VALIDATION_REJECTED_STAGE:
+            return
+        try:
+            metrics = json.loads(str(metadata.get("validation_metrics_json")))
+        except (TypeError, ValueError):
+            return
+        if not isinstance(metrics, Mapping):
+            return
+        reports = metrics.get("refused_layer_prior_correction_reports_json")
+        if not isinstance(reports, str):
+            return
+        try:
+            decoded = json.loads(reports)
+        except ValueError:
+            return
+        self._refused_layer_solver_diagnostics = {
+            "layer_index": metrics.get("refused_layer_index"),
+            "scope_id": metadata.get("scope_id"),
+            "validation_reason": metadata.get("validation_reason"),
+            "validation_decision_sha256": (
+                metadata.get("validation_decision_sha256")
+            ),
+            "solve_count": metrics.get(
+                "refused_layer_prior_correction_solve_count"
+            ),
+            "prior_correction_reports": decoded,
+            "prior_correction_reports_nonfinite": (
+                metrics.get(
+                    "refused_layer_prior_correction_reports_nonfinite_json"
+                )
+            ),
+        }
+
+    def refused_layer_solver_diagnostics(self) -> dict[str, Any] | None:
+        """Return the last floor-refused layer's per-solve solver evidence."""
+
+        if self._refused_layer_solver_diagnostics is None:
+            return None
+        return dict(self._refused_layer_solver_diagnostics)
 
     def _observe_merged_capture_policy(
         self,
@@ -743,6 +819,7 @@ class _ProgressJournal:
         self._sequence += 1
         self._observe_replay_sharding(stage, safe_metadata)
         self._observe_merged_capture_policy(stage, safe_metadata)
+        self._observe_refused_layer_solver_diagnostics(stage, safe_metadata)
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -953,13 +1030,14 @@ def _scanner_safe_route_response(value: Any) -> Any:
 def _build_registered_carrier_counted_plan(
     registration: Lfm2CarrierChildPackageRegistration,
     *,
+    profile: Lfm2CarrierCountedAbiProfile,
     parent_unique_parameters: int,
     target_total_parameter_elements: int,
     observed_allocations: Sequence[Any],
 ) -> CountedChildStatePlan:
-    """Bind the live fold to the one registered current exact-4x lane."""
+    """Bind the live fold to the run's one admitted carrier ABI lane."""
 
-    registered = registration.current_exact4x_counted_plan()
+    registered = registration.admitted_counted_plan(profile)
     if parent_unique_parameters != registered.parent_unique_parameters:
         raise ProductionLfm2CatalogError(
             "Current carrier routes belong to the registered "
@@ -2234,14 +2312,13 @@ class ProductionLfm2CatalogConfig:
                     "Carrier-routed folding requires the sealed target tokenizer "
                     "bridge."
                 )
+            # The declared ratio is no longer pinned to a value here.  It is
+            # one field of a sealed counted-ABI tuple and is checked below,
+            # coherently, against the counted totals and the residual width it
+            # claims to describe -- a 2x ratio carrying 4x totals is not a
+            # weaker request, it is an incoherent one.
             if not (
                 self.compression_ratio is not None
-                and math.isclose(
-                    self.compression_ratio,
-                    4.0,
-                    rel_tol=0.0,
-                    abs_tol=0.0,
-                )
                 and self.dense_heterogeneous_layout
                 and self.dense_heterogeneous_global_hidden_frontier
                 and self.dense_heterogeneous_factor_writer_rank_discovery
@@ -2269,11 +2346,26 @@ class ProductionLfm2CatalogConfig:
                     "attention with geometry risk, and streaming-v2 vocabulary "
                     "margin observability."
                 )
+            # The sealed counted-ABI allowlist.  Ratio, counted total, dense
+            # body, and residual width are matched as one tuple: every field
+            # has to come from the same admitted profile, so no cross-field
+            # mixture is expressible.  The two structural invariants that hold
+            # for *every* profile -- the body budget is the same number the
+            # heterogeneous solver is given, and both route channels are
+            # reserved inside the counted target -- are still checked here
+            # rather than inferred from the profile.
             if (
-                self.counted_target_total_parameters
-                != LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS
-                or self.counted_dense_body_parameters
-                != LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS
+                admitted_lfm2_carrier_counted_abi_profile(
+                    compression_ratio=self.compression_ratio,
+                    counted_target_total_parameter_elements=(
+                        self.counted_target_total_parameters
+                    ),
+                    counted_dense_body_parameter_elements=(
+                        self.counted_dense_body_parameters
+                    ),
+                    hidden_size=self.carrier_expected_hidden_size,
+                )
+                is None
                 or self.dense_heterogeneous_target_parameters
                 != self.counted_dense_body_parameters
                 or self.counted_target_total_parameters
@@ -2282,8 +2374,10 @@ class ProductionLfm2CatalogConfig:
             ):
                 raise ProductionLfm2CatalogError(
                     "Carrier-routed production must reserve both independent "
-                    "route channels inside the counted target and give only the "
-                    "53,552,368-element remainder to the physical body."
+                    "route channels inside the counted target and give the "
+                    "remainder to the physical body at one admitted carrier "
+                    "ABI: "
+                    f"{describe_admitted_lfm2_carrier_counted_abi()}."
                 )
             if (
                 self.carrier_expected_target_rows != LFM2_CARRIER_TARGET_ROWS
@@ -3065,6 +3159,42 @@ class ProductionLfm2CatalogConfig:
     @property
     def uses_carrier_routes(self) -> bool:
         return self.carrier_route_publication is not None
+
+    @property
+    def carrier_counted_abi_profile(self) -> Lfm2CarrierCountedAbiProfile:
+        """Return the one admitted carrier ABI tuple this run requested.
+
+        Configuration already refused anything outside the allowlist, so this
+        resolves rather than decides.  Every later re-pin -- the registered
+        counted plan, the balanced-basis phase dependency, the routed ABI
+        smoke -- reads the run's profile from here instead of a module
+        constant, so a 2x run is re-pinned to 2x rather than dying minutes in
+        against the 4x numbers (NOTES-W13T §7).
+        """
+
+        if not self.uses_carrier_routes:
+            raise ProductionLfm2CatalogError(
+                "Only a carrier-routed configuration has a carrier ABI "
+                "profile."
+            )
+        profile = admitted_lfm2_carrier_counted_abi_profile(
+            compression_ratio=self.compression_ratio,
+            counted_target_total_parameter_elements=(
+                self.counted_target_total_parameters
+            ),
+            counted_dense_body_parameter_elements=(
+                self.counted_dense_body_parameters
+            ),
+            hidden_size=self.carrier_expected_hidden_size,
+        )
+        if profile is None:
+            raise ProductionLfm2CatalogError(
+                "Carrier-routed production must reserve both independent "
+                "route channels inside the counted target and give the "
+                "remainder to the physical body at one admitted carrier ABI: "
+                f"{describe_admitted_lfm2_carrier_counted_abi()}."
+            )
+        return profile
 
     @property
     def uses_portable_runtime_relocation(self) -> bool:
@@ -8622,7 +8752,22 @@ class CarrierRouteSmokeBehaviorEvaluator:
         maximum_prompt_tokens: int,
         maximum_new_tokens: int,
         baseline_fingerprint: str,
+        counted_abi_profile: Lfm2CarrierCountedAbiProfile,
     ) -> None:
+        # The smoke asserts the run's own admitted counted ABI, not a module
+        # constant, so the 2x lane is checked as strictly as the 4x one.  The
+        # gate manifest is deliberately unchanged: the counted numbers are
+        # already sealed in the configuration identity, and rotating the gate
+        # fingerprint would invalidate every published 4x receipt.
+        if not any(
+            counted_abi_profile is admitted
+            for admitted in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES
+        ):
+            raise ProductionLfm2CatalogError(
+                "Carrier route smoke requires one admitted carrier ABI: "
+                f"{describe_admitted_lfm2_carrier_counted_abi()}."
+            )
+        self.counted_abi_profile = counted_abi_profile
         self.artifact_io = artifact_io
         self.semantic_source_tokenizer = semantic_source_tokenizer
         self.target_tokenizer = target_tokenizer
@@ -8748,10 +8893,10 @@ class CarrierRouteSmokeBehaviorEvaluator:
             report.get("effective_child_parameter_count"),
         )
         expected_counts = (
-            LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS,
+            self.counted_abi_profile.counted_dense_body_parameter_elements,
             LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE,
             LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE,
-            LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS,
+            self.counted_abi_profile.counted_target_total_parameter_elements,
         )
         if observed_counts != expected_counts:
             raise ProductionLfm2CatalogError(
@@ -9960,6 +10105,7 @@ def _compose_on_policy_phase_dependencies(
 def _authenticated_carrier_phase_dependencies(
     registration: Lfm2CarrierChildPackageRegistration,
     *,
+    profile: Lfm2CarrierCountedAbiProfile,
     expected_registration_fingerprint: str,
     expected_route_artifact_sha256: str,
     expected_span_evidence_sha256: str,
@@ -9968,7 +10114,7 @@ def _authenticated_carrier_phase_dependencies(
     """Freshly authenticate every external carrier dependency boundary."""
 
     verified = registration.verify()
-    current_counted_plan = verified.current_exact4x_counted_plan()
+    current_counted_plan = verified.admitted_counted_plan(profile)
     if (
         verified.fingerprint != expected_registration_fingerprint
         or verified.expected_artifact_sha256 != expected_route_artifact_sha256
@@ -11817,6 +11963,7 @@ def run_production_catalog(
             )
             carrier_counted_plan = _build_registered_carrier_counted_plan(
                 carrier_registration,
+                profile=config.carrier_counted_abi_profile,
                 parent_unique_parameters=(
                     parent_graph.unique_parameter_count
                 ),
@@ -12352,6 +12499,7 @@ def run_production_catalog(
                 ),
                 maximum_new_tokens=config.routed_smoke_max_new_tokens,
                 baseline_fingerprint=route_smoke_baseline_fingerprint,
+                counted_abi_profile=config.carrier_counted_abi_profile,
             )
             behavior_evaluator = carrier_behavior_evaluator
             evaluator = CombinedLfm2FinalEvaluator(
@@ -12378,10 +12526,12 @@ def run_production_catalog(
                 expected_route = config.carrier_route_artifact_sha256
                 expected_span = config.carrier_span_evidence_sha256
                 expected_counted_plan = carrier_counted_plan.fingerprint
+                expected_carrier_profile = config.carrier_counted_abi_profile
 
                 def carrier_phase_dependencies() -> Mapping[str, str]:
                     return _authenticated_carrier_phase_dependencies(
                         carrier_registration,
+                        profile=expected_carrier_profile,
                         expected_registration_fingerprint=expected_registration,
                         expected_route_artifact_sha256=expected_route,
                         expected_span_evidence_sha256=expected_span,
@@ -13460,7 +13610,15 @@ def run_production_catalog(
                     if materialized_target_abi is None
                     else dict(materialized_target_abi)
                 ),
-                "failure": diagnose_failure(error),
+                "failure": {
+                    **diagnose_failure(error),
+                    # NOTES-W13S §6.4: a floor-refused layer publishes no
+                    # capsule, so its per-solve solver evidence had nowhere to
+                    # land.  ``None`` whenever no layer was refused.
+                    "refused_layer_solver_diagnostics": (
+                        progress.refused_layer_solver_diagnostics()
+                    ),
+                },
                 "publication_destination": str(config.publish_destination),
                 "publication_present": (config.publish_destination.exists()),
                 "ledger": {

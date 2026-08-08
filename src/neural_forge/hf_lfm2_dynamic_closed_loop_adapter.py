@@ -8444,6 +8444,66 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         )
 
+    def _refused_layer_prior_correction_diagnostics(
+        self,
+        scope: FoldScope,
+    ) -> dict[str, JsonScalar]:
+        """Serialize a refused layer's own per-solve prior corrections.
+
+        NOTES-W13S §6.4: the R1/R2/R3 per-solve numbers -- requested versus
+        allowed prior-delta ratio, the effective ridge, lambda*sigma_max --
+        reached disk only through an *accepted* layer's completion receipt, so
+        a layer the terminal floor refused published nothing at all and the
+        one arm that most needed those numbers could not read them.  They are
+        still resident in this layer's producer/consumer/downstream payloads
+        at refusal time; this puts them on the refusal itself, which is the
+        last place they exist.  Accepted decisions are untouched, so no sealed
+        capsule, completion receipt, or decision digest moves.
+
+        Every lookup here is optional on purpose.  This runs on the refusal
+        path, and a diagnostic that raised would replace a clean fail-closed
+        rejection with an infrastructure crash; a scope with no layer-local
+        payload state simply has nothing to report.
+        """
+
+        if scope.kind != "layer" or scope.layer_index is None:
+            return {}
+        layer_index = int(scope.layer_index)
+        reports: dict[str, list[dict[str, Any]]] = {}
+        solves = 0
+        for stage, attribute in (
+            ("producer", "_producer_payloads"),
+            ("consumer", "_consumer_payloads"),
+            ("downstream", "_downstream_payloads"),
+        ):
+            payloads = getattr(self, attribute, None)
+            if not isinstance(payloads, Mapping):
+                continue
+            payload = payloads.get(layer_index)
+            compiled = None if payload is None else payload.compiled
+            stage_reports = getattr(compiled, "prior_correction_reports", ())
+            encoded = [value.as_dict() for value in stage_reports]
+            if not encoded:
+                continue
+            reports[stage] = encoded
+            solves += len(encoded)
+        if not reports:
+            return {}
+        reports_json, nonfinite_json = _durable_diagnostic_json(
+            reports,
+            "refused-layer prior-correction diagnostics",
+        )
+        diagnostics: dict[str, JsonScalar] = {
+            "refused_layer_index": layer_index,
+            "refused_layer_prior_correction_solve_count": solves,
+            "refused_layer_prior_correction_reports_json": reports_json,
+        }
+        if nonfinite_json is not None:
+            diagnostics[
+                "refused_layer_prior_correction_reports_nonfinite_json"
+            ] = nonfinite_json
+        return diagnostics
+
     def _validation_decision(
         self,
         *,
@@ -8668,6 +8728,14 @@ class Lfm2DynamicClosedLoopAdapter:
             reason = "; ".join((reason, *blocking))
         if floor_engaged:
             metrics["terminal_composition_floor_failed"] = bool(floor_reasons)
+        if not accepted:
+            # The refusal is the last moment this layer's solver evidence
+            # exists.  A refused layer publishes no restart capsule and no
+            # completion receipt, so without this the numbers are discarded
+            # (NOTES-W13S §6.4).
+            metrics.update(
+                self._refused_layer_prior_correction_diagnostics(scope)
+            )
         return ValidationDecision(
             scope=scope,
             accepted=accepted,

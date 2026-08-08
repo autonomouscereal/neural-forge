@@ -804,6 +804,27 @@ def test_a_run_headed_past_the_no_branch_baseline_fails_closed_at_the_wall(
     assert metrics["terminal_composition_floor_failed"] is True
     assert "baseline_relative_rmse" in metrics
     assert "candidate_relative_rmse" in metrics
+    # NOTES-W13S §6.4: this layer publishes no restart capsule and no
+    # completion receipt, so its per-solve prior-correction reports used to be
+    # discarded here.  They now ride the refusal itself.
+    assert metrics["refused_layer_index"] == 1
+    assert metrics["refused_layer_prior_correction_solve_count"] > 0
+    reports = json.loads(
+        str(metrics["refused_layer_prior_correction_reports_json"])
+    )
+    clamped = [
+        entry
+        for stage_reports in reports.values()
+        for entry in stage_reports
+        if "prior_delta_clamp" in entry
+    ]
+    assert clamped, reports
+    for entry in clamped:
+        clamp = entry["prior_delta_clamp"]
+        assert clamp["requested_prior_delta_ratio"] is not None
+        assert clamp["allowed_prior_delta_ratio"] is not None
+        assert isinstance(clamp["clamp_engaged"], bool)
+        assert clamp["budget_units"] == "prior_frobenius_norm"
 
 
 # --- W13P item 4: the A12 rule ported over the body reclosure ----------------

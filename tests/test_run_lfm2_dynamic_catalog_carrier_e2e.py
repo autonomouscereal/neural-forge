@@ -1194,15 +1194,15 @@ def test_authenticated_carrier_routes_stop_at_the_sealed_production_abi(
     tmp_path,
     capsys,
 ) -> None:
-    """The routed lane is pinned to the 4096-row H816 exact-4x publication."""
+    """The routed lane is pinned to the sealed 4096-row H816 carrier ABI."""
 
     pack = carrier_lane_pack
     run = tmp_path / "carrier-run"
     arguments = _lane_arguments(pack, run, carrier_routes=True)
 
     # Two config-time pins make a toy routed child inexpressible: the residual
-    # width is forced to H816 and the dense body budget to the sealed
-    # 53,552,368-element remainder.  See NOTES-1E.md, blocker 1.
+    # width is forced to H816 and the counted budget to one of the two sealed
+    # carrier ABI tuples.  See NOTES-1E.md blocker 1 and NOTES-W13U.
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
         match="equal carrier_expected_hidden_size",
@@ -1222,11 +1222,26 @@ def test_authenticated_carrier_routes_stop_at_the_sealed_production_abi(
     ] = str(pack.exact_body_parameters)
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
-        match="reserve both independent route channels",
+        match=(
+            "reserve both independent route channels inside the counted "
+            "target and give the remainder to the physical body at one "
+            "admitted carrier ABI"
+        ),
     ):
         MODULE.config_from_args(
             MODULE.build_parser().parse_args(toy_budget_arguments)
         )
+    # The exact-2x rung is admitted; a toy budget that merely *looks* like one
+    # is not.  Both admitted tuples name themselves in the refusal.
+    admitted_tuples = str(
+        pytest.raises(
+            MODULE.ProductionLfm2CatalogError,
+            MODULE.config_from_args,
+            MODULE.build_parser().parse_args(toy_budget_arguments),
+        ).value
+    )
+    assert "ratio 4 / counted total 57,420,144" in admitted_tuples
+    assert "ratio 2 / counted total 114,846,592" in admitted_tuples
 
     config = MODULE.config_from_args(
         MODULE.build_parser().parse_args(arguments)

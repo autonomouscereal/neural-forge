@@ -61,6 +61,164 @@ class Lfm2CarrierChildPackageError(RuntimeError):
     """A carrier registration, package, loader, or count is invalid."""
 
 
+@dataclass(frozen=True)
+class Lfm2CarrierCountedAbiProfile:
+    """One sealed carrier counted-ABI tuple, admitted or refused as a whole.
+
+    The declared compaction ratio, the counted target total, the dense body
+    remainder, and the residual width are *one* fact about a child, not four
+    independent knobs.  A request that pairs one profile's ratio with another
+    profile's budget describes no child this lane can build, so the tuple is
+    matched coherently and a partial match is a refusal.
+    """
+
+    profile_id: str
+    compression_ratio: float
+    counted_target_total_parameter_elements: int
+    counted_dense_body_parameter_elements: int
+    hidden_size: int
+
+    def matches(
+        self,
+        *,
+        compression_ratio: float | None,
+        counted_target_total_parameter_elements: int,
+        counted_dense_body_parameter_elements: int,
+        hidden_size: int,
+    ) -> bool:
+        return bool(
+            compression_ratio is not None
+            and float(compression_ratio) == self.compression_ratio
+            and counted_target_total_parameter_elements
+            == self.counted_target_total_parameter_elements
+            and counted_dense_body_parameter_elements
+            == self.counted_dense_body_parameter_elements
+            and hidden_size == self.hidden_size
+        )
+
+    def describe(self) -> str:
+        return (
+            f"ratio {self.compression_ratio:g} / counted total "
+            f"{self.counted_target_total_parameter_elements:,} / dense body "
+            f"{self.counted_dense_body_parameter_elements:,} / hidden "
+            f"{self.hidden_size}"
+        )
+
+
+# The proven 4x lane.  Every published carrier child to date is this tuple.
+LFM2_CARRIER_EXACT_4X_COUNTED_ABI = Lfm2CarrierCountedAbiProfile(
+    profile_id="exact-4x-h816",
+    compression_ratio=4.0,
+    counted_target_total_parameter_elements=(
+        CURRENT_LFM2_CARRIER_TARGET_PARAMETER_ELEMENTS
+    ),
+    counted_dense_body_parameter_elements=(
+        CURRENT_LFM2_CARRIER_DENSE_PARAMETER_ELEMENTS
+    ),
+    hidden_size=CURRENT_LFM2_CARRIER_HIDDEN_SIZE,
+)
+# The exact-2x ceiling rung derived in NOTES-W13T §2.  229,693,184 is even, so
+# the half is exact with no walk-down; the two route channels are a fixed
+# subtraction rather than a fraction of the budget, so the body is the same
+# 2 x 1,933,888 short; and H816 carries an exact operator/MLP lattice at this
+# budget (45 exact widths, 672..1024), so the rung moves one variable -- the
+# budget -- against the 4x arm.
+LFM2_CARRIER_EXACT_2X_COUNTED_ABI = Lfm2CarrierCountedAbiProfile(
+    profile_id="exact-2x-h816",
+    compression_ratio=2.0,
+    counted_target_total_parameter_elements=114_846_592,
+    counted_dense_body_parameter_elements=110_978_816,
+    hidden_size=CURRENT_LFM2_CARRIER_HIDDEN_SIZE,
+)
+# The complete admitted set.  This is an allowlist, not a relaxation: anything
+# that is not one of these tuples is refused exactly as before.
+ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES: tuple[
+    Lfm2CarrierCountedAbiProfile, ...
+] = (
+    LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
+    LFM2_CARRIER_EXACT_2X_COUNTED_ABI,
+)
+
+
+# How far a profile's *declared* ratio may sit from the counted ratio it
+# labels.  The declared ratio is a rung name, not a derived quantity: the 4x
+# lane declares 4.0 while 229,693,184 / 57,420,144 is 4.0002195745, because
+# 57,420,144 is canonical for reasons upstream of this arithmetic
+# (docs/CURRENT_FOLDING_GOAL.md; NOTES-W13T §2.2).  The exact-2x rung is
+# genuinely exact.  A tenth of a percent admits the former and still refuses a
+# profile whose label misdescribes its own budget.
+_ADMITTED_CARRIER_RATIO_LABEL_TOLERANCE = 1e-3
+
+
+def _seal_admitted_carrier_counted_abi() -> None:
+    """Refuse to import an allowlist whose own arithmetic does not close."""
+
+    identifiers = set()
+    for profile in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES:
+        if profile.profile_id in identifiers:
+            raise Lfm2CarrierChildPackageError(
+                "Admitted carrier ABI profile identifiers must be unique."
+            )
+        identifiers.add(profile.profile_id)
+        routes = (
+            profile.counted_target_total_parameter_elements
+            - profile.counted_dense_body_parameter_elements
+        )
+        counted_ratio = (
+            CURRENT_LFM2_PARENT_PARAMETER_ELEMENTS
+            / profile.counted_target_total_parameter_elements
+        )
+        if (
+            profile.compression_ratio <= 0.0
+            or profile.counted_dense_body_parameter_elements <= 0
+            or profile.hidden_size != CURRENT_LFM2_CARRIER_HIDDEN_SIZE
+            or routes != 2 * CURRENT_LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS
+            or abs(counted_ratio - profile.compression_ratio)
+            > _ADMITTED_CARRIER_RATIO_LABEL_TOLERANCE
+            * profile.compression_ratio
+        ):
+            raise Lfm2CarrierChildPackageError(
+                "Admitted carrier ABI profile does not close on the sealed "
+                f"229,693,184-element source: {profile.describe()}."
+            )
+
+
+_seal_admitted_carrier_counted_abi()
+
+
+def describe_admitted_lfm2_carrier_counted_abi() -> str:
+    """Render every admitted tuple for a fail-closed refusal message."""
+
+    return "; ".join(
+        profile.describe()
+        for profile in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES
+    )
+
+
+def admitted_lfm2_carrier_counted_abi_profile(
+    *,
+    compression_ratio: float | None,
+    counted_target_total_parameter_elements: int,
+    counted_dense_body_parameter_elements: int,
+    hidden_size: int,
+) -> Lfm2CarrierCountedAbiProfile | None:
+    """Return the one admitted profile this request *entirely* matches."""
+
+    for profile in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES:
+        if profile.matches(
+            compression_ratio=compression_ratio,
+            counted_target_total_parameter_elements=(
+                counted_target_total_parameter_elements
+            ),
+            counted_dense_body_parameter_elements=(
+                counted_dense_body_parameter_elements
+            ),
+            hidden_size=hidden_size,
+        ):
+            return profile
+    return None
+
+
 def _digest(value: Any, name: str) -> str:
     if (
         not isinstance(value, str)
@@ -561,18 +719,44 @@ class Lfm2CarrierChildPackageRegistration:
             continuous_allocations=self.allocations(),
         )
 
-    def current_exact4x_counted_plan(self) -> CountedChildStatePlan:
-        plan = self.counted_plan(
-            parent_parameter_elements=CURRENT_LFM2_PARENT_PARAMETER_ELEMENTS,
-            target_parameter_elements=CURRENT_LFM2_CARRIER_TARGET_PARAMETER_ELEMENTS,
-        )
-        if plan.dense_model_parameter_elements != (
-            CURRENT_LFM2_CARRIER_DENSE_PARAMETER_ELEMENTS
+    def admitted_counted_plan(
+        self,
+        profile: Lfm2CarrierCountedAbiProfile,
+    ) -> CountedChildStatePlan:
+        """Build the counted plan for one admitted carrier ABI tuple.
+
+        The profile object itself must be a member of the sealed allowlist --
+        an equal-looking tuple assembled by a caller is not admitted -- and the
+        plan the live routes produce must still reserve that profile's exact
+        dense body.  Both checks are the fail-closed re-pin the 4x lane always
+        had; only the number of admitted answers changed.
+        """
+
+        if not any(
+            profile is admitted
+            for admitted in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES
         ):
             raise Lfm2CarrierChildPackageError(
-                "Current carrier plan did not reserve the exact H816 dense body."
+                "Carrier counted plans are sealed to the admitted carrier ABI "
+                f"({describe_admitted_lfm2_carrier_counted_abi()})."
+            )
+        plan = self.counted_plan(
+            parent_parameter_elements=CURRENT_LFM2_PARENT_PARAMETER_ELEMENTS,
+            target_parameter_elements=(
+                profile.counted_target_total_parameter_elements
+            ),
+        )
+        if plan.dense_model_parameter_elements != (
+            profile.counted_dense_body_parameter_elements
+        ):
+            raise Lfm2CarrierChildPackageError(
+                "Admitted carrier plan did not reserve its exact H816 dense "
+                f"body ({profile.describe()})."
             )
         return plan
+
+    def current_exact4x_counted_plan(self) -> CountedChildStatePlan:
+        return self.admitted_counted_plan(LFM2_CARRIER_EXACT_4X_COUNTED_ABI)
 
     def bind_source(self, child_model: Any) -> Any:
         _publication, spans = self._authenticated()
@@ -1031,6 +1215,7 @@ def run_lfm2_resumable_review_from_packaged_child(
 
 
 __all__ = [
+    "ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES",
     "AuthenticatedLfm2CarrierChildPackage",
     "CARRIER_CHILD_PACKAGE_RECEIPT",
     "CARRIER_CHILD_PACKAGE_SCHEMA",
@@ -1041,9 +1226,14 @@ __all__ = [
     "CURRENT_LFM2_CARRIER_TARGET_PARAMETER_ELEMENTS",
     "CURRENT_LFM2_CARRIER_TARGET_ROWS",
     "CURRENT_LFM2_PARENT_PARAMETER_ELEMENTS",
+    "LFM2_CARRIER_EXACT_2X_COUNTED_ABI",
+    "LFM2_CARRIER_EXACT_4X_COUNTED_ABI",
     "Lfm2CarrierChildCheckpointIO",
     "Lfm2CarrierChildPackageError",
     "Lfm2CarrierChildPackageRegistration",
+    "Lfm2CarrierCountedAbiProfile",
+    "admitted_lfm2_carrier_counted_abi_profile",
+    "describe_admitted_lfm2_carrier_counted_abi",
     "load_authenticated_lfm2_carrier_child_package",
     "run_lfm2_resumable_review_from_packaged_child",
     "seal_lfm2_carrier_child_package",

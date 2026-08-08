@@ -25,6 +25,10 @@ from neural_forge.dynamic_behavior_execution import (
 from neural_forge.dynamic_counted_child_state import (
     ContinuousChildStateAllocation,
 )
+from neural_forge.lfm2_carrier_child_package import (
+    LFM2_CARRIER_EXACT_2X_COUNTED_ABI,
+    LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
+)
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (
     GLOBAL_TOPOLOGY_CAPACITY_PHASE,
     GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
@@ -839,12 +843,14 @@ def test_carrier_phase_dependencies_are_freshly_reauthenticated_each_time() -> N
             self.verify_calls += 1
             return self
 
-        def current_exact4x_counted_plan(self):
+        def admitted_counted_plan(self, profile):
+            assert profile is LFM2_CARRIER_EXACT_4X_COUNTED_ABI
             self.plan_calls += 1
             return SimpleNamespace(fingerprint=self.plan_fingerprint)
 
     registration = _Registration()
     arguments = {
+        "profile": LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
         "expected_registration_fingerprint": "a" * 64,
         "expected_route_artifact_sha256": "b" * 64,
         "expected_span_evidence_sha256": "c" * 64,
@@ -876,6 +882,108 @@ def test_carrier_phase_dependencies_are_freshly_reauthenticated_each_time() -> N
         )
     assert registration.verify_calls == 3
     assert registration.plan_calls == 3
+
+
+def test_refused_layer_solver_diagnostics_reach_the_failure_receipt(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """NOTES-W13S §6.4: a refused layer's solver numbers now land somewhere.
+
+    The adapter attaches them to the rejected validation decision; the decision
+    passes through the progress journal on its way to the log; the failure
+    receipt reads the journal.  This covers the last two links -- the journal's
+    harvest of the real event shape, and the receipt field itself.
+    """
+
+    from neural_forge.dynamic_closed_loop_fold import FoldScope
+    from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
+        Lfm2DynamicClosedLoopAdapter,
+    )
+    from neural_forge.hf_lfm2_structural_residual_attention_fold import (
+        Lfm2PriorCorrectionReport,
+    )
+
+    report = Lfm2PriorCorrectionReport(
+        role="mlp_gate",
+        rows=64,
+        input_width=32,
+        output_width=48,
+        underdetermined=False,
+        prior_provided=True,
+        prior_norm=2.5,
+        correction_norm=0.5,
+        update_scale=0.25,
+        max_prior_delta_ratio=8.0,
+        requested_prior_delta_ratio=19.75,
+        prior_delta_clamp_engaged=True,
+    )
+    payloads = SimpleNamespace(
+        _producer_payloads={},
+        _consumer_payloads={},
+        _downstream_payloads={
+            3: SimpleNamespace(
+                compiled=SimpleNamespace(
+                    prior_correction_reports=(report,),
+                )
+            )
+        },
+    )
+    diagnostics = (
+        Lfm2DynamicClosedLoopAdapter._refused_layer_prior_correction_diagnostics(
+            payloads,
+            FoldScope(kind="layer", layer_index=3),
+        )
+    )
+
+    assert diagnostics["refused_layer_index"] == 3
+    assert diagnostics["refused_layer_prior_correction_solve_count"] == 1
+
+    journal = MODULE._ProgressJournal("0" * 64, stream=io.StringIO())
+    journal.emit(
+        MODULE.CHILD_CLOSED_LOOP_VALIDATION_REJECTED_STAGE,
+        scope_id="layer:000003",
+        validation_reason="terminal composed endpoint below the floor",
+        validation_decision_sha256="b" * 64,
+        validation_metrics_json=json.dumps(
+            {
+                "candidate_relative_rmse": 1.31,
+                "terminal_composition_floor_failed": True,
+                **dict(diagnostics),
+            },
+            sort_keys=True,
+        ),
+    )
+    harvested = journal.refused_layer_solver_diagnostics()
+
+    assert harvested["layer_index"] == 3
+    assert harvested["solve_count"] == 1
+    clamp = harvested["prior_correction_reports"]["downstream"][0][
+        "prior_delta_clamp"
+    ]
+    assert clamp["requested_prior_delta_ratio"] == 19.75
+    assert clamp["allowed_prior_delta_ratio"] == 8.0
+    assert clamp["clamp_engaged"] is True
+
+    # An unrelated failure leaves the field empty rather than inventing one.
+    assert MODULE._ProgressJournal(
+        "0" * 64,
+        stream=io.StringIO(),
+    ).refused_layer_solver_diagnostics() is None
+
+    class _SeededJournal(MODULE._ProgressJournal):
+        def __init__(self, configuration_sha256, *, stream=None):
+            super().__init__(configuration_sha256, stream=stream)
+            self._refused_layer_solver_diagnostics = harvested
+
+    monkeypatch.setattr(MODULE, "_ProgressJournal", _SeededJournal)
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_required_args(tmp_path))
+    )
+    receipt = MODULE.run_production_catalog(config)
+
+    assert receipt["status"] == "failed_closed"
+    assert receipt["failure"]["refused_layer_solver_diagnostics"] == harvested
 
 
 def test_final_performance_diagnostic_only_cli_requires_manual_review(
@@ -1449,6 +1557,23 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     assert config.dense_streaming_vocabulary_margin_v2 is True
 
 
+def _exact_2x_carrier_arguments(tmp_path: Path) -> list[str]:
+    """NOTES-W13T §2's exact-2x rung, expressed in the carrier lane's flags."""
+
+    arguments = _carrier_arguments(tmp_path)
+    arguments[arguments.index("--compression-ratio") + 1] = "2"
+    arguments[
+        arguments.index("--dense-heterogeneous-target-parameters") + 1
+    ] = "110978816"
+    return [
+        *arguments,
+        "--counted-target-total-parameters",
+        "114846592",
+        "--counted-dense-body-parameters",
+        "110978816",
+    ]
+
+
 def test_carrier_mode_rejects_legacy_full_body_budget(tmp_path) -> None:
     arguments = _carrier_arguments(tmp_path)
     index = arguments.index("--dense-heterogeneous-target-parameters")
@@ -1456,9 +1581,192 @@ def test_carrier_mode_rejects_legacy_full_body_budget(tmp_path) -> None:
 
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
-        match="reserve both independent route channels",
+        match=(
+            "reserve both independent route channels inside the counted "
+            "target and give the remainder to the physical body at one "
+            "admitted carrier ABI"
+        ),
     ):
         MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def test_carrier_abi_allowlist_admits_the_4x_and_exact_2x_tuples(
+    tmp_path,
+) -> None:
+    """Both sealed rungs construct end to end at configuration time.
+
+    This is NOTES-W13T §3's probe 6 (arm A's exact numbers, ACCEPTED) with the
+    exact-2x arm -- probe 1, previously REFUSED -- alongside it.
+    """
+
+    exact_4x = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_carrier_arguments(tmp_path / "4x"))
+    )
+    exact_2x = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            _exact_2x_carrier_arguments(tmp_path / "2x")
+        )
+    )
+
+    assert exact_4x.compression_ratio == 4.0
+    assert exact_4x.counted_target_total_parameters == 57_420_144
+    assert exact_4x.counted_dense_body_parameters == 53_552_368
+    assert exact_4x.dense_heterogeneous_target_parameters == 53_552_368
+    assert exact_4x.carrier_counted_abi_profile.profile_id == "exact-4x-h816"
+
+    assert exact_2x.compression_ratio == 2.0
+    assert exact_2x.counted_target_total_parameters == 114_846_592
+    assert exact_2x.counted_dense_body_parameters == 110_978_816
+    assert exact_2x.dense_heterogeneous_target_parameters == 110_978_816
+    assert exact_2x.carrier_counted_abi_profile.profile_id == "exact-2x-h816"
+
+    # The route reservation is a fixed subtraction, not a fraction of the
+    # budget, and both rungs keep the untied 4096-row H816 child ABI.
+    for config in (exact_4x, exact_2x):
+        assert config.uses_carrier_routes is True
+        assert (
+            config.counted_target_total_parameters
+            - config.counted_dense_body_parameters
+            == 2 * MODULE.LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE
+        )
+        assert config.carrier_expected_target_rows == 4_096
+        assert config.carrier_expected_hidden_size == 816
+        assert config.required_target_hidden_size == 816
+
+    identity = exact_2x.identity()["carrier_routes"]
+    assert identity["counted_target_total_parameters"] == 114_846_592
+    assert identity["counted_dense_body_parameters"] == 110_978_816
+    assert identity["continuous_route_parameters"] == 3_867_776
+    assert identity["expected_hidden_size"] == 816
+
+
+def test_carrier_abi_allowlist_refuses_cross_field_tuples(tmp_path) -> None:
+    """The tuple is matched whole; no field is negotiable on its own."""
+
+    admitted = (
+        "reserve both independent route channels inside the counted target "
+        "and give the remainder to the physical body at one admitted "
+        "carrier ABI"
+    )
+
+    # A 2x ratio carried on the 4x budget.  NOTES-W13T §3 probe 2 isolated
+    # exactly this: the ratio alone used to refuse, and it still does -- now
+    # because the tuple is incoherent, not because 4.0 is the only ratio.
+    two_x_ratio_four_x_totals = _carrier_arguments(tmp_path / "r2-b4x")
+    two_x_ratio_four_x_totals[
+        two_x_ratio_four_x_totals.index("--compression-ratio") + 1
+    ] = "2"
+    with pytest.raises(MODULE.ProductionLfm2CatalogError, match=admitted):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(two_x_ratio_four_x_totals)
+        )
+
+    # The mirror image: NOTES-W13T §3 probe 4, the 4x ratio on the 2x budget.
+    four_x_ratio_two_x_totals = _exact_2x_carrier_arguments(
+        tmp_path / "r4-b2x"
+    )
+    four_x_ratio_two_x_totals[
+        four_x_ratio_two_x_totals.index("--compression-ratio") + 1
+    ] = "4"
+    with pytest.raises(MODULE.ProductionLfm2CatalogError, match=admitted):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(four_x_ratio_two_x_totals)
+        )
+
+    # H1024 also has an exact lattice at the 2x budget (NOTES-W13T §2.2), and
+    # it is still not a child this carrier ABI can bind.  Both the expected
+    # and the required width move together so the earlier equality guard is
+    # satisfied and the allowlist is what refuses.
+    two_x_totals_h1024 = [
+        *_exact_2x_carrier_arguments(tmp_path / "b2x-h1024"),
+        "--carrier-expected-hidden-size",
+        "1024",
+        "--required-target-hidden-size",
+        "1024",
+    ]
+    with pytest.raises(MODULE.ProductionLfm2CatalogError, match=admitted):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(two_x_totals_h1024)
+        )
+
+
+def test_carrier_abi_allowlist_still_refuses_an_unlisted_budget(
+    tmp_path,
+) -> None:
+    """A coherent-looking rung that is not on the list is still refused."""
+
+    # The exact quarter, 57,423,296 / 53,555,520 -- coherent arithmetic, an
+    # exact MLP lattice at H816 (NOTES-W13T §2.2), and deliberately not
+    # admitted.  The allowlist is an allowlist, not a formula.
+    arguments = _carrier_arguments(tmp_path)
+    arguments[
+        arguments.index("--dense-heterogeneous-target-parameters") + 1
+    ] = "53555520"
+    arguments = [
+        *arguments,
+        "--counted-target-total-parameters",
+        "57423296",
+        "--counted-dense-body-parameters",
+        "53555520",
+    ]
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="one admitted carrier ABI",
+    ):
+        MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def test_carrier_route_smoke_pins_the_run_s_own_admitted_counts() -> None:
+    """The routed ABI smoke follows the run's profile, not a 4x constant."""
+
+    class ArtifactIO:
+        route_artifact_sha256 = "1" * 64
+        route_publication = Path("route")
+        span_evidence = MappingProxyType({"evidence_sha256": "2" * 64})
+        expected_target_rows = 4_096
+        expected_hidden_size = 816
+
+        @staticmethod
+        def has_packaged_runtime(_model):
+            return False
+
+        @staticmethod
+        def register_in_memory(model):
+            return model
+
+    def _evaluator(profile):
+        return MODULE.CarrierRouteSmokeBehaviorEvaluator(
+            artifact_io=ArtifactIO(),
+            semantic_source_tokenizer=object(),
+            target_tokenizer=object(),
+            prompts=({"id": "reason", "category": "reasoning", "prompt": "y"},),
+            maximum_prompt_tokens=512,
+            maximum_new_tokens=2,
+            baseline_fingerprint="4" * 64,
+            counted_abi_profile=profile,
+        )
+
+    exact_2x = _evaluator(LFM2_CARRIER_EXACT_2X_COUNTED_ABI)
+    exact_4x = _evaluator(LFM2_CARRIER_EXACT_4X_COUNTED_ABI)
+
+    assert exact_2x.counted_abi_profile.profile_id == "exact-2x-h816"
+    assert exact_4x.counted_abi_profile.profile_id == "exact-4x-h816"
+
+    # An unlisted profile object cannot arm the smoke at all.
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="one admitted carrier ABI",
+    ):
+        _evaluator(
+            MODULE.Lfm2CarrierCountedAbiProfile(
+                profile_id="exact-4x-h816",
+                compression_ratio=4.0,
+                counted_target_total_parameter_elements=57_420_144,
+                counted_dense_body_parameter_elements=53_552_368,
+                hidden_size=816,
+            )
+        )
 
 
 def test_required_target_hidden_size_is_general_and_carrier_derived(
@@ -1574,10 +1882,11 @@ def test_carrier_counted_plan_verifies_body_routes_and_realized_ratio() -> None:
     assert verification["realized_parameter_compaction_ratio"] != 4.0
 
     registration = SimpleNamespace(
-        current_exact4x_counted_plan=lambda: plan
+        admitted_counted_plan=lambda _profile: plan
     )
     assert MODULE._build_registered_carrier_counted_plan(
         registration,
+        profile=LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
         parent_unique_parameters=229_693_184,
         target_total_parameter_elements=57_420_144,
         observed_allocations=allocations,
@@ -1588,6 +1897,7 @@ def test_carrier_counted_plan_verifies_body_routes_and_realized_ratio() -> None:
     ):
         MODULE._build_registered_carrier_counted_plan(
             registration,
+            profile=LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
             parent_unique_parameters=229_693_183,
             target_total_parameter_elements=57_420_144,
             observed_allocations=allocations,
@@ -1843,6 +2153,7 @@ def test_carrier_route_smoke_is_structural_and_enforces_every_count(
         maximum_prompt_tokens=512,
         maximum_new_tokens=2,
         baseline_fingerprint="4" * 64,
+        counted_abi_profile=LFM2_CARRIER_EXACT_4X_COUNTED_ABI,
     )
 
     decision = evaluator.evaluate_model(object(), phase="accepted_in_memory_child")
