@@ -1280,6 +1280,17 @@ class ProductionLfm2CatalogConfig:
     dense_closed_loop_solver_conditioning_diagnostics: bool = False
     dense_closed_loop_gate_operating_point_diagnostics: bool = False
     dense_closed_loop_depth_telemetry: bool = False
+    # -- W13R R1/R2: the body MLP boundary solve's regularizer and step bound --
+    #
+    # `reports/stage1-attribution-20260808/STAGE_A_ATTRIBUTION.md`: the body
+    # ridge is absolute 1e-6 against a sigma_max of 1.4e5-7.1e5, so it is inert
+    # (relative weight 1.4e-12 to 7.3e-12), and the resulting near-singular
+    # solves asked for 1.4x-140x the prior's norm at all 42 MLP fits while a
+    # hard-coded 1.0 clamp allowed 1.0x.  Both flags are off by default and an
+    # unset run compiles byte-identical weights and keeps its configuration
+    # digest.  A ratio above 1.0 without a relative ridge is refused below.
+    dense_closed_loop_relative_ridge_lambda: float | None = None
+    dense_closed_loop_body_max_prior_delta_ratio: float | None = None
     # Execution-only, exactly like portable_runtime_device: an honoured shard
     # plan seals byte-identical replay bytes, so the device list stays out of
     # the canonical fold identity and lives in the receipt instead.
@@ -2812,6 +2823,52 @@ class ProductionLfm2CatalogConfig:
                 "The terminal free-run tripwire stop flag requires the "
                 "tripwire itself."
             )
+        self._validate_w13r_body_solve_configuration()
+
+    def _validate_w13r_body_solve_configuration(self) -> None:
+        """Fail closed on an unusable body-solve remedy request (W13R R1/R2).
+
+        The coupling is the whole point of the pair.  Relaxing the prior-delta
+        clamp on an effectively unregularized near-singular system is the
+        unbounded-step path A12 and W12B already convicted and the overlap
+        audit's do-NOT list already forbids; with a relative ridge the bound
+        comes from the conditioning and the clamp becomes a backstop instead of
+        the operative limiter.
+        """
+
+        for name in (
+            "dense_closed_loop_relative_ridge_lambda",
+            "dense_closed_loop_body_max_prior_delta_ratio",
+        ):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            object.__setattr__(
+                self,
+                name,
+                _finite_float(value, name, minimum=0.0),
+            )
+            if not self.dense_run_closed_loop:
+                raise ProductionLfm2CatalogError(
+                    f"{name} requires the dense closed-loop body fold; pass "
+                    "--dense-run-closed-loop."
+                )
+        ratio = self.dense_closed_loop_body_max_prior_delta_ratio
+        if (
+            ratio is not None
+            and ratio > 1.0
+            and self.dense_closed_loop_relative_ridge_lambda is None
+        ):
+            raise ProductionLfm2CatalogError(
+                "--dense-closed-loop-body-max-prior-delta-ratio above 1.0 "
+                "requires --dense-closed-loop-relative-ridge-lambda. An "
+                "unbounded step on an effectively unregularized near-singular "
+                "body system is the closed path A12 and W12B already measured "
+                "(pinv step 40x for 1% fit gain, held out 6x worse; "
+                "unregularized reclosure +515%): the clamp is the only thing "
+                "bounding that solve until the ridge is relative, so relaxing "
+                "it alone reopens exactly that failure."
+            )
 
     def _validate_on_policy_evidence_configuration(self) -> None:
         """Fail closed on an unusable bounded on-policy extension request."""
@@ -3347,6 +3404,32 @@ class ProductionLfm2CatalogConfig:
                     }
                 ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
+                # W13R R1/R2.  Recorded only when a remedy is requested, so
+                # every run sealed before this keeps its exact configuration
+                # digest; a run that sets either one solves a different body
+                # system and must say so here.
+                **(
+                    {}
+                    if (
+                        self.dense_closed_loop_relative_ridge_lambda is None
+                        and self.dense_closed_loop_body_max_prior_delta_ratio
+                        is None
+                    )
+                    else {
+                        "dense_closed_loop_body_solve": {
+                            "relative_ridge_lambda": (
+                                self.dense_closed_loop_relative_ridge_lambda
+                            ),
+                            "body_max_prior_delta_ratio": (
+                                self
+                                .dense_closed_loop_body_max_prior_delta_ratio
+                            ),
+                            "scope": "body_mlp_gate_up_down_boundary_fits",
+                            "operator_solves_keep_the_absolute_ridge": True,
+                            "relaxed_clamp_requires_relative_ridge": True,
+                        }
+                    }
+                ),
                 "dense_closed_loop_performance_metrics": {
                     "diagnostic_only": (
                         self
@@ -10252,6 +10335,15 @@ def build_production_catalog_wiring(
                             config
                             .dense_closed_loop_gate_operating_point_diagnostics
                         ),
+                        # --- W13R R1/R2 -------------------------------------
+                        relative_ridge_lambda=(
+                            config
+                            .dense_closed_loop_relative_ridge_lambda
+                        ),
+                        body_max_prior_delta_ratio=(
+                            config
+                            .dense_closed_loop_body_max_prior_delta_ratio
+                        ),
                     )
                 ),
                 macro_cell_attractor_gate_config=(
@@ -11098,6 +11190,15 @@ def _closed_loop_depth_telemetry(
         ),
         "margin_row_weights_enabled": (
             config.dense_closed_loop_margin_row_weights
+        ),
+        # W13R R1/R2: which regularizer and which step bound the body MLP
+        # boundaries were actually solved under, next to the depth profile the
+        # attribution reads them against.
+        "body_relative_ridge_lambda": (
+            config.dense_closed_loop_relative_ridge_lambda
+        ),
+        "body_max_prior_delta_ratio": (
+            config.dense_closed_loop_body_max_prior_delta_ratio
         ),
     }
 
@@ -14268,6 +14369,34 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-closed-loop-relative-ridge-lambda",
+        type=float,
+        default=None,
+        help=(
+            "Solve the body MLP gate/up/down boundaries with a ridge of "
+            "lambda * sigma_max of each fit's own unregularized system instead "
+            "of the absolute --ridge, capping the solved condition number at "
+            "1/lambda. Unset keeps the absolute lane and compiles identical "
+            "weights. The Stage-A attribution measured the absolute 1e-6 ridge "
+            "at a relative weight of 1.4e-12 to 7.3e-12 against sigma_max, i.e. "
+            "inert; lambda in [1e-6, 1e-4] is the band the historical ridge "
+            "sweeps operated in."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-body-max-prior-delta-ratio",
+        type=float,
+        default=None,
+        help=(
+            "Override the hard-coded 1.0 prior-delta clamp on the body MLP "
+            "boundary fits, whose budget is the structural-transport prior's "
+            "own norm. Unset keeps 1.0. A value above 1.0 requires "
+            "--dense-closed-loop-relative-ridge-lambda: an unbounded step on "
+            "an unregularized near-singular system is the closed A12/W12B "
+            "path."
+        ),
+    )
+    parser.add_argument(
         "--dense-closed-loop-depth-telemetry",
         action="store_true",
         help=(
@@ -15063,6 +15192,12 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_closed_loop_depth_telemetry=(
             args.dense_closed_loop_depth_telemetry
+        ),
+        dense_closed_loop_relative_ridge_lambda=(
+            args.dense_closed_loop_relative_ridge_lambda
+        ),
+        dense_closed_loop_body_max_prior_delta_ratio=(
+            args.dense_closed_loop_body_max_prior_delta_ratio
         ),
         dense_replay_devices=replay_devices,
         dense_replay_devices_source=replay_devices_source,

@@ -30,6 +30,7 @@ from neural_forge.hf_closed_form_fit import FitMetrics  # noqa: E402
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
     Lfm2DynamicClosedLoopAdapter,
+    Lfm2DynamicClosedLoopAdapterConfig,
     Lfm2DynamicClosedLoopAdapterError,
     Lfm2TerminalFreeRunTripwire,
     _durable_diagnostic_json,
@@ -43,6 +44,8 @@ from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
     Lfm2CachedMlpFoldCase,
+    _shifted_system_conditioning,
+    _solved_system_conditioning,
     compile_lfm2_structural_residual_mlp_fold,
     lfm2_estimate_input_error_covariance,
 )
@@ -1263,6 +1266,395 @@ def test_nonfinite_solver_diagnostics_are_durable_and_explicit() -> None:
     ]
 
 
+# --- W13R R1/R2: relative ridge and the body prior-delta clamp ---------------
+#
+# The Stage-A attribution
+# (`reports/stage1-attribution-20260808/STAGE_A_ATTRIBUTION.md`) measured the
+# mechanism these two remedies aim at: an absolute ridge of 1e-6 against a
+# sigma_max of 1.4e5-7.1e5 leaves the body normal system effectively
+# unregularized, the resulting near-singular solve asks for 1.4x-140x the
+# prior's norm, and a hard 1.0 clamp truncates it -- at all 42 body MLP fits of
+# the r13 refold.  The toy below reproduces that shape at 240 rows.
+
+
+_TOY_SOURCE_HIDDEN = 8
+_TOY_SOURCE_INTERMEDIATE = 10
+_TOY_TARGET_HIDDEN = 4
+_TOY_TARGET_INTERMEDIATE = 5
+_TOY_ROWS = 240
+# How hard the design's last direction is squeezed.  1e-5 puts cond(X^T X) in
+# the 1e10 neighbourhood the run's layers 4/5/11 actually sat at.
+_TOY_SQUEEZE = 1e-5
+# The parent targets are not exactly representable in the child's chart; that
+# unrepresentable part is what an unregularized inverse amplifies.
+_TOY_NOISE = 5e-2
+# A structural-transport prior small enough that even a well-regularized
+# correction exceeds it, which is exactly when the clamp -- not the evidence --
+# is the operative limiter.
+_TOY_PRIOR_SCALE = 0.05
+
+
+def _toy_design(rows: int, generator) -> torch.Tensor:
+    raw = torch.randn(
+        rows, _TOY_TARGET_HIDDEN, dtype=torch.float64, generator=generator
+    )
+    scale = torch.ones(_TOY_TARGET_HIDDEN, dtype=torch.float64)
+    scale[-1] = _TOY_SQUEEZE
+    return raw * scale
+
+
+def _toy_endpoint(design, gate, up, down):
+    post = torch.nn.functional.silu(design @ gate.T) * (design @ up.T)
+    return post @ down.T
+
+
+def _ill_conditioned_bundle():
+    """One near-singular boundary with an unrepresentable target component."""
+
+    generator = torch.Generator().manual_seed(20260808)
+
+    def normal(*shape):
+        return torch.randn(*shape, dtype=torch.float64, generator=generator)
+
+    gate_map = normal(_TOY_SOURCE_INTERMEDIATE, _TOY_TARGET_HIDDEN)
+    up_map = normal(_TOY_SOURCE_INTERMEDIATE, _TOY_TARGET_HIDDEN)
+    teacher_gate = normal(_TOY_TARGET_INTERMEDIATE, _TOY_TARGET_HIDDEN)
+    teacher_up = normal(_TOY_TARGET_INTERMEDIATE, _TOY_TARGET_HIDDEN)
+    teacher_down = normal(_TOY_TARGET_HIDDEN, _TOY_TARGET_INTERMEDIATE)
+    fit_design = _toy_design(_TOY_ROWS, generator)
+    held_design = _toy_design(_TOY_ROWS, generator)
+    parent_gate = fit_design @ gate_map.T + _TOY_NOISE * normal(
+        _TOY_ROWS, _TOY_SOURCE_INTERMEDIATE
+    )
+    parent_up = fit_design @ up_map.T + _TOY_NOISE * normal(
+        _TOY_ROWS, _TOY_SOURCE_INTERMEDIATE
+    )
+    case = Lfm2CachedMlpFoldCase(
+        target_input=fit_design,
+        parent_gate=parent_gate,
+        parent_up=parent_up,
+        parent_post_swiglu=(
+            torch.nn.functional.silu(parent_gate) * parent_up
+        ),
+        parent_post_mlp_residual_target_space=_toy_endpoint(
+            fit_design, teacher_gate, teacher_up, teacher_down
+        ),
+        target_pre_mlp_residual=torch.zeros(
+            _TOY_ROWS, _TOY_TARGET_HIDDEN, dtype=torch.float64
+        ),
+    )
+    return {
+        "case": case,
+        "held_design": held_design,
+        "held_endpoint": _toy_endpoint(
+            held_design, teacher_gate, teacher_up, teacher_down
+        ),
+        "source_gate": normal(
+            _TOY_SOURCE_INTERMEDIATE, _TOY_SOURCE_HIDDEN
+        ),
+        "source_up": normal(_TOY_SOURCE_INTERMEDIATE, _TOY_SOURCE_HIDDEN),
+        "source_down": normal(
+            _TOY_SOURCE_HIDDEN, _TOY_SOURCE_INTERMEDIATE
+        ),
+        "prior_gate": _TOY_PRIOR_SCALE
+        * normal(_TOY_TARGET_INTERMEDIATE, _TOY_TARGET_HIDDEN),
+        "prior_up": _TOY_PRIOR_SCALE
+        * normal(_TOY_TARGET_INTERMEDIATE, _TOY_TARGET_HIDDEN),
+        "prior_down": _TOY_PRIOR_SCALE
+        * normal(_TOY_TARGET_HIDDEN, _TOY_TARGET_INTERMEDIATE),
+    }
+
+
+def _compile_ill_conditioned(bundle, **overrides):
+    return compile_lfm2_structural_residual_mlp_fold(
+        source_gate_weight=bundle["source_gate"],
+        source_up_weight=bundle["source_up"],
+        source_down_weight=bundle["source_down"],
+        target_gate_weight_template=bundle["prior_gate"],
+        target_up_weight_template=bundle["prior_up"],
+        target_down_weight_template=bundle["prior_down"],
+        cases=(bundle["case"],),
+        gate_weight_prior=bundle["prior_gate"],
+        up_weight_prior=bundle["prior_up"],
+        down_weight_prior=bundle["prior_down"],
+        residual_assignment_sha256="ab" * 32,
+        ridge=1e-6,
+        solver_conditioning_diagnostics=True,
+        **overrides,
+    )
+
+
+def _held_out_endpoint_error(compiled, bundle) -> float:
+    """The boundary this branch actually has to hit, on rows it never saw."""
+
+    design = bundle["held_design"]
+    post = torch.nn.functional.silu(
+        design @ compiled.gate_weight.to(torch.float64).T
+    ) * (design @ compiled.up_weight.to(torch.float64).T)
+    prediction = post @ compiled.down_weight.to(torch.float64).T
+    endpoint = bundle["held_endpoint"]
+    return float(
+        torch.linalg.vector_norm(prediction - endpoint)
+        / torch.linalg.vector_norm(endpoint)
+    )
+
+
+def _roles(compiled):
+    return {
+        value["role"]: value
+        for value in compiled.as_dict()["prior_correction_reports"]
+    }
+
+
+def _condition_cap(relative_ridge_lambda: float) -> float:
+    """The condition number a relative ridge can leave, at its worst.
+
+    With ``ridge = lambda * sigma_max`` the solved spectrum runs from
+    ``sigma_max * (1 + lambda)`` down to ``sigma_min + lambda * sigma_max``, so
+    an exactly singular direction still lands at ``(1 + lambda) / lambda``.
+    The reported cap ``1 / lambda`` is that bound to first order.
+    """
+
+    return (1.0 + relative_ridge_lambda) / relative_ridge_lambda
+
+
+@pytest.fixture(scope="module")
+def ill_conditioned_boundary():
+    return _ill_conditioned_bundle()
+
+
+def test_relative_ridge_default_off_solves_the_identical_system() -> None:
+    """The byte-identity pin: unset must be the absolute lane, exactly."""
+
+    baseline = _compile_toy_mlp()
+    explicit_off = _compile_toy_mlp(relative_ridge_lambda=None)
+    assert explicit_off.compiled_state_sha256 == baseline.compiled_state_sha256
+    for name in ("gate_weight", "up_weight", "down_weight"):
+        assert torch.equal(
+            getattr(explicit_off, name), getattr(baseline, name)
+        )
+    for report in baseline.as_dict()["prior_correction_reports"]:
+        assert "relative_ridge" not in report
+    treated = _compile_toy_mlp(relative_ridge_lambda=1e-4)
+    assert treated.compiled_state_sha256 != baseline.compiled_state_sha256
+
+
+def test_the_relative_ridge_seals_lambda_sigma_max_and_the_mode() -> None:
+    compiled = _compile_toy_mlp(
+        relative_ridge_lambda=1e-4,
+        solver_conditioning_diagnostics=True,
+    )
+    for role, report in _roles(compiled).items():
+        relative = report["relative_ridge"]
+        assert relative["mode"] == "relative_to_unregularized_sigma_max"
+        assert relative["relative_ridge_lambda"] == 1e-4
+        assert relative["absolute_ridge_configured"] == 1e-6
+        sigma_max = relative["unregularized_system_singular_value_maximum"]
+        assert sigma_max > 0.0, role
+        assert relative["effective_ridge"] == pytest.approx(
+            1e-4 * sigma_max, rel=1e-12
+        )
+        assert relative["effective_condition_number_cap"] == pytest.approx(1e4)
+        # The cap is real: the solved system's condition number honours it.
+        assert report["solver_conditioning"][
+            "system_condition_number"
+        ] <= _condition_cap(1e-4) * (1.0 + 1e-9)
+
+
+@pytest.mark.parametrize("squeeze", [1.0, 1e-3, 1e-5, 1e-8])
+@pytest.mark.parametrize("relative_ridge_lambda", [1e-6, 1e-4])
+def test_the_reused_spectrum_measures_what_a_second_svd_would(
+    squeeze: float,
+    relative_ridge_lambda: float,
+) -> None:
+    """The relative arm reads conditioning off the spectrum it already took.
+
+    That is only honest if the shifted spectrum is the solved system's
+    spectrum.  It is, to ~1e-15 relative, because a symmetric PSD Gram's
+    singular values are its eigenvalues and ``ridge*I`` shifts every one of
+    them by exactly ``ridge``.
+    """
+
+    generator = torch.Generator().manual_seed(7)
+    design = torch.randn(400, 6, dtype=torch.float64, generator=generator)
+    scale = torch.ones(6, dtype=torch.float64)
+    scale[-1] = squeeze
+    gram = (design * scale).T @ (design * scale)
+    singular = torch.linalg.svdvals(gram)
+    ridge = relative_ridge_lambda * float(singular.max().item())
+    direct = _solved_system_conditioning(
+        gram + ridge * torch.eye(6, dtype=torch.float64)
+    )
+    derived = _shifted_system_conditioning(singular, ridge)
+    for measured, reused in zip(direct, derived, strict=True):
+        assert reused == pytest.approx(measured, rel=1e-12)
+    assert derived[2] <= _condition_cap(relative_ridge_lambda) * (1.0 + 1e-9)
+
+
+def test_every_solve_seals_its_requested_and_allowed_delta_ratio() -> None:
+    """The diagnostic the attribution had to reconstruct from 1/update_scale."""
+
+    compiled = _compile_toy_mlp()
+    for role, report in _roles(compiled).items():
+        clamp = report["prior_delta_clamp"]
+        assert clamp["allowed_prior_delta_ratio"] == 1.0
+        assert clamp["budget_units"] == "prior_frobenius_norm"
+        assert clamp["requested_prior_delta_ratio"] > 0.0, role
+        if clamp["clamp_engaged"]:
+            # The clamp identity the run's 42/42 check verified: a bound solve
+            # leaves exactly `max_prior_delta_ratio * ||prior||` of correction.
+            assert clamp["requested_prior_delta_ratio"] > 1.0
+            assert report["update_scale"] == pytest.approx(
+                1.0 / clamp["requested_prior_delta_ratio"]
+            )
+        else:
+            assert clamp["requested_prior_delta_ratio"] <= 1.0
+            assert report["update_scale"] == 1.0
+
+
+def test_mlp_down_now_carries_conditioning_like_the_other_two_roles() -> None:
+    """R3(c): item 8 instrumented two of the three MLP roles."""
+
+    compiled = _compile_toy_mlp(solver_conditioning_diagnostics=True)
+    roles = _roles(compiled)
+    assert set(roles) == {"mlp_gate", "mlp_up", "mlp_down"}
+    for role, report in roles.items():
+        conditioning = report["solver_conditioning"]
+        assert conditioning["system_condition_number"] >= 1.0, role
+        assert conditioning["system_singular_value_maximum"] > 0.0
+        assert conditioning["silent_gelsd_fallback_taken"] is False
+    assert (
+        compiled.compiled_state_sha256
+        == _compile_toy_mlp().compiled_state_sha256
+    )
+
+
+def test_the_clamp_not_the_evidence_limits_the_unregularized_boundary(
+    ill_conditioned_boundary,
+) -> None:
+    """Reproduce the attributed shape: request >> allowed, boundary at ~1.0."""
+
+    baseline = _compile_ill_conditioned(ill_conditioned_boundary)
+    for role, report in _roles(baseline).items():
+        clamp = report["prior_delta_clamp"]
+        assert clamp["clamp_engaged"] is True, role
+        assert clamp["allowed_prior_delta_ratio"] == 1.0
+        assert clamp["requested_prior_delta_ratio"] > 10.0, role
+        assert report["update_scale"] < 0.1
+    # A boundary at the emit-zero floor, which is where arm A's 14 boundaries
+    # sat (post-layer relL2 0.78-1.39).
+    assert baseline.residual_endpoint_relative_rmse > 0.99
+    assert _held_out_endpoint_error(baseline, ill_conditioned_boundary) > 0.99
+
+
+def test_the_relative_ridge_shrinks_the_request_it_cannot_release(
+    ill_conditioned_boundary,
+) -> None:
+    """R1 alone bounds the solve by the evidence; the clamp still binds.
+
+    The comparison is made on ``mlp_gate``/``mlp_up`` only, and deliberately:
+    those two are solved against the same design in both arms, so their
+    conditioning and their request are comparable.  ``mlp_down`` is solved
+    against the post-SwiGLU block *produced by* the gate/up weights, so its
+    system is a different matrix in every arm -- which is itself worth knowing
+    and is why its request can rise while the boundary improves.
+    """
+
+    baseline = _compile_ill_conditioned(ill_conditioned_boundary)
+    treated = _compile_ill_conditioned(
+        ill_conditioned_boundary, relative_ridge_lambda=1e-4
+    )
+    baseline_roles = _roles(baseline)
+    treated_roles = _roles(treated)
+    for role in ("mlp_gate", "mlp_up"):
+        report = treated_roles[role]
+        before = baseline_roles[role]
+        assert (
+            report["prior_delta_clamp"]["requested_prior_delta_ratio"]
+            < before["prior_delta_clamp"]["requested_prior_delta_ratio"]
+        ), role
+        # The cap is 1/lambda, and it is the binding constraint here: the
+        # unregularized system is five orders above it.
+        assert before["solver_conditioning"]["system_condition_number"] > 1e7
+        assert report["solver_conditioning"][
+            "system_condition_number"
+        ] <= _condition_cap(1e-4) * (1.0 + 1e-9)
+    # Still clamped everywhere: a regularized solve of a boundary whose prior
+    # is small is not a solve the 1.0 budget can pay for, so R1 alone leaves
+    # the boundary exactly where it was.
+    for role, report in treated_roles.items():
+        assert report["prior_delta_clamp"]["clamp_engaged"] is True, role
+    assert treated.residual_endpoint_relative_rmse > 0.99
+
+
+def test_the_two_remedies_together_recover_the_boundary(
+    ill_conditioned_boundary,
+) -> None:
+    """R1+R2: the correction survives and the endpoint improves, held out."""
+
+    baseline = _compile_ill_conditioned(ill_conditioned_boundary)
+    remedied = _compile_ill_conditioned(
+        ill_conditioned_boundary,
+        relative_ridge_lambda=1e-4,
+        max_prior_delta_ratio=64.0,
+    )
+    for role, report in _roles(remedied).items():
+        clamp = report["prior_delta_clamp"]
+        assert clamp["clamp_engaged"] is False, role
+        assert clamp["allowed_prior_delta_ratio"] == 64.0
+        assert report["update_scale"] == 1.0
+    assert remedied.residual_endpoint_relative_rmse < 0.5
+    assert baseline.residual_endpoint_relative_rmse > 0.99
+    held_out = _held_out_endpoint_error(remedied, ill_conditioned_boundary)
+    assert held_out < 0.6
+    assert held_out < _held_out_endpoint_error(
+        baseline, ill_conditioned_boundary
+    )
+
+
+def test_relaxing_the_clamp_alone_leaves_the_singular_system_uncapped(
+    ill_conditioned_boundary,
+) -> None:
+    """Why the coupling exists, measured rather than asserted.
+
+    Relaxing the bound without regularizing does three bad things at once: the
+    solved condition number stays at 2.5e8, the largest request is *still*
+    clamped (it is 112x the prior, above even a 64x budget), and the boundary
+    it does reach generalizes worse than the regularized arm's.  That is the
+    A12/W12B shape, and it is why the catalog refuses this configuration.
+    """
+
+    remedied = _compile_ill_conditioned(
+        ill_conditioned_boundary,
+        relative_ridge_lambda=1e-4,
+        max_prior_delta_ratio=64.0,
+    )
+    unregularized = _compile_ill_conditioned(
+        ill_conditioned_boundary,
+        max_prior_delta_ratio=64.0,
+    )
+    remedied_roles = _roles(remedied)
+    unregularized_roles = _roles(unregularized)
+    for role in ("mlp_gate", "mlp_up"):
+        assert unregularized_roles[role]["solver_conditioning"][
+            "system_condition_number"
+        ] > 1e7
+        assert remedied_roles[role]["solver_conditioning"][
+            "system_condition_number"
+        ] <= _condition_cap(1e-4) * (1.0 + 1e-9)
+    assert (
+        unregularized_roles["mlp_gate"]["prior_delta_clamp"]["clamp_engaged"]
+        is True
+    )
+    assert (
+        remedied_roles["mlp_gate"]["prior_delta_clamp"]["clamp_engaged"]
+        is False
+    )
+    assert _held_out_endpoint_error(
+        unregularized, ill_conditioned_boundary
+    ) > _held_out_endpoint_error(remedied, ill_conditioned_boundary)
+
+
 def test_gate_operating_point_diagnostics_do_not_change_the_state() -> None:
     baseline = _compile_toy_mlp()
     diagnostic = _compile_toy_mlp(gate_operating_point_diagnostics=True)
@@ -1385,4 +1777,148 @@ def test_solver_and_gate_telemetry_reach_a_toy_layer_receipt(
             assert conditioning["system_condition_number"] >= 1.0
         assert "gate_operating_point" in body
         assert "drift" in body["gate_operating_point"]
+        # R3(c): the third role is instrumented now, not two of three.
+        for role in ("mlp_gate", "mlp_up", "mlp_down"):
+            assert "solver_conditioning" in roles[role], role
     assert not adapter._downstream_payloads
+
+
+# --- W13R R3: the telemetry that already existed and was thrown away ---------
+
+
+def test_the_operator_branch_seals_its_prior_correction_reports(
+    sealed_parent,
+) -> None:
+    """R3(a)/(b): the gap that made the operator stage unattributable.
+
+    Every operator producer and consumer compile fits around the same
+    structural-transport priors under the same clamp the MLP triple does, and
+    the adapter dropped all of it.  These keys are unconditional: a telemetry
+    flag nobody set is exactly how the Stage-A operator gap was created.
+    """
+
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    allowed = adapter.config.max_prior_delta_ratio
+    report = _run_toy_layers(adapter)
+    assert report["layer_reports"]
+    for entry in report["layer_reports"]:
+        producer = dict(entry["producer"]["compiled"]["metadata"])
+        consumer = dict(entry["consumer"]["compiled"]["metadata"])
+        downstream = dict(entry["downstream"]["compiled"]["metadata"])
+        for stage in (producer, consumer):
+            reports = json.loads(
+                stage["operator_prior_correction_reports_json"]
+            )
+            assert reports
+            for value in reports:
+                assert value["role"]
+                assert value["prior_norm"] >= 0.0
+                assert value["correction_norm"] >= 0.0
+                assert 0.0 < value["update_scale"] <= 1.0
+                clamp = value["prior_delta_clamp"]
+                assert clamp["allowed_prior_delta_ratio"] == allowed
+                assert clamp["requested_prior_delta_ratio"] >= 0.0
+                assert isinstance(clamp["clamp_engaged"], bool)
+                if clamp["clamp_engaged"]:
+                    assert clamp["requested_prior_delta_ratio"] > allowed
+        # R3(b): both branch-local endpoint errors, which the run that raised
+        # the question computed and discarded.
+        assert consumer["operator_residual_endpoint_relative_rmse"] >= 0.0
+        assert downstream["mlp_residual_endpoint_relative_rmse"] >= 0.0
+        # ... and the composed post-layer endpoint they decompose.
+        assert downstream["candidate_fit_relative_rmse"] >= 0.0
+
+
+def test_the_body_solve_remedy_reaches_a_toy_layer_and_records_itself(
+    sealed_parent,
+) -> None:
+    """R1/R2 end to end through the adapter, against an unset control."""
+
+    control_adapter, _child, mapping = _adapter(sealed_parent)
+    control = _run_toy_layers(control_adapter)
+
+    treated_adapter, _treated_child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=mapping,
+    )
+    treated_adapter.config = replace(
+        treated_adapter.config,
+        mlp_solver_conditioning_diagnostics=True,
+        relative_ridge_lambda=1e-4,
+        body_max_prior_delta_ratio=8.0,
+    )
+    assert treated_adapter.config.mlp_max_prior_delta_ratio == 8.0
+    assert control_adapter.config.mlp_max_prior_delta_ratio == (
+        control_adapter.config.max_prior_delta_ratio
+    )
+    treated = _run_toy_layers(treated_adapter)
+
+    for layer_ordinal, (control_entry, treated_entry) in enumerate(
+        zip(control["layer_reports"], treated["layer_reports"], strict=True)
+    ):
+        control_meta = dict(control_entry["downstream"]["compiled"]["metadata"])
+        treated_meta = dict(treated_entry["downstream"]["compiled"]["metadata"])
+        # A different body system was solved, and the artifact says so rather
+        # than being confusable with the control's layer.
+        assert (
+            treated_meta["compiled_state_sha256"]
+            != control_meta["compiled_state_sha256"]
+        )
+        assert (
+            treated_entry["downstream"]["compiled"]["artifact_sha256"]
+            != control_entry["downstream"]["compiled"]["artifact_sha256"]
+        )
+        roles = {
+            value["role"]: value
+            for value in json.loads(
+                treated_meta["mlp_prior_correction_reports_json"]
+            )
+        }
+        for role, value in roles.items():
+            relative = value["relative_ridge"]
+            assert relative["relative_ridge_lambda"] == 1e-4
+            assert relative["effective_ridge"] == pytest.approx(
+                1e-4
+                * relative["unregularized_system_singular_value_maximum"],
+                rel=1e-12,
+            )
+            assert value["prior_delta_clamp"][
+                "allowed_prior_delta_ratio"
+            ] == 8.0, role
+        # The operator branch never receives the relative ridge or the relaxed
+        # clamp, at any depth: relaxing a bound on a system nothing regularizes
+        # is the configuration the coupling exists to prevent.
+        for stage in ("producer", "consumer"):
+            for value in json.loads(
+                dict(treated_entry[stage]["compiled"]["metadata"])[
+                    "operator_prior_correction_reports_json"
+                ]
+            ):
+                assert "relative_ridge" not in value
+                assert value["prior_delta_clamp"][
+                    "allowed_prior_delta_ratio"
+                ] == treated_adapter.config.max_prior_delta_ratio
+        if layer_ordinal == 0:
+            # Layer 0's operator is fitted before any remedied MLP is
+            # installed, so it is the one stage that must be byte-identical.
+            # Deeper layers legitimately differ: this is a closed loop, and
+            # layer k's operator evidence is the child layer k-1 produced.
+            assert (
+                treated_entry["producer"]["compiled"]["metadata"]
+                == control_entry["producer"]["compiled"]["metadata"]
+            )
+
+
+def test_the_adapter_refuses_a_relaxed_clamp_without_a_relative_ridge() -> None:
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="requires relative_ridge_lambda",
+    ) as failure:
+        Lfm2DynamicClosedLoopAdapterConfig(body_max_prior_delta_ratio=4.0)
+    assert "unbounded-step path" in str(failure.value)
+    # Tightening the bound needs no companion; only relaxing it does.
+    tightened = Lfm2DynamicClosedLoopAdapterConfig(
+        body_max_prior_delta_ratio=0.25
+    )
+    assert tightened.mlp_max_prior_delta_ratio == 0.25
+    assert Lfm2DynamicClosedLoopAdapterConfig().mlp_max_prior_delta_ratio == 1.0

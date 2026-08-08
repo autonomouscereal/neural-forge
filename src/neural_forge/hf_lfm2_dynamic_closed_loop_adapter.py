@@ -1130,6 +1130,41 @@ def _durable_diagnostic_json(
     return encoded, markers
 
 
+def _operator_prior_correction_metadata(
+    compiled: Any,
+    name: str,
+) -> dict[str, JsonScalar]:
+    """Seal one operator compile's prior-correction reports (W13R R3(a)).
+
+    Every operator producer and consumer artifact already carries the same
+    ``Lfm2PriorCorrectionReport`` objects the MLP triple does -- one per fitted
+    projection, singular on the short-conv/attention consumers and a tuple on
+    the attention producer and the coupled V/O fold -- and the adapter has
+    always dropped them on the floor.  The Stage-A attribution could therefore
+    say nothing at all about the operator branch: no ``update_scale``, no prior
+    or correction norm, no solver path, at any layer.  This is the one
+    serialization that closes that, and it is emitted unconditionally because a
+    telemetry flag nobody set is exactly how the gap was created.
+    """
+
+    reports = getattr(compiled, "prior_correction_reports", None)
+    if reports is None:
+        single = getattr(compiled, "prior_correction_report", None)
+        reports = () if single is None else (single,)
+    body = [value.as_dict() for value in reports]
+    if not body:
+        return {}
+    encoded, nonfinite_json = _durable_diagnostic_json(body, name)
+    metadata: dict[str, JsonScalar] = {
+        "operator_prior_correction_reports_json": encoded,
+    }
+    if nonfinite_json is not None:
+        metadata["operator_prior_correction_reports_nonfinite_json"] = (
+            nonfinite_json
+        )
+    return metadata
+
+
 _BOUNDARY_ACCEPTANCE_LIFT_SCHEMA = (
     "neural-forge-lfm2-body-reclosure-boundary-acceptance-lift-v1"
 )
@@ -1260,6 +1295,30 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     ridge: float = 1e-6
     norm_ridge: float = 1e-6
     max_prior_delta_ratio: float | None = 1.0
+    # -- W13R R1/R2: the body MLP boundary solve's regularizer and step bound --
+    #
+    # ``ridge`` above is *absolute*.  The Stage-A attribution
+    # (`reports/stage1-attribution-20260808/STAGE_A_ATTRIBUTION.md`) measured it
+    # against a normal system whose sigma_max runs 1.4e5-7.1e5, so its relative
+    # weight was 1.4e-12 to 7.3e-12 -- inert.  The resulting near-singular
+    # solves asked for corrections of 1.4x-140x the prior's norm on all 42 body
+    # MLP fits, and ``max_prior_delta_ratio = 1.0`` truncated every one of them
+    # to a unit-relative step.
+    #
+    # ``relative_ridge_lambda`` makes the ridge ``lambda * sigma_max`` of each
+    # fit's own unregularized system, capping the solved condition number at
+    # 1/lambda.  ``body_max_prior_delta_ratio`` overrides the 1.0 clamp for the
+    # same three fits.  Both default to ``None``, which solves and compiles
+    # exactly what this adapter compiled before they existed.
+    #
+    # They are scoped to the MLP compile *together* and deliberately: the
+    # operator producer/consumer solves keep the absolute ridge, so relaxing
+    # their clamp would be an unbounded step on an unregularized system, which
+    # is the path A12 and W12B already closed (pinv step 40x for 1% fit gain,
+    # held out 6x worse; unregularized reclosure +515%).  A ratio above 1.0
+    # therefore requires a relative ridge, here and in the catalog.
+    relative_ridge_lambda: float | None = None
+    body_max_prior_delta_ratio: float | None = None
     cluster_ridge: float = 1e-8
     cluster_max_iterations: int = 16
     cluster_distance_chunk_size: int = 512
@@ -1405,6 +1464,37 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                     "max_prior_delta_ratio",
                 ),
             )
+        if self.relative_ridge_lambda is not None:
+            object.__setattr__(
+                self,
+                "relative_ridge_lambda",
+                _nonnegative_float(
+                    self.relative_ridge_lambda,
+                    "relative_ridge_lambda",
+                ),
+            )
+        if self.body_max_prior_delta_ratio is not None:
+            object.__setattr__(
+                self,
+                "body_max_prior_delta_ratio",
+                _nonnegative_float(
+                    self.body_max_prior_delta_ratio,
+                    "body_max_prior_delta_ratio",
+                ),
+            )
+            if (
+                self.body_max_prior_delta_ratio > 1.0
+                and self.relative_ridge_lambda is None
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "body_max_prior_delta_ratio above 1.0 requires "
+                    "relative_ridge_lambda: relaxing the prior-delta clamp on "
+                    "an effectively unregularized near-singular system is the "
+                    "unbounded-step path A12 and W12B already closed (pinv "
+                    "step 40x for 1% fit gain, held out 6x worse; "
+                    "unregularized reclosure +515%). Set a relative ridge so "
+                    "the bound comes from the conditioning."
+                )
         object.__setattr__(
             self,
             "cluster_ridge",
@@ -1802,6 +1892,18 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             "replay_devices",
             _replay_device_request(self.replay_devices, "replay_devices"),
         )
+
+    @property
+    def mlp_max_prior_delta_ratio(self) -> float | None:
+        """The prior-delta clamp the three body MLP fits actually receive.
+
+        Unset means the shared ``max_prior_delta_ratio`` every boundary solve
+        has always used, so an unset run compiles the identical weights.
+        """
+
+        if self.body_max_prior_delta_ratio is None:
+            return self.max_prior_delta_ratio
+        return self.body_max_prior_delta_ratio
 
 
 @dataclass(frozen=True, slots=True)
@@ -13406,6 +13508,10 @@ class Lfm2DynamicClosedLoopAdapter:
                         if operator_kind == "full_attention"
                         else target_writer.writer_rank
                     ),
+                    **_operator_prior_correction_metadata(
+                        compiled,
+                        "operator producer prior-correction diagnostics",
+                    ),
                 }
             ),
         )
@@ -13757,6 +13863,21 @@ class Lfm2DynamicClosedLoopAdapter:
                         "fit_nonincreasing",
                         None,
                     ),
+                    # W13R R3(b), operator half: the consumer is the write that
+                    # actually lands the operator branch in the residual, and
+                    # its own endpoint error is measured and then dropped.
+                    # Sealing it makes the per-branch endpoint decomposition
+                    # the Stage-A report could not compute a read, not an
+                    # inference.
+                    "operator_residual_endpoint_relative_rmse": getattr(
+                        compiled_consumer,
+                        "residual_endpoint_relative_rmse",
+                        None,
+                    ),
+                    **_operator_prior_correction_metadata(
+                        compiled_consumer,
+                        "operator consumer prior-correction diagnostics",
+                    ),
                 }
             ),
         )
@@ -13974,7 +14095,8 @@ class Lfm2DynamicClosedLoopAdapter:
             down_weight_prior=target_mlp.w2.weight.detach(),
             residual_assignment_sha256=self.map_sha256,
             ridge=self.config.ridge,
-            max_prior_delta_ratio=self.config.max_prior_delta_ratio,
+            max_prior_delta_ratio=self.config.mlp_max_prior_delta_ratio,
+            relative_ridge_lambda=self.config.relative_ridge_lambda,
             cluster_ridge=self.config.cluster_ridge,
             cluster_max_iterations=self.config.cluster_max_iterations,
             cluster_distance_chunk_size=(
@@ -13999,7 +14121,16 @@ class Lfm2DynamicClosedLoopAdapter:
                 else {"gate_operating_point_diagnostics": True}
             ),
         )
-        durable_diagnostic_metadata: dict[str, JsonScalar] = {}
+        durable_diagnostic_metadata: dict[str, JsonScalar] = {
+            # W13R R3(b): the branch-local MLP endpoint error the compiler
+            # already measures on its own materialized weights.  Arm A's
+            # receipt carried only the *composed* post-layer endpoint, so the
+            # operator-versus-MLP decomposition Q2 asked for had to be inferred
+            # from stage deltas.  It is one float; it is now on the record.
+            "mlp_residual_endpoint_relative_rmse": float(
+                compiled_mlp.residual_endpoint_relative_rmse
+            ),
+        }
         if self.config.mlp_solver_conditioning_diagnostics:
             correction_reports = [
                 value.as_dict()
@@ -14012,7 +14143,8 @@ class Lfm2DynamicClosedLoopAdapter:
             if any(
                 "solver_conditioning"
                 not in correction_reports_by_role.get(role, {})
-                for role in ("mlp_gate", "mlp_up")
+                # W13R R3(c): mlp_down joins the two roles item 8 shipped with.
+                for role in ("mlp_gate", "mlp_up", "mlp_down")
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Requested MLP solver diagnostics were not materialized."
@@ -14095,6 +14227,24 @@ class Lfm2DynamicClosedLoopAdapter:
                         ),
                         "input_error_scale": (
                             input_error_evidence["input_error_scale"]
+                        ),
+                    }
+                ),
+                **(
+                    {}
+                    if (
+                        self.config.relative_ridge_lambda is None
+                        and self.config.body_max_prior_delta_ratio is None
+                    )
+                    else {
+                        # Same discipline as the noise-aware evidence above: a
+                        # boundary solved under the W13R remedy arm must not be
+                        # confusable with the absolute-ridge control's layer.
+                        "relative_ridge_lambda": (
+                            self.config.relative_ridge_lambda
+                        ),
+                        "body_max_prior_delta_ratio": (
+                            self.config.mlp_max_prior_delta_ratio
                         ),
                     }
                 ),

@@ -83,10 +83,13 @@ def test_retention_lane_defaults_are_all_off(tmp_path) -> None:
     assert config.dense_closed_loop_solver_conditioning_diagnostics is False
     assert config.dense_closed_loop_gate_operating_point_diagnostics is False
     assert config.dense_closed_loop_depth_telemetry is False
+    assert config.dense_closed_loop_relative_ridge_lambda is None
+    assert config.dense_closed_loop_body_max_prior_delta_ratio is None
     assert (
         "dense_closed_loop_finite_numeric_policy"
         not in config.identity()["target"]
     )
+    assert "dense_closed_loop_body_solve" not in config.identity()["target"]
 
 
 def test_retention_lane_requires_the_closed_loop_body_fold(tmp_path) -> None:
@@ -191,8 +194,124 @@ def test_parser_exposes_every_retention_flag(tmp_path) -> None:
         "--dense-closed-loop-solver-conditioning-diagnostics",
         "--dense-closed-loop-gate-operating-point-diagnostics",
         "--dense-closed-loop-depth-telemetry",
+        "--dense-closed-loop-relative-ridge-lambda",
+        "--dense-closed-loop-body-max-prior-delta-ratio",
     ):
         assert flag in options
+
+
+# --- W13R R1/R2: the body solve's regularizer and its step bound -------------
+
+
+def test_body_solve_flags_default_to_the_absolute_lane(tmp_path) -> None:
+    """Unset means the exact system every run before this one solved."""
+
+    parser = MODULE.build_parser()
+    defaults = {
+        action.dest: action.default
+        for action in parser._actions
+        if action.option_strings
+    }
+    assert defaults["dense_closed_loop_relative_ridge_lambda"] is None
+    assert defaults["dense_closed_loop_body_max_prior_delta_ratio"] is None
+    config = _config(tmp_path)
+    telemetry_config = _config(
+        tmp_path,
+        dense_run_closed_loop=True,
+        dense_closed_loop_depth_telemetry=True,
+    )
+    telemetry = MODULE._closed_loop_depth_telemetry(
+        telemetry_config,
+        _run_with_closed_loop_report(),
+        _evaluator_with_depth_table(),
+    )
+    assert telemetry["body_relative_ridge_lambda"] is None
+    assert telemetry["body_max_prior_delta_ratio"] is None
+    assert config.identity() == _config(tmp_path).identity()
+
+
+def test_body_solve_flags_require_the_closed_loop_body_fold(tmp_path) -> None:
+    for name in (
+        "dense_closed_loop_relative_ridge_lambda",
+        "dense_closed_loop_body_max_prior_delta_ratio",
+    ):
+        with pytest.raises(
+            MODULE.ProductionLfm2CatalogError,
+            match="requires the dense closed-loop body fold",
+        ):
+            _config(tmp_path, **{name: 0.5})
+
+
+def test_a_relaxed_clamp_without_a_relative_ridge_is_refused(tmp_path) -> None:
+    """The A12/W12B coupling, enforced where the arm is configured.
+
+    An unbounded step on an unregularized near-singular system is the failure
+    this program has already measured twice; the clamp is the only bound on
+    that solve until the ridge is relative.
+    """
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires --dense-closed-loop-relative-ridge-lambda",
+    ) as failure:
+        _config(
+            tmp_path,
+            dense_run_closed_loop=True,
+            dense_closed_loop_body_max_prior_delta_ratio=4.0,
+        )
+    message = str(failure.value)
+    assert "closed path" in message
+    assert "A12" in message and "W12B" in message
+
+
+def test_a_tightened_clamp_needs_no_relative_ridge(tmp_path) -> None:
+    """The refusal is about *relaxing* the bound, not about touching it."""
+
+    config = _config(
+        tmp_path,
+        dense_run_closed_loop=True,
+        dense_closed_loop_body_max_prior_delta_ratio=0.25,
+    )
+    assert config.dense_closed_loop_body_max_prior_delta_ratio == 0.25
+    assert (
+        config.identity()["target"]["dense_closed_loop_body_solve"][
+            "relative_ridge_lambda"
+        ]
+        is None
+    )
+
+
+def test_negative_body_solve_values_are_refused(tmp_path) -> None:
+    for name in (
+        "dense_closed_loop_relative_ridge_lambda",
+        "dense_closed_loop_body_max_prior_delta_ratio",
+    ):
+        with pytest.raises(MODULE.ProductionLfm2CatalogError):
+            _config(tmp_path, dense_run_closed_loop=True, **{name: -1.0})
+
+
+def test_the_remedy_arm_records_itself_in_the_configuration_identity(
+    tmp_path,
+) -> None:
+    config = _config(
+        tmp_path,
+        dense_run_closed_loop=True,
+        dense_closed_loop_depth_telemetry=True,
+        dense_closed_loop_relative_ridge_lambda=1e-5,
+        dense_closed_loop_body_max_prior_delta_ratio=8.0,
+    )
+    body_solve = config.identity()["target"]["dense_closed_loop_body_solve"]
+    assert body_solve["relative_ridge_lambda"] == 1e-5
+    assert body_solve["body_max_prior_delta_ratio"] == 8.0
+    assert body_solve["scope"] == "body_mlp_gate_up_down_boundary_fits"
+    assert body_solve["operator_solves_keep_the_absolute_ridge"] is True
+    telemetry = MODULE._closed_loop_depth_telemetry(
+        config,
+        _run_with_closed_loop_report(),
+        _evaluator_with_depth_table(),
+    )
+    assert telemetry["body_relative_ridge_lambda"] == 1e-5
+    assert telemetry["body_max_prior_delta_ratio"] == 8.0
 
 
 # --- item 8: depth telemetry -------------------------------------------------

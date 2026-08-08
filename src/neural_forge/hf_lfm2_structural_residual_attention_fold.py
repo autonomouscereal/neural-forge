@@ -871,6 +871,30 @@ class Lfm2PriorCorrectionReport:
     system_singular_value_maximum: float | None = None
     system_singular_value_minimum: float | None = None
     system_condition_number: float | None = None
+    # Which regularizer the solve actually used (W13R R1).  ``absolute`` is the
+    # historical lane and reports nothing new; a relative arm records the
+    # lambda, the sigma_max it was multiplied by, and the ridge that produced,
+    # because "ridge = 1e-6" is meaningless without the scale it sits against.
+    ridge_mode: str = "absolute"
+    configured_ridge: float | None = None
+    effective_ridge: float | None = None
+    relative_ridge_lambda: float | None = None
+    unregularized_system_singular_value_maximum: float | None = None
+    # The prior-delta clamp's own two numbers (W13R R2).  ``update_scale``
+    # alone cannot say whether a solve was limited by the evidence or by the
+    # budget; requested-versus-allowed can, and the Stage-A attribution had to
+    # reconstruct it from 1/update_scale because nobody sealed it.
+    max_prior_delta_ratio: float | None = None
+    requested_prior_delta_ratio: float | None = None
+    prior_delta_clamp_engaged: bool | None = None
+
+    @property
+    def allowed_prior_delta_ratio(self) -> float | None:
+        """The ratio the clamp permitted, or ``None`` when it was not applied."""
+
+        if self.prior_delta_clamp_engaged is None:
+            return None
+        return self.max_prior_delta_ratio
 
     def as_dict(self) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -907,6 +931,38 @@ class Lfm2PriorCorrectionReport:
                     "solved_normal_system"
                     if self.solver_path != "direct_gelsd_least_squares"
                     else "design_matrix"
+                ),
+            }
+        if self.prior_delta_clamp_engaged is not None:
+            # Emitted whenever the clamp was actually evaluated.  This one is
+            # deliberately *not* behind the telemetry opt-in: W13R records that
+            # every production body solve in this program's history hit this
+            # bound, and that fact was recoverable only by inverting
+            # ``update_scale`` after the fact.  It moves the receipts of runs
+            # that fit around a prior; it never moves one compiled byte.
+            body["prior_delta_clamp"] = {
+                "requested_prior_delta_ratio": (
+                    self.requested_prior_delta_ratio
+                ),
+                "allowed_prior_delta_ratio": self.allowed_prior_delta_ratio,
+                "clamp_engaged": self.prior_delta_clamp_engaged,
+                "budget_units": "prior_frobenius_norm",
+            }
+        if self.ridge_mode != "absolute":
+            # Emitted only for a relative-ridge arm, so an absolute-lane run
+            # seals the exact prior-correction body it sealed before R1.
+            body["relative_ridge"] = {
+                "mode": self.ridge_mode,
+                "relative_ridge_lambda": self.relative_ridge_lambda,
+                "unregularized_system_singular_value_maximum": (
+                    self.unregularized_system_singular_value_maximum
+                ),
+                "effective_ridge": self.effective_ridge,
+                "absolute_ridge_configured": self.configured_ridge,
+                "effective_condition_number_cap": (
+                    None
+                    if not self.relative_ridge_lambda
+                    else 1.0 / self.relative_ridge_lambda
                 ),
             }
         if self.input_error_covariance_applied:
@@ -1059,6 +1115,26 @@ def _solved_system_conditioning(matrix: Any) -> tuple[float, float, float]:
     return largest, smallest, condition
 
 
+def _shifted_system_conditioning(
+    singular: Any,
+    shift: float,
+) -> tuple[float, float, float]:
+    """Return the conditioning of ``A + shift*I`` from ``A``'s own spectrum.
+
+    ``A`` here is always one symmetric positive-semidefinite Gram, whose
+    singular values are its eigenvalues, so adding ``shift*I`` shifts every one
+    of them by exactly ``shift`` and preserves their order.  A relative-ridge
+    solve has already paid for ``A``'s spectrum in order to read sigma_max off
+    it; reading the solved system's conditioning off the same vector keeps that
+    arm at one ``svdvals`` rather than two.
+    """
+
+    largest = float(singular.max().item()) + shift
+    smallest = float(singular.min().item()) + shift
+    condition = math.inf if smallest <= 0.0 else largest / smallest
+    return largest, smallest, condition
+
+
 def _fit_linear(
     input_rows: Any,
     target_rows: Any,
@@ -1070,6 +1146,7 @@ def _fit_linear(
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
     solver_diagnostics: bool = False,
+    relative_ridge_lambda: float | None = None,
 ) -> tuple[Any, Lfm2PriorCorrectionReport]:
     """Fit ``target = input @ weight.T`` around a source-derived prior.
 
@@ -1098,6 +1175,18 @@ def _fit_linear(
     spectrum of the system that branch actually solved.  It costs one extra
     ``svdvals`` per fit, never touches the coefficients, and is emitted only
     into the report, so a diagnostic fit compiles the identical weights.
+
+    ``relative_ridge_lambda`` replaces the *absolute* ``ridge`` with
+    ``lambda * sigma_max`` of this fit's own unregularized system.  An absolute
+    ridge is an assertion about the design's scale that nothing checks: the
+    Stage-A attribution (``reports/stage1-attribution-20260808``) measured
+    ridge 1e-6 against sigma_max 1.4e5-7.1e5 on the body MLP boundaries, i.e. a
+    relative ridge of 1.4e-12 to 7.3e-12, and the resulting effectively
+    unregularized near-singular solves asked for corrections 1.4x-140x the
+    prior's norm at all 42 of them.  Setting lambda caps the solved condition
+    number at ``1/lambda`` and bounds the solution norm by the evidence instead
+    of by the clamp.  ``None`` is the absolute lane and solves the identical
+    system it solved before this existed.
     """
 
     torch = _torch()
@@ -1146,13 +1235,37 @@ def _fit_linear(
             f"{role}_input_error_covariance",
             width=int(x.shape[1]),
         )
+    configured_ridge = ridge
+    unregularized_singular = None
+    unregularized_sigma_max: float | None = None
+    normal_system = None
+    if relative_ridge_lambda is not None:
+        relative_ridge_lambda = _nonnegative_float(
+            relative_ridge_lambda, f"{role}_relative_ridge_lambda"
+        )
+        # The unregularized system this fit is about to solve -- the primal
+        # Gram, or the dual one when the design is wider than it is tall.
+        # Building it here instead of inside the branch below keeps the
+        # relative arm at exactly one Gram and one ``svdvals``, which is the
+        # cost the conditioning telemetry already pays; sigma_max is read off
+        # that spectrum rather than measured a second time.
+        normal_system = (
+            x @ x.T
+            if error_covariance is None and int(x.shape[1]) > int(x.shape[0])
+            else x.T @ x
+        )
+        unregularized_singular = torch.linalg.svdvals(
+            normal_system.to(dtype=torch.float64)
+        )
+        unregularized_sigma_max = float(unregularized_singular.max().item())
+        ridge = relative_ridge_lambda * unregularized_sigma_max
     if error_covariance is not None:
         # Errors-in-variables normal equations.  ``Sigma`` regularizes the full
         # operator, so the prior contributes ``-scale * Sigma @ prior.T`` to the
         # right-hand side; with no prior that term is exactly zero and the zero
         # GEMM is skipped for the same reason the residual GEMM above is.
         system = (
-            x.T @ x
+            (x.T @ x if normal_system is None else normal_system)
             + ridge * torch.eye(int(x.shape[1]), dtype=torch.float64)
             + input_error_scale * error_covariance
         )
@@ -1171,7 +1284,9 @@ def _fit_linear(
         solver_path = "direct_gelsd_least_squares"
         solved_system = x
     elif int(x.shape[1]) > int(x.shape[0]):
-        system = x @ x.T + ridge * torch.eye(int(x.shape[0]), dtype=torch.float64)
+        system = (
+            x @ x.T if normal_system is None else normal_system
+        ) + ridge * torch.eye(int(x.shape[0]), dtype=torch.float64)
         try:
             dual = torch.linalg.solve(system, residual)
             solver_path = "dual_solve"
@@ -1181,7 +1296,9 @@ def _fit_linear(
         solution = x.T @ dual
         solved_system = system
     else:
-        system = x.T @ x + ridge * torch.eye(int(x.shape[1]), dtype=torch.float64)
+        system = (
+            x.T @ x if normal_system is None else normal_system
+        ) + ridge * torch.eye(int(x.shape[1]), dtype=torch.float64)
         right = x.T @ residual
         try:
             solution = torch.linalg.solve(system, right)
@@ -1190,10 +1307,24 @@ def _fit_linear(
             solution = torch.linalg.lstsq(system, right, driver="gelsd").solution
             solver_path = "primal_gelsd_fallback"
         solved_system = system
+    # The shifted-spectrum shortcut is exact only when the solved system really
+    # is ``normal_system + ridge*I``: the noise-aware branch adds a covariance
+    # that is not a multiple of the identity, and a zero effective ridge lands
+    # on the design matrix itself rather than on a Gram.
+    solved_system_is_shifted_gram = (
+        unregularized_singular is not None
+        and error_covariance is None
+        and ridge != 0.0
+    )
     conditioning: tuple[float, float, float] | None = None
     if solver_diagnostics:
-        conditioning = _solved_system_conditioning(solved_system)
+        conditioning = (
+            _shifted_system_conditioning(unregularized_singular, ridge)
+            if solved_system_is_shifted_gram
+            else _solved_system_conditioning(solved_system)
+        )
     del solved_system
+    del normal_system
     if not bool(torch.isfinite(solution).all().item()):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Closed-form projection fit produced non-finite coefficients."
@@ -1202,15 +1333,21 @@ def _fit_linear(
     prior_norm = float(torch.linalg.vector_norm(prior_rows).item())
     correction_norm = float(torch.linalg.vector_norm(correction).item())
     update_scale = 1.0
+    requested_prior_delta_ratio: float | None = None
+    clamp_engaged: bool | None = None
     if (
         prior is not None
         and max_prior_delta_ratio is not None
         and correction_norm > 0.0
     ):
-        allowed = max_prior_delta_ratio * max(
-            prior_norm, torch.finfo(torch.float64).tiny
-        )
+        # The clamp's own denominator, reused verbatim, so the requested and
+        # allowed ratios the report seals are exactly the two numbers this
+        # comparison is made of.
+        budget = max(prior_norm, torch.finfo(torch.float64).tiny)
+        allowed = max_prior_delta_ratio * budget
+        requested_prior_delta_ratio = correction_norm / budget
         update_scale = min(1.0, allowed / correction_norm)
+        clamp_engaged = update_scale < 1.0
         if update_scale < 1.0:
             correction = correction * update_scale
             correction_norm *= update_scale
@@ -1250,6 +1387,18 @@ def _fit_linear(
         system_condition_number=(
             None if conditioning is None else conditioning[2]
         ),
+        ridge_mode=(
+            "absolute"
+            if relative_ridge_lambda is None
+            else "relative_to_unregularized_sigma_max"
+        ),
+        configured_ridge=configured_ridge,
+        effective_ridge=ridge,
+        relative_ridge_lambda=relative_ridge_lambda,
+        unregularized_system_singular_value_maximum=unregularized_sigma_max,
+        max_prior_delta_ratio=max_prior_delta_ratio,
+        requested_prior_delta_ratio=requested_prior_delta_ratio,
+        prior_delta_clamp_engaged=clamp_engaged,
     )
 
 
@@ -4747,6 +4896,7 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
     solver_conditioning_diagnostics: bool = False,
+    relative_ridge_lambda: float | None = None,
     gate_operating_point_diagnostics: bool = False,
     gate_operating_point_correction: bool = False,
     gate_operating_point_match_channel_mean: bool = True,
@@ -4903,6 +5053,7 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
             solver_diagnostics=solver_conditioning_diagnostics,
+            relative_ridge_lambda=relative_ridge_lambda,
         )
         up_weight, up_fit = _fit_linear(
             target_input_rows,
@@ -4914,6 +5065,7 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
             solver_diagnostics=solver_conditioning_diagnostics,
+            relative_ridge_lambda=relative_ridge_lambda,
         )
         gate_operating_point, uncorrected_gate_weight, gate_weight = (
             _resolve_gate_operating_point(
@@ -4947,6 +5099,12 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             ridge=ridge,
             prior=normalized_priors["w2.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
+            # W13R R3(c): the down write is the least-solved role in the fold
+            # (update_scale 0.0071-0.064 across depth in arm A) and was the one
+            # `_fit_linear` call in this compile with no conditioning telemetry
+            # at all.  Read-only, exactly as it already is for gate and up.
+            solver_diagnostics=solver_conditioning_diagnostics,
+            relative_ridge_lambda=relative_ridge_lambda,
         )
         fp64_state = {
             "w1.weight": gate_weight,
@@ -6307,6 +6465,7 @@ def compile_lfm2_structural_residual_mlp_fold(
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
     solver_conditioning_diagnostics: bool = False,
+    relative_ridge_lambda: float | None = None,
     gate_operating_point_diagnostics: bool = False,
     gate_operating_point_correction: bool = False,
     gate_operating_point_match_channel_mean: bool = True,
@@ -6329,8 +6488,13 @@ def compile_lfm2_structural_residual_mlp_fold(
 
     ``solver_conditioning_diagnostics`` attaches the solver path actually taken
     -- including the otherwise-silent ``gelsd`` fallback -- and the solved
-    system's sigma_max/sigma_min/condition number to the W1/W3 fit reports.  It
+    system's sigma_max/sigma_min/condition number to all three fit reports.  It
     is read-only: the compiled state is bit-identical either way.
+
+    ``relative_ridge_lambda`` switches all three fits from the absolute
+    ``ridge`` to ``lambda * sigma_max`` of each fit's own unregularized system
+    (see :func:`_fit_linear`).  ``None`` keeps the absolute lane and compiles
+    bit-identical weights.
     """
 
     torch = _torch()
@@ -6353,6 +6517,10 @@ def compile_lfm2_structural_residual_mlp_fold(
     if max_prior_delta_ratio is not None:
         max_prior_delta_ratio = _nonnegative_float(
             max_prior_delta_ratio, "max_prior_delta_ratio"
+        )
+    if relative_ridge_lambda is not None:
+        relative_ridge_lambda = _nonnegative_float(
+            relative_ridge_lambda, "relative_ridge_lambda"
         )
     if residual_assignment_sha256 is not None and not _valid_sha256_text(
         residual_assignment_sha256
@@ -6382,6 +6550,7 @@ def compile_lfm2_structural_residual_mlp_fold(
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
             solver_conditioning_diagnostics=(solver_conditioning_diagnostics),
+            relative_ridge_lambda=relative_ridge_lambda,
             gate_operating_point_diagnostics=(gate_operating_point_diagnostics),
             gate_operating_point_correction=gate_operating_point_correction,
             gate_operating_point_match_channel_mean=(
@@ -6613,6 +6782,7 @@ def compile_lfm2_structural_residual_mlp_fold(
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
             solver_diagnostics=solver_conditioning_diagnostics,
+            relative_ridge_lambda=relative_ridge_lambda,
         )
         up_weight, up_fit = _fit_linear(
             target_input_rows,
@@ -6624,6 +6794,7 @@ def compile_lfm2_structural_residual_mlp_fold(
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
             solver_diagnostics=solver_conditioning_diagnostics,
+            relative_ridge_lambda=relative_ridge_lambda,
         )
         gate_operating_point, uncorrected_gate_weight, gate_weight = (
             _resolve_gate_operating_point(
@@ -6653,6 +6824,12 @@ def compile_lfm2_structural_residual_mlp_fold(
             ridge=ridge,
             prior=normalized_priors["w2.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
+            # W13R R3(c): the down write is the least-solved role in the fold
+            # (update_scale 0.0071-0.064 across depth in arm A) and was the one
+            # `_fit_linear` call in this compile with no conditioning telemetry
+            # at all.  Read-only, exactly as it already is for gate and up.
+            solver_diagnostics=solver_conditioning_diagnostics,
+            relative_ridge_lambda=relative_ridge_lambda,
         )
         fp64_state = {
             "w1.weight": gate_weight,
