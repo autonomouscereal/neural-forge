@@ -1280,6 +1280,7 @@ class ProductionLfm2CatalogConfig:
     balanced_basis_phase_hmac_key_id: str | None = None
     balanced_basis_existing_phase_key_sha256: str | None = None
     autoregressive_hankel_cache_root: Path | None = None
+    autoregressive_hankel_source_cache_directory: Path | None = None
     tokenizer_directory: Path | None = None
     target_tokenizer_directory: Path | None = None
     target_tokenizer_calibration: Path | None = None
@@ -1555,6 +1556,7 @@ class ProductionLfm2CatalogConfig:
             "balanced_basis_phase_event_log",
             "balanced_basis_phase_hmac_key_file",
             "autoregressive_hankel_cache_root",
+            "autoregressive_hankel_source_cache_directory",
             "dense_restart_capsule_root",
             "dense_resume_from_capsule",
             "on_policy_child_artifact_directory",
@@ -1743,9 +1745,19 @@ class ProductionLfm2CatalogConfig:
             "dense_autoregressive_hankel_future_lags",
             hankel_lags,
         )
-        if (self.autoregressive_hankel_cache_root is None) != (not hankel_lags):
+        hankel_requested = (
+            self.autoregressive_hankel_cache_root is not None
+            or self.autoregressive_hankel_source_cache_directory is not None
+            or bool(hankel_lags)
+        )
+        if hankel_requested and (
+            self.autoregressive_hankel_cache_root is None
+            or self.autoregressive_hankel_source_cache_directory is None
+            or not hankel_lags
+        ):
             raise ProductionLfm2CatalogError(
-                "Autoregressive Hankel folding requires its stable cache root "
+                "Autoregressive Hankel folding requires its stable output "
+                "cache root, explicit authenticated source-cache directory, "
                 "and nonempty future-lag schedule together."
             )
         for name in (
@@ -3593,6 +3605,13 @@ class ProductionLfm2CatalogConfig:
                             .expanduser()
                             .absolute()
                         ),
+                        "source_cache_directory": str(
+                            self.autoregressive_hankel_source_cache_directory
+                            .expanduser()
+                            .absolute()
+                        ),
+                        "source_cache_is_explicit_not_active_session": True,
+                        "merged_active_session_inference_forbidden": True,
                         "checkpoint_granularity_batches": 1,
                         "bounded_memory_cumulative_aggregation_required": True,
                         "per_batch_shards_retained_together": False,
@@ -10178,6 +10197,7 @@ def _autoregressive_hankel_cache_receipt_fields(
     if not config.uses_autoregressive_hankel_observability:
         return {}
     assert config.autoregressive_hankel_cache_root is not None
+    assert config.autoregressive_hankel_source_cache_directory is not None
     return {
         "autoregressive_hankel_cache": {
             "enabled": True,
@@ -10186,6 +10206,13 @@ def _autoregressive_hankel_cache_receipt_fields(
                 .expanduser()
                 .absolute()
             ),
+            "source_cache_directory": str(
+                config.autoregressive_hankel_source_cache_directory
+                .expanduser()
+                .absolute()
+            ),
+            "source_cache_is_explicit_not_active_session": True,
+            "merged_active_session_inference_forbidden": True,
             "future_lags": list(
                 config.dense_autoregressive_hankel_future_lags
             ),
@@ -11889,6 +11916,11 @@ def run_production_catalog(
                 "autoregressive_hankel_enabled": True,
                 "autoregressive_hankel_cache_root": str(
                     config.autoregressive_hankel_cache_root
+                    .expanduser()
+                    .absolute()
+                ),
+                "autoregressive_hankel_source_cache_directory": str(
+                    config.autoregressive_hankel_source_cache_directory
                     .expanduser()
                     .absolute()
                 ),
@@ -14413,7 +14445,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Stable cross-run root for per-batch future-causal statistics and "
             "bounded-memory cumulative AHB observability checkpoints. Requires "
-            "--dense-autoregressive-hankel-future-lags."
+            "the explicit source-cache directory and future-lag schedule."
+        ),
+    )
+    parser.add_argument(
+        "--autoregressive-hankel-source-cache-directory",
+        type=Path,
+        help=(
+            "Exact sealed parent trace-cache directory used only for AHB. "
+            "This explicit source is fully authenticated and never inferred "
+            "from an active merged/on-policy session."
         ),
     )
     parser.add_argument(
@@ -15549,6 +15590,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         autoregressive_hankel_cache_root=(
             args.autoregressive_hankel_cache_root
+        ),
+        autoregressive_hankel_source_cache_directory=(
+            args.autoregressive_hankel_source_cache_directory
         ),
         snapshot_root=args.snapshot_root,
         publish_destination=args.publish_destination,

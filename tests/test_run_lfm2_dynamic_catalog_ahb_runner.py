@@ -99,6 +99,8 @@ def test_ahb_cli_binds_sparse_lags_solver_and_stable_cache(tmp_path) -> None:
             "4",
             "--autoregressive-hankel-cache-root",
             str(tmp_path / "stable" / "ahb"),
+            "--autoregressive-hankel-source-cache-directory",
+            str(tmp_path / "sealed-ahb-source"),
             "--dense-autoregressive-hankel-future-lags",
             "0,1,2,4,8,16,32",
             "--dense-autoregressive-hankel-state-ridge-fraction",
@@ -132,6 +134,11 @@ def test_ahb_cli_binds_sparse_lags_solver_and_stable_cache(tmp_path) -> None:
     assert receipt["bounded_memory_cumulative_aggregation_required"] is True
     assert receipt["all_statistics_shards_retained_in_memory"] is False
     assert receipt["parent_trace_regeneration"] is False
+    assert receipt["source_cache_is_explicit_not_active_session"] is True
+    assert receipt["merged_active_session_inference_forbidden"] is True
+    assert receipt["source_cache_directory"] == str(
+        (tmp_path / "sealed-ahb-source").absolute()
+    )
 
 
 @pytest.mark.parametrize("lags", ["", "1,2", "0", "0,2,1", "0,1,1", "0,-1,2"])
@@ -166,11 +173,21 @@ def test_ahb_requires_paired_cache_and_lags_and_automatic_balanced_fold(
 ) -> None:
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
-        match="cache root and nonempty future-lag schedule together",
+        match="explicit authenticated source-cache directory",
     ):
         _config(
             tmp_path,
             autoregressive_hankel_cache_root=tmp_path / "stable" / "ahb",
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="explicit authenticated source-cache directory",
+    ):
+        _config(
+            tmp_path,
+            compression_ratio=4.0,
+            autoregressive_hankel_cache_root=tmp_path / "stable" / "ahb",
+            dense_autoregressive_hankel_future_lags=(0, 1),
         )
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
@@ -179,6 +196,9 @@ def test_ahb_requires_paired_cache_and_lags_and_automatic_balanced_fold(
         _config(
             tmp_path,
             autoregressive_hankel_cache_root=tmp_path / "stable" / "ahb",
+            autoregressive_hankel_source_cache_directory=(
+                tmp_path / "sealed-ahb-source"
+            ),
             dense_autoregressive_hankel_future_lags=(0, 1),
         )
     with pytest.raises(
@@ -189,6 +209,9 @@ def test_ahb_requires_paired_cache_and_lags_and_automatic_balanced_fold(
             tmp_path,
             compression_ratio=4.0,
             autoregressive_hankel_cache_root=tmp_path / "stable" / "ahb",
+            autoregressive_hankel_source_cache_directory=(
+                tmp_path / "sealed-ahb-source"
+            ),
             dense_autoregressive_hankel_future_lags=(0, 1),
             dense_residual_basis_mode="weight_complete",
         )
@@ -201,6 +224,7 @@ def test_ahb_wiring_seam_fails_closed_on_configuration_artifact_mismatch(
         tmp_path,
         compression_ratio=4.0,
         autoregressive_hankel_cache_root=tmp_path / "stable" / "ahb",
+        autoregressive_hankel_source_cache_directory=(tmp_path / "sealed-ahb-source"),
         dense_autoregressive_hankel_future_lags=(0, 1, 2),
     )
     with pytest.raises(
