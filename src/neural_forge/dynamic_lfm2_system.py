@@ -125,6 +125,7 @@ class Lfm2DynamicStackResources:
     target_tokenizer_vocabulary_margin_binding: (
         Lfm2TargetTokenizerVocabularyMarginBinding | None
     ) = None
+    autoregressive_hankel_observability: Any | None = None
     dense_fold_progress_sink: (
         Callable[[str, Mapping[str, Any]], None] | None
     ) = None
@@ -356,6 +357,47 @@ class Lfm2DynamicStackResources:
                 raise DynamicLfm2AdapterError(
                     "Target vocabulary-margin binding differs from the stack's "
                     "strict tokenizer trace adapter."
+                )
+        if self.autoregressive_hankel_observability is not None:
+            try:
+                from .dynamic_balanced_circuit_basis import (
+                    PrecomputedDownstreamObservability,
+                )
+                from .hf_lfm2_autoregressive_hankel_observability import (
+                    Lfm2AutoregressiveHankelObservabilityResult,
+                )
+            except ImportError as exc:  # pragma: no cover - optional dependency
+                raise DynamicLfm2AdapterError(
+                    "The autoregressive Hankel fold primitive is unavailable."
+                ) from exc
+            value = self.autoregressive_hankel_observability
+            if not isinstance(
+                value,
+                (
+                    Lfm2AutoregressiveHankelObservabilityResult,
+                    PrecomputedDownstreamObservability,
+                ),
+            ):
+                raise DynamicLfm2AdapterError(
+                    "autoregressive_hankel_observability has the wrong type."
+                )
+            evidence = (
+                value.evidence
+                if isinstance(value, Lfm2AutoregressiveHankelObservabilityResult)
+                else value
+            )
+            if not evidence.verify():
+                raise DynamicLfm2AdapterError(
+                    "autoregressive_hankel_observability failed authentication."
+                )
+            if self.dense_fold_config is None or getattr(
+                self.dense_fold_config,
+                "residual_basis_mode",
+                None,
+            ) != "circuit_balanced":
+                raise DynamicLfm2AdapterError(
+                    "Autoregressive Hankel evidence requires one dense circuit-"
+                    "balanced fold configuration."
                 )
         if self.dense_fold_progress_sink is not None and not callable(
             self.dense_fold_progress_sink
@@ -1232,6 +1274,9 @@ class Lfm2DynamicFoldStackAdapter:
                 ),
                 residual_basis_phase_cache_context=(
                     self.resources.residual_basis_phase_cache_context
+                ),
+                autoregressive_hankel_observability=(
+                    self.resources.autoregressive_hankel_observability
                 ),
                 progress_sink=self.resources.dense_fold_progress_sink,
             )

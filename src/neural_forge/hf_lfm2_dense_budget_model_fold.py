@@ -36,6 +36,9 @@ from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
 from .dynamic_child_replay_phase_cache import (
     DynamicChildReplayPhaseCacheContext,
 )
+from .dynamic_balanced_circuit_basis import (
+    PrecomputedDownstreamObservability,
+)
 from .dynamic_closed_loop_fold import (
     RUN_SCHEMA as CLOSED_LOOP_RUN_SCHEMA,
     ChildClosedLoopCompiler,
@@ -100,6 +103,9 @@ from .hf_lfm2_balanced_basis_phase_cache import (
     Lfm2BalancedBasisPhaseBuildRequest,
     Lfm2BalancedBasisPhaseCacheContext,
     load_or_build_lfm2_circuit_balanced_basis,
+)
+from .hf_lfm2_autoregressive_hankel_observability import (
+    Lfm2AutoregressiveHankelObservabilityResult,
 )
 from .hf_lfm2_sealed_evidence_set import (
     SEALED_EVIDENCE_CACHE_TYPES,
@@ -2163,6 +2169,11 @@ def _build_residual_basis(
     phase_cache_binding_provider: (
         Callable[[], Mapping[str, Mapping[str, Any]]] | None
     ) = None,
+    autoregressive_hankel_observability: (
+        Lfm2AutoregressiveHankelObservabilityResult
+        | PrecomputedDownstreamObservability
+        | None
+    ) = None,
 ) -> Any:
     if config.residual_basis_mode == "weight_complete":
         return build_lfm2_weight_complete_basis(
@@ -2202,6 +2213,9 @@ def _build_residual_basis(
             target_tokenizer_vocabulary_margin_binding=(
                 target_tokenizer_vocabulary_margin_binding
             ),
+            autoregressive_hankel_observability=(
+                autoregressive_hankel_observability
+            ),
         )
 
     if phase_cache_context is None:
@@ -2231,6 +2245,9 @@ def _build_residual_basis(
         ),
         target_tokenizer_vocabulary_margin_binding=(
             target_tokenizer_vocabulary_margin_binding
+        ),
+        autoregressive_hankel_observability=(
+            autoregressive_hankel_observability
         ),
     )
     return load_or_build_lfm2_circuit_balanced_basis(
@@ -3383,6 +3400,11 @@ class Lfm2DenseBudgetModelOperator:
         residual_basis_phase_cache_context: (
             Lfm2BalancedBasisPhaseCacheContext | None
         ) = None,
+        autoregressive_hankel_observability: (
+            Lfm2AutoregressiveHankelObservabilityResult
+            | PrecomputedDownstreamObservability
+            | None
+        ) = None,
         evidence_set: Lfm2SealedEvidenceSet | None = None,
         progress_sink: (
             Callable[[str, Mapping[str, JsonScalar]], None] | None
@@ -3479,6 +3501,34 @@ class Lfm2DenseBudgetModelOperator:
                 "Residual-basis phase caching is only defined for the "
                 "circuit-balanced basis."
             )
+        if autoregressive_hankel_observability is not None:
+            if not isinstance(
+                autoregressive_hankel_observability,
+                (
+                    Lfm2AutoregressiveHankelObservabilityResult,
+                    PrecomputedDownstreamObservability,
+                ),
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "autoregressive_hankel_observability has the wrong type."
+                )
+            if self.config.residual_basis_mode != "circuit_balanced":
+                raise Lfm2DenseBudgetFoldError(
+                    "Autoregressive Hankel observability requires the "
+                    "circuit-balanced residual basis."
+                )
+            evidence = (
+                autoregressive_hankel_observability.evidence
+                if isinstance(
+                    autoregressive_hankel_observability,
+                    Lfm2AutoregressiveHankelObservabilityResult,
+                )
+                else autoregressive_hankel_observability
+            )
+            if not evidence.verify():
+                raise Lfm2DenseBudgetFoldError(
+                    "Autoregressive Hankel observability failed authentication."
+                )
         if (
             residual_basis_phase_cache_context is not None
             and selective_session is None
@@ -3633,6 +3683,9 @@ class Lfm2DenseBudgetModelOperator:
         self.residual_basis_phase_cache_context = (
             residual_basis_phase_cache_context
         )
+        self.autoregressive_hankel_observability = (
+            autoregressive_hankel_observability
+        )
 
     def _residual_basis_phase_bindings(
         self,
@@ -3642,6 +3695,7 @@ class Lfm2DenseBudgetModelOperator:
         bridge = self.tokenizer_bridge_artifact
         adapter = self.tokenizer_bridge_trace_adapter
         vocabulary_binding = self.target_tokenizer_vocabulary_margin_binding
+        hankel = self.autoregressive_hankel_observability
         tokenizer: dict[str, Any] = {
             "schema": "neural-forge-lfm2-balanced-basis-tokenizer-binding-v1",
             "parent_tokenizer_semantics_sha256": (
@@ -3700,10 +3754,36 @@ class Lfm2DenseBudgetModelOperator:
             tokenizer["target_vocabulary_margin_binding_sha256"] = (
                 vocabulary_binding.binding_sha256
             )
-        return {
+        hankel_binding: dict[str, Any] | None = None
+        if hankel is not None:
+            evidence = (
+                hankel.evidence
+                if isinstance(
+                    hankel,
+                    Lfm2AutoregressiveHankelObservabilityResult,
+                )
+                else hankel
+            )
+            if not evidence.verify():
+                raise Lfm2DenseBudgetFoldError(
+                    "AHB evidence changed while authenticating the residual-"
+                    "basis phase."
+                )
+            hankel_binding = {
+                "schema": "neural-forge-lfm2-balanced-basis-ahb-binding-v1",
+                "enabled": True,
+                "evidence_sha256": evidence.evidence_sha256,
+                "provenance_sha256": evidence.provenance[
+                    "provenance_sha256"
+                ],
+            }
+        bindings = {
             "selected_target": self.selected_target.as_dict(),
             "tokenizer": tokenizer,
         }
+        if hankel_binding is not None:
+            bindings["autoregressive_hankel"] = hankel_binding
+        return bindings
 
     # -- accepted-layer restart capsules -------------------------------
 
@@ -4024,6 +4104,9 @@ class Lfm2DenseBudgetModelOperator:
                     None
                     if self.residual_basis_phase_cache_context is None
                     else self._residual_basis_phase_bindings
+                ),
+                autoregressive_hankel_observability=(
+                    self.autoregressive_hankel_observability
                 ),
             )
             if (
