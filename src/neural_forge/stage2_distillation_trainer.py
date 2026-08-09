@@ -142,6 +142,12 @@ class Stage2CheckpointSettings:
     lexicon_package_sha256: str
     save_optimizer: Callable[[Any, Path], None] | None = None
     keep_optimizer_state: bool = True
+    # The design-declared initialization artifact for this arm (section 1):
+    # the A9/A11 saved child state for S2-A, the a0028 published artifact tree
+    # for S2-B, and ``None`` for the two random-init controls, which have a
+    # recorded seed and no source artifact.  It is sealed into every rung
+    # checkpoint so the stage-2 admission list has something to key on.
+    init_artifact_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +183,14 @@ class Stage2TrainerConfig:
     loss_log_interval_steps: int = 10
     safety_checkpoint_seconds: float = 1_800.0
     safety_checkpoints_kept: int = 2
+    # H4 of NOTES-S2B.  On-policy sampling used to re-run the whole student
+    # forward for every generated token: 256 full forwards over a growing
+    # context per on-policy step.  The cached path advances one token at a time
+    # through the child body's own cache -- the mechanism the deployed routed
+    # decode already uses (``hf_lfm2_semantic_step_model_runtime``).  The
+    # uncached path stays as the correctness reference, and the equivalence
+    # test drives both at one seed.
+    on_policy_sampling_uses_cache: bool = True
 
     def __post_init__(self) -> None:
         if not self.arm_id.strip():
@@ -410,31 +424,84 @@ class Stage2DistillationTrainer:
             )
         return logits.detach()
 
-    def _sample_on_policy_sequence(self, prefix: Tensor) -> Tensor:
-        """Ancestral student continuation at T=1.0 over defined donor rows."""
+    def _draw(self, donor_logits: Tensor, *, greedy: bool) -> Tensor:
+        """One ``[batch, 1]`` donor id from ``[batch, donor_rows]`` logits.
 
+        Both sampling paths funnel through here, so the cached and uncached
+        decodes cannot diverge in the *selection* rule -- only in how the
+        logits were produced, which is exactly what the equivalence test is
+        measuring.
+        """
+
+        restricted = self.vocabulary.restrict(donor_logits)
+        if greedy:
+            return torch.argmax(restricted, dim=-1, keepdim=True)
+        probabilities = torch.softmax(
+            restricted.float() / self.objective.temperature,
+            dim=-1,
+        )
+        return torch.multinomial(
+            probabilities.to(device="cpu"),
+            num_samples=1,
+            generator=self._sample_generator,
+        ).to(device=donor_logits.device)
+
+    def sample_on_policy_sequence(
+        self,
+        prefix: Tensor,
+        *,
+        greedy: bool = False,
+        use_cache: bool | None = None,
+    ) -> Tensor:
+        """Ancestral student continuation at T=1.0 over defined donor rows.
+
+        ``use_cache`` defaults to the config's
+        ``on_policy_sampling_uses_cache``.  The uncached branch re-runs the
+        whole student forward per token (the original H4 cost); the cached
+        branch prefills once and advances one token at a time through the
+        child body's own cache, scoring only the position that emits.
+        """
+
+        cached = (
+            self.config.on_policy_sampling_uses_cache
+            if use_cache is None
+            else bool(use_cache)
+        )
         context = prefix
         was_training = self.student.training
         self.student.eval()
         try:
             with torch.no_grad():
-                for _step in range(self.objective.continuation_tokens):
-                    logits = self.student(context)
+                if cached:
+                    donor_logits, state = self.student.start_cached_decode(context)
                     self.on_policy_sample_forward_calls += 1
-                    restricted = self.vocabulary.restrict(logits[:, -1, :])
-                    probabilities = torch.softmax(
-                        restricted.float() / self.objective.temperature,
-                        dim=-1,
-                    )
-                    drawn = torch.multinomial(
-                        probabilities.to(device="cpu"),
-                        num_samples=1,
-                        generator=self._sample_generator,
-                    ).to(device=context.device)
-                    context = torch.cat((context, drawn), dim=1)
+                    for step in range(self.objective.continuation_tokens):
+                        drawn = self._draw(donor_logits, greedy=greedy)
+                        context = torch.cat((context, drawn), dim=1)
+                        if step + 1 == self.objective.continuation_tokens:
+                            # The terminal token is never fed back: nothing
+                            # scores after it.  The deployed decode makes the
+                            # same skip (``terminal_token_not_fed_to_unused_
+                            # cache``), and it keeps the forward-call count at
+                            # exactly one per emitted token.
+                            break
+                        donor_logits = self.student.advance_cached_decode(
+                            state,
+                            drawn,
+                        )
+                        self.on_policy_sample_forward_calls += 1
+                else:
+                    for _step in range(self.objective.continuation_tokens):
+                        logits = self.student(context)
+                        self.on_policy_sample_forward_calls += 1
+                        drawn = self._draw(logits[:, -1, :], greedy=greedy)
+                        context = torch.cat((context, drawn), dim=1)
         finally:
             self.student.train(was_training)
         return context
+
+    def _sample_on_policy_sequence(self, prefix: Tensor) -> Tensor:
+        return self.sample_on_policy_sequence(prefix)
 
     def _micro_batches(self, donor_ids: Tensor) -> list[Tensor]:
         size = self.config.micro_batch_sequences
@@ -638,6 +705,8 @@ class Stage2DistillationTrainer:
                 self.student.initialization.init_source_sha256
             ),
             routes_were_trained=self.student.train_routes,
+            initialization_mode=self.student.initialization.mode,
+            init_artifact_sha256=settings.init_artifact_sha256,
             optimizer=optimizer,
             save_optimizer=settings.save_optimizer,
         )

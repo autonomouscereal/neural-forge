@@ -350,6 +350,20 @@ class Stage2StudentInitialization:
         }
 
 
+@dataclass(slots=True)
+class Stage2CachedDecodeState:
+    """The child body's own cache plus the context length it covers.
+
+    Mutable on purpose: HF cache objects are advanced in place by some layer
+    types and returned fresh by others, so the state holds whatever the body
+    handed back last and the length it is now valid for.  The length is what
+    the attention mask is built from, exactly as the deployed decode does.
+    """
+
+    cache: Any
+    length: int
+
+
 class Stage2RoutedStudent(nn.Module):
     """A carrier-ABI child plus its two route channels, end to end trainable."""
 
@@ -676,24 +690,15 @@ class Stage2RoutedStudent(nn.Module):
 
     # -- full forward ------------------------------------------------------
 
-    def body_hidden_states(self, inputs_embeds: Tensor) -> Tensor:
-        """Advance the child body once per donor action, as decode does."""
-
+    def _body(self) -> Any:
         body = getattr(self.child, "model", None)
         if not callable(body):
             raise Stage2CarrierStudentError(
                 "Semantic-step training requires a callable child body at model."
             )
-        attention_mask = torch.ones(
-            tuple(inputs_embeds.shape[:2]),
-            device=inputs_embeds.device,
-            dtype=torch.int64,
-        )
-        output = body(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            use_cache=False,
-        )
+        return body
+
+    def _body_hidden(self, output: Any, *, expected_shape: tuple[int, int]) -> Tensor:
         hidden = output if isinstance(output, Tensor) else None
         if hidden is None:
             hidden = getattr(output, "last_hidden_state", None)
@@ -702,13 +707,88 @@ class Stage2RoutedStudent(nn.Module):
         if (
             not isinstance(hidden, Tensor)
             or hidden.ndim != 3
-            or tuple(hidden.shape[:2]) != tuple(inputs_embeds.shape[:2])
+            or tuple(int(size) for size in hidden.shape[:2]) != expected_shape
             or int(hidden.shape[2]) != self.hidden_size
         ):
             raise Stage2CarrierStudentError(
                 "Child body returned invalid semantic hidden states."
             )
         return hidden
+
+    def body_hidden_states(self, inputs_embeds: Tensor) -> Tensor:
+        """Advance the child body once per donor action, as decode does."""
+
+        attention_mask = torch.ones(
+            tuple(inputs_embeds.shape[:2]),
+            device=inputs_embeds.device,
+            dtype=torch.int64,
+        )
+        output = self._body()(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            use_cache=False,
+        )
+        return self._body_hidden(
+            output,
+            expected_shape=(
+                int(inputs_embeds.shape[0]),
+                int(inputs_embeds.shape[1]),
+            ),
+        )
+
+    def body_hidden_states_with_cache(
+        self,
+        inputs_embeds: Tensor,
+        *,
+        past_key_values: Any = None,
+        past_length: int = 0,
+    ) -> tuple[Tensor, Any]:
+        """One cached body advance, called exactly as the routed decode calls it.
+
+        ``hf_lfm2_semantic_step_model_runtime`` prefills the prompt with
+        ``use_cache=True`` and then advances one semantic token at a time with
+        ``past_key_values=cache`` and an attention mask covering the *whole*
+        context so far.  This reproduces that call shape verbatim rather than
+        inventing a second decode contract, so the sampler and the deployed
+        decode exercise the same code path in the child's hybrid conv/attention
+        stack.
+        """
+
+        total_length = int(past_length) + int(inputs_embeds.shape[1])
+        attention_mask = torch.ones(
+            (int(inputs_embeds.shape[0]), total_length),
+            device=inputs_embeds.device,
+            dtype=torch.int64,
+        )
+        output = self._body()(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            use_cache=True,
+        )
+        hidden = self._body_hidden(
+            output,
+            expected_shape=(
+                int(inputs_embeds.shape[0]),
+                int(inputs_embeds.shape[1]),
+            ),
+        )
+        cache = getattr(output, "past_key_values", None)
+        if cache is None and isinstance(output, (tuple, list)) and len(output) > 1:
+            cache = output[1]
+        if cache is None:
+            raise Stage2CarrierStudentError(
+                "Child body returned no cache while use_cache=True; the "
+                "uncached sampling path is the flag for such a body."
+            )
+        return hidden, cache
+
+    def donor_logits_from_hidden(self, hidden_states: Tensor) -> Tensor:
+        """The routed readout on already-computed hidden states."""
+
+        return self.donor_logits_from_target_scores(
+            self.score_target_tokens(hidden_states)
+        )
 
     def forward(self, donor_ids: Tensor) -> Tensor:
         """``[batch, length]`` donor ids -> ``[batch, length, donor_rows]``."""
@@ -726,6 +806,70 @@ class Stage2RoutedStudent(nn.Module):
         return self.donor_logits_from_target_scores(
             self.score_target_tokens(hidden)
         )
+
+    # -- cached incremental decode ------------------------------------------
+
+    def start_cached_decode(
+        self,
+        donor_ids: Tensor,
+    ) -> tuple[Tensor, "Stage2CachedDecodeState"]:
+        """Prefill a context and return its last position's donor logits.
+
+        The returned logits are ``[batch, donor_rows]`` for the *next* token,
+        which is all a sampler needs; the intermediate positions are never
+        scored, and skipping their readout is a second saving on top of the
+        cache itself (the routed ``C_out`` readout is a sparse mm over the full
+        donor vocabulary at every position).
+        """
+
+        if (
+            not isinstance(donor_ids, Tensor)
+            or donor_ids.ndim != 2
+            or donor_ids.dtype not in {torch.int32, torch.int64}
+            or int(donor_ids.shape[1]) == 0
+        ):
+            raise Stage2CarrierStudentError(
+                "Cached decode starts from one non-empty [batch, length] "
+                "donor id tensor."
+            )
+        embeddings = self.reconstruct_donor_embeddings(donor_ids)
+        hidden, cache = self.body_hidden_states_with_cache(embeddings)
+        state = Stage2CachedDecodeState(
+            cache=cache,
+            length=int(donor_ids.shape[1]),
+        )
+        return self.donor_logits_from_hidden(hidden[:, -1, :]), state
+
+    def advance_cached_decode(
+        self,
+        state: "Stage2CachedDecodeState",
+        donor_ids: Tensor,
+    ) -> Tensor:
+        """Feed one already-chosen donor token; return the next donor logits."""
+
+        if not isinstance(state, Stage2CachedDecodeState):
+            raise Stage2CarrierStudentError(
+                "advance_cached_decode needs the state start_cached_decode "
+                "returned."
+            )
+        if (
+            not isinstance(donor_ids, Tensor)
+            or donor_ids.ndim != 2
+            or int(donor_ids.shape[1]) != 1
+            or donor_ids.dtype not in {torch.int32, torch.int64}
+        ):
+            raise Stage2CarrierStudentError(
+                "Cached decode advances exactly one donor token per call."
+            )
+        embeddings = self.reconstruct_donor_embeddings(donor_ids)
+        hidden, cache = self.body_hidden_states_with_cache(
+            embeddings,
+            past_key_values=state.cache,
+            past_length=state.length,
+        )
+        state.cache = cache
+        state.length += 1
+        return self.donor_logits_from_hidden(hidden[:, -1, :])
 
     def route_layouts(self) -> dict[str, Any]:
         return {

@@ -219,6 +219,227 @@ def admitted_lfm2_carrier_counted_abi_profile(
     return None
 
 
+# The two stage-2 initialization modes, restated here rather than imported.
+# ``neural_forge.stage2_carrier_student`` imports this module, so the arrow can
+# only point one way; these two strings are the interface and a test pins them
+# equal to the stage-2 module's own constants.
+STAGE2_FOLD_INITIALIZATION_LABEL = "fold-init"
+STAGE2_RANDOM_INITIALIZATION_LABEL = "random-init"
+STAGE2_CHECKPOINT_LABEL_INITIALIZATION_MODES = (
+    STAGE2_FOLD_INITIALIZATION_LABEL,
+    STAGE2_RANDOM_INITIALIZATION_LABEL,
+)
+
+
+@dataclass(frozen=True)
+class Lfm2Stage2CheckpointLabel:
+    """One sealed stage-2 arm label, matched as a whole or refused.
+
+    A stage-2 checkpoint whose k32 route coefficients were trained carries a
+    truthful non-zero packaged-route operation audit, which the stage-1 loader
+    refuses at a byte-exact message.  That refusal is correct and stays; this
+    label is the key to the *parallel* stage-2 lane
+    (``neural_forge.stage2_routed_decode_admission``), never a relaxation of
+    the default one.
+
+    The four fields are one fact about an arm, not four knobs: an arm id, the
+    initialization mode, the design-declared initialization artifact (a digest
+    for the two fold arms; ``None`` for the two random-init controls, which
+    have a seed rather than a source artifact), and the trained-routes flag.
+    A request pairing one arm's id with another arm's provenance describes no
+    checkpoint this measurement produces, so a partial match is a refusal.
+    """
+
+    label_id: str
+    arm_id: str
+    initialization_mode: str
+    init_artifact_sha256: str | None
+    route_coefficients_trained: bool
+    counted_abi_profile_id: str | None
+
+    @property
+    def fold_weights_used(self) -> bool:
+        return self.initialization_mode == STAGE2_FOLD_INITIALIZATION_LABEL
+
+    def matches(
+        self,
+        *,
+        arm_id: str,
+        initialization_mode: str,
+        init_artifact_sha256: str | None,
+        route_coefficients_trained: bool,
+    ) -> bool:
+        return bool(
+            arm_id == self.arm_id
+            and initialization_mode == self.initialization_mode
+            and init_artifact_sha256 == self.init_artifact_sha256
+            and isinstance(route_coefficients_trained, bool)
+            and route_coefficients_trained == self.route_coefficients_trained
+        )
+
+    def describe(self) -> str:
+        artifact = self.init_artifact_sha256 or "no-source-artifact"
+        profile = self.counted_abi_profile_id or "no-admitted-carrier-abi"
+        return (
+            f"{self.label_id} / arm {self.arm_id} / {self.initialization_mode} "
+            f"/ init {artifact} / trained routes "
+            f"{str(self.route_coefficients_trained).lower()} / {profile}"
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "label_id": self.label_id,
+            "arm_id": self.arm_id,
+            "initialization_mode": self.initialization_mode,
+            "init_artifact_sha256": self.init_artifact_sha256,
+            "route_coefficients_trained": self.route_coefficients_trained,
+            "counted_abi_profile_id": self.counted_abi_profile_id,
+            "fold_weights_used": self.fold_weights_used,
+        }
+
+
+# The four arms of docs/STAGE2_FIRST_MEASUREMENT_DESIGN_2026-08-08.md section 1.
+# S2-A is the A9/A11 dual-route child's saved physical child state; S2-B is the
+# a0028 exact-2x published child artifact tree.  S2-A/S2-C run at the A11
+# publication topology (170,646,400 counted, 1.346018x), which is **not** one of
+# the sealed production carrier ABI tuples, so they name no profile and cannot
+# reach the counted-plan re-pin at all.
+LFM2_STAGE2_S2A_FOLD_LABEL = Lfm2Stage2CheckpointLabel(
+    label_id="stage2-s2a-fold-init-trained-routes",
+    arm_id="S2-A",
+    initialization_mode=STAGE2_FOLD_INITIALIZATION_LABEL,
+    init_artifact_sha256=(
+        "54b9c5f7f484fd256a985aa33346f1bf4f601bec5f1978c287341d9e27f36e85"
+    ),
+    route_coefficients_trained=True,
+    counted_abi_profile_id=None,
+)
+LFM2_STAGE2_S2B_FOLD_LABEL = Lfm2Stage2CheckpointLabel(
+    label_id="stage2-s2b-fold-init-trained-routes",
+    arm_id="S2-B",
+    initialization_mode=STAGE2_FOLD_INITIALIZATION_LABEL,
+    init_artifact_sha256=(
+        "f3f38cc3e87de7299196a5c8bb553ef1ca735a630ed43616029a59f694958fad"
+    ),
+    route_coefficients_trained=True,
+    counted_abi_profile_id="exact-2x-h816",
+)
+LFM2_STAGE2_S2C_CONTROL_LABEL = Lfm2Stage2CheckpointLabel(
+    label_id="stage2-s2c-random-init-trained-routes",
+    arm_id="S2-C",
+    initialization_mode=STAGE2_RANDOM_INITIALIZATION_LABEL,
+    init_artifact_sha256=None,
+    route_coefficients_trained=True,
+    counted_abi_profile_id=None,
+)
+LFM2_STAGE2_S2D_CONTROL_LABEL = Lfm2Stage2CheckpointLabel(
+    label_id="stage2-s2d-random-init-trained-routes",
+    arm_id="S2-D",
+    initialization_mode=STAGE2_RANDOM_INITIALIZATION_LABEL,
+    init_artifact_sha256=None,
+    route_coefficients_trained=True,
+    counted_abi_profile_id="exact-2x-h816",
+)
+# The complete admitted set.  This is an allowlist for one explicitly-invoked
+# stage-2 lane; nothing here widens, weakens, or reaches the stage-1 loader.
+ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS: tuple[
+    Lfm2Stage2CheckpointLabel, ...
+] = (
+    LFM2_STAGE2_S2A_FOLD_LABEL,
+    LFM2_STAGE2_S2B_FOLD_LABEL,
+    LFM2_STAGE2_S2C_CONTROL_LABEL,
+    LFM2_STAGE2_S2D_CONTROL_LABEL,
+)
+
+
+def _seal_admitted_lfm2_stage2_checkpoint_labels() -> None:
+    """Refuse to import a stage-2 label list that is not internally coherent."""
+
+    label_ids: set[str] = set()
+    arm_ids: set[str] = set()
+    admitted_profile_ids = {
+        profile.profile_id
+        for profile in ADMITTED_LFM2_CARRIER_COUNTED_ABI_PROFILES
+    }
+    for label in ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS:
+        artifact = label.init_artifact_sha256
+        if (
+            label.label_id in label_ids
+            or label.arm_id in arm_ids
+            or not label.label_id
+            or not label.arm_id
+        ):
+            raise Lfm2CarrierChildPackageError(
+                "Admitted stage-2 checkpoint labels must name distinct arms."
+            )
+        label_ids.add(label.label_id)
+        arm_ids.add(label.arm_id)
+        if (
+            label.initialization_mode
+            not in STAGE2_CHECKPOINT_LABEL_INITIALIZATION_MODES
+            # A fold arm is identified by the artifact it was initialized from;
+            # a control has a recorded seed and no source artifact at all, and
+            # inventing a digest for it would be a false provenance claim.
+            or (label.fold_weights_used and not isinstance(artifact, str))
+            or (not label.fold_weights_used and artifact is not None)
+            or (artifact is not None and _digest(artifact, "init artifact") != artifact)
+            # The stage-2 lane exists *only* for checkpoints the stage-1 loader
+            # truthfully refuses.  A frozen-route checkpoint already opens
+            # through the untouched stage-1 loader and needs no admission, so a
+            # frozen-route label would be an admission with nothing to admit.
+            or label.route_coefficients_trained is not True
+            or (
+                label.counted_abi_profile_id is not None
+                and label.counted_abi_profile_id not in admitted_profile_ids
+            )
+        ):
+            raise Lfm2CarrierChildPackageError(
+                "Admitted stage-2 checkpoint label is not coherent: "
+                f"{label.describe()}."
+            )
+
+
+def describe_admitted_lfm2_stage2_checkpoint_labels() -> str:
+    """Render every admitted stage-2 label for a fail-closed refusal message."""
+
+    return "; ".join(
+        label.describe() for label in ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS
+    )
+
+
+def is_admitted_lfm2_stage2_checkpoint_label(value: Any) -> bool:
+    """True only for the sealed label objects themselves, by identity.
+
+    An equal-valued label a caller assembles is *not* admitted, exactly as an
+    equal-valued carrier ABI tuple is not: the allowlist cannot be widened from
+    a call site.
+    """
+
+    return any(
+        value is admitted for admitted in ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS
+    )
+
+
+def admitted_lfm2_stage2_checkpoint_label(
+    *,
+    arm_id: str,
+    initialization_mode: str,
+    init_artifact_sha256: str | None,
+    route_coefficients_trained: bool,
+) -> Lfm2Stage2CheckpointLabel | None:
+    """Return the one stage-2 label this request *entirely* matches."""
+
+    for label in ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS:
+        if label.matches(
+            arm_id=arm_id,
+            initialization_mode=initialization_mode,
+            init_artifact_sha256=init_artifact_sha256,
+            route_coefficients_trained=route_coefficients_trained,
+        ):
+            return label
+    return None
+
+
 def _digest(value: Any, name: str) -> str:
     if (
         not isinstance(value, str)
@@ -227,6 +448,11 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise Lfm2CarrierChildPackageError(f"{name} must be a lowercase SHA-256.")
     return value
+
+
+# Sealed at import, like the carrier ABI allowlist above it.  The call sits
+# here rather than beside the tuple only because the seal reuses ``_digest``.
+_seal_admitted_lfm2_stage2_checkpoint_labels()
 
 
 def _path(value: Any, name: str) -> Path:
@@ -757,6 +983,41 @@ class Lfm2CarrierChildPackageRegistration:
 
     def current_exact4x_counted_plan(self) -> CountedChildStatePlan:
         return self.admitted_counted_plan(LFM2_CARRIER_EXACT_4X_COUNTED_ABI)
+
+    def admitted_stage2_checkpoint_plan(
+        self,
+        profile: Lfm2CarrierCountedAbiProfile,
+        label: Lfm2Stage2CheckpointLabel,
+    ) -> CountedChildStatePlan:
+        """Build a counted plan on the explicitly-labelled stage-2 lane.
+
+        This is a *parallel* entrypoint, not a relaxation.  It admits nothing
+        :meth:`admitted_counted_plan` would refuse -- it delegates to it, so
+        the fail-closed re-pin is the same object -- and it adds a second
+        independent requirement on top: the caller must present one of the
+        sealed stage-2 labels, and that label must itself name the requested
+        carrier ABI tuple.  Passing a label to :meth:`admitted_counted_plan`
+        refuses, and passing a profile here refuses, because both checks are by
+        identity against their own sealed allowlist.
+        """
+
+        if not isinstance(
+            label, Lfm2Stage2CheckpointLabel
+        ) or not is_admitted_lfm2_stage2_checkpoint_label(label):
+            raise Lfm2CarrierChildPackageError(
+                "Stage-2 counted plans require one sealed stage-2 checkpoint "
+                f"label ({describe_admitted_lfm2_stage2_checkpoint_labels()})."
+            )
+        if (
+            not isinstance(profile, Lfm2CarrierCountedAbiProfile)
+            or label.counted_abi_profile_id != profile.profile_id
+        ):
+            raise Lfm2CarrierChildPackageError(
+                f"Stage-2 label {label.label_id!r} does not run at the "
+                "requested carrier ABI "
+                f"({describe_admitted_lfm2_carrier_counted_abi()})."
+            )
+        return self.admitted_counted_plan(profile)
 
     def bind_source(self, child_model: Any) -> Any:
         _publication, spans = self._authenticated()

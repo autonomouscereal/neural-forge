@@ -48,8 +48,18 @@ STAGE2_PREREGISTRATION_BYTE_LENGTH = 3_337
 STAGE2_PREREGISTRATION_SHA256 = (
     "70453e10f347b454443210ca26911e2e21a95c0c993dd6f1df02a1468d95d3d3"
 )
+# The whole document *may* gain amendments; only section 8 may not move.  It
+# gained one: commit `53d31156` appended "AMENDMENT 1 -- 2026-08-09: corpus
+# arithmetic and throughput corrected" after section 12, 20 lines, entirely
+# below section 8.  ``STAGE2_PREREGISTRATION_SHA256`` above is unchanged and
+# still verifies, which is the property that actually matters; this digest
+# tracks the document so an amendment is *visible* rather than silent.
+#   design HEAD `fec82744`:
+#     96b642cb4eebe7671228801ea98fb722cad9c913af7f63bbc264de8b15b24a04
+#   amended `53d31156`:
+#     4a71d829934c8d07c127bcc09ba7dc59964c96135c0d523ef9c861ce2e0b83f8
 STAGE2_DESIGN_DOCUMENT_SHA256 = (
-    "96b642cb4eebe7671228801ea98fb722cad9c913af7f63bbc264de8b15b24a04"
+    "4a71d829934c8d07c127bcc09ba7dc59964c96135c0d523ef9c861ce2e0b83f8"
 )
 # Design section 3.1: rungs are checkpoints inside one run per arm.
 STAGE2_RUNG_TOKENS = (10_000_000, 100_000_000, 1_000_000_000)
