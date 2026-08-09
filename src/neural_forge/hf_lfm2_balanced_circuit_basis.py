@@ -30,6 +30,7 @@ from .dynamic_balanced_circuit_basis import (
     BalancedCircuitBasisResult,
     DownstreamObservability,
     EvidenceSplit,
+    PrecomputedDownstreamObservability,
     PrecomputedResidualSnapshotGram,
     ResidualSnapshotBlock,
     _NUMERICAL_LOCK,
@@ -53,6 +54,11 @@ from .hf_lfm2_circuit_trace_row_selection import (
     load_lfm2_circuit_trace_selected_rows,
     release_lfm2_circuit_trace_selected_rows,
 )
+from .hf_lfm2_autoregressive_hankel_observability import (
+    LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_PROVENANCE_SCHEMA,
+    LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_SCHEMA,
+    Lfm2AutoregressiveHankelObservabilityResult,
+)
 from .hf_lfm2_sealed_evidence_set import Lfm2MergedSealedEvidenceSession
 from .hf_lfm2_weight_complete_basis import (
     Lfm2WeightCompleteInventory,
@@ -73,6 +79,12 @@ _ENDPOINTS = ("pre", "post_operator", "post_layer")
 _VOCABULARY_MARGIN_ROLE = "vocabulary_margin_geometry"
 _VOCABULARY_MARGIN_SCHEMA = (
     "neural-forge-lfm2-vocabulary-margin-observability-v1"
+)
+_AUTOREGRESSIVE_HANKEL_ROLE = (
+    "autoregressive_hankel_future_causal_geometry"
+)
+_AUTOREGRESSIVE_HANKEL_INTEGRATION_SCHEMA = (
+    "neural-forge-lfm2-autoregressive-hankel-basis-integration-v1"
 )
 _STREAMING_ROW_SELECTION_PROGRESS_SCHEMA = (
     "neural-forge-lfm2-balanced-basis-row-selection-progress-v1"
@@ -2989,6 +3001,235 @@ def _build_observability(
     )
 
 
+def _canonical_autoregressive_hankel_boundaries(
+    layer_count: int,
+) -> tuple[str, ...]:
+    return (
+        "layer.000.residual.pre",
+        *(
+            f"layer.{layer_index:03d}.residual.post_layer"
+            for layer_index in range(layer_count)
+        ),
+    )
+
+
+def _validated_autoregressive_hankel_observability(
+    value: (
+        Lfm2AutoregressiveHankelObservabilityResult
+        | PrecomputedDownstreamObservability
+        | None
+    ),
+    *,
+    source_width: int,
+    layer_count: int,
+) -> tuple[
+    PrecomputedDownstreamObservability | None,
+    dict[str, Any] | None,
+]:
+    """Reauthenticate optional future-causal evidence at the LFM2 seam."""
+
+    if value is None:
+        return None, None
+    if isinstance(value, Lfm2AutoregressiveHankelObservabilityResult):
+        evidence = value.evidence
+        source_result = value.as_dict()
+        input_kind = "sealed-result"
+    elif isinstance(value, PrecomputedDownstreamObservability):
+        evidence = value
+        source_result = None
+        input_kind = "sealed-precomputed-evidence"
+    else:
+        raise Lfm2CircuitBalancedBasisError(
+            "autoregressive_hankel_observability must be one sealed LFM2 "
+            "AHB result, its authenticated precomputed evidence, or None."
+        )
+
+    try:
+        evidence_verified = evidence.verify()
+        evidence_document = evidence.as_dict()
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2CircuitBalancedBasisError(
+            "Autoregressive Hankel observability evidence failed "
+            "reauthentication."
+        ) from exc
+    expected_boundaries = _canonical_autoregressive_hankel_boundaries(
+        layer_count
+    )
+    provenance = evidence_document.get("provenance")
+    future_lags = (
+        provenance.get("future_lags")
+        if isinstance(provenance, Mapping)
+        else None
+    )
+    boundary_names = (
+        provenance.get("boundary_names")
+        if isinstance(provenance, Mapping)
+        else None
+    )
+    boundary_gram_sha256s = (
+        provenance.get("boundary_gram_sha256s")
+        if isinstance(provenance, Mapping)
+        else None
+    )
+    configuration = (
+        provenance.get("configuration")
+        if isinstance(provenance, Mapping)
+        else None
+    )
+    zero_execution = (
+        isinstance(provenance, Mapping)
+        and provenance.get("parent_forward_calls") == 0
+        and provenance.get("child_forward_calls") == 0
+        and provenance.get("trace_regeneration_calls") == 0
+        and provenance.get("training_steps") == 0
+        and provenance.get("backward_calls") == 0
+        and provenance.get("optimizer_steps") == 0
+        and provenance.get("autograd_used") is False
+    )
+    if (
+        evidence_verified is not True
+        or evidence.source_width != source_width
+        or evidence.node_id != "output.lm_head"
+        or evidence.circuit_kind != CircuitKind.OUTPUT_HEAD.value
+        or evidence.role != _AUTOREGRESSIVE_HANKEL_ROLE
+        or evidence.interface_ids != ("text.logits.output",)
+        or not isinstance(provenance, Mapping)
+        or provenance.get("schema")
+        != LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_PROVENANCE_SCHEMA
+        or provenance.get("fit_only_selection_evidence") is not True
+        or provenance.get("global_gram_sha256")
+        != evidence_document.get("gram_sha256")
+        or boundary_names != list(expected_boundaries)
+        or not isinstance(boundary_gram_sha256s, list)
+        or len(boundary_gram_sha256s) != len(expected_boundaries)
+        or any(
+            not isinstance(item, str) or _SHA256.fullmatch(item) is None
+            for item in boundary_gram_sha256s
+        )
+        or isinstance(future_lags, (str, bytes))
+        or not isinstance(future_lags, Sequence)
+        or not future_lags
+        or any(
+            isinstance(lag, bool) or not isinstance(lag, int) or lag < 0
+            for lag in future_lags
+        )
+        or tuple(future_lags) != tuple(sorted(set(future_lags)))
+        or future_lags[0] != 0
+        or not any(lag > 0 for lag in future_lags)
+        or not isinstance(configuration, Mapping)
+        or configuration.get("lag_zero_used_for_selection") is not False
+        or configuration.get("cross_trajectory_pairs_created") is not False
+        or zero_execution is not True
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "Autoregressive Hankel observability is not sealed, model-wide, "
+            "future-causal, fit-only, zero-execution LFM2 evidence."
+        )
+
+    if source_result is not None:
+        report_body = dict(source_result)
+        report_sha256 = report_body.pop("report_sha256", None)
+        boundaries = source_result.get("boundaries")
+        if (
+            source_result.get("schema")
+            != LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_SCHEMA
+            or report_sha256 != canonical_sha256(report_body)
+            or source_result.get("source_width") != source_width
+            or source_result.get("boundary_count") != len(expected_boundaries)
+            or source_result.get("boundary_names") != list(expected_boundaries)
+            or source_result.get("future_lags") != list(future_lags)
+            or source_result.get("global_gram_sha256")
+            != evidence_document["gram_sha256"]
+            or canonical_sha256(source_result.get("precomputed_observability"))
+            != canonical_sha256(evidence_document)
+            or source_result.get(
+                "empirical_on_trajectory_not_action_complete_bisimulation"
+            )
+            is not True
+            or source_result.get("model_forward_calls") != 0
+            or source_result.get("parent_trace_regeneration_calls") != 0
+            or source_result.get("training_steps") != 0
+            or source_result.get("backward_calls") != 0
+            or source_result.get("optimizer_steps") != 0
+            or source_result.get("autograd_used") is not False
+            or not isinstance(boundaries, list)
+            or len(boundaries) != len(expected_boundaries)
+            or len(value.boundary_grams) != len(expected_boundaries)
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "The sealed AHB result report does not match its evidence."
+            )
+        for boundary_index, (boundary, gram, expected_name) in enumerate(
+            zip(
+                boundaries,
+                value.boundary_grams,
+                expected_boundaries,
+                strict=True,
+            )
+        ):
+            if (
+                not isinstance(boundary, Mapping)
+                or boundary.get("boundary_index") != boundary_index
+                or boundary.get("boundary_name") != expected_name
+                or not isinstance(gram, torch.Tensor)
+                or tuple(gram.shape) != (source_width, source_width)
+                or not bool(torch.isfinite(gram).all().item())
+                or boundary.get("gram_sha256")
+                != _basis_tensor_sha256(gram)
+                or boundary_gram_sha256s[boundary_index]
+                != _basis_tensor_sha256(gram)
+            ):
+                raise Lfm2CircuitBalancedBasisError(
+                    "The sealed AHB boundary Grams changed after publication."
+                )
+
+    integration_body = {
+        "schema": _AUTOREGRESSIVE_HANKEL_INTEGRATION_SCHEMA,
+        "enabled": True,
+        "input_kind": input_kind,
+        "source_width": source_width,
+        "canonical_boundary_names": list(expected_boundaries),
+        "future_lags": list(future_lags),
+        "evidence": evidence_document,
+        "source_result": source_result,
+        "fit_only_selection_evidence": True,
+        "empirical_on_trajectory_not_action_complete_bisimulation": True,
+        "precomputed_gram_consumed_directly": True,
+        "parent_forward_calls": 0,
+        "child_forward_calls": 0,
+        "trace_regeneration_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "autograd_used": False,
+    }
+    return evidence, {
+        **integration_body,
+        "report_sha256": canonical_sha256(integration_body),
+    }
+
+
+def _combined_precomputed_observability(
+    *,
+    streaming_vocabulary_margin: PrecomputedDownstreamObservability | None,
+    autoregressive_hankel: PrecomputedDownstreamObservability | None,
+) -> tuple[PrecomputedDownstreamObservability, ...]:
+    result = tuple(
+        value
+        for value in (streaming_vocabulary_margin, autoregressive_hankel)
+        if value is not None
+    )
+    if any(
+        not isinstance(value, PrecomputedDownstreamObservability)
+        for value in result
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "Precomputed observability lanes must contain authenticated "
+            "typed Gram evidence."
+        )
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2CircuitBalancedBasisResult:
     """Balanced structural map bound to its LFM2 cache and complete weights."""
@@ -3208,12 +3449,28 @@ def build_lfm2_circuit_balanced_basis(
     streaming_vocabulary_margin_v2: bool = False,
     streaming_vocabulary_margin_pair_chunk_size: int = 256,
     target_tokenizer_vocabulary_margin_binding: Any | None = None,
+    autoregressive_hankel_observability: (
+        Lfm2AutoregressiveHankelObservabilityResult
+        | PrecomputedDownstreamObservability
+        | None
+    ) = None,
 ) -> Lfm2CircuitBalancedBasisResult:
     """Build an LFM2 residual map from weights, sealed cache, and circuit IR."""
 
     if not isinstance(parent_model, torch.nn.Module):
         raise Lfm2CircuitBalancedBasisError(
             "parent_model must be a torch.nn.Module."
+        )
+    if autoregressive_hankel_observability is not None and not isinstance(
+        autoregressive_hankel_observability,
+        (
+            Lfm2AutoregressiveHankelObservabilityResult,
+            PrecomputedDownstreamObservability,
+        ),
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "autoregressive_hankel_observability must be one sealed LFM2 "
+            "AHB result, its authenticated precomputed evidence, or None."
         )
     target_width = _positive_int(target_width, "target_width")
     validation_fraction = _unit_interval(
@@ -3376,6 +3633,14 @@ def build_lfm2_circuit_balanced_basis(
         raise Lfm2CircuitBalancedBasisError(
             "circuit_graph must be the canonical LFM2 ModelCircuitGraph."
         )
+    (
+        autoregressive_hankel_evidence,
+        autoregressive_hankel_report,
+    ) = _validated_autoregressive_hankel_observability(
+        autoregressive_hankel_observability,
+        source_width=inventory.source_width,
+        layer_count=layer_count,
+    )
     # One set both handles agree on, resolved once: every fit/held-out split
     # this solve makes has to know which batches a child actually visited.
     extension_batch_indices = _resolved_extension_batch_indices(
@@ -3567,6 +3832,14 @@ def build_lfm2_circuit_balanced_basis(
     required_kinds = tuple(
         sorted({value.circuit_kind for value in observability})
     )
+    precomputed_observability = _combined_precomputed_observability(
+        streaming_vocabulary_margin=(
+            None
+            if streaming_margin_adapter is None
+            else streaming_margin_adapter.precomputed_observability
+        ),
+        autoregressive_hankel=autoregressive_hankel_evidence,
+    )
     basis_result = build_balanced_circuit_basis(
         inventory.operators,
         fit_snapshots,
@@ -3578,11 +3851,7 @@ def build_lfm2_circuit_balanced_basis(
         precomputed_heldout_snapshot_gram=(
             precomputed_heldout_snapshot_gram
         ),
-        precomputed_downstream_observability=(
-            ()
-            if streaming_margin_adapter is None
-            else (streaming_margin_adapter.precomputed_observability,)
-        ),
+        precomputed_downstream_observability=precomputed_observability,
         structural_controllability_weight=(
             structural_controllability_weight
         ),
@@ -3687,6 +3956,11 @@ def build_lfm2_circuit_balanced_basis(
                 else ""
             )
             + ("-streaming-v2" if streaming_vocabulary_margin_v2 else "")
+            + (
+                "-plus-autoregressive-hankel-observability"
+                if autoregressive_hankel_evidence is not None
+                else ""
+            )
             + "-balanced-pod"
         ),
         "parent": parent_fingerprint.as_dict(),
@@ -3747,6 +4021,13 @@ def build_lfm2_circuit_balanced_basis(
     }
     if margin_report is not None:
         report["vocabulary_margin_observability"] = margin_report
+    if autoregressive_hankel_report is not None:
+        report["autoregressive_hankel_observability"] = (
+            autoregressive_hankel_report
+        )
+        report["hashes"]["autoregressive_hankel_observability_sha256"] = (
+            autoregressive_hankel_evidence.evidence_sha256
+        )
     report["result_sha256"] = canonical_sha256(report)
     return Lfm2CircuitBalancedBasisResult(
         inventory=inventory,
