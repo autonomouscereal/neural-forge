@@ -72,6 +72,93 @@ def _sealed_cache(tmp_path: Path):
     )
 
 
+def test_selective_authentication_progress_finishes_only_after_session_seal(
+    tmp_path,
+) -> None:
+    cache = _sealed_cache(tmp_path)
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def observe(stage: str, details) -> None:
+        events.append((stage, dict(details)))
+
+    session = open_lfm2_circuit_trace_cache(
+        cache.path,
+        verify=False,
+    ).selective_authenticated_session(progress_callback=observe)
+    try:
+        assert [stage for stage, _details in events] == [
+            "authentication_started",
+            "batch_verified",
+            "batch_verified",
+            "authentication_completed",
+        ]
+        started = events[0][1]
+        assert started == {
+            "cache_key": cache.cache_key,
+            "batch_count": 2,
+            "trace_file_count": 2,
+            "record_file_count": 2,
+        }
+        verified = [details for stage, details in events if stage == "batch_verified"]
+        assert [details["verified_batch_count"] for details in verified] == [1, 2]
+        assert [details["batch_index"] for details in verified] == [0, 1]
+        completed = events[-1][1]
+        assert completed == {
+            "cache_key": cache.cache_key,
+            "batch_count": 2,
+            "session_sha256": session.evidence_sha256,
+        }
+        assert session.as_dict()["session_sha256"] == completed["session_sha256"]
+    finally:
+        session.close()
+
+
+def test_selective_authentication_progress_never_claims_a_tampered_batch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    cache = _sealed_cache(tmp_path)
+    opened = open_lfm2_circuit_trace_cache(cache.path, verify=False)
+    trace_path = (
+        cache.path / "batches" / "batch-000001" / trace_cache.TRACE_FILENAME
+    )
+    corrupted = bytearray(trace_path.read_bytes())
+    corrupted[-1] ^= 0x01
+    trace_path.write_bytes(corrupted)
+    events: list[tuple[str, dict[str, Any]]] = []
+    closed_states = []
+    real_close_batch_state = (
+        trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession._close_batch_state
+    )
+
+    def observe(stage: str, details) -> None:
+        events.append((stage, dict(details)))
+
+    def tracked_close_batch_state(state) -> None:
+        closed_states.append(state)
+        real_close_batch_state(state)
+
+    monkeypatch.setattr(
+        trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
+        "_close_batch_state",
+        staticmethod(tracked_close_batch_state),
+    )
+    with pytest.raises(
+        Lfm2CircuitTraceCorruptionError,
+        match="trace file hash changed",
+    ):
+        opened.selective_authenticated_session(progress_callback=observe)
+
+    assert [stage for stage, _details in events] == [
+        "authentication_started",
+        "batch_verified",
+    ]
+    assert events[-1][1]["verified_batch_count"] == 1
+    assert events[-1][1]["batch_index"] == 0
+    assert len(closed_states) == 1
+    assert closed_states[0].trace_guard.closed is True
+
+
 def test_selective_safetensors_mappings_close_after_each_selection(
     tmp_path,
     monkeypatch,

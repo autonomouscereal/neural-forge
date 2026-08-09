@@ -38,7 +38,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import CodeType, MappingProxyType
@@ -4989,10 +4989,22 @@ class Lfm2CircuitTraceCache:
 
     def selective_authenticated_session(
         self,
+        *,
+        progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
     ) -> Lfm2CircuitTraceSelectiveAuthenticatedSession:
-        """Hash-authenticate each file once, then permit selected tensor reads."""
+        """Hash-authenticate each file once, then permit selected tensor reads.
 
-        return Lfm2CircuitTraceSelectiveAuthenticatedSession(self)
+        The optional callback receives ``authentication_started``, one
+        ``batch_verified`` event after each complete batch authentication, and
+        ``authentication_completed`` only after the session receipt is sealed.
+        Event details are immutable scalar mappings and are not part of the
+        authenticated cache or session evidence.
+        """
+
+        return Lfm2CircuitTraceSelectiveAuthenticatedSession(
+            self,
+            progress_callback=progress_callback,
+        )
 
 
 class Lfm2CircuitTraceAuthenticatedSession:
@@ -5251,9 +5263,16 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
         "_completion_identity",
     )
 
-    def __init__(self, cache: Lfm2CircuitTraceCache) -> None:
+    def __init__(
+        self,
+        cache: Lfm2CircuitTraceCache,
+        *,
+        progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
+    ) -> None:
         if not isinstance(cache, Lfm2CircuitTraceCache):
             raise TypeError("cache must be Lfm2CircuitTraceCache.")
+        if progress_callback is not None and not callable(progress_callback):
+            raise TypeError("progress_callback must be callable or None.")
         self._cache = cache
         self._closed = False
         self._lock = threading.RLock()
@@ -5266,16 +5285,50 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
         fresh_manifest, entries = _fresh_verified_cache_state(cache)
         states: list[_Lfm2SelectiveBatchState] = []
         try:
-            for entry in entries:
-                states.append(
-                    self._open_batch_state(
-                        fresh_manifest,
-                        entry,
-                    )
+            if progress_callback is not None:
+                progress_callback(
+                    "authentication_started",
+                    MappingProxyType(
+                        {
+                            "cache_key": cache.cache_key,
+                            "batch_count": len(entries),
+                            "trace_file_count": len(entries),
+                            "record_file_count": len(entries),
+                        }
+                    ),
                 )
+            for entry in entries:
+                state = self._open_batch_state(
+                    fresh_manifest,
+                    entry,
+                )
+                states.append(state)
+                if progress_callback is not None:
+                    progress_callback(
+                        "batch_verified",
+                        MappingProxyType(
+                            {
+                                "cache_key": cache.cache_key,
+                                "batch_count": len(entries),
+                                "verified_batch_count": len(states),
+                                "batch_index": state.reference.index,
+                            }
+                        ),
+                    )
             self._batch_states = tuple(states)
             self._verify_immutable_metadata(entries)
             self._seal_evidence()
+            if progress_callback is not None:
+                progress_callback(
+                    "authentication_completed",
+                    MappingProxyType(
+                        {
+                            "cache_key": cache.cache_key,
+                            "batch_count": len(entries),
+                            "session_sha256": self.evidence_sha256,
+                        }
+                    ),
+                )
         except BaseException:
             for state in reversed(states):
                 self._close_batch_state(state)

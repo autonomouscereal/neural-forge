@@ -168,6 +168,69 @@ def test_progress_journal_is_ordered_flushed_and_scalar_only() -> None:
     assert stream.getvalue() == unchanged
 
 
+def test_parent_cache_authentication_progress_is_bounded_and_identity_bound() -> None:
+    stream = _FlushRecordingStream()
+    journal = MODULE._ProgressJournal("a" * 64, stream=stream)
+    callback = MODULE._parent_cache_authentication_progress_callback(journal)
+    cache_key = "b" * 64
+    batch_count = 33
+
+    callback(
+        "authentication_started",
+        {
+            "cache_key": cache_key,
+            "batch_count": batch_count,
+            "trace_file_count": batch_count,
+            "record_file_count": batch_count,
+        },
+    )
+    for verified_batch_count in range(1, batch_count + 1):
+        callback(
+            "batch_verified",
+            {
+                "cache_key": cache_key,
+                "batch_count": batch_count,
+                "verified_batch_count": verified_batch_count,
+                "batch_index": verified_batch_count - 1,
+            },
+        )
+    callback(
+        "authentication_completed",
+        {
+            "cache_key": cache_key,
+            "batch_count": batch_count,
+            "session_sha256": "c" * 64,
+        },
+    )
+
+    rows = _progress_rows(stream.getvalue())
+    assert [row["stage"] for row in rows] == [
+        "parent_cache_selective_authentication_started",
+        "parent_cache_selective_authentication_progress",
+        "parent_cache_selective_authentication_progress",
+        "parent_cache_selective_authentication_progress",
+        "parent_cache_selective_authentication_progress",
+        "parent_cache_selective_authentication_completed",
+    ]
+    progress_rows = [
+        row
+        for row in rows
+        if row["stage"] == "parent_cache_selective_authentication_progress"
+    ]
+    assert [row["verified_batch_count"] for row in progress_rows] == [
+        1,
+        16,
+        32,
+        33,
+    ]
+    assert {row["parent_cache_key"] for row in rows} == {cache_key}
+    assert {row["source_batch_count"] for row in rows} == {batch_count}
+    assert all(row["parent_forward_calls"] == 0 for row in rows)
+    assert all(row["training_steps"] == 0 for row in rows)
+    assert rows[-1]["selective_session_sha256"] == "c" * 64
+    assert stream.flush_count == len(rows)
+
+
 def _without_calibration(arguments: list[str]) -> list[str]:
     result = list(arguments)
     index = result.index("--calibration")
@@ -4529,6 +4592,8 @@ def test_sealed_parent_cache_uses_one_selective_hash_authentication_pass(
     monkeypatch.setattr(trace_cache, "_load_verified_batch", forbidden)
     monkeypatch.setattr(trace_cache.Lfm2CircuitTraceCache, "verify", forbidden)
     monkeypatch.setattr(fixture.parent, "forward", forbidden)
+    stream = _FlushRecordingStream()
+    progress = MODULE._ProgressJournal("e" * 64, stream=stream)
 
     resolved = MODULE.resolve_production_parent_cache(
         config,
@@ -4536,6 +4601,7 @@ def test_sealed_parent_cache_uses_one_selective_hash_authentication_pass(
         fixture.tokenizer,
         fixture.capture_config,
         input_device="cpu",
+        progress=progress,
     )
     try:
         committed_payloads = {
@@ -4562,6 +4628,21 @@ def test_sealed_parent_cache_uses_one_selective_hash_authentication_pass(
     assert set(hash_counts) == committed_payloads
     assert all(count == 1 for count in hash_counts.values())
     assert len(hash_counts) == 2 * len(fixture.cache)
+    rows = _progress_rows(stream.getvalue())
+    assert [row["stage"] for row in rows] == [
+        "parent_cache_selective_authentication_started",
+        "parent_cache_selective_authentication_progress",
+        "parent_cache_selective_authentication_progress",
+        "parent_cache_selective_authentication_completed",
+    ]
+    assert [
+        row["verified_batch_count"]
+        for row in rows
+        if row["stage"] == "parent_cache_selective_authentication_progress"
+    ] == [1, len(fixture.cache)]
+    assert rows[-1]["selective_session_sha256"] == (
+        resolved.selective_session.evidence_sha256
+    )
 
 
 def test_global_frontier_can_resolve_matching_calibration_metadata_only(
@@ -4603,6 +4684,7 @@ def test_global_frontier_can_resolve_matching_calibration_metadata_only(
         "selective_authenticated_session",
         forbidden_session,
     )
+    stream = _FlushRecordingStream()
     resolved = MODULE.resolve_production_parent_cache(
         config,
         fixture.parent,
@@ -4610,6 +4692,7 @@ def test_global_frontier_can_resolve_matching_calibration_metadata_only(
         fixture.capture_config,
         input_device="cpu",
         defer_selective_session=True,
+        progress=MODULE._ProgressJournal("f" * 64, stream=stream),
     )
 
     assert resolved.selective_session is None
@@ -4620,6 +4703,7 @@ def test_global_frontier_can_resolve_matching_calibration_metadata_only(
     receipt = resolved.runtime_receipt_fields()
     assert receipt["parent_cache_selective_session_reused"] is False
     assert receipt["parent_cache_selective_session_sha256"] is None
+    assert _progress_rows(stream.getvalue()) == []
 
 
 def test_sealed_parent_cache_closes_session_once_when_binding_fails_after_calibration(

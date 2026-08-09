@@ -5010,6 +5010,72 @@ def _validate_sealed_parent_cache_binding(
     )
 
 
+_PARENT_CACHE_AUTHENTICATION_PROGRESS_INTERVAL_BATCHES = 16
+
+
+def _parent_cache_authentication_progress_callback(
+    progress: _ProgressJournal,
+) -> Callable[[str, Mapping[str, Any]], None]:
+    """Relay bounded scalar progress from one selective cache authentication."""
+
+    def relay(stage: str, details: Mapping[str, Any]) -> None:
+        parent_cache_key = str(details["cache_key"])
+        source_batch_count = int(details["batch_count"])
+        common = {
+            "parent_cache_key": parent_cache_key,
+            "source_batch_count": source_batch_count,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+        if stage == "authentication_started":
+            progress.emit(
+                "parent_cache_selective_authentication_started",
+                **common,
+                trace_files_to_hash=int(details["trace_file_count"]),
+                record_files_to_hash=int(details["record_file_count"]),
+                full_trace_payload_sha256_verification=True,
+            )
+            return
+        if stage == "batch_verified":
+            verified_batch_count = int(details["verified_batch_count"])
+            if not (
+                verified_batch_count == 1
+                or verified_batch_count
+                % _PARENT_CACHE_AUTHENTICATION_PROGRESS_INTERVAL_BATCHES
+                == 0
+                or verified_batch_count == source_batch_count
+            ):
+                return
+            progress.emit(
+                "parent_cache_selective_authentication_progress",
+                **common,
+                verified_batch_count=verified_batch_count,
+                last_verified_batch_index=int(details["batch_index"]),
+                trace_payload_sha256_verified_count=verified_batch_count,
+                record_payload_sha256_verified_count=verified_batch_count,
+                progress_interval_batches=(
+                    _PARENT_CACHE_AUTHENTICATION_PROGRESS_INTERVAL_BATCHES
+                ),
+            )
+            return
+        if stage == "authentication_completed":
+            progress.emit(
+                "parent_cache_selective_authentication_completed",
+                **common,
+                selective_session_sha256=str(details["session_sha256"]),
+                authenticated_batch_count=source_batch_count,
+                trace_file_sha256_passes_per_session=1,
+                record_file_sha256_passes_per_session=1,
+                unselected_tensor_payloads_loaded=False,
+            )
+            return
+        raise ProductionLfm2CatalogError(
+            f"Unknown parent-cache authentication progress stage: {stage!r}."
+        )
+
+    return relay
+
+
 def resolve_production_parent_cache(
     config: ProductionLfm2CatalogConfig,
     parent: Any,
@@ -5018,6 +5084,7 @@ def resolve_production_parent_cache(
     *,
     input_device: Any,
     defer_selective_session: bool = False,
+    progress: _ProgressJournal | None = None,
 ) -> ResolvedProductionParentCache:
     """Open a sealed cache with no parent forwards, or retain legacy build mode."""
 
@@ -5150,7 +5217,14 @@ def resolve_production_parent_cache(
                         ),
                         **on_policy_fields,
                     )
-            selective_session = parent_cache.selective_authenticated_session()
+            if progress is None:
+                selective_session = parent_cache.selective_authenticated_session()
+            else:
+                selective_session = parent_cache.selective_authenticated_session(
+                    progress_callback=_parent_cache_authentication_progress_callback(
+                        progress
+                    ),
+                )
         except Exception as exc:
             raise ProductionLfm2CatalogError(
                 f"Sealed parent cache failed selective authentication: {exc}"
@@ -12621,6 +12695,7 @@ def run_production_catalog(
             defer_selective_session=(
                 config.dense_heterogeneous_global_hidden_frontier
             ),
+            progress=progress,
         )
         active_selective_session = resolved_parent_cache.selective_session
         parent_cache = resolved_parent_cache.cache
