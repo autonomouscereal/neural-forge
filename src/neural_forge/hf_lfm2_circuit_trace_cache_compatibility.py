@@ -235,6 +235,28 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
             "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227",
         ),
+        (
+            # A0006 compatibility receipt for base and extension caches
+            # written by the sharded-replay reader.  The current collector
+            # adds only an optional authentication-progress callback: its
+            # events observe the reader's existing verification milestones,
+            # invoke no additional cache reads or hashes, and are excluded
+            # from authenticated evidence.  No stored manifest, record,
+            # tensor, topology, runtime byte, or meaning is reinterpreted.
+            "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227",
+            "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791",
+            "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        ),
+        (
+            # The same reader-only callback delta above applies directionally
+            # to the sealed A0003 AHB source cache.  Authentication progress
+            # emits events around the already-required reads and hashes; it
+            # performs none of its own and cannot change or reinterpret the
+            # stored manifest, record, tensor, topology, or runtime bytes.
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791",
+            "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        ),
     }
 )
 

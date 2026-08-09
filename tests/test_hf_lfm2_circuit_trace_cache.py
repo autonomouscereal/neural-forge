@@ -824,6 +824,22 @@ def _rehashed_implementation(
     }
 
 
+def _sealed_sharded_reader_cache_implementation() -> dict[str, str]:
+    identity = _rehashed_implementation(
+        _sealed_complete_causal_cache_implementation(),
+        collector_source_sha256=(
+            "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945"
+        ),
+        canonical_contract_source_sha256=(
+            "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
+        ),
+    )
+    assert identity["implementation_sha256"] == (
+        "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227"
+    )
+    return identity
+
+
 def _runtime_reader_implementation(torch_version: str) -> dict[str, str]:
     return _rehashed_implementation(
         _sealed_complete_causal_cache_implementation(),
@@ -847,10 +863,10 @@ def _current_heterogeneous_reader_implementation() -> dict[str, str]:
 @pytest.mark.parametrize(
     "stored_implementation",
     (
-        _sealed_compiler_cache_implementation,
+        _sealed_sharded_reader_cache_implementation,
         _sealed_complete_causal_cache_implementation,
     ),
-    ids=("compiler-interface", "complete-causal-a0003"),
+    ids=("base-extension-sharded-reader", "ahb-complete-causal-a0003"),
 )
 def test_current_heterogeneous_reader_reuses_sealed_parent_cache_without_parent_forward(
     tmp_path,
@@ -912,32 +928,53 @@ def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical()
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
     assert current["collector_source_sha256"] == (
-        "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945"
+        "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
     )
     assert current["canonical_contract_source_sha256"] == (
         "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
     )
     assert current["implementation_sha256"] == (
-        "01c7543732fe8cdca1803dd61354107bf76d1c59db02eb5e70483af3644475a2"
+        "a53a95365961b1d4d2ba047463390e6b4e68ac5089b72d1f341d548d57205d67"
     )
 
     assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
-def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
-    stored = _sealed_compiler_cache_implementation()
+def test_sealed_sharded_cache_allows_authentication_progress_reader() -> None:
+    stored = _sealed_sharded_reader_cache_implementation()
     current = _current_heterogeneous_reader_implementation()
     assert current["collector_source_sha256"] == (
-        "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945"
+        "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
     )
     assert current["canonical_contract_source_sha256"] == (
         "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
     )
     assert current["implementation_sha256"] == (
-        "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227"
+        "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)
+
+
+def test_authentication_progress_reader_matches_exact_a0006_remote_identity() -> None:
+    assert _current_heterogeneous_reader_implementation() == {
+        "schema": "neural-forge-lfm2-circuit-implementation-v1",
+        "collector_source_sha256": (
+            "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
+        ),
+        "canonical_contract_source_sha256": (
+            "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
+        ),
+        "transformers_lfm2_source_sha256": (
+            "2ec8be8af6b65482f54d29e52da9765b863ce37b65846423dfbfda72f944f150"
+        ),
+        "torch_version": "2.11.0+cu128",
+        "transformers_version": "5.12.1",
+        "safetensors_version": "0.8.0",
+        "implementation_sha256": (
+            "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41"
+        ),
+    }
 
 
 @pytest.mark.parametrize(
@@ -954,11 +991,20 @@ def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
         ("safetensors_version", "0.8.1"),
     ),
 )
-def test_sealed_compiler_cache_rejects_current_reader_neighbors(
+@pytest.mark.parametrize(
+    "stored_implementation",
+    (
+        _sealed_sharded_reader_cache_implementation,
+        _sealed_complete_causal_cache_implementation,
+    ),
+    ids=("base-extension-sharded-reader", "ahb-complete-causal-a0003"),
+)
+def test_authentication_progress_reader_rejects_current_identity_neighbors(
+    stored_implementation,
     field,
     value,
 ) -> None:
-    stored = _sealed_compiler_cache_implementation()
+    stored = stored_implementation()
     current = _rehashed_implementation(
         _current_heterogeneous_reader_implementation(),
         **{field: value},
@@ -975,12 +1021,21 @@ def test_sealed_compiler_cache_rejects_current_reader_neighbors(
         ("torch_version", "2.11.1+cu128"),
     ),
 )
-def test_current_heterogeneous_reader_rejects_stored_cache_neighbors(
+@pytest.mark.parametrize(
+    "stored_implementation",
+    (
+        _sealed_sharded_reader_cache_implementation,
+        _sealed_complete_causal_cache_implementation,
+    ),
+    ids=("base-extension-sharded-reader", "ahb-complete-causal-a0003"),
+)
+def test_authentication_progress_reader_rejects_stored_cache_neighbors(
+    stored_implementation,
     field,
     value,
 ) -> None:
     stored = _rehashed_implementation(
-        _sealed_compiler_cache_implementation(),
+        stored_implementation(),
         **{field: value},
     )
     current = _current_heterogeneous_reader_implementation()
@@ -988,12 +1043,22 @@ def test_current_heterogeneous_reader_rejects_stored_cache_neighbors(
     assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
-def test_sealed_compiler_cache_rejects_current_implementation_tamper() -> None:
+@pytest.mark.parametrize(
+    "stored_implementation",
+    (
+        _sealed_sharded_reader_cache_implementation,
+        _sealed_complete_causal_cache_implementation,
+    ),
+    ids=("base-extension-sharded-reader", "ahb-complete-causal-a0003"),
+)
+def test_authentication_progress_reader_rejects_current_implementation_tamper(
+    stored_implementation,
+) -> None:
     current = _current_heterogeneous_reader_implementation()
     current["implementation_sha256"] = "c" * 64
 
     assert not trace_cache._compatible_implementation_identity(
-        _sealed_compiler_cache_implementation(),
+        stored_implementation(),
         current,
     )
 
