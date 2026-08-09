@@ -976,6 +976,144 @@ def test_body_reclosure_fails_closed_on_a_terminal_regression(
     assert f"{float(after):.9g}" in message
 
 
+@pytest.mark.parametrize(
+    "diagnostic_overrides",
+    (
+        {"performance_metrics_diagnostic_only": True},
+        {"all_layer_finite_numeric_checks_diagnostic_only": True},
+    ),
+    ids=("global-performance-policy", "all-layer-finite-policy"),
+)
+def test_body_reclosure_routes_finite_regression_to_manual_intelligence_review(
+    sealed_parent,
+    diagnostic_overrides,
+) -> None:
+    """An opted-in numeric diagnostic cannot veto a structurally valid child."""
+
+    report = _toy_body_reclosure(
+        sealed_parent,
+        terminal_composition_floor_enabled=True,
+        # A tight tolerance engages the same finite-regression refusal shape
+        # that stopped A0007 while keeping all evidence finite.
+        terminal_composition_regression_tolerance=0.05,
+        **diagnostic_overrides,
+    )
+    validation = report["body_reclosure"]["validation"]
+    metrics = dict(validation["metrics"])
+    assert validation["accepted"] is True
+    assert metrics["body_reclosure_terminal_non_regression_passed"] is False
+    assert metrics["body_reclosure_terminal_composition_floor_failed"] is True
+    assert metrics["body_reclosure_terminal_floor_metrics_finite"] is True
+    assert metrics[
+        "body_reclosure_terminal_non_regression_failure_is_diagnostic_only"
+    ] is True
+    assert metrics[
+        "body_reclosure_terminal_non_regression_has_decision_authority"
+    ] is False
+    assert metrics[
+        "body_reclosure_terminal_floor_retains_authority_under_diagnostic_only"
+    ] is False
+    assert metrics["body_reclosure_manual_intelligence_review_required"] is True
+    assert metrics["body_reclosure_finite_numeric_policy_diagnostic_only"] is True
+    assert metrics["global_performance_metrics_diagnostic_only"] is bool(
+        diagnostic_overrides.get("performance_metrics_diagnostic_only", False)
+    )
+    assert metrics["all_layer_finite_numeric_checks_diagnostic_only"] is bool(
+        diagnostic_overrides.get(
+            "all_layer_finite_numeric_checks_diagnostic_only",
+            False,
+        )
+    )
+    assert metrics["manual_whole_output_review_required"] is True
+    assert "recorded diagnostically without numeric decision authority" in (
+        validation["reason"]
+    )
+    assert "manual whole-output intelligence review is required" in (
+        validation["reason"]
+    )
+
+
+def test_body_reclosure_diagnostic_policy_still_rejects_nonfinite_terminal(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    """Diagnostic routing never admits an unauthenticated numeric value."""
+
+    events: list[tuple[str, dict[str, object]]] = []
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    adapter.config = replace(
+        adapter.config,
+        terminal_composition_floor_enabled=True,
+        # The actual terminal RMSE remains finite and inside this tolerance.
+        # Only the independent metric authentication below is invalid.
+        terminal_composition_regression_tolerance=10.0,
+        performance_metrics_diagnostic_only=True,
+    )
+    heldout_terminal_metrics = adapter._heldout_terminal_metrics
+
+    def _inject_nonfinite_post_reclosure(paired, *, batch_indices):
+        metrics = heldout_terminal_metrics(
+            paired,
+            batch_indices=batch_indices,
+        )
+        if metrics is None or adapter._body_reclosure_payload is None:
+            return metrics
+        return replace(
+            metrics,
+            mean_cosine_similarity=float("nan"),
+            finite=False,
+        )
+
+    monkeypatch.setattr(
+        adapter,
+        "_heldout_terminal_metrics",
+        _inject_nonfinite_post_reclosure,
+    )
+    with pytest.raises(ClosedLoopFoldError):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-moving-gauge-v3-contract-v1",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+            ),
+            progress_sink=(
+                lambda stage, metadata: events.append((stage, dict(metadata)))
+            ),
+        ).run()
+    rejected = [
+        metadata
+        for stage, metadata in events
+        if stage == "child_closed_loop_validation_decision_rejected"
+    ]
+    assert len(rejected) == 1
+    metrics = json.loads(str(rejected[0]["validation_metrics_json"]))
+    assert metrics["body_reclosure_terminal_non_regression_passed"] is True
+    assert metrics["body_reclosure_terminal_composition_floor_failed"] is True
+    assert metrics["body_reclosure_terminal_floor_metrics_finite"] is False
+    assert (
+        metrics[
+            "body_reclosure_terminal_floor_numeric_authentication_failed"
+        ]
+        is True
+    )
+    assert metrics[
+        "body_reclosure_terminal_non_regression_failure_is_diagnostic_only"
+    ] is False
+    assert metrics[
+        "body_reclosure_terminal_non_regression_has_decision_authority"
+    ] is True
+
+
 # --- item 7: errors-in-variables ridge ---------------------------------------
 
 

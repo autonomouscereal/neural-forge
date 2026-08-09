@@ -1360,10 +1360,12 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     # terminal layer's `residual.post_layer` rows.
     terminal_composition_floor_enabled: bool = False
     # A composed prediction at or above the no-branch baseline carries no
-    # signal at all.  This is a safety bound, not an intelligence verdict. It
-    # keeps authority under the legacy performance-only diagnostic policy;
-    # the two explicit finite-numeric policies above may instead retain it as
-    # evidence for manual whole-output review.
+    # signal at all.  This is a safety bound, not an intelligence verdict. At
+    # per-layer sites it keeps authority under the global performance-only
+    # policy unless an explicit finite-numeric layer policy applies.  The
+    # completed body-reclosure site also honors the global performance policy,
+    # routing finite failures to manual whole-output review; nonfinite evidence
+    # always keeps hard authority.
     terminal_composition_absolute_floor_enabled: bool = True
     # Engagement depth for the absolute wall.  A partially folded child still
     # carries unfolded layers downstream of the layer under test, so the early
@@ -8182,10 +8184,13 @@ class Lfm2DynamicClosedLoopAdapter:
           before the install.
 
         Both are *safety* bounds on measurable composition, not intelligence
-        verdicts.  They keep decision authority under the legacy
-        performance-only diagnostic policy.  Explicit finite-numeric policies
-        may retain finite failures as evidence for manual review; nonfinite
-        measurements stay hard failures.  Nothing here can promote a child.
+        verdicts.  This helper reports the evidence and default failure reasons;
+        each caller applies its declared scope policy.  Per-layer callers keep
+        the global performance-only policy from bypassing the floor unless an
+        explicit finite-numeric layer policy applies.  Completed body reclosure
+        also routes finite failures through its global/all-layer manual-review
+        policies.  Nonfinite measurements stay hard failures, and nothing here
+        can promote a child.
         """
 
         if not self.config.terminal_composition_floor_enabled:
@@ -16333,34 +16338,86 @@ class Lfm2DynamicClosedLoopAdapter:
             baseline=payload.terminal_baseline,
             candidate=terminal_candidate,
         )
+        terminal_floor_metrics_finite = bool(
+            self._fit_metrics_are_finite(payload.terminal_baseline)
+            and self._fit_metrics_are_finite(terminal_candidate)
+        )
+        numeric_metrics_diagnostic_only = bool(
+            self.config.performance_metrics_diagnostic_only
+            or self.config.all_layer_finite_numeric_checks_diagnostic_only
+        )
+        finite_floor_failure_is_diagnostic = bool(
+            floor_reasons
+            and numeric_metrics_diagnostic_only
+            and terminal_floor_metrics_finite
+        )
+        nonfinite_floor_reasons = (
+            (
+                "body-reclosure terminal floor metrics are nonfinite or "
+                "unauthenticated",
+            )
+            if floor_engaged and not terminal_floor_metrics_finite
+            else ()
+        )
+        blocking_floor_reasons = tuple(nonfinite_floor_reasons) + (
+            () if finite_floor_failure_is_diagnostic else tuple(floor_reasons)
+        )
         reason = (
             "moving_gauge_v3 structural authentication passed on a fresh "
-            "heldout full-child recapture; numeric fit is diagnostic only"
+            "heldout full-child recapture"
         )
         accepted = True
-        if floor_reasons:
+        if finite_floor_failure_is_diagnostic:
+            before = _terminal_relative_rmse_text(payload.terminal_baseline)
+            after = _terminal_relative_rmse_text(terminal_candidate)
+            tolerance = self.config.terminal_composition_regression_tolerance
+            reason = "; ".join(
+                (
+                    reason,
+                    "finite body-reclosure terminal regression recorded "
+                    "diagnostically without numeric decision authority: the "
+                    "composed held-out terminal relative RMSE moved from "
+                    f"{before} before the reclosure to {after} after it, beyond "
+                    f"the non-regression tolerance {tolerance:.9g}",
+                    *floor_reasons,
+                    "manual whole-output intelligence review is required",
+                )
+            )
+        elif blocking_floor_reasons:
             # Fail closed.  There is no rollback path: the install receipt for
             # this stage is already sealed against the post-reclosure child,
             # and no pre-reclosure tensor survives compilation -- the payload
             # keeps digests of the seed weights, not the weights.  The
             # compiler publishes this complete decision, metrics included,
             # before it raises, so the refusal keeps its evidence.
-            before = _terminal_relative_rmse_text(payload.terminal_baseline)
-            after = _terminal_relative_rmse_text(terminal_candidate)
-            tolerance = (
-                self.config.terminal_composition_regression_tolerance
-            )
             accepted = False
-            reason = "; ".join(
-                (
-                    reason,
-                    "body reclosure refused: the composed held-out terminal "
-                    f"relative RMSE moved from {before} before the reclosure "
-                    f"to {after} after it, beyond the terminal "
-                    f"non-regression tolerance {tolerance:.9g}",
-                    *floor_reasons,
+            if nonfinite_floor_reasons:
+                reason = "; ".join(
+                    (
+                        reason,
+                        "body reclosure refused: terminal floor evidence did "
+                        "not pass finite numeric authentication",
+                        *blocking_floor_reasons,
+                    )
                 )
-            )
+            else:
+                before = _terminal_relative_rmse_text(
+                    payload.terminal_baseline
+                )
+                after = _terminal_relative_rmse_text(terminal_candidate)
+                tolerance = (
+                    self.config.terminal_composition_regression_tolerance
+                )
+                reason = "; ".join(
+                    (
+                        reason,
+                        "body reclosure refused: the composed held-out terminal "
+                        f"relative RMSE moved from {before} before the reclosure "
+                        f"to {after} after it, beyond the terminal "
+                        f"non-regression tolerance {tolerance:.9g}",
+                        *blocking_floor_reasons,
+                    )
+                )
         terminal_metrics: dict[str, JsonScalar] = {
             f"body_reclosure_{name}": value
             for name, value in floor_metrics.items()
@@ -16369,17 +16426,37 @@ class Lfm2DynamicClosedLoopAdapter:
             terminal_metrics.update(
                 {
                     "body_reclosure_terminal_composition_floor_failed": bool(
-                        floor_reasons
+                        floor_reasons or nonfinite_floor_reasons
                     ),
-                    # The per-layer floor yields to the finite-numeric
-                    # diagnostic policies while the body is incomplete.  The
-                    # body is complete by definition at this stage, so this
-                    # clause keeps hard authority and says so.
+                    "body_reclosure_terminal_floor_metrics_finite": (
+                        terminal_floor_metrics_finite
+                    ),
+                    "body_reclosure_terminal_non_regression_failure_is_diagnostic_only": (
+                        finite_floor_failure_is_diagnostic
+                    ),
+                    "body_reclosure_terminal_floor_numeric_authentication_failed": (
+                        bool(nonfinite_floor_reasons)
+                    ),
                     "body_reclosure_terminal_non_regression_has_decision_authority": (
-                        True
+                        not (
+                            numeric_metrics_diagnostic_only
+                            and terminal_floor_metrics_finite
+                        )
+                    ),
+                    "body_reclosure_terminal_floor_retains_authority_under_diagnostic_only": (
+                        not (
+                            numeric_metrics_diagnostic_only
+                            and terminal_floor_metrics_finite
+                        )
                     ),
                     "body_reclosure_terminal_non_regression_is_the_ported_a12_rule": (
                         True
+                    ),
+                    "body_reclosure_manual_intelligence_review_required": (
+                        finite_floor_failure_is_diagnostic
+                    ),
+                    "body_reclosure_finite_numeric_policy_diagnostic_only": (
+                        numeric_metrics_diagnostic_only
                     ),
                 }
             )
@@ -16420,6 +16497,13 @@ class Lfm2DynamicClosedLoopAdapter:
                     "exact_unique_parameter_count": exact_count,
                     "performance_metrics_diagnostic_only": True,
                     "performance_metrics_are_decision_authority": False,
+                    "global_performance_metrics_diagnostic_only": (
+                        self.config.performance_metrics_diagnostic_only
+                    ),
+                    "all_layer_finite_numeric_checks_diagnostic_only": (
+                        self.config
+                        .all_layer_finite_numeric_checks_diagnostic_only
+                    ),
                     "manual_whole_output_review_required": True,
                     "parent_forward_calls": 0,
                     "training_steps": 0,
