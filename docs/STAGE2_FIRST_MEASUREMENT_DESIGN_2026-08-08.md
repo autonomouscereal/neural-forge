@@ -469,3 +469,23 @@ Coordination goes through the Relay Desk per the standing comms channel.
 *Designed 2026-08-08 against HEAD `4e6d0ed6`. Read-only everywhere: the sealed run directories, the
 server inventory, and the dataset estate were inspected without writing. This file is the only file
 written. No git add, no commit.*
+
+---
+
+## AMENDMENT 1 — 2026-08-09: corpus arithmetic and throughput corrected
+
+Measured on the RTX 8000 (NOTES-S2A.md): accepted throughput is 2,299
+tok/s — the design's 20k tok/s estimate was 8.7x optimistic — so corpus
+generation is ~65.5h wall (projected complete 2026-08-11 ~22:20Z), not
+~15.5 GPU-h. The corpus target is corrected to 541,065,216 tokens (129
+shards: 5 holdout generated FIRST + 124 train): by the design's own
+epoch rules the three rungs draw 10M/55M/505M off-policy tokens (50%
+on-policy after 10M), so 505M train + 20M holdout is the zero-repeat
+floor for the full ladder — the original 1.12B figure was uncorrected
+arithmetic, not a requirement. Holdout-first ordering makes any shard
+boundary a valid sealed stopping point. One trial shard was discarded
+for a seed-mix quota defect (archived, not deleted); the fix is
+quota-enforced and injection-tested. The silent ~10-minute launcher
+deaths (twice, not root-caused, hypothesis: SSH session-scope cgroup
+teardown) are mitigated by a systemd transient unit with
+Restart=on-failure and resume-by-missing-manifest.
