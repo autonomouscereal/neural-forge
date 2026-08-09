@@ -311,6 +311,9 @@ DEFAULT_CAPTURE_DECODE_STEPS = 8
 DEFAULT_CAPTURE_BYTES = 128 * 1024 * 1024
 DEFAULT_CAPTURE_LOGIT_RTOL = 0.2
 DEFAULT_CAPTURE_LOGIT_ATOL = 1.0
+DEFAULT_AUTOREGRESSIVE_HANKEL_STATE_RIDGE_FRACTION = 1e-8
+DEFAULT_AUTOREGRESSIVE_HANKEL_FUTURE_RIDGE_FRACTION = 1e-8
+DEFAULT_AUTOREGRESSIVE_HANKEL_MAXIMUM_CONDITION_NUMBER = 1e10
 DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE = "auto"
 # Multi-device child-replay sharding (NOTES-2B).  The CLI flag wins over the
 # environment; the environment is only consulted for a closed-loop run so an
@@ -869,6 +872,33 @@ def _finite_float(value: Any, name: str, *, minimum: float | None = None) -> flo
     return result
 
 
+def _parse_autoregressive_hankel_future_lags(value: str) -> tuple[int, ...]:
+    """Parse one exact sparse future-lag schedule for argparse."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise argparse.ArgumentTypeError(
+            "autoregressive Hankel future lags must be comma-separated integers."
+        )
+    try:
+        lags = tuple(int(item.strip()) for item in value.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "autoregressive Hankel future lags must be comma-separated integers."
+        ) from exc
+    if (
+        not lags
+        or any(lag < 0 for lag in lags)
+        or lags != tuple(sorted(set(lags)))
+        or lags[0] != 0
+        or lags[-1] <= 0
+    ):
+        raise argparse.ArgumentTypeError(
+            "autoregressive Hankel future lags must be sorted, unique, start "
+            "at zero, and contain at least one nonzero lag."
+        )
+    return lags
+
+
 def _file_sha256(path: Path, *, chunk_bytes: int = 8 * 1024**2) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1249,6 +1279,7 @@ class ProductionLfm2CatalogConfig:
     balanced_basis_phase_hmac_key_file: Path | None = None
     balanced_basis_phase_hmac_key_id: str | None = None
     balanced_basis_existing_phase_key_sha256: str | None = None
+    autoregressive_hankel_cache_root: Path | None = None
     tokenizer_directory: Path | None = None
     target_tokenizer_directory: Path | None = None
     target_tokenizer_calibration: Path | None = None
@@ -1311,6 +1342,16 @@ class ProductionLfm2CatalogConfig:
     dense_heterogeneous_hidden_size: int = 784
     dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
+    dense_autoregressive_hankel_future_lags: tuple[int, ...] = ()
+    dense_autoregressive_hankel_state_ridge_fraction: float = (
+        DEFAULT_AUTOREGRESSIVE_HANKEL_STATE_RIDGE_FRACTION
+    )
+    dense_autoregressive_hankel_future_ridge_fraction: float = (
+        DEFAULT_AUTOREGRESSIVE_HANKEL_FUTURE_RIDGE_FRACTION
+    )
+    dense_autoregressive_hankel_maximum_condition_number: float = (
+        DEFAULT_AUTOREGRESSIVE_HANKEL_MAXIMUM_CONDITION_NUMBER
+    )
     dense_body_reclosure_mode: str = "disabled"
     # Verification-only (R13 efficiency): how the moving-gauge install sweep
     # proves the publication it just made matches the sealed causal preview.
@@ -1513,6 +1554,7 @@ class ProductionLfm2CatalogConfig:
             "balanced_basis_phase_cache_root",
             "balanced_basis_phase_event_log",
             "balanced_basis_phase_hmac_key_file",
+            "autoregressive_hankel_cache_root",
             "dense_restart_capsule_root",
             "dense_resume_from_capsule",
             "on_policy_child_artifact_directory",
@@ -1671,6 +1713,85 @@ class ProductionLfm2CatalogConfig:
                     "balanced_basis_existing_phase_key_sha256",
                 ),
             )
+        raw_hankel_lags = self.dense_autoregressive_hankel_future_lags
+        if isinstance(raw_hankel_lags, (str, bytes)) or not isinstance(
+            raw_hankel_lags,
+            Sequence,
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_autoregressive_hankel_future_lags must be a sequence "
+                "of integers."
+            )
+        hankel_lags = tuple(raw_hankel_lags)
+        if hankel_lags and (
+            any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+                for value in hankel_lags
+            )
+            or hankel_lags != tuple(sorted(set(hankel_lags)))
+            or hankel_lags[0] != 0
+            or hankel_lags[-1] <= 0
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_autoregressive_hankel_future_lags must be sorted, "
+                "unique, start at zero, and contain at least one nonzero lag."
+            )
+        object.__setattr__(
+            self,
+            "dense_autoregressive_hankel_future_lags",
+            hankel_lags,
+        )
+        if (self.autoregressive_hankel_cache_root is None) != (not hankel_lags):
+            raise ProductionLfm2CatalogError(
+                "Autoregressive Hankel folding requires its stable cache root "
+                "and nonempty future-lag schedule together."
+            )
+        for name in (
+            "dense_autoregressive_hankel_state_ridge_fraction",
+            "dense_autoregressive_hankel_future_ridge_fraction",
+            "dense_autoregressive_hankel_maximum_condition_number",
+        ):
+            value = _finite_float(getattr(self, name), name, minimum=0.0)
+            if value <= 0.0:
+                raise ProductionLfm2CatalogError(
+                    f"{name} must be a finite positive number."
+                )
+            object.__setattr__(self, name, value)
+        if not self.uses_autoregressive_hankel_observability:
+            if (
+                self.dense_autoregressive_hankel_state_ridge_fraction
+                != DEFAULT_AUTOREGRESSIVE_HANKEL_STATE_RIDGE_FRACTION
+                or self.dense_autoregressive_hankel_future_ridge_fraction
+                != DEFAULT_AUTOREGRESSIVE_HANKEL_FUTURE_RIDGE_FRACTION
+                or self.dense_autoregressive_hankel_maximum_condition_number
+                != DEFAULT_AUTOREGRESSIVE_HANKEL_MAXIMUM_CONDITION_NUMBER
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Autoregressive Hankel solver controls require the cache "
+                    "root and future-lag schedule."
+                )
+        else:
+            assert self.autoregressive_hankel_cache_root is not None
+            hankel_root = (
+                self.autoregressive_hankel_cache_root.expanduser().absolute()
+            )
+            mutable_directory_roots = (
+                self.cache_root.expanduser().absolute(),
+                self.snapshot_root.expanduser().absolute(),
+                self.publish_destination.expanduser().absolute(),
+            )
+            if any(
+                hankel_root.is_relative_to(root)
+                or root.is_relative_to(hankel_root)
+                for root in mutable_directory_roots
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The autoregressive Hankel cache root must be a stable "
+                    "cross-run root outside per-run cache, snapshot, and "
+                    "publication trees."
+                )
         bridge_values = (
             self.target_tokenizer_directory,
             self.target_tokenizer_calibration,
@@ -1902,6 +2023,17 @@ class ProductionLfm2CatalogConfig:
                 "Balanced-basis phase caching requires "
                 "dense_residual_basis_mode='circuit_balanced'."
             )
+        if self.uses_autoregressive_hankel_observability:
+            if self.compression_ratio is None:
+                raise ProductionLfm2CatalogError(
+                    "Autoregressive Hankel observability requires an automatic "
+                    "compression_ratio request into a blank dense child."
+                )
+            if basis_mode != "circuit_balanced":
+                raise ProductionLfm2CatalogError(
+                    "Autoregressive Hankel observability requires "
+                    "dense_residual_basis_mode='circuit_balanced'."
+                )
         body_reclosure_mode = str(self.dense_body_reclosure_mode).strip().lower()
         if body_reclosure_mode not in {"disabled", "moving_gauge_v3"}:
             raise ProductionLfm2CatalogError(
@@ -3255,6 +3387,10 @@ class ProductionLfm2CatalogConfig:
         return self.balanced_basis_phase_cache_root is not None
 
     @property
+    def uses_autoregressive_hankel_observability(self) -> bool:
+        return self.autoregressive_hankel_cache_root is not None
+
+    @property
     def uses_child_replay_phase_cache(self) -> bool:
         return self.child_replay_phase_cache_root is not None
 
@@ -3446,6 +3582,23 @@ class ProductionLfm2CatalogConfig:
                     }
                 }
             ),
+            **(
+                {}
+                if not self.uses_autoregressive_hankel_observability
+                else {
+                    "autoregressive_hankel_cache": {
+                        "enabled": True,
+                        "root": str(
+                            self.autoregressive_hankel_cache_root
+                            .expanduser()
+                            .absolute()
+                        ),
+                        "checkpoint_granularity_batches": 1,
+                        "bounded_memory_cumulative_aggregation_required": True,
+                        "per_batch_shards_retained_together": False,
+                    }
+                }
+            ),
             "snapshot_root": str(self.snapshot_root),
             "publish_destination": str(self.publish_destination),
             "ledger_path": str(self.ledger_path),
@@ -3488,6 +3641,39 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "dense_residual_basis_mode": (
                     self.dense_residual_basis_mode
+                ),
+                **(
+                    {}
+                    if not self.uses_autoregressive_hankel_observability
+                    else {
+                        "dense_autoregressive_hankel_observability": {
+                            "method": (
+                                "model-wide-future-causal-autoregressive-"
+                                "hankel-balanced-basis-v1"
+                            ),
+                            "future_lags": list(
+                                self.dense_autoregressive_hankel_future_lags
+                            ),
+                            "state_ridge_fraction": (
+                                self
+                                .dense_autoregressive_hankel_state_ridge_fraction
+                            ),
+                            "future_ridge_fraction": (
+                                self
+                                .dense_autoregressive_hankel_future_ridge_fraction
+                            ),
+                            "maximum_condition_number": (
+                                self
+                                .dense_autoregressive_hankel_maximum_condition_number
+                            ),
+                            "source": "authenticated-cached-parent-traces",
+                            "future_lag_zero_is_geometry_only": True,
+                            "nonzero_future_lags_drive_observability": True,
+                            "right_censor_without_zero_padding": True,
+                            "fold_only_closed_form": True,
+                            "training_steps": 0,
+                        }
+                    }
                 ),
                 "dense_body_reclosure_mode": self.dense_body_reclosure_mode,
                 # Recorded only when it is not the default, so every existing
@@ -9984,6 +10170,45 @@ def _balanced_basis_phase_cache_receipt_fields(
     }
 
 
+def _autoregressive_hankel_cache_receipt_fields(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    """Describe the opt-in bounded-memory, fold-only AHB cache policy."""
+
+    if not config.uses_autoregressive_hankel_observability:
+        return {}
+    assert config.autoregressive_hankel_cache_root is not None
+    return {
+        "autoregressive_hankel_cache": {
+            "enabled": True,
+            "root": str(
+                config.autoregressive_hankel_cache_root
+                .expanduser()
+                .absolute()
+            ),
+            "future_lags": list(
+                config.dense_autoregressive_hankel_future_lags
+            ),
+            "state_ridge_fraction": (
+                config.dense_autoregressive_hankel_state_ridge_fraction
+            ),
+            "future_ridge_fraction": (
+                config.dense_autoregressive_hankel_future_ridge_fraction
+            ),
+            "maximum_condition_number": (
+                config
+                .dense_autoregressive_hankel_maximum_condition_number
+            ),
+            "checkpoint_granularity_batches": 1,
+            "bounded_memory_cumulative_aggregation_required": True,
+            "all_statistics_shards_retained_in_memory": False,
+            "parent_trace_regeneration": False,
+            "fold_only_closed_form": True,
+            "training_steps": 0,
+        }
+    }
+
+
 def _balanced_basis_phase_anchor_authority(
     config: ProductionLfm2CatalogConfig,
 ) -> PhaseAnchorAuthority | None:
@@ -10159,9 +10384,22 @@ def build_production_catalog_wiring(
     balanced_basis_phase_cache_context: (
         Lfm2BalancedBasisPhaseCacheContext | None
     ) = None,
+    autoregressive_hankel_observability: Any | None = None,
     progress: _ProgressJournal | None = None,
 ) -> ProductionCatalogWiring:
     """Configure the production target and stack catalogs exactly once."""
+
+    if config.uses_autoregressive_hankel_observability:
+        if autoregressive_hankel_observability is None:
+            raise ProductionLfm2CatalogError(
+                "Enabled autoregressive Hankel folding requires its fully "
+                "authenticated aggregate observability artifact."
+            )
+    elif autoregressive_hankel_observability is not None:
+        raise ProductionLfm2CatalogError(
+            "An autoregressive Hankel artifact cannot enter a run whose "
+            "configuration did not bind the AHB cache and lag schedule."
+        )
 
     target_vocabulary_margin_binding = None
     if config.uses_tokenizer_bridge and config.dense_vocabulary_margin_observability:
@@ -10573,6 +10811,9 @@ def build_production_catalog_wiring(
             ),
             residual_basis_phase_cache_context=(
                 balanced_basis_phase_cache_context
+            ),
+            autoregressive_hankel_observability=(
+                autoregressive_hankel_observability
             ),
             dense_fold_progress_sink=(
                 None
@@ -11641,6 +11882,24 @@ def run_production_catalog(
                 ),
             }
         ),
+        **(
+            {}
+            if not config.uses_autoregressive_hankel_observability
+            else {
+                "autoregressive_hankel_enabled": True,
+                "autoregressive_hankel_cache_root": str(
+                    config.autoregressive_hankel_cache_root
+                    .expanduser()
+                    .absolute()
+                ),
+                "autoregressive_hankel_future_lags": ",".join(
+                    str(value)
+                    for value in (
+                        config.dense_autoregressive_hankel_future_lags
+                    )
+                ),
+            }
+        ),
         folding_only=True,
     )
     if config.dense_replay_devices or config.dense_replay_devices_source != (
@@ -11724,6 +11983,7 @@ def run_production_catalog(
                 "required_target_hidden_size": config.required_target_hidden_size,
             },
             **_balanced_basis_phase_cache_receipt_fields(config),
+            **_autoregressive_hankel_cache_receipt_fields(config),
             "closed_loop_performance_metrics_policy": (
                 _dense_closed_loop_performance_metrics_policy(config)
             ),
@@ -13144,6 +13404,7 @@ def run_production_catalog(
                     ),
                 },
                 **_balanced_basis_phase_cache_receipt_fields(config),
+                **_autoregressive_hankel_cache_receipt_fields(config),
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -13582,6 +13843,7 @@ def run_production_catalog(
                     ),
                 },
                 **_balanced_basis_phase_cache_receipt_fields(config),
+                **_autoregressive_hankel_cache_receipt_fields(config),
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -14144,6 +14406,41 @@ def build_parser() -> argparse.ArgumentParser:
             "hit-only after full live parent/trace/target/tokenizer/HMAC "
             "reauthentication. A miss is fatal and never rebuilds."
         ),
+    )
+    parser.add_argument(
+        "--autoregressive-hankel-cache-root",
+        type=Path,
+        help=(
+            "Stable cross-run root for per-batch future-causal statistics and "
+            "bounded-memory cumulative AHB observability checkpoints. Requires "
+            "--dense-autoregressive-hankel-future-lags."
+        ),
+    )
+    parser.add_argument(
+        "--dense-autoregressive-hankel-future-lags",
+        type=_parse_autoregressive_hankel_future_lags,
+        default=(),
+        metavar="0,1,2,4,8",
+        help=(
+            "Sorted unique sparse causal lags. Zero supplies authenticated "
+            "state geometry and at least one positive lag supplies future "
+            "behavior; terminal rows are right-censored, never padded."
+        ),
+    )
+    parser.add_argument(
+        "--dense-autoregressive-hankel-state-ridge-fraction",
+        type=float,
+        default=DEFAULT_AUTOREGRESSIVE_HANKEL_STATE_RIDGE_FRACTION,
+    )
+    parser.add_argument(
+        "--dense-autoregressive-hankel-future-ridge-fraction",
+        type=float,
+        default=DEFAULT_AUTOREGRESSIVE_HANKEL_FUTURE_RIDGE_FRACTION,
+    )
+    parser.add_argument(
+        "--dense-autoregressive-hankel-maximum-condition-number",
+        type=float,
+        default=DEFAULT_AUTOREGRESSIVE_HANKEL_MAXIMUM_CONDITION_NUMBER,
     )
     parser.add_argument("--snapshot-root", required=True, type=Path)
     parser.add_argument(
@@ -15250,6 +15547,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         balanced_basis_existing_phase_key_sha256=(
             args.balanced_basis_existing_phase_key_sha256
         ),
+        autoregressive_hankel_cache_root=(
+            args.autoregressive_hankel_cache_root
+        ),
         snapshot_root=args.snapshot_root,
         publish_destination=args.publish_destination,
         ledger_path=args.ledger,
@@ -15286,6 +15586,18 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
             args.dense_heterogeneous_target_parameters
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
+        dense_autoregressive_hankel_future_lags=(
+            args.dense_autoregressive_hankel_future_lags
+        ),
+        dense_autoregressive_hankel_state_ridge_fraction=(
+            args.dense_autoregressive_hankel_state_ridge_fraction
+        ),
+        dense_autoregressive_hankel_future_ridge_fraction=(
+            args.dense_autoregressive_hankel_future_ridge_fraction
+        ),
+        dense_autoregressive_hankel_maximum_condition_number=(
+            args.dense_autoregressive_hankel_maximum_condition_number
+        ),
         dense_body_reclosure_mode=args.dense_body_reclosure_mode,
         dense_moving_gauge_install_verification=(
             args.dense_moving_gauge_install_verification
