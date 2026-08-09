@@ -43,7 +43,9 @@ def _canonical_flat_row_indices(
     indices = tuple(value)
     if (
         not indices
-        or any(isinstance(index, bool) or not isinstance(index, int) for index in indices)
+        or any(
+            isinstance(index, bool) or not isinstance(index, int) for index in indices
+        )
         or indices != tuple(sorted(set(indices)))
         or indices[0] < 0
         or indices[-1] >= row_count
@@ -267,6 +269,115 @@ class Lfm2CircuitTraceSelectedRowsPayload:
         self._released = True
 
 
+def lfm2_circuit_trace_selected_rows_payload_sha256(
+    *,
+    session_sha256: str,
+    cache_key: str,
+    batch_index: int,
+    reference: Any,
+    payload: Lfm2CircuitTraceSelectedRowsPayload,
+) -> str:
+    """Recompute a selected-row payload seal in one session's coordinates."""
+
+    if not isinstance(payload, Lfm2CircuitTraceSelectedRowsPayload):
+        raise TypeError("payload must be Lfm2CircuitTraceSelectedRowsPayload.")
+    record = getattr(reference, "_record", None)
+    inventory = None if not isinstance(record, Mapping) else record.get("tensors")
+    names = payload.ordered_tensor_names
+    if (
+        not isinstance(inventory, Mapping)
+        or not names
+        or names != tuple(sorted(set(names)))
+        or set(payload.row_indices) != set(names)
+        or any(name not in inventory for name in names)
+    ):
+        raise trace_cache.Lfm2CircuitTraceCacheError(
+            "Selected row payload cannot be sealed from its authenticated inventory."
+        )
+    tensors = payload.tensors
+    if set(tensors) != set(names):
+        raise trace_cache.Lfm2CircuitTraceCacheError(
+            "Selected row payload tensor inventory changed."
+        )
+    torch = trace_cache._torch()
+    source_logical_bytes = 0
+    source_row_count = 0
+    selected_row_count = 0
+    selected_logical_bytes = 0
+    ordered_row_selections = []
+    for name in names:
+        descriptor = inventory[name]
+        shape = descriptor.get("shape") if isinstance(descriptor, Mapping) else None
+        if (
+            not isinstance(shape, list)
+            or len(shape) < 2
+            or any(
+                isinstance(size, bool) or not isinstance(size, int) or size <= 0
+                for size in shape
+            )
+        ):
+            raise trace_cache.Lfm2CircuitTraceCacheError(
+                "Selected row payload source descriptor changed."
+            )
+        row_count = math.prod(shape[:-1])
+        indices = _canonical_flat_row_indices(
+            payload.row_indices[name],
+            row_count=row_count,
+            name=name,
+        )
+        tensor = tensors[name]
+        selected_descriptor = trace_cache._tensor_descriptor(torch, tensor)
+        source_logical_bytes += int(descriptor["size_bytes"])
+        source_row_count += row_count
+        selected_row_count += len(indices)
+        selected_logical_bytes += int(tensor.numel() * tensor.element_size())
+        ordered_row_selections.append(
+            {
+                "tensor_name": name,
+                "flat_row_indices": list(indices),
+                "source_descriptor": dict(descriptor),
+                "selected_descriptor": selected_descriptor,
+            }
+        )
+    if (
+        payload.input_sha256 != reference.input_sha256
+        or payload.logical_bytes != selected_logical_bytes
+        or payload.source_logical_bytes != source_logical_bytes
+        or payload.selected_row_count != selected_row_count
+        or payload.source_row_count != source_row_count
+        or payload.source_tensor_count != len(names)
+        or payload.safetensors_get_slice_calls != len(names)
+        or payload.whole_tensor_cpu_clone_calls != 0
+        or payload.unselected_rows_loaded is not False
+    ):
+        raise trace_cache.Lfm2CircuitTraceCacheError(
+            "Selected row payload accounting changed."
+        )
+    body = {
+        "schema": SELECTIVE_ROW_BATCH_PAYLOAD_SCHEMA,
+        "session_sha256": session_sha256,
+        "cache_key": cache_key,
+        "batch_index": batch_index,
+        "input_sha256": reference.input_sha256,
+        "record_sha256": reference.record_sha256,
+        "ordered_row_selections": ordered_row_selections,
+        "source_logical_bytes": source_logical_bytes,
+        "selected_logical_bytes": selected_logical_bytes,
+        "source_tensor_count": len(names),
+        "source_row_count": source_row_count,
+        "selected_row_count": selected_row_count,
+        "safetensors_get_slice_calls": len(names),
+        "coalesced_slice_count": payload.coalesced_slice_count,
+        "maximum_materialized_source_rows": (payload.maximum_materialized_source_rows),
+        "row_selection_precedes_whole_tensor_cpu_clone": True,
+        "whole_tensor_cpu_clone_calls": 0,
+        "unselected_rows_loaded": False,
+        "collector_source_or_implementation_identity_changed": False,
+        "row_selection_reader_source_sha256": _READER_SOURCE_SHA256,
+    }
+    return trace_cache._json_sha256(body)
+
+
 def load_lfm2_circuit_trace_selected_rows(
     session: trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
     index: int,
@@ -316,9 +427,7 @@ def load_lfm2_circuit_trace_selected_rows(
                 not isinstance(shape, list)
                 or len(shape) < 2
                 or any(
-                    isinstance(size, bool)
-                    or not isinstance(size, int)
-                    or size <= 0
+                    isinstance(size, bool) or not isinstance(size, int) or size <= 0
                     for size in shape
                 )
                 or isinstance(numel, bool)
@@ -492,6 +601,7 @@ def release_lfm2_circuit_trace_selected_rows(
 __all__ = [
     "Lfm2CircuitTraceSelectedRowsPayload",
     "SELECTIVE_ROW_BATCH_PAYLOAD_SCHEMA",
+    "lfm2_circuit_trace_selected_rows_payload_sha256",
     "load_lfm2_circuit_trace_selected_rows",
     "release_lfm2_circuit_trace_selected_rows",
 ]

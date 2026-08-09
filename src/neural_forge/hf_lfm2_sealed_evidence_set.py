@@ -40,9 +40,11 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceSelectedBatchPayload,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    SELECTIVE_BATCH_PAYLOAD_SCHEMA,
 )
 from .hf_lfm2_circuit_trace_row_selection import (
     Lfm2CircuitTraceSelectedRowsPayload,
+    lfm2_circuit_trace_selected_rows_payload_sha256,
     load_lfm2_circuit_trace_selected_rows,
     release_lfm2_circuit_trace_selected_rows,
 )
@@ -57,9 +59,7 @@ SEALED_EVIDENCE_SET_SCHEMA = "neural-forge-lfm2-sealed-evidence-set-v1"
 SEALED_EVIDENCE_SET_CACHE_KEY_SCHEMA = (
     "neural-forge-lfm2-sealed-evidence-set-cache-key-v1"
 )
-MERGED_EVIDENCE_SESSION_SCHEMA = (
-    "neural-forge-lfm2-merged-sealed-evidence-session-v1"
-)
+MERGED_EVIDENCE_SESSION_SCHEMA = "neural-forge-lfm2-merged-sealed-evidence-session-v1"
 BASE_EVIDENCE_ROLE = "base"
 EXTENSION_EVIDENCE_ROLE = "on_policy_extension"
 _CORPUS_LIST_FIELDS = (
@@ -511,6 +511,51 @@ class Lfm2MergedSealedEvidenceSession:
     def __len__(self) -> int:
         return self._evidence_set.batch_count
 
+    @staticmethod
+    def _selection_sha256(
+        *,
+        reference: Any,
+        session_sha256: str,
+        cache_key: str,
+        batch_index: int,
+        tensor_names: tuple[str, ...],
+    ) -> tuple[str, int]:
+        """Restate one member selection in the coordinates of its owner.
+
+        A merged session changes both the session digest and (for extension
+        members) the batch index.  Those fields are part of the authenticated
+        selected-payload digest, so carrying the member digest after changing
+        either field creates a payload whose public identity contradicts its
+        own seal.
+        """
+
+        record = getattr(reference, "_record", None)
+        inventory = None if not isinstance(record, Mapping) else record.get("tensors")
+        if (
+            not isinstance(inventory, Mapping)
+            or not tensor_names
+            or tensor_names != tuple(sorted(set(tensor_names)))
+            or any(name not in inventory for name in tensor_names)
+        ):
+            raise Lfm2SealedEvidenceSetError(
+                "Selected payload cannot be restated from its authenticated inventory."
+            )
+        logical_bytes = sum(int(inventory[name]["size_bytes"]) for name in tensor_names)
+        body = {
+            "schema": SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+            "session_sha256": session_sha256,
+            "cache_key": cache_key,
+            "batch_index": batch_index,
+            "input_sha256": reference.input_sha256,
+            "record_sha256": reference.record_sha256,
+            "ordered_tensor_names": list(tensor_names),
+            "ordered_tensor_descriptors": [
+                dict(inventory[name]) for name in tensor_names
+            ],
+            "logical_bytes": logical_bytes,
+        }
+        return canonical_sha256(body), logical_bytes
+
     def _member_session(
         self,
         index: int,
@@ -537,15 +582,59 @@ class Lfm2MergedSealedEvidenceSession:
         "this payload belongs to me" contract is never weakened.
         """
 
+        if isinstance(tensor_names, (str, bytes)) or not isinstance(
+            tensor_names,
+            Sequence,
+        ):
+            raise TypeError("tensor_names must be a sequence of strings.")
+        names = tuple(tensor_names)
         session, member_index = self._member_session(index)
-        payload = session.load_selected_tensors(member_index, tensor_names)
-        if payload.session_sha256 != session.evidence_sha256:
-            raise Lfm2SealedEvidenceSetError(
-                "A merged evidence member returned a payload from another "
-                "authenticated session."
+        payload = session.load_selected_tensors(member_index, names)
+        try:
+            member_reference = session.batch_references[member_index]
+            member_selection_sha256, member_logical_bytes = self._selection_sha256(
+                reference=member_reference,
+                session_sha256=session.evidence_sha256,
+                cache_key=session.cache_key,
+                batch_index=member_index,
+                tensor_names=names,
             )
+            if (
+                payload.session_sha256 != session.evidence_sha256
+                or payload.batch_index != member_index
+                or payload.input_sha256 != member_reference.input_sha256
+                or payload.ordered_tensor_names != names
+                or payload.logical_bytes != member_logical_bytes
+                or payload.selection_sha256 != member_selection_sha256
+            ):
+                raise Lfm2SealedEvidenceSetError(
+                    "A merged evidence member returned an inconsistent selected payload."
+                )
+            merged_reference = self._references[index]
+            merged_selection_sha256, merged_logical_bytes = self._selection_sha256(
+                reference=merged_reference,
+                session_sha256=self._evidence_sha256,
+                cache_key=self.cache_key,
+                batch_index=index,
+                tensor_names=names,
+            )
+            if merged_logical_bytes != member_logical_bytes:
+                raise Lfm2SealedEvidenceSetError(
+                    "Merged selected-payload byte accounting differs from its member."
+                )
+        except BaseException as primary_error:
+            try:
+                session.release_selected_tensors(payload)
+            except BaseException as release_error:
+                payload._release()
+                primary_error.add_note(
+                    "Releasing the inconsistent selected payload also failed: "
+                    f"{type(release_error).__qualname__}: {release_error}"
+                )
+            raise
         payload.batch_index = index
         payload.session_sha256 = self._evidence_sha256
+        payload.selection_sha256 = merged_selection_sha256
         return payload
 
     def load_selected_tensor_rows(
@@ -568,13 +657,44 @@ class Lfm2MergedSealedEvidenceSession:
             member_index,
             row_indices,
         )
-        if payload.session_sha256 != session.evidence_sha256:
-            raise Lfm2SealedEvidenceSetError(
-                "A merged evidence member returned selected rows from another "
-                "authenticated session."
+        try:
+            member_reference = session.batch_references[member_index]
+            member_selection_sha256 = lfm2_circuit_trace_selected_rows_payload_sha256(
+                reference=member_reference,
+                session_sha256=session.evidence_sha256,
+                cache_key=session.cache_key,
+                batch_index=member_index,
+                payload=payload,
             )
+            if (
+                payload.session_sha256 != session.evidence_sha256
+                or payload.batch_index != member_index
+                or payload.selection_sha256 != member_selection_sha256
+            ):
+                raise Lfm2SealedEvidenceSetError(
+                    "A merged evidence member returned inconsistent selected rows."
+                )
+            merged_reference = self._references[index]
+            merged_selection_sha256 = lfm2_circuit_trace_selected_rows_payload_sha256(
+                reference=merged_reference,
+                session_sha256=self._evidence_sha256,
+                cache_key=self.cache_key,
+                batch_index=index,
+                payload=payload,
+            )
+        except BaseException as primary_error:
+            try:
+                release_lfm2_circuit_trace_selected_rows(session, payload)
+            except BaseException as release_error:
+                payload._release()
+                primary_error.add_note(
+                    "Releasing the inconsistent selected rows also failed: "
+                    f"{type(release_error).__qualname__}: {release_error}"
+                )
+            raise
         payload.batch_index = index
         payload.session_sha256 = self._evidence_sha256
+        payload.selection_sha256 = merged_selection_sha256
         return payload
 
     def release_selected_tensor_rows(
@@ -587,9 +707,38 @@ class Lfm2MergedSealedEvidenceSession:
             raise Lfm2SealedEvidenceSetError(
                 "Selected row payload belongs to another authenticated session."
             )
-        session, member_index = self._member_session(int(payload.batch_index))
+        if isinstance(payload.batch_index, bool) or not isinstance(
+            payload.batch_index,
+            int,
+        ):
+            raise Lfm2SealedEvidenceSetError(
+                "Selected row payload batch identity changed while borrowed."
+            )
+        merged_index = payload.batch_index
+        merged_reference = self._references[merged_index]
+        merged_selection_sha256 = lfm2_circuit_trace_selected_rows_payload_sha256(
+            reference=merged_reference,
+            session_sha256=self._evidence_sha256,
+            cache_key=self.cache_key,
+            batch_index=merged_index,
+            payload=payload,
+        )
+        if payload.selection_sha256 != merged_selection_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                "Selected row payload identity changed while borrowed from the merged session."
+            )
+        session, member_index = self._member_session(merged_index)
+        member_reference = session.batch_references[member_index]
+        member_selection_sha256 = lfm2_circuit_trace_selected_rows_payload_sha256(
+            reference=member_reference,
+            session_sha256=session.evidence_sha256,
+            cache_key=session.cache_key,
+            batch_index=member_index,
+            payload=payload,
+        )
         payload.batch_index = member_index
         payload.session_sha256 = session.evidence_sha256
+        payload.selection_sha256 = member_selection_sha256
         release_lfm2_circuit_trace_selected_rows(session, payload)
 
     def release_selected_tensors(
@@ -602,9 +751,46 @@ class Lfm2MergedSealedEvidenceSession:
             raise Lfm2SealedEvidenceSetError(
                 "Selected payload belongs to another authenticated session."
             )
-        session, member_index = self._member_session(int(payload.batch_index))
+        if isinstance(payload.batch_index, bool) or not isinstance(
+            payload.batch_index,
+            int,
+        ):
+            raise Lfm2SealedEvidenceSetError(
+                "Selected payload batch identity changed while borrowed."
+            )
+        merged_index = payload.batch_index
+        merged_reference = self._references[merged_index]
+        merged_selection_sha256, merged_logical_bytes = self._selection_sha256(
+            reference=merged_reference,
+            session_sha256=self._evidence_sha256,
+            cache_key=self.cache_key,
+            batch_index=merged_index,
+            tensor_names=payload.ordered_tensor_names,
+        )
+        if (
+            payload.input_sha256 != merged_reference.input_sha256
+            or payload.logical_bytes != merged_logical_bytes
+            or payload.selection_sha256 != merged_selection_sha256
+        ):
+            raise Lfm2SealedEvidenceSetError(
+                "Selected payload identity changed while borrowed from the merged session."
+            )
+        session, member_index = self._member_session(merged_index)
+        member_reference = session.batch_references[member_index]
+        member_selection_sha256, member_logical_bytes = self._selection_sha256(
+            reference=member_reference,
+            session_sha256=session.evidence_sha256,
+            cache_key=session.cache_key,
+            batch_index=member_index,
+            tensor_names=payload.ordered_tensor_names,
+        )
+        if member_logical_bytes != merged_logical_bytes:
+            raise Lfm2SealedEvidenceSetError(
+                "Selected payload cannot be restored to its authenticated member."
+            )
         payload.batch_index = member_index
         payload.session_sha256 = session.evidence_sha256
+        payload.selection_sha256 = member_selection_sha256
         session.release_selected_tensors(payload)
 
     def verify(self) -> Lfm2MergedSealedEvidenceSession:
@@ -818,11 +1004,7 @@ class Lfm2SealedEvidenceSet:
             "schema": corpora[0]["schema"],
             "batch_count": offset,
             **{
-                name: [
-                    value
-                    for corpus in corpora
-                    for value in corpus[name]
-                ]
+                name: [value for corpus in corpora for value in corpus[name]]
                 for name in _CORPUS_LIST_FIELDS
             },
         }
@@ -863,9 +1045,7 @@ class Lfm2SealedEvidenceSet:
                 member_role=member.role,
                 member_cache_key=member.cache_key,
                 member_batch_index=index,
-                input_sha256=str(
-                    corpus["ordered_batch_input_sha256"][index]
-                ),
+                input_sha256=str(corpus["ordered_batch_input_sha256"][index]),
                 split=member.splits[index],
             )
             for member, corpus in zip(members, corpora)
@@ -973,23 +1153,18 @@ class Lfm2SealedEvidenceSet:
 
     @property
     def round_manifest_sha256(self) -> tuple[str, ...]:
-        return tuple(
-            str(member.round_manifest_sha256) for member in self._members[1:]
-        )
+        return tuple(str(member.round_manifest_sha256) for member in self._members[1:])
 
     @property
     def extension_target_preimage_sha256(self) -> tuple[str | None, ...]:
         """Each extension's sealed target-token preimage digest, if it has one."""
 
-        return tuple(
-            member.target_preimage_sha256 for member in self._members[1:]
-        )
+        return tuple(member.target_preimage_sha256 for member in self._members[1:])
 
     @property
     def every_extension_carries_a_target_preimage(self) -> bool:
         return bool(self._members[1:]) and all(
-            member.target_preimage_sha256 is not None
-            for member in self._members[1:]
+            member.target_preimage_sha256 is not None for member in self._members[1:]
         )
 
     @property
@@ -1037,9 +1212,7 @@ class Lfm2SealedEvidenceSet:
         for name in _CORPUS_LIST_FIELDS:
             merged: list[Any] = []
             for member in self._members:
-                merged.extend(
-                    dict(member.cache.manifest["corpus"])[name]
-                )
+                merged.extend(dict(member.cache.manifest["corpus"])[name])
             merged_corpus[name] = merged
         merged_corpus["corpus_sha256"] = self.corpus_fingerprint
         manifest["corpus"] = merged_corpus
@@ -1048,12 +1221,8 @@ class Lfm2SealedEvidenceSet:
         manifest["merged_sealed_evidence_set"] = {
             "schema": SEALED_EVIDENCE_SET_SCHEMA,
             "base_cache_key": self.base_cache.cache_key,
-            "ordered_member_cache_keys": [
-                member.cache_key for member in self._members
-            ],
-            "on_policy_evidence_identity_sha256": (
-                self.evidence_identity_sha256
-            ),
+            "ordered_member_cache_keys": [member.cache_key for member in self._members],
+            "on_policy_evidence_identity_sha256": (self.evidence_identity_sha256),
             "extension_batch_indices": list(self.extension_batch_indices),
             "all_extension_rows_are_fit_rows": True,
             "parent_forward_calls": 0,
@@ -1085,9 +1254,7 @@ class Lfm2SealedEvidenceSet:
         """
 
         self._assert_open()
-        return tuple(
-            member.cache for member in self._members if "fit" in member.splits
-        )
+        return tuple(member.cache for member in self._members if "fit" in member.splits)
 
     def iter_batches(self) -> Iterator[Lfm2SealedEvidenceBatch]:
         """Iterate every sealed batch with its member and content provenance."""
@@ -1142,8 +1309,7 @@ class Lfm2SealedEvidenceSet:
                     )
             elif member.role != BASE_EVIDENCE_ROLE:
                 raise Lfm2SealedEvidenceSetError(
-                    "An on-policy extension member lost its authenticated "
-                    "session."
+                    "An on-policy extension member lost its authenticated session."
                 )
         return self
 
@@ -1193,9 +1359,7 @@ class Lfm2SealedEvidenceSet:
             "member_count": self.member_count,
             "batch_count": self.batch_count,
             "round_count": self.round_count,
-            "on_policy_evidence_identity_sha256": (
-                self.evidence_identity_sha256
-            ),
+            "on_policy_evidence_identity_sha256": (self.evidence_identity_sha256),
             "members": [member.as_dict() for member in self._members],
             "ordered_splits": list(self.splits),
             "all_extension_rows_are_fit_rows": True,
@@ -1225,12 +1389,8 @@ class Lfm2SealedEvidenceSet:
             "every_extension_carries_a_target_preimage": (
                 self.every_extension_carries_a_target_preimage
             ),
-            "on_policy_evidence_identity_sha256": (
-                self.evidence_identity_sha256
-            ),
-            "fit_batch_count": sum(
-                1 for value in self._batches if value.is_fit
-            ),
+            "on_policy_evidence_identity_sha256": (self.evidence_identity_sha256),
+            "fit_batch_count": sum(1 for value in self._batches if value.is_fit),
             "extension_fit_batch_count": sum(
                 1
                 for value in self._batches
@@ -1239,8 +1399,7 @@ class Lfm2SealedEvidenceSet:
             "extension_selection_or_validation_batch_count": sum(
                 1
                 for value in self._batches
-                if value.member_role == EXTENSION_EVIDENCE_ROLE
-                and not value.is_fit
+                if value.member_role == EXTENSION_EVIDENCE_ROLE and not value.is_fit
             ),
             "all_extension_rows_are_fit_rows": True,
             "parent_forward_calls": 0,

@@ -15,6 +15,7 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    SELECTIVE_BATCH_PAYLOAD_SCHEMA,
     build_lfm2_circuit_trace_cache,
 )
 
@@ -131,9 +132,7 @@ def _request(cache, *, splits=None, extension=False, manifest=None):
         split_sha256=canonical_sha256(
             {"cache_key": cache.cache_key, "splits": list(ordered)}
         ),
-        round_manifest_sha256=(
-            None if not extension else (manifest or "a" * 64)
-        ),
+        round_manifest_sha256=(None if not extension else (manifest or "a" * 64)),
         all_rows_are_fit=extension,
     )
 
@@ -241,9 +240,7 @@ def test_merged_corpus_and_cache_key_change_with_extension_evidence(
         first_corpus.pop("corpus_sha256")
         merged = {
             "schema": base_corpus["schema"],
-            "batch_count": (
-                base_corpus["batch_count"] + first_corpus["batch_count"]
-            ),
+            "batch_count": (base_corpus["batch_count"] + first_corpus["batch_count"]),
             **{
                 name: [*base_corpus[name], *first_corpus[name]]
                 for name in (
@@ -304,9 +301,7 @@ def test_evidence_identity_is_the_one_digest_the_runner_folds_into_keys(
         # solve can never be reused for this request.
         _splits, extended = runner._derive_sealed_cache_splits(
             lane.base,
-            on_policy_evidence_identity_sha256=(
-                evidence.evidence_identity_sha256
-            ),
+            on_policy_evidence_identity_sha256=(evidence.evidence_identity_sha256),
         )
         _base_splits, base_digest = runner._derive_sealed_cache_splits(lane.base)
         assert extended != base_digest
@@ -535,16 +530,18 @@ def test_merged_views_present_one_cache_and_one_session(lane) -> None:
         assert cache.manifest["capture"] == lane.base.manifest["capture"]
         assert cache.manifest["parent"] == lane.base.manifest["parent"]
         assert "manifest_sha256" not in cache.manifest
-        assert cache.manifest["merged_sealed_evidence_set"][
-            "on_policy_evidence_identity_sha256"
-        ] == evidence.evidence_identity_sha256
+        assert (
+            cache.manifest["merged_sealed_evidence_set"][
+                "on_policy_evidence_identity_sha256"
+            ]
+            == evidence.evidence_identity_sha256
+        )
 
         # Extension batches are named once, in merged order, as fit rows.
         assert cache.extension_batch_indices == (3, 4, 5)
         assert session.extension_batch_indices == (3, 4, 5)
         assert all(
-            evidence.batch(index).is_fit
-            for index in cache.extension_batch_indices
+            evidence.batch(index).is_fit for index in cache.extension_batch_indices
         )
 
         # Batch references are renumbered into merged order but keep the exact
@@ -577,12 +574,29 @@ def test_merged_session_selection_is_routed_to_its_sealed_member(lane) -> None:
         try:
             assert payload.batch_index == 3
             assert payload.session_sha256 == session.evidence_sha256
-            assert payload.input_sha256 == (
-                lane.first.manifest["corpus"]["ordered_batch_input_sha256"][0]
+            assert (
+                payload.input_sha256
+                == (lane.first.manifest["corpus"]["ordered_batch_input_sha256"][0])
+            )
+            reference = session.batch_references[3]
+            inventory = reference.record["tensors"]
+            assert payload.selection_sha256 == canonical_sha256(
+                {
+                    "schema": SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+                    "session_sha256": session.evidence_sha256,
+                    "cache_key": session.cache_key,
+                    "batch_index": 3,
+                    "input_sha256": reference.input_sha256,
+                    "record_sha256": reference.record_sha256,
+                    "ordered_tensor_names": list(names),
+                    "ordered_tensor_descriptors": [inventory[name] for name in names],
+                    "logical_bytes": payload.logical_bytes,
+                }
             )
             member_session = evidence.members[1].session
             direct = member_session.load_selected_tensors(0, names)
             try:
+                assert direct.selection_sha256 != payload.selection_sha256
                 for name in names:
                     assert torch.equal(
                         payload.tensors[name],
@@ -601,6 +615,45 @@ def test_merged_session_selection_is_routed_to_its_sealed_member(lane) -> None:
     finally:
         evidence.close()
     assert session.closed is True
+
+
+def test_merged_selection_preserves_member_validation_and_emergency_release(
+    lane,
+    monkeypatch,
+) -> None:
+    evidence = _open(
+        lane,
+        _request(lane.first, extension=True, manifest="b" * 64),
+    )
+    try:
+        session = evidence.merged_session()
+        names = tuple(session.batch_references[3].ordered_tensor_names[:2])
+        with pytest.raises(TypeError, match="sequence of strings"):
+            session.load_selected_tensors(3, names[0])
+        with pytest.raises(TypeError, match="sequence of strings"):
+            session.load_selected_tensors(3, iter(names))
+
+        member_session = evidence.members[1].session
+        member_type = type(member_session)
+        original_load = member_type.load_selected_tensors
+        captured = {}
+
+        def corrupt_load(owner, index, tensor_names):
+            payload = original_load(owner, index, tensor_names)
+            if owner is member_session:
+                payload.session_sha256 = "0" * 64
+                captured["payload"] = payload
+            return payload
+
+        monkeypatch.setattr(member_type, "load_selected_tensors", corrupt_load)
+        with pytest.raises(
+            MODULE.Lfm2SealedEvidenceSetError,
+            match="inconsistent selected payload",
+        ):
+            session.load_selected_tensors(3, names)
+        assert captured["payload"].released is True
+    finally:
+        evidence.close()
 
 
 def test_merged_views_are_refused_without_extension_evidence(lane) -> None:
@@ -627,6 +680,7 @@ def test_merged_session_row_reads_are_routed_to_their_sealed_member(lane) -> Non
     """Bounded row reads carry the member's authentication, merged numbering."""
 
     from neural_forge.hf_lfm2_circuit_trace_row_selection import (
+        lfm2_circuit_trace_selected_rows_payload_sha256,
         load_lfm2_circuit_trace_selected_rows,
         release_lfm2_circuit_trace_selected_rows,
     )
@@ -648,10 +702,20 @@ def test_merged_session_row_reads_are_routed_to_their_sealed_member(lane) -> Non
         try:
             assert payload.batch_index == 3
             assert payload.session_sha256 == session.evidence_sha256
-            assert payload.input_sha256 == (
-                lane.first.manifest["corpus"]["ordered_batch_input_sha256"][0]
+            assert (
+                payload.input_sha256
+                == (lane.first.manifest["corpus"]["ordered_batch_input_sha256"][0])
             )
             assert dict(payload.row_indices) == {name: (0,)}
+            assert payload.selection_sha256 == (
+                lfm2_circuit_trace_selected_rows_payload_sha256(
+                    reference=reference,
+                    session_sha256=session.evidence_sha256,
+                    cache_key=session.cache_key,
+                    batch_index=3,
+                    payload=payload,
+                )
+            )
             member_session = evidence.members[1].session
             direct = load_lfm2_circuit_trace_selected_rows(
                 member_session,
@@ -659,6 +723,7 @@ def test_merged_session_row_reads_are_routed_to_their_sealed_member(lane) -> Non
                 selection,
             )
             try:
+                assert direct.selection_sha256 != payload.selection_sha256
                 assert torch.equal(payload.tensors[name], direct.tensors[name])
             finally:
                 release_lfm2_circuit_trace_selected_rows(member_session, direct)
@@ -685,5 +750,79 @@ def test_merged_session_row_reads_are_routed_to_their_sealed_member(lane) -> Non
                 evidence.members[1].session,
                 foreign,
             )
+    finally:
+        evidence.close()
+
+
+def test_merged_selection_rejects_noninteger_batch_identity_and_releases_rows(
+    lane,
+    monkeypatch,
+) -> None:
+    evidence = _open(
+        lane,
+        _request(lane.first, extension=True, manifest="b" * 64),
+    )
+    try:
+        session = evidence.merged_session()
+        reference = session.batch_references[3]
+        name = next(
+            value
+            for value in reference.ordered_tensor_names
+            if ".residual." in value and not value.startswith("cached_prefill.")
+        )
+        selection = {name: (0,)}
+
+        whole_names = tuple(reference.ordered_tensor_names[:2])
+        whole = session.load_selected_tensors(3, whole_names)
+        try:
+            whole.batch_index = "3"
+            with pytest.raises(
+                MODULE.Lfm2SealedEvidenceSetError,
+                match="batch identity changed",
+            ):
+                session.release_selected_tensors(whole)
+        finally:
+            whole.batch_index = 3
+            session.release_selected_tensors(whole)
+
+        member_session = evidence.members[1].session
+        original_load = MODULE.load_lfm2_circuit_trace_selected_rows
+        captured = {}
+
+        def corrupt_row_load(owner, index, row_indices):
+            payload = original_load(owner, index, row_indices)
+            if owner is member_session:
+                payload.session_sha256 = "0" * 64
+                captured["payload"] = payload
+            return payload
+
+        monkeypatch.setattr(
+            MODULE,
+            "load_lfm2_circuit_trace_selected_rows",
+            corrupt_row_load,
+        )
+        with pytest.raises(
+            MODULE.Lfm2SealedEvidenceSetError,
+            match="inconsistent selected rows",
+        ):
+            session.load_selected_tensor_rows(3, selection)
+        assert captured["payload"].released is True
+
+        monkeypatch.setattr(
+            MODULE,
+            "load_lfm2_circuit_trace_selected_rows",
+            original_load,
+        )
+        rows = session.load_selected_tensor_rows(3, selection)
+        try:
+            rows.batch_index = 3.0
+            with pytest.raises(
+                MODULE.Lfm2SealedEvidenceSetError,
+                match="batch identity changed",
+            ):
+                session.release_selected_tensor_rows(rows)
+        finally:
+            rows.batch_index = 3
+            session.release_selected_tensor_rows(rows)
     finally:
         evidence.close()
