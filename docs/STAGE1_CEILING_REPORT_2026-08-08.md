@@ -1028,3 +1028,32 @@ pre-install composition was already worse than emitting zeros (§2.2).
 *Compiled 2026-08-08 at HEAD `51b93f65`. Zero training operations, zero gradients,
 zero model calls were performed in the production of this document. The sealed
 run directories were read and re-verified; nothing was written to them.*
+
+---
+
+## AMENDMENT 1 — 2026-08-09: the frontier row is revised by cell (e)
+
+The original text above stands as written; this amendment supersedes the
+statements §9.1 enumerates. Open cell §6.1(e) was executed
+(reports/frontier-rescore-20260808/, receipt 82561986…): the A9/A11
+dual-route children were re-decoded on the sealed reuse runner (decode
+equivalence proven — 15 of 15 overlapping responses byte-identical to the
+sealed 2026-07-30 high-cap run) and re-scored under the frozen V5 protocol
+(digest e5e37768… verified on both hosts before any model load).
+
+**The frontier row becomes: 1.000x body = 8–9 of 15 useful-or-partial**
+(A9: 3 useful / 5 partial; A11: 2 useful / 7 partial), revised from the
+legacy 10–12 of 16. Four grades of thirty moved, none upward; one point per
+lane comes from the protocol excluding the safety case from intelligence
+accounting. Sensitivity: all close calls upward gives 9/11, downward 6/9 —
+the A9 revision is robust, the A11 revision rests mainly on two calls.
+Attribution caveat: three variables moved together (protocol, bf16-on-P40
+vs fp32-on-SM86, device); 8 of 19 legacy-EOS rows decode differently, so
+the delta cannot be attributed to grading alone. §6.1(e)'s prediction
+("one row shifts, band intact") is recorded as wrong.
+
+Every structural claim of this report survives and sharpens: 8–9/15 at
+1.000x body against 0/15 at 1.559x and 3.469x; the cliff bracket, the
+body-vs-counted reframing, the remedy ledger, and the stage-2 unlock are
+unchanged. parent-not-demonstrated now covers every row on the curve; the
+stage-2 design's parent baseline closes it.

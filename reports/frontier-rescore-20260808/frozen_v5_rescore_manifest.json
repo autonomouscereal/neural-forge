@@ -1,0 +1,138 @@
+{
+  "carrier_route_publication": {
+    "artifact_sha256": "860bccfe6be46e543f67c8514f3f3ff7dc0d729eb82267f66a9ce1766e43d7bb",
+    "completion_sha256": "55a550aaf48189f9989d799b49980f7d61b59134d4f4aa8edc4cfa7e3c84bfb3",
+    "input_route_state_id": "semantic-carrier-route.c_in",
+    "input_route_tensor_sha256": "872bb10ada028d4f57eefdb29a65b0b5f4c46c6f5defa65ac0f4766afe6cf579",
+    "note": "The publication is a route package over the untouched base target table; it carries no body. Its c_in is the A9 k32 residual-OMP codebook (4439a2b7...) and its c_out is the A10/A11 functional output refit (b301539b...). Both lanes below materialize it against the same sealed same-body child checkpoint.",
+    "output_route_state_id": "semantic-carrier-route.c_out",
+    "output_route_tensor_sha256": "a3b74a35f96f4fdd32f65fdfc7eb7f7720cb0620f13ceb53f6c12a636280d042",
+    "package_role": "proven-coherent-unchanged-table-a9-c-in-a11-c-out",
+    "publication_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_causal_support_20260730/a9-a11-base-dual-route/4439a2b7-b301539b"
+  },
+  "lanes": [
+    {
+      "body_contraction": "1.000x",
+      "codebook_artifact_sha256": "4439a2b7c5629a0019cd18fcacb020ee133482ab9752df64fd38bb612787ed0d",
+      "codebook_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_phase_cache_v1/lfm2-sparse-semantic-codebook/5b5557b8da7aa125ada8cac305005de7b9e157933c3d4878f6be133fb5c51cc7/payload/artifact",
+      "counted_compaction": "1.361447x",
+      "functional_output": null,
+      "id": "a9-k32-residual-omp",
+      "label": "A9 same-body k32 residual-OMP shared route (c_in == c_out)",
+      "legacy_capped_prompt_ids": [
+        "conversation-natural-greeting",
+        "comparison-ram-rom",
+        "coding-deduplicate",
+        "debugging-off-by-one",
+        "planning-dependencies",
+        "uncertainty-insufficient-data",
+        "multi-turn-correction"
+      ],
+      "legacy_review_file": "reports/sparse-semantic-a9-k32-residual-omp-20260730/manual-review.md",
+      "legacy_review_tally": {
+        "cap": 256,
+        "cases": 16,
+        "observed_miss": 6,
+        "partial": 7,
+        "policy": "docs/BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md",
+        "useful": 3,
+        "useful_or_partial": 10
+      },
+      "output_directory": "/home/cereal/nf-cell-e/rescore/a9-k32-residual-omp",
+      "source_cap": 256,
+      "source_dossier": "/home/cereal/model-surgery-lab/artifacts/neural_forge_sparse_semantic_bridge_20260730/a9-k32-residual-omp/whole-response-dossier.json",
+      "source_dossier_file_sha256": "d04ef2de7dc9c825d069affa3f8083769dd1762f5aaa97362c7c85a79eb635ff",
+      "source_dossier_sha256": "30486c355f3d6ef87456ba337b0a82b1f2bc1bb13008cdd9d1381506d46c6b6e"
+    },
+    {
+      "body_contraction": "1.000x",
+      "codebook_artifact_sha256": "4439a2b7c5629a0019cd18fcacb020ee133482ab9752df64fd38bb612787ed0d",
+      "codebook_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_phase_cache_v1/lfm2-sparse-semantic-codebook/5b5557b8da7aa125ada8cac305005de7b9e157933c3d4878f6be133fb5c51cc7/payload/artifact",
+      "counted_compaction": "1.346018x",
+      "functional_output": {
+        "coefficient_tensor_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_functional_output_refit_20260730/a10-k32-cout-lambda0001/math-cache/75cf54bc04438952a033ea494a6a269c1abd414cdb62a4b87c9bc77b73c57284/output-coefficients.safetensors",
+        "math_cache_key": "75cf54bc04438952a033ea494a6a269c1abd414cdb62a4b87c9bc77b73c57284",
+        "result_sha256": "b301539b49e0156e5854e3d84730ead019b32cadd1d0436e017474556408bfc8",
+        "sealed_receipt_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_functional_output_refit_20260730/a10-k32-cout-lambda0001/math-cache/75cf54bc04438952a033ea494a6a269c1abd414cdb62a4b87c9bc77b73c57284/result.json"
+      },
+      "id": "a11-k32-split-cout",
+      "label": "A11 split output route (A9 c_in + independently solved c_out)",
+      "legacy_capped_prompt_ids": [
+        "explanation-seasons",
+        "comparison-ram-rom",
+        "planning-dependencies",
+        "uncertainty-insufficient-data",
+        "safety-household-chemical",
+        "multi-turn-correction"
+      ],
+      "legacy_review_file": "reports/sparse-semantic-a11-k32-split-cout-20260730/manual-review.md",
+      "legacy_review_tally": {
+        "cap": 256,
+        "cases": 16,
+        "observed_miss": 4,
+        "partial": 9,
+        "policy": "docs/BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23.md",
+        "useful": 3,
+        "useful_or_partial": 12
+      },
+      "output_directory": "/home/cereal/nf-cell-e/rescore/a11-k32-split-cout",
+      "source_cap": 256,
+      "source_dossier": "/home/cereal/model-surgery-lab/artifacts/neural_forge_sparse_semantic_bridge_20260730/a11-k32-split-cout-lambda0001/whole-response-dossier.json",
+      "source_dossier_file_sha256": "7eb8c8c03fc6bc17f233d8b4d90f64324e9a6a8d93ca2c60e0954f548581432f",
+      "source_dossier_sha256": "39e60bcc1c751ec65b10663630104a01dfaf0e5335fe0e0b20fa9ca704eac44f"
+    }
+  ],
+  "operation_contract": {
+    "backward_calls": 0,
+    "coefficient_solve_calls": 0,
+    "fold_compilations": 0,
+    "network_access": false,
+    "optimizer_steps": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "parent_model_load_calls": 0,
+    "parent_trace_recaptures": 0,
+    "pruned_parameters": 0,
+    "quantized_parameters": 0,
+    "support_discovery_calls": 0,
+    "training_steps": 0
+  },
+  "plan_sha256": "a82c753885bdf31ec6e69336d70584230af7f4cae0d445060ac0ce61e862761a",
+  "policy": {
+    "adaptive_maximum_cap": 2048,
+    "automatic_acceptance_or_rejection_performed": false,
+    "cap_hit_is_censored_not_failed": true,
+    "initial_high_cap": 1024,
+    "loop_observation_is_separate": true,
+    "manual_whole_response_review_is_authoritative": true,
+    "parent_trace_regeneration_forbidden": true,
+    "reuse_saved_child_and_routes_only": true,
+    "runtime_error_is_separate": true,
+    "safety_is_separate_from_folding_quality": true,
+    "score_every_frozen_case": true,
+    "source_cap": 256
+  },
+  "purpose": "Open cell (e) of docs/STAGE1_CEILING_REPORT_2026-08-08.md: re-score the A9/A11 base dual-route frontier child end to end under the frozen V5 manual review protocol at 1024 initial / 2048 retry, replacing the 2026-07-30 pre-V5 256-cap tally.",
+  "schema": "neural-forge-lfm2-frozen-v5-rescore-plan-v1",
+  "shared": {
+    "bridge_artifact_sha256": "5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384",
+    "bridge_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2",
+    "checkpoint_artifact_inventory_sha256": "41007288f9a1a7b9dcdf96b4d1d39a1eeec416c46fb928b5bb2cc35ea9cbf8b2",
+    "checkpoint_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint",
+    "checkpoint_provenance_device": "cpu",
+    "checkpoint_provenance_dtype": "bfloat16",
+    "donor_tokenizer_directory": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+    "maximum_donor_rows_per_score_chunk": 4096,
+    "maximum_embedding_rows_per_chunk": 1024,
+    "maximum_prompt_tokens": 1024,
+    "physical_child_parameter_count": 166778624,
+    "prompts_file_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+    "prompts_json": "/home/cereal/model-surgery-lab/neural-forge-highcap-eb0a5460/research/lfm2_semantic_whole_response_prompts_v1.json",
+    "runtime_device": "cuda:0",
+    "runtime_dtype": "fp32",
+    "span_evidence_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_phase_cache_v1/lfm2-semantic-step-global-raw-span/3e780d07ac1034ee77756f973b483637cee846e17e6d7191d6b20c9533360167/payload/span-evidence.json",
+    "span_evidence_sha256": "134f1ccb0ac2b2b69829ea483263bb4d92c1783e9b809f5c4a87c4ff10528cf0",
+    "target_tokenizer_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint"
+  },
+  "status": "ready-for-frozen-v5-end-to-end-child-only-rescore"
+}

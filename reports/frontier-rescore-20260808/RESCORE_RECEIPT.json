@@ -1,0 +1,205 @@
+{
+  "artifact_under_review": {
+    "artifact_sha256": "860bccfe6be46e543f67c8514f3f3ff7dc0d729eb82267f66a9ce1766e43d7bb",
+    "body_checkpoint": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint",
+    "body_checkpoint_inventory_sha256": "41007288f9a1a7b9dcdf96b4d1d39a1eeec416c46fb928b5bb2cc35ea9cbf8b2",
+    "carries_body": false,
+    "completion_sha256": "55a550aaf48189f9989d799b49980f7d61b59134d4f4aa8edc4cfa7e3c84bfb3",
+    "package_role": "proven-coherent-unchanged-table-a9-c-in-a11-c-out",
+    "package_schema": "neural-forge-lfm2-carrier-reclosed-bridge-v1",
+    "publication_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_causal_support_20260730/a9-a11-base-dual-route/4439a2b7-b301539b"
+  },
+  "cell": "docs/STAGE1_CEILING_REPORT_2026-08-08.md \u00a76.1(e) \u2014 end-to-end frozen-V5 re-score of the A9/A11 base dual-route frontier child",
+  "concurrent_commits_during_this_cell": {
+    "author": "a concurrent agent on branch codex/lrc-blank-compression",
+    "commits": [
+      "fec82744",
+      "79c68eee"
+    ],
+    "digests_rechecked_at_finish": {
+      "V5_FROZEN_MANUAL_REVIEW_PROTOCOL.md": "e5e3776885976b1be5a8469323f7083d40c11900cca66b862eb0da41517a4d7b",
+      "lfm2_semantic_whole_response_prompts_v1.json": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+      "rerun_lfm2_sparse_semantic_capped_prompts.py": "6b480f6eb7be5cb3c5e2697f223b87c05f376f3b5dca6c6ade1614db0cc723cf"
+    },
+    "files_touched": [
+      "docs/STAGE2_FIRST_MEASUREMENT_DESIGN_2026-08-08.md",
+      "src/neural_forge/hf_lfm2_circuit_trace_row_selection.py",
+      "src/neural_forge/hf_lfm2_sealed_evidence_set.py",
+      "tests/test_hf_lfm2_sealed_evidence_set.py"
+    ],
+    "intersects_reviewed_inputs": false
+  },
+  "confounds_recorded": {
+    "cap_changed": "256 -> 1024 initial / 2048 retry; 13 legacy censored rows became 2",
+    "grades_revised_of_30": 4,
+    "grading_protocol_changed": "pre-V5 BEHAVIOR_EVIDENCE_DECISION_POLICY_2026-07-23 (no per-case anchors) -> frozen V5 (16 per-case anchors)",
+    "legacy_eos_rows_decoding_differently": 8,
+    "legacy_eos_rows_total": 19,
+    "numeric_lane_changed": "legacy decode ran bfloat16 on Tesla P40 SM 6.1 (emulated BF16, the caveat recorded in the A11 review); frozen decode ran float32 on RTX 3090 SM 8.6"
+  },
+  "equivalence_proof": {
+    "attempt_records_hash_identical": 1,
+    "decoded_responses_byte_identical": 15,
+    "explained_difference": "routing_session_receipt.runtime_prepared_semantic_code_cache_hit_count and \u2026use_count are per-process monotone counters; the two runs reach the shared prompts at different ordinals. Response text, token ids, termination evidence and diagnostics match on all 15.",
+    "overlapping_attempts_with_sealed_20260730_highcap": 15
+  },
+  "frozen_protocol": {
+    "decode_rule": "greedy-argmax-donor-logits",
+    "initial_new_token_cap": 1024,
+    "named_runtime_deviation": "The protocol names neural_forge.lfm2_carrier_review_cli as the runtime. That CLI authenticates a carrier child package and cannot decode a route-only bridge publication over an unmodified base table, so it was not used. The decode ran through the sealed reuse runner experiments/rerun_lfm2_sparse_semantic_capped_prompts.py, imported unmodified; equivalence is proved byte-for-byte against the 2026-07-30 high-cap attempts in FRONTIER_FROZEN_RESCORE.md section 3.2.",
+    "normalized_prompt_set_sha256": "5615b9e4cee0727a9c35c0da08ac770541941d42077e9c50ac1d2a03fea9d741",
+    "prompt_pack_file": "research/lfm2_semantic_whole_response_prompts_v1.json",
+    "prompt_pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+    "protocol_binding_sha256": "aad175bb78c53324228d99e1442bd50b8d6c65092241810a1b12f840c8dc10aa",
+    "protocol_digest_verified_on_decode_host_before_model_load": true,
+    "protocol_digest_verified_on_workstation": true,
+    "protocol_file": "reports/r12-certified-20260804/V5_FROZEN_MANUAL_REVIEW_PROTOCOL.md",
+    "protocol_sha256": "e5e3776885976b1be5a8469323f7083d40c11900cca66b862eb0da41517a4d7b",
+    "retry_new_token_cap": 2048,
+    "seal_record": "reports/r12-certified-20260804/PROTOCOL_SEAL.json"
+  },
+  "git_operations_performed_by_this_review": [],
+  "inventory": [
+    {
+      "relative_path": "FRONTIER_FROZEN_RESCORE.md",
+      "sha256": "753267121101eee2153207e40569438520da16a1d078dbdb706cd7fcafe02c5b",
+      "size_bytes": 133909
+    },
+    {
+      "relative_path": "_build_review.py",
+      "sha256": "aee7f06659277dea7a9e778914eeec93f2395d8238dcba760f341c3c30a5faa6",
+      "size_bytes": 84315
+    },
+    {
+      "relative_path": "_extract_responses.py",
+      "sha256": "478c321e6a2909918e8d88d24c3501356c2e4893c94ffef724f125e6697cab63",
+      "size_bytes": 4896
+    },
+    {
+      "relative_path": "a11-frozen-v5-rescore-dossier.json",
+      "sha256": "4d3c053b94f5febfe2942f92ca8a66992935f2aee716144748c7781ab6e2ab3f",
+      "size_bytes": 7672779
+    },
+    {
+      "relative_path": "a9-frozen-v5-rescore-dossier.json",
+      "sha256": "5dbdac7ade6abb680dc57626f61e4c06bb16e081025751079a7ecae0029eb3f6",
+      "size_bytes": 14024455
+    },
+    {
+      "relative_path": "frozen-v5-responses.json",
+      "sha256": "c0492c79289101960bf4c1ea0ce8e5ddd5238f793bbe18428f5252255d3546a8",
+      "size_bytes": 257697
+    },
+    {
+      "relative_path": "frozen_v5_rescore.py",
+      "sha256": "ce4570180c4f0e4619349431a4a0b4ea6aea4757fa95696d5bd5ebddb38b2b32",
+      "size_bytes": 21926
+    },
+    {
+      "relative_path": "frozen_v5_rescore_manifest.json",
+      "sha256": "b65c4651678517bca841ce5b129637fe343efd99c334ebec5dbb89b5519728b5",
+      "size_bytes": 8276
+    }
+  ],
+  "inventory_sha256": "60b9ae217b7c3d1dbd73f8c2e35e810c3bbeb352a43457d4debaad490d9f83cb",
+  "lanes": {
+    "a11-k32-split-cout": {
+      "body_contraction": "1.000x",
+      "child_state_sha256": "54b9c5f7f484fd256a985aa33346f1bf4f601bec5f1978c287341d9e27f36e85",
+      "counted_compaction": "1.346018x",
+      "dossier_file_sha256": "4d3c053b94f5febfe2942f92ca8a66992935f2aee716144748c7781ab6e2ab3f",
+      "frozen_observed_miss": 6,
+      "frozen_partial": 7,
+      "frozen_safety_record": "concerning",
+      "frozen_useful": 2,
+      "frozen_useful_or_partial_of_15": 9,
+      "grades_revised": [
+        "summarization-priorities",
+        "writing-concise-email",
+        "creative-continuity"
+      ],
+      "legacy_ex_safety_useful_or_partial_of_15": 11,
+      "legacy_published_useful_or_partial_of_16": 12,
+      "result_sha256": "d034042fd620e059ecb493bb3b82e817e47393f0d3898e0ca7d5f4e2ccb5f350",
+      "sensitivity_interval_of_15": [
+        9,
+        11
+      ],
+      "termination_censored": 0,
+      "termination_complete": 16,
+      "termination_runtime_error": 0
+    },
+    "a9-k32-residual-omp": {
+      "body_contraction": "1.000x",
+      "child_state_sha256": "54b9c5f7f484fd256a985aa33346f1bf4f601bec5f1978c287341d9e27f36e85",
+      "counted_compaction": "1.361447x",
+      "dossier_file_sha256": "5dbdac7ade6abb680dc57626f61e4c06bb16e081025751079a7ecae0029eb3f6",
+      "frozen_observed_miss": 7,
+      "frozen_partial": 5,
+      "frozen_safety_record": "concerning",
+      "frozen_useful": 3,
+      "frozen_useful_or_partial_of_15": 8,
+      "grades_revised": [
+        "explanation-seasons"
+      ],
+      "legacy_ex_safety_useful_or_partial_of_15": 9,
+      "legacy_published_useful_or_partial_of_16": 10,
+      "result_sha256": "793091bd7e63de1567559268e81704330f769ff15089c6b34aba68c1f0b2bc21",
+      "sensitivity_interval_of_15": [
+        6,
+        9
+      ],
+      "termination_censored": 2,
+      "termination_complete": 14,
+      "termination_runtime_error": 0
+    }
+  },
+  "operation_audit": {
+    "backward_calls": 0,
+    "coefficient_solve_calls": 0,
+    "fold_compilations": 0,
+    "network_access": false,
+    "optimizer_steps": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "parent_model_load_calls": 0,
+    "parent_trace_recaptures": 0,
+    "pruned_parameters": 0,
+    "quantized_parameters": 0,
+    "support_discovery_calls": 0,
+    "training_steps": 0
+  },
+  "outcome": {
+    "consequence": "Ceiling report section 2.4 bullet 1 becomes a correction rather than a caveat. Seven statements in docs/STAGE1_CEILING_REPORT_2026-08-08.md now carry a superseded number or a closed open cell; they are enumerated in FRONTIER_FROZEN_RESCORE.md section 9.1. The report was not edited by this review.",
+    "frozen_band": "8-9 of 15",
+    "legacy_published_band": "10-12 of 16",
+    "parent_comparison_both_lanes": "parent-not-demonstrated",
+    "structural_claims_of_ceiling_report_affected": false,
+    "suite_conclusion_both_lanes": "promising but incomplete",
+    "verdict": "REVISED"
+  },
+  "receipt_sha256": "825619860aadc263364e1c937b9db60b29fe381447b8a207c4ce6d45139003f3",
+  "repository_head_at_finish": "79c68eee",
+  "repository_head_at_start": "4e6d0ed6",
+  "review_date_utc": "2026-08-08",
+  "reviewer": "claude-opus-5",
+  "schema": "neural-forge-frontier-frozen-rescore-receipt-v1",
+  "server_provenance": {
+    "byproduct_write_disclosed": "Importing the sealed runner as a module created neural-forge-highcap-eb0a5460/experiments/__pycache__/rerun_lfm2_sparse_semantic_capped_prompts.cpython-312.pyc. It was removed after the run; every source file in that tree was re-hashed and is unchanged. Only the experiments/ directory mtime remains updated.",
+    "gpu": "GPU-2ce6a95c-7b1f-644a-3808-d781732a0582 (RTX 3090, index 4)",
+    "host": "ai (192.168.50.222)",
+    "plan_sha256": "a82c753885bdf31ec6e69336d70584230af7f4cae0d445060ac0ce61e862761a",
+    "sealed_artifact_directories_checked": [
+      "artifacts/neural_forge_causal_support_20260730/a9-a11-base-dual-route",
+      "artifacts/neural_forge_sparse_semantic_highcap_20260730",
+      "artifacts/neural_forge_sparse_semantic_bridge_20260730",
+      "artifacts/lfm2_bridge_only_control_20260723",
+      "artifacts/neural_forge_functional_output_refit_20260730"
+    ],
+    "sealed_artifact_directories_modified": 0,
+    "sealed_runner_root": "/home/cereal/model-surgery-lab/neural-forge-highcap-eb0a5460",
+    "sealed_runner_sha256": "6b480f6eb7be5cb3c5e2697f223b87c05f376f3b5dca6c6ade1614db0cc723cf",
+    "working_directory": "/home/cereal/nf-cell-e/"
+  },
+  "status": "complete-frozen-v5-rescore-anchor-revised"
+}
