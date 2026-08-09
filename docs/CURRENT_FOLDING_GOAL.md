@@ -28,6 +28,25 @@ Nothing in stages 2-3 may be started, prototyped, or wired into production
 lanes while stage 1 is open. The fold-only prohibitions below bind until a
 sealed stage-1 ceiling report says otherwise.
 
+## Stage transition record
+
+- **2026-08-08: Stage 1 CLOSED.** Exit condition met by the sealed ceiling
+  report (docs/STAGE1_CEILING_REPORT_2026-08-08.md, commit cccb8be8): the
+  fold-only ceiling is a proven, documented claim (1.000x body = 10-12/16;
+  1.559x and 3.469x body = 0/15 across three frozen reviews with every
+  remedy exhausted). Cyril's proceed directive (2026-08-08, following
+  delivery of the report) opens stage 2.
+- **Stage 2 OPEN, with these rules:** gradient training is now permitted
+  ONLY in stage-2-labeled lanes (fold-as-initialization + recovery
+  distillation, and their distillation-from-scratch controls). Every
+  stage-2 run must carry a matched-compute control or reference one; the
+  fold's initialization value must be measured, never assumed. All stage-1
+  sealed artifacts, the frozen review protocol, the closed-path ledger,
+  and the fail-closed evidence discipline remain binding. Fold-only
+  remains the rule for anything labeled stage-1 (e.g. ceiling-refinement
+  cells, kernel-estate work, chimera coverage). The stage-1 prohibitions
+  section below is retained verbatim as the stage-1 contract.
+
 ## Closed-path additions from the 2026-08-07 overlap audit
 
 (docs/OVERLAP_AUDIT_2026-08-07.md is the sealed evidence; these bind like the
