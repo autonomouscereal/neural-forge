@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -29,11 +30,13 @@ from neural_forge.dynamic_fold_phase_cache import (  # noqa: E402
 import neural_forge.dynamic_fold_phase_cache as phase_cache_module  # noqa: E402
 from neural_forge.dynamic_model_inspector import inspect_model_circuits  # noqa: E402
 import neural_forge.hf_lfm2_cached_global_topology_frontier as global_frontier  # noqa: E402
+import neural_forge.hf_lfm2_global_topology_phase_compatibility as topology_compatibility  # noqa: E402
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (  # noqa: E402
     GLOBAL_TOPOLOGY_CAPACITY_PHASE,
     GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
     GLOBAL_TOPOLOGY_SELECTION_PHASE,
     Lfm2CachedGlobalTopologyFrontierError,
+    Lfm2ExistingGlobalTopologyPhaseReuseRequest,
     Lfm2GlobalTargetRuntimePins,
     Lfm2GlobalTopologyCandidateReport,
     Lfm2GlobalTopologyPhaseCacheContext,
@@ -65,6 +68,37 @@ from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
 
 def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+_PUBLISHED_GLOBAL_ALGORITHM_SHA256 = (
+    "3e4531740792b3abe7ed54c02a49ca99caabc3ae94dd181c167913cbb5dbcab1"
+)
+_CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256 = (
+    "4ff8fadb908bbc08bd03bc329f2cff435f7687e5e6ebda8e6c115f0f92543322"
+)
+_CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256 = (
+    "3ca319c165d81c7fffb2f57a55edf3fcab49c647dd73cefb5a9b8d955a4741a7"
+)
+_CURRENT_GLOBAL_ALGORITHM_SHA256 = (
+    "a91c75980d86da408ebef352d9ca29c30c5ffe30870e3ed24cfb3aa218359b39"
+)
+
+
+def _compatibility_receipt_sha256() -> str:
+    receipt = (
+        topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
+            historical_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+            current_global_frontier_source_sha256=(
+                _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
+            ),
+            current_functional_width_source_sha256=(
+                _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+            ),
+            current_algorithm_sha256=_CURRENT_GLOBAL_ALGORITHM_SHA256,
+        )
+    )
+    assert receipt is not None
+    return str(receipt["compatibility_receipt_sha256"])
 
 
 def _runtime() -> Lfm2GlobalTargetRuntimePins:
@@ -146,9 +180,7 @@ def _forge_resealed_phase_evidence(
     completion["result"]["evidence_sha256"] = evidence["evidence_sha256"]
     if evidence_field == "capacity_option_bank":
         completion["result"]["layer_count"] = len(evidence["layer_evidence"])
-        completion["result"]["layer_option_count"] = len(
-            evidence["layer_options"]
-        )
+        completion["result"]["layer_option_count"] = len(evidence["layer_options"])
     else:
         completion["result"]["candidate_score_count"] = len(
             evidence["candidate_scores"]
@@ -357,9 +389,12 @@ def test_required_hidden_filters_b1_b2_b3_and_authenticates_distinct_cache(
 def test_illegal_required_hidden_fails_before_cached_evidence(tmp_path) -> None:
     parent, graph, cache, kwargs = _phase_cache_case(tmp_path)
 
-    with observe_model_execution(parent) as execution, pytest.raises(
-        Lfm2CachedGlobalTopologyFrontierError,
-        match="required target hidden size is not legal.*H12",
+    with (
+        observe_model_execution(parent) as execution,
+        pytest.raises(
+            Lfm2CachedGlobalTopologyFrontierError,
+            match="required target hidden size is not legal.*H12",
+        ),
     ):
         build_lfm2_cached_global_topology_frontier(
             graph,
@@ -370,6 +405,241 @@ def test_illegal_required_hidden_fails_before_cached_evidence(tmp_path) -> None:
 
     assert execution["root_forward_calls"] == 0
     assert execution["module_forward_calls"] == 0
+
+
+def test_historical_phase_compatibility_is_exact_directional_and_source_bound() -> None:
+    assert (
+        hashlib.sha256(Path(global_frontier.__file__).read_bytes()).hexdigest()
+        == _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
+    )
+    assert (
+        hashlib.sha256(
+            Path(global_frontier._cached_functional_width_module.__file__).read_bytes()
+        ).hexdigest()
+        == _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+    )
+    assert (
+        global_frontier._global_algorithm_fingerprint()
+        == _CURRENT_GLOBAL_ALGORITHM_SHA256
+    )
+    exact = topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
+        historical_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+        current_global_frontier_source_sha256=(_CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256),
+        current_functional_width_source_sha256=(
+            _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+        ),
+        current_algorithm_sha256=_CURRENT_GLOBAL_ALGORITHM_SHA256,
+    )
+    assert exact is not None
+    receipt = dict(exact)
+    body = dict(receipt)
+    seal = body.pop("compatibility_receipt_sha256")
+    assert seal == canonical_sha256(body)
+    for field in (
+        "historical_algorithm_sha256",
+        "current_global_frontier_source_sha256",
+        "current_functional_width_source_sha256",
+        "current_algorithm_sha256",
+    ):
+        values = {
+            "historical_algorithm_sha256": _PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+            "current_global_frontier_source_sha256": (
+                _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
+            ),
+            "current_functional_width_source_sha256": (
+                _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+            ),
+            "current_algorithm_sha256": _CURRENT_GLOBAL_ALGORITHM_SHA256,
+        }
+        values[field] = "f" * 64
+        assert (
+            topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
+                **values
+            )
+            is None
+        )
+    assert (
+        topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
+            historical_algorithm_sha256=_CURRENT_GLOBAL_ALGORITHM_SHA256,
+            current_global_frontier_source_sha256=(
+                _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
+            ),
+            current_functional_width_source_sha256=(
+                _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+            ),
+            current_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+        )
+        is None
+    )
+
+
+def test_compatibility_receipt_reader_rejects_foreign_fields_and_reseals() -> None:
+    exact = topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
+        historical_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+        current_global_frontier_source_sha256=(_CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256),
+        current_functional_width_source_sha256=(
+            _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+        ),
+        current_algorithm_sha256=_CURRENT_GLOBAL_ALGORITHM_SHA256,
+    )
+    assert exact is not None
+    validation = {
+        "historical_algorithm_sha256": _PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+        "current_global_frontier_source_sha256": (
+            _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
+        ),
+        "current_functional_width_source_sha256": (
+            _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+        ),
+        "current_algorithm_sha256": _CURRENT_GLOBAL_ALGORITHM_SHA256,
+    }
+    assert dict(
+        global_frontier._validate_global_topology_phase_compatibility_receipt(
+            exact,
+            **validation,
+        )
+    ) == dict(exact)
+    for field_name, foreign_value in (
+        ("schema", "foreign-schema"),
+        ("direction", "current-to-historical"),
+        ("historical_artifact_rewritten", True),
+        ("historical_algorithm_sha256", "f" * 64),
+        ("current_global_frontier_source_sha256", "f" * 64),
+        ("current_functional_width_source_sha256", "f" * 64),
+        ("current_algorithm_sha256", "f" * 64),
+    ):
+        forged = dict(exact)
+        forged[field_name] = foreign_value
+        forged_body = dict(forged)
+        forged_body.pop("compatibility_receipt_sha256")
+        forged["compatibility_receipt_sha256"] = canonical_sha256(forged_body)
+        with pytest.raises(FoldPhaseCacheIntegrityError):
+            global_frontier._validate_global_topology_phase_compatibility_receipt(
+                forged,
+                **validation,
+            )
+    extra = {**dict(exact), "foreign": False}
+    with pytest.raises(FoldPhaseCacheIntegrityError, match="fields"):
+        global_frontier._validate_global_topology_phase_compatibility_receipt(
+            extra,
+            **validation,
+        )
+    bad_self_hash = {**dict(exact), "compatibility_receipt_sha256": "f" * 64}
+    with pytest.raises(FoldPhaseCacheIntegrityError, match="self-hash"):
+        global_frontier._validate_global_topology_phase_compatibility_receipt(
+            bad_self_hash,
+            **validation,
+        )
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    (
+        (b'{"phase_key":{},"phase_key":{}}\n', "duplicate key"),
+        (b'{"phase_key":NaN}\n', "non-finite value"),
+    ),
+)
+def test_historical_completion_discovery_rejects_noncanonical_json(
+    tmp_path,
+    raw,
+    message,
+) -> None:
+    phase_key_sha256 = "a" * 64
+    cache = DynamicFoldPhaseCache(tmp_path / "phases")
+    entry = cache.root / GLOBAL_TOPOLOGY_CAPACITY_PHASE / phase_key_sha256
+    entry.mkdir(parents=True)
+    (entry / phase_cache_module.COMPLETE_FILENAME).write_bytes(raw)
+    with pytest.raises(FoldPhaseCacheIntegrityError, match=message):
+        global_frontier._existing_global_topology_phase_key_from_digest(
+            cache,
+            phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            phase_key_sha256=phase_key_sha256,
+        )
+
+
+def test_historical_completion_discovery_is_bounded_and_replacement_stable(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    phase_key_sha256 = "a" * 64
+    cache = DynamicFoldPhaseCache(tmp_path / "phases")
+    entry = cache.root / GLOBAL_TOPOLOGY_CAPACITY_PHASE / phase_key_sha256
+    entry.mkdir(parents=True)
+    completion = entry / phase_cache_module.COMPLETE_FILENAME
+    completion.write_bytes(b" " * (phase_cache_module._MAX_JSON_BYTES + 1))
+    with pytest.raises(FoldPhaseCacheIntegrityError, match="size limit"):
+        global_frontier._existing_global_topology_phase_key_from_digest(
+            cache,
+            phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            phase_key_sha256=phase_key_sha256,
+        )
+
+    completion.write_bytes(b"{}\n")
+    replacement = entry / "replacement.json"
+    replacement.write_bytes(b"{}\n")
+    real_open = os.open
+    swapped = False
+
+    def replacing_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if not swapped and Path(os.fspath(path)) == completion:
+            swapped = True
+            os.replace(replacement, completion)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(phase_cache_module.os, "open", replacing_open)
+    with pytest.raises(FoldPhaseCacheIntegrityError, match="changed while opening"):
+        global_frontier._existing_global_topology_phase_key_from_digest(
+            cache,
+            phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            phase_key_sha256=phase_key_sha256,
+        )
+
+
+def test_requested_historical_phase_miss_is_fatal_and_never_builds(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    _parent_model, graph, cache, kwargs = _phase_cache_case(tmp_path / "source")
+    phase_root = tmp_path / "missing-derived-phases"
+    current_algorithm_sha256 = global_frontier._global_algorithm_fingerprint()
+    monkeypatch.setattr(
+        global_frontier,
+        "_global_algorithm_fingerprint",
+        lambda: current_algorithm_sha256,
+    )
+    monkeypatch.setattr(
+        global_frontier,
+        "build_lfm2_cached_heterogeneous_capacity_option_bank",
+        lambda *_args, **_kwargs: pytest.fail(
+            "missing historical capacity phase attempted a cold build"
+        ),
+    )
+    request = Lfm2ExistingGlobalTopologyPhaseReuseRequest(
+        phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        phase_key_sha256="a" * 64,
+        expected_completion_sha256="b" * 64,
+        expected_evidence_sha256="c" * 64,
+        expected_compatibility_receipt_sha256="d" * 64,
+    )
+    with pytest.raises(
+        Lfm2CachedGlobalTopologyFrontierError,
+        match="absent.*hit-only loading forbids building",
+    ):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("missing-historical-splits"),
+                selective_session_factory=lambda: pytest.fail(
+                    "missing historical phase opened a selective session"
+                ),
+                existing_capacity_phase_reuse=request,
+            ),
+            **kwargs,
+        )
+    assert not phase_root.exists()
 
 
 def test_topology_trace_cache_fingerprint_ignores_child_replay_surface(
@@ -685,6 +955,138 @@ def test_global_frontier_phase_cache_resumes_after_capacity_only_interruption(
         and details["phase_name"] == GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE
         for stage, details in progress
     )
+
+
+def test_historical_capacity_reuse_rejects_semantic_neighbor_and_payload_tamper(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    _parent_model, graph, cache, kwargs = _phase_cache_case(tmp_path)
+    phase_root = tmp_path / "historical-derived-phases"
+    with monkeypatch.context() as historical_patch:
+        historical_patch.setattr(
+            global_frontier,
+            "_global_algorithm_fingerprint",
+            lambda: _PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+        )
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("historical-context-splits"),
+            ),
+            **kwargs,
+        )
+    capacity_entry = next((phase_root / GLOBAL_TOPOLOGY_CAPACITY_PHASE).iterdir())
+    completion = json.loads(
+        (capacity_entry / "complete.json").read_text(encoding="ascii")
+    )
+    payload_path = capacity_entry / "payload" / "evidence.json"
+    payload = json.loads(payload_path.read_text(encoding="ascii"))
+    request = Lfm2ExistingGlobalTopologyPhaseReuseRequest(
+        phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        phase_key_sha256=capacity_entry.name,
+        expected_completion_sha256=completion["completion_sha256"],
+        expected_evidence_sha256=payload["capacity_option_bank"]["evidence_sha256"],
+        expected_compatibility_receipt_sha256=_compatibility_receipt_sha256(),
+    )
+    current_algorithm_sha256 = global_frontier._global_algorithm_fingerprint()
+    monkeypatch.setattr(
+        global_frontier,
+        "_global_algorithm_fingerprint",
+        lambda: current_algorithm_sha256,
+    )
+    monkeypatch.setattr(
+        global_frontier,
+        "build_lfm2_cached_heterogeneous_capacity_option_bank",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid historical capacity phase attempted a cold build"
+        ),
+    )
+    with monkeypatch.context() as receipt_patch:
+        receipt_patch.setattr(
+            global_frontier,
+            "_read_phase_payload",
+            lambda *_args, **_kwargs: pytest.fail(
+                "compatibility receipt neighbor reached evidence loading"
+            ),
+        )
+        with pytest.raises(
+            FoldPhaseCacheIntegrityError,
+            match="different exact compatibility receipt",
+        ):
+            build_lfm2_cached_global_topology_frontier(
+                graph,
+                cache,
+                phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                    cache=DynamicFoldPhaseCache(phase_root),
+                    evidence_split_sha256=_digest("historical-context-splits"),
+                    selective_session_factory=lambda: pytest.fail(
+                        "compatibility neighbor opened a selective session"
+                    ),
+                    existing_capacity_phase_reuse=replace(
+                        request,
+                        expected_compatibility_receipt_sha256="f" * 64,
+                    ),
+                ),
+                **kwargs,
+            )
+    for field_name, message in (
+        ("expected_completion_sha256", "completion differs"),
+        ("expected_evidence_sha256", "evidence differs"),
+    ):
+        with pytest.raises(FoldPhaseCacheIntegrityError, match=message):
+            build_lfm2_cached_global_topology_frontier(
+                graph,
+                cache,
+                phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                    cache=DynamicFoldPhaseCache(phase_root),
+                    evidence_split_sha256=_digest("historical-context-splits"),
+                    selective_session_factory=lambda: pytest.fail(
+                        "digest neighbor opened a selective session"
+                    ),
+                    existing_capacity_phase_reuse=replace(
+                        request,
+                        **{field_name: "f" * 64},
+                    ),
+                ),
+                **kwargs,
+            )
+    with pytest.raises(
+        FoldPhaseCacheIntegrityError,
+        match="outside dependency_sha256s.global_topology_algorithms",
+    ):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("neighbor-context-splits"),
+                selective_session_factory=lambda: pytest.fail(
+                    "semantic neighbor opened a selective session"
+                ),
+                existing_capacity_phase_reuse=request,
+            ),
+            **kwargs,
+        )
+    raw_payload = bytearray(payload_path.read_bytes())
+    raw_payload[len(raw_payload) // 2] ^= 1
+    payload_path.write_bytes(bytes(raw_payload))
+    with pytest.raises(FoldPhaseCacheIntegrityError):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("historical-context-splits"),
+                selective_session_factory=lambda: pytest.fail(
+                    "tampered historical phase opened a selective session"
+                ),
+                existing_capacity_phase_reuse=request,
+            ),
+            **kwargs,
+        )
 
 
 @pytest.mark.parametrize(

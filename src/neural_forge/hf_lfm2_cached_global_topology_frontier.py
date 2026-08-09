@@ -50,6 +50,7 @@ from .dynamic_fold_phase_cache import (
     FoldPhaseCacheIntegrityError,
     FoldPhaseEventLog,
     FoldPhaseKey,
+    FoldPhaseKeyError,
     VerifiedFoldPhaseCacheEntry,
 )
 from .dynamic_parameter_frontier import Lfm2HeterogeneousLayoutSelectionInput
@@ -85,6 +86,10 @@ from .hf_lfm2_cached_heterogeneous_capacity import (
 from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
+)
+from .hf_lfm2_global_topology_phase_compatibility import (
+    GLOBAL_TOPOLOGY_PHASE_COMPATIBILITY_RECEIPT_SCHEMA,
+    explicit_global_topology_phase_compatibility_receipt,
 )
 from .hf_lfm2_heterogeneous_layout_selection import (
     LFM2_HETEROGENEOUS_LAYER_OPTION_SCHEMA,
@@ -145,9 +150,7 @@ class Lfm2CachedGlobalTopologyFrontierUnattainable(
     """No legal residual width can materialize the requested exact child."""
 
 
-class Lfm2CachedGlobalTopologyEvidenceCacheMiss(
-    Lfm2CachedGlobalTopologyFrontierError
-):
+class Lfm2CachedGlobalTopologyEvidenceCacheMiss(Lfm2CachedGlobalTopologyFrontierError):
     """Cold B1/B2 evidence was intentionally deferred until rows exist."""
 
 
@@ -206,6 +209,52 @@ def _text(value: Any, name: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2ExistingGlobalTopologyPhaseReuseRequest:
+    """Exact immutable reference to one historical capacity or functional hit."""
+
+    phase_name: str
+    phase_key_sha256: str
+    expected_completion_sha256: str
+    expected_evidence_sha256: str
+    expected_compatibility_receipt_sha256: str
+
+    def __post_init__(self) -> None:
+        phase_name = _text(self.phase_name, "phase_name")
+        if phase_name not in {
+            GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        }:
+            raise Lfm2CachedGlobalTopologyFrontierError(
+                "Historical global-topology reuse is limited to capacity and "
+                "functional evidence phases."
+            )
+        object.__setattr__(self, "phase_name", phase_name)
+        for name in (
+            "phase_key_sha256",
+            "expected_completion_sha256",
+            "expected_evidence_sha256",
+            "expected_compatibility_receipt_sha256",
+        ):
+            object.__setattr__(self, name, _digest(getattr(self, name), name))
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": (
+                "neural-forge-lfm2-existing-global-topology-phase-reuse-request-v1"
+            ),
+            "phase_name": self.phase_name,
+            "phase_key_sha256": self.phase_key_sha256,
+            "expected_completion_sha256": self.expected_completion_sha256,
+            "expected_evidence_sha256": self.expected_evidence_sha256,
+            "expected_compatibility_receipt_sha256": (
+                self.expected_compatibility_receipt_sha256
+            ),
+            "cache_miss_build_allowed": False,
+        }
+        return {**body, "request_sha256": canonical_sha256(body)}
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2GlobalTopologyPhaseCacheContext:
     """Operational cache binding for resumable cache-only topology evidence."""
 
@@ -214,6 +263,12 @@ class Lfm2GlobalTopologyPhaseCacheContext:
     events: FoldPhaseEventLog | None = None
     progress: PhaseProgressCallback | None = None
     selective_session_factory: Callable[[], Any] | None = None
+    existing_capacity_phase_reuse: (
+        Lfm2ExistingGlobalTopologyPhaseReuseRequest | None
+    ) = None
+    existing_functional_phase_reuse: (
+        Lfm2ExistingGlobalTopologyPhaseReuseRequest | None
+    ) = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.cache, DynamicFoldPhaseCache):
@@ -227,6 +282,23 @@ class Lfm2GlobalTopologyPhaseCacheContext:
             self.selective_session_factory
         ):
             raise TypeError("selective_session_factory must be callable or None.")
+        for field_name, expected_phase_name in (
+            ("existing_capacity_phase_reuse", GLOBAL_TOPOLOGY_CAPACITY_PHASE),
+            ("existing_functional_phase_reuse", GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE),
+        ):
+            request = getattr(self, field_name)
+            if request is not None and not isinstance(
+                request,
+                Lfm2ExistingGlobalTopologyPhaseReuseRequest,
+            ):
+                raise TypeError(
+                    f"{field_name} must be "
+                    "Lfm2ExistingGlobalTopologyPhaseReuseRequest or None."
+                )
+            if request is not None and request.phase_name != expected_phase_name:
+                raise Lfm2CachedGlobalTopologyFrontierError(
+                    f"{field_name} must name {expected_phase_name}."
+                )
 
 
 def _phase_progress(
@@ -315,6 +387,348 @@ def _read_phase_payload(
             "Derived LFM2 phase completion does not bind its payload receipt."
         )
     return value
+
+
+def _raw_module_source_sha256(path_value: Any, *, label: str) -> str:
+    if not isinstance(path_value, str) or not path_value:
+        raise FoldPhaseCacheIntegrityError(
+            f"Cannot locate current {label} source for historical phase reuse."
+        )
+    try:
+        raw = Path(path_value).resolve(strict=True).read_bytes()
+    except OSError as exc:
+        raise FoldPhaseCacheIntegrityError(
+            f"Cannot authenticate current {label} source for historical phase reuse."
+        ) from exc
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _existing_global_topology_phase_key_from_digest(
+    cache: DynamicFoldPhaseCache,
+    *,
+    phase_name: str,
+    phase_key_sha256: str,
+) -> FoldPhaseKey:
+    """Read one immutable historical completion key without creating a path."""
+
+    digest = _digest(phase_key_sha256, "phase_key_sha256")
+    entry = cache.root / phase_name / digest
+    completion = entry / _dynamic_fold_phase_cache_module.COMPLETE_FILENAME
+    _dynamic_fold_phase_cache_module._assert_no_reparse_ancestors(
+        entry.parent,
+        FoldPhaseCacheIntegrityError,
+    )
+    if not _dynamic_fold_phase_cache_module._lexists(entry):
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Requested historical {phase_name} phase is absent; hit-only "
+            "loading forbids building or repairing it."
+        )
+    _dynamic_fold_phase_cache_module._assert_ordinary_directory(
+        entry,
+        "historical global-topology phase entry",
+        FoldPhaseCacheIntegrityError,
+    )
+    _dynamic_fold_phase_cache_module._assert_ordinary_file(
+        completion,
+        "historical global-topology completion marker",
+        FoldPhaseCacheIntegrityError,
+    )
+    raw = _dynamic_fold_phase_cache_module._read_limited(
+        completion,
+        _dynamic_fold_phase_cache_module._MAX_JSON_BYTES,
+        "historical global-topology completion marker",
+        FoldPhaseCacheIntegrityError,
+    )
+    value = _dynamic_fold_phase_cache_module._strict_canonical_json_bytes(
+        raw,
+        "historical global-topology completion marker",
+        FoldPhaseCacheIntegrityError,
+    )
+    if value.get("phase_key_sha256") != digest:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology completion is noncanonical or has a stale key."
+        )
+    try:
+        key = FoldPhaseKey.from_dict(value.get("phase_key"))
+    except (FoldPhaseKeyError, TypeError) as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology completion contains an invalid phase key."
+        ) from exc
+    if key.phase_name != phase_name or key.phase_key_sha256 != digest:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology phase key differs from its immutable "
+            "cache address."
+        )
+    return key
+
+
+def _current_historical_phase_compatibility_receipt(
+    *,
+    historical_algorithm_sha256: str,
+    current_algorithm_sha256: str,
+) -> Mapping[str, Any]:
+    live_algorithm_sha256 = _global_algorithm_fingerprint()
+    if live_algorithm_sha256 != current_algorithm_sha256:
+        raise FoldPhaseCacheIntegrityError(
+            "Current global-topology implementation changed while historical "
+            "phase compatibility was checked."
+        )
+    global_source_sha256 = _raw_module_source_sha256(
+        __file__,
+        label="global-frontier",
+    )
+    functional_source_sha256 = _raw_module_source_sha256(
+        _cached_functional_width_module.__file__,
+        label="functional-width",
+    )
+    receipt = explicit_global_topology_phase_compatibility_receipt(
+        historical_algorithm_sha256=historical_algorithm_sha256,
+        current_global_frontier_source_sha256=global_source_sha256,
+        current_functional_width_source_sha256=functional_source_sha256,
+        current_algorithm_sha256=current_algorithm_sha256,
+    )
+    if receipt is None:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology phase has no exact directional "
+            "compatibility receipt for the current implementation."
+        )
+    return _validate_global_topology_phase_compatibility_receipt(
+        receipt,
+        historical_algorithm_sha256=historical_algorithm_sha256,
+        current_global_frontier_source_sha256=global_source_sha256,
+        current_functional_width_source_sha256=functional_source_sha256,
+        current_algorithm_sha256=current_algorithm_sha256,
+    )
+
+
+def _validate_global_topology_phase_compatibility_receipt(
+    receipt: Any,
+    *,
+    historical_algorithm_sha256: str,
+    current_global_frontier_source_sha256: str,
+    current_functional_width_source_sha256: str,
+    current_algorithm_sha256: str,
+) -> Mapping[str, Any]:
+    """Authenticate every field of one exact directional policy receipt."""
+
+    raw = _strict_mapping(
+        receipt,
+        expected_fields={
+            "schema",
+            "policy_sha256",
+            "historical_algorithm_sha256",
+            "current_global_frontier_source_sha256",
+            "current_functional_width_source_sha256",
+            "current_algorithm_sha256",
+            "direction",
+            "historical_artifact_rewritten",
+            "compatibility_receipt_sha256",
+        },
+        label="global-topology phase compatibility receipt",
+    )
+    expected = {
+        "historical_algorithm_sha256": historical_algorithm_sha256,
+        "current_global_frontier_source_sha256": (
+            current_global_frontier_source_sha256
+        ),
+        "current_functional_width_source_sha256": (
+            current_functional_width_source_sha256
+        ),
+        "current_algorithm_sha256": current_algorithm_sha256,
+    }
+    try:
+        _digest(raw["policy_sha256"], "compatibility policy_sha256")
+        for field_name, expected_digest in expected.items():
+            _digest(raw[field_name], f"compatibility {field_name}")
+            _digest(expected_digest, f"expected compatibility {field_name}")
+        claimed_receipt_sha256 = _digest(
+            raw["compatibility_receipt_sha256"],
+            "compatibility_receipt_sha256",
+        )
+    except Lfm2CachedGlobalTopologyFrontierError as exc:
+        raise FoldPhaseCacheIntegrityError(str(exc)) from exc
+    if (
+        raw["schema"] != GLOBAL_TOPOLOGY_PHASE_COMPATIBILITY_RECEIPT_SCHEMA
+        or raw["direction"] != "historical-to-current"
+        or raw["historical_artifact_rewritten"] is not False
+        or any(raw[field_name] != value for field_name, value in expected.items())
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Global-topology phase compatibility receipt contract is invalid."
+        )
+    body = dict(raw)
+    body.pop("compatibility_receipt_sha256")
+    if canonical_sha256(body) != claimed_receipt_sha256:
+        raise FoldPhaseCacheIntegrityError(
+            "Global-topology phase compatibility receipt self-hash does not verify."
+        )
+    return MappingProxyType(raw)
+
+
+def _lookup_existing_global_topology_phase_payload(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    current_key: FoldPhaseKey,
+    request: Lfm2ExistingGlobalTopologyPhaseReuseRequest,
+) -> tuple[
+    VerifiedFoldPhaseCacheEntry,
+    dict[str, Any],
+    Mapping[str, Any],
+]:
+    """Load one exact historical hit after proving a single allowed delta."""
+
+    if request.phase_name != current_key.phase_name:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology request names a different phase."
+        )
+    _phase_progress(
+        context,
+        "global_topology_existing_phase_reuse_lookup",
+        phase_name=request.phase_name,
+        historical_phase_key_sha256=request.phase_key_sha256,
+        current_phase_key_sha256=current_key.phase_key_sha256,
+        request_sha256=request.as_dict()["request_sha256"],
+        cache_miss_build_allowed=False,
+    )
+    historical_key = _existing_global_topology_phase_key_from_digest(
+        context.cache,
+        phase_name=request.phase_name,
+        phase_key_sha256=request.phase_key_sha256,
+    )
+    historical_document = historical_key.as_dict()
+    current_document = current_key.as_dict()
+    historical_dependencies = dict(historical_document["dependency_sha256s"])
+    current_dependencies = dict(current_document["dependency_sha256s"])
+    historical_algorithm_sha256 = historical_dependencies.get(
+        "global_topology_algorithms"
+    )
+    current_algorithm_sha256 = current_dependencies.get("global_topology_algorithms")
+    try:
+        historical_algorithm_sha256 = _digest(
+            historical_algorithm_sha256,
+            "historical global_topology_algorithms",
+        )
+        current_algorithm_sha256 = _digest(
+            current_algorithm_sha256,
+            "current global_topology_algorithms",
+        )
+    except Lfm2CachedGlobalTopologyFrontierError as exc:
+        raise FoldPhaseCacheIntegrityError(str(exc)) from exc
+    historical_dependencies["global_topology_algorithms"] = current_algorithm_sha256
+    normalized_historical_key = FoldPhaseKey(
+        phase_name=historical_key.phase_name,
+        dependency_sha256s=historical_dependencies,
+        numeric_contract=historical_document["numeric_contract"],
+        abi=historical_document["abi"],
+    )
+    if normalized_historical_key.as_dict() != current_document:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology phase differs from the current phase "
+            "outside dependency_sha256s.global_topology_algorithms."
+        )
+    compatibility_receipt = _current_historical_phase_compatibility_receipt(
+        historical_algorithm_sha256=historical_algorithm_sha256,
+        current_algorithm_sha256=current_algorithm_sha256,
+    )
+    if (
+        compatibility_receipt["compatibility_receipt_sha256"]
+        != request.expected_compatibility_receipt_sha256
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology request pins a different exact "
+            "compatibility receipt."
+        )
+    entry = context.cache.lookup(historical_key, events=context.events)
+    if entry is None:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Requested historical {request.phase_name} phase is absent; "
+            "hit-only loading forbids building or repairing it."
+        )
+    if entry.completion_sha256 != request.expected_completion_sha256:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology completion differs from the exact "
+            "requested completion digest."
+        )
+    schema = {
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE: GLOBAL_TOPOLOGY_CAPACITY_PAYLOAD_SCHEMA,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE: GLOBAL_TOPOLOGY_FUNCTIONAL_PAYLOAD_SCHEMA,
+    }[request.phase_name]
+    payload = _read_phase_payload(
+        entry,
+        schema=schema,
+        expected_phase_key=historical_key,
+    )
+    return entry, payload, compatibility_receipt
+
+
+def _complete_existing_global_topology_phase_reuse(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    current_key: FoldPhaseKey,
+    request: Lfm2ExistingGlobalTopologyPhaseReuseRequest,
+    entry: VerifiedFoldPhaseCacheEntry,
+    payload: Mapping[str, Any],
+    compatibility_receipt: Mapping[str, Any],
+    *,
+    evidence_sha256: str,
+) -> Mapping[str, Any]:
+    """Reauthenticate the immutable hit and emit a sealed no-rewrite receipt."""
+
+    evidence = _digest(evidence_sha256, "historical evidence_sha256")
+    if evidence != request.expected_evidence_sha256:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology evidence differs from the exact "
+            "requested evidence digest."
+        )
+    historical_algorithm_sha256 = compatibility_receipt["historical_algorithm_sha256"]
+    current_algorithm_sha256 = compatibility_receipt["current_algorithm_sha256"]
+    current_receipt = _current_historical_phase_compatibility_receipt(
+        historical_algorithm_sha256=historical_algorithm_sha256,
+        current_algorithm_sha256=current_algorithm_sha256,
+    )
+    if dict(current_receipt) != dict(compatibility_receipt):
+        raise FoldPhaseCacheIntegrityError(
+            "Global-topology compatibility policy changed while the historical "
+            "phase was read."
+        )
+    reauthenticated = context.cache.lookup(entry.phase_key)
+    if (
+        reauthenticated is None
+        or reauthenticated.completion_sha256 != entry.completion_sha256
+        or reauthenticated.payload_inventory != entry.payload_inventory
+        or reauthenticated.result != entry.result
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Historical global-topology phase changed while it was read."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-global-topology-phase-live-reuse-v1",
+        "request_sha256": request.as_dict()["request_sha256"],
+        "phase_name": request.phase_name,
+        "historical_phase_key_sha256": entry.phase_key.phase_key_sha256,
+        "current_phase_key_sha256": current_key.phase_key_sha256,
+        "historical_completion_sha256": entry.completion_sha256,
+        "historical_payload_sha256": payload["payload_sha256"],
+        "historical_evidence_sha256": evidence,
+        "historical_algorithm_sha256": historical_algorithm_sha256,
+        "current_algorithm_sha256": current_algorithm_sha256,
+        "compatibility_policy_sha256": compatibility_receipt["policy_sha256"],
+        "compatibility_receipt_sha256": compatibility_receipt[
+            "compatibility_receipt_sha256"
+        ],
+        "semantic_phase_contract_exact": True,
+        "historical_artifact_rewritten": False,
+        "cache_miss_build_allowed": False,
+        "parent_model_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+    }
+    receipt = MappingProxyType({**body, "reuse_receipt_sha256": canonical_sha256(body)})
+    _phase_progress(
+        context,
+        "global_topology_existing_phase_reuse_hit",
+        **dict(receipt),
+    )
+    return receipt
 
 
 def _lookup_phase_payload(
@@ -1018,15 +1432,11 @@ def _trace_cache_topology_interface_fingerprint() -> str:
         "session.open_batch_state": session_type._open_batch_state,
         "session.close_batch_state": session_type._close_batch_state,
         "session.verify_batch_identity": session_type._verify_batch_identity,
-        "session.verify_immutable_metadata": (
-            session_type._verify_immutable_metadata
-        ),
+        "session.verify_immutable_metadata": (session_type._verify_immutable_metadata),
         "session.seal_evidence": session_type._seal_evidence,
         "session.state": session_type._state,
         "session.load_selected_tensors": session_type.load_selected_tensors,
-        "session.release_selected_tensors": (
-            session_type.release_selected_tensors
-        ),
+        "session.release_selected_tensors": (session_type.release_selected_tensors),
         "session.verify": session_type.verify,
         "session.close": session_type.close,
         "session.enter": session_type.__enter__,
@@ -1082,9 +1492,7 @@ def _trace_cache_topology_interface_fingerprint() -> str:
         "sha256_hex_length": module._SHA256_LENGTH,
         "cache_fields": list(cache_type.__dataclass_fields__),
         "selective_session_slots": list(session_type.__slots__),
-        "selective_batch_state_fields": list(
-            selective_state_type.__dataclass_fields__
-        ),
+        "selective_batch_state_fields": list(selective_state_type.__dataclass_fields__),
         "selective_reference_fields": list(reference_type.__dataclass_fields__),
         "selected_payload_slots": list(payload_type.__slots__),
         "file_identity_fields": list(identity_type.__dataclass_fields__),
@@ -2326,7 +2734,21 @@ def build_lfm2_cached_global_topology_frontier(
             candidate_hidden_sizes=widths,
             maximum_rows_per_role=functional_row_ceiling,
         )
-        capacity_hit = _lookup_phase_payload(phase_cache_context, capacity_key)
+        capacity_reuse = phase_cache_context.existing_capacity_phase_reuse
+        capacity_compatibility_receipt = None
+        if capacity_reuse is None:
+            capacity_hit = _lookup_phase_payload(phase_cache_context, capacity_key)
+        else:
+            (
+                capacity_entry,
+                capacity_payload,
+                capacity_compatibility_receipt,
+            ) = _lookup_existing_global_topology_phase_payload(
+                phase_cache_context,
+                capacity_key,
+                capacity_reuse,
+            )
+            capacity_hit = (capacity_entry, capacity_payload)
         if capacity_hit is not None:
             capacity_entry, capacity_payload = capacity_hit
             capacity_payload = _strict_mapping(
@@ -2368,7 +2790,35 @@ def build_lfm2_cached_global_topology_frontier(
                 raise FoldPhaseCacheIntegrityError(
                     "Capacity phase completion does not bind its typed evidence."
                 )
-        functional_hit = _lookup_phase_payload(phase_cache_context, functional_key)
+            if capacity_reuse is not None:
+                assert capacity_compatibility_receipt is not None
+                _complete_existing_global_topology_phase_reuse(
+                    phase_cache_context,
+                    capacity_key,
+                    capacity_reuse,
+                    capacity_entry,
+                    capacity_payload,
+                    capacity_compatibility_receipt,
+                    evidence_sha256=base_bank.evidence_sha256,
+                )
+        functional_reuse = phase_cache_context.existing_functional_phase_reuse
+        functional_compatibility_receipt = None
+        if functional_reuse is None:
+            functional_hit = _lookup_phase_payload(
+                phase_cache_context,
+                functional_key,
+            )
+        else:
+            (
+                functional_entry,
+                functional_payload,
+                functional_compatibility_receipt,
+            ) = _lookup_existing_global_topology_phase_payload(
+                phase_cache_context,
+                functional_key,
+                functional_reuse,
+            )
+            functional_hit = (functional_entry, functional_payload)
         if functional_hit is not None:
             functional_entry, functional_payload = functional_hit
             functional_payload = _strict_mapping(
@@ -2409,6 +2859,17 @@ def build_lfm2_cached_global_topology_frontier(
             ):
                 raise FoldPhaseCacheIntegrityError(
                     "Functional phase completion does not bind its typed evidence."
+                )
+            if functional_reuse is not None:
+                assert functional_compatibility_receipt is not None
+                _complete_existing_global_topology_phase_reuse(
+                    phase_cache_context,
+                    functional_key,
+                    functional_reuse,
+                    functional_entry,
+                    functional_payload,
+                    functional_compatibility_receipt,
+                    evidence_sha256=functional.evidence_sha256,
                 )
 
     if (
@@ -2481,24 +2942,21 @@ def build_lfm2_cached_global_topology_frontier(
             authenticated_retained_rows = retained_parent_rows
             if retained_parent_rows is not None:
                 try:
-                    authenticated_retained_rows = (
-                        Lfm2RetainedTraceRowAdapter.build(
-                            retained_parent_rows,
-                            cache_key=parent_cache.cache_key,
-                            corpus_fingerprint=parent_cache.corpus_fingerprint,
-                            batch_references=session.batch_references,
-                            phases_by_batch=tuple(
-                                _cached_heterogeneous_capacity_module
-                                ._ordered_parent_phases(reference.record)
-                                for reference in session.batch_references
-                            ),
-                            expected_layer_kinds=tuple(
-                                "short_conv"
-                                if layer_type == "conv"
-                                else "full_attention"
-                                for layer_type in layer_types
-                            ),
-                        )
+                    authenticated_retained_rows = Lfm2RetainedTraceRowAdapter.build(
+                        retained_parent_rows,
+                        cache_key=parent_cache.cache_key,
+                        corpus_fingerprint=parent_cache.corpus_fingerprint,
+                        batch_references=session.batch_references,
+                        phases_by_batch=tuple(
+                            _cached_heterogeneous_capacity_module._ordered_parent_phases(
+                                reference.record
+                            )
+                            for reference in session.batch_references
+                        ),
+                        expected_layer_kinds=tuple(
+                            "short_conv" if layer_type == "conv" else "full_attention"
+                            for layer_type in layer_types
+                        ),
                     )
                 except Lfm2RetainedTraceRowsError as exc:
                     raise Lfm2CachedGlobalTopologyFrontierError(
@@ -3022,9 +3480,7 @@ def build_lfm2_cached_global_topology_frontier(
                     "frontier_sha256": result.frontier_sha256,
                     "selected_candidate_sha256": result.selected_candidate_sha256,
                     "selected_hidden_size": result.selected_input.target_pins.hidden_size,
-                    "required_target_hidden_size": (
-                        result.required_target_hidden_size
-                    ),
+                    "required_target_hidden_size": (result.required_target_hidden_size),
                     "candidate_count": len(result.candidates),
                     "rejected_width_count": len(result.rejected_widths),
                 },
@@ -3098,6 +3554,7 @@ __all__ = [
     "Lfm2CachedGlobalTopologyEvidenceCacheMiss",
     "Lfm2CachedGlobalTopologyFrontierError",
     "Lfm2CachedGlobalTopologyFrontierUnattainable",
+    "Lfm2ExistingGlobalTopologyPhaseReuseRequest",
     "Lfm2GlobalTopologyPhaseCacheContext",
     "Lfm2GlobalTargetRuntimePins",
     "Lfm2GlobalTopologyCandidateReport",
