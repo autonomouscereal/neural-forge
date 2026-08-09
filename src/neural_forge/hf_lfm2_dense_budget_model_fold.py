@@ -3695,7 +3695,6 @@ class Lfm2DenseBudgetModelOperator:
         bridge = self.tokenizer_bridge_artifact
         adapter = self.tokenizer_bridge_trace_adapter
         vocabulary_binding = self.target_tokenizer_vocabulary_margin_binding
-        hankel = self.autoregressive_hankel_observability
         tokenizer: dict[str, Any] = {
             "schema": "neural-forge-lfm2-balanced-basis-tokenizer-binding-v1",
             "parent_tokenizer_semantics_sha256": (
@@ -3754,36 +3753,10 @@ class Lfm2DenseBudgetModelOperator:
             tokenizer["target_vocabulary_margin_binding_sha256"] = (
                 vocabulary_binding.binding_sha256
             )
-        hankel_binding: dict[str, Any] | None = None
-        if hankel is not None:
-            evidence = (
-                hankel.evidence
-                if isinstance(
-                    hankel,
-                    Lfm2AutoregressiveHankelObservabilityResult,
-                )
-                else hankel
-            )
-            if not evidence.verify():
-                raise Lfm2DenseBudgetFoldError(
-                    "AHB evidence changed while authenticating the residual-"
-                    "basis phase."
-                )
-            hankel_binding = {
-                "schema": "neural-forge-lfm2-balanced-basis-ahb-binding-v1",
-                "enabled": True,
-                "evidence_sha256": evidence.evidence_sha256,
-                "provenance_sha256": evidence.provenance[
-                    "provenance_sha256"
-                ],
-            }
-        bindings = {
+        return {
             "selected_target": self.selected_target.as_dict(),
             "tokenizer": tokenizer,
         }
-        if hankel_binding is not None:
-            bindings["autoregressive_hankel"] = hankel_binding
-        return bindings
 
     # -- accepted-layer restart capsules -------------------------------
 

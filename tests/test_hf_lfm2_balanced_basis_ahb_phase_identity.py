@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -14,6 +16,7 @@ from neural_forge.dynamic_circuit_ir import (  # noqa: E402
     canonical_sha256,
 )
 import neural_forge.hf_lfm2_balanced_basis_phase_cache as phase_cache  # noqa: E402
+import neural_forge.hf_lfm2_dense_budget_model_fold as dense_fold  # noqa: E402
 from neural_forge.hf_lfm2_autoregressive_hankel_observability import (  # noqa: E402
     LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_PROVENANCE_SCHEMA,
     Lfm2AutoregressiveHankelObservabilityResult,
@@ -103,6 +106,79 @@ def _request(
         adapter_source_sha256="d" * 64,
         autoregressive_hankel_observability=evidence,
     )
+
+
+def test_dense_phase_provider_keeps_ahb_in_basis_identity_not_binding_documents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence = _ahb_evidence(3.0)
+    target_document = {
+        "schema": "test-selected-target-v1",
+        "hidden_size": 1,
+    }
+    selected_target = SimpleNamespace(
+        parent_tokenizer_semantics_sha256="a" * 64,
+        child_tokenizer_semantics_sha256="b" * 64,
+        tokenizer_bridge_required=False,
+        as_dict=lambda: dict(target_document),
+    )
+    operator = object.__new__(dense_fold.Lfm2DenseBudgetModelOperator)
+    operator.selected_target = selected_target
+    operator.tokenizer_bridge_artifact = None
+    operator.tokenizer_bridge_trace_adapter = None
+    operator.target_tokenizer_vocabulary_margin_binding = None
+    operator.autoregressive_hankel_observability = evidence
+
+    captured: dict[str, object] = {}
+    marker = object()
+
+    def load_with_contract_check(*_args, **kwargs):
+        provider = kwargs["binding_provider"]
+        captured["bindings"] = phase_cache._binding_documents(provider)  # noqa: SLF001
+        captured["request"] = kwargs["build_request"]
+        return marker
+
+    monkeypatch.setattr(
+        dense_fold,
+        "load_or_build_lfm2_circuit_balanced_basis",
+        load_with_contract_check,
+    )
+    result = dense_fold._build_residual_basis(  # noqa: SLF001
+        object(),
+        object(),
+        object(),
+        1,
+        dense_fold.Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="circuit_balanced",
+            run_closed_loop=False,
+        ),
+        phase_cache_context=object(),
+        phase_cache_binding_provider=operator._residual_basis_phase_bindings,
+        autoregressive_hankel_observability=evidence,
+    )
+
+    assert result is marker
+    bindings = captured["bindings"]
+    assert isinstance(bindings, dict)
+    assert set(bindings) == {"selected_target", "tokenizer"}
+
+    request = captured["request"]
+    assert isinstance(request, phase_cache.Lfm2BalancedBasisPhaseBuildRequest)
+    basis_config = request.as_basis_config()
+    assert basis_config["autoregressive_hankel_observability"][
+        "evidence_sha256"
+    ] == evidence.evidence_sha256
+    assert canonical_sha256(basis_config) != canonical_sha256(
+        _request(None).as_basis_config()
+    )
+
+    with torch.no_grad():
+        evidence.gram[0, 0].add_(0.25)
+    with pytest.raises(
+        phase_cache.Lfm2BalancedBasisPhaseCacheError,
+        match="failed reauthentication",
+    ):
+        request.as_basis_config()
 
 
 def test_ahb_evidence_is_exact_phase_identity_forwarded_and_reauthenticated(
