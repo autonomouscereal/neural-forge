@@ -125,6 +125,14 @@ from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
     Lfm2ExistingBalancedBasisPhaseReuseRequest,
     PhaseAnchorAuthority,
 )
+from neural_forge.hf_lfm2_autoregressive_hankel_observability_cache import (
+    AuthenticatedLfm2AutoregressiveHankelObservability,
+    open_lfm2_autoregressive_hankel_observability_accumulator,
+)
+from neural_forge.hf_lfm2_autoregressive_hankel_phase_cache import (
+    describe_lfm2_autoregressive_hankel_phase,
+    load_or_build_lfm2_autoregressive_hankel_statistics,
+)
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     ATTENTION_GEOMETRY_RISK_METHOD,
     Lfm2CachedHeterogeneousCapacityOptionBank,
@@ -3615,6 +3623,8 @@ class ProductionLfm2CatalogConfig:
                         "checkpoint_granularity_batches": 1,
                         "bounded_memory_cumulative_aggregation_required": True,
                         "per_batch_shards_retained_together": False,
+                        "phase_shard_pruning_after_durable_absorption": True,
+                        "phase_shard_pruning_failure_affects_fold": False,
                     }
                 }
             ),
@@ -10189,6 +10199,411 @@ def _balanced_basis_phase_cache_receipt_fields(
     }
 
 
+def _prune_absorbed_autoregressive_hankel_phase_shard(
+    statistics_cache_root: Path,
+    absorption_receipt: Mapping[str, Any],
+) -> int:
+    """Remove one redundant raw shard only after its pooled commit is sealed."""
+
+    document = dict(absorption_receipt)
+    receipt_sha256 = document.pop("receipt_sha256", None)
+    phase_key = document.get("phase_key_sha256")
+    raw_path = document.get("phase_shard_path")
+    if (
+        not isinstance(receipt_sha256, str)
+        or canonical_sha256(document) != receipt_sha256
+        or not isinstance(phase_key, str)
+        or len(phase_key) != 64
+        or any(character not in "0123456789abcdef" for character in phase_key)
+        or not isinstance(raw_path, str)
+        or document.get("phase_shard_prunable_after_commit") is not True
+        or document.get("pooled_checkpoint_authenticated_before_prunable")
+        is not True
+        or document.get("source_tensor_references_retained_by_accumulator") != 0
+    ):
+        raise ProductionLfm2CatalogError(
+            "AHB phase-shard pruning requires an exact sealed durable "
+            "absorption receipt."
+        )
+    root = Path(statistics_cache_root).expanduser().absolute()
+    shard_root = root / "shards"
+    expected = shard_root / phase_key[:2] / phase_key
+    observed = Path(raw_path).expanduser().absolute()
+    try:
+        resolved_root = shard_root.resolve(strict=True)
+        resolved_expected = expected.resolve(strict=True)
+        resolved_observed = observed.resolve(strict=True)
+    except OSError as exc:
+        raise ProductionLfm2CatalogError(
+            "The absorbed AHB phase shard is unavailable for safe pruning."
+        ) from exc
+    try:
+        inventory = tuple(observed.iterdir())
+        unsafe = (
+            resolved_observed != resolved_expected
+            or resolved_expected.parent.parent != resolved_root
+            or observed.is_symlink()
+            or not observed.is_dir()
+            or {item.name for item in inventory}
+            != {"receipt.json", "statistics.safetensors"}
+            or any(item.is_symlink() or not item.is_file() for item in inventory)
+        )
+    except OSError as exc:
+        raise ProductionLfm2CatalogError(
+            "The absorbed AHB phase shard could not be inspected for safe "
+            "pruning."
+        ) from exc
+    if unsafe:
+        raise ProductionLfm2CatalogError(
+            "The absorbed AHB phase shard failed the exact safe-pruning "
+            "boundary."
+        )
+    try:
+        released_bytes = sum(item.stat().st_size for item in inventory)
+        shutil.rmtree(observed)
+    except OSError as exc:
+        raise ProductionLfm2CatalogError(
+            "The absorbed AHB phase shard could not be safely pruned."
+        ) from exc
+    if observed.exists():
+        raise ProductionLfm2CatalogError(
+            "The absorbed AHB phase shard remained after safe pruning."
+        )
+    try:
+        expected.parent.rmdir()
+    except OSError:
+        pass
+    return int(released_bytes)
+
+
+def _autoregressive_hankel_phase_shard_disk_bytes(shard: Any) -> int:
+    """Best-effort cleanup telemetry that never decides folding correctness."""
+
+    try:
+        path = Path(shard.path)
+        if path.is_symlink() or not path.is_dir():
+            return 0
+        return int(
+            sum(
+                item.stat().st_size
+                for item in path.iterdir()
+                if item.is_file() and not item.is_symlink()
+            )
+        )
+    except (AttributeError, OSError, TypeError, ValueError):
+        return 0
+
+
+def _materialize_production_autoregressive_hankel_observability(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    expected_parent_cache: Lfm2CircuitTraceCache,
+    progress: _ProgressJournal | None = None,
+) -> tuple[
+    AuthenticatedLfm2AutoregressiveHankelObservability,
+    Mapping[str, Any],
+]:
+    """Stream an explicit sealed cache into one resumable future-causal Gram."""
+
+    if not config.uses_autoregressive_hankel_observability:
+        raise ProductionLfm2CatalogError(
+            "AHB materialization requires the explicit opt-in configuration."
+        )
+    assert config.autoregressive_hankel_cache_root is not None
+    assert config.autoregressive_hankel_source_cache_directory is not None
+    output_root = config.autoregressive_hankel_cache_root.expanduser().absolute()
+    statistics_root = output_root / "statistics"
+    observability_root = output_root / "observability"
+    source_path = (
+        config.autoregressive_hankel_source_cache_directory
+        .expanduser()
+        .resolve(strict=True)
+    )
+    if progress is not None:
+        progress.emit(
+            "autoregressive_hankel_source_authentication_started",
+            source_cache_directory=str(source_path),
+            parent_forward_calls=0,
+            training_steps=0,
+        )
+    source_cache = open_lfm2_circuit_trace_cache(source_path, verify=False)
+    phase_cache_hits = 0
+    built_phase_shards = 0
+    pruned_phase_shards = 0
+    pruned_phase_bytes = 0
+    deferred_phase_shards = 0
+    deferred_phase_bytes = 0
+    peak_source_shards_resident = 0
+    with source_cache.selective_authenticated_session() as source_session:
+        source_session.verify()
+        if (
+            source_cache.parent_fingerprint
+            != expected_parent_cache.parent_fingerprint
+            or source_cache.layer_topology_fingerprint
+            != expected_parent_cache.layer_topology_fingerprint
+        ):
+            raise ProductionLfm2CatalogError(
+                "The explicit AHB source cache differs from the live parent "
+                "or canonical layer topology."
+            )
+        cross_implementation_source = (
+            source_cache.implementation_fingerprint
+            != expected_parent_cache.implementation_fingerprint
+        )
+        references = source_session.batch_references
+        if not references:
+            raise ProductionLfm2CatalogError(
+                "The explicit AHB source cache contains no authenticated batches."
+            )
+        if progress is not None:
+            progress.emit(
+                "autoregressive_hankel_source_authenticated",
+                source_cache_key=source_cache.cache_key,
+                source_session_sha256=source_session.evidence_sha256,
+                source_batch_count=len(references),
+                active_session_inferred=False,
+                cross_implementation_source=cross_implementation_source,
+                parent_forward_calls=0,
+                training_steps=0,
+            )
+
+        phase_identities = []
+        boundary_names: tuple[str, ...] | None = None
+        for reference in references:
+            identity = describe_lfm2_autoregressive_hankel_phase(
+                session=source_session,
+                reference=reference,
+                future_lags=(
+                    config.dense_autoregressive_hankel_future_lags
+                ),
+            )
+            if boundary_names is None:
+                boundary_names = identity.boundary_names
+            elif identity.boundary_names != boundary_names:
+                raise ProductionLfm2CatalogError(
+                    "AHB source batches disagree on canonical boundary order."
+                )
+            phase_identities.append(identity)
+        assert boundary_names is not None
+        planned_phase_keys = tuple(
+            identity.phase_key_sha256 for identity in phase_identities
+        )
+        accumulator = open_lfm2_autoregressive_hankel_observability_accumulator(
+            observability_root,
+            planned_phase_keys=planned_phase_keys,
+            boundary_names=boundary_names,
+            state_ridge_fraction=(
+                config.dense_autoregressive_hankel_state_ridge_fraction
+            ),
+            future_ridge_fraction=(
+                config.dense_autoregressive_hankel_future_ridge_fraction
+            ),
+            maximum_condition_number=(
+                config
+                .dense_autoregressive_hankel_maximum_condition_number
+            ),
+        )
+        if (
+            accumulator.processed_source_count > len(phase_identities)
+            or accumulator.committed_phase_keys
+            != planned_phase_keys[: accumulator.processed_source_count]
+        ):
+            raise ProductionLfm2CatalogError(
+                "The resumed AHB accumulator differs from its exact source plan."
+            )
+        if progress is not None:
+            progress.emit(
+                "autoregressive_hankel_accumulator_resumed",
+                plan_key_sha256=accumulator.plan.plan_key_sha256,
+                source_batch_count=len(phase_identities),
+                processed_source_count=accumulator.processed_source_count,
+                skipped_phase_build_count=accumulator.processed_source_count,
+                aggregate_already_complete=accumulator.completed,
+                peak_source_shards_resident=0,
+            )
+
+        while not accumulator.completed:
+            ordinal = accumulator.processed_source_count
+            expected_phase_key = accumulator.next_expected_phase_key
+            if expected_phase_key is None:
+                break
+            if ordinal >= len(phase_identities):
+                raise ProductionLfm2CatalogError(
+                    "The AHB accumulator requested a source beyond its plan."
+                )
+            phase_identity = phase_identities[ordinal]
+            if phase_identity.phase_key_sha256 != expected_phase_key:
+                raise ProductionLfm2CatalogError(
+                    "The AHB accumulator requested a different next phase key."
+                )
+            if progress is not None:
+                progress.emit(
+                    "autoregressive_hankel_phase_started",
+                    source_ordinal=ordinal,
+                    source_batch_count=len(phase_identities),
+                    phase_key_sha256=expected_phase_key,
+                    completed_prefix_skipped_before_build=True,
+                    peak_source_shards_resident=1,
+                    **_process_memory_progress_metadata(),
+                )
+            shard = load_or_build_lfm2_autoregressive_hankel_statistics(
+                statistics_root,
+                session=source_session,
+                reference=references[ordinal],
+                future_lags=(
+                    config.dense_autoregressive_hankel_future_lags
+                ),
+            )
+            peak_source_shards_resident = 1
+            if shard.phase_key_sha256 != expected_phase_key:
+                raise ProductionLfm2CatalogError(
+                    "The loaded AHB statistics shard differs from its plan."
+                )
+            shard_cache_hit = bool(shard.cache_hit)
+            phase_cache_hits += int(shard_cache_hit)
+            built_phase_shards += int(not shard_cache_hit)
+            absorption = accumulator.absorb(shard)
+            if (
+                absorption.get("phase_key_sha256") != expected_phase_key
+                or absorption.get("durable_processed_source_count")
+                != ordinal + 1
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The durable AHB absorption receipt differs from its phase."
+                )
+            retained_bytes = _autoregressive_hankel_phase_shard_disk_bytes(
+                shard
+            )
+            prune_deferred_reason = None
+            try:
+                released_bytes = _prune_absorbed_autoregressive_hankel_phase_shard(
+                    statistics_root,
+                    absorption,
+                )
+            except ProductionLfm2CatalogError as exc:
+                released_bytes = 0
+                prune_deferred_reason = str(exc)
+                deferred_phase_shards += 1
+                deferred_phase_bytes += retained_bytes
+                if progress is not None:
+                    progress.emit(
+                        "autoregressive_hankel_phase_prune_deferred",
+                        source_ordinal=ordinal,
+                        phase_key_sha256=expected_phase_key,
+                        reason_type=type(exc).__name__,
+                        reason=prune_deferred_reason,
+                        retained_phase_bytes=retained_bytes,
+                        folding_correctness_affected=False,
+                    )
+            else:
+                pruned_phase_shards += 1
+                pruned_phase_bytes += released_bytes
+            del shard
+            if progress is not None:
+                progress.emit(
+                    "autoregressive_hankel_phase_committed",
+                    source_ordinal=ordinal,
+                    source_batch_count=len(phase_identities),
+                    phase_key_sha256=expected_phase_key,
+                    phase_cache_hit=shard_cache_hit,
+                    durable_processed_source_count=(
+                        accumulator.processed_source_count
+                    ),
+                    absorption_receipt_sha256=absorption["receipt_sha256"],
+                    raw_phase_shard_pruned=(
+                        prune_deferred_reason is None
+                    ),
+                    raw_phase_shard_prune_deferred=(
+                        prune_deferred_reason is not None
+                    ),
+                    raw_phase_bytes_pruned=released_bytes,
+                    source_tensor_references_retained=0,
+                    **_process_memory_progress_metadata(),
+                )
+        aggregate = accumulator.finalize()
+        if not aggregate.result.evidence.verify():
+            raise ProductionLfm2CatalogError(
+                "The finalized AHB observability artifact failed authentication."
+            )
+        result_report = aggregate.result.as_dict()
+        runtime_body = {
+            "schema": "neural-forge-production-lfm2-ahb-materialization-v1",
+            "source_cache_directory": str(source_path),
+            "source_cache_key": source_cache.cache_key,
+            "source_session_sha256": source_session.evidence_sha256,
+            "source_batch_count": len(phase_identities),
+            "active_or_merged_session_inferred": False,
+            "source_trace_implementation_fingerprint": (
+                source_cache.implementation_fingerprint
+            ),
+            "active_trace_implementation_fingerprint": (
+                expected_parent_cache.implementation_fingerprint
+            ),
+            "cross_implementation_source": cross_implementation_source,
+            "future_lags": list(
+                config.dense_autoregressive_hankel_future_lags
+            ),
+            "plan_key_sha256": accumulator.plan.plan_key_sha256,
+            "planned_phase_key_sha256s": list(planned_phase_keys),
+            "resumed_processed_source_count": (
+                len(phase_identities)
+                - phase_cache_hits
+                - built_phase_shards
+            ),
+            "phase_cache_hit_count": phase_cache_hits,
+            "phase_cache_build_count": built_phase_shards,
+            "phase_shard_pruned_count": pruned_phase_shards,
+            "phase_shard_pruned_bytes": pruned_phase_bytes,
+            "phase_shard_prune_deferred_count": deferred_phase_shards,
+            "phase_shard_prune_deferred_bytes": deferred_phase_bytes,
+            "peak_source_shards_resident": peak_source_shards_resident,
+            "all_source_shard_tensor_references_released": True,
+            "aggregate_cache_hit": bool(aggregate.cache_hit),
+            "aggregate_key_sha256": aggregate.aggregate_key_sha256,
+            "aggregate_path": str(aggregate.path),
+            "aggregate_receipt_sha256": aggregate.receipt["receipt_sha256"],
+            "aggregate_provenance_sha256": aggregate.provenance[
+                "provenance_sha256"
+            ],
+            "observability_evidence_sha256": (
+                aggregate.result.evidence.evidence_sha256
+            ),
+            "observability_report_sha256": result_report["report_sha256"],
+            "parent_forward_calls": 0,
+            "trace_regeneration_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+        runtime_receipt = MappingProxyType(
+            {
+                **runtime_body,
+                "receipt_sha256": canonical_sha256(runtime_body),
+            }
+        )
+        if progress is not None:
+            progress.emit(
+                "autoregressive_hankel_observability_ready",
+                source_batch_count=len(phase_identities),
+                plan_key_sha256=accumulator.plan.plan_key_sha256,
+                aggregate_key_sha256=aggregate.aggregate_key_sha256,
+                aggregate_cache_hit=bool(aggregate.cache_hit),
+                observability_evidence_sha256=(
+                    aggregate.result.evidence.evidence_sha256
+                ),
+                phase_shard_pruned_count=pruned_phase_shards,
+                phase_shard_pruned_bytes=pruned_phase_bytes,
+                phase_shard_prune_deferred_count=(
+                    deferred_phase_shards
+                ),
+                peak_source_shards_resident=peak_source_shards_resident,
+                parent_forward_calls=0,
+                training_steps=0,
+                **_process_memory_progress_metadata(),
+            )
+        return aggregate, runtime_receipt
+
+
 def _autoregressive_hankel_cache_receipt_fields(
     config: ProductionLfm2CatalogConfig,
 ) -> dict[str, Any]:
@@ -10229,6 +10644,8 @@ def _autoregressive_hankel_cache_receipt_fields(
             "checkpoint_granularity_batches": 1,
             "bounded_memory_cumulative_aggregation_required": True,
             "all_statistics_shards_retained_in_memory": False,
+            "phase_shard_pruning_after_durable_absorption": True,
+            "phase_shard_pruning_failure_affects_fold": False,
             "parent_trace_regeneration": False,
             "fold_only_closed_form": True,
             "training_steps": 0,
@@ -11963,6 +12380,9 @@ def run_production_catalog(
     balanced_basis_phase_context: (
         Lfm2BalancedBasisPhaseCacheContext | None
     ) = None
+    autoregressive_hankel_observability: (
+        AuthenticatedLfm2AutoregressiveHankelObservability | None
+    ) = None
     preplanned_global_topology_frontier: (
         Lfm2CachedGlobalTopologyFrontier | None
     ) = None
@@ -12189,6 +12609,18 @@ def run_production_catalog(
             ),
             parent_trace_regeneration_after_cache=0,
         )
+        if config.uses_autoregressive_hankel_observability:
+            (
+                autoregressive_hankel_observability,
+                autoregressive_hankel_runtime_receipt,
+            ) = _materialize_production_autoregressive_hankel_observability(
+                config,
+                expected_parent_cache=parent_cache,
+                progress=progress,
+            )
+            runtime["autoregressive_hankel_observability"] = dict(
+                autoregressive_hankel_runtime_receipt
+            )
         tokenizer_bridge = resolve_production_tokenizer_bridge(
             config,
             donor_tokenizer=tokenizer,
@@ -12866,6 +13298,11 @@ def run_production_catalog(
             ),
             balanced_basis_phase_cache_context=(
                 balanced_basis_phase_context
+            ),
+            autoregressive_hankel_observability=(
+                None
+                if autoregressive_hankel_observability is None
+                else autoregressive_hankel_observability.result
             ),
             progress=progress,
         )

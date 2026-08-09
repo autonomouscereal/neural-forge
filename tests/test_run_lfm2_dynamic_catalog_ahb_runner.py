@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import gc
 import sys
+import weakref
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -242,4 +245,261 @@ def test_ahb_wiring_seam_fails_closed_on_configuration_artifact_mismatch(
             disabled,
             autoregressive_hankel_observability=object(),
             **_wiring_kwargs(),
+        )
+
+
+@pytest.mark.parametrize("prune_fails", [False, True])
+def test_ahb_materializer_resumes_before_build_and_holds_one_shard(
+    tmp_path,
+    monkeypatch,
+    prune_fails,
+) -> None:
+    source_directory = tmp_path / "sealed-ahb-source"
+    source_directory.mkdir()
+    config = _config(
+        tmp_path,
+        compression_ratio=4.0,
+        autoregressive_hankel_cache_root=tmp_path / "stable" / "ahb",
+        autoregressive_hankel_source_cache_directory=source_directory,
+        dense_autoregressive_hankel_future_lags=(0, 1, 2),
+    )
+    phase_keys = tuple(character * 64 for character in "abc")
+    references = tuple(SimpleNamespace(index=index) for index in range(3))
+
+    class FakeSession:
+        evidence_sha256 = "d" * 64
+        batch_references = references
+        closed = False
+
+        def verify(self):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.closed = True
+
+    session = FakeSession()
+    source_cache = SimpleNamespace(
+        cache_key="e" * 64,
+        parent_fingerprint="parent",
+        layer_topology_fingerprint="topology",
+        implementation_fingerprint="source-implementation",
+        selective_authenticated_session=lambda: session,
+    )
+    current_cache = SimpleNamespace(
+        parent_fingerprint="parent",
+        layer_topology_fingerprint="topology",
+        implementation_fingerprint="implementation",
+    )
+    open_calls = []
+
+    def open_source(path, *, verify):
+        open_calls.append((Path(path), verify))
+        return source_cache
+
+    monkeypatch.setattr(MODULE, "open_lfm2_circuit_trace_cache", open_source)
+    described = []
+
+    def describe_phase(*, session, reference, future_lags):
+        assert session is not None
+        assert future_lags == (0, 1, 2)
+        described.append(reference.index)
+        return SimpleNamespace(
+            phase_key_sha256=phase_keys[reference.index],
+            boundary_names=("layer.000.residual.pre", "layer.000.residual.post_layer"),
+        )
+
+    monkeypatch.setattr(
+        MODULE,
+        "describe_lfm2_autoregressive_hankel_phase",
+        describe_phase,
+    )
+    live_shards: list[weakref.ReferenceType] = []
+    built_ordinals = []
+
+    class FakeShard:
+        def __init__(self, phase_key, *, cache_hit):
+            self.phase_key_sha256 = phase_key
+            self.cache_hit = cache_hit
+
+    def load_phase(_root, *, session, reference, future_lags):
+        del session, future_lags
+        gc.collect()
+        assert not any(reference() is not None for reference in live_shards)
+        built_ordinals.append(reference.index)
+        shard = FakeShard(
+            phase_keys[reference.index],
+            cache_hit=reference.index == 1,
+        )
+        live_shards.append(weakref.ref(shard))
+        return shard
+
+    monkeypatch.setattr(
+        MODULE,
+        "load_or_build_lfm2_autoregressive_hankel_statistics",
+        load_phase,
+    )
+
+    evidence = SimpleNamespace(evidence_sha256="f" * 64, verify=lambda: True)
+    result = SimpleNamespace(
+        evidence=evidence,
+        as_dict=lambda: {"report_sha256": "1" * 64},
+    )
+    aggregate = SimpleNamespace(
+        result=result,
+        receipt={"receipt_sha256": "2" * 64},
+        provenance={"provenance_sha256": "3" * 64},
+        path=tmp_path / "aggregate",
+        aggregate_key_sha256="4" * 64,
+        cache_hit=False,
+    )
+
+    class FakeAccumulator:
+        plan = SimpleNamespace(plan_key_sha256="5" * 64)
+
+        def __init__(self):
+            self.processed_source_count = 1
+            self.committed_phase_keys = phase_keys[:1]
+
+        @property
+        def completed(self):
+            return self.processed_source_count == len(phase_keys)
+
+        @property
+        def next_expected_phase_key(self):
+            if self.completed:
+                return None
+            return phase_keys[self.processed_source_count]
+
+        def absorb(self, shard):
+            ordinal = self.processed_source_count
+            assert shard.phase_key_sha256 == phase_keys[ordinal]
+            self.processed_source_count += 1
+            body = {
+                "phase_key_sha256": shard.phase_key_sha256,
+                "durable_processed_source_count": self.processed_source_count,
+                "phase_shard_path": f"shard-{ordinal}",
+                "phase_shard_prunable_after_commit": True,
+                "pooled_checkpoint_authenticated_before_prunable": True,
+                "source_tensor_references_retained_by_accumulator": 0,
+            }
+            return {**body, "receipt_sha256": MODULE.canonical_sha256(body)}
+
+        def finalize(self):
+            assert self.completed
+            return aggregate
+
+    accumulator = FakeAccumulator()
+
+    def open_accumulator(
+        _root,
+        *,
+        planned_phase_keys,
+        boundary_names,
+        state_ridge_fraction,
+        future_ridge_fraction,
+        maximum_condition_number,
+    ):
+        assert planned_phase_keys == phase_keys
+        assert len(boundary_names) == 2
+        assert state_ridge_fraction > 0
+        assert future_ridge_fraction > 0
+        assert maximum_condition_number > 0
+        return accumulator
+
+    monkeypatch.setattr(
+        MODULE,
+        "open_lfm2_autoregressive_hankel_observability_accumulator",
+        open_accumulator,
+    )
+    pruned = []
+
+    def prune_phase(_root, absorption):
+        pruned.append(absorption["phase_key_sha256"])
+        if prune_fails:
+            raise MODULE.ProductionLfm2CatalogError("cleanup deferred")
+        return 100 + len(pruned)
+
+    monkeypatch.setattr(
+        MODULE,
+        "_prune_absorbed_autoregressive_hankel_phase_shard",
+        prune_phase,
+    )
+    progress_rows = []
+    progress = SimpleNamespace(
+        emit=lambda stage, **metadata: progress_rows.append((stage, metadata))
+    )
+
+    observed, runtime = (
+        MODULE._materialize_production_autoregressive_hankel_observability(
+            config,
+            expected_parent_cache=current_cache,
+            progress=progress,
+        )
+    )
+
+    assert observed is aggregate
+    assert open_calls == [(source_directory.resolve(), False)]
+    assert described == [0, 1, 2]
+    assert built_ordinals == [1, 2]
+    assert pruned == list(phase_keys[1:])
+    assert not any(reference() is not None for reference in live_shards)
+    assert session.closed is True
+    assert runtime["resumed_processed_source_count"] == 1
+    assert runtime["phase_cache_hit_count"] == 1
+    assert runtime["phase_cache_build_count"] == 1
+    assert runtime["phase_shard_pruned_count"] == (0 if prune_fails else 2)
+    assert runtime["phase_shard_prune_deferred_count"] == (2 if prune_fails else 0)
+    assert runtime["active_or_merged_session_inferred"] is False
+    assert runtime["cross_implementation_source"] is True
+    assert runtime["source_trace_implementation_fingerprint"] == (
+        "source-implementation"
+    )
+    assert runtime["active_trace_implementation_fingerprint"] == "implementation"
+    assert runtime["training_steps"] == 0
+    stages = [stage for stage, _metadata in progress_rows]
+    assert "autoregressive_hankel_accumulator_resumed" in stages
+    assert stages.count("autoregressive_hankel_phase_started") == 2
+    assert stages.count("autoregressive_hankel_phase_committed") == 2
+    assert stages.count("autoregressive_hankel_phase_prune_deferred") == (
+        2 if prune_fails else 0
+    )
+    assert stages[-1] == "autoregressive_hankel_observability_ready"
+
+
+def test_ahb_phase_shard_pruning_requires_sealed_absorption(tmp_path) -> None:
+    statistics_root = tmp_path / "statistics"
+    phase_key = "a" * 64
+    shard = statistics_root / "shards" / phase_key[:2] / phase_key
+    shard.mkdir(parents=True)
+    (shard / "receipt.json").write_bytes(b"receipt")
+    (shard / "statistics.safetensors").write_bytes(b"statistics")
+    body = {
+        "phase_key_sha256": phase_key,
+        "phase_shard_path": str(shard.absolute()),
+        "phase_shard_prunable_after_commit": True,
+        "pooled_checkpoint_authenticated_before_prunable": True,
+        "source_tensor_references_retained_by_accumulator": 0,
+    }
+    absorption = {**body, "receipt_sha256": MODULE.canonical_sha256(body)}
+
+    released = MODULE._prune_absorbed_autoregressive_hankel_phase_shard(
+        statistics_root,
+        absorption,
+    )
+
+    assert released == len(b"receiptstatistics")
+    assert not shard.exists()
+
+    unsafe = dict(absorption)
+    unsafe["pooled_checkpoint_authenticated_before_prunable"] = False
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="exact sealed durable absorption receipt",
+    ):
+        MODULE._prune_absorbed_autoregressive_hankel_phase_shard(
+            statistics_root,
+            unsafe,
         )
