@@ -37,6 +37,9 @@ from . import dynamic_circuit_ir as _circuit_ir_module
 from . import dynamic_fold_phase_cache as _phase_cache_module
 from . import dynamic_model_inspector as _model_inspector_module
 from . import dynamic_weight_complete_basis as _weight_basis_module
+from . import (
+    hf_lfm2_autoregressive_hankel_observability as _ahb_observability_module,
+)
 from . import hf_lfm2_balanced_circuit_basis as _lfm2_balanced_module
 from . import hf_lfm2_circuit_trace_cache as _trace_cache_module
 from . import hf_lfm2_circuit_trace_row_selection as _row_selection_module
@@ -266,6 +269,117 @@ def _canonical_mapping(value: Any, name: str) -> dict[str, Any]:
     return normalized
 
 
+def _autoregressive_hankel_observability_binding(
+    value: Any | None,
+) -> dict[str, Any] | None:
+    """Reauthenticate one runtime AHB artifact and return only key material."""
+
+    if value is None:
+        return None
+    result_type = _ahb_observability_module.Lfm2AutoregressiveHankelObservabilityResult
+    evidence_type = _balanced_basis_module.PrecomputedDownstreamObservability
+    if isinstance(value, result_type):
+        evidence = value.evidence
+        input_kind = "sealed-result"
+        result_report = _canonical_mapping(
+            value.as_dict(),
+            "autoregressive_hankel_observability result report",
+        )
+    elif isinstance(value, evidence_type):
+        evidence = value
+        input_kind = "sealed-precomputed-evidence"
+        result_report = None
+    else:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "autoregressive_hankel_observability must be one sealed LFM2 "
+            "AHB result, its authenticated precomputed evidence, or None."
+        )
+
+    try:
+        verified = evidence.verify()
+        evidence_document = _canonical_mapping(
+            evidence.as_dict(),
+            "autoregressive_hankel_observability evidence",
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Autoregressive Hankel observability evidence failed reauthentication."
+        ) from exc
+    provenance = evidence_document.get("provenance")
+    if not isinstance(provenance, dict):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Autoregressive Hankel observability has no sealed provenance."
+        )
+    evidence_sha256 = _digest(
+        evidence_document.get("evidence_sha256"),
+        "autoregressive_hankel_observability.evidence_sha256",
+    )
+    gram_sha256 = _digest(
+        evidence_document.get("gram_sha256"),
+        "autoregressive_hankel_observability.gram_sha256",
+    )
+    provenance_sha256 = _digest(
+        provenance.get("provenance_sha256"),
+        "autoregressive_hankel_observability.provenance_sha256",
+    )
+    if (
+        verified is not True
+        or evidence.evidence_sha256 != evidence_sha256
+        or evidence_document.get("role")
+        != "autoregressive_hankel_future_causal_geometry"
+        or provenance.get("schema")
+        != _ahb_observability_module.LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_PROVENANCE_SCHEMA
+        or provenance.get("global_gram_sha256") != gram_sha256
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Autoregressive Hankel observability is not the exact sealed "
+            "future-causal evidence requested for this phase."
+        )
+
+    result_report_sha256: str | None = None
+    if result_report is not None:
+        result_body = dict(result_report)
+        result_report_sha256 = _digest(
+            result_body.pop("report_sha256", None),
+            "autoregressive_hankel_observability.report_sha256",
+        )
+        boundaries = result_report.get("boundaries")
+        if (
+            result_report.get("schema")
+            != _ahb_observability_module.LFM2_AUTOREGRESSIVE_HANKEL_OBSERVABILITY_SCHEMA
+            or result_report_sha256 != canonical_sha256(result_body)
+            or result_report.get("precomputed_observability") != evidence_document
+            or result_report.get("global_gram_sha256") != gram_sha256
+            or not isinstance(boundaries, list)
+            or len(boundaries) != len(value.boundary_grams)
+        ):
+            raise Lfm2BalancedBasisPhaseCacheError(
+                "Autoregressive Hankel result report failed reauthentication."
+            )
+        for boundary, boundary_gram in zip(
+            boundaries,
+            value.boundary_grams,
+            strict=True,
+        ):
+            if (
+                not isinstance(boundary, dict)
+                or not isinstance(boundary_gram, torch.Tensor)
+                or boundary.get("gram_sha256") != _balanced_tensor_sha256(boundary_gram)
+            ):
+                raise Lfm2BalancedBasisPhaseCacheError(
+                    "Autoregressive Hankel boundary Gram changed after sealing."
+                )
+
+    return {
+        "schema": "neural-forge-lfm2-balanced-basis-ahb-binding-v1",
+        "input_kind": input_kind,
+        "evidence_sha256": evidence_sha256,
+        "provenance_sha256": provenance_sha256,
+        "gram_sha256": gram_sha256,
+        "result_report_sha256": result_report_sha256,
+    }
+
+
 class PhaseAnchorAuthority:
     """Runtime-only HMAC authority for one source-authentic phase cache.
 
@@ -341,6 +455,15 @@ class Lfm2BalancedBasisPhaseBuildRequest:
     streaming_vocabulary_margin_v2: bool = False
     streaming_vocabulary_margin_pair_chunk_size: int = 256
     target_tokenizer_vocabulary_margin_binding: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    autoregressive_hankel_observability: (
+        _ahb_observability_module.Lfm2AutoregressiveHankelObservabilityResult
+        | _balanced_basis_module.PrecomputedDownstreamObservability
+        | None
+    ) = field(
         default=None,
         repr=False,
         compare=False,
@@ -433,6 +556,7 @@ class Lfm2BalancedBasisPhaseBuildRequest:
                 "observability."
             )
         self._verify_target_binding()
+        self._verify_autoregressive_hankel_observability()
 
     def _verify_target_binding(self) -> str | None:
         binding = self.target_tokenizer_vocabulary_margin_binding
@@ -456,10 +580,17 @@ class Lfm2BalancedBasisPhaseBuildRequest:
             "target_tokenizer_vocabulary_margin_binding.binding_sha256",
         )
 
+    def _verify_autoregressive_hankel_observability(
+        self,
+    ) -> dict[str, Any] | None:
+        return _autoregressive_hankel_observability_binding(
+            self.autoregressive_hankel_observability
+        )
+
     def as_basis_config(self) -> dict[str, Any]:
         """Return the exact canonical values bound into the phase key."""
 
-        return {
+        config = {
             "adapter_source_sha256": self.adapter_source_sha256,
             "validation_fraction": self.validation_fraction,
             "split_seed": self.split_seed,
@@ -485,6 +616,13 @@ class Lfm2BalancedBasisPhaseBuildRequest:
                 self._verify_target_binding()
             ),
         }
+        ahb_binding = self._verify_autoregressive_hankel_observability()
+        if ahb_binding is not None:
+            # Runtime tensors never enter the JSON phase key.  These three
+            # independently authenticated digests identify the exact evidence,
+            # its provenance, and the Gram consumed by the cold builder.
+            config["autoregressive_hankel_observability"] = ahb_binding
+        return config
 
     def build(
         self,
@@ -502,6 +640,7 @@ class Lfm2BalancedBasisPhaseBuildRequest:
         """Call the canonical builder with exactly the values in this request."""
 
         self._verify_target_binding()
+        self._verify_autoregressive_hankel_observability()
         return build_lfm2_circuit_balanced_basis(
             parent_model,
             trace_cache,
@@ -528,6 +667,9 @@ class Lfm2BalancedBasisPhaseBuildRequest:
             ),
             target_tokenizer_vocabulary_margin_binding=(
                 self.target_tokenizer_vocabulary_margin_binding
+            ),
+            autoregressive_hankel_observability=(
+                self.autoregressive_hankel_observability
             ),
         )
 
