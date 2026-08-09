@@ -955,6 +955,13 @@ def test_mapped_parent_normalization_is_sealed_distinct_and_fail_closed(
     )
     assert control["donor_canonical_sequence_equivalence_claimed"] is False
     assert control["canonical_behavior_input_evidence_sha256"]
+    assert control["generation_protocol"] == {
+        **MODULE.GENERATION_PROTOCOL,
+        "max_new_tokens": 4,
+    }
+    assert control["generation_protocol_matches_original_parent"] is True
+    assert mapped.generation_limit == 4
+    assert mapped.cases[0].parent_metadata.generation_limit == 4
     assert mapped.cases[0].parent_output == "4"
     sealed = json.loads(envelope.read_text(encoding="ascii"))
     target_ids = sealed["rows"][0]["target_prompt_input_ids"]
@@ -966,6 +973,40 @@ def test_mapped_parent_normalization_is_sealed_distinct_and_fail_closed(
         ]
         for token_id in target_ids
     ]
+
+    protocol_tampered = dict(sealed)
+    protocol_tampered["generation"] = {
+        **MODULE.GENERATION_PROTOCOL,
+        "max_new_tokens": 8,
+    }
+    protocol_tampered_body = dict(protocol_tampered)
+    protocol_tampered_body.pop("envelope_sha256")
+    protocol_tampered["envelope_sha256"] = MODULE.canonical_sha256(
+        protocol_tampered_body
+    )
+    protocol_tampered_path = tmp_path / "mapped-envelope-tampered-protocol.json"
+    MODULE._write_atomic_json(protocol_tampered_path, protocol_tampered)
+    protocol_tampered_config = _base_config(
+        tmp_path,
+        target_tokenizer_directory=artifact.root_dir,
+        target_tokenizer_calibration=tmp_path / "target-calibration.json",
+        tokenizer_bridge_artifact_sha256=artifact.artifact_sha256,
+        tokenizer_bridge_profile_sha256=artifact.profile_fingerprint,
+        tokenizer_bridge_mapped_parent_outputs=protocol_tampered_path,
+        tokenizer_bridge_mapped_parent_outputs_sha256=MODULE._file_sha256(
+            protocol_tampered_path
+        ),
+    )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="execution contract is incomplete",
+    ):
+        MODULE._load_bridge_mapped_parent_baseline(
+            protocol_tampered_config,
+            original_baseline=_original_behavior_baseline(),
+            tokenizer_bridge=runtime,
+            parent_cache=parent_cache,
+        )
 
     rejected_envelope, rejected_sha = _mapped_parent_envelope(
         tmp_path,

@@ -286,7 +286,19 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.identity()["capture"]["parent_decode_trace_mode"] == (
         MODULE.CACHED_VERIFIED_TRACE_MODE
     )
-    assert config.whole_output_max_new_tokens == 64
+    assert config.whole_output_max_new_tokens is None
+    generation_binding = config.identity()["whole_output_gate"][
+        "generation_protocol_binding"
+    ]
+    assert generation_binding == {
+        "source": "authenticated_cached_parent_envelope",
+        "sealed_envelope_file_sha256": config.cached_parent_outputs_sha256,
+        "expected_max_new_tokens": None,
+        "explicit_limit_is_assertion": True,
+        "protocol": dict(MODULE.GENERATION_PROTOCOL),
+    }
+    assert config.routed_manual_initial_max_new_tokens == 1024
+    assert config.routed_manual_retry_max_new_tokens == 2048
     assert config.whole_output_minimum_task_score_retention == 1.0
     assert config.whole_output_maximum_parent_task_score_regressions == 0
     assert config.final_performance_metrics_diagnostic_only is False
@@ -391,6 +403,31 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--required-target-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
     assert "--child-replay-phase-cache-root" in help_text
+
+
+def test_whole_output_cli_limit_is_optional_assertion_independent_of_manual_review(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--whole-output-max-new-tokens",
+                "256",
+            ]
+        )
+    )
+
+    assert config.whole_output_max_new_tokens == 256
+    binding = config.identity()["whole_output_gate"][
+        "generation_protocol_binding"
+    ]
+    assert binding["source"] == "authenticated_cached_parent_envelope"
+    assert binding["expected_max_new_tokens"] == 256
+    assert binding["explicit_limit_is_assertion"] is True
+    assert config.routed_manual_initial_max_new_tokens == 1024
+    assert config.routed_manual_retry_max_new_tokens == 2048
 
 
 def test_child_replay_phase_cache_cli_is_explicit_stable_and_canonical(
@@ -5198,7 +5235,6 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
         max_endpoint_relative_rmse=1e6,
         min_endpoint_cosine_similarity=-1.0,
         min_residual_cosine=-1.0,
-        whole_output_max_new_tokens=4,
         snapshot_chunk_bytes=1024 * 1024,
     )
 
@@ -5215,6 +5251,20 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
     assert receipt["fold"]["optimizer_steps"] == 0
     assert receipt["fold"]["backward_calls"] == 0
     assert receipt["parent"]["parent_forward_count_after_cache"] == 0
+    assert config.whole_output_max_new_tokens is None
+    generation_binding = receipt["parent"]["whole_output_envelope_binding"]
+    assert generation_binding["generation_protocol_source"] == (
+        "authenticated_cached_parent_envelope"
+    )
+    assert generation_binding["configured_generation_limit_assertion"] is None
+    assert generation_binding["resolved_generation_protocol"] == {
+        **MODULE.GENERATION_PROTOCOL,
+        "max_new_tokens": 4,
+    }
+    assert generation_binding["mapped_parent_generation_limit"] is None
+    assert generation_binding[
+        "mapped_parent_generation_protocol_matches_original"
+    ] is True
     assert set(receipt["behavior"]) == {
         "accepted_in_memory_child",
         "freshly_reloaded_child",

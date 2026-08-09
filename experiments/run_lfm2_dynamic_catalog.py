@@ -1519,7 +1519,7 @@ class ProductionLfm2CatalogConfig:
     min_teacher_top1: float = 0.05
     min_free_run_match: float = 0.05
     min_residual_cosine: float = 0.0
-    whole_output_max_new_tokens: int = 64
+    whole_output_max_new_tokens: int | None = None
     whole_output_maximum_prompt_tokens: int = 512
     whole_output_fragment_minimum_characters: int = 12
     whole_output_maximum_new_empty_responses: int = 0
@@ -1965,7 +1965,6 @@ class ProductionLfm2CatalogConfig:
             "max_selection_rows",
             "max_fit_rows",
             "max_validation_rows",
-            "whole_output_max_new_tokens",
             "whole_output_maximum_prompt_tokens",
             "whole_output_fragment_minimum_characters",
             "snapshot_chunk_bytes",
@@ -1974,6 +1973,15 @@ class ProductionLfm2CatalogConfig:
                 self,
                 name,
                 _positive_int(getattr(self, name), name),
+            )
+        if self.whole_output_max_new_tokens is not None:
+            object.__setattr__(
+                self,
+                "whole_output_max_new_tokens",
+                _positive_int(
+                    self.whole_output_max_new_tokens,
+                    "whole_output_max_new_tokens",
+                ),
             )
         if self.required_target_hidden_size is not None:
             object.__setattr__(
@@ -4073,7 +4081,17 @@ class ProductionLfm2CatalogConfig:
                 "endpoint_numeric_fit_is_diagnostic_only": True,
             },
             "whole_output_gate": {
-                "max_new_tokens": self.whole_output_max_new_tokens,
+                "generation_protocol_binding": {
+                    "source": "authenticated_cached_parent_envelope",
+                    "sealed_envelope_file_sha256": (
+                        self.cached_parent_outputs_sha256
+                    ),
+                    "expected_max_new_tokens": (
+                        self.whole_output_max_new_tokens
+                    ),
+                    "explicit_limit_is_assertion": True,
+                    "protocol": dict(GENERATION_PROTOCOL),
+                },
                 "maximum_prompt_tokens": (self.whole_output_maximum_prompt_tokens),
                 "fragment_minimum_characters": (
                     self.whole_output_fragment_minimum_characters
@@ -6616,6 +6634,11 @@ def _load_bridge_mapped_parent_baseline(
         "new_generation_limit_saturations": new_saturations,
         "generation_limit_saturations_are_censored": True,
         "generation_limit_saturations_have_acceptance_authority": False,
+        "generation_protocol": {
+            **GENERATION_PROTOCOL,
+            "max_new_tokens": original_baseline.generation_limit,
+        },
+        "generation_protocol_matches_original_parent": True,
         "repeated_bigram_share_regressions": repetition_regressions,
         "original_parent_input_mode": "donor-tokenizer-canonical",
         "mapped_parent_input_mode": (
@@ -13395,6 +13418,18 @@ def run_production_catalog(
                 "whole_output_case_count": len(whole_output_baseline.cases),
                 "whole_output_envelope_binding": {
                     "validated": True,
+                    "generation_protocol_source": (
+                        "authenticated_cached_parent_envelope"
+                    ),
+                    "configured_generation_limit_assertion": (
+                        config.whole_output_max_new_tokens
+                    ),
+                    "resolved_generation_protocol": {
+                        **GENERATION_PROTOCOL,
+                        "max_new_tokens": (
+                            whole_output_baseline.generation_limit
+                        ),
+                    },
                     "parent_cache_key": (
                         whole_output_baseline.parent_cache_key
                     ),
@@ -13424,6 +13459,16 @@ def run_production_catalog(
                         None
                         if mapped_parent_baseline is None
                         else mapped_parent_baseline.source_sha256
+                    ),
+                    "mapped_parent_generation_limit": (
+                        None
+                        if mapped_parent_baseline is None
+                        else mapped_parent_baseline.generation_limit
+                    ),
+                    "mapped_parent_generation_protocol_matches_original": (
+                        mapped_parent_baseline is None
+                        or mapped_parent_baseline.generation_limit
+                        == whole_output_baseline.generation_limit
                     ),
                     "child_evaluated_against_original_and_mapped_parent": (
                         mapped_parent_baseline is not None
@@ -15821,7 +15866,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--whole-output-max-new-tokens",
         type=int,
-        default=64,
+        default=None,
+        help=(
+            "Optional assertion for the authenticated cached-parent generation "
+            "limit; omitted values are inferred from the sealed envelope."
+        ),
     )
     parser.add_argument(
         "--whole-output-maximum-prompt-tokens",

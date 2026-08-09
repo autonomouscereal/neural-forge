@@ -507,7 +507,7 @@ def load_lfm2_cached_whole_output_baseline(
     expected_parent_cache_key: str,
     expected_parent_state_fingerprint: str,
     expected_tokenizer_fingerprint: str,
-    expected_generation_limit: int = 64,
+    expected_generation_limit: int | None = 64,
     fragment_minimum_characters: int = 12,
 ) -> Lfm2CachedWholeOutputBaseline:
     source = Path(path).expanduser().resolve(strict=True)
@@ -560,18 +560,34 @@ def load_lfm2_cached_whole_output_baseline(
             raise DynamicLfm2BehaviorError(
                 f"Cached parent output envelope {name} differs from the live run."
             )
+    generation = body.get("generation")
+    if not isinstance(generation, Mapping):
+        raise DynamicLfm2BehaviorError(
+            "Cached parent generation protocol is missing or malformed."
+        )
     generation_limit = _positive_int(
-        expected_generation_limit,
-        "expected_generation_limit",
+        generation.get("max_new_tokens"),
+        "cached parent generation max_new_tokens",
     )
-    expected_generation = {
+    authenticated_generation = {
         **GENERATION_PROTOCOL,
         "max_new_tokens": generation_limit,
     }
-    if body.get("generation") != expected_generation:
+    if dict(generation) != authenticated_generation:
         raise DynamicLfm2BehaviorError(
-            "Cached parent generation protocol differs from the live gate."
+            "Cached parent generation protocol is not the authenticated "
+            "greedy protocol."
         )
+    if expected_generation_limit is not None:
+        asserted_generation_limit = _positive_int(
+            expected_generation_limit,
+            "expected_generation_limit",
+        )
+        if generation_limit != asserted_generation_limit:
+            raise DynamicLfm2BehaviorError(
+                "Explicit cached parent generation-limit assertion differs "
+                "from the authenticated envelope."
+            )
     fragment_characters = _positive_int(
         fragment_minimum_characters,
         "fragment_minimum_characters",

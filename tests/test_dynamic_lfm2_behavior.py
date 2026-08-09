@@ -7,10 +7,12 @@ from types import SimpleNamespace
 import pytest
 
 from neural_forge.dynamic_behavior_gate import resolve_behavior_gate_binding
+from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_executor import FoldDecision
 from neural_forge.dynamic_lfm2_behavior import (
     CombinedLfm2FinalEvaluator,
     DynamicLfm2BehaviorError,
+    GENERATION_PROTOCOL,
     Lfm2WholeOutputBehaviorEvaluator,
     load_lfm2_cached_whole_output_baseline,
     seal_lfm2_cached_whole_output_envelope,
@@ -78,6 +80,29 @@ def _load(envelope, receipt, *, generation_limit=64):
     )
 
 
+def _reseal_generation(envelope, generation):
+    payload = json.loads(envelope.read_text(encoding="ascii"))
+    body = dict(payload)
+    body.pop("envelope_sha256")
+    body["generation"] = generation
+    rewritten = {
+        **body,
+        "envelope_sha256": canonical_sha256(body),
+    }
+    raw = (
+        json.dumps(
+            rewritten,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        + b"\n"
+    )
+    envelope.write_bytes(raw)
+    return hashlib.sha256(raw).hexdigest()
+
+
 def test_cached_lfm2_baseline_is_parent_bound_and_scores_tasks(tmp_path) -> None:
     envelope, receipt = _seal(tmp_path)
     baseline = _load(envelope, receipt)
@@ -130,6 +155,61 @@ def test_cached_lfm2_baseline_is_parent_bound_and_scores_tasks(tmp_path) -> None
             expected_parent_cache_key="d" * 64,
             expected_parent_state_fingerprint=PARENT_STATE,
             expected_tokenizer_fingerprint=TOKENIZER,
+        )
+
+
+def test_cached_lfm2_baseline_infers_authenticated_generation_limit(
+    tmp_path,
+) -> None:
+    envelope, receipt = _seal(tmp_path, generation_limit=4)
+
+    baseline = _load(envelope, receipt, generation_limit=None)
+
+    assert baseline.generation_limit == 4
+    assert all(
+        case.parent_metadata.generation_limit == 4
+        for case in baseline.cases
+    )
+    with pytest.raises(
+        DynamicLfm2BehaviorError,
+        match="generation-limit assertion differs",
+    ):
+        _load(envelope, receipt, generation_limit=8)
+
+
+@pytest.mark.parametrize(
+    "generation",
+    [
+        {
+            **GENERATION_PROTOCOL,
+            "do_sample": True,
+            "max_new_tokens": 64,
+        },
+        {
+            **GENERATION_PROTOCOL,
+            "max_new_tokens": 64,
+            "unsealed_extension": True,
+        },
+    ],
+)
+def test_cached_lfm2_baseline_requires_exact_authenticated_protocol(
+    tmp_path,
+    generation,
+) -> None:
+    envelope, _receipt = _seal(tmp_path)
+    rewritten_sha256 = _reseal_generation(envelope, generation)
+
+    with pytest.raises(
+        DynamicLfm2BehaviorError,
+        match="authenticated greedy protocol",
+    ):
+        load_lfm2_cached_whole_output_baseline(
+            envelope,
+            expected_sha256=rewritten_sha256,
+            expected_parent_cache_key=PARENT_CACHE_KEY,
+            expected_parent_state_fingerprint=PARENT_STATE,
+            expected_tokenizer_fingerprint=TOKENIZER,
+            expected_generation_limit=None,
         )
 
 
@@ -300,6 +380,9 @@ def test_real_generator_accepts_concise_coherent_nonidentical_output(
             return input_ids * self.weight
 
         def generate(self, *, input_ids, **_kwargs):
+            assert _kwargs["max_new_tokens"] == 4
+            assert _kwargs["do_sample"] is False
+            assert _kwargs["use_cache"] is True
             self(input_ids)
             prefix = input_ids if self.preserve_prefix else input_ids + 1
             suffix = torch.tensor([[4, 2, 5]], device=input_ids.device)
