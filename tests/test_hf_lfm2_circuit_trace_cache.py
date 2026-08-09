@@ -844,13 +844,22 @@ def _current_heterogeneous_reader_implementation() -> dict[str, str]:
     )
 
 
-def test_current_heterogeneous_reader_reuses_sealed_compiler_cache_without_parent_forward(
+@pytest.mark.parametrize(
+    "stored_implementation",
+    (
+        _sealed_compiler_cache_implementation,
+        _sealed_complete_causal_cache_implementation,
+    ),
+    ids=("compiler-interface", "complete-causal-a0003"),
+)
+def test_current_heterogeneous_reader_reuses_sealed_parent_cache_without_parent_forward(
     tmp_path,
     monkeypatch,
+    stored_implementation,
 ) -> None:
     model = _parent(seed=203)
     calls = _instrument_forwards(model)
-    stored = _sealed_compiler_cache_implementation()
+    stored = stored_implementation()
     monkeypatch.setattr(trace_cache, "implementation_identity", lambda: stored)
     config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
     first = build_lfm2_circuit_trace_cache(

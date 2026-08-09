@@ -222,6 +222,19 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
             "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227",
         ),
+        (
+            # Exact directional reuse of the sealed complete-causal A0003
+            # parent cache by the same sharded child-replay reader above.
+            # The stored implementation differs from the compiler/interface
+            # cache only in the collector revision that produced it; its
+            # committed manifest, record, tensor, topology, runtime, and
+            # package contracts are the already-audited native-parent forms.
+            # Multi-device replay remains child-only and cannot reinterpret
+            # any byte consumed from this sealed parent cache.
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
+            "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227",
+        ),
     }
 )
 
