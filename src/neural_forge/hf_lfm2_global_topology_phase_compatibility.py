@@ -51,6 +51,18 @@ _EXPLICIT_GLOBAL_TOPOLOGY_PHASE_COMPATIBILITY = frozenset(
             "3ca319c165d81c7fffb2f57a55edf3fcab49c647dd73cefb5a9b8d955a4741a7",
             "a91c75980d86da408ebef352d9ca29c30c5ffe30870e3ed24cfb3aa218359b39",
         ),
+        (
+            # Production reader after the callable fingerprint was made
+            # source-portable.  The prior reader hashed ``code.co_code`` and
+            # therefore produced different algorithm identities for the same
+            # authenticated sources on Python 3.11 and 3.12.  This tuple binds
+            # the exact v2 source reader and preserves the same directional,
+            # hit-only A0007 compatibility contract.
+            "3e4531740792b3abe7ed54c02a49ca99caabc3ae94dd181c167913cbb5dbcab1",
+            "338d5b800bfac45dc8cee0017a98a850392610b34322db4cd55a0d8a0de73b12",
+            "3ca319c165d81c7fffb2f57a55edf3fcab49c647dd73cefb5a9b8d955a4741a7",
+            "d2ed9e076927dea1bfa44e47f3a2fff19b9617f486ca079e27948d212b6212dd",
+        ),
     }
 )
 

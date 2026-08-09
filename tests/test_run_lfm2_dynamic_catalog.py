@@ -1657,6 +1657,228 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     assert config.dense_streaming_vocabulary_margin_v2 is True
 
 
+def _historical_global_topology_reuse_arguments() -> list[str]:
+    return [
+        "--global-topology-existing-capacity-phase-key-sha256",
+        "8" * 64,
+        "--global-topology-existing-capacity-completion-sha256",
+        "9" * 64,
+        "--global-topology-existing-capacity-evidence-sha256",
+        "a" * 64,
+        "--global-topology-existing-capacity-compatibility-receipt-sha256",
+        "b" * 64,
+        "--global-topology-existing-functional-phase-key-sha256",
+        "c" * 64,
+        "--global-topology-existing-functional-completion-sha256",
+        "d" * 64,
+        "--global-topology-existing-functional-evidence-sha256",
+        "e" * 64,
+        "--global-topology-existing-functional-compatibility-receipt-sha256",
+        "f" * 64,
+    ]
+
+
+def test_parser_wires_explicit_historical_global_topology_hits_without_fold_drift(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    baseline = MODULE.config_from_args(
+        parser.parse_args(_carrier_arguments(tmp_path))
+    )
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_carrier_arguments(tmp_path),
+                *_historical_global_topology_reuse_arguments(),
+            ]
+        )
+    )
+
+    capacity = config.global_topology_existing_capacity_phase_reuse
+    functional = config.global_topology_existing_functional_phase_reuse
+    assert capacity is not None
+    assert functional is not None
+    assert capacity.phase_name == MODULE.GLOBAL_TOPOLOGY_CAPACITY_PHASE
+    assert capacity.phase_key_sha256 == "8" * 64
+    assert capacity.expected_completion_sha256 == "9" * 64
+    assert capacity.expected_evidence_sha256 == "a" * 64
+    assert capacity.expected_compatibility_receipt_sha256 == "b" * 64
+    assert functional.phase_name == MODULE.GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE
+    assert functional.phase_key_sha256 == "c" * 64
+    assert functional.expected_completion_sha256 == "d" * 64
+    assert functional.expected_evidence_sha256 == "e" * 64
+    assert functional.expected_compatibility_receipt_sha256 == "f" * 64
+
+    # Cache transport is execution-only; selecting the exact same sealed
+    # evidence cannot invalidate the A0007 fold/capsule identity.
+    assert config.identity() == baseline.identity()
+    context = MODULE._global_topology_phase_cache_context(
+        config,
+        evidence_split_sha256="7" * 64,
+    )
+    assert context.existing_capacity_phase_reuse is capacity
+    assert context.existing_functional_phase_reuse is functional
+    receipt = MODULE._global_topology_existing_phase_reuse_receipt_fields(config)
+    assert receipt["existing_phase_reuse_hit_only"] is True
+    assert [
+        value["phase_name"] for value in receipt["existing_phase_reuse_requests"]
+    ] == [
+        MODULE.GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        MODULE.GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+    ]
+    progress_fields = MODULE._global_topology_existing_phase_reuse_progress_fields(
+        config
+    )
+    assert progress_fields == {
+        "global_topology_existing_phase_reuse_request_count": 2,
+        "global_topology_existing_phase_reuse_requests_sha256": (
+            MODULE.canonical_sha256(receipt["existing_phase_reuse_requests"])
+        ),
+    }
+
+
+def test_production_global_topology_relay_preserves_authenticated_reuse_receipt(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_carrier_arguments(tmp_path),
+                *_historical_global_topology_reuse_arguments(),
+            ]
+        )
+    )
+    stream = _FlushRecordingStream()
+    journal = MODULE._ProgressJournal("0" * 64, stream=stream)
+    context = MODULE._global_topology_phase_cache_context(
+        config,
+        evidence_split_sha256="7" * 64,
+        progress=journal,
+    )
+    assert context.progress is not None
+    observed_receipts = []
+    for index, request in enumerate(
+        (
+            config.global_topology_existing_capacity_phase_reuse,
+            config.global_topology_existing_functional_phase_reuse,
+        )
+    ):
+        assert request is not None
+        seed = str(index + 1)
+        body = {
+            "schema": MODULE.GLOBAL_TOPOLOGY_LIVE_REUSE_RECEIPT_SCHEMA,
+            "request_sha256": request.as_dict()["request_sha256"],
+            "phase_name": request.phase_name,
+            "historical_phase_key_sha256": request.phase_key_sha256,
+            "current_phase_key_sha256": seed * 64,
+            "historical_completion_sha256": (
+                request.expected_completion_sha256
+            ),
+            "historical_payload_sha256": str(index + 3) * 64,
+            "historical_evidence_sha256": request.expected_evidence_sha256,
+            "historical_algorithm_sha256": str(index + 5) * 64,
+            "current_algorithm_sha256": str(index + 7) * 64,
+            "compatibility_policy_sha256": str(index + 8) * 64,
+            "compatibility_receipt_sha256": (
+                request.expected_compatibility_receipt_sha256
+            ),
+            "semantic_phase_contract_exact": True,
+            "historical_artifact_rewritten": False,
+            "cache_miss_build_allowed": False,
+            "parent_model_calls": 0,
+            "training_steps": 0,
+            "optimizer_steps": 0,
+            "backward_calls": 0,
+        }
+        receipt = {
+            **body,
+            "reuse_receipt_sha256": MODULE.canonical_sha256(body),
+        }
+        observed_receipts.append(receipt)
+        context.progress(
+            MODULE.GLOBAL_TOPOLOGY_EXISTING_PHASE_REUSE_HIT_STAGE,
+            MappingProxyType(receipt),
+        )
+        if index == 0:
+            partial_fields = (
+                MODULE._global_topology_existing_phase_reuse_receipt_fields(
+                    config,
+                    progress=journal,
+                )
+            )
+            assert partial_fields[
+                "existing_phase_reuse_observed_phase_names"
+            ] == [MODULE.GLOBAL_TOPOLOGY_CAPACITY_PHASE]
+            assert partial_fields[
+                "existing_phase_reuse_all_requested_hits_observed"
+            ] is False
+            with pytest.raises(
+                MODULE.ProductionLfm2CatalogError,
+                match="did not observe every requested",
+            ):
+                MODULE._global_topology_existing_phase_reuse_receipt_fields(
+                    config,
+                    progress=journal,
+                    require_all_observed=True,
+                )
+
+    rows = _progress_rows(stream.getvalue())
+    assert len(rows) == 2
+    for row, receipt in zip(rows, observed_receipts, strict=True):
+        assert row["schema"] == MODULE.PROGRESS_JOURNAL_SCHEMA
+        assert row["global_topology_phase_schema"] == receipt["schema"]
+        assert row["reuse_receipt_sha256"] == receipt["reuse_receipt_sha256"]
+        assert row["semantic_phase_contract_exact"] is True
+        assert row["historical_artifact_rewritten"] is False
+    assert journal.global_topology_existing_phase_reuse_receipts() == (
+        observed_receipts
+    )
+    terminal_fields = MODULE._global_topology_existing_phase_reuse_receipt_fields(
+        config,
+        progress=journal,
+        require_all_observed=True,
+    )
+    assert terminal_fields["existing_phase_reuse_observed_live_receipts"] == (
+        observed_receipts
+    )
+    assert terminal_fields["existing_phase_reuse_observed_phase_names"] == [
+        MODULE.GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        MODULE.GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+    ]
+    assert terminal_fields["existing_phase_reuse_all_requested_hits_observed"] is True
+    assert stream.flush_count == 2
+
+
+def test_global_topology_relay_rejects_reserved_field_collisions() -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="field collision after namespacing",
+    ):
+        MODULE._global_topology_progress_journal_details(
+            {
+                "schema": "inner-schema",
+                "global_topology_phase_schema": "forged-collision",
+            }
+        )
+
+
+def test_parser_rejects_partial_historical_global_topology_reuse(tmp_path) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="Historical global-topology capacity reuse is all-or-none",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_carrier_arguments(tmp_path),
+                    "--global-topology-existing-capacity-phase-key-sha256",
+                    "8" * 64,
+                ]
+            )
+        )
+
+
 def _exact_2x_carrier_arguments(tmp_path: Path) -> list[str]:
     """NOTES-W13T §2's exact-2x rung, expressed in the carrier lane's flags."""
 

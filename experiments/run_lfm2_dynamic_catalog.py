@@ -139,8 +139,11 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     build_lfm2_cached_heterogeneous_capacity_option_bank,
 )
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (
+    GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+    GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
     Lfm2CachedGlobalTopologyEvidenceCacheMiss,
     Lfm2CachedGlobalTopologyFrontier,
+    Lfm2ExistingGlobalTopologyPhaseReuseRequest,
     Lfm2GlobalTopologyPhaseCacheContext,
     Lfm2GlobalTargetRuntimePins,
     build_lfm2_cached_global_topology_frontier,
@@ -600,6 +603,12 @@ def _process_memory_progress_metadata() -> dict[str, int]:
 CHILD_CLOSED_LOOP_VALIDATION_REJECTED_STAGE = (
     "child_closed_loop_validation_decision_rejected"
 )
+GLOBAL_TOPOLOGY_EXISTING_PHASE_REUSE_HIT_STAGE = (
+    "global_topology_existing_phase_reuse_hit"
+)
+GLOBAL_TOPOLOGY_LIVE_REUSE_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-global-topology-phase-live-reuse-v1"
+)
 
 
 class _ProgressJournal:
@@ -644,6 +653,10 @@ class _ProgressJournal:
             "maximum_worker_peak_capture_bytes": 0,
         }
         self._merged_capture_policy: dict[str, Any] | None = None
+        self._global_topology_existing_phase_reuse_receipts: dict[
+            str,
+            dict[str, Any],
+        ] = {}
         # A layer the terminal floor refuses publishes no restart capsule and
         # no completion receipt, so its per-solve prior-correction reports used
         # to die with the process (NOTES-W13S §6.4).  The adapter now attaches
@@ -697,6 +710,114 @@ class _ProgressJournal:
         if self._refused_layer_solver_diagnostics is None:
             return None
         return dict(self._refused_layer_solver_diagnostics)
+
+    def _observe_global_topology_existing_phase_reuse(
+        self,
+        stage: str,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        if stage != GLOBAL_TOPOLOGY_EXISTING_PHASE_REUSE_HIT_STAGE:
+            return
+        receipt = dict(metadata)
+        receipt["schema"] = receipt.pop("global_topology_phase_schema", None)
+        expected_fields = {
+            "schema",
+            "request_sha256",
+            "phase_name",
+            "historical_phase_key_sha256",
+            "current_phase_key_sha256",
+            "historical_completion_sha256",
+            "historical_payload_sha256",
+            "historical_evidence_sha256",
+            "historical_algorithm_sha256",
+            "current_algorithm_sha256",
+            "compatibility_policy_sha256",
+            "compatibility_receipt_sha256",
+            "semantic_phase_contract_exact",
+            "historical_artifact_rewritten",
+            "cache_miss_build_allowed",
+            "parent_model_calls",
+            "training_steps",
+            "optimizer_steps",
+            "backward_calls",
+            "reuse_receipt_sha256",
+        }
+        if set(receipt) != expected_fields:
+            raise ProductionLfm2CatalogError(
+                "Global-topology live reuse receipt fields are not exact."
+            )
+        if receipt["schema"] != GLOBAL_TOPOLOGY_LIVE_REUSE_RECEIPT_SCHEMA:
+            raise ProductionLfm2CatalogError(
+                "Global-topology live reuse receipt schema is not supported."
+            )
+        phase_name = str(receipt["phase_name"])
+        if phase_name not in {
+            GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        }:
+            raise ProductionLfm2CatalogError(
+                "Global-topology live reuse receipt names an unsupported phase."
+            )
+        for field in (
+            "request_sha256",
+            "historical_phase_key_sha256",
+            "current_phase_key_sha256",
+            "historical_completion_sha256",
+            "historical_payload_sha256",
+            "historical_evidence_sha256",
+            "historical_algorithm_sha256",
+            "current_algorithm_sha256",
+            "compatibility_policy_sha256",
+            "compatibility_receipt_sha256",
+            "reuse_receipt_sha256",
+        ):
+            _digest(receipt[field], f"global topology live reuse {field}")
+        if (
+            receipt["semantic_phase_contract_exact"] is not True
+            or receipt["historical_artifact_rewritten"] is not False
+            or receipt["cache_miss_build_allowed"] is not False
+            or any(
+                type(receipt[field]) is not int or receipt[field] != 0
+                for field in (
+                    "parent_model_calls",
+                    "training_steps",
+                    "optimizer_steps",
+                    "backward_calls",
+                )
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "Global-topology live reuse receipt violates the hit-only policy."
+            )
+        claimed_sha256 = str(receipt["reuse_receipt_sha256"])
+        body = dict(receipt)
+        body.pop("reuse_receipt_sha256")
+        if canonical_sha256(body) != claimed_sha256:
+            raise ProductionLfm2CatalogError(
+                "Global-topology live reuse receipt self-hash does not verify."
+            )
+        previous = self._global_topology_existing_phase_reuse_receipts.get(
+            phase_name
+        )
+        if previous is not None and previous != receipt:
+            raise ProductionLfm2CatalogError(
+                "Global-topology live reuse phase emitted conflicting receipts."
+            )
+        self._global_topology_existing_phase_reuse_receipts[phase_name] = receipt
+
+    def global_topology_existing_phase_reuse_receipts(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Return deduplicated authenticated live-hit receipts in phase order."""
+
+        return [
+            dict(self._global_topology_existing_phase_reuse_receipts[phase_name])
+            for phase_name in (
+                GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+                GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+            )
+            if phase_name in self._global_topology_existing_phase_reuse_receipts
+        ]
 
     def _observe_merged_capture_policy(
         self,
@@ -810,6 +931,7 @@ class _ProgressJournal:
                     f"Progress journal metadata field {normalized_key} is nonfinite."
                 )
             safe_metadata[normalized_key] = value
+        self._observe_global_topology_existing_phase_reuse(stage, safe_metadata)
         payload = {
             "schema": PROGRESS_JOURNAL_SCHEMA,
             "timestamp_utc": (
@@ -1281,6 +1403,15 @@ class ProductionLfm2CatalogConfig:
     ledger_path: Path
     receipt_path: Path
     derived_global_topology_cache_root: Path | None = None
+    # Execution-only authenticated cache directives.  These do not change the
+    # fold identity: a successful request restores the exact immutable B1/B2
+    # evidence that a cold build would otherwise recompute.
+    global_topology_existing_capacity_phase_reuse: (
+        Lfm2ExistingGlobalTopologyPhaseReuseRequest | None
+    ) = None
+    global_topology_existing_functional_phase_reuse: (
+        Lfm2ExistingGlobalTopologyPhaseReuseRequest | None
+    ) = None
     child_replay_phase_cache_root: Path | None = None
     balanced_basis_phase_cache_root: Path | None = None
     balanced_basis_phase_event_log: Path | None = None
@@ -2642,6 +2773,33 @@ class ProductionLfm2CatalogConfig:
                 "dense_heterogeneous_global_hidden_frontier requires an "
                 "explicit stable derived_global_topology_cache_root."
             )
+        for field_name, expected_phase_name in (
+            (
+                "global_topology_existing_capacity_phase_reuse",
+                GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            ),
+            (
+                "global_topology_existing_functional_phase_reuse",
+                GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+            ),
+        ):
+            request = getattr(self, field_name)
+            if request is None:
+                continue
+            if not isinstance(request, Lfm2ExistingGlobalTopologyPhaseReuseRequest):
+                raise ProductionLfm2CatalogError(
+                    f"{field_name} must be an authenticated global-topology "
+                    "phase reuse request or None."
+                )
+            if request.phase_name != expected_phase_name:
+                raise ProductionLfm2CatalogError(
+                    f"{field_name} must name {expected_phase_name}."
+                )
+            if not self.dense_heterogeneous_global_hidden_frontier:
+                raise ProductionLfm2CatalogError(
+                    f"{field_name} requires the automatic global heterogeneous "
+                    "compression frontier."
+                )
         if (
             self.dense_heterogeneous_factor_writer_rank_discovery
             and not self.dense_heterogeneous_layout
@@ -10214,7 +10372,10 @@ def _global_topology_phase_cache_context(
 
     def relay(stage: str, details: Mapping[str, Any]) -> None:
         if progress is not None:
-            progress.emit(stage, **dict(details))
+            progress.emit(
+                stage,
+                **_global_topology_progress_journal_details(details),
+            )
 
     return Lfm2GlobalTopologyPhaseCacheContext(
         cache=DynamicFoldPhaseCache(
@@ -10226,7 +10387,38 @@ def _global_topology_phase_cache_context(
         ),
         progress=None if progress is None else relay,
         selective_session_factory=selective_session_factory,
+        existing_capacity_phase_reuse=(
+            config.global_topology_existing_capacity_phase_reuse
+        ),
+        existing_functional_phase_reuse=(
+            config.global_topology_existing_functional_phase_reuse
+        ),
     )
+
+
+def _global_topology_progress_journal_details(
+    details: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Namespace topology fields reserved by the outer progress envelope.
+
+    A historical-hit event carries the authenticated reuse receipt verbatim,
+    including that receipt's own ``schema``.  The progress journal also owns a
+    ``schema`` field, so the relay renames only reserved envelope keys while
+    preserving every value and the receipt's self-hash.  A collision fails
+    closed instead of silently dropping evidence.
+    """
+
+    normalized: dict[str, Any] = {}
+    for raw_key, value in details.items():
+        key = str(raw_key)
+        if key in _ProgressJournal._RESERVED_FIELDS:
+            key = f"global_topology_phase_{key}"
+        if key in normalized:
+            raise ProductionLfm2CatalogError(
+                f"Global-topology progress field collision after namespacing: {key}."
+            )
+        normalized[key] = value
+    return normalized
 
 
 def _child_replay_phase_cache_context(
@@ -10260,6 +10452,73 @@ def _child_replay_phase_cache_context(
         ),
         progress=None if progress is None else relay,
     )
+
+
+def _global_topology_existing_phase_reuse_receipt_fields(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    progress: _ProgressJournal | None = None,
+    require_all_observed: bool = False,
+) -> dict[str, Any]:
+    requests = tuple(
+        request
+        for request in (
+            config.global_topology_existing_capacity_phase_reuse,
+            config.global_topology_existing_functional_phase_reuse,
+        )
+        if request is not None
+    )
+    if not requests:
+        return {}
+    request_by_phase = {request.phase_name: request for request in requests}
+    observed = (
+        []
+        if progress is None
+        else progress.global_topology_existing_phase_reuse_receipts()
+    )
+    for receipt in observed:
+        phase_name = str(receipt["phase_name"])
+        request = request_by_phase.get(phase_name)
+        if request is None:
+            raise ProductionLfm2CatalogError(
+                "Observed global-topology live reuse has no configured request."
+            )
+        if receipt["request_sha256"] != request.as_dict()["request_sha256"]:
+            raise ProductionLfm2CatalogError(
+                "Observed global-topology live reuse does not bind its configured request."
+            )
+    observed_phase_names = [str(receipt["phase_name"]) for receipt in observed]
+    all_requested_observed = set(observed_phase_names) == set(request_by_phase)
+    if require_all_observed and not all_requested_observed:
+        raise ProductionLfm2CatalogError(
+            "A successful run did not observe every requested global-topology reuse hit."
+        )
+    return {
+        "existing_phase_reuse_requests": [
+            request.as_dict() for request in requests
+        ],
+        "existing_phase_reuse_hit_only": True,
+        "existing_phase_reuse_observed_live_receipts": observed,
+        "existing_phase_reuse_observed_phase_names": observed_phase_names,
+        "existing_phase_reuse_all_requested_hits_observed": (
+            all_requested_observed
+        ),
+    }
+
+
+def _global_topology_existing_phase_reuse_progress_fields(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    """Represent sealed reuse requests using journal-safe JSON scalars."""
+
+    receipt_fields = _global_topology_existing_phase_reuse_receipt_fields(config)
+    requests = receipt_fields.get("existing_phase_reuse_requests", [])
+    return {
+        "global_topology_existing_phase_reuse_request_count": len(requests),
+        "global_topology_existing_phase_reuse_requests_sha256": (
+            canonical_sha256(requests) if requests else None
+        ),
+    }
 
 
 def _balanced_basis_phase_cache_receipt_fields(
@@ -12403,6 +12662,7 @@ def run_production_catalog(
             if config.dense_heterogeneous_global_hidden_frontier
             else None
         ),
+        **_global_topology_existing_phase_reuse_progress_fields(config),
         **(
             {}
             if not config.uses_balanced_basis_phase_cache
@@ -12530,6 +12790,7 @@ def run_production_catalog(
                     else None
                 ),
                 "required_target_hidden_size": config.required_target_hidden_size,
+                **_global_topology_existing_phase_reuse_receipt_fields(config),
             },
             **_balanced_basis_phase_cache_receipt_fields(config),
             **_autoregressive_hankel_cache_receipt_fields(config),
@@ -13991,6 +14252,11 @@ def run_production_catalog(
                     "required_target_hidden_size": (
                         config.required_target_hidden_size
                     ),
+                    **_global_topology_existing_phase_reuse_receipt_fields(
+                        config,
+                        progress=progress,
+                        require_all_observed=True,
+                    ),
                 },
                 **_balanced_basis_phase_cache_receipt_fields(config),
                 **_autoregressive_hankel_cache_receipt_fields(config),
@@ -14429,6 +14695,10 @@ def run_production_catalog(
                     ),
                     "required_target_hidden_size": (
                         config.required_target_hidden_size
+                    ),
+                    **_global_topology_existing_phase_reuse_receipt_fields(
+                        config,
+                        progress=progress,
                     ),
                 },
                 **_balanced_basis_phase_cache_receipt_fields(config),
@@ -14947,6 +15217,41 @@ def build_parser() -> argparse.ArgumentParser:
             "remain under --cache-root."
         ),
     )
+    for phase_label in ("capacity", "functional"):
+        parser.add_argument(
+            f"--global-topology-existing-{phase_label}-phase-key-sha256",
+            metavar="SHA256",
+            help=(
+                f"Exact immutable historical global-topology {phase_label} "
+                "phase key to consume hit-only. The completion, evidence, and "
+                "compatibility receipt pins for this phase are all required."
+            ),
+        )
+        parser.add_argument(
+            f"--global-topology-existing-{phase_label}-completion-sha256",
+            metavar="SHA256",
+            help=(
+                f"Expected sealed completion SHA-256 for the historical "
+                f"global-topology {phase_label} phase."
+            ),
+        )
+        parser.add_argument(
+            f"--global-topology-existing-{phase_label}-evidence-sha256",
+            metavar="SHA256",
+            help=(
+                f"Expected semantic evidence SHA-256 for the historical "
+                f"global-topology {phase_label} phase."
+            ),
+        )
+        parser.add_argument(
+            "--global-topology-existing-"
+            f"{phase_label}-compatibility-receipt-sha256",
+            metavar="SHA256",
+            help=(
+                f"Expected exact directional compatibility receipt SHA-256 "
+                f"for the historical global-topology {phase_label} phase."
+            ),
+        )
     parser.add_argument(
         "--child-replay-phase-cache-root",
         type=Path,
@@ -16063,10 +16368,63 @@ def resolve_replay_device_request(
     return (), REPLAY_DEVICES_SOURCE_UNSET
 
 
+def _global_topology_existing_phase_reuse_from_args(
+    args: argparse.Namespace,
+    *,
+    phase_label: str,
+    phase_name: str,
+) -> Lfm2ExistingGlobalTopologyPhaseReuseRequest | None:
+    """Build one all-or-none, hit-only historical topology request."""
+
+    option_names = {
+        "phase_key_sha256": (
+            f"global_topology_existing_{phase_label}_phase_key_sha256"
+        ),
+        "expected_completion_sha256": (
+            f"global_topology_existing_{phase_label}_completion_sha256"
+        ),
+        "expected_evidence_sha256": (
+            f"global_topology_existing_{phase_label}_evidence_sha256"
+        ),
+        "expected_compatibility_receipt_sha256": (
+            "global_topology_existing_"
+            f"{phase_label}_compatibility_receipt_sha256"
+        ),
+    }
+    raw = {name: getattr(args, option) for name, option in option_names.items()}
+    supplied = {name for name, value in raw.items() if value is not None}
+    if not supplied:
+        return None
+    if supplied != set(raw):
+        missing = ", ".join(sorted(set(raw) - supplied))
+        raise ProductionLfm2CatalogError(
+            f"Historical global-topology {phase_label} reuse is all-or-none; "
+            f"missing {missing}."
+        )
+    normalized = {
+        name: _digest(value, f"historical {phase_label} {name}")
+        for name, value in raw.items()
+    }
+    return Lfm2ExistingGlobalTopologyPhaseReuseRequest(
+        phase_name=phase_name,
+        **normalized,
+    )
+
+
 def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
     replay_devices, replay_devices_source = resolve_replay_device_request(
         getattr(args, "dense_replay_devices", None),
         dense_run_closed_loop=bool(args.dense_run_closed_loop),
+    )
+    capacity_phase_reuse = _global_topology_existing_phase_reuse_from_args(
+        args,
+        phase_label="capacity",
+        phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+    )
+    functional_phase_reuse = _global_topology_existing_phase_reuse_from_args(
+        args,
+        phase_label="functional",
+        phase_name=GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
     )
     return ProductionLfm2CatalogConfig(
         parent_model=args.parent_model,
@@ -16130,6 +16488,12 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         cache_root=args.cache_root,
         derived_global_topology_cache_root=(
             args.derived_global_topology_cache_root
+        ),
+        global_topology_existing_capacity_phase_reuse=(
+            capacity_phase_reuse
+        ),
+        global_topology_existing_functional_phase_reuse=(
+            functional_phase_reuse
         ),
         child_replay_phase_cache_root=(
             args.child_replay_phase_cache_root

@@ -74,13 +74,13 @@ _PUBLISHED_GLOBAL_ALGORITHM_SHA256 = (
     "3e4531740792b3abe7ed54c02a49ca99caabc3ae94dd181c167913cbb5dbcab1"
 )
 _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256 = (
-    "4ff8fadb908bbc08bd03bc329f2cff435f7687e5e6ebda8e6c115f0f92543322"
+    "338d5b800bfac45dc8cee0017a98a850392610b34322db4cd55a0d8a0de73b12"
 )
 _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256 = (
     "3ca319c165d81c7fffb2f57a55edf3fcab49c647dd73cefb5a9b8d955a4741a7"
 )
 _CURRENT_GLOBAL_ALGORITHM_SHA256 = (
-    "a91c75980d86da408ebef352d9ca29c30c5ffe30870e3ed24cfb3aa218359b39"
+    "d2ed9e076927dea1bfa44e47f3a2fff19b9617f486ca079e27948d212b6212dd"
 )
 
 
@@ -640,6 +640,34 @@ def test_requested_historical_phase_miss_is_fatal_and_never_builds(
             **kwargs,
         )
     assert not phase_root.exists()
+
+
+def test_callable_source_fingerprint_is_portable_across_bytecode_compilers(
+    monkeypatch,
+) -> None:
+    def first(value):
+        return value + 1
+
+    def second(value):
+        return value * 2
+
+    for function in (first, second):
+        function.__module__ = "portable_fixture"
+        function.__qualname__ = "portable_fixture"
+    monkeypatch.setattr(
+        global_frontier.inspect,
+        "getsource",
+        lambda _value: "def portable_fixture(value):\n    return value\n",
+    )
+
+    assert first.__code__.co_code != second.__code__.co_code
+    assert global_frontier._callable_source_fingerprint(
+        first,
+        role="portable",
+    ) == global_frontier._callable_source_fingerprint(
+        second,
+        role="portable",
+    )
 
 
 def test_topology_trace_cache_fingerprint_ignores_child_replay_surface(

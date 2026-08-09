@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import importlib.util
+import io
 import json
 import shutil
 import sys
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -626,16 +628,36 @@ def test_authenticated_a0007_da5_phases_restore_and_recompute_current_selection(
         ]["evidence_sha256"],
         expected_compatibility_receipt_sha256=compatibility_receipt_sha256,
     )
-    progress = []
-    context = Lfm2GlobalTopologyPhaseCacheContext(
-        cache=DynamicFoldPhaseCache(phase_root),
+    runner_script = (
+        Path(__file__).resolve().parents[1]
+        / "experiments"
+        / "run_lfm2_dynamic_catalog.py"
+    )
+    runner_spec = importlib.util.spec_from_file_location(
+        "run_lfm2_dynamic_catalog_exact4x_reuse",
+        runner_script,
+    )
+    assert runner_spec is not None and runner_spec.loader is not None
+    runner = importlib.util.module_from_spec(runner_spec)
+    sys.modules[runner_spec.name] = runner
+    runner_spec.loader.exec_module(runner)
+    progress_stream = io.StringIO()
+    progress_journal = runner._ProgressJournal(
+        "0" * 64,
+        stream=progress_stream,
+    )
+    relay_config = SimpleNamespace(
+        global_topology_phase_cache_root=phase_root,
+        global_topology_existing_capacity_phase_reuse=capacity_reuse,
+        global_topology_existing_functional_phase_reuse=functional_reuse,
+    )
+    context = runner._global_topology_phase_cache_context(
+        relay_config,
         evidence_split_sha256=historical_dependencies["evidence_split"],
-        progress=lambda stage, details: progress.append((stage, dict(details))),
+        progress=progress_journal,
         selective_session_factory=lambda: pytest.fail(
             "authenticated A0007 hits attempted a lazy trace session"
         ),
-        existing_capacity_phase_reuse=capacity_reuse,
-        existing_functional_phase_reuse=functional_reuse,
     )
     result = build_lfm2_cached_global_topology_frontier(
         graph,
@@ -655,11 +677,14 @@ def test_authenticated_a0007_da5_phases_restore_and_recompute_current_selection(
     assert result.selected_input.target_pins.hidden_size == 816
     assert result.exact_target_unique_parameters == 53_552_368
     assert [value.hidden_size for value in result.candidates] == [816]
-    reuse_receipts = [
-        details
-        for stage, details in progress
-        if stage == "global_topology_existing_phase_reuse_hit"
+    progress = [
+        json.loads(line)
+        for line in progress_stream.getvalue().splitlines()
+        if line.strip()
     ]
+    reuse_receipts = (
+        progress_journal.global_topology_existing_phase_reuse_receipts()
+    )
     assert [value["phase_name"] for value in reuse_receipts] == [
         GLOBAL_TOPOLOGY_CAPACITY_PHASE,
         GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
@@ -675,6 +700,15 @@ def test_authenticated_a0007_da5_phases_restore_and_recompute_current_selection(
         assert receipt["historical_payload_sha256"] == identity["payload_sha256"]
         assert receipt["historical_evidence_sha256"] == identity["evidence_sha256"]
         assert receipt["compatibility_receipt_sha256"] == compatibility_receipt_sha256
+    terminal_reuse = runner._global_topology_existing_phase_reuse_receipt_fields(
+        relay_config,
+        progress=progress_journal,
+        require_all_observed=True,
+    )
+    assert terminal_reuse["existing_phase_reuse_observed_live_receipts"] == (
+        reuse_receipts
+    )
+    assert terminal_reuse["existing_phase_reuse_all_requested_hits_observed"] is True
     selection_entries = list((phase_root / GLOBAL_TOPOLOGY_SELECTION_PHASE).iterdir())
     assert len(selection_entries) == 1
     selection_completion = json.loads(
@@ -689,9 +723,9 @@ def test_authenticated_a0007_da5_phases_restore_and_recompute_current_selection(
         == current_algorithm_sha256
     )
     assert any(
-        stage == "global_topology_phase_cache_published"
-        and details["phase_name"] == GLOBAL_TOPOLOGY_SELECTION_PHASE
-        for stage, details in progress
+        row["stage"] == "global_topology_phase_cache_published"
+        and row["phase_name"] == GLOBAL_TOPOLOGY_SELECTION_PHASE
+        for row in progress
     )
     for phase_name, identity in _A0007_PHASE_IDENTITIES.items():
         source_entry = _A0007_FIXTURE_ROOT / phase_name / identity["phase_key_sha256"]

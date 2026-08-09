@@ -1311,7 +1311,16 @@ def _parent_phase_dependencies(
 
 
 def _callable_source_fingerprint(value: Callable[..., Any], *, role: str) -> str:
-    """Bind a derived cache key to the exact Python implementation in use."""
+    """Bind a derived cache key to portable, exact Python source identity.
+
+    ``code.co_code`` is an interpreter artifact rather than a source identity:
+    Python 3.11 and 3.12 compile the same authenticated function text to
+    different bytecode.  Including it made a phase built and reviewed on one
+    interpreter impossible to authenticate on another even when every source
+    module byte was identical.  The normalized callable source below and the
+    complete implementation-module fingerprints in
+    :func:`_global_algorithm_fingerprint` already bind the implementation.
+    """
 
     target = getattr(value, "__func__", value)
     try:
@@ -1320,19 +1329,13 @@ def _callable_source_fingerprint(value: Callable[..., Any], *, role: str) -> str
         raise Lfm2CachedGlobalTopologyFrontierError(
             f"Cannot authenticate source for derived-cache algorithm {role}."
         ) from exc
-    code = getattr(target, "__code__", None)
-    if code is None:
-        raise Lfm2CachedGlobalTopologyFrontierError(
-            f"Derived-cache algorithm {role} has no Python code identity."
-        )
     return canonical_sha256(
         {
-            "schema": "neural-forge-lfm2-global-callable-source-v1",
+            "schema": "neural-forge-lfm2-global-callable-source-v2",
             "role": role,
             "module": str(getattr(target, "__module__", "")),
             "qualname": str(getattr(target, "__qualname__", "")),
             "source_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
-            "bytecode_sha256": hashlib.sha256(code.co_code).hexdigest(),
         }
     )
 
