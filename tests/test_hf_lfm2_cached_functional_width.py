@@ -73,20 +73,48 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
     parent, graph, cache = _case(tmp_path)
     selections = []
     progress = []
+    record_snapshot_count = 0
+    record_snapshot_residency = {"current": 0, "peak": 0}
     original_load = (
         trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession.load_selected_tensors
     )
+    original_record_getter = (
+        trace_cache.Lfm2CircuitTraceSelectiveBatchReference.record.fget
+    )
+    assert original_record_getter is not None
 
     def tracked_load(session, index, names):
         payload = original_load(session, index, names)
         selections.append((index, tuple(names), payload))
         return payload
 
+    class TrackedRecord(dict):
+        def __init__(self, value):
+            super().__init__(value)
+            record_snapshot_residency["current"] += 1
+            record_snapshot_residency["peak"] = max(
+                record_snapshot_residency["peak"],
+                record_snapshot_residency["current"],
+            )
+
+        def __del__(self):
+            record_snapshot_residency["current"] -= 1
+
+    def tracked_record(reference):
+        nonlocal record_snapshot_count
+        record_snapshot_count += 1
+        return TrackedRecord(original_record_getter(reference))
+
     with monkeypatch.context() as patch:
         patch.setattr(
             trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
             "load_selected_tensors",
             tracked_load,
+        )
+        patch.setattr(
+            trace_cache.Lfm2CircuitTraceSelectiveBatchReference,
+            "record",
+            property(tracked_record),
         )
         with observe_model_execution(parent) as execution:
             evidence = build_lfm2_cached_functional_width_evidence(
@@ -101,6 +129,8 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
 
     assert execution["root_forward_calls"] == 0
     assert execution["module_forward_calls"] == 0
+    assert record_snapshot_count == cache.batch_count
+    assert record_snapshot_residency == {"current": 0, "peak": 1}
     repeated_evidence = build_lfm2_cached_functional_width_evidence(
         graph,
         cache,
@@ -108,6 +138,34 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
         maximum_rows_per_role=24,
     )
     assert dict(repeated_evidence.as_dict()) == dict(evidence.as_dict())
+    assert repeated_evidence.evidence_sha256 == evidence.evidence_sha256
+    assert repeated_evidence.selection_manifest_sha256 == (
+        evidence.selection_manifest_sha256
+    )
+    assert repeated_evidence.role_gram_sha256 == evidence.role_gram_sha256
+    assert repeated_evidence.functional_eigenspectrum_sha256 == (
+        evidence.functional_eigenspectrum_sha256
+    )
+    assert evidence.selection_manifest_sha256 == (
+        "e6a53bbcce9d65d3d52dbfd999e2eab9bb2ef3d8a814ba0ddfe63ff49de2b515"
+    )
+    assert dict(evidence.role_gram_sha256) == {
+        "nonlinear_mlp_write": (
+            "c7fd36940b64fb7af2f7754ad825d0b99edc716e772f7bcb9397c1f1d261fe21"
+        ),
+        "operator_write": (
+            "18c0e8930680cc9bc9e14c5bd3fdf852edcba9328827a7936ff40e9808e0d8f3"
+        ),
+        "residual_context": (
+            "d8caa28c13428d35d5df9dd9697437aed8ffcd46db23030f6318fdb35e3d1930"
+        ),
+        "terminal_context": (
+            "74a844ba64180bacb3e12681d0cdc0504ebdcc0e97b39d4620e89e2d8eef2063"
+        ),
+    }
+    assert evidence.functional_eigenspectrum_sha256 == (
+        "42dbad0208d7957fd8c73fcc80e0aaf9972e321c7596725bfef2476c8b574669"
+    )
     assert evidence.source_graph_fingerprint == graph.fingerprint
     assert evidence.parent_cache_key == cache.cache_key
     assert evidence.source_hidden_size == 32
@@ -172,6 +230,8 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
     stages = [stage for stage, _details in progress]
     assert stages == [
         "functional_width_selection_started",
+        "functional_width_selection_batch_progress",
+        "functional_width_selection_batch_progress",
         "functional_width_selection_completed",
         "functional_width_gram_accumulation_started",
         "functional_width_gram_batch_progress",
@@ -180,6 +240,46 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
         "functional_width_eigensolve_started",
         "functional_width_eigensolve_completed",
     ]
+    selection_started = next(
+        details
+        for stage, details in progress
+        if stage == "functional_width_selection_started"
+    )
+    selection_progress = [
+        details
+        for stage, details in progress
+        if stage == "functional_width_selection_batch_progress"
+    ]
+    selection_completed = next(
+        details
+        for stage, details in progress
+        if stage == "functional_width_selection_completed"
+    )
+    assert [details["completed_batch_count"] for details in selection_progress] == [
+        1,
+        2,
+    ]
+    assert all(
+        details["total_batch_count"] == cache.batch_count
+        and details["maximum_progress_event_count"] == 16
+        and details["authenticated_record_snapshot_count"]
+        == details["completed_batch_count"]
+        for details in selection_progress
+    )
+    assert len(selection_progress) <= 16
+    assert selection_progress[-1]["enumerated_location_count"] == (
+        selection_completed["enumerated_location_count"]
+    )
+    source_layer_count = selection_started["source_layer_count"]
+    locations_per_phase = 3 * source_layer_count + 1
+    phase_count = selection_completed["enumerated_location_count"] // (
+        locations_per_phase
+    )
+    legacy_record_clone_count = (
+        cache.batch_count + 3 * source_layer_count * phase_count
+    )
+    assert legacy_record_clone_count == 74
+    assert legacy_record_clone_count >= 10 * record_snapshot_count
     assert all(
         details["parent_model_calls"] == 0
         and details["child_model_calls"] == 0

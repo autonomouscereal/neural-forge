@@ -668,12 +668,12 @@ def enumerate_lfm2_global_hidden_sizes(
 
 
 def _descriptor_shape(
-    reference: Any,
+    record: Mapping[str, Any],
     name: str,
     *,
     source_hidden_size: int,
 ) -> tuple[int, ...]:
-    inventory = reference.record.get("tensors")
+    inventory = record.get("tensors")
     descriptor = inventory.get(name) if isinstance(inventory, Mapping) else None
     shape = descriptor.get("shape") if isinstance(descriptor, Mapping) else None
     if (
@@ -893,34 +893,27 @@ def build_lfm2_cached_functional_width_evidence(
             retained_parent_rows=retained_parent_rows is not None,
         )
 
-        retained_adapter = None
-        if retained_parent_rows is not None:
-            try:
-                retained_adapter = Lfm2RetainedTraceRowAdapter.build(
-                    retained_parent_rows,
-                    cache_key=parent_cache.cache_key,
-                    corpus_fingerprint=parent_cache.corpus_fingerprint,
-                    batch_references=session.batch_references,
-                    phases_by_batch=tuple(
-                        _ordered_parent_phases(reference.record)
-                        for reference in session.batch_references
-                    ),
-                    expected_layer_kinds=expected_kinds,
-                )
-            except Lfm2RetainedTraceRowsError as exc:
-                raise Lfm2CachedFunctionalWidthError(
-                    f"Retained functional rows failed authentication: {exc}"
-                ) from exc
-
+        batch_references = session.batch_references
+        phases_by_batch_rows = []
         locations: list[_FunctionalLocation] = []
         final_layer = len(discovered) - 1
-        for expected_index, reference in enumerate(session.batch_references):
+        selection_progress_stride = max(
+            1,
+            math.ceil(
+                len(batch_references)
+                / LFM2_FUNCTIONAL_WIDTH_MAXIMUM_PROGRESS_EVENTS
+            ),
+        )
+        for expected_index, reference in enumerate(batch_references):
             if reference.index != expected_index:
                 raise Lfm2CachedFunctionalWidthError(
                     "Selective cache references are not in canonical order."
                 )
+            record = reference.record
+            phases = _ordered_parent_phases(record)
+            phases_by_batch_rows.append(phases)
             available = frozenset(reference.ordered_tensor_names)
-            for phase in _ordered_parent_phases(reference.record):
+            for phase in phases:
                 for layer in discovered:
                     prefix = f"{phase}.layer.{layer.ordinal:03d}.residual."
                     pre = prefix + "pre"
@@ -934,7 +927,7 @@ def build_lfm2_cached_functional_width_evidence(
                         )
                     shapes = tuple(
                         _descriptor_shape(
-                            reference,
+                            record,
                             name,
                             source_hidden_size=source_hidden,
                         )
@@ -978,6 +971,40 @@ def build_lfm2_cached_functional_width_evidence(
                                 **base,
                             )
                         )
+            del record
+            completed_batch_count = expected_index + 1
+            if (
+                completed_batch_count % selection_progress_stride == 0
+                or completed_batch_count == len(batch_references)
+            ):
+                _emit_progress(
+                    progress,
+                    "functional_width_selection_batch_progress",
+                    completed_batch_count=completed_batch_count,
+                    total_batch_count=len(batch_references),
+                    maximum_progress_event_count=(
+                        LFM2_FUNCTIONAL_WIDTH_MAXIMUM_PROGRESS_EVENTS
+                    ),
+                    authenticated_record_snapshot_count=completed_batch_count,
+                    enumerated_location_count=len(locations),
+                )
+
+        phases_by_batch = tuple(phases_by_batch_rows)
+        retained_adapter = None
+        if retained_parent_rows is not None:
+            try:
+                retained_adapter = Lfm2RetainedTraceRowAdapter.build(
+                    retained_parent_rows,
+                    cache_key=parent_cache.cache_key,
+                    corpus_fingerprint=parent_cache.corpus_fingerprint,
+                    batch_references=batch_references,
+                    phases_by_batch=phases_by_batch,
+                    expected_layer_kinds=expected_kinds,
+                )
+            except Lfm2RetainedTraceRowsError as exc:
+                raise Lfm2CachedFunctionalWidthError(
+                    f"Retained functional rows failed authentication: {exc}"
+                ) from exc
 
         allocations: dict[str, tuple[int, ...]] = {}
         for role in _ROLES:
@@ -1081,7 +1108,7 @@ def build_lfm2_cached_functional_width_evidence(
                         )
                         tensors = payload.tensors
                     else:
-                        reference = session.batch_references[batch_index]
+                        reference = batch_references[batch_index]
                         try:
                             tensors = retained_adapter.selected_tensors(
                                 reference,
