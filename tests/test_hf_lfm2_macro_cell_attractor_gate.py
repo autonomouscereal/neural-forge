@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -21,6 +23,15 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (  # noqa: E402
     Lfm2MacroCellAttractorGate,
     Lfm2MacroCellAttractorGateConfig,
+    Lfm2TargetTokenFreeRolloutConfig,
+    Lfm2TargetTokenFreeRolloutSource,
+)
+from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
+    Lfm2TargetTokenizedRecord,
+    build_lfm2_strict_tokenizer_bridge_trace_adapter,
+)
+from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
+    seal_strict_tokenizer_bridge_artifact,
 )
 
 
@@ -94,6 +105,173 @@ def sealed_trace_cache(tmp_path_factory):
         input_device="cpu",
     )
     return parent, cache
+
+
+class _BridgeTokenizer:
+    def __init__(self, surfaces: list[str]) -> None:
+        self.surfaces = list(surfaces)
+        self.all_special_ids: list[int] = []
+        self.bos_token_id = None
+        self.eos_token_id = None
+        self.pad_token_id = None
+        self.unk_token_id = None
+
+    def __len__(self) -> int:
+        return len(self.surfaces)
+
+    def get_vocab(self) -> dict[str, int]:
+        return {
+            f"raw-{index}-{surface}": index
+            for index, surface in enumerate(self.surfaces)
+        }
+
+    def convert_ids_to_tokens(self, token_id: int) -> str:
+        return f"raw-{token_id}-{self.surfaces[token_id]}"
+
+    def decode(self, token_ids: list[int], **_kwargs: Any) -> str:
+        return "".join(self.surfaces[token_id] for token_id in token_ids)
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+        assert add_special_tokens is False
+        return [self.surfaces.index(text)]
+
+
+@pytest.fixture(scope="module")
+def bridged_target_rollout(tmp_path_factory):
+    parent = _parent_model()
+    donor_tokenizer = _BridgeTokenizer([f"<{index}>" for index in range(41)])
+    target_tokenizer = _BridgeTokenizer(
+        donor_tokenizer.surfaces[1:] + donor_tokenizer.surfaces[:1]
+    )
+    bridge_root = tmp_path_factory.mktemp("lfm2-target-rollout-bridge")
+    (bridge_root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    bridge = seal_strict_tokenizer_bridge_artifact(
+        donor_tokenizer,
+        target_tokenizer,
+        bridge_root,
+        donor_row_capacity=41,
+        target_row_capacity=41,
+    )
+    mapping = bridge.transport_profile.target_to_donor_row_indices
+    inverse = {donor_id: target_id for target_id, donor_id in enumerate(mapping)}
+    target_prompts = ((1, 2, 3, 4), (5, 6, 7, 8))
+    target_records = []
+    donor_batches = []
+    target_forced_sequences = []
+    for index, target_prompt in enumerate(target_prompts):
+        donor_prompt = tuple(mapping[token_id] for token_id in target_prompt)
+        donor_forced = _greedy_forced(parent, donor_prompt, 4)
+        if index == 0:
+            donor_forced = (
+                (donor_forced[0] + 1) % 41,
+                *donor_forced[1:],
+            )
+        target_forced = tuple(inverse[token_id] for token_id in donor_forced)
+        target_forced_sequences.append(target_forced)
+        donor_batches.append(_batch(donor_prompt, donor_forced))
+        target_input_ids = torch.tensor([target_prompt], dtype=torch.long)
+        target_records.append(
+            Lfm2TargetTokenizedRecord(
+                record_id=f"target-record-{index}",
+                split="evaluation",
+                input_ids=target_input_ids,
+                attention_mask=torch.ones_like(target_input_ids),
+                forced_decode_ids=torch.tensor(
+                    [target_forced],
+                    dtype=torch.long,
+                ),
+            )
+        )
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        bridge,
+        target_records,
+    )
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path_factory.mktemp("lfm2-target-rollout-parent-cache"),
+        parent,
+        donor_batches,
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=4,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+    used_target_ids = {
+        token_id for forced in target_forced_sequences for token_id in forced
+    }
+    eos_token_id = next(
+        token_id for token_id in range(41) if token_id not in used_target_ids
+    )
+    return parent, cache, adapter, eos_token_id
+
+
+class _ScriptedTargetChild(torch.nn.Module):
+    def __init__(self, adapter, *, eos_token_id: int) -> None:
+        super().__init__()
+        self.config = SimpleNamespace(
+            vocab_size=adapter.target_row_capacity,
+            eos_token_id=eos_token_id,
+        )
+        self.anchor = torch.nn.Parameter(torch.tensor([0.0]))
+        self.probe = torch.nn.Dropout(p=0.5)
+        self.script: dict[tuple[int, ...], int] = {}
+        for record in adapter.records:
+            input_ids = record.target_input_ids
+            attention_mask = record.attention_mask.to(dtype=torch.bool)
+            forced_decode_ids = record.target_forced_decode_ids
+            for row_index in range(int(input_ids.shape[0])):
+                prefix = [
+                    int(value)
+                    for value in input_ids[row_index][attention_mask[row_index]]
+                    .detach()
+                    .cpu()
+                    .tolist()
+                ]
+                for token_id in forced_decode_ids[row_index].tolist():
+                    self.script[tuple(prefix)] = int(token_id)
+                    prefix.append(int(token_id))
+        self.fallback_token_id = next(
+            token_id
+            for token_id in range(self.config.vocab_size)
+            if token_id != eos_token_id
+        )
+
+    def forward(
+        self,
+        *,
+        input_ids,
+        attention_mask,
+        use_cache,
+        return_dict,
+    ):
+        assert use_cache is False
+        assert return_dict is True
+        assert attention_mask.shape == input_ids.shape
+        logits = torch.full(
+            (
+                int(input_ids.shape[0]),
+                int(input_ids.shape[1]),
+                self.config.vocab_size,
+            ),
+            -15.0,
+            dtype=torch.float32,
+            device=input_ids.device,
+        )
+        for row_index in range(int(input_ids.shape[0])):
+            prefix = tuple(
+                int(value)
+                for value in input_ids[row_index][
+                    attention_mask[row_index].to(dtype=torch.bool)
+                ]
+                .detach()
+                .cpu()
+                .tolist()
+            )
+            target = self.script.get(prefix, self.fallback_token_id)
+            logits[row_index, -1, target] = 15.0
+        return SimpleNamespace(logits=logits + self.anchor * 0.0)
 
 
 class _TransitionChild(torch.nn.Module):
@@ -330,3 +508,146 @@ def test_repetitive_dominant_low_entropy_attractor_is_rejected(
         decision_payload["diagnostics"]["exact_token_match_is_diagnostic_only"]
         is True
     )
+
+
+def test_target_token_rollout_uses_bridge_domain_without_parent_or_mutation(
+    bridged_target_rollout,
+    monkeypatch,
+):
+    parent, cache, adapter, eos_token_id = bridged_target_rollout
+
+    def forbidden_parent_forward(*args, **kwargs):
+        raise AssertionError("Target-token rollout must not execute the parent.")
+
+    monkeypatch.setattr(parent, "forward", forbidden_parent_forward)
+    source = Lfm2TargetTokenFreeRolloutSource(
+        cache,
+        adapter,
+        config=Lfm2TargetTokenFreeRolloutConfig(
+            maximum_records=2,
+            maximum_steps=4,
+            eos_token_id=eos_token_id,
+        ),
+    )
+    child = _ScriptedTargetChild(adapter, eos_token_id=eos_token_id)
+    child.train()
+    child.probe.eval()
+    child.anchor.grad = torch.tensor([7.0])
+    state_before = fingerprint_model_state(child)
+    gradient_before = child.anchor.grad.detach().clone()
+    flags_before = (child.training, child.probe.training)
+
+    snapshot = source.capture(child, phase="target-aware")
+    repeated = source.capture(child, phase="target-aware")
+    payload = snapshot.as_dict()
+
+    assert snapshot.snapshot_sha256 == repeated.snapshot_sha256
+    assert fingerprint_model_state(child) == state_before
+    assert torch.equal(child.anchor.grad, gradient_before)
+    assert (child.training, child.probe.training) == flags_before
+    assert payload["metrics"]["record_count"] == 2
+    assert (
+        payload["metrics"][
+            "diagnostic_mean_teacher_route_exact_token_match_fraction"
+        ]
+        == 1.0
+    )
+    assert payload["metrics"]["evaluation_only_step_count"] == 0
+    assert payload["quality_contract"]["numeric_quality_gate"] is False
+    assert payload["quality_contract"]["horizon_censored_is_failure"] is False
+    assert '"accepted"' not in json.dumps(payload, sort_keys=True)
+    assert any(
+        int(cache.load_batch(index).tensors["prefill.logits"][0, -1].argmax())
+        != int(record.donor_forced_decode_ids[0, 0])
+        for index, record in enumerate(adapter.records)
+    )
+    for record in payload["records"]:
+        adapter_record = adapter.records[record["batch_index"]]
+        target_prompt = adapter_record.target_input_ids[0].tolist()
+        donor_prompt = adapter_record.donor_input_ids[0].tolist()
+        assert record["target_prompt_token_ids"] == target_prompt
+        assert target_prompt != donor_prompt
+        assert record["child"]["token_ids"] == record["teacher_forced_route"][
+            "token_ids"
+        ]
+        assert record["child"]["termination"]["termination_kind"] == "horizon_censored"
+        assert record["child"]["termination"]["censored"] is True
+        assert all(step["paired_fit_eligible"] for step in record["steps"])
+        assert all(
+            step["reference_target_token_id"]
+            == step["cached_parent_projected_target_top1_token_id"]
+            for step in record["steps"]
+        )
+        assert all(
+            step["child_matches_teacher_forced_route"]
+            for step in record["steps"]
+        )
+    assert payload["audit"]["parent_forward_calls"] == 0
+    assert payload["audit"]["parent_trace_regeneration_calls"] == 0
+    assert payload["audit"]["tokenizer_accessed"] is False
+    assert payload["audit"]["training_steps"] == 0
+    assert payload["audit"]["backward_calls"] == 0
+    assert payload["audit"]["optimizer_steps"] == 0
+    assert payload["audit"]["state_preserved"] is True
+    assert payload["audit"]["audit_sha256"] == canonical_sha256(
+        _without_sha(payload["audit"], "audit_sha256")
+    )
+
+
+def test_target_token_rollout_marks_post_divergence_unpaired_and_eos_terminal(
+    bridged_target_rollout,
+):
+    _, cache, adapter, eos_token_id = bridged_target_rollout
+    source = Lfm2TargetTokenFreeRolloutSource(
+        cache,
+        adapter,
+        config=Lfm2TargetTokenFreeRolloutConfig(
+            maximum_records=1,
+            maximum_steps=4,
+            eos_token_id=eos_token_id,
+        ),
+    )
+    baseline = source.capture(
+        _ScriptedTargetChild(adapter, eos_token_id=eos_token_id),
+        phase="locate-selection",
+    ).as_dict()
+    selected = baseline["records"][0]
+    prompt = tuple(selected["target_prompt_token_ids"])
+    reference_first = int(selected["teacher_forced_route"]["token_ids"][0])
+    wrong_token = next(
+        token_id
+        for token_id in range(adapter.target_row_capacity)
+        if token_id not in (eos_token_id, reference_first)
+    )
+
+    divergent_child = _ScriptedTargetChild(adapter, eos_token_id=eos_token_id)
+    divergent_child.script[prompt] = wrong_token
+    divergent = source.capture(
+        divergent_child,
+        phase="divergent-evaluation",
+    ).as_dict()
+    record = divergent["records"][0]
+    assert record["diagnostics"]["teacher_route_first_divergence_step"] == 0
+    assert record["steps"][0]["paired_fit_eligible"] is True
+    assert all(not step["paired_fit_eligible"] for step in record["steps"][1:])
+    assert record["causal_fit"]["paired_fit_step_count"] == 1
+    assert record["causal_fit"]["first_unpaired_step"] == 1
+    assert record["causal_fit"]["post_divergence_steps_are_evaluation_only"]
+    assert record["child"]["termination"]["termination_kind"] == "horizon_censored"
+    assert divergent["quality_contract"]["horizon_censored_is_failure"] is False
+    assert '"accepted"' not in json.dumps(divergent, sort_keys=True)
+
+    eos_child = _ScriptedTargetChild(adapter, eos_token_id=eos_token_id)
+    eos_child.script[prompt] = eos_token_id
+    eos_payload = source.capture(eos_child, phase="explicit-eos").as_dict()
+    eos_record = eos_payload["records"][0]
+    assert len(eos_record["steps"]) == 1
+    assert eos_record["steps"][0]["paired_fit_eligible"] is True
+    assert eos_record["child"]["termination"] == {
+        "termination_kind": "eos",
+        "censored": False,
+        "eos_position": 0,
+        "observed_token_count": 1,
+        "configured_horizon": 4,
+    }
+    assert eos_payload["metrics"]["child_eos_termination_count"] == 1

@@ -28,6 +28,10 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
 )
+from .hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2BridgeAlignedRecord,
+    Lfm2StrictTokenizerBridgeTraceAdapter,
+)
 
 
 MACRO_CELL_ATTRACTOR_SNAPSHOT_SCHEMA = (
@@ -42,6 +46,18 @@ _CAPTURE_AUDIT_SCHEMA = (
 )
 _DECISION_AUDIT_SCHEMA = (
     "neural-forge-lfm2-macro-cell-attractor-decision-audit-v1"
+)
+TARGET_TOKEN_FREE_ROLLOUT_SNAPSHOT_SCHEMA = (
+    "neural-forge-lfm2-target-token-free-rollout-snapshot-v1"
+)
+_TARGET_TOKEN_FREE_ROLLOUT_SELECTION_SCHEMA = (
+    "neural-forge-lfm2-target-token-free-rollout-selection-v1"
+)
+_TARGET_TOKEN_FREE_ROLLOUT_CONFIG_SCHEMA = (
+    "neural-forge-lfm2-target-token-free-rollout-config-v1"
+)
+_TARGET_TOKEN_FREE_ROLLOUT_AUDIT_SCHEMA = (
+    "neural-forge-lfm2-target-token-free-rollout-audit-v1"
 )
 
 
@@ -204,6 +220,68 @@ class Lfm2MacroCellAttractorGateConfig:
 @dataclass(frozen=True, slots=True)
 class Lfm2MacroCellAttractorSnapshot:
     """Immutable, canonical evidence from one live child rollout."""
+
+    _payload: Mapping[str, Any]
+
+    @property
+    def snapshot_sha256(self) -> str:
+        return str(self._payload["snapshot_sha256"])
+
+    @property
+    def metrics(self) -> dict[str, Any]:
+        return _json_copy(self._payload["metrics"])
+
+    @property
+    def records(self) -> tuple[dict[str, Any], ...]:
+        return tuple(_json_copy(record) for record in self._payload["records"])
+
+    def as_dict(self) -> dict[str, Any]:
+        return _json_copy(self._payload)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2TargetTokenFreeRolloutConfig:
+    """Deterministic capture bounds without any numeric acceptance policy."""
+
+    maximum_records: int = 8
+    maximum_steps: int | None = None
+    split_seed: str = "neural-forge-lfm2-target-token-free-rollout-v1"
+    eos_token_id: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "maximum_records",
+            _positive_integer(self.maximum_records, "maximum_records"),
+        )
+        if self.maximum_steps is not None:
+            object.__setattr__(
+                self,
+                "maximum_steps",
+                _positive_integer(self.maximum_steps, "maximum_steps"),
+            )
+        if not isinstance(self.split_seed, str) or not self.split_seed.strip():
+            raise ValueError("split_seed must be a nonempty string.")
+        object.__setattr__(self, "split_seed", self.split_seed.strip())
+        if self.eos_token_id is not None:
+            object.__setattr__(
+                self,
+                "eos_token_id",
+                _nonnegative_integer(self.eos_token_id, "eos_token_id"),
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "maximum_records": self.maximum_records,
+            "maximum_steps": self.maximum_steps,
+            "split_seed": self.split_seed,
+            "eos_token_id": self.eos_token_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2TargetTokenFreeRolloutSnapshot:
+    """Immutable target-token rollout evidence for fit planning or review."""
 
     _payload: Mapping[str, Any]
 
@@ -1293,12 +1371,1006 @@ class Lfm2MacroCellAttractorGate:
         )
 
 
+def _resolve_target_rollout_eos_token_id(
+    model: Any,
+    config: Lfm2TargetTokenFreeRolloutConfig,
+    vocabulary_size: int,
+) -> int:
+    value = config.eos_token_id
+    if value is None:
+        value = getattr(getattr(model, "config", None), "eos_token_id", None)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise Lfm2MacroCellAttractorGateError(
+            "An integer eos_token_id is required in the rollout source or child config."
+        )
+    if value < 0 or value >= vocabulary_size:
+        raise Lfm2MacroCellAttractorGateError(
+            "The child eos_token_id is outside the target vocabulary."
+        )
+    return int(value)
+
+
+def _verify_bridge_cache_batch(
+    batch: Lfm2CircuitTraceBatch,
+    record: Lfm2BridgeAlignedRecord,
+) -> None:
+    torch = _torch()
+    if batch.index != record.ordinal:
+        raise Lfm2MacroCellAttractorGateError(
+            "Tokenizer-bridge record order differs from the parent cache."
+        )
+    if batch.input_sha256 != record.donor_cache_input_sha256:
+        raise Lfm2MacroCellAttractorGateError(
+            "Tokenizer-bridge donor input does not bind to the parent cache."
+        )
+    parent = record.as_parent_cache_batch()
+    cached_positions = batch.tensors.get("input.position_ids")
+    parent_positions = parent.get("position_ids")
+    if (
+        not torch.equal(batch.input_ids, parent["input_ids"])
+        or not torch.equal(batch.attention_mask, parent["attention_mask"])
+        or not torch.equal(
+            batch.forced_decode_ids,
+            parent["forced_decode_ids"],
+        )
+        or (cached_positions is None and parent_positions is not None)
+        or (
+            cached_positions is not None
+            and (
+                parent_positions is None
+                or not torch.equal(cached_positions, parent_positions)
+            )
+        )
+    ):
+        raise Lfm2MacroCellAttractorGateError(
+            "Tokenizer-bridge donor tensors differ from the sealed parent cache."
+        )
+
+
+def _cached_parent_target_step(
+    batch: Lfm2CircuitTraceBatch,
+    row_index: int,
+    step_index: int,
+    mapping: Any,
+) -> dict[str, Any]:
+    torch = _torch()
+    if step_index == 0:
+        key = (
+            "cached_prefill.logits"
+            if "cached_prefill.logits" in batch.tensors
+            else "prefill.logits"
+        )
+    else:
+        key = f"decode.{step_index - 1:03d}.logits"
+    logits = batch.tensors.get(key)
+    if (
+        not isinstance(logits, torch.Tensor)
+        or logits.ndim != 3
+        or row_index >= int(logits.shape[0])
+        or int(logits.shape[1]) <= 0
+        or int(logits.shape[2]) <= int(mapping.max().item())
+    ):
+        raise Lfm2MacroCellAttractorGateError(
+            f"Sealed batch {batch.index} has invalid predictor {key!r}."
+        )
+    donor_vector = logits[row_index, -1, :]
+    target_vector = donor_vector.index_select(
+        0,
+        mapping.to(device=donor_vector.device),
+    )
+    return {
+        "tensor_key": key,
+        "donor_top1_token_id": int(donor_vector.argmax(dim=-1).item()),
+        "donor_normalized_entropy": _normalized_entropy(donor_vector),
+        "projected_target_top1_token_id": int(target_vector.argmax(dim=-1).item()),
+        "projected_target_normalized_entropy": _normalized_entropy(target_vector),
+    }
+
+
+def _tokens_through_eos(
+    token_ids: Sequence[int],
+    eos_token_id: int,
+) -> list[int]:
+    tokens = [int(value) for value in token_ids]
+    position = _first_eos_position(tokens, eos_token_id)
+    return tokens if position is None else tokens[: position + 1]
+
+
+def _termination_evidence(
+    token_ids: Sequence[int],
+    eos_token_id: int,
+    horizon: int,
+) -> dict[str, Any]:
+    position = _first_eos_position(token_ids, eos_token_id)
+    if position is not None:
+        return {
+            "termination_kind": "eos",
+            "censored": False,
+            "eos_position": position,
+            "observed_token_count": position + 1,
+            "configured_horizon": horizon,
+        }
+    return {
+        "termination_kind": "horizon_censored",
+        "censored": True,
+        "eos_position": None,
+        "observed_token_count": len(token_ids),
+        "configured_horizon": horizon,
+    }
+
+
+def _target_rollout_match_diagnostics(
+    reference: Sequence[int],
+    child: Sequence[int],
+) -> dict[str, Any]:
+    expected = tuple(int(value) for value in reference)
+    observed = tuple(int(value) for value in child)
+    width = max(1, len(expected), len(observed))
+    positional_matches = sum(
+        1
+        for index in range(width)
+        if index < len(expected)
+        and index < len(observed)
+        and expected[index] == observed[index]
+    )
+    common_prefix = 0
+    for index in range(min(len(expected), len(observed))):
+        if expected[index] != observed[index]:
+            break
+        common_prefix += 1
+    first_divergence = None
+    if expected != observed:
+        first_divergence = common_prefix
+    return {
+        "exact_sequence_match": expected == observed,
+        "exact_token_match_fraction": positional_matches / width,
+        "longest_common_prefix_token_count": common_prefix,
+        "longest_common_prefix_fraction": common_prefix / width,
+        "first_divergence_step": first_divergence,
+        "exact_token_match_is_diagnostic_only": True,
+    }
+
+
+def _capture_target_token_rollout_record(
+    *,
+    model: Any,
+    batch: Lfm2CircuitTraceBatch,
+    aligned_record: Lfm2BridgeAlignedRecord,
+    row_index: int,
+    horizon: int,
+    eos_token_id: int,
+    vocabulary_size: int,
+    input_device: Any,
+    mapping: Any,
+    boundary_order_sha256: str,
+) -> tuple[dict[str, Any], int]:
+    torch = _torch()
+    _verify_bridge_cache_batch(batch, aligned_record)
+    target_input_ids = aligned_record.target_input_ids
+    attention_mask = aligned_record.attention_mask
+    target_position_ids = aligned_record.position_ids
+    target_forced_decode_ids = aligned_record.target_forced_decode_ids
+    donor_forced_decode_ids = aligned_record.donor_forced_decode_ids
+    if (
+        target_input_ids.ndim != 2
+        or attention_mask.shape != target_input_ids.shape
+        or target_forced_decode_ids.ndim != 2
+        or donor_forced_decode_ids.shape != target_forced_decode_ids.shape
+        or (
+            target_position_ids is not None
+            and target_position_ids.shape != target_input_ids.shape
+        )
+        or row_index >= int(target_input_ids.shape[0])
+        or horizon > int(target_forced_decode_ids.shape[1])
+    ):
+        raise Lfm2MacroCellAttractorGateError(
+            "A selected target-token bridge record changed shape."
+        )
+    valid = attention_mask[row_index].to(dtype=torch.bool)
+    prompt = target_input_ids[row_index][valid]
+    if int(prompt.numel()) <= 0:
+        raise Lfm2MacroCellAttractorGateError(
+            "A selected target-token prompt has no active tokens."
+        )
+    if bool(((prompt < 0) | (prompt >= vocabulary_size)).any().item()):
+        raise Lfm2MacroCellAttractorGateError(
+            "A selected target-token prompt leaves the child vocabulary."
+        )
+    target_forced = [
+        int(value)
+        for value in target_forced_decode_ids[row_index, :horizon]
+        .detach()
+        .cpu()
+        .tolist()
+    ]
+    donor_forced = [
+        int(value)
+        for value in donor_forced_decode_ids[row_index, :horizon]
+        .detach()
+        .cpu()
+        .tolist()
+    ]
+    mapped_target_forced = [int(mapping[value].item()) for value in target_forced]
+    if mapped_target_forced != donor_forced:
+        raise Lfm2MacroCellAttractorGateError(
+            "The target forced-prefix route is not an authenticated bridge "
+            "image of the donor cache route."
+        )
+    cached_steps = [
+        _cached_parent_target_step(batch, row_index, step_index, mapping)
+        for step_index in range(horizon)
+    ]
+    teacher_route_tokens = _tokens_through_eos(target_forced, eos_token_id)
+    batch_record = batch.record
+    record_sha256 = batch_record.get("record_sha256")
+    if not isinstance(record_sha256, str) or len(record_sha256) != 64:
+        raise Lfm2MacroCellAttractorGateError(
+            "The cached parent batch lacks its sealed record digest."
+        )
+    trajectory_id = canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-target-token-trajectory-id-v1",
+            "adapter_alignment_sha256": aligned_record.alignment_sha256,
+            "target_cache_input_sha256": aligned_record.target_cache_input_sha256,
+            "row_index": row_index,
+        }
+    )
+
+    prefix_ids = prompt.to(device=input_device, dtype=torch.long).reshape(1, -1)
+    prefix_mask = torch.ones_like(prefix_ids)
+    prefix_positions = (
+        None
+        if target_position_ids is None
+        else target_position_ids[row_index][valid]
+        .to(device=input_device, dtype=torch.long)
+        .reshape(1, -1)
+    )
+    generated: list[int] = []
+    child_entropies: list[float] = []
+    steps: list[dict[str, Any]] = []
+    prefix_aligned = True
+    child_forward_calls = 0
+    for step_index in range(horizon):
+        teacher_route_active = step_index < len(teacher_route_tokens)
+        paired_fit_eligible = prefix_aligned and teacher_route_active
+        child_inputs = {
+            "input_ids": prefix_ids,
+            "attention_mask": prefix_mask,
+            "use_cache": False,
+            "return_dict": True,
+        }
+        if prefix_positions is not None:
+            child_inputs["position_ids"] = prefix_positions
+        output = model(**child_inputs)
+        child_forward_calls += 1
+        logits = _extract_logits(output)
+        if (
+            int(logits.shape[0]) != 1
+            or int(logits.shape[1]) <= 0
+            or int(logits.shape[2]) != vocabulary_size
+        ):
+            raise Lfm2MacroCellAttractorGateError(
+                "The target-token child rollout changed batch or vocabulary shape."
+            )
+        child_vector = logits[0, -1, :]
+        child_entropy = _normalized_entropy(child_vector)
+        next_token = int(child_vector.argmax(dim=-1).item())
+        teacher_forced_target_token_id = (
+            teacher_route_tokens[step_index] if teacher_route_active else None
+        )
+        cached = cached_steps[step_index]
+        reference_target_token_id = (
+            cached["projected_target_top1_token_id"]
+            if paired_fit_eligible
+            else None
+        )
+        steps.append(
+            {
+                "step_index": step_index,
+                "absolute_target_sequence_position": (
+                    int(prompt.numel()) + step_index
+                ),
+                "predicted_position_id": (
+                    int(prompt.numel()) + step_index
+                    if prefix_positions is None
+                    else int(prefix_positions[0, -1].item()) + 1
+                ),
+                "target_prefix_before_prediction": [
+                    int(value) for value in prefix_ids[0].detach().cpu().tolist()
+                ],
+                "target_position_ids_before_prediction": (
+                    None
+                    if prefix_positions is None
+                    else [
+                        int(value)
+                        for value in prefix_positions[0].detach().cpu().tolist()
+                    ]
+                ),
+                "reference_target_token_id": reference_target_token_id,
+                "teacher_forced_route_target_token_id": (
+                    teacher_forced_target_token_id
+                ),
+                "teacher_forced_route_donor_token_id": (
+                    donor_forced[step_index] if teacher_route_active else None
+                ),
+                "child_target_token_id": next_token,
+                "child_normalized_entropy": child_entropy,
+                "cached_parent_prefix_aligned": prefix_aligned,
+                "paired_fit_eligible": paired_fit_eligible,
+                "cached_parent_locator": {
+                    "cache_key": batch_record["cache_key"],
+                    "batch_index": batch.index,
+                    "input_sha256": batch.input_sha256,
+                    "record_sha256": record_sha256,
+                    "boundary_order_sha256": boundary_order_sha256,
+                    "tensor_key": cached["tensor_key"],
+                    "row_index": row_index,
+                    "sequence_index": -1,
+                },
+                "cached_parent_donor_top1_token_id": cached["donor_top1_token_id"],
+                "cached_parent_donor_normalized_entropy": cached[
+                    "donor_normalized_entropy"
+                ],
+                "cached_parent_projected_target_top1_token_id": cached[
+                    "projected_target_top1_token_id"
+                ],
+                "cached_parent_projected_target_normalized_entropy": cached[
+                    "projected_target_normalized_entropy"
+                ],
+                "child_matches_cached_parent_projected_target_top1": (
+                    reference_target_token_id is not None
+                    and next_token == reference_target_token_id
+                ),
+                "child_matches_teacher_forced_route": (
+                    teacher_forced_target_token_id is not None
+                    and next_token == teacher_forced_target_token_id
+                ),
+            }
+        )
+        generated.append(next_token)
+        child_entropies.append(child_entropy)
+        if (
+            not teacher_route_active
+            or next_token != teacher_forced_target_token_id
+        ):
+            prefix_aligned = False
+        if next_token == eos_token_id:
+            break
+        token = torch.tensor(
+            [[next_token]],
+            dtype=torch.long,
+            device=input_device,
+        )
+        prefix_ids = torch.cat((prefix_ids, token), dim=1)
+        prefix_mask = torch.cat(
+            (
+                prefix_mask,
+                torch.ones(
+                    (1, 1),
+                    dtype=prefix_mask.dtype,
+                    device=input_device,
+                ),
+            ),
+            dim=1,
+        )
+        if prefix_positions is not None:
+            next_position = prefix_positions[:, -1:] + 1
+            prefix_positions = torch.cat(
+                (prefix_positions, next_position),
+                dim=1,
+            )
+
+    child_health = _sequence_health(
+        generated,
+        child_entropies,
+        eos_token_id,
+    )
+    route_diagnostics = _target_rollout_match_diagnostics(
+        teacher_route_tokens,
+        generated,
+    )
+    eligible_steps = [
+        step for step in steps if bool(step["paired_fit_eligible"])
+    ]
+    eligible_projected_top1_matches = sum(
+        1
+        for step in eligible_steps
+        if bool(step["child_matches_cached_parent_projected_target_top1"])
+    )
+    paired_fit_steps = sum(1 for step in steps if bool(step["paired_fit_eligible"]))
+    first_unpaired_step = next(
+        (
+            int(step["step_index"])
+            for step in steps
+            if not bool(step["paired_fit_eligible"])
+        ),
+        None,
+    )
+    return (
+        {
+            "record_id": (f"{aligned_record.record_id}#row-{row_index:06d}"),
+            "trajectory_id": trajectory_id,
+            "adapter_record_id": aligned_record.record_id,
+            "adapter_record_ordinal": aligned_record.ordinal,
+            "split": aligned_record.split,
+            "adapter_alignment_sha256": aligned_record.alignment_sha256,
+            "batch_index": batch.index,
+            "row_index": row_index,
+            "donor_cache_input_sha256": batch.input_sha256,
+            "target_cache_input_sha256": (aligned_record.target_cache_input_sha256),
+            "horizon": horizon,
+            "target_prompt_token_ids": [
+                int(value) for value in prompt.detach().cpu().tolist()
+            ],
+            "teacher_forced_route": {
+                "token_ids": teacher_route_tokens,
+                "sealed_forced_target_token_ids": target_forced,
+                "sealed_forced_donor_token_ids": donor_forced,
+                "termination": _termination_evidence(
+                    teacher_route_tokens,
+                    eos_token_id,
+                    horizon,
+                ),
+            },
+            "cached_parent": {
+                "conditional_context_kind": "authenticated_teacher_forced_prefix",
+                "not_a_free_run_trajectory": True,
+                "projected_target_top1_token_ids": [
+                    int(step["projected_target_top1_token_id"])
+                    for step in cached_steps
+                ],
+                "mean_projected_target_normalized_entropy": _mean(
+                    [
+                        step["projected_target_normalized_entropy"]
+                        for step in cached_steps
+                    ],
+                    "cached projected-target entropies",
+                ),
+            },
+            "child": {
+                **child_health,
+                "termination": _termination_evidence(
+                    generated,
+                    eos_token_id,
+                    horizon,
+                ),
+            },
+            "steps": steps,
+            "causal_fit": {
+                "paired_fit_step_count": paired_fit_steps,
+                "evaluation_only_step_count": len(steps) - paired_fit_steps,
+                "first_unpaired_step": first_unpaired_step,
+                "paired_fit_requires_cached_parent_prefix_alignment": True,
+                "post_divergence_steps_are_evaluation_only": True,
+                "new_parent_forward_required_for_post_divergence_pairing": True,
+            },
+            "diagnostics": {
+                **{
+                    f"teacher_route_{key}": value
+                    for key, value in route_diagnostics.items()
+                    if key != "exact_token_match_is_diagnostic_only"
+                },
+                "eligible_projected_top1_match_count": (
+                    eligible_projected_top1_matches
+                ),
+                "eligible_projected_top1_match_fraction": (
+                    eligible_projected_top1_matches / max(1, len(eligible_steps))
+                ),
+                "exact_token_match_is_diagnostic_only": True,
+            },
+        },
+        child_forward_calls,
+    )
+
+
+def _aggregate_target_rollout_metrics(
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not records:
+        raise Lfm2MacroCellAttractorGateError(
+            "Target-token rollout selected no child rows."
+        )
+    step_count = sum(len(record["steps"]) for record in records)
+    paired_fit_step_count = sum(
+        int(record["causal_fit"]["paired_fit_step_count"]) for record in records
+    )
+    return {
+        "record_count": len(records),
+        "observed_step_count": step_count,
+        "paired_fit_step_count": paired_fit_step_count,
+        "evaluation_only_step_count": step_count - paired_fit_step_count,
+        "child_eos_termination_count": sum(
+            1
+            for record in records
+            if record["child"]["termination"]["termination_kind"] == "eos"
+        ),
+        "child_horizon_censored_count": sum(
+            1
+            for record in records
+            if record["child"]["termination"]["termination_kind"] == "horizon_censored"
+        ),
+        "teacher_route_eos_termination_count": sum(
+            1
+            for record in records
+            if record["teacher_forced_route"]["termination"]["termination_kind"]
+            == "eos"
+        ),
+        "teacher_route_horizon_censored_count": sum(
+            1
+            for record in records
+            if record["teacher_forced_route"]["termination"]["termination_kind"]
+            == "horizon_censored"
+        ),
+        "mean_child_normalized_entropy": _mean(
+            [record["child"]["normalized_entropy"] for record in records],
+            "child normalized entropies",
+        ),
+        "mean_cached_parent_projected_target_normalized_entropy": _mean(
+            [
+                record["cached_parent"][
+                    "mean_projected_target_normalized_entropy"
+                ]
+                for record in records
+            ],
+            "cached-parent projected-target entropies",
+        ),
+        "diagnostic_mean_teacher_route_exact_token_match_fraction": _mean(
+            [
+                record["diagnostics"][
+                    "teacher_route_exact_token_match_fraction"
+                ]
+                for record in records
+            ],
+            "teacher-route exact-match diagnostics",
+        ),
+        "diagnostic_mean_teacher_route_longest_common_prefix_fraction": _mean(
+            [
+                record["diagnostics"][
+                    "teacher_route_longest_common_prefix_fraction"
+                ]
+                for record in records
+            ],
+            "teacher-route common-prefix diagnostics",
+        ),
+        "diagnostic_eligible_projected_top1_match_fraction": (
+            sum(
+                int(
+                    record["diagnostics"][
+                        "eligible_projected_top1_match_count"
+                    ]
+                )
+                for record in records
+            )
+            / max(1, paired_fit_step_count)
+        ),
+    }
+
+
+class Lfm2TargetTokenFreeRolloutSource:
+    """Capture target-domain free runs backed only by sealed parent semantics.
+
+    The source deliberately has no comparison or acceptance method.  Its
+    per-step ``paired_fit_eligible`` field is true only while the live child's
+    target-token prefix is the same causal prefix that produced the cached
+    parent conditional.  The forced IDs are causal routing anchors, not a
+    claim that the unrestricted donor argmax selected those IDs.  Once the
+    child diverges from that route, later steps remain useful rollout
+    observations but cannot soundly supervise a paired fit without a new
+    on-policy parent cache.
+    """
+
+    def __init__(
+        self,
+        trace_cache: Lfm2CircuitTraceCache,
+        trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+        *,
+        config: Lfm2TargetTokenFreeRolloutConfig | None = None,
+    ) -> None:
+        if not isinstance(trace_cache, Lfm2CircuitTraceCache):
+            raise TypeError("trace_cache must be Lfm2CircuitTraceCache.")
+        if not isinstance(
+            trace_adapter,
+            Lfm2StrictTokenizerBridgeTraceAdapter,
+        ):
+            raise TypeError(
+                "trace_adapter must be Lfm2StrictTokenizerBridgeTraceAdapter."
+            )
+        selected = Lfm2TargetTokenFreeRolloutConfig() if config is None else config
+        if not isinstance(selected, Lfm2TargetTokenFreeRolloutConfig):
+            raise TypeError("config must be Lfm2TargetTokenFreeRolloutConfig or None.")
+        self._trace_cache = trace_cache
+        self._trace_adapter = trace_adapter.verify()
+        self._config = selected
+        self._cache_key = trace_cache.cache_key
+        self._adapter_evidence_sha256 = trace_adapter.evidence_sha256
+        topology = trace_cache.manifest.get("layer_topology")
+        layer_count = topology.get("layer_count") if isinstance(topology, Mapping) else None
+        if (
+            isinstance(layer_count, bool)
+            or not isinstance(layer_count, int)
+            or layer_count <= 0
+            or topology.get("layer_topology_sha256")
+            != trace_cache.layer_topology_fingerprint
+        ):
+            raise Lfm2MacroCellAttractorGateError(
+                "Parent cache lacks a sealed residual-boundary topology."
+            )
+        boundary_body = {
+            "schema": "neural-forge-lfm2-residual-boundary-order-v1",
+            "layer_topology_sha256": trace_cache.layer_topology_fingerprint,
+            "boundary_names": [
+                "layer.000.residual.pre",
+                *[
+                    f"layer.{index:03d}.residual.post_layer"
+                    for index in range(layer_count)
+                ],
+                "output.lm_head_input",
+            ],
+            "final_behavior_endpoint": "output.lm_head_input",
+        }
+        self._boundary_contract = {
+            **boundary_body,
+            "boundary_order_sha256": canonical_sha256(boundary_body),
+        }
+        if trace_cache.batch_count != trace_adapter.record_count:
+            raise Lfm2MacroCellAttractorGateError(
+                "Parent cache and tokenizer-bridge adapter batch counts differ."
+            )
+        torch = _torch()
+        mapping = torch.tensor(trace_adapter.mapping, dtype=torch.long)
+        if (
+            mapping.ndim != 1
+            or int(mapping.numel()) != trace_adapter.target_row_capacity
+            or int(mapping.numel()) <= 1
+            or bool((mapping < 0).any().item())
+            or int(mapping.max().item()) >= trace_adapter.donor_row_capacity
+        ):
+            raise Lfm2MacroCellAttractorGateError(
+                "Tokenizer-bridge target-to-donor mapping is invalid."
+            )
+        self._mapping = mapping
+        self._mapping_sha256 = canonical_sha256(
+            [int(value) for value in mapping.tolist()]
+        )
+
+        candidates: list[tuple[str, int, int, str, str, int]] = []
+        for batch_index, aligned_record in enumerate(trace_adapter.records):
+            batch = trace_cache.load_batch(batch_index)
+            _verify_bridge_cache_batch(batch, aligned_record)
+            target_forced = aligned_record.target_forced_decode_ids
+            donor_forced = aligned_record.donor_forced_decode_ids
+            if (
+                target_forced.ndim != 2
+                or donor_forced.shape != target_forced.shape
+                or int(target_forced.shape[0]) <= 0
+                or int(target_forced.shape[1]) <= 0
+            ):
+                raise Lfm2MacroCellAttractorGateError(
+                    "Tokenizer-bridge record has no target decode trajectory."
+                )
+            horizon = int(target_forced.shape[1])
+            if selected.maximum_steps is not None:
+                horizon = min(horizon, selected.maximum_steps)
+            for row_index in range(int(target_forced.shape[0])):
+                donor_tokens = [
+                    int(value)
+                    for value in donor_forced[row_index, :horizon]
+                    .detach()
+                    .cpu()
+                    .tolist()
+                ]
+                target_tokens = [
+                    int(value)
+                    for value in target_forced[row_index, :horizon]
+                    .detach()
+                    .cpu()
+                    .tolist()
+                ]
+                mapped_target_tokens = [
+                    int(mapping[value].item()) for value in target_tokens
+                ]
+                if mapped_target_tokens != donor_tokens:
+                    raise Lfm2MacroCellAttractorGateError(
+                        "Tokenizer-bridge forced-prefix mapping changed after "
+                        "adapter authentication."
+                    )
+                rank = canonical_sha256(
+                    {
+                        "schema": _TARGET_TOKEN_FREE_ROLLOUT_SELECTION_SCHEMA,
+                        "cache_key": self._cache_key,
+                        "trace_adapter_evidence_sha256": (
+                            self._adapter_evidence_sha256
+                        ),
+                        "split_seed": selected.split_seed,
+                        "adapter_record_id": aligned_record.record_id,
+                        "batch_index": batch_index,
+                        "row_index": row_index,
+                        "donor_cache_input_sha256": batch.input_sha256,
+                        "target_cache_input_sha256": (
+                            aligned_record.target_cache_input_sha256
+                        ),
+                        "horizon": horizon,
+                    }
+                )
+                candidates.append(
+                    (
+                        rank,
+                        batch_index,
+                        row_index,
+                        batch.input_sha256,
+                        aligned_record.alignment_sha256,
+                        horizon,
+                    )
+                )
+        candidates.sort()
+        chosen = tuple(candidates[: selected.maximum_records])
+        if not chosen:
+            raise Lfm2MacroCellAttractorGateError(
+                "No target-token bridge row authenticates a cached parent "
+                "teacher-forced prefix trajectory."
+            )
+        self._selected_records = tuple(
+            (
+                batch_index,
+                row_index,
+                donor_input_sha256,
+                alignment_sha256,
+                horizon,
+            )
+            for (
+                _rank,
+                batch_index,
+                row_index,
+                donor_input_sha256,
+                alignment_sha256,
+                horizon,
+            ) in chosen
+        )
+        self._eligible_record_count = len(candidates)
+        self._selection_sha256 = canonical_sha256(self._selection_body())
+        self._config_sha256 = canonical_sha256(
+            {
+                "schema": _TARGET_TOKEN_FREE_ROLLOUT_CONFIG_SCHEMA,
+                "config": selected.as_dict(),
+            }
+        )
+
+    @property
+    def config(self) -> Lfm2TargetTokenFreeRolloutConfig:
+        return self._config
+
+    @property
+    def selection_sha256(self) -> str:
+        return self._selection_sha256
+
+    def _selection_body(self) -> dict[str, Any]:
+        return {
+            "schema": _TARGET_TOKEN_FREE_ROLLOUT_SELECTION_SCHEMA,
+            "cache_key": self._cache_key,
+            "trace_adapter_evidence_sha256": self._adapter_evidence_sha256,
+            "split_seed": self._config.split_seed,
+            "eligible_authenticated_record_count": self._eligible_record_count,
+            "selection_requires_parent_global_greedy_tokens": False,
+            "selected_records": [
+                {
+                    "batch_index": batch_index,
+                    "row_index": row_index,
+                    "donor_cache_input_sha256": donor_input_sha256,
+                    "adapter_alignment_sha256": alignment_sha256,
+                    "horizon": horizon,
+                }
+                for (
+                    batch_index,
+                    row_index,
+                    donor_input_sha256,
+                    alignment_sha256,
+                    horizon,
+                ) in self._selected_records
+            ],
+        }
+
+    def capture(
+        self,
+        child_model: Any,
+        *,
+        phase: str,
+    ) -> Lfm2TargetTokenFreeRolloutSnapshot:
+        """Capture child target-token trajectories without making a decision."""
+
+        torch = _torch()
+        if not isinstance(phase, str) or not phase.strip():
+            raise ValueError("phase must be a nonempty string.")
+        phase = phase.strip()
+        if self._trace_adapter.verify().evidence_sha256 != (
+            self._adapter_evidence_sha256
+        ):
+            raise Lfm2MacroCellAttractorGateError(
+                "Tokenizer-bridge trace identity changed after source binding."
+            )
+        vocabulary_size = _model_vocabulary_size(child_model)
+        if vocabulary_size != self._trace_adapter.target_row_capacity:
+            raise Lfm2MacroCellAttractorGateError(
+                "The child vocabulary does not match the tokenizer-bridge "
+                "target row capacity."
+            )
+        eos_token_id = _resolve_target_rollout_eos_token_id(
+            child_model,
+            self._config,
+            vocabulary_size,
+        )
+        input_device = _model_input_device(child_model)
+        state_before = fingerprint_model_state(child_model)
+        gradients_before = _gradient_fingerprint(child_model)
+        flags_before = _training_flags(child_model)
+        flags_sha256_before = _training_flags_sha256(flags_before)
+
+        records: list[dict[str, Any]] = []
+        child_forward_calls = 0
+        failure: Exception | None = None
+        try:
+            child_model.eval()
+            with torch.inference_mode():
+                for (
+                    batch_index,
+                    row_index,
+                    expected_input_sha256,
+                    expected_alignment_sha256,
+                    horizon,
+                ) in self._selected_records:
+                    batch = self._trace_cache.load_batch(batch_index)
+                    aligned_record = self._trace_adapter.records[batch_index]
+                    if (
+                        batch.input_sha256 != expected_input_sha256
+                        or aligned_record.alignment_sha256 != expected_alignment_sha256
+                    ):
+                        raise Lfm2MacroCellAttractorGateError(
+                            "A selected target-token rollout binding changed."
+                        )
+                    record, forward_calls = _capture_target_token_rollout_record(
+                        model=child_model,
+                        batch=batch,
+                        aligned_record=aligned_record,
+                        row_index=row_index,
+                        horizon=horizon,
+                        eos_token_id=eos_token_id,
+                        vocabulary_size=vocabulary_size,
+                        input_device=input_device,
+                        mapping=self._mapping,
+                        boundary_order_sha256=self._boundary_contract[
+                            "boundary_order_sha256"
+                        ],
+                    )
+                    records.append(record)
+                    child_forward_calls += forward_calls
+        except Exception as exc:  # state checks still run before surfacing failure
+            failure = exc
+        finally:
+            _restore_training_flags(flags_before)
+
+        state_after = fingerprint_model_state(child_model)
+        gradients_after = _gradient_fingerprint(child_model)
+        flags_after = _training_flags(child_model)
+        flags_sha256_after = _training_flags_sha256(flags_after)
+        state_preserved = (
+            state_before == state_after
+            and gradients_before == gradients_after
+            and flags_sha256_before == flags_sha256_after
+        )
+        if not state_preserved:
+            raise Lfm2MacroCellAttractorGateError(
+                "Target-token rollout changed child state, gradients, or "
+                "module training flags."
+            ) from failure
+        if failure is not None:
+            if isinstance(failure, Lfm2MacroCellAttractorGateError):
+                raise failure
+            raise Lfm2MacroCellAttractorGateError(
+                "The target-token child free rollout failed."
+            ) from failure
+
+        metrics = _aggregate_target_rollout_metrics(records)
+        audit_body = {
+            "schema": _TARGET_TOKEN_FREE_ROLLOUT_AUDIT_SCHEMA,
+            "parent_forward_calls": 0,
+            "parent_trace_regeneration_calls": 0,
+            "child_forward_calls": child_forward_calls,
+            "tokenizer_accessed": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "quantization_used": False,
+            "pruning_used": False,
+            "inference_mode": True,
+            "child_use_cache": False,
+            "child_rollout_mode": "target_token_full_prefix_greedy_argmax",
+            "sealed_parent_teacher_prefix_conditionals_authenticated": True,
+            "parent_global_greedy_trajectory_required": False,
+            "numeric_quality_gate": False,
+            "exact_token_match_is_diagnostic_only": True,
+            "horizon_censored_is_failure": False,
+            "model_state_sha256_before": state_before,
+            "model_state_sha256_after": state_after,
+            "gradient_sha256_before": gradients_before,
+            "gradient_sha256_after": gradients_after,
+            "training_flags_sha256_before": flags_sha256_before,
+            "training_flags_sha256_after": flags_sha256_after,
+            "state_preserved": True,
+        }
+        audit = {
+            **audit_body,
+            "audit_sha256": canonical_sha256(audit_body),
+        }
+        snapshot_body = {
+            "schema": TARGET_TOKEN_FREE_ROLLOUT_SNAPSHOT_SCHEMA,
+            "phase": phase,
+            "cache": {
+                "cache_key": self._cache_key,
+                "parent_fingerprint": self._trace_cache.parent_fingerprint,
+                "corpus_fingerprint": self._trace_cache.corpus_fingerprint,
+            },
+            "tokenizer_bridge": {
+                "trace_adapter_evidence_sha256": (self._adapter_evidence_sha256),
+                "bridge_artifact_sha256": (self._trace_adapter.bridge_artifact_sha256),
+                "transport_profile_fingerprint": (
+                    self._trace_adapter.transport_profile_fingerprint
+                ),
+                "mapping_sha256": self._mapping_sha256,
+                "donor_row_capacity": (self._trace_adapter.donor_row_capacity),
+                "target_row_capacity": (self._trace_adapter.target_row_capacity),
+                "numeric_token_id_equality_required": False,
+            },
+            "cached_parent_residual_boundaries": self._boundary_contract,
+            "selection": {
+                **self._selection_body(),
+                "selection_sha256": self._selection_sha256,
+            },
+            "rollout_config": self._config.as_dict(),
+            "rollout_config_sha256": self._config_sha256,
+            "child": {
+                "model_type": _qualified_type_name(child_model),
+                "model_state_sha256": state_before,
+                "vocabulary_size": vocabulary_size,
+                "eos_token_id": eos_token_id,
+                "input_device_type": str(input_device.type),
+            },
+            "quality_contract": {
+                "numeric_quality_gate": False,
+                "manual_or_semantic_review_remains_authoritative": True,
+                "exact_token_match_is_diagnostic_only": True,
+                "horizon_censored_is_failure": False,
+            },
+            "causal_fit_contract": {
+                "target_token_prefixes_exposed": True,
+                "cached_parent_tensor_locators_exposed": True,
+                "cached_parent_record_digests_exposed": True,
+                "canonical_residual_boundary_order_sealed": True,
+                "teacher_forced_route_is_causal_join_key": True,
+                "cached_parent_targets_are_teacher_prefix_conditionals": True,
+                "paired_fit_eligibility_is_per_step": True,
+                "post_divergence_steps_are_evaluation_only": True,
+                "parent_model_available_to_source": False,
+            },
+            "metrics": metrics,
+            "records": records,
+            "audit": audit,
+        }
+        payload = {
+            **snapshot_body,
+            "snapshot_sha256": canonical_sha256(snapshot_body),
+        }
+        return Lfm2TargetTokenFreeRolloutSnapshot(MappingProxyType(_json_copy(payload)))
+
+
 __all__ = [
     "MACRO_CELL_ATTRACTOR_DECISION_SCHEMA",
     "MACRO_CELL_ATTRACTOR_SNAPSHOT_SCHEMA",
+    "TARGET_TOKEN_FREE_ROLLOUT_SNAPSHOT_SCHEMA",
     "Lfm2MacroCellAttractorDecision",
     "Lfm2MacroCellAttractorGate",
     "Lfm2MacroCellAttractorGateConfig",
     "Lfm2MacroCellAttractorGateError",
     "Lfm2MacroCellAttractorSnapshot",
+    "Lfm2TargetTokenFreeRolloutConfig",
+    "Lfm2TargetTokenFreeRolloutSnapshot",
+    "Lfm2TargetTokenFreeRolloutSource",
 ]
