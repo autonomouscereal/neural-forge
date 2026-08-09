@@ -26,6 +26,8 @@ from neural_forge.hf_lfm2_body_reclosure_phase_cache import (  # noqa: E402
     Lfm2ExistingBodyReclosurePhaseReuseRequest,
     build_lfm2_body_reclosure_phase_request,
     load_or_build_lfm2_body_reclosure_phase,
+    lookup_lfm2_body_reclosure_phase,
+    publish_lfm2_body_reclosure_phase,
 )
 
 
@@ -63,12 +65,13 @@ def _request(
     )
 
 
-def _artifact() -> Lfm2BodyReclosureArtifact:
+def _artifact(*, first_writer_offset: float = 0.0) -> Lfm2BodyReclosureArtifact:
+    first_writer = torch.arange(12, dtype=torch.float64).reshape(3, 4)
+    if first_writer_offset:
+        first_writer = first_writer + first_writer_offset
     return Lfm2BodyReclosureArtifact(
         tensors={
-            "model.layers.000.writer": torch.arange(12, dtype=torch.float64).reshape(
-                3, 4
-            ),
+            "model.layers.000.writer": first_writer,
             "model.layers.001.writer": torch.tensor(
                 [1.0, -2.0, 3.0], dtype=torch.float32
             ),
@@ -280,6 +283,134 @@ def test_publication_serializes_an_authenticated_tensor_snapshot(
     assert completed.artifact.artifact_sha256 == artifact.artifact_sha256
 
 
+def test_split_lookup_miss_is_explicit_and_never_reserves_or_produces(
+    tmp_path: Path,
+) -> None:
+    context = Lfm2BodyReclosurePhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "lookup-only-cache")
+    )
+    request = _request()
+
+    missing = lookup_lfm2_body_reclosure_phase(context, request)
+
+    assert missing is None
+    assert context.cache.lookup(request.phase_key) is None
+    assert context.cache.entry_path(request.phase_key).exists() is False
+
+
+def test_split_delayed_cold_publication_reloads_an_authenticated_hit(
+    tmp_path: Path,
+) -> None:
+    events = []
+    context = Lfm2BodyReclosurePhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "delayed-publication-cache"),
+        progress=lambda stage, details: events.append((stage, dict(details))),
+    )
+    request = _request()
+    artifact = _artifact()
+    artifact.reauthenticate()
+
+    assert lookup_lfm2_body_reclosure_phase(context, request) is None
+    published = publish_lfm2_body_reclosure_phase(context, request, artifact)
+    reloaded = lookup_lfm2_body_reclosure_phase(context, request)
+
+    assert published.cache_hit is False
+    assert published.producer_invoked is False
+    assert published.publication_race_lost is False
+    assert published.artifact is not artifact
+    assert published.artifact.artifact_sha256 == artifact.artifact_sha256
+    assert reloaded is not None
+    assert reloaded.cache_hit is True
+    assert reloaded.artifact.artifact_sha256 == artifact.artifact_sha256
+    assert any(stage == "body_reclosure_phase_publish_started" for stage, _ in events)
+    assert any(stage == "body_reclosure_phase_published" for stage, _ in events)
+
+
+@pytest.mark.parametrize("byte_identical", [True, False])
+def test_split_publication_race_authenticates_byte_identity_or_fails_closed(
+    tmp_path: Path,
+    monkeypatch,
+    byte_identical: bool,
+) -> None:
+    context = Lfm2BodyReclosurePhaseCacheContext(
+        cache=DynamicFoldPhaseCache(
+            tmp_path / f"split-race-{'same' if byte_identical else 'different'}"
+        )
+    )
+    request = _request()
+    winner_candidate = _artifact()
+    local_candidate = (
+        _artifact() if byte_identical else _artifact(first_writer_offset=1000.0)
+    )
+    original_lookup = context.cache.lookup
+    winners = []
+
+    def publish_winner_after_reported_miss(phase_key, *, events=None):
+        monkeypatch.setattr(context.cache, "lookup", original_lookup)
+        winners.append(
+            publish_lfm2_body_reclosure_phase(
+                context,
+                request,
+                winner_candidate,
+            )
+        )
+        return None
+
+    monkeypatch.setattr(
+        context.cache,
+        "lookup",
+        publish_winner_after_reported_miss,
+    )
+    if byte_identical:
+        resumed = publish_lfm2_body_reclosure_phase(
+            context,
+            request,
+            local_candidate,
+        )
+        assert resumed.cache_hit is True
+        assert resumed.producer_invoked is False
+        assert resumed.publication_race_lost is True
+        assert resumed.artifact.artifact_sha256 == local_candidate.artifact_sha256
+    else:
+        with pytest.raises(
+            Lfm2BodyReclosurePhaseAuthenticationError,
+            match="differs from the caller's authenticated artifact",
+        ):
+            publish_lfm2_body_reclosure_phase(
+                context,
+                request,
+                local_candidate,
+            )
+
+    assert len(winners) == 1
+    durable = lookup_lfm2_body_reclosure_phase(context, request)
+    assert durable is not None
+    assert durable.artifact.artifact_sha256 == winner_candidate.artifact_sha256
+
+
+def test_split_publish_reports_active_reservation_without_waiting(
+    tmp_path: Path,
+) -> None:
+    context = Lfm2BodyReclosurePhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "split-in-progress-cache")
+    )
+    request = _request()
+    transaction = context.cache.begin(request.phase_key)
+    try:
+        with pytest.raises(Lfm2BodyReclosurePhaseInProgressError) as raised:
+            publish_lfm2_body_reclosure_phase(context, request, _artifact())
+    finally:
+        transaction.__exit__(
+            RuntimeError,
+            RuntimeError("release test reservation"),
+            None,
+        )
+
+    assert raised.value.phase_key_sha256 == request.phase_key.phase_key_sha256
+    assert raised.value.retryable is True
+    assert context.cache.lookup(request.phase_key) is None
+
+
 def test_cold_publication_hot_hit_and_exact_hit_reuse_forbid_producer(
     tmp_path: Path,
 ) -> None:
@@ -383,15 +514,21 @@ def test_exact_hit_only_miss_is_fatal_and_never_calls_producer(
             request.phase_key.phase_key_sha256
         ),
     )
-    with pytest.raises(
-        Lfm2BodyReclosurePhaseCacheError,
-        match="hit-only reuse forbids building",
-    ):
-        load_or_build_lfm2_body_reclosure_phase(
+    for action in (
+        lambda: lookup_lfm2_body_reclosure_phase(context, request),
+        lambda: publish_lfm2_body_reclosure_phase(context, request, _artifact()),
+        lambda: load_or_build_lfm2_body_reclosure_phase(
             context,
             request,
             producer=lambda: pytest.fail("miss invoked producer"),
-        )
+        ),
+    ):
+        with pytest.raises(
+            Lfm2BodyReclosurePhaseCacheError,
+            match="hit-only reuse forbids building",
+        ):
+            action()
+    assert context.cache.lookup(request.phase_key) is None
 
 
 def test_completion_between_lookup_and_reservation_resumes_exact_winner(

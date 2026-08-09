@@ -16,13 +16,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, NoReturn
 
 from .dynamic_fold_phase_cache import (
     DynamicFoldPhaseCache,
     FoldPhaseCacheAlreadyCompleteError,
     FoldPhaseCacheConcurrencyError,
     FoldPhaseCacheIntegrityError,
+    FoldPhaseCacheTransaction,
     FoldPhaseEventLog,
     FoldPhaseKey,
     VerifiedFoldPhaseCacheEntry,
@@ -1148,23 +1149,114 @@ def _verify_hit_only_artifact(
             )
 
 
-def load_or_build_lfm2_body_reclosure_phase(
+def _validate_context_and_request(
     context: Lfm2BodyReclosurePhaseCacheContext,
     request: Lfm2BodyReclosurePhaseRequest,
-    *,
-    producer: BodyReclosureProducer,
-) -> AuthenticatedLfm2BodyReclosurePhase:
-    """Load an exact bundle or atomically publish a cold producer result."""
-
+) -> Lfm2ExistingBodyReclosurePhaseReuseRequest | None:
     if not isinstance(context, Lfm2BodyReclosurePhaseCacheContext):
         raise TypeError("context must be Lfm2BodyReclosurePhaseCacheContext.")
     if not isinstance(request, Lfm2BodyReclosurePhaseRequest):
         raise TypeError("request must be Lfm2BodyReclosurePhaseRequest.")
-    if not callable(producer):
-        raise TypeError("producer must be callable.")
     reuse = context.existing_phase_reuse_request
     if reuse is not None:
         _verify_hit_only_request(request, reuse)
+    return reuse
+
+
+def _authenticated_result(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+    entry: VerifiedFoldPhaseCacheEntry,
+    *,
+    cache_hit: bool,
+    producer_invoked: bool,
+    publication_race_lost: bool,
+    candidate: Lfm2BodyReclosureArtifact | None = None,
+) -> AuthenticatedLfm2BodyReclosurePhase:
+    reuse = context.existing_phase_reuse_request
+    if (
+        reuse is not None
+        and reuse.expected_completion_sha256 is not None
+        and reuse.expected_completion_sha256 != entry.completion_sha256
+    ):
+        raise Lfm2BodyReclosurePhaseAuthenticationError(
+            "Exact body-reclosure completion differs from the reuse request."
+        )
+    candidate_sha256 = None if candidate is None else candidate.reauthenticate()
+    artifact = _load_entry(context, request, entry)
+    if reuse is not None:
+        _verify_hit_only_artifact(reuse, artifact)
+    if candidate is not None:
+        _verify_candidate_matches_publication(
+            candidate,
+            artifact,
+            candidate_sha256=candidate_sha256,
+        )
+    return AuthenticatedLfm2BodyReclosurePhase(
+        request=request,
+        artifact=artifact,
+        entry=entry,
+        cache_hit=cache_hit,
+        producer_invoked=producer_invoked,
+        publication_race_lost=publication_race_lost,
+    )
+
+
+def _verify_candidate_matches_publication(
+    candidate: Lfm2BodyReclosureArtifact,
+    published: Lfm2BodyReclosureArtifact,
+    *,
+    candidate_sha256: str | None = None,
+) -> None:
+    expected = (
+        candidate.reauthenticate()
+        if candidate_sha256 is None
+        else _digest(candidate_sha256, "candidate artifact SHA-256")
+    )
+    if published.artifact_sha256 != expected:
+        raise Lfm2BodyReclosurePhaseAuthenticationError(
+            "Existing body-reclosure publication differs from the caller's "
+            "authenticated artifact."
+        )
+    if candidate.reauthenticate() != expected:
+        raise Lfm2BodyReclosurePhaseAuthenticationError(
+            "Caller body-reclosure artifact changed while the existing "
+            "publication was authenticated."
+        )
+
+
+def _raise_in_progress(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+    error: FoldPhaseCacheConcurrencyError,
+) -> NoReturn:
+    key = request.phase_key
+    _progress(
+        context,
+        "body_reclosure_phase_in_progress",
+        phase_key_sha256=key.phase_key_sha256,
+        status="in_progress",
+        retryable=True,
+        producer_invoked=False,
+        ownership_stolen=False,
+        owner_liveness_authenticated=False,
+    )
+    raise Lfm2BodyReclosurePhaseInProgressError(key.phase_key_sha256) from error
+
+
+def lookup_lfm2_body_reclosure_phase(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+) -> AuthenticatedLfm2BodyReclosurePhase | None:
+    """Return an exact authenticated hit or ``None`` without producing.
+
+    ``None`` is the explicit ordinary-miss representation.  Publication
+    reservation contention is reported separately by the publication API as
+    :class:`Lfm2BodyReclosurePhaseInProgressError`; lookup itself never takes a
+    reservation, waits for a writer, or invokes model work.
+    """
+
+    reuse = _validate_context_and_request(context, request)
     key = request.phase_key
     _progress(
         context,
@@ -1174,17 +1266,14 @@ def load_or_build_lfm2_body_reclosure_phase(
     )
     entry = context.cache.lookup(key, events=context.events)
     if entry is not None:
-        if (
-            reuse is not None
-            and reuse.expected_completion_sha256 is not None
-            and reuse.expected_completion_sha256 != entry.completion_sha256
-        ):
-            raise Lfm2BodyReclosurePhaseAuthenticationError(
-                "Exact body-reclosure completion differs from the reuse request."
-            )
-        artifact = _load_entry(context, request, entry)
-        if reuse is not None:
-            _verify_hit_only_artifact(reuse, artifact)
+        authenticated = _authenticated_result(
+            context,
+            request,
+            entry,
+            cache_hit=True,
+            producer_invoked=False,
+            publication_race_lost=False,
+        )
         _progress(
             context,
             "body_reclosure_phase_cache_hit",
@@ -1193,60 +1282,173 @@ def load_or_build_lfm2_body_reclosure_phase(
             producer_invoked=False,
             exact_hit_only=reuse is not None,
         )
-        return AuthenticatedLfm2BodyReclosurePhase(
-            request=request,
-            artifact=artifact,
-            entry=entry,
-            cache_hit=True,
-            producer_invoked=False,
-            publication_race_lost=False,
-        )
-    if reuse is not None:
-        raise Lfm2BodyReclosurePhaseCacheError(
-            "Requested body-reclosure phase is absent; exact hit-only reuse "
-            "forbids building or repairing it."
-        )
+        return authenticated
     _progress(
         context,
         "body_reclosure_phase_cache_miss",
         phase_key_sha256=key.phase_key_sha256,
     )
+    if reuse is not None:
+        raise Lfm2BodyReclosurePhaseCacheError(
+            "Requested body-reclosure phase is absent; exact hit-only reuse "
+            "forbids building or repairing it."
+        )
+    return None
+
+
+def _resume_completed_publication(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+    *,
+    candidate: Lfm2BodyReclosureArtifact | None,
+    producer_invoked: bool,
+) -> AuthenticatedLfm2BodyReclosurePhase:
+    key = request.phase_key
+    raced = context.cache.lookup(key, events=context.events)
+    if raced is None:
+        raise Lfm2BodyReclosurePhaseAuthenticationError(
+            "Completed body-reclosure phase disappeared during lookup."
+        )
+    authenticated = _authenticated_result(
+        context,
+        request,
+        raced,
+        cache_hit=True,
+        producer_invoked=producer_invoked,
+        publication_race_lost=True,
+        candidate=candidate,
+    )
+    _progress(
+        context,
+        "body_reclosure_phase_publish_race_resumed",
+        phase_key_sha256=key.phase_key_sha256,
+        completion_sha256=raced.completion_sha256,
+        producer_invoked=producer_invoked,
+        byte_identical_candidate=candidate is not None,
+    )
+    return authenticated
+
+
+def _complete_reserved_publication(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+    artifact: Lfm2BodyReclosureArtifact,
+    transaction: FoldPhaseCacheTransaction,
+    *,
+    producer_invoked: bool,
+) -> AuthenticatedLfm2BodyReclosurePhase:
+    key = request.phase_key
+    artifact_sha256 = artifact.reauthenticate()
+    receipt = _write_bundle(transaction.payload_path, request, artifact)
+    entry = transaction.complete(result=_completion_result(receipt))
+    authenticated = _authenticated_result(
+        context,
+        request,
+        entry,
+        cache_hit=False,
+        producer_invoked=producer_invoked,
+        publication_race_lost=False,
+        candidate=artifact,
+    )
+    if authenticated.artifact.artifact_sha256 != artifact_sha256:
+        raise Lfm2BodyReclosurePhaseAuthenticationError(
+            "Cold and reloaded body-reclosure artifacts differ."
+        )
+    _progress(
+        context,
+        "body_reclosure_phase_published",
+        phase_key_sha256=key.phase_key_sha256,
+        completion_sha256=entry.completion_sha256,
+        artifact_sha256=authenticated.artifact.artifact_sha256,
+        producer_invoked=producer_invoked,
+        cold_reload_exact=True,
+    )
+    return authenticated
+
+
+def publish_lfm2_body_reclosure_phase(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+    artifact: Lfm2BodyReclosureArtifact,
+) -> AuthenticatedLfm2BodyReclosurePhase:
+    """Atomically publish one already-validated artifact and reload it.
+
+    The caller owns all compilation and structural validation.  This function
+    performs no producer work: it authenticates the supplied artifact, wins an
+    immutable reservation or returns a byte-identical completed winner, and
+    returns only the fully reloaded authenticated bundle.
+    """
+
+    _validate_context_and_request(context, request)
+    if not isinstance(artifact, Lfm2BodyReclosureArtifact):
+        raise TypeError("artifact must be Lfm2BodyReclosureArtifact.")
+    artifact.reauthenticate()
+    hit = lookup_lfm2_body_reclosure_phase(context, request)
+    if hit is not None:
+        _verify_candidate_matches_publication(artifact, hit.artifact)
+        return hit
+
+    key = request.phase_key
+    _progress(
+        context,
+        "body_reclosure_phase_publish_started",
+        phase_key_sha256=key.phase_key_sha256,
+        caller_supplied_artifact=True,
+        producer_invoked=False,
+    )
     try:
         transaction = context.cache.begin(key, events=context.events)
     except FoldPhaseCacheAlreadyCompleteError:
-        raced = context.cache.lookup(key)
-        if raced is None:
-            raise Lfm2BodyReclosurePhaseAuthenticationError(
-                "Completed body-reclosure phase disappeared during lookup."
-            )
-        artifact = _load_entry(context, request, raced)
-        _progress(
+        return _resume_completed_publication(
             context,
-            "body_reclosure_phase_publish_race_resumed",
-            phase_key_sha256=key.phase_key_sha256,
-            completion_sha256=raced.completion_sha256,
+            request,
+            candidate=artifact,
             producer_invoked=False,
-        )
-        return AuthenticatedLfm2BodyReclosurePhase(
-            request=request,
-            artifact=artifact,
-            entry=raced,
-            cache_hit=True,
-            producer_invoked=False,
-            publication_race_lost=True,
         )
     except FoldPhaseCacheConcurrencyError as exc:
-        _progress(
+        _raise_in_progress(context, request, exc)
+    with transaction:
+        return _complete_reserved_publication(
             context,
-            "body_reclosure_phase_in_progress",
-            phase_key_sha256=key.phase_key_sha256,
-            status="in_progress",
-            retryable=True,
+            request,
+            artifact,
+            transaction,
             producer_invoked=False,
-            ownership_stolen=False,
-            owner_liveness_authenticated=False,
         )
-        raise Lfm2BodyReclosurePhaseInProgressError(key.phase_key_sha256) from exc
+
+
+def load_or_build_lfm2_body_reclosure_phase(
+    context: Lfm2BodyReclosurePhaseCacheContext,
+    request: Lfm2BodyReclosurePhaseRequest,
+    *,
+    producer: BodyReclosureProducer,
+) -> AuthenticatedLfm2BodyReclosurePhase:
+    """Compose lookup/publication internals with exactly-once producer ownership.
+
+    Reservation precedes producer invocation, so the compatibility surface
+    retains its historical exactly-once guarantee while sharing the split
+    API's authentication and atomic-publication implementation.
+    """
+
+    _validate_context_and_request(context, request)
+    if not callable(producer):
+        raise TypeError("producer must be callable.")
+    hit = lookup_lfm2_body_reclosure_phase(context, request)
+    if hit is not None:
+        return hit
+
+    key = request.phase_key
+    try:
+        transaction = context.cache.begin(key, events=context.events)
+    except FoldPhaseCacheAlreadyCompleteError:
+        return _resume_completed_publication(
+            context,
+            request,
+            candidate=None,
+            producer_invoked=False,
+        )
+    except FoldPhaseCacheConcurrencyError as exc:
+        _raise_in_progress(context, request, exc)
     with transaction:
         _progress(
             context,
@@ -1266,29 +1468,13 @@ def load_or_build_lfm2_body_reclosure_phase(
             phase_key_sha256=key.phase_key_sha256,
             artifact_sha256=cold.artifact_sha256,
         )
-        receipt = _write_bundle(transaction.payload_path, request, cold)
-        entry = transaction.complete(result=_completion_result(receipt))
-    artifact = _load_entry(context, request, entry)
-    if artifact.artifact_sha256 != cold.artifact_sha256:
-        raise Lfm2BodyReclosurePhaseAuthenticationError(
-            "Cold and reloaded body-reclosure artifacts differ."
+        return _complete_reserved_publication(
+            context,
+            request,
+            cold,
+            transaction,
+            producer_invoked=True,
         )
-    _progress(
-        context,
-        "body_reclosure_phase_published",
-        phase_key_sha256=key.phase_key_sha256,
-        completion_sha256=entry.completion_sha256,
-        artifact_sha256=artifact.artifact_sha256,
-        cold_reload_exact=True,
-    )
-    return AuthenticatedLfm2BodyReclosurePhase(
-        request=request,
-        artifact=artifact,
-        entry=entry,
-        cache_hit=False,
-        producer_invoked=True,
-        publication_race_lost=False,
-    )
 
 
 __all__ = [
@@ -1309,4 +1495,6 @@ __all__ = [
     "build_lfm2_body_reclosure_phase_request",
     "describe_lfm2_body_reclosure_phase",
     "load_or_build_lfm2_body_reclosure_phase",
+    "lookup_lfm2_body_reclosure_phase",
+    "publish_lfm2_body_reclosure_phase",
 ]
