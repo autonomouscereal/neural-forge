@@ -103,6 +103,51 @@ class MatrixCellRunError(RuntimeError):
     """The cell failed closed."""
 
 
+#: Components whose parent map is **not** a single 2-D matmul from
+#: ``input_endpoint`` to ``write_endpoint``, and the reason, verbatim from the
+#: wave-1 measurements in `NOTES-MX-E` §4.5.
+#:
+#: The generic calibration gate below scores ``held_input @ parent_weight.T``
+#: against the sealed write rows.  For C05-C09 and C11-C13 that *is* the
+#: component.  For these four it is a category error with four different faces,
+#: and wave 1 sealed all four cells as ``infra`` -- void for a harness reason,
+#: with no evidence at all about the technique.  A gate that cannot be applied
+#: is not a gate that failed, so these cells declare it inapplicable, carry the
+#: reason into the receipt, and rest their verdict on the links that need no
+#: per-component predictor: the macrocell where the write composes into the
+#: residual, the composed forward against the copy_exact control, the free-run
+#: probe and the frozen review.
+#:
+#: This is deliberately a *closed list of components*, not a fallback triggered
+#: by a caught exception.  A shape mismatch that happens for some other reason
+#: must still void its cell loudly; only these four pre-registered category
+#: errors are exempt, and the exemption is visible in the sealed receipt.
+NO_PARENT_MATMUL_PREDICTOR: Mapping[str, str] = {
+    "C03": (
+        "conv_in_proj emits three stacked projection blocks (B/C/x) over one "
+        "internal channel axis; the layout has no name for the stacked write "
+        "endpoint, so the generic gate compares a 3072-wide in_proj output "
+        "against the 1024-wide residual (NOTES-MX-E 4.5)."
+    ),
+    "C04": (
+        "the short-conv FIR kernel is (channels, 1, taps); parent_weight.T is "
+        "not a linear map from the operator input, so there is no matmul for "
+        "the generic gate to run (NOTES-MX-E 4.5)."
+    ),
+    "C10": (
+        "attn_per_head owns four tensors and its output passes through a "
+        "softmax; the generic gate takes weight_keys[0] (q_proj), finds the "
+        "shapes agree, and computes a meaningless 4.4955 relL2 "
+        "(NOTES-MX-E 4.5)."
+    ),
+    "C14": (
+        "the RMSNorm gain is a 1-D (hidden,) vector and the component "
+        "normalizes before it scales; held_input @ gain.T collapses the rows "
+        "instead of reproducing them (NOTES-MX-E 4.5)."
+    ),
+}
+
+
 # --------------------------------------------------------------------------
 # small helpers, copied in shape from the layer-0 study
 # --------------------------------------------------------------------------
@@ -153,6 +198,33 @@ def _src_tree_sha256(root: Path) -> str:
             digest.update(name.encode("ascii"))
             digest.update(_file_sha256(candidate).encode("ascii"))
     return digest.hexdigest()
+
+
+def compute_architecture(device: str) -> str:
+    """``sm<major><minor> <device name>`` for the device this cell will run on.
+
+    `NOTES-MX-E` §2 is the reason this exists.  A wave-1 batch was launched with
+    ``CUDA_VISIBLE_DEVICES=4`` -- ``nvidia-smi``'s second RTX 3090 -- and CUDA's
+    default ``FASTEST_FIRST`` ordering resolved it to a Tesla P40 at sm_61.  The
+    cells died in evidence loading so nothing numeric was lost, but that was
+    luck: A9's fp32 OMP candidate search does not reproduce across
+    architectures (`NOTES-MX-C` §4.4), and a half-wave measured on sm_61 would
+    have been silently incomparable with the sm_86 half, because no receipt
+    field recorded which one ran.
+
+    The string is read off the *resolved* device, not off an environment
+    variable, so it survives every ordering surprise that produced the leak.
+    """
+
+    if not str(device).startswith("cuda"):
+        return f"cpu {sys.platform}"
+    if not torch.cuda.is_available():
+        raise MatrixCellRunError(
+            f"--device {device} was requested but CUDA is not available."
+        )
+    index = int(str(device).split(":", 1)[1]) if ":" in str(device) else 0
+    major, minor = torch.cuda.get_device_capability(index)
+    return f"sm{int(major)}{int(minor)} {torch.cuda.get_device_name(index)}"
 
 
 def _repo_head(root: Path) -> str:
@@ -1348,6 +1420,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--parent-model", type=Path, required=True)
     parser.add_argument("--control-artifact", type=Path)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--require-compute-architecture",
+        help=(
+            "Refuse to run unless the resolved device's compute architecture "
+            "starts with this string, e.g. 'sm86'.  NOTES-MX-E 2: the wave-1 "
+            "P40 leak was caught by a shell preflight the harness itself did "
+            "not have, and a preflight that lives outside the process it "
+            "guards is one careless invocation from being skipped."
+        ),
+    )
     parser.add_argument("--dtype", default="float32")
     parser.add_argument("--probe-prompts", type=Path, default=PROBE_PROMPTS_FILE)
     parser.add_argument("--smoke-prompts", type=Path, default=SMOKE_PROMPTS_FILE)
@@ -1454,6 +1536,18 @@ def run(args: argparse.Namespace) -> int:
     probe_prompts, probe_sha = _load_prompt_set(args.probe_prompts, "free-run-probe")
     smoke_prompts, smoke_sha = _load_prompt_set(args.smoke_prompts, "decode-smoke")
 
+    architecture = compute_architecture(str(args.device))
+    required = args.require_compute_architecture
+    if required and not architecture.startswith(str(required)):
+        # Refused before the receipt exists: a cell on the wrong architecture is
+        # not a failed cell, it is a cell that must not be sealed into a ledger
+        # whose other rows were measured somewhere else.
+        raise MatrixCellRunError(
+            f"--device {args.device} resolves to {architecture!r}, which does "
+            f"not start with the required {required!r}."
+        )
+    _log(f"compute architecture: {architecture}")
+
     receipt = blank_receipt(
         cell_id=cell.text,
         cell_instance_id=instance,
@@ -1462,6 +1556,7 @@ def run(args: argparse.Namespace) -> int:
         src_tree_sha=_src_tree_sha256(_REPO_ROOT),
         probe_set_sha=probe_sha,
         smoke_prompt_sha=smoke_sha,
+        compute_architecture=architecture,
     )
     receipt_path = output / "cell-receipt.json"
     watchdog = CellWatchdog(
@@ -1488,6 +1583,7 @@ def run(args: argparse.Namespace) -> int:
         "technique_modules": technique_modules,
         "registry": describe_registry(),
         "device": device,
+        "compute_architecture": architecture,
         "dtype": str(args.dtype),
         "probe_prompts": len(probe_prompts),
         "smoke_prompts": len(smoke_prompts),
@@ -1546,6 +1642,7 @@ def run(args: argparse.Namespace) -> int:
             calibration_block = {
                 "copy_exact_reproduction_relL2": 0.0,
                 "passed": before == after,
+                "applicable": True,
             }
             solve_block.update(dict(result.solve))
             diagnostics["control_weight_digest"] = before
@@ -1593,6 +1690,7 @@ def run(args: argparse.Namespace) -> int:
             calibration_block = {
                 "copy_exact_reproduction_relL2": 0.0 if calibration["passed"] else None,
                 "passed": bool(calibration["passed"]),
+                "applicable": True,
                 "mode": calibration["mode"],
                 "artifact_bit_identical": calibration["artifact_bit_identical"],
             }
@@ -1645,28 +1743,44 @@ def run(args: argparse.Namespace) -> int:
             # and metric.  If reproducing the parent is not ~0, the harness is
             # measuring something else and no solve below may be believed.
             parent_weight = parent_weights[spec.weight_keys[0]]
-            calibration_relative = None
-            if spec.input_endpoint and spec.write_endpoint:
-                held_input = evidence.heldout_rows(spec.input_endpoint)
-                held_write = evidence.heldout_rows(spec.write_endpoint)
-                reproduced = held_input @ parent_weight.T
-                calibration_relative = float(
-                    _row_metrics(reproduced, held_write)["aggregate_relative_l2"]
-                )
             calibration_tolerance = float(knobs.get("calibration_tolerance", 1e-3))
-            calibration_block = {
-                "copy_exact_reproduction_relL2": calibration_relative,
-                "passed": (
-                    calibration_relative is not None
-                    and calibration_relative <= calibration_tolerance
-                ),
-            }
-            _log(
-                f"calibration: copy_exact reproduction relL2="
-                f"{calibration_relative} (tolerance {calibration_tolerance})"
-            )
-            if not calibration_block["passed"]:
-                raise _CalibrationRefused(calibration_block, solve_block)
+            inapplicable = NO_PARENT_MATMUL_PREDICTOR.get(cell.component)
+            if inapplicable is not None:
+                calibration_block = {
+                    "copy_exact_reproduction_relL2": None,
+                    "passed": False,
+                    "applicable": False,
+                    "inapplicable_reason": inapplicable,
+                    "tolerance": calibration_tolerance,
+                }
+                _log(
+                    f"calibration: DECLARED INAPPLICABLE for {cell.component} -- "
+                    f"{inapplicable}"
+                )
+            else:
+                calibration_relative = None
+                if spec.input_endpoint and spec.write_endpoint:
+                    held_input = evidence.heldout_rows(spec.input_endpoint)
+                    held_write = evidence.heldout_rows(spec.write_endpoint)
+                    reproduced = held_input @ parent_weight.T
+                    calibration_relative = float(
+                        _row_metrics(reproduced, held_write)["aggregate_relative_l2"]
+                    )
+                calibration_block = {
+                    "copy_exact_reproduction_relL2": calibration_relative,
+                    "passed": (
+                        calibration_relative is not None
+                        and calibration_relative <= calibration_tolerance
+                    ),
+                    "applicable": True,
+                    "tolerance": calibration_tolerance,
+                }
+                _log(
+                    f"calibration: copy_exact reproduction relL2="
+                    f"{calibration_relative} (tolerance {calibration_tolerance})"
+                )
+                if not calibration_block["passed"]:
+                    raise _CalibrationRefused(calibration_block, solve_block)
 
             watchdog.stage("solve")
             technique = resolve(cell.technique, cell.component)
@@ -1694,46 +1808,97 @@ def run(args: argparse.Namespace) -> int:
             )
             held_input = evidence.heldout_rows(spec.input_endpoint)
             held_write = evidence.heldout_rows(spec.write_endpoint)
-            write_metrics = _row_metrics(predict(held_input), held_write)
+            predicted = predict(held_input)
             # The macrocell: the composed layer output the write lands in.  §3
             # names the field ``post_operator`` while its own parenthetical says
             # the composed layer output; on a layer where an MLP shares the
             # residual those are different endpoints and S5 says score the
             # composed one.  The endpoint that was scored is named explicitly.
             macro_endpoint = spec.macrocell_endpoint or "residual.post_operator"
-            delta = predict(held_input) - held_write
             macro_reference = evidence.heldout_rows(macro_endpoint)
-            if int(delta.shape[-1]) == int(macro_reference.shape[-1]):
-                macro_metrics = _row_metrics(macro_reference + delta, macro_reference)
-            else:
-                # The component writes into a different width than the residual
-                # (attention q/k/v).  The macrocell cannot be composed from the
-                # write alone; record it as unavailable rather than invent it.
+            if int(predicted.shape[-1]) != int(held_write.shape[-1]):
+                # The layout has no name for this component's write, so the
+                # runner fell back to the macrocell endpoint and the two widths
+                # disagree.  Wave 1 crashed here (C03: 3072 vs 1024) and sealed
+                # the cell void.  Neither boundary link is measurable without
+                # *inventing* a stacked endpoint and choosing its block order,
+                # which is a design decision that would produce a confident and
+                # possibly false number; the whole boundary stage is therefore
+                # declared inapplicable and the verdict rests on the composed
+                # forward, the free-run probe and the review.
+                write_metrics = None
                 macro_metrics = None
-            boundary_block = {
-                "applicable": True,
-                "macrocell_endpoint": macro_endpoint,
-                "write_heldout_relL2": write_metrics["mean_relative_l2"],
-                "write_heldout_cos": write_metrics["mean_cosine"],
-                "post_operator_heldout_relL2": (
-                    None if macro_metrics is None else macro_metrics["mean_relative_l2"]
-                ),
-                "post_operator_heldout_cos": (
-                    None if macro_metrics is None else macro_metrics["mean_cosine"]
-                ),
-                "endpoint_band_le_0p4": (
-                    None
-                    if macro_metrics is None
-                    else bool(macro_metrics["mean_relative_l2"] <= 0.4)
-                ),
-            }
-            if macro_metrics is None:
-                boundary_block["post_operator_heldout_relL2"] = 0.0
-                boundary_block["post_operator_heldout_cos"] = 1.0
-                boundary_block["endpoint_band_le_0p4"] = True
-                boundary_block["macrocell_endpoint"] = (
-                    f"{macro_endpoint}#not-composable-from-write"
-                )
+                boundary_block = {
+                    "applicable": False,
+                    "local_solve_applicable": False,
+                    "macrocell_endpoint": (
+                        f"{macro_endpoint}#no-nameable-write-endpoint"
+                    ),
+                    "write_heldout_relL2": None,
+                    "write_heldout_cos": None,
+                    "post_operator_heldout_relL2": None,
+                    "post_operator_heldout_cos": None,
+                    "endpoint_band_le_0p4": None,
+                    "inapplicable_reason": (
+                        f"{spec.component_id} has no sealed write endpoint: the "
+                        f"technique predicts {int(predicted.shape[-1])} channels "
+                        f"and the fallback endpoint {macro_endpoint!r} carries "
+                        f"{int(held_write.shape[-1])}."
+                    ),
+                }
+            else:
+                write_metrics = _row_metrics(predicted, held_write)
+                delta = predicted - held_write
+                if int(delta.shape[-1]) == int(macro_reference.shape[-1]):
+                    macro_metrics = _row_metrics(
+                        macro_reference + delta, macro_reference
+                    )
+                else:
+                    # The component writes into a different width than the
+                    # residual (attention q/k/v).  The macrocell cannot be
+                    # composed from the write alone; record it as unavailable
+                    # rather than invent it.
+                    macro_metrics = None
+                local_reason = NO_PARENT_MATMUL_PREDICTOR.get(cell.component)
+                boundary_block = {
+                    "applicable": True,
+                    # The write score is a real measurement whenever the
+                    # technique supplied a predictor and the widths agree -- but
+                    # for the four components whose *parent* has no matmul
+                    # predictor there is no calibrated reference for it, so the
+                    # number is recorded as a diagnostic and the chain's third
+                    # link is declared inapplicable rather than gated on an
+                    # uncalibrated reading.
+                    "local_solve_applicable": local_reason is None,
+                    "macrocell_endpoint": macro_endpoint,
+                    "write_heldout_relL2": write_metrics["mean_relative_l2"],
+                    "write_heldout_cos": write_metrics["mean_cosine"],
+                    "post_operator_heldout_relL2": (
+                        None
+                        if macro_metrics is None
+                        else macro_metrics["mean_relative_l2"]
+                    ),
+                    "post_operator_heldout_cos": (
+                        None if macro_metrics is None else macro_metrics["mean_cosine"]
+                    ),
+                    "endpoint_band_le_0p4": (
+                        None
+                        if macro_metrics is None
+                        else bool(macro_metrics["mean_relative_l2"] <= 0.4)
+                    ),
+                }
+                if local_reason is not None:
+                    boundary_block["local_solve_inapplicable_reason"] = (
+                        "the write score has no calibrated parent reference: "
+                        + local_reason
+                    )
+                if macro_metrics is None:
+                    boundary_block["post_operator_heldout_relL2"] = 0.0
+                    boundary_block["post_operator_heldout_cos"] = 1.0
+                    boundary_block["endpoint_band_le_0p4"] = True
+                    boundary_block["macrocell_endpoint"] = (
+                        f"{macro_endpoint}#not-composable-from-write"
+                    )
             diagnostics["write_metrics"] = write_metrics
             diagnostics["macrocell_metrics"] = macro_metrics
             _install_component(model, result.installed_weights)
@@ -1861,7 +2026,9 @@ def run(args: argparse.Namespace) -> int:
         receipt["composed"] = composed_block
         receipt["behavior"] = behavior
         receipt["outcome"]["notes"] = (
-            route_result.notes if route_result is not None else ""
+            route_result.notes
+            if route_result is not None
+            else _storage_note(solve_block)
         )
 
     except _CalibrationRefused as refusal:
@@ -1888,9 +2055,15 @@ def run(args: argparse.Namespace) -> int:
         OSError,
     ) as exc:
         _log(f"CELL FAILED {type(exc).__name__}: {exc}")
+        # The cell is void.  Note that this stays ``applicable: True`` even for
+        # a component whose calibration gate was declared inapplicable above: a
+        # technique that refused, or a stage that raised, is a real ``infra``
+        # outcome and must not inherit the exemption that was granted to one
+        # specific gate.
         receipt["calibration"] = {
             "copy_exact_reproduction_relL2": None,
             "passed": False,
+            "applicable": True,
         }
         receipt["behavior"] = {
             "free_run": {
@@ -1921,6 +2094,28 @@ def run(args: argparse.Namespace) -> int:
         f"receipt={sealed['receipt_sha'][:12]} in {elapsed:.1f}s"
     )
     return 0 if sealed["outcome"]["status"] in ("pass", "pending-review") else 1
+
+
+def _storage_note(solve: Mapping[str, Any]) -> str:
+    """The one line `NOTES-MX-E` §4.1 says every cell should have carried.
+
+    A level names a *rank*, and a rank is not a size.  T1 at M16 stores a
+    ``w x r`` basis plus an ``r x w`` factor -- 1.88x the dense parent it
+    replaced -- and wave 1's ledger had no column that would have shown it.
+    The counts are already sealed under ``solve``; putting them in the receipt's
+    own notes puts them in the ledger row a human actually reads.
+    """
+
+    stored = solve.get("stored_parameter_count")
+    parent = solve.get("parent_parameter_count")
+    if not isinstance(stored, int) or not isinstance(parent, int) or parent <= 0:
+        return ""
+    ratio = float(stored) / float(parent)
+    verdict = "contracts" if ratio < 1.0 else "COSTS MORE THAN DENSE"
+    return (
+        f"storage: stores {stored} against a dense parent of {parent} "
+        f"({ratio:.4f}x) -- {verdict}."
+    )
 
 
 class _CalibrationRefused(Exception):

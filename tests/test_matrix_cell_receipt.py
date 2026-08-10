@@ -68,8 +68,15 @@ def _receipt(**overrides):
         src_tree_sha="a" * 64,
         probe_set_sha=probe_set_sha256(("probe",)),
         smoke_prompt_sha=probe_set_sha256(("smoke",)),
+        compute_architecture=overrides.pop(
+            "compute_architecture", "sm86 NVIDIA GeForce RTX 3090"
+        ),
     )
-    body["calibration"] = {"copy_exact_reproduction_relL2": 1e-9, "passed": True}
+    body["calibration"] = {
+        "copy_exact_reproduction_relL2": 1e-9,
+        "passed": True,
+        "applicable": True,
+    }
     body["solve"].update(
         {
             "solver_path": "direct_gelsd_least_squares",
@@ -85,6 +92,7 @@ def _receipt(**overrides):
     )
     body["boundary"] = {
         "applicable": True,
+        "local_solve_applicable": True,
         "macrocell_endpoint": "residual.post_layer",
         "write_heldout_relL2": 0.02,
         "write_heldout_cos": 0.999,
@@ -247,12 +255,131 @@ def test_free_run_is_the_f3_signature_after_every_numeric_link_passes():
 def test_declared_inapplicable_links_are_skipped_but_absent_ones_are_not():
     body = _receipt()
     body["boundary"]["applicable"] = False
+    body["boundary"]["local_solve_applicable"] = False
     body["boundary"]["write_heldout_cos"] = None
     body["boundary"]["post_operator_heldout_relL2"] = None
     assert first_divergent_metric(body) is None
     body["boundary"]["applicable"] = True
+    body["boundary"]["local_solve_applicable"] = True
     with pytest.raises(MatrixCellReceiptError):
         first_divergent_metric(body)
+
+
+def test_calibration_can_be_declared_inapplicable_only_with_a_reason():
+    """NOTES-MX-E §4.5: four cells were void for a *harness* reason.
+
+    C03/C04/C10/C14 have no ``held_input @ parent_weight.T`` predictor, so the
+    generic gate is a category error rather than a failed measurement.  The
+    receipt may say so -- and then the cell's verdict has to come from the
+    links that need no per-component predictor -- but saying so costs a reason,
+    because a bare ``false`` here would silently retire the chain's first link
+    for every cell that copied the pattern.
+    """
+
+    body = _receipt()
+    body["calibration"] = {
+        "copy_exact_reproduction_relL2": None,
+        "passed": False,
+        "applicable": True,
+    }
+    assert first_divergent_metric(body) == "infra"
+
+    body["calibration"]["applicable"] = False
+    with pytest.raises(MatrixCellReceiptError, match="inapplicable_reason"):
+        first_divergent_metric(body)
+
+    body["calibration"]["inapplicable_reason"] = (
+        "the RMSNorm gain is 1-D; held_input @ gain.T collapses the rows."
+    )
+    # Link 1 is now skipped and the verdict comes from further down the chain.
+    assert first_divergent_metric(body) is None
+    body["composed"]["vs_copy_exact_control_delta"] = 0.9
+    assert first_divergent_metric(body) == "composition"
+
+
+def test_local_solve_can_be_declared_inapplicable_without_losing_the_macrocell():
+    """The boundary's two links are declared separately because they differ.
+
+    The write-cosine link needs a per-component predictor scored against a
+    named write endpoint; the macrocell link needs only a delta that composes
+    into the residual.  A component can have the second and not a *calibrated*
+    version of the first, and wave 1 lost both to a single flag.
+    """
+
+    body = _receipt()
+    body["boundary"]["write_heldout_cos"] = 0.10  # would be a local-solve failure
+    assert first_divergent_metric(body) == "local-solve"
+
+    body["boundary"]["local_solve_applicable"] = False
+    with pytest.raises(MatrixCellReceiptError, match="local_solve_inapplicable_reason"):
+        first_divergent_metric(body)
+
+    body["boundary"]["local_solve_inapplicable_reason"] = (
+        "attn_per_head owns four tensors behind a softmax."
+    )
+    # Link 3 is skipped; link 4 is still measured and still fires.
+    assert first_divergent_metric(body) is None
+    body["boundary"]["post_operator_heldout_relL2"] = 0.9
+    assert first_divergent_metric(body) == "macrocell-band"
+
+
+def test_local_solve_cannot_be_applicable_inside_a_boundary_that_never_ran():
+    body = _receipt()
+    body["boundary"]["applicable"] = False
+    with pytest.raises(MatrixCellReceiptError, match="boundary stage did not run"):
+        first_divergent_metric(body)
+
+
+def test_compute_architecture_is_mandatory_and_nonempty():
+    """NOTES-MX-E §2: the one cell input the sealed identities did not cover.
+
+    A9's fp32 OMP candidate search is architecture-non-portable, so a cell
+    measured on sm_61 and a cell measured on sm_86 are not comparable -- and
+    wave 1 came within one evidence-loading crash of merging five P40 rows into
+    a ledger that could not have said which was which.
+    """
+
+    body = _receipt()
+    assert body["code_identity"]["compute_architecture"] == "sm86 NVIDIA GeForce RTX 3090"
+    assert seal_receipt(body)["code_identity"]["compute_architecture"].startswith("sm86")
+
+    del body["code_identity"]["compute_architecture"]
+    with pytest.raises(
+        MatrixCellReceiptError, match="code_identity.compute_architecture"
+    ):
+        seal_receipt(body)
+
+    blank = _receipt(compute_architecture="   ")
+    with pytest.raises(MatrixCellReceiptError, match="compute_architecture is empty"):
+        seal_receipt(blank)
+
+
+def test_ledger_row_carries_the_architecture_and_the_storage_columns():
+    body = _receipt()
+    body["solve"]["stored_parameter_count"] = 1_966_080
+    body["solve"]["parent_parameter_count"] = 1_048_576
+    row = ledger_line(seal_receipt(body))
+    assert row["compute_architecture"] == "sm86 NVIDIA GeForce RTX 3090"
+    assert row["stored_parameter_count"] == 1_966_080
+    assert row["parent_parameter_count"] == 1_048_576
+    # The trap NOTES-MX-E §4.1 measured: a "contraction" that stores 1.88x the
+    # dense tensor it replaced.  The ledger now has a column that shows it.
+    assert row["stored_parameter_ratio"] == pytest.approx(1.875)
+    assert row["calibration_applicable"] is True
+    assert row["local_solve_applicable"] is True
+
+    # A cell whose technique installed no tensor reports null, never zero.
+    plain = ledger_line(seal_receipt(_receipt(instance="9" * 32)))
+    assert plain["stored_parameter_count"] is None
+    assert plain["stored_parameter_ratio"] is None
+
+
+def test_m2_is_the_break_even_level_and_parses():
+    from neural_forge.matrix_cell_receipt import LEVELS
+
+    assert LEVELS["M2"] == 0.5
+    assert CellId.parse("C05.T1.M2.L05").level == "M2"
+    assert "C05.T1.M2.L05" in known_cell_ids(components=("C05",), techniques=("T1",))
 
 
 # -------------------------------------------------------- acceptance clause
@@ -332,6 +459,7 @@ def test_ledger_is_append_only_and_rerenders(tmp_path):
     )
     control = _receipt(cell_id=CONTROL_CELL_ID, instance="3" * 32)
     control["boundary"]["applicable"] = False
+    control["boundary"]["local_solve_applicable"] = False
     control["boundary"]["write_heldout_cos"] = None
     control["boundary"]["post_operator_heldout_relL2"] = None
     control["boundary"]["endpoint_band_le_0p4"] = None

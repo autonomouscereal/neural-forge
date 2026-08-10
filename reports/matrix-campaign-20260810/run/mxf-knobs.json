@@ -1,0 +1,5 @@
+{
+  "_purpose": "Wave-2 (MX-F) cells at the registered technique defaults.  One shared knob file so any knob change in this wave is a measured response to a wave-1 receipt rather than untracked tuning; the one cell that deviates (C13.T5 at doubled OMP k) uses its own file and says so in its cell id's knob selector.",
+  "_calibration_tolerance_note": "Unchanged from NOTES-MX-D 4 / NOTES-MX-E: the evidence base is captured with a bfloat16 parent, so the sealed activation rows carry ~2^-9 relative quantization and the copy_exact calibration arm cannot beat that floor.  Wave 1 measured 0.000638-0.002282 across every component that could run the gate.  5e-3 clears the measured floor by ~2.2x and is still three decades below anything a genuine row-selection or endpoint error produces.",
+  "calibration_tolerance": 0.005
+}

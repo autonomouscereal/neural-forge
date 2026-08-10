@@ -517,3 +517,133 @@ def test_a_cell_without_a_control_artifact_seals_a_failure(tmp_path, monkeypatch
     assert receipt["calibration"]["passed"] is False
     assert "sealed_reference" in receipt["outcome"]["notes"]
     assert not (output / "route").exists()
+
+
+# --------------------------------------------------- compute architecture (MX-F)
+
+
+def test_compute_architecture_names_the_capability_and_the_device():
+    """NOTES-MX-E §2: the leak was that no field recorded which GPU ran a cell.
+
+    The string is read off the *resolved* device rather than off an environment
+    variable, because the leak was an ordering surprise -- ``CUDA_VISIBLE_DEVICES=4``
+    with CUDA's default ``FASTEST_FIRST`` ordering resolved to a Tesla P40 while
+    ``nvidia-smi`` index 4 is an RTX 3090.  Reading the environment back would
+    have reproduced the lie.
+    """
+
+    assert runner.compute_architecture("cpu").startswith("cpu ")
+    if not torch.cuda.is_available():
+        pytest.skip("no CUDA device on this host")
+    text = runner.compute_architecture("cuda:0")
+    major, minor = torch.cuda.get_device_capability(0)
+    assert text.startswith(f"sm{major}{minor} ")
+    assert torch.cuda.get_device_name(0) in text
+
+
+def test_required_compute_architecture_refuses_before_the_receipt_exists(
+    tmp_path, monkeypatch
+):
+    """A preflight that lives outside the process it guards can be skipped.
+
+    Wave 1's guard was a shell ``if`` in the batch driver.  It worked, and it
+    was one careless invocation away from not existing.  The refusal below is
+    inside the runner, and it happens before ``blank_receipt``, so a wrong-GPU
+    cell produces no receipt at all rather than a sealed row that has to be
+    quarantined afterwards.
+    """
+
+    state = _stub_state()
+    monkeypatch.setattr(runner, "_load_parent", lambda d, dev, dt: _StubModel(state))
+    monkeypatch.setattr(runner, "_load_tokenizer", lambda d: _StubTokenizer())
+    output = tmp_path / "CTRL"
+    args = runner._parser().parse_args(
+        [
+            "--cell-id",
+            CONTROL_CELL_ID,
+            "--mode",
+            "control",
+            "--out",
+            str(output),
+            "--parent-model",
+            str(tmp_path),
+            "--device",
+            "cpu",
+            "--require-compute-architecture",
+            "sm86",
+        ]
+    )
+    with pytest.raises(runner.MatrixCellRunError, match="does not start with"):
+        runner.run(args)
+    assert not (output / "cell-receipt.json").exists()
+
+
+def test_control_receipt_carries_the_compute_architecture(tmp_path, monkeypatch):
+    state = _stub_state()
+    monkeypatch.setattr(runner, "_load_parent", lambda d, dev, dt: _StubModel(state))
+    monkeypatch.setattr(runner, "_load_tokenizer", lambda d: _StubTokenizer())
+    output = tmp_path / "CTRL"
+    args = runner._parser().parse_args(
+        [
+            "--cell-id",
+            CONTROL_CELL_ID,
+            "--mode",
+            "control",
+            "--out",
+            str(output),
+            "--ledger",
+            str(tmp_path / "ledger.jsonl"),
+            "--parent-model",
+            str(tmp_path),
+            "--device",
+            "cpu",
+            "--probe-tokens",
+            "4",
+            "--smoke-token-cap",
+            "6",
+        ]
+    )
+    assert runner.run(args) == 0
+    receipt = json.loads((output / "cell-receipt.json").read_text(encoding="utf-8"))
+    verify_seal(receipt)
+    assert receipt["code_identity"]["compute_architecture"].startswith("cpu ")
+    assert receipt["calibration"]["applicable"] is True
+    assert receipt["boundary"]["local_solve_applicable"] is False
+    rows = read_ledger(tmp_path / "ledger.jsonl")
+    assert rows[0]["compute_architecture"].startswith("cpu ")
+
+
+# ----------------------------------------------- the four void cells (MX-F §2)
+
+
+def test_the_void_components_are_a_closed_pre_registered_list_with_reasons():
+    """NOTES-MX-E §4.5's four faces of one gap, enumerated rather than caught.
+
+    The exemption is keyed on the component id, not on catching the exception
+    the generic gate happens to raise.  A shape mismatch for some *other*
+    reason must still void its cell loudly; only these four pre-registered
+    category errors are exempt, and each one carries the measurement that
+    established it.
+    """
+
+    assert set(runner.NO_PARENT_MATMUL_PREDICTOR) == {"C03", "C04", "C10", "C14"}
+    for component, reason in runner.NO_PARENT_MATMUL_PREDICTOR.items():
+        assert "NOTES-MX-E" in reason
+        assert len(reason) > 80, component
+    # C05-C09 and C11-C13 *are* single 2-D linear maps and keep the gate.
+    for component in ("C05", "C06", "C07", "C08", "C09", "C11", "C12", "C13"):
+        assert component not in runner.NO_PARENT_MATMUL_PREDICTOR
+
+
+def test_storage_note_says_when_a_contraction_costs_more_than_dense():
+    note = runner._storage_note(
+        {"stored_parameter_count": 1_966_080, "parent_parameter_count": 1_048_576}
+    )
+    assert "1.8750x" in note
+    assert "COSTS MORE THAN DENSE" in note
+    contracting = runner._storage_note(
+        {"stored_parameter_count": 983_040, "parent_parameter_count": 1_048_576}
+    )
+    assert "contracts" in contracting
+    # A cell whose technique installed no tensor makes no storage claim at all.
+    assert runner._storage_note({}) == ""

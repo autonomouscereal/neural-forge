@@ -15,6 +15,15 @@ narrative in `NOTES-MX-A.md` at the repo root.
 | `cells/CAL.C01.T5.X4/cell-receipt.json` | cell 0b, status `infra` — calibration failed, campaign stopped |
 | `cells/CAL.C01.T5.X4/route-numeric-dtype-contract.json` | the reproduced route's dtype contract, `0f52a2d4…`, against A9's sealed `243a4e48…` |
 | `cells/CAL.C01.T5.X4/route-identity-excerpt.md` | the reproduced codebook artifact digest and the terminal trace-cache failure, lifted from the route progress log |
+| `cells/<cell-id>/wave2/` | a wave-2 re-run of a cell id wave 1 already sealed (four void cells plus the C13.T5 rescue probe).  The ledger keeps both instances by design; the wave-1 files beside it are untouched. |
+| `run/mxf-*`, `run/run-mxf-batch.sh` | wave-2 (MX-F) knob files, batch driver, review spec and the summarize/smoke/review-seal drivers |
+
+
+Wave-2 receipts carry three fields wave-1 receipts do not:
+`code_identity.compute_architecture`, `calibration.applicable` and
+`boundary.local_solve_applicable`.  Wave-1 receipts predate them, are preserved
+byte-for-byte, and re-verify their seals but no longer round-trip through
+`validate_receipt`.  Narrative in `NOTES-MX-F.md` at the repo root.
 
 The server side is under `/mnt/ai_data/neural-forge-matrix/` (receipts, ledger,
 `backup/` inventories) with the route's own working directory on local disk at

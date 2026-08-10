@@ -49,6 +49,30 @@ deviations are written down rather than silently absorbed:
    the token-route calibration cell -- which have no component write to score --
    can declare a link not-applicable *explicitly*.  A link is never skipped
    because a field happened to be absent.
+5. `calibration.applicable` and `boundary.local_solve_applicable` extend that
+   same declared-inapplicability mechanism to the chain's *local* links, and
+   were added in wave 2.  `NOTES-MX-E` §4.5 measured one harness gap four ways:
+   the generic parent-calibration gate assumes the component is a single 2-D
+   linear map ``held_input @ parent_weight.T``, which C03 (a 3-block in_proj),
+   C04 (FIR taps), C10 (four tensors behind a softmax) and C14 (a 1-D RMSNorm
+   gain) each violate differently, and the cells died at link 1 with no
+   evidence at all.  A link that *cannot be measured for this component* is a
+   different statement from a link that was measured and failed, and the
+   receipt now carries both statements separately.  Declaring one costs a
+   mandatory reason string, and the two flags are read by
+   `first_divergent_metric` only -- never by `campaign_pass`, whose clause is
+   still behavior plus the wreck detector and nothing else.
+6. `code_identity.compute_architecture` is new in wave 2 and mandatory.
+   `NOTES-MX-E` §2: a batch was launched on what ``nvidia-smi`` calls the
+   second RTX 3090, CUDA's default ``FASTEST_FIRST`` ordering resolved it to a
+   Tesla P40 (sm_61), and *nothing in the receipt would have said so*.  A9's
+   fp32 OMP candidate search is architecture-non-portable (`NOTES-MX-C` §4.4),
+   so two cells measured on different compute architectures are not
+   comparable, and the compute architecture was the one input to a cell that
+   the sealed identities did not cover.  Receipts sealed before this field
+   exists (wave 1) do not validate under this schema; they are preserved
+   byte-for-byte as sealed and are read through the ledger, which is where
+   their comparability claim was always recorded.
 """
 
 from __future__ import annotations
@@ -115,10 +139,21 @@ TECHNIQUES: Mapping[str, str] = {
 #: level id -> marginal contraction of the component's own width.  ``NA`` is
 #: the C14 case: norms are diagonal, so the cell tests standalone refit quality
 #: (N10) at identity size and has no level axis.
+#:
+#: The marginal family is ``M_k = 1 - 1/k``: M16 keeps 15/16, M8 keeps 7/8, M4
+#: keeps 3/4.  ``M2`` -- keep 1/2 -- is new in wave 2 and is the family's floor.
+#: It exists because of `NOTES-MX-E` §4.1's storage arithmetic: a technique
+#: whose stored form is a ``w x r`` basis *plus* an ``r x w`` solved factor
+#: stores ``r * (in + out)`` against a dense ``in * out``, so on a square
+#: component it does not contract at all until ``r < w/2``.  Every marginal
+#: level above M2 therefore *costs* storage on a square component, and M2 is
+#: the exact break-even.  Naming it makes the break-even a measurable cell
+#: rather than a footnote.
 LEVELS: Mapping[str, Any] = {
     "M16": 15.0 / 16.0,
     "M8": 7.0 / 8.0,
     "M4": 3.0 / 4.0,
+    "M2": 1.0 / 2.0,
     "X4": None,  # the width the canonical exact-4x layout assigns this component
     "NA": 1.0,
 }
@@ -307,6 +342,7 @@ _MANDATORY: Mapping[str, tuple[type, ...]] = {
     "campaign_wave": (int,),
     "code_identity.repo_head": (str,),
     "code_identity.src_tree_sha": (str,),
+    "code_identity.compute_architecture": (str,),
     "evidence.parent_trace_cache_sha": (str, type(None)),
     "evidence.chart_sha": (str, type(None)),
     "evidence.probe_set_sha": (str,),
@@ -317,6 +353,7 @@ _MANDATORY: Mapping[str, tuple[type, ...]] = {
     "evidence.backward_calls": (int,),
     "calibration.copy_exact_reproduction_relL2": (float, int, type(None)),
     "calibration.passed": (bool,),
+    "calibration.applicable": (bool,),
     "solve.solver_path": (str, type(None)),
     "solve.ridge_relative": (float, int, type(None)),
     "solve.condition_number": (float, int, type(None)),
@@ -327,6 +364,7 @@ _MANDATORY: Mapping[str, tuple[type, ...]] = {
     "solve.allowed_clamp_ratio": (float, int, type(None)),
     "solve.clamp_engaged": (bool,),
     "boundary.applicable": (bool,),
+    "boundary.local_solve_applicable": (bool,),
     "boundary.macrocell_endpoint": (str, type(None)),
     "boundary.write_heldout_relL2": (float, int, type(None)),
     "boundary.write_heldout_cos": (float, int, type(None)),
@@ -442,6 +480,53 @@ def validate_receipt(body: Mapping[str, Any]) -> None:
         value = _lookup(body, path)
         if _SHA256.match(str(value)) is None:
             raise MatrixCellReceiptError(f"{path} must be a sha256 hex digest.")
+    architecture = str(_lookup(body, "code_identity.compute_architecture")).strip()
+    if not architecture:
+        raise MatrixCellReceiptError(
+            "code_identity.compute_architecture is empty.  A cell that does not "
+            "record the compute architecture it ran on cannot be compared with "
+            "one that does (NOTES-MX-E 2)."
+        )
+    _validate_declared_inapplicability(body)
+
+
+def _validate_declared_inapplicability(body: Mapping[str, Any]) -> None:
+    """A skipped chain link must say *why*, and cannot be skipped by accident.
+
+    Declared inapplicability is the only mechanism that can stop
+    `first_divergent_metric` from walking a link, so it is the only mechanism
+    that could silently retire a gate.  Two rules keep it honest:
+
+    * a declaration carries a nonempty reason in the same block, so a receipt
+      reader sees the category error rather than a bare ``false``;
+    * the boundary's two links nest -- ``local_solve_applicable`` cannot be
+      true when the boundary as a whole did not run, because that would claim a
+      measurement inside a stage that never happened.
+    """
+
+    if not _flag(body, "calibration.applicable"):
+        reason = body["calibration"].get("inapplicable_reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise MatrixCellReceiptError(
+                "calibration.applicable is false with no "
+                "calibration.inapplicable_reason; the chain's first link is "
+                "never skipped without a recorded reason."
+            )
+    boundary = body["boundary"]
+    if not _flag(body, "boundary.applicable"):
+        if _flag(body, "boundary.local_solve_applicable"):
+            raise MatrixCellReceiptError(
+                "boundary.local_solve_applicable is true while "
+                "boundary.applicable is false; the boundary stage did not run."
+            )
+    elif not _flag(body, "boundary.local_solve_applicable"):
+        reason = boundary.get("local_solve_inapplicable_reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise MatrixCellReceiptError(
+                "boundary.local_solve_applicable is false with no "
+                "boundary.local_solve_inapplicable_reason; the chain's third "
+                "link is never skipped without a recorded reason."
+            )
 
 
 # --------------------------------------------------------------------------
@@ -462,8 +547,14 @@ def first_divergent_metric(body: Mapping[str, Any]) -> str | None:
 
     validate_receipt(body)
 
-    # 1. infra -- the cell is void, not evidence.
-    if not _flag(body, "calibration.passed"):
+    # 1. infra -- the cell is void, not evidence.  A component whose parent map
+    #    is not a single 2-D matmul (C03/C04/C10/C14) cannot be run through the
+    #    generic ``held_input @ parent_weight.T`` gate at all, and wave 1 sealed
+    #    four such cells as void for a harness reason rather than a technique
+    #    one.  Those cells declare the gate inapplicable, with a reason, and
+    #    rest their verdict on the links that need no per-component predictor:
+    #    the macrocell, the composed forward, free-run and the review.
+    if _flag(body, "calibration.applicable") and not _flag(body, "calibration.passed"):
         return "infra"
 
     # 2. solve-conditioning.  A clamp that binds is only a conditioning failure
@@ -485,10 +576,15 @@ def first_divergent_metric(body: Mapping[str, Any]) -> str | None:
         if float(requested) / allowed_value > SOLVE_CLAMP_RATIO_CAP:
             return "solve-conditioning"
 
-    # 3/4. local-solve and macrocell-band, both boundary-side.
+    # 3/4. local-solve and macrocell-band, both boundary-side.  The write-cosine
+    #      link needs a per-component predictor against a named write endpoint;
+    #      the macrocell link needs only a delta that composes into the residual.
+    #      They are declared separately because a component can have the second
+    #      and not the first.
     if _flag(body, "boundary.applicable"):
-        if _number(body, "boundary.write_heldout_cos") < LOCAL_SOLVE_MIN_WRITE_COS:
-            return "local-solve"
+        if _flag(body, "boundary.local_solve_applicable"):
+            if _number(body, "boundary.write_heldout_cos") < LOCAL_SOLVE_MIN_WRITE_COS:
+                return "local-solve"
         macrocell = _number(body, "boundary.post_operator_heldout_relL2")
         if macrocell > MACROCELL_MAX_RELATIVE_L2:
             return "macrocell-band"
@@ -578,6 +674,7 @@ def blank_receipt(
     src_tree_sha: str,
     probe_set_sha: str,
     smoke_prompt_sha: str,
+    compute_architecture: str,
 ) -> dict[str, Any]:
     """Return a fully-keyed receipt body with every mandatory field present.
 
@@ -606,6 +703,7 @@ def blank_receipt(
         "code_identity": {
             "repo_head": str(repo_head),
             "src_tree_sha": str(src_tree_sha),
+            "compute_architecture": str(compute_architecture),
         },
         "evidence": {
             "parent_trace_cache_sha": None,
@@ -616,7 +714,11 @@ def blank_receipt(
             "parent_model_forward_calls": 0,
             "backward_calls": 0,
         },
-        "calibration": {"copy_exact_reproduction_relL2": None, "passed": False},
+        "calibration": {
+            "copy_exact_reproduction_relL2": None,
+            "passed": False,
+            "applicable": True,
+        },
         "solve": {
             "solver_path": None,
             "ridge_relative": None,
@@ -631,6 +733,7 @@ def blank_receipt(
         },
         "boundary": {
             "applicable": False,
+            "local_solve_applicable": False,
             "macrocell_endpoint": None,
             "write_heldout_relL2": None,
             "write_heldout_cos": None,
@@ -804,6 +907,21 @@ def write_receipt(path: str | Path, body: Mapping[str, Any]) -> Path:
 # --------------------------------------------------------------------------
 
 
+def _stored_parameter_ratio(body: Mapping[str, Any]) -> float | None:
+    """Stored parameters over the dense parent, or ``None`` when unmeasured.
+
+    Above 1.0 the "contraction" costs more storage than the tensor it replaced.
+    That is not a hypothetical: it is the measured state of every T1 cell in
+    wave 1 (`NOTES-MX-E` §4.1).
+    """
+
+    stored = body["solve"].get("stored_parameter_count")
+    parent = body["solve"].get("parent_parameter_count")
+    if not isinstance(stored, int) or not isinstance(parent, int) or parent <= 0:
+        return None
+    return float(stored) / float(parent)
+
+
 def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
     """One append-only ledger row: the numbers the renderer needs, and no more."""
 
@@ -821,10 +939,23 @@ def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
         "level": body["level"],
         "site": body["site"],
         "campaign_wave": body["campaign_wave"],
+        "compute_architecture": body["code_identity"]["compute_architecture"],
         "status": body["outcome"]["status"],
         "first_divergent_metric": body["outcome"]["first_divergent_metric"],
         "decode_smoke_review": body["outcome"]["decode_smoke_review"],
         "calibration_passed": body["calibration"]["passed"],
+        "calibration_applicable": body["calibration"]["applicable"],
+        "local_solve_applicable": body["boundary"]["local_solve_applicable"],
+        # The storage columns.  `NOTES-MX-E` §4.1 measured a technique whose
+        # "contraction" stores 1.88x its dense parent, and the ledger had no
+        # column that would have shown it: the level names a *rank*, not a size.
+        # A cell that does not report what it stores is not comparable on the
+        # only axis a fold is ultimately judged on, so both counts and their
+        # ratio ride in the row.  ``None`` for a cell whose technique installed
+        # no tensor (the control, the token routes).
+        "stored_parameter_count": body["solve"].get("stored_parameter_count"),
+        "parent_parameter_count": body["solve"].get("parent_parameter_count"),
+        "stored_parameter_ratio": _stored_parameter_ratio(body),
         "write_heldout_cos": body["boundary"]["write_heldout_cos"],
         "post_operator_heldout_relL2": body["boundary"][
             "post_operator_heldout_relL2"
@@ -932,7 +1063,7 @@ def known_cell_ids(
                 for entry in sites
             )
         )
-        levels = ("NA",) if component == "C14" else ("M16", "M8", "M4", "X4")
+        levels = ("NA",) if component == "C14" else ("M16", "M8", "M4", "M2", "X4")
         for technique in chosen_techniques:
             for level in levels:
                 for site in site_ids:

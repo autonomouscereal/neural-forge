@@ -56,7 +56,12 @@ from neural_forge.matrix_cell_receipt import (  # noqa: E402
     read_ledger,
 )
 
-LEVEL_ORDER = ("M16", "M8", "M4", "X4", "NA")
+LEVEL_ORDER = ("M16", "M8", "M4", "M2", "X4", "NA")
+
+#: The marginal ladder §5 rule 2 walks, shallowest first.  ``M2`` joined it in
+#: wave 2 as the family's floor and the break-even point for every technique
+#: whose stored form is a basis plus a solved factor (`NOTES-MX-E` §4.1).
+LEVEL_LADDER = ("M16", "M8", "M4", "M2", "X4")
 
 #: One glyph per status.  Chosen so the matrix reads at a glance in a terminal
 #: and in a Markdown viewer: a filled mark is a real behavioral pass, a hollow
@@ -275,15 +280,15 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
         "than a fail is flagged `non-monotone` and does not count."
     )
     add("")
-    add("| component | technique | M16 | M8 | M4 | X4 | verdict |")
-    add("|---|---|---|---|---|---|---|")
+    add("| component | technique | M16 | M8 | M4 | M2 | X4 | verdict |")
+    add("|---|---|---|---|---|---|---|---|")
     for (component, technique), entries in sorted(grouped.items()):
         rungs: list[str] = []
         by_level = defaultdict(list)
         for entry in entries:
             by_level[str(entry.get("level"))].append(entry)
         passed_levels: list[str] = []
-        for level in ("M16", "M8", "M4", "X4"):
+        for level in LEVEL_LADDER:
             rows_at = by_level.get(level, [])
             if not rows_at:
                 rungs.append(".")
@@ -294,10 +299,8 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
                 passed_levels.append(level)
         verdict = "untested"
         if passed_levels:
-            ordered = [lv for lv in ("M16", "M8", "M4", "X4") if lv in passed_levels]
-            monotone = ordered == [
-                lv for lv in ("M16", "M8", "M4", "X4")[: len(ordered)]
-            ]
+            ordered = [lv for lv in LEVEL_LADDER if lv in passed_levels]
+            monotone = ordered == [lv for lv in LEVEL_LADDER[: len(ordered)]]
             verdict = (
                 f"works to {ordered[-1]}" if monotone else "non-monotone (not working)"
             )
@@ -381,6 +384,43 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
     )
     add("")
 
+    # ------------------------------------------------------------------ 4b
+    add("## 4b. Storage honesty")
+    add("")
+    add(
+        "A level names a *rank*, and a rank is not a size.  A technique whose "
+        "stored form is a `w x r` basis plus an `r x w` solved factor stores "
+        "`r * (in + out)` against a dense `in * out`, so on a square component "
+        "it does not contract at all until `r < w/2`.  Cells above 1.0 below "
+        "cost more storage than the tensor they replaced."
+    )
+    add("")
+    stored_rows = [
+        row for row in _latest_by_cell(rows).values()
+        if row.get("stored_parameter_ratio") is not None
+    ]
+    if stored_rows:
+        add("| cell | technique | level | stored | dense parent | stored/dense |")
+        add("|---|---|---|---:|---:|---:|")
+        for row in sorted(stored_rows, key=_sort_key):
+            add(
+                f"| `{row['cell_id']}` | {row.get('technique_id')} "
+                f"| {row.get('level')} | {row.get('stored_parameter_count')} "
+                f"| {row.get('parent_parameter_count')} "
+                f"| {_number(row.get('stored_parameter_ratio'), 4)} |"
+            )
+        contracting = sum(
+            1 for row in stored_rows if float(row["stored_parameter_ratio"]) < 1.0
+        )
+        add("")
+        add(
+            f"{contracting} of {len(stored_rows)} sealed cells with a storage "
+            "reading actually contract."
+        )
+    else:
+        add("_(no sealed cell reports a stored-parameter count yet)_")
+    add("")
+
     # ------------------------------------------------------------------ 5
     add("## 5. Per-cell drill-down")
     add("")
@@ -400,13 +440,21 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
             f"wave {newest.get('campaign_wave')}"
         )
         add("")
-        add("| instance | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | cond | s | receipt |")
-        add("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|")
+        add(
+            "| instance | arch | status | link | write cos | macrocell relL2 "
+            "| vs control | free-run | lcp | stored/dense | cond | s | receipt |"
+        )
+        add("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
         for entry in instances:
             add(
-                "| `{instance}` | {status} | {link} | {cos} | {band} | {delta} "
-                "| {free} | {lcp} | {cond} | {secs} | `{sha}` |".format(
+                "| `{instance}` | {arch} | {status} | {link} | {cos} | {band} "
+                "| {delta} | {free} | {lcp} | {stored} | {cond} | {secs} "
+                "| `{sha}` |".format(
                     instance=str(entry.get("cell_instance_id", ""))[:8],
+                    # A cell sealed before wave 2 has no architecture field; the
+                    # dash is the honest reading, not an assumption about which
+                    # GPU it ran on.
+                    arch=str(entry.get("compute_architecture") or "--").split(" ")[0],
                     status=str(entry.get("status")),
                     link=str(entry.get("first_divergent_metric") or "--"),
                     cos=_number(entry.get("write_heldout_cos")),
@@ -414,6 +462,7 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
                     delta=_number(entry.get("vs_copy_exact_control_delta")),
                     free=_number(entry.get("token_match_vs_control"), 3),
                     lcp=_number(entry.get("mean_lcp"), 3),
+                    stored=_number(entry.get("stored_parameter_ratio"), 3),
                     cond=_number(entry.get("condition_number"), 1),
                     secs=_number(entry.get("wall_time_seconds"), 1),
                     sha=str(entry.get("receipt_sha", ""))[:12],

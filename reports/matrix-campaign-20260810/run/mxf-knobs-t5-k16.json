@@ -1,0 +1,5 @@
+{
+  "_purpose": "The MLP rescue probe.  NOTES-MX-E 4: mlp_down is the campaign's wall -- every technique fails there at composition, and T5 at the registered default k=8 reached free-run 0.502 at L05.  This file doubles the OMP route budget to k=16 and changes nothing else, so the difference between this cell and wave-1's C13.T5.M16.L05 instance is exactly one knob.",
+  "calibration_tolerance": 0.005,
+  "active_k": 16
+}
