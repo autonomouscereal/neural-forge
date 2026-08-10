@@ -96,44 +96,205 @@ def _config_payload(model: Any) -> dict[str, Any]:
     return normalize(value)
 
 
+def _disable_torch_function_subclass(torch: Any) -> Any:
+    guard = getattr(
+        getattr(torch, "_C", None),
+        "DisableTorchFunctionSubclass",
+        None,
+    )
+    if guard is None:
+        raise DynamicModelInspectionError(
+            "PyTorch cannot disable Tensor-subclass dispatch for authenticated "
+            "physical-state inspection."
+        )
+    return guard()
+
+
 def _storage_groups(model: Any) -> dict[str, str]:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - model inspection requires torch
+        raise DynamicModelInspectionError(
+            "Dynamic inspection requires PyTorch."
+        ) from exc
+
     groups: dict[tuple[Any, ...], str] = {}
     result: dict[str, str] = {}
+    entries: list[
+        tuple[
+            str,
+            tuple[Any, ...],
+            tuple[Any, ...],
+            tuple[int, int],
+        ]
+    ] = []
     for name, parameter in sorted(
         model.named_parameters(recurse=True, remove_duplicate=False)
     ):
-        if getattr(parameter, "device", None) is None:
-            raise DynamicModelInspectionError("Model parameter has no device.")
-        if parameter.device.type == "meta":
-            raise DynamicModelInspectionError(
-                "Dynamic inspection requires materialized parameters."
-            )
         try:
+            if not isinstance(parameter, torch.Tensor):
+                raise DynamicModelInspectionError(
+                    f"Model parameter {name!r} is not a PyTorch tensor."
+                )
+            # Use unbound base-Tensor accessors.  Tensor subclasses can override
+            # instance methods such as ``untyped_storage`` and ``data_ptr``;
+            # trusting those overrides would let two unrelated allocations claim
+            # one physical identity (or hide a real cross-StorageImpl alias).
+            with _disable_torch_function_subclass(torch):
+                device = torch.Tensor.device.__get__(parameter, torch.Tensor)
+                dtype = torch.Tensor.dtype.__get__(parameter, torch.Tensor)
+                storage = torch.Tensor.untyped_storage(parameter)
+                storage_ptr = int(storage.data_ptr())
+                tensor_ptr = int(torch.Tensor.data_ptr(parameter))
+                storage_nbytes = int(storage.nbytes())
+                strides = tuple(int(value) for value in torch.Tensor.stride(parameter))
+                shape = tuple(int(value) for value in torch.Tensor.size(parameter))
+                offset = int(torch.Tensor.storage_offset(parameter))
+                element_size = int(torch.Tensor.element_size(parameter))
+            if device.type == "meta":
+                raise DynamicModelInspectionError(
+                    "Dynamic inspection requires materialized parameters."
+                )
+            storage_token = getattr(storage, "_cdata", None)
+            if (
+                isinstance(storage_token, bool)
+                or not isinstance(storage_token, int)
+                or storage_token <= 0
+            ):
+                raise DynamicModelInspectionError(
+                    f"Could not establish a valid parameter storage identity for "
+                    f"{name!r}."
+                )
+            if any(dimension <= 0 for dimension in shape):
+                raise DynamicModelInspectionError(
+                    f"Zero-sized parameter {name!r} is not representable by the "
+                    "circuit IR."
+                )
+            covered_span = 1
+            for stride, dimension in sorted(
+                (abs(stride), dimension)
+                for stride, dimension in zip(strides, shape, strict=True)
+                if dimension > 1
+            ):
+                if stride < covered_span:
+                    raise DynamicModelInspectionError(
+                        f"Internally overlapping parameter {name!r} is not "
+                        "representable by the circuit IR."
+                    )
+                covered_span += (dimension - 1) * stride
+            minimum = offset + sum(
+                min(0, (dimension - 1) * stride)
+                for dimension, stride in zip(shape, strides, strict=True)
+            )
+            maximum = offset + sum(
+                max(0, (dimension - 1) * stride)
+                for dimension, stride in zip(shape, strides, strict=True)
+            )
+            relative_span = (
+                minimum * element_size,
+                (maximum + 1) * element_size,
+            )
+            if (
+                storage_ptr <= 0
+                or tensor_ptr <= 0
+                or storage_nbytes <= 0
+                or element_size <= 0
+                or tensor_ptr != storage_ptr + offset * element_size
+                or relative_span[0] < 0
+                or relative_span[1] > storage_nbytes
+                or relative_span[0] >= relative_span[1]
+            ):
+                raise DynamicModelInspectionError(
+                    f"Could not authenticate the physical parameter span for {name!r}."
+                )
+            device_identity = (device.type, device.index)
+            absolute_span = (
+                storage_ptr + relative_span[0],
+                storage_ptr + relative_span[1],
+            )
+            # Exact aliases are physical views, not StorageImpl identities.
+            # Separate torch.from_numpy calls can wrap the same bytes with
+            # different StorageImpl objects; conversely a Tensor subclass can
+            # spoof a positive ``_cdata`` value.  Absolute authenticated spans
+            # make both cases unambiguous.
             key = (
-                parameter.device.type,
-                parameter.device.index,
-                str(parameter.dtype),
-                int(parameter.untyped_storage().data_ptr()),
-                int(parameter.storage_offset()),
-                tuple(int(value) for value in parameter.shape),
-                tuple(int(value) for value in parameter.stride()),
+                *device_identity,
+                str(dtype),
+                tensor_ptr,
+                shape,
+                strides,
             )
         except (AttributeError, RuntimeError) as exc:
             raise DynamicModelInspectionError(
                 f"Could not establish parameter storage identity for {name!r}."
             ) from exc
+        entries.append((name, device_identity, key, absolute_span))
+
+    # The IR can represent exact aliases and independent storages, but not two
+    # learned parameters that cover only part of the same physical allocation.
+    # Treating such views as independent would overcount the child and allow a
+    # component transaction to mutate an unowned alias.  Bounding-span overlap
+    # is intentionally conservative for strided views: an unfamiliar layout
+    # fails closed instead of receiving a false exact-compaction certificate.
+    entries_by_device: dict[
+        tuple[Any, ...],
+        list[tuple[str, tuple[Any, ...], tuple[Any, ...], tuple[int, int]]],
+    ] = {}
+    for entry in entries:
+        entries_by_device.setdefault(entry[1], []).append(entry)
+    for device_entries in entries_by_device.values():
+        # Collapse exact aliases before sweeping their conservative byte spans.
+        # Sorting by interval endpoints and path makes both the result and any
+        # fail-closed diagnostic independent of registration order.  The prior
+        # interval with the furthest end is sufficient: if it does not overlap
+        # the current interval, no earlier interval can overlap it either.
+        representatives: dict[
+            tuple[Any, ...],
+            tuple[str, tuple[Any, ...], tuple[Any, ...], tuple[int, int]],
+        ] = {}
+        for entry in device_entries:
+            representatives.setdefault(entry[2], entry)
+        ordered = sorted(
+            representatives.values(),
+            key=lambda entry: (entry[3][0], entry[3][1], entry[0]),
+        )
+        furthest_name: str | None = None
+        furthest_end: int | None = None
+        for name, _device, _key, span in ordered:
+            if furthest_end is not None and span[0] < furthest_end:
+                raise DynamicModelInspectionError(
+                    "Partially overlapping parameter storage is not representable "
+                    f"by the circuit IR: {furthest_name!r} and {name!r}."
+                )
+            if furthest_end is None or span[1] > furthest_end:
+                furthest_name = name
+                furthest_end = span[1]
+
+    for name, _device, key, _span in entries:
         group = groups.setdefault(key, f"storage-{len(groups):06d}")
         result[name] = group
     return result
 
 
 def _parameter_counts(model: Any) -> tuple[int, int, int]:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - model inspection requires torch
+        raise DynamicModelInspectionError(
+            "Dynamic inspection requires PyTorch."
+        ) from exc
+
     logical = 0
     unique: dict[str, tuple[int, int]] = {}
     groups = _storage_groups(model)
     for name, value in model.named_parameters(recurse=True, remove_duplicate=False):
-        count = int(value.numel())
-        size = int(value.element_size())
+        if not isinstance(value, torch.Tensor):
+            raise DynamicModelInspectionError(
+                f"Model parameter {name!r} is not a PyTorch tensor."
+            )
+        with _disable_torch_function_subclass(torch):
+            count = int(torch.Tensor.numel(value))
+            size = int(torch.Tensor.element_size(value))
         logical += count
         group = groups[name]
         existing = unique.get(group)

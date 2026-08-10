@@ -12,6 +12,7 @@ from neural_forge.dynamic_circuit_ir import (
     CircuitNode,
     ModelCircuitGraph,
     ParameterSpec,
+    canonical_json_bytes,
     canonical_sha256,
 )
 from neural_forge.dynamic_fold_diagnostics import (
@@ -19,9 +20,12 @@ from neural_forge.dynamic_fold_diagnostics import (
     TRANSACTION_REPORT_BINDING_KEY,
     WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY,
     WholeChildComponentDiagnosticError,
+    authenticate_whole_child_component_dispatch,
     bind_whole_child_component_diagnostic_variant,
     build_whole_child_component_diagnostic_plan,
+    classify_diagnostic_measurement_role,
     compile_whole_child_component_diagnostic_variant,
+    validate_compiled_whole_child_component_diagnostic_variant,
     validate_executed_whole_child_component_diagnostic_run,
     validate_whole_child_diagnostic_transaction_report,
 )
@@ -131,7 +135,17 @@ def _graph(
             (
                 _parameter(
                     f"{prefix}.state_mixer",
+                    "operator.in_proj.weight",
+                    4 * scale,
+                ),
+                _parameter(
+                    f"{prefix}.state_mixer",
                     "operator.conv.weight",
+                    4 * scale,
+                ),
+                _parameter(
+                    f"{prefix}.state_mixer",
+                    "operator.out_proj.weight",
                     4 * scale,
                 ),
             ),
@@ -217,6 +231,42 @@ def _graph(
         unique_parameter_bytes=unique * 4,
         config_fingerprint=canonical_sha256(
             {"model_name": model_name, "scale": scale, "fused": fused_attention}
+        ),
+    )
+
+
+def _replace_graph_node(
+    graph: ModelCircuitGraph,
+    node_id: str,
+    *,
+    kind: CircuitKind | str | None = None,
+    parameters: tuple[ParameterSpec, ...] | None = None,
+) -> ModelCircuitGraph:
+    nodes = tuple(
+        replace(
+            node,
+            kind=node.kind if kind is None else kind,
+            parameters=node.parameters if parameters is None else parameters,
+        )
+        if node.node_id == node_id
+        else node
+        for node in graph.nodes
+    )
+    groups: dict[str, int] = {}
+    for node in nodes:
+        for parameter in node.parameters:
+            previous = groups.setdefault(parameter.storage_group, parameter.numel)
+            assert previous == parameter.numel
+    logical = sum(node.logical_parameter_count for node in nodes)
+    unique = sum(groups.values())
+    return replace(
+        graph,
+        nodes=nodes,
+        logical_parameter_count=logical,
+        unique_parameter_count=unique,
+        unique_parameter_bytes=unique * 4,
+        config_fingerprint=canonical_sha256(
+            {"base": graph.config_fingerprint, "replaced_node": node_id}
         ),
     )
 
@@ -320,7 +370,9 @@ def _fold_plan(
         child_graph_fingerprint=child.fingerprint,
         child_state_fingerprint=child_state,
         evidence_fingerprint=evidence,
-        source_unit_ids=tuple(value.node_id for value in parent.nodes),
+        source_unit_ids=tuple(
+            f"{parent.model_name}:{value.node_id}" for value in parent.nodes
+        ),
         target_unit_ids=tuple(value.node_id for value in child.nodes),
         topology_transition="dense_parent_to_exact_blank_child",
         selection_policy="architecture_driven",
@@ -356,7 +408,10 @@ def _fold_plan(
         target_logical_parameters=child.logical_parameter_count,
         configuration=configuration,
         signature=signature,
-        ledger_decision=LedgerDecision(True, "new exact candidate"),
+        ledger_decision=LedgerDecision(
+            True,
+            "No matching closure or prior exact attempt.",
+        ),
     )
     return DynamicFoldPlan(
         parent_graph_fingerprints=(parent.fingerprint,),
@@ -370,6 +425,74 @@ def _fold_plan(
         registry_fingerprint=canonical_sha256({"registry": "test"}),
         ledger_fingerprint=canonical_sha256({"ledger": "empty"}),
     )
+
+
+def _two_action_fold_plan(
+    parent: ModelCircuitGraph,
+    child: ModelCircuitGraph,
+) -> DynamicFoldPlan:
+    base = _fold_plan(parent, child)
+    template = base.actions[0]
+    child_focus = tuple(
+        node for node in child.nodes if node.kind == CircuitKind.ATTENTION.value
+    )
+    parent_focus = tuple(
+        node for node in parent.nodes if node.kind == CircuitKind.ATTENTION.value
+    )
+    assert len(child_focus) == len(parent_focus) == 1
+    child_partitions = (
+        child_focus,
+        tuple(node for node in child.nodes if node not in child_focus),
+    )
+    parent_partitions = (
+        parent_focus,
+        tuple(node for node in parent.nodes if node not in parent_focus),
+    )
+    actions = []
+    for index, (parent_nodes, child_nodes) in enumerate(
+        zip(parent_partitions, child_partitions, strict=True)
+    ):
+        target_paths = tuple(
+            parameter.path for node in child_nodes for parameter in node.parameters
+        )
+        target_groups = tuple(
+            sorted(
+                {
+                    parameter.storage_group
+                    for node in child_nodes
+                    for parameter in node.parameters
+                }
+            )
+        )
+        source_ids = tuple(node.node_id for node in parent_nodes)
+        target_ids = tuple(node.node_id for node in child_nodes)
+        signature = replace(
+            template.signature,
+            source_unit_ids=tuple(
+                f"{parent.model_name}:{node_id}" for node_id in source_ids
+            ),
+            target_unit_ids=target_ids,
+        )
+        actions.append(
+            replace(
+                template,
+                action_id=f"whole-child-{index}",
+                sequence_index=index,
+                sources=(SourceCircuitRef(parent.model_name, source_ids),),
+                target_node_ids=target_ids,
+                target_parameter_paths=target_paths,
+                target_storage_groups=target_groups,
+                dependencies=() if index == 0 else ("whole-child-0",),
+                source_logical_parameters=sum(
+                    node.logical_parameter_count for node in parent_nodes
+                ),
+                target_logical_parameters=sum(
+                    node.logical_parameter_count for node in child_nodes
+                ),
+                signature=signature,
+            )
+        )
+    return replace(base, actions=tuple(actions))
 
 
 class _DiagnosticTransaction:
@@ -403,9 +526,12 @@ class _BaselineDiagnosticOperator:
     )
 
     def prepare(self, action, context, _evidence):
-        dispatch = json.loads(
-            dict(action.configuration)[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY]
+        authenticated = _authenticate_dispatch(
+            action,
+            context.child_graph,
+            expected_method_id=self.method_id,
         )
+        assert authenticated is not None
         original = {
             name: parameter.detach().clone()
             for name, parameter in context.child_model.named_parameters()
@@ -413,12 +539,19 @@ class _BaselineDiagnosticOperator:
         parent_parameters = dict(context.parent_models["parent"].named_parameters())
         for name, parameter in context.child_model.named_parameters():
             rows = parent_parameters[name].detach().reshape(parameter.numel(), -1)
-            parameter.copy_(rows.mean(dim=1).reshape_as(parameter))
+            strategy = authenticated.strategy_for_parameter(name)
+            folded = (
+                rows[:, 0]
+                if dict(strategy.configuration).get("residual_basis")
+                == "attention_aware"
+                else rows.mean(dim=1)
+            )
+            parameter.copy_(folded.reshape_as(parameter))
         return _DiagnosticTransaction(
             self.method_id,
             context.child_model,
             original,
-            dispatch["binding"],
+            authenticated.binding.as_dict(),
             context.child_state_fingerprint,
         )
 
@@ -502,6 +635,22 @@ def _method(method_id: str) -> FoldMethodSpec:
     )
 
 
+def _authenticate_dispatch(
+    action: FoldAction,
+    child: ModelCircuitGraph,
+    *,
+    expected_method_id: str,
+):
+    method = _method(expected_method_id)
+    return authenticate_whole_child_component_dispatch(
+        action,
+        child,
+        expected_method_id=expected_method_id,
+        expected_method_spec_sha256=method.fingerprint,
+        expected_evidence_requirements=method.evidence_channels,
+    )
+
+
 def _registries(*, malicious: bool = False):
     operators = [_BaselineDiagnosticOperator(), _FocusDiagnosticOperator()]
     methods = [
@@ -524,7 +673,7 @@ def _diagnostic_fixture(*, fused_attention: bool = False):
         child,
         fold_plan,
         baseline_method_id=_BaselineDiagnosticOperator.method_id,
-        focus_method_id=_FocusDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
         methods=methods,
         operators=operators,
         baseline_configuration={"residual_basis": "balanced"},
@@ -556,6 +705,98 @@ def test_architecture_discovery_builds_full_child_component_variants() -> None:
         "normalization",
         "residual_routing",
     } <= semantics
+
+    measurement_roles = {
+        role
+        for component in diagnostic.components
+        for role in component.measurement_roles
+    }
+    assert {
+        "attention_query",
+        "attention_key",
+        "attention_value",
+        "attention_output",
+        "conv_in_proj",
+        "conv_kernel",
+        "conv_out_proj",
+        "mlp_gate",
+        "mlp_up",
+        "mlp_down",
+    } <= measurement_roles
+    attention_components = [
+        component
+        for component in diagnostic.components
+        if set(component.measurement_roles)
+        & {
+            "attention_query",
+            "attention_key",
+            "attention_value",
+            "attention_output",
+        }
+    ]
+    assert len(attention_components) == 4
+    assert (
+        len(
+            {
+                bundle
+                for component in attention_components
+                for bundle in component.physical_bundle_ids
+            }
+        )
+        == 1
+    )
+    state_mixer_components = [
+        component
+        for component in diagnostic.components
+        if set(component.measurement_roles)
+        & {"conv_in_proj", "conv_kernel", "conv_out_proj"}
+    ]
+    assert len(state_mixer_components) == 3
+    assert (
+        len(
+            {
+                bundle
+                for component in state_mixer_components
+                for bundle in component.physical_bundle_ids
+            }
+        )
+        == 1
+    )
+    mlp_components = [
+        component
+        for component in diagnostic.components
+        if set(component.measurement_roles) & {"mlp_gate", "mlp_up", "mlp_down"}
+    ]
+    assert len(mlp_components) == 3
+    assert (
+        len(
+            {
+                bundle
+                for component in mlp_components
+                for bundle in component.physical_bundle_ids
+            }
+        )
+        == 1
+    )
+
+    parameter_components = [
+        component for component in diagnostic.components if component.parameter_paths
+    ]
+    component_scopes = [
+        scope for scope in diagnostic.scopes if scope.scope_kind == "component"
+    ]
+    assert len(component_scopes) == len(parameter_components)
+    assert all(len(scope.component_ids) == 1 for scope in component_scopes)
+    assert any(
+        scope.scope_kind == "layer_semantic" and scope.semantics == ("mlp_producer",)
+        for scope in diagnostic.scopes
+    )
+    assert {
+        scope.measurement_roles[0]
+        for scope in diagnostic.scopes
+        if scope.scope_kind == "layer_measurement_role"
+        and len(scope.measurement_roles) == 1
+    } >= {"mlp_gate", "mlp_up", "mlp_down"}
 
     tied = [
         value
@@ -627,6 +868,117 @@ def test_fused_attention_is_not_falsely_split_into_qkvo() -> None:
         "attention_key",
         "attention_value",
     }.intersection(semantics)
+
+
+def test_measurement_roles_split_shortconv_without_splitting_physical_bundle() -> None:
+    roles = {
+        parameter.role: classify_diagnostic_measurement_role(
+            CircuitKind.SHORT_CONV,
+            parameter,
+        )
+        for parameter in (
+            _parameter("conv", "operator.in_proj.weight", 4),
+            _parameter("conv", "operator.conv.weight", 4),
+            _parameter("conv", "operator.out_proj.weight", 4),
+        )
+    }
+    assert roles == {
+        "operator.in_proj.weight": "conv_in_proj",
+        "operator.conv.weight": "conv_kernel",
+        "operator.out_proj.weight": "conv_out_proj",
+    }
+
+
+def test_unknown_modality_node_is_conservatively_one_physical_bundle() -> None:
+    parent = _replace_graph_node(
+        _graph("parent", scale=4),
+        "parent.norm",
+        kind="novel_video_adapter",
+        parameters=(
+            _parameter("parent.novel", "visual_reader.weight", 16),
+            _parameter("parent.novel", "temporal_writer.weight", 16),
+        ),
+    )
+    child = _replace_graph_node(
+        _graph("child", scale=1),
+        "child.norm",
+        kind="novel_video_adapter",
+        parameters=(
+            _parameter("child.novel", "visual_reader.weight", 4),
+            _parameter("child.novel", "temporal_writer.weight", 4),
+        ),
+    )
+    methods, operators = _registries()
+    diagnostic = build_whole_child_component_diagnostic_plan(
+        (parent,),
+        child,
+        _fold_plan(parent, child),
+        baseline_method_id=_BaselineDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
+        methods=methods,
+        operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
+    )
+    novel = [
+        component
+        for component in diagnostic.components
+        if "child.norm" in component.node_ids and component.parameter_paths
+    ]
+    assert len(novel) == 1
+    assert len(novel[0].parameter_paths) == 2
+    assert (
+        len({bundle for component in novel for bundle in component.physical_bundle_ids})
+        == 1
+    )
+
+
+def test_tied_query_key_preserves_both_measurement_axes() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    attention = next(node for node in child.nodes if node.node_id == "child.attention")
+    child = _replace_graph_node(
+        child,
+        attention.node_id,
+        parameters=tuple(
+            replace(parameter, storage_group="child.tied_qk")
+            if parameter.role in {"operator.q_proj.weight", "operator.k_proj.weight"}
+            else parameter
+            for parameter in attention.parameters
+        ),
+    )
+    methods, operators = _registries()
+    diagnostic = build_whole_child_component_diagnostic_plan(
+        (parent,),
+        child,
+        _fold_plan(parent, child),
+        baseline_method_id=_BaselineDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
+        methods=methods,
+        operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
+        include_layer_scopes=True,
+    )
+    role_scope_ids = {
+        scope.scope_id
+        for scope in diagnostic.scopes
+        if scope.scope_kind == "layer_measurement_role"
+    }
+    assert any("0_attention_query" in value for value in role_scope_ids)
+    assert any("0_attention_key" in value for value in role_scope_ids)
+
+
+def test_ambiguous_mlp_role_fails_into_generic_coupled_measurement() -> None:
+    parameter = _parameter(
+        "mlp",
+        "operator.gate_proj.down_proj.weight",
+        4,
+    )
+    assert (
+        classify_diagnostic_measurement_role(CircuitKind.GATED_MLP, parameter)
+        == "mlp_coupled_projection"
+    )
 
 
 def test_partial_plan_and_non_compacting_control_fail_closed() -> None:
@@ -772,6 +1124,576 @@ def test_operator_without_production_dispatch_capability_fails_closed() -> None:
         )
 
 
+def test_cross_operator_component_strategy_fails_during_plan_build() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    methods, operators = _registries()
+    with pytest.raises(
+        WholeChildComponentDiagnosticError,
+        match="two configurations of one production fold operator",
+    ):
+        build_whole_child_component_diagnostic_plan(
+            (parent,),
+            child,
+            _fold_plan(parent, child),
+            baseline_method_id=_BaselineDiagnosticOperator.method_id,
+            focus_method_id=_FocusDiagnosticOperator.method_id,
+            methods=methods,
+            operators=operators,
+        )
+
+
+def test_multi_action_dispatch_authenticates_each_exact_partition() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    base_plan = _two_action_fold_plan(parent, child)
+    methods, operators = _registries()
+    diagnostic = build_whole_child_component_diagnostic_plan(
+        (parent,),
+        child,
+        base_plan,
+        baseline_method_id=_BaselineDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
+        methods=methods,
+        operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
+    )
+    query_scope = next(
+        value for value in diagnostic.scopes if value.semantics == ("attention_query",)
+    )
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        f"focus.{query_scope.scope_id}",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    authenticated = [
+        _authenticate_dispatch(
+            action,
+            child,
+            expected_method_id=_BaselineDiagnosticOperator.method_id,
+        )
+        for action in compiled.actions
+    ]
+    assert all(value is not None for value in authenticated)
+    expected_focus_paths = tuple(
+        sorted(
+            path
+            for component in diagnostic.components
+            if component.component_id in query_scope.component_ids
+            for path in component.parameter_paths
+        )
+    )
+    assert all(
+        value.focused_parameter_paths == expected_focus_paths
+        for value in authenticated
+        if value is not None
+    )
+    assert all(
+        len(action.target_node_ids) < len(child.nodes) for action in compiled.actions
+    )
+    raw = dict(compiled.actions[0].configuration)[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY]
+    dispatch = json.loads(raw)
+    assert "diagnostic_plan" not in dispatch
+    assert "variants" not in dispatch
+    assert "components" not in dispatch
+    assert "assignments" not in dispatch
+    assert set(dispatch["plan_authentication_manifest"]) == {
+        "schema",
+        "parent_graph_fingerprints",
+        "parent_unique_parameters",
+        "target_graph_fingerprint",
+        "target_topology_fingerprint",
+        "base_fold_plan_fingerprint",
+        "blank_child_state_fingerprint",
+        "exact_target_unique_parameters",
+        "target_parameter_paths_sha256",
+        "target_storage_groups_sha256",
+        "include_layer_scopes",
+        "baseline_strategy_sha256",
+        "focus_strategy_sha256",
+        "components_sha256",
+        "scopes_sha256",
+        "variant_formula_sha256",
+        "complete_whole_model_target_required",
+        "component_focus_is_not_partial_compaction",
+        "parent_shell_hybrid_forbidden",
+    }
+
+
+@pytest.mark.parametrize("tamper", ("evidence", "ledger"))
+def test_operator_and_compiler_reject_unsealed_action_contracts(tamper: str) -> None:
+    parent, child, base_plan, diagnostic, methods, operators = _diagnostic_fixture()
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        "baseline.complete_whole_child",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    action = compiled.actions[0]
+    if tamper == "evidence":
+        forged_action = replace(action, evidence_requirements=())
+    else:
+        forged_action = replace(
+            action,
+            ledger_decision=LedgerDecision(True, "forged allowed decision"),
+        )
+    forged_plan = replace(compiled, actions=(forged_action,))
+
+    with pytest.raises(WholeChildComponentDiagnosticError):
+        _authenticate_dispatch(
+            forged_action,
+            child,
+            expected_method_id=action.method_id,
+        )
+    with pytest.raises(WholeChildComponentDiagnosticError):
+        validate_compiled_whole_child_component_diagnostic_variant(
+            diagnostic,
+            "baseline.complete_whole_child",
+            forged_plan,
+            (parent,),
+            child,
+            base_plan,
+        )
+
+
+def test_operator_rejects_fully_rehashed_strategy_evidence_omission() -> None:
+    parent, child, base_plan, diagnostic, methods, operators = _diagnostic_fixture()
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        "baseline.complete_whole_child",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    action = compiled.actions[0]
+    configuration = dict(action.configuration)
+    dispatch = json.loads(configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY])
+    fingerprint_map = {}
+    forged_strategies = {}
+    for old_fingerprint, strategy in dispatch["strategies"].items():
+        strategy["evidence_requirements"] = []
+        new_fingerprint = canonical_sha256(strategy)
+        fingerprint_map[old_fingerprint] = new_fingerprint
+        forged_strategies[new_fingerprint] = strategy
+    dispatch["strategies"] = forged_strategies
+    manifest = dispatch["plan_authentication_manifest"]
+    manifest["baseline_strategy_sha256"] = fingerprint_map[
+        manifest["baseline_strategy_sha256"]
+    ]
+    manifest["focus_strategy_sha256"] = fingerprint_map[
+        manifest["focus_strategy_sha256"]
+    ]
+    manifest["variant_formula_sha256"] = canonical_sha256(
+        {
+            "component_ids": [value.component_id for value in diagnostic.components],
+            "scope_ids": [value.scope_id for value in diagnostic.scopes],
+            "baseline_strategy_sha256": manifest["baseline_strategy_sha256"],
+            "focus_strategy_sha256": manifest["focus_strategy_sha256"],
+            "baseline_variant_id": "baseline.complete_whole_child",
+            "focused_variant_prefix": "focus.",
+        }
+    )
+    assignments = {
+        value.component_id: manifest["baseline_strategy_sha256"]
+        for value in diagnostic.components
+    }
+    variant_row = {
+        "variant_id": "baseline.complete_whole_child",
+        "focus_scope_id": None,
+        "component_strategy_fingerprints": assignments,
+        "complete_whole_child_fold_required": True,
+        "focus_is_strategy_substitution_not_partial_fold": True,
+    }
+    binding = dispatch["binding"]
+    binding["plan_sha256"] = canonical_sha256(manifest)
+    binding["variant_sha256"] = canonical_sha256(variant_row)
+    binding["assignments_sha256"] = canonical_sha256(assignments)
+    selected = manifest["baseline_strategy_sha256"]
+    configuration["whole_child_component_diagnostic_selected_strategy_sha256"] = (
+        selected
+    )
+    configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY] = canonical_json_bytes(
+        dispatch
+    ).decode("ascii")
+    forged = replace(
+        action,
+        action_id=(
+            "whole-child-diagnostic."
+            + canonical_sha256(
+                {
+                    "binding": canonical_sha256(binding),
+                    "base_action": configuration[
+                        "whole_child_component_diagnostic_base_action_id"
+                    ],
+                    "method_id": action.method_id,
+                }
+            )[:20]
+        ),
+        evidence_requirements=(),
+        configuration=tuple(configuration.items()),
+        signature=replace(
+            action.signature,
+            configuration=tuple(configuration.items()),
+        ),
+    )
+
+    with pytest.raises(WholeChildComponentDiagnosticError, match="trusted live"):
+        _authenticate_dispatch(
+            forged,
+            child,
+            expected_method_id=action.method_id,
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("target_node_ids", "target_parameter_paths", "target_storage_groups"),
+)
+def test_base_plan_rejects_cross_action_ownership_swaps(field: str) -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    base_plan = _two_action_fold_plan(parent, child)
+    left, right = base_plan.actions
+    forged = replace(
+        base_plan,
+        actions=(
+            replace(left, **{field: getattr(right, field)}),
+            replace(right, **{field: getattr(left, field)}),
+        ),
+    )
+    methods, operators = _registries()
+
+    with pytest.raises(WholeChildComponentDiagnosticError, match="ownership partition"):
+        build_whole_child_component_diagnostic_plan(
+            (parent,),
+            child,
+            forged,
+            baseline_method_id=_BaselineDiagnosticOperator.method_id,
+            focus_method_id=_BaselineDiagnosticOperator.method_id,
+            methods=methods,
+            operators=operators,
+            baseline_configuration={"residual_basis": "balanced"},
+            focus_configuration={"residual_basis": "attention_aware"},
+        )
+
+
+def test_compiled_validation_rejects_rewritten_action_identity_chain() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    base_plan = _two_action_fold_plan(parent, child)
+    methods, operators = _registries()
+    diagnostic = build_whole_child_component_diagnostic_plan(
+        (parent,),
+        child,
+        base_plan,
+        baseline_method_id=_BaselineDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
+        methods=methods,
+        operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
+    )
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        "baseline.complete_whole_child",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    replacements = {
+        action.action_id: f"forged-action-{index}"
+        for index, action in enumerate(compiled.actions)
+    }
+    rewritten = replace(
+        compiled,
+        actions=tuple(
+            replace(
+                action,
+                action_id=replacements[action.action_id],
+                dependencies=tuple(
+                    replacements[value] for value in action.dependencies
+                ),
+            )
+            for action in compiled.actions
+        ),
+    )
+
+    with pytest.raises(WholeChildComponentDiagnosticError):
+        validate_compiled_whole_child_component_diagnostic_variant(
+            diagnostic,
+            "baseline.complete_whole_child",
+            rewritten,
+            (parent,),
+            child,
+            base_plan,
+        )
+
+
+def test_operator_authentication_rejects_forged_plan_variant_and_scope() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    base_plan = _fold_plan(parent, child)
+    methods, operators = _registries()
+    diagnostic = build_whole_child_component_diagnostic_plan(
+        (parent,),
+        child,
+        base_plan,
+        baseline_method_id=_BaselineDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
+        methods=methods,
+        operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
+        include_layer_scopes=True,
+    )
+    query_scope = next(
+        value for value in diagnostic.scopes if value.semantics == ("attention_query",)
+    )
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        f"focus.{query_scope.scope_id}",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    action = compiled.actions[0]
+    configuration = dict(action.configuration)
+    dispatch = json.loads(configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY])
+    dispatch["binding"]["plan_sha256"] = "1" * 64
+    dispatch["binding"]["variant_sha256"] = "2" * 64
+    dispatch["binding"]["focus_scope_id"] = "scope.not.discovered"
+    dispatch_json = canonical_json_bytes(dispatch).decode("ascii")
+    configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY] = dispatch_json
+    binding_sha256 = canonical_sha256(dispatch["binding"])
+    forged = replace(
+        action,
+        action_id=(
+            "whole-child-diagnostic."
+            + canonical_sha256(
+                {
+                    "binding": binding_sha256,
+                    "base_action": configuration[
+                        "whole_child_component_diagnostic_base_action_id"
+                    ],
+                    "method_id": action.method_id,
+                }
+            )[:20]
+        ),
+        configuration=tuple(configuration.items()),
+        signature=replace(
+            action.signature,
+            configuration=tuple(configuration.items()),
+        ),
+    )
+    with pytest.raises(
+        WholeChildComponentDiagnosticError,
+        match="provenance|variant|focus scope",
+    ):
+        _authenticate_dispatch(
+            forged,
+            child,
+            expected_method_id=action.method_id,
+        )
+
+
+def test_operator_rejects_fully_rehashed_unknown_base_dependency() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    base_plan = _two_action_fold_plan(parent, child)
+    methods, operators = _registries()
+    diagnostic = build_whole_child_component_diagnostic_plan(
+        (parent,),
+        child,
+        base_plan,
+        baseline_method_id=_BaselineDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
+        methods=methods,
+        operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
+    )
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        "baseline.complete_whole_child",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    action = compiled.actions[1]
+    configuration = dict(action.configuration)
+    dispatch = json.loads(configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY])
+    dispatch["base_fold_plan"]["actions"][1]["dependencies"] = ["forged.missing.action"]
+    base_body = dict(dispatch["base_fold_plan"])
+    base_body.pop("fingerprint")
+    base_fingerprint = canonical_sha256(base_body)
+    dispatch["base_fold_plan"]["fingerprint"] = base_fingerprint
+    dispatch["binding"]["base_fold_plan_fingerprint"] = base_fingerprint
+    dispatch["plan_authentication_manifest"]["base_fold_plan_fingerprint"] = (
+        base_fingerprint
+    )
+    dispatch["binding"]["plan_sha256"] = canonical_sha256(
+        dispatch["plan_authentication_manifest"]
+    )
+    configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY] = canonical_json_bytes(
+        dispatch
+    ).decode("ascii")
+    forged = replace(
+        action,
+        action_id=(
+            "whole-child-diagnostic."
+            + canonical_sha256(
+                {
+                    "binding": canonical_sha256(dispatch["binding"]),
+                    "base_action": configuration[
+                        "whole_child_component_diagnostic_base_action_id"
+                    ],
+                    "method_id": action.method_id,
+                }
+            )[:20]
+        ),
+        configuration=tuple(configuration.items()),
+        signature=replace(
+            action.signature,
+            configuration=tuple(configuration.items()),
+        ),
+    )
+    with pytest.raises(
+        WholeChildComponentDiagnosticError,
+        match="dependency, signature, or ledger contract",
+    ):
+        _authenticate_dispatch(
+            forged,
+            child,
+            expected_method_id=action.method_id,
+        )
+
+
+def test_operator_rejects_fully_rehashed_non_fold_base_configuration() -> None:
+    parent, child, base_plan, diagnostic, methods, operators = _diagnostic_fixture()
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        "baseline.complete_whole_child",
+        (parent,),
+        child,
+        base_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    action = compiled.actions[0]
+    configuration = dict(action.configuration)
+    dispatch = json.loads(configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY])
+    base_action = dispatch["base_fold_plan"]["actions"][0]
+    base_signature = ExperimentSignature.from_dict(base_action["signature"])
+    forbidden_configuration = (("optimizer", "adam"),)
+    base_action["configuration"] = dict(forbidden_configuration)
+    base_action["signature"] = replace(
+        base_signature,
+        configuration=forbidden_configuration,
+    ).as_dict()
+    base_body = dict(dispatch["base_fold_plan"])
+    base_body.pop("fingerprint")
+    base_fingerprint = canonical_sha256(base_body)
+    dispatch["base_fold_plan"]["fingerprint"] = base_fingerprint
+    dispatch["binding"]["base_fold_plan_fingerprint"] = base_fingerprint
+    dispatch["plan_authentication_manifest"]["base_fold_plan_fingerprint"] = (
+        base_fingerprint
+    )
+    dispatch["binding"]["plan_sha256"] = canonical_sha256(
+        dispatch["plan_authentication_manifest"]
+    )
+    configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY] = canonical_json_bytes(
+        dispatch
+    ).decode("ascii")
+    forged = replace(
+        action,
+        action_id=(
+            "whole-child-diagnostic."
+            + canonical_sha256(
+                {
+                    "binding": canonical_sha256(dispatch["binding"]),
+                    "base_action": configuration[
+                        "whole_child_component_diagnostic_base_action_id"
+                    ],
+                    "method_id": action.method_id,
+                }
+            )[:20]
+        ),
+        configuration=tuple(configuration.items()),
+        signature=replace(
+            action.signature,
+            configuration=tuple(configuration.items()),
+        ),
+    )
+
+    with pytest.raises(WholeChildComponentDiagnosticError, match="forbidden non-fold"):
+        _authenticate_dispatch(
+            forged,
+            child,
+            expected_method_id=action.method_id,
+        )
+
+
+def test_operator_rejects_legacy_v1_dispatch_schema() -> None:
+    parent, child, fold_plan, diagnostic, methods, operators = _diagnostic_fixture()
+    compiled = compile_whole_child_component_diagnostic_variant(
+        diagnostic,
+        "baseline.complete_whole_child",
+        (parent,),
+        child,
+        fold_plan,
+        methods=methods,
+        operators=operators,
+        ledger=ExperimentLedger(),
+    )
+    action = compiled.actions[0]
+    configuration = dict(action.configuration)
+    dispatch = json.loads(configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY])
+    dispatch["schema"] = "neural-forge-whole-child-component-dispatch-v1"
+    configuration[DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY] = canonical_json_bytes(
+        dispatch
+    ).decode("ascii")
+    legacy = replace(
+        action,
+        configuration=tuple(configuration.items()),
+        signature=replace(
+            action.signature,
+            configuration=tuple(configuration.items()),
+        ),
+    )
+    with pytest.raises(
+        WholeChildComponentDiagnosticError,
+        match="exact complete child budget",
+    ):
+        _authenticate_dispatch(
+            legacy,
+            child,
+            expected_method_id=action.method_id,
+        )
+
+
 def test_variants_execute_distinct_authenticated_whole_child_folds() -> None:
     parent_model = _TinyWholeChild(8)
     with torch.no_grad():
@@ -797,9 +1719,11 @@ def test_variants_execute_distinct_authenticated_whole_child_folds() -> None:
         child_graph,
         base_plan,
         baseline_method_id=_BaselineDiagnosticOperator.method_id,
-        focus_method_id=_FocusDiagnosticOperator.method_id,
+        focus_method_id=_BaselineDiagnosticOperator.method_id,
         methods=methods,
         operators=operators,
+        baseline_configuration={"residual_basis": "balanced"},
+        focus_configuration={"residual_basis": "attention_aware"},
     )
     query_scope = next(
         value for value in diagnostic.scopes if value.semantics == ("attention_query",)
@@ -832,7 +1756,7 @@ def test_variants_execute_distinct_authenticated_whole_child_folds() -> None:
         _BaselineDiagnosticOperator.method_id
     }
     assert {value.method_id for value in focus_plan.actions} == {
-        _FocusDiagnosticOperator.method_id
+        _BaselineDiagnosticOperator.method_id
     }
     assert baseline_plan.child_graph_fingerprint == focus_plan.child_graph_fingerprint
     assert (

@@ -21,6 +21,7 @@ from typing import Any
 
 from .dynamic_circuit_ir import (
     CircuitKind,
+    CircuitNode,
     JsonScalar,
     ModelCircuitGraph,
     ParameterSpec,
@@ -32,25 +33,33 @@ from .dynamic_fold_executor import (
     FoldOperatorRegistry,
 )
 from .dynamic_fold_planner import (
+    PLAN_SCHEMA as DYNAMIC_FOLD_PLAN_SCHEMA,
     DynamicFoldPlan,
     FoldAction,
     validate_fold_method_contract,
 )
 from .dynamic_fold_registry import (
     ExperimentLedger,
+    ExperimentSignature,
     FoldMethodRegistry,
+    default_method_registry,
 )
 
-SCHEMA = "neural-forge-whole-child-component-diagnostic-plan-v1"
-BINDING_SCHEMA = "neural-forge-whole-child-component-diagnostic-binding-v1"
+SCHEMA = "neural-forge-whole-child-component-diagnostic-plan-v2"
+BINDING_SCHEMA = "neural-forge-whole-child-component-diagnostic-binding-v2"
+DISPATCH_SCHEMA = "neural-forge-whole-child-component-dispatch-v2"
+PLAN_AUTHENTICATION_MANIFEST_SCHEMA = (
+    "neural-forge-whole-child-component-plan-authentication-manifest-v2"
+)
 TRANSACTION_REPORT_BINDING_KEY = "whole_child_component_diagnostic_binding"
 DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY = "whole_child_component_diagnostic_dispatch_json"
 DIAGNOSTIC_BASE_ACTION_CONFIGURATION_KEY = (
     "whole_child_component_diagnostic_base_action_id"
 )
 WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY = (
-    "complete_whole_child_component_dispatch_v1"
+    "complete_whole_child_component_dispatch_v2"
 )
+_OPEN_LEDGER_REASON = "No matching closure or prior exact attempt."
 
 _FORBIDDEN_CONFIGURATION_TOKENS = frozenset(
     {
@@ -140,6 +149,58 @@ def _config(
     if len(result) != len({key for key, _item in result}):
         raise WholeChildComponentDiagnosticError("Configuration keys repeat.")
     return tuple(result)
+
+
+def _is_open_ledger_decision(value: Any) -> bool:
+    return (
+        getattr(value, "allowed", None) is True
+        and getattr(value, "reason", None) == _OPEN_LEDGER_REASON
+        and getattr(value, "blocking_record_sha256", None) is None
+        and getattr(value, "closure_level", None) is None
+    )
+
+
+def _is_open_ledger_row(value: Mapping[str, Any]) -> bool:
+    return (
+        value["allowed"] is True
+        and value["reason"] == _OPEN_LEDGER_REASON
+        and value["blocking_record_sha256"] is None
+        and value["closure_level"] is None
+    )
+
+
+def _trusted_method_contract(
+    expected_method_id: str,
+    expected_method_spec_sha256: str | None,
+    expected_evidence_requirements: Sequence[str] | None,
+) -> tuple[str, tuple[str, ...]]:
+    method_id = _text(expected_method_id, "expected_method_id")
+    if (expected_method_spec_sha256 is None) != (
+        expected_evidence_requirements is None
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Trusted method-spec identity and evidence requirements must be "
+            "provided together."
+        )
+    if expected_method_spec_sha256 is not None:
+        return (
+            _digest(expected_method_spec_sha256, "expected_method_spec_sha256"),
+            _names(
+                tuple(expected_evidence_requirements or ()),
+                "expected evidence requirement",
+            ),
+        )
+    try:
+        method = default_method_registry().require_selectable(
+            method_id,
+            require_zero_gradient=True,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise WholeChildComponentDiagnosticError(
+            "Production dispatch authentication has no trusted live method "
+            f"contract for {method_id!r}."
+        ) from exc
+    return method.fingerprint, method.evidence_channels
 
 
 def _tokens(role: str) -> frozenset[str]:
@@ -237,6 +298,138 @@ def classify_diagnostic_parameter_semantic(
     return by_kind.get(kind, f"other_{kind}")
 
 
+def classify_diagnostic_measurement_role(
+    circuit_kind: CircuitKind | str,
+    parameter: ParameterSpec,
+) -> str:
+    """Return the finest unambiguous role available from canonical IR data.
+
+    A measurement role is deliberately distinct from a physical compression
+    bundle.  For example, gate/up/down can be measured independently even
+    though reducing an MLP intermediate width changes all three tensors as one
+    physical operation.
+    """
+
+    semantic = classify_diagnostic_parameter_semantic(circuit_kind, parameter)
+    kind = (
+        circuit_kind.value
+        if isinstance(circuit_kind, CircuitKind)
+        else _text(circuit_kind, "circuit_kind")
+    )
+    role = parameter.role
+    if kind in {CircuitKind.GATED_MLP.value, CircuitKind.DENSE_MLP.value}:
+        gate = _projection_match(
+            role,
+            frozenset({"gate", "w1"}),
+            ("gate_proj", "gate_projection"),
+        )
+        up = _projection_match(
+            role,
+            frozenset({"up", "w3"}),
+            ("up_proj", "up_projection"),
+        )
+        down = _projection_match(
+            role,
+            frozenset({"down", "out", "output", "writer", "w2", "wo", "fc2"}),
+            ("down_proj", "out_proj", "output_proj"),
+        )
+        matched = [
+            value
+            for value, selected in (
+                ("mlp_gate", gate),
+                ("mlp_up", up),
+                ("mlp_down", down),
+            )
+            if selected
+        ]
+        if len(matched) == 1:
+            return matched[0]
+        if matched:
+            return "mlp_coupled_projection"
+    if kind in {
+        CircuitKind.SHORT_CONV.value,
+        CircuitKind.RECURRENT_MIXER.value,
+    }:
+        input_projection = _projection_match(
+            role,
+            frozenset({"in", "input", "reader"}),
+            ("in_proj", "input_proj", "proj_in"),
+        )
+        output_projection = _projection_match(
+            role,
+            frozenset({"out", "output", "writer"}),
+            ("out_proj", "output_proj", "proj_out"),
+        )
+        kernel = _projection_match(
+            role,
+            frozenset({"kernel", "filter"}),
+            (
+                "conv.weight",
+                "conv_weight",
+                "kernel_weight",
+                "filter_weight",
+                ".kernel.",
+                ".filter.",
+            ),
+        )
+        matched = [
+            value
+            for value, selected in (
+                ("conv_in_proj", input_projection),
+                ("conv_kernel", kernel),
+                ("conv_out_proj", output_projection),
+            )
+            if selected
+        ]
+        if len(matched) == 1:
+            return matched[0]
+        return "state_mixer_coupled"
+    return semantic
+
+
+def _physical_bundle_id(
+    node: CircuitNode,
+    parameter: ParameterSpec,
+    measurement_role: str,
+) -> str:
+    """Name the geometry that must contract together for a real child."""
+
+    if node.kind == CircuitKind.ATTENTION.value and measurement_role.startswith(
+        "attention_"
+    ):
+        bundle_kind = "attention_head_geometry"
+    elif node.kind in {
+        CircuitKind.GATED_MLP.value,
+        CircuitKind.DENSE_MLP.value,
+    } and measurement_role.startswith("mlp_"):
+        bundle_kind = "mlp_intermediate_width"
+    elif node.kind in {
+        CircuitKind.SHORT_CONV.value,
+        CircuitKind.RECURRENT_MIXER.value,
+    } and measurement_role in {
+        "conv_in_proj",
+        "conv_kernel",
+        "conv_out_proj",
+        "state_mixer_coupled",
+    }:
+        bundle_kind = "state_mixer_internal_width"
+    else:
+        # Unknown families and modality adapters are conservatively coupled at
+        # the IR-node boundary.  Splitting an unfamiliar node tensor-by-tensor
+        # would claim a physical contraction that the generic IR cannot prove.
+        # Family inspectors may expose finer canonical circuit kinds later;
+        # until then an entire node shares one physical bundle while its
+        # parameter roles remain independently measurable.
+        bundle_kind = "node_coupled_geometry"
+    descriptor = {
+        "bundle_kind": bundle_kind,
+        "node_id": node.node_id,
+        "layer_index": node.layer_index,
+        "storage_group": None,
+    }
+    return f"bundle.{bundle_kind}.{canonical_sha256(descriptor)[:12]}"
+
+
 def _structural_semantic(kind: str) -> str:
     if kind == CircuitKind.RESIDUAL_ADD.value:
         return "residual_routing"
@@ -256,6 +449,7 @@ class DiagnosticFoldStrategy:
     operator_type: str
     operator_source_sha256: str
     operator_prepare_implementation_fingerprint: str
+    evidence_requirements: tuple[str, ...] = ()
     operator_resource_fingerprint: str | None = None
     configuration: tuple[tuple[str, JsonScalar], ...] = ()
 
@@ -289,6 +483,11 @@ class DiagnosticFoldStrategy:
                 "operator_prepare_implementation_fingerprint",
             ),
         )
+        object.__setattr__(
+            self,
+            "evidence_requirements",
+            _names(self.evidence_requirements, "evidence requirement"),
+        )
         if self.operator_resource_fingerprint is not None:
             object.__setattr__(
                 self,
@@ -319,11 +518,30 @@ class DiagnosticFoldStrategy:
             "operator_prepare_implementation_fingerprint": (
                 self.operator_prepare_implementation_fingerprint
             ),
+            "evidence_requirements": list(self.evidence_requirements),
             "operator_resource_fingerprint": self.operator_resource_fingerprint,
             "operator_prepare_static_audit_binding_required_at_compile": True,
             "operator_capability": WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY,
             "configuration": dict(self.configuration),
         }
+
+
+def _operator_implementation_binding(
+    strategy: DiagnosticFoldStrategy,
+) -> tuple[str, int, str, str, str, str, str, tuple[str, ...], str | None]:
+    """Return the implementation identity shared by diagnostic configurations."""
+
+    return (
+        strategy.method_id,
+        strategy.method_version,
+        strategy.family_id,
+        strategy.method_spec_sha256,
+        strategy.operator_type,
+        strategy.operator_source_sha256,
+        strategy.operator_prepare_implementation_fingerprint,
+        strategy.evidence_requirements,
+        strategy.operator_resource_fingerprint,
+    )
 
 
 def _registered_strategy(
@@ -386,6 +604,7 @@ def _registered_strategy(
         operator_prepare_implementation_fingerprint=str(
             row["prepare_implementation_fingerprint"]
         ),
+        evidence_requirements=method.evidence_channels,
         operator_resource_fingerprint=row["resource_fingerprint"],
         configuration=_config(configuration, enforce_fold_only=True),
     )
@@ -395,6 +614,8 @@ def _registered_strategy(
 class DiagnosticComponent:
     component_id: str
     semantics: tuple[str, ...]
+    measurement_roles: tuple[str, ...]
+    physical_bundle_ids: tuple[str, ...]
     node_ids: tuple[str, ...]
     parameter_paths: tuple[str, ...]
     storage_groups: tuple[str, ...]
@@ -404,6 +625,8 @@ class DiagnosticComponent:
         return {
             "component_id": self.component_id,
             "semantics": list(self.semantics),
+            "measurement_roles": list(self.measurement_roles),
+            "physical_bundle_ids": list(self.physical_bundle_ids),
             "node_ids": list(self.node_ids),
             "parameter_paths": list(self.parameter_paths),
             "storage_groups": list(self.storage_groups),
@@ -418,13 +641,18 @@ class DiagnosticScope:
     scope_kind: str
     component_ids: tuple[str, ...]
     semantics: tuple[str, ...]
+    measurement_roles: tuple[str, ...]
+    physical_bundle_ids: tuple[str, ...]
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "scope_id": self.scope_id,
             "scope_kind": self.scope_kind,
             "component_ids": list(self.component_ids),
+            "component_set_sha256": canonical_sha256(self.component_ids),
             "semantics": list(self.semantics),
+            "measurement_roles": list(self.measurement_roles),
+            "physical_bundle_ids": list(self.physical_bundle_ids),
         }
 
 
@@ -526,6 +754,47 @@ class WholeChildComponentDiagnosticPlan:
         return value
 
 
+def _diagnostic_plan_authentication_manifest(
+    diagnostic: WholeChildComponentDiagnosticPlan,
+) -> dict[str, Any]:
+    """Return the linear-size plan projection required by an operator."""
+
+    component_rows = [value.as_dict() for value in diagnostic.components]
+    scope_rows = [value.as_dict() for value in diagnostic.scopes]
+    return {
+        "schema": PLAN_AUTHENTICATION_MANIFEST_SCHEMA,
+        "parent_graph_fingerprints": list(diagnostic.parent_graph_fingerprints),
+        "parent_unique_parameters": diagnostic.parent_unique_parameters,
+        "target_graph_fingerprint": diagnostic.target_graph_fingerprint,
+        "target_topology_fingerprint": diagnostic.target_topology_fingerprint,
+        "base_fold_plan_fingerprint": diagnostic.base_fold_plan_fingerprint,
+        "blank_child_state_fingerprint": diagnostic.blank_child_state_fingerprint,
+        "exact_target_unique_parameters": diagnostic.exact_target_unique_parameters,
+        "target_parameter_paths_sha256": diagnostic.target_parameter_paths_sha256,
+        "target_storage_groups_sha256": diagnostic.target_storage_groups_sha256,
+        "include_layer_scopes": diagnostic.include_layer_scopes,
+        "baseline_strategy_sha256": diagnostic.baseline_strategy.fingerprint,
+        "focus_strategy_sha256": diagnostic.focus_strategy.fingerprint,
+        "components_sha256": canonical_sha256(component_rows),
+        "scopes_sha256": canonical_sha256(scope_rows),
+        "variant_formula_sha256": canonical_sha256(
+            {
+                "component_ids": [
+                    value.component_id for value in diagnostic.components
+                ],
+                "scope_ids": [value.scope_id for value in diagnostic.scopes],
+                "baseline_strategy_sha256": diagnostic.baseline_strategy.fingerprint,
+                "focus_strategy_sha256": diagnostic.focus_strategy.fingerprint,
+                "baseline_variant_id": "baseline.complete_whole_child",
+                "focused_variant_prefix": "focus.",
+            }
+        ),
+        "complete_whole_model_target_required": True,
+        "component_focus_is_not_partial_compaction": True,
+        "parent_shell_hybrid_forbidden": True,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class WholeChildDiagnosticBinding:
     plan_sha256: str
@@ -572,6 +841,7 @@ class AuthenticatedWholeChildComponentDispatch:
     binding: WholeChildDiagnosticBinding
     dispatch_sha256: str
     selected_strategy_fingerprint: str
+    focus_strategy_fingerprint: str
     strategies: tuple[tuple[str, DiagnosticFoldStrategy], ...]
     components: tuple[DiagnosticComponent, ...]
     component_strategy_fingerprints: tuple[tuple[str, str], ...]
@@ -592,7 +862,7 @@ class AuthenticatedWholeChildComponentDispatch:
         return tuple(
             path
             for path, fingerprint in self.parameter_strategy_fingerprints
-            if fingerprint == self.selected_strategy_fingerprint
+            if fingerprint == self.focus_strategy_fingerprint
         )
 
     def strategy_for_parameter(self, path: str) -> DiagnosticFoldStrategy:
@@ -606,10 +876,11 @@ class AuthenticatedWholeChildComponentDispatch:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "schema": "neural-forge-authenticated-whole-child-component-dispatch-v1",
+            "schema": "neural-forge-authenticated-whole-child-component-dispatch-v2",
             "binding": self.binding.as_dict(),
             "dispatch_sha256": self.dispatch_sha256,
             "selected_strategy_fingerprint": self.selected_strategy_fingerprint,
+            "focus_strategy_fingerprint": self.focus_strategy_fingerprint,
             "strategies": {
                 fingerprint: strategy.as_dict()
                 for fingerprint, strategy in self.strategies
@@ -628,6 +899,8 @@ class AuthenticatedWholeChildComponentDispatch:
 @dataclass(slots=True)
 class _Fragment:
     semantics: set[str]
+    measurement_roles: set[str]
+    physical_bundles: set[str]
     nodes: set[str]
     paths: set[str]
     groups: set[str]
@@ -641,6 +914,8 @@ def _discover_components(graph: ModelCircuitGraph) -> tuple[DiagnosticComponent,
             fragments.append(
                 _Fragment(
                     {_structural_semantic(node.kind)},
+                    {_structural_semantic(node.kind)},
+                    set(),
                     {node.node_id},
                     set(),
                     set(),
@@ -648,14 +923,26 @@ def _discover_components(graph: ModelCircuitGraph) -> tuple[DiagnosticComponent,
                 )
             )
             continue
-        by_semantic: dict[str, list[ParameterSpec]] = {}
+        by_role: dict[tuple[str, str, str], list[ParameterSpec]] = {}
         for parameter in node.parameters:
             semantic = classify_diagnostic_parameter_semantic(node.kind, parameter)
-            by_semantic.setdefault(semantic, []).append(parameter)
-        for semantic, parameters in by_semantic.items():
+            measurement_role = classify_diagnostic_measurement_role(
+                node.kind, parameter
+            )
+            physical_bundle = _physical_bundle_id(node, parameter, measurement_role)
+            by_role.setdefault(
+                (semantic, measurement_role, physical_bundle), []
+            ).append(parameter)
+        for (
+            semantic,
+            measurement_role,
+            physical_bundle,
+        ), parameters in by_role.items():
             fragments.append(
                 _Fragment(
                     {semantic},
+                    {measurement_role},
+                    {physical_bundle},
                     {node.node_id},
                     {value.path for value in parameters},
                     {value.storage_group for value in parameters},
@@ -684,9 +971,11 @@ def _discover_components(graph: ModelCircuitGraph) -> tuple[DiagnosticComponent,
     merged: dict[int, _Fragment] = {}
     for index, fragment in enumerate(fragments):
         current = merged.setdefault(
-            find(index), _Fragment(set(), set(), set(), set(), set())
+            find(index), _Fragment(set(), set(), set(), set(), set(), set(), set())
         )
         current.semantics.update(fragment.semantics)
+        current.measurement_roles.update(fragment.measurement_roles)
+        current.physical_bundles.update(fragment.physical_bundles)
         current.nodes.update(fragment.nodes)
         current.paths.update(fragment.paths)
         current.groups.update(fragment.groups)
@@ -696,6 +985,8 @@ def _discover_components(graph: ModelCircuitGraph) -> tuple[DiagnosticComponent,
     for value in merged.values():
         descriptor = {
             "semantics": sorted(value.semantics),
+            "measurement_roles": sorted(value.measurement_roles),
+            "physical_bundles": sorted(value.physical_bundles),
             "nodes": sorted(value.nodes),
             "paths": sorted(value.paths),
             "groups": sorted(value.groups),
@@ -705,6 +996,8 @@ def _discover_components(graph: ModelCircuitGraph) -> tuple[DiagnosticComponent,
             DiagnosticComponent(
                 component_id=f"component.{label}.{canonical_sha256(descriptor)[:12]}",
                 semantics=tuple(sorted(value.semantics)),
+                measurement_roles=tuple(sorted(value.measurement_roles)),
+                physical_bundle_ids=tuple(sorted(value.physical_bundles)),
                 node_ids=tuple(sorted(value.nodes)),
                 parameter_paths=tuple(sorted(value.paths)),
                 storage_groups=tuple(sorted(value.groups)),
@@ -804,6 +1097,7 @@ def _strategy_from_dispatch(value: Any) -> DiagnosticFoldStrategy:
             "operator_type",
             "operator_source_sha256",
             "operator_prepare_implementation_fingerprint",
+            "evidence_requirements",
             "operator_resource_fingerprint",
             "operator_prepare_static_audit_binding_required_at_compile",
             "operator_capability",
@@ -815,6 +1109,7 @@ def _strategy_from_dispatch(value: Any) -> DiagnosticFoldStrategy:
         row["operator_prepare_static_audit_binding_required_at_compile"] is not True
         or row["operator_capability"] != WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY
         or not isinstance(row["configuration"], Mapping)
+        or not isinstance(row["evidence_requirements"], list)
     ):
         raise WholeChildComponentDiagnosticError(
             "Diagnostic dispatch strategy lacks its executable capability binding."
@@ -829,6 +1124,7 @@ def _strategy_from_dispatch(value: Any) -> DiagnosticFoldStrategy:
         operator_prepare_implementation_fingerprint=(
             row["operator_prepare_implementation_fingerprint"]
         ),
+        evidence_requirements=tuple(row["evidence_requirements"]),
         operator_resource_fingerprint=row["operator_resource_fingerprint"],
         configuration=tuple(row["configuration"].items()),
     )
@@ -839,19 +1135,473 @@ def _strategy_from_dispatch(value: Any) -> DiagnosticFoldStrategy:
     return strategy
 
 
+def _fingerprinted_dispatch_object(value: Any, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise WholeChildComponentDiagnosticError(f"{label} must be an object.")
+    row = dict(value)
+    fingerprint = _digest(row.pop("fingerprint", None), f"{label} fingerprint")
+    if canonical_sha256(row) != fingerprint:
+        raise WholeChildComponentDiagnosticError(
+            f"{label} fingerprint differs from its canonical contents."
+        )
+    return dict(value)
+
+
+def _validate_dispatch_provenance(
+    row: Mapping[str, Any],
+    binding: WholeChildDiagnosticBinding,
+    action: FoldAction,
+    child_graph: ModelCircuitGraph,
+    strategies: Mapping[str, DiagnosticFoldStrategy],
+    components: tuple[DiagnosticComponent, ...],
+    selected_strategy_fingerprint: str,
+) -> tuple[dict[str, str], str]:
+    """Recompute every compiler-owned identity available at operator time."""
+
+    plan = _exact_object_keys(
+        row["plan_authentication_manifest"],
+        {
+            "schema",
+            "parent_graph_fingerprints",
+            "parent_unique_parameters",
+            "target_graph_fingerprint",
+            "target_topology_fingerprint",
+            "base_fold_plan_fingerprint",
+            "blank_child_state_fingerprint",
+            "exact_target_unique_parameters",
+            "target_parameter_paths_sha256",
+            "target_storage_groups_sha256",
+            "include_layer_scopes",
+            "baseline_strategy_sha256",
+            "focus_strategy_sha256",
+            "components_sha256",
+            "scopes_sha256",
+            "variant_formula_sha256",
+            "complete_whole_model_target_required",
+            "component_focus_is_not_partial_compaction",
+            "parent_shell_hybrid_forbidden",
+        },
+        "Diagnostic plan authentication manifest",
+    )
+    parent_unique_parameters = plan["parent_unique_parameters"]
+    target_groups = sorted(
+        {
+            parameter.storage_group
+            for node in child_graph.nodes
+            for parameter in node.parameters
+        }
+    )
+    if (
+        plan["schema"] != PLAN_AUTHENTICATION_MANIFEST_SCHEMA
+        or canonical_sha256(plan) != binding.plan_sha256
+        or plan["parent_graph_fingerprints"]
+        != list(action.signature.parent_graph_fingerprints)
+        or isinstance(parent_unique_parameters, bool)
+        or not isinstance(parent_unique_parameters, int)
+        or parent_unique_parameters <= child_graph.unique_parameter_count
+        or plan["target_graph_fingerprint"] != child_graph.fingerprint
+        or plan["target_topology_fingerprint"]
+        != child_graph.structural_topology_fingerprint
+        or plan["base_fold_plan_fingerprint"] != binding.base_fold_plan_fingerprint
+        or plan["blank_child_state_fingerprint"]
+        != action.signature.child_state_fingerprint
+        or plan["exact_target_unique_parameters"] != child_graph.unique_parameter_count
+        or plan["target_parameter_paths_sha256"]
+        != canonical_sha256(sorted(child_graph.parameter_paths))
+        or plan["target_storage_groups_sha256"] != canonical_sha256(target_groups)
+        or plan["complete_whole_model_target_required"] is not True
+        or plan["component_focus_is_not_partial_compaction"] is not True
+        or plan["parent_shell_hybrid_forbidden"] is not True
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic plan provenance differs from the live action or child."
+        )
+
+    baseline = strategies.get(plan["baseline_strategy_sha256"])
+    focus = strategies.get(plan["focus_strategy_sha256"])
+    if (
+        baseline is None
+        or focus is None
+        or baseline.fingerprint == focus.fingerprint
+        or {baseline.fingerprint, focus.fingerprint} != set(strategies)
+        or plan["components_sha256"]
+        != canonical_sha256([value.as_dict() for value in components])
+        or not isinstance(plan["include_layer_scopes"], bool)
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic plan strategies or components differ from live discovery."
+        )
+    scopes = _discover_scopes(components, plan["include_layer_scopes"])
+    variant_formula_sha256 = canonical_sha256(
+        {
+            "component_ids": [value.component_id for value in components],
+            "scope_ids": [value.scope_id for value in scopes],
+            "baseline_strategy_sha256": baseline.fingerprint,
+            "focus_strategy_sha256": focus.fingerprint,
+            "baseline_variant_id": "baseline.complete_whole_child",
+            "focused_variant_prefix": "focus.",
+        }
+    )
+    if (
+        plan["scopes_sha256"] != canonical_sha256([value.as_dict() for value in scopes])
+        or plan["variant_formula_sha256"] != variant_formula_sha256
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic plan scopes or variants differ from live discovery."
+        )
+    expected_variant = _expected_variant_by_id(
+        components,
+        scopes,
+        baseline,
+        focus,
+        binding.variant_id,
+    )
+    assignments = dict(expected_variant.component_strategy_fingerprints)
+    if (
+        expected_variant.fingerprint != binding.variant_sha256
+        or expected_variant.focus_scope_id != binding.focus_scope_id
+        or canonical_sha256(assignments) != binding.assignments_sha256
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic variant or focus scope was not derived from the live plan."
+        )
+
+    focus_component_ids = {
+        component_id
+        for component_id, fingerprint in assignments.items()
+        if fingerprint == focus.fingerprint
+    }
+    focus_paths = {
+        path
+        for component in components
+        if component.component_id in focus_component_ids
+        for path in component.parameter_paths
+    }
+    focus_groups = {
+        group
+        for component in components
+        if component.component_id in focus_component_ids
+        for group in component.storage_groups
+    }
+    expected_selected = (
+        focus.fingerprint
+        if focus_paths.intersection(action.target_parameter_paths)
+        or focus_groups.intersection(action.target_storage_groups)
+        else baseline.fingerprint
+    )
+    if selected_strategy_fingerprint != expected_selected:
+        raise WholeChildComponentDiagnosticError(
+            "Action-selected strategy differs from its authenticated focus scope."
+        )
+
+    base_plan = _exact_object_keys(
+        _fingerprinted_dispatch_object(row["base_fold_plan"], "Base fold plan"),
+        {
+            "schema",
+            "parent_graph_fingerprints",
+            "parent_state_fingerprints",
+            "child_graph_fingerprint",
+            "child_state_fingerprint",
+            "evidence_fingerprint",
+            "exact_target_unique_parameters",
+            "actions",
+            "gaps",
+            "registry_fingerprint",
+            "ledger_fingerprint",
+            "complete_target_parameter_coverage",
+            "known_closed_methods_filtered",
+            "ready",
+            "expected_logical_compression_delta",
+            "fingerprint",
+        },
+        "Base fold plan",
+    )
+    base_actions = base_plan["actions"]
+    if (
+        base_plan["schema"] != DYNAMIC_FOLD_PLAN_SCHEMA
+        or base_plan["fingerprint"] != binding.base_fold_plan_fingerprint
+        or base_plan["parent_graph_fingerprints"]
+        != list(action.signature.parent_graph_fingerprints)
+        or base_plan["parent_state_fingerprints"]
+        != dict(action.signature.parent_state_fingerprints)
+        or base_plan["child_graph_fingerprint"] != child_graph.fingerprint
+        or base_plan["child_state_fingerprint"]
+        != action.signature.child_state_fingerprint
+        or base_plan["evidence_fingerprint"] != action.signature.evidence_fingerprint
+        or base_plan["exact_target_unique_parameters"]
+        != child_graph.unique_parameter_count
+        or base_plan["gaps"] != []
+        or base_plan["complete_target_parameter_coverage"] is not True
+        or base_plan["known_closed_methods_filtered"] is not True
+        or base_plan["ready"] is not True
+        or not isinstance(base_actions, list)
+        or not base_actions
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Base fold plan provenance differs from the compiled action."
+        )
+    _digest(base_plan["registry_fingerprint"], "base registry_fingerprint")
+    _digest(base_plan["ledger_fingerprint"], "base ledger_fingerprint")
+    base_action_ids: set[str] = set()
+    previous_action_ids: set[str] = set()
+    compiled_action_ids: dict[str, str] = {}
+    base_signatures: dict[str, ExperimentSignature] = {}
+    for expected_index, base_action_row in enumerate(base_actions):
+        base_action_row = _exact_object_keys(
+            base_action_row,
+            {
+                "action_id",
+                "sequence_index",
+                "method_id",
+                "sources",
+                "target_node_ids",
+                "target_parameter_paths",
+                "target_storage_groups",
+                "dependencies",
+                "evidence_requirements",
+                "source_logical_parameters",
+                "target_logical_parameters",
+                "compression_delta",
+                "configuration",
+                "signature",
+                "ledger_decision",
+            },
+            "Embedded base action",
+        )
+        action_id = _text(base_action_row["action_id"], "base action_id")
+        dependencies = base_action_row["dependencies"]
+        sources = base_action_row["sources"]
+        configuration = base_action_row["configuration"]
+        target_node_ids = base_action_row["target_node_ids"]
+        target_parameter_paths = base_action_row["target_parameter_paths"]
+        target_storage_groups = base_action_row["target_storage_groups"]
+        evidence_requirements = base_action_row["evidence_requirements"]
+        ledger_decision = _exact_object_keys(
+            base_action_row["ledger_decision"],
+            {"allowed", "reason", "blocking_record_sha256", "closure_level"},
+            "Embedded ledger decision",
+        )
+        if not isinstance(configuration, Mapping):
+            raise WholeChildComponentDiagnosticError(
+                "Embedded base action configuration is invalid."
+            )
+        normalized_configuration = _config(
+            configuration,
+            enforce_fold_only=True,
+        )
+        if not isinstance(sources, list) or not sources:
+            raise WholeChildComponentDiagnosticError(
+                "Embedded base action sources are invalid."
+            )
+        normalized_sources = []
+        for source in sources:
+            source = _exact_object_keys(
+                source,
+                {"parent_name", "node_ids"},
+                "Embedded base action source",
+            )
+            parent_name = _text(source["parent_name"], "source parent_name")
+            node_ids = source["node_ids"]
+            if (
+                parent_name not in base_plan["parent_state_fingerprints"]
+                or not isinstance(node_ids, list)
+                or not node_ids
+                or node_ids
+                != sorted({_text(value, "source node_id") for value in node_ids})
+            ):
+                raise WholeChildComponentDiagnosticError(
+                    "Embedded base action source is not canonical."
+                )
+            normalized_sources.append(
+                {"parent_name": parent_name, "node_ids": node_ids}
+            )
+        list_contracts = (
+            ("target_node_ids", target_node_ids, False),
+            ("target_parameter_paths", target_parameter_paths, True),
+            ("target_storage_groups", target_storage_groups, True),
+            ("dependencies", dependencies, True),
+            ("evidence_requirements", evidence_requirements, True),
+        )
+        for label, values, may_be_empty in list_contracts:
+            if (
+                not isinstance(values, list)
+                or (not may_be_empty and not values)
+                or values != sorted({_text(value, label) for value in values})
+            ):
+                raise WholeChildComponentDiagnosticError(
+                    f"Embedded base action {label} is not canonical."
+                )
+        expected_paths, expected_groups = _expected_target_ownership(
+            child_graph,
+            target_node_ids,
+        )
+        try:
+            signature = ExperimentSignature.from_dict(base_action_row["signature"])
+        except (TypeError, ValueError) as exc:
+            raise WholeChildComponentDiagnosticError(
+                "Embedded base action signature is not canonical."
+            ) from exc
+        source_unit_ids = sorted(
+            f"{source['parent_name']}:{node_id}"
+            for source in normalized_sources
+            for node_id in source["node_ids"]
+        )
+        numeric_counts = (
+            base_action_row["source_logical_parameters"],
+            base_action_row["target_logical_parameters"],
+            base_action_row["compression_delta"],
+        )
+        if (
+            action_id in base_action_ids
+            or base_action_row["sequence_index"] != expected_index
+            or any(value not in previous_action_ids for value in dependencies)
+            or base_action_row["method_id"] != signature.method_id
+            or tuple(target_parameter_paths) != expected_paths
+            or tuple(target_storage_groups) != expected_groups
+            or signature.parent_graph_fingerprints
+            != tuple(base_plan["parent_graph_fingerprints"])
+            or dict(signature.parent_state_fingerprints)
+            != base_plan["parent_state_fingerprints"]
+            or signature.child_graph_fingerprint != base_plan["child_graph_fingerprint"]
+            or signature.child_state_fingerprint != base_plan["child_state_fingerprint"]
+            or signature.evidence_fingerprint != base_plan["evidence_fingerprint"]
+            or signature.source_unit_ids != tuple(source_unit_ids)
+            or signature.target_unit_ids != tuple(sorted(target_node_ids))
+            or signature.configuration != normalized_configuration
+            or signature.zero_gradient is not True
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in numeric_counts
+            )
+            or base_action_row["compression_delta"]
+            != base_action_row["source_logical_parameters"]
+            - base_action_row["target_logical_parameters"]
+            or not _is_open_ledger_row(ledger_decision)
+        ):
+            raise WholeChildComponentDiagnosticError(
+                "Embedded base action dependency, signature, or ledger contract is "
+                "invalid."
+            )
+        base_action_ids.add(action_id)
+        previous_action_ids.add(action_id)
+        base_signatures[action_id] = signature
+        row_strategy = (
+            focus
+            if focus_paths.intersection(target_parameter_paths)
+            or focus_groups.intersection(target_storage_groups)
+            else baseline
+        )
+        compiled_action_ids[action_id] = (
+            "whole-child-diagnostic."
+            + canonical_sha256(
+                {
+                    "binding": binding.fingerprint,
+                    "base_action": action_id,
+                    "method_id": row_strategy.method_id,
+                }
+            )[:20]
+        )
+    if base_plan["expected_logical_compression_delta"] != sum(
+        value["compression_delta"] for value in base_actions
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Base fold plan compression accounting is invalid."
+        )
+    if (
+        Counter(
+            node_id
+            for base_action in base_actions
+            for node_id in base_action["target_node_ids"]
+        )
+        != Counter(value.node_id for value in child_graph.nodes)
+        or Counter(
+            path
+            for base_action in base_actions
+            for path in base_action["target_parameter_paths"]
+        )
+        != Counter(child_graph.parameter_paths)
+        or Counter(
+            group
+            for base_action in base_actions
+            for group in base_action["target_storage_groups"]
+        )
+        != Counter({value: 1 for value in target_groups})
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Embedded base fold plan does not own the complete live child."
+        )
+    base_action_id = dict(action.configuration).get(
+        DIAGNOSTIC_BASE_ACTION_CONFIGURATION_KEY
+    )
+    matching_base_actions = [
+        value for value in base_actions if value.get("action_id") == base_action_id
+    ]
+    if len(matching_base_actions) != 1:
+        raise WholeChildComponentDiagnosticError(
+            "Compiled action does not map to one embedded base action."
+        )
+    base_action = matching_base_actions[0]
+    base_signature = base_signatures[base_action_id]
+    compiled_base_configuration = {
+        key: value
+        for key, value in action.configuration
+        if key
+        not in {
+            DIAGNOSTIC_BASE_ACTION_CONFIGURATION_KEY,
+            DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY,
+            "whole_child_component_diagnostic_selected_strategy_sha256",
+        }
+    }
+    if (
+        base_action.get("sources") != [value.as_dict() for value in action.sources]
+        or action.sequence_index != base_action.get("sequence_index")
+        or action.dependencies
+        != tuple(
+            sorted(
+                compiled_action_ids[value]
+                for value in base_action.get("dependencies", [])
+            )
+        )
+        or base_action.get("target_node_ids") != list(action.target_node_ids)
+        or base_action.get("target_parameter_paths")
+        != list(action.target_parameter_paths)
+        or base_action.get("target_storage_groups")
+        != list(action.target_storage_groups)
+        or base_action.get("source_logical_parameters")
+        != action.source_logical_parameters
+        or base_action.get("target_logical_parameters")
+        != action.target_logical_parameters
+        or base_action.get("configuration") != compiled_base_configuration
+        or action.signature.source_unit_ids != base_signature.source_unit_ids
+        or action.signature.target_unit_ids != base_signature.target_unit_ids
+        or action.signature.topology_transition != base_signature.topology_transition
+        or action.signature.promotion_gate != base_signature.promotion_gate
+        or action.signature.selection_policy
+        != "architecture_driven_complete_whole_child_component_dispatch"
+        or action.signature.fit_objective != "complete_whole_child_component_fold"
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Embedded base action differs from the live compiled action."
+        )
+    return assignments, focus.fingerprint
+
+
 def authenticate_whole_child_component_dispatch(
     action: FoldAction,
     child_graph: ModelCircuitGraph,
     *,
     expected_method_id: str,
+    expected_method_spec_sha256: str | None = None,
+    expected_evidence_requirements: Sequence[str] | None = None,
 ) -> AuthenticatedWholeChildComponentDispatch | None:
     """Authenticate an optional compiler dispatch at a production operator.
 
     Ordinary actions return ``None`` and retain their existing execution path.
-    A diagnostic action is accepted only when it still owns the complete live
-    graph exactly once and both strategy configurations are implementations of
-    the same registered production operator.  Other families/operators fail
-    closed instead of receiving metadata-only diagnostic claims.
+    A diagnostic action is accepted only when its authenticated base plan owns
+    the complete live graph exactly once and both strategy configurations are
+    implementations of the same registered production operator.  Individual
+    actions may own disjoint slices of that complete plan.  Other
+    families/operators fail closed instead of receiving metadata-only claims.
     """
 
     if not isinstance(action, FoldAction) or not isinstance(
@@ -860,10 +1610,18 @@ def authenticate_whole_child_component_dispatch(
         raise WholeChildComponentDiagnosticError(
             "Production dispatch authentication requires a FoldAction and graph."
         )
+    method_id = _text(expected_method_id, "expected_method_id")
     configuration = dict(action.configuration)
     raw = configuration.get(DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY)
     if raw is None:
         return None
+    trusted_method_spec_sha256, trusted_evidence_requirements = (
+        _trusted_method_contract(
+            method_id,
+            expected_method_spec_sha256,
+            expected_evidence_requirements,
+        )
+    )
     if not isinstance(raw, str) or not raw:
         raise WholeChildComponentDiagnosticError(
             "Diagnostic dispatch configuration must be canonical JSON text."
@@ -883,16 +1641,16 @@ def authenticate_whole_child_component_dispatch(
         {
             "schema",
             "binding",
-            "assignments",
+            "plan_authentication_manifest",
+            "base_fold_plan",
             "strategies",
-            "components",
             "complete_whole_child_fold_required",
             "exact_target_unique_parameters",
         },
         "Diagnostic dispatch",
     )
     if (
-        row["schema"] != "neural-forge-whole-child-component-dispatch-v1"
+        row["schema"] != DISPATCH_SCHEMA
         or row["complete_whole_child_fold_required"] is not True
         or row["exact_target_unique_parameters"] != child_graph.unique_parameter_count
     ):
@@ -932,28 +1690,22 @@ def authenticate_whole_child_component_dispatch(
             raise WholeChildComponentDiagnosticError(
                 "Diagnostic strategy fingerprint differs from its contents."
             )
-        if strategy.method_id != _text(expected_method_id, "expected_method_id"):
+        if (
+            strategy.method_id != method_id
+            or strategy.method_spec_sha256 != trusted_method_spec_sha256
+            or strategy.evidence_requirements != trusted_evidence_requirements
+        ):
             raise WholeChildComponentDiagnosticError(
-                "Production component dispatch cannot cross fold operators."
+                "Production component dispatch differs from its trusted live "
+                "method contract."
             )
-        implementation_bindings.add(
-            (
-                strategy.method_id,
-                strategy.method_version,
-                strategy.family_id,
-                strategy.method_spec_sha256,
-                strategy.operator_type,
-                strategy.operator_source_sha256,
-                strategy.operator_prepare_implementation_fingerprint,
-                strategy.operator_resource_fingerprint,
-            )
-        )
+        implementation_bindings.add(_operator_implementation_binding(strategy))
         strategies.append((fingerprint, strategy))
     if selected not in dict(strategies) or len(implementation_bindings) != 1:
         raise WholeChildComponentDiagnosticError(
             "Diagnostic strategies are not two configurations of one operator."
         )
-    if action.method_id != expected_method_id:
+    if action.method_id != method_id:
         raise WholeChildComponentDiagnosticError(
             "Diagnostic action method differs from its production operator."
         )
@@ -975,92 +1727,23 @@ def authenticate_whole_child_component_dispatch(
         or action.signature.method_id != selected_strategy.method_id
         or action.signature.method_version != selected_strategy.method_version
         or action.signature.family_id != selected_strategy.family_id
+        or action.evidence_requirements != selected_strategy.evidence_requirements
+        or not _is_open_ledger_decision(action.ledger_decision)
     ):
         raise WholeChildComponentDiagnosticError(
             "Diagnostic action identity differs from its selected strategy binding."
         )
 
-    assignments = row["assignments"]
-    component_rows = row["components"]
-    if not isinstance(assignments, Mapping) or not isinstance(component_rows, list):
-        raise WholeChildComponentDiagnosticError(
-            "Diagnostic component assignments have the wrong representation."
-        )
     components = _discover_components(child_graph)
-    expected_by_id = {value.component_id: value for value in components}
-    if len(component_rows) != len(expected_by_id):
-        raise WholeChildComponentDiagnosticError(
-            "Diagnostic dispatch omits live child components."
-        )
-    observed_ids = set()
-    for component_row in component_rows:
-        component_row = _exact_object_keys(
-            component_row,
-            {
-                "component_id",
-                "semantics",
-                "node_ids",
-                "parameter_paths",
-                "storage_groups",
-                "layer_indices",
-                "structural_only",
-                "assigned_strategy_fingerprint",
-            },
-            "Diagnostic component",
-        )
-        component_id = _text(component_row["component_id"], "component_id")
-        if component_id in observed_ids or component_id not in expected_by_id:
-            raise WholeChildComponentDiagnosticError(
-                "Diagnostic dispatch contains a stale or duplicate component."
-            )
-        observed_ids.add(component_id)
-        assigned = _digest(
-            component_row["assigned_strategy_fingerprint"],
-            "assigned strategy fingerprint",
-        )
-        if (
-            assigned not in dict(strategies)
-            or assignments.get(component_id) != assigned
-            or {
-                **expected_by_id[component_id].as_dict(),
-                "assigned_strategy_fingerprint": assigned,
-            }
-            != dict(component_row)
-        ):
-            raise WholeChildComponentDiagnosticError(
-                "Diagnostic component assignment differs from live discovery."
-            )
-    if observed_ids != set(expected_by_id) or set(assignments) != observed_ids:
-        raise WholeChildComponentDiagnosticError(
-            "Diagnostic assignments do not cover every live child component."
-        )
-    normalized_assignments = {
-        _text(component_id, "component_id"): _digest(
-            fingerprint, "assigned strategy fingerprint"
-        )
-        for component_id, fingerprint in assignments.items()
-    }
-    if canonical_sha256(normalized_assignments) != binding.assignments_sha256:
-        raise WholeChildComponentDiagnosticError(
-            "Diagnostic assignments differ from their compiler binding."
-        )
-
-    target_groups = {
-        parameter.storage_group
-        for node in child_graph.nodes
-        for parameter in node.parameters
-    }
-    if (
-        Counter(action.target_node_ids)
-        != Counter(value.node_id for value in child_graph.nodes)
-        or Counter(action.target_parameter_paths)
-        != Counter(child_graph.parameter_paths)
-        or Counter(action.target_storage_groups)
-        != Counter({value: 1 for value in target_groups})
-    ):
-        raise WholeChildComponentDiagnosticError(
-            "Production diagnostic action does not own the exact whole child."
-        )
+    normalized_assignments, focus_strategy_fingerprint = _validate_dispatch_provenance(
+        row,
+        binding,
+        action,
+        child_graph,
+        dict(strategies),
+        components,
+        selected,
+    )
 
     parameter_strategies = []
     for component in components:
@@ -1092,6 +1775,7 @@ def authenticate_whole_child_component_dispatch(
         binding=binding,
         dispatch_sha256=canonical_sha256(payload),
         selected_strategy_fingerprint=selected,
+        focus_strategy_fingerprint=focus_strategy_fingerprint,
         strategies=tuple(sorted(strategies)),
         components=components,
         component_strategy_fingerprints=tuple(sorted(normalized_assignments.items())),
@@ -1138,6 +1822,12 @@ def _scope(
         semantics=tuple(
             sorted({semantic for value in values for semantic in value.semantics})
         ),
+        measurement_roles=tuple(
+            sorted({role for value in values for role in value.measurement_roles})
+        ),
+        physical_bundle_ids=tuple(
+            sorted({bundle for value in values for bundle in value.physical_bundle_ids})
+        ),
     )
 
 
@@ -1151,6 +1841,8 @@ def _discover_scopes(
     # until then, no parameterless "residual focus" variant is emitted.
     components = tuple(value for value in components if value.parameter_paths)
     proposed = []
+    for component in components:
+        proposed.append(_scope("component", component.component_id, [component]))
     for semantics in sorted({value.semantics for value in components}):
         proposed.append(
             _scope(
@@ -1169,6 +1861,30 @@ def _discover_scopes(
         ):
             selected = [value for value in components if layer in value.layer_indices]
             proposed.append(_scope("layer", str(layer), selected))
+            for semantics in sorted({value.semantics for value in selected}):
+                subset = [value for value in selected if value.semantics == semantics]
+                proposed.append(
+                    _scope(
+                        "layer_semantic",
+                        f"{layer}_{'_and_'.join(semantics)}",
+                        subset,
+                    )
+                )
+            for measurement_role in sorted(
+                {role for value in selected for role in value.measurement_roles}
+            ):
+                subset = [
+                    value
+                    for value in selected
+                    if measurement_role in value.measurement_roles
+                ]
+                proposed.append(
+                    _scope(
+                        "layer_measurement_role",
+                        f"{layer}_{measurement_role}",
+                        subset,
+                    )
+                )
             for label, semantics in _SUBSYSTEMS.items():
                 subset = [
                     value for value in selected if set(value.semantics) & semantics
@@ -1177,10 +1893,43 @@ def _discover_scopes(
                     proposed.append(
                         _scope("layer_subsystem", f"{layer}_{label}", subset)
                     )
-    unique: dict[tuple[str, ...], DiagnosticScope] = {}
+    # Preserve each diagnostic axis even when a one-layer toy makes two axes
+    # select the same physical component set.  The component-set digest lets a
+    # runner reuse the underlying solve instead of recomputing it.
+    unique: dict[str, DiagnosticScope] = {}
     for value in proposed:
-        unique.setdefault(value.component_ids, value)
+        previous = unique.setdefault(value.scope_id, value)
+        if previous != value:
+            raise WholeChildComponentDiagnosticError(
+                "Architecture-derived diagnostic scope IDs collide."
+            )
     return tuple(sorted(unique.values(), key=lambda value: value.scope_id))
+
+
+def _expected_target_ownership(
+    child: ModelCircuitGraph,
+    target_node_ids: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    nodes = {value.node_id: value for value in child.nodes}
+    try:
+        selected = tuple(nodes[value] for value in target_node_ids)
+    except KeyError as exc:
+        raise WholeChildComponentDiagnosticError(
+            "A fold action names a target node outside the inspected child."
+        ) from exc
+    paths = tuple(
+        sorted(parameter.path for node in selected for parameter in node.parameters)
+    )
+    groups = tuple(
+        sorted(
+            {
+                parameter.storage_group
+                for node in selected
+                for parameter in node.parameters
+            }
+        )
+    )
+    return paths, groups
 
 
 def _validate_base(
@@ -1242,9 +1991,23 @@ def _validate_base(
             "The base plan contains a non-fold-only action."
         )
     for action in fold_plan.actions:
+        expected_paths, expected_groups = _expected_target_ownership(
+            child,
+            action.target_node_ids,
+        )
         if action.method_id != action.signature.method_id:
             raise WholeChildComponentDiagnosticError(
                 "A base action method differs from its experiment signature."
+            )
+        if (
+            action.target_parameter_paths != expected_paths
+            or action.target_storage_groups != expected_groups
+            or action.signature.target_unit_ids != action.target_node_ids
+        ):
+            raise WholeChildComponentDiagnosticError(
+                "A base action's nodes, parameter paths, learned-storage groups, "
+                "and signature target units do not describe one exact child "
+                "ownership partition."
             )
         if action.configuration != action.signature.configuration:
             raise WholeChildComponentDiagnosticError(
@@ -1285,6 +2048,41 @@ def _expected_variants(
     return tuple(sorted(result, key=lambda value: value.variant_id))
 
 
+def _expected_variant_by_id(
+    components: Sequence[DiagnosticComponent],
+    scopes: Sequence[DiagnosticScope],
+    baseline: DiagnosticFoldStrategy,
+    focus: DiagnosticFoldStrategy,
+    variant_id: str,
+) -> WholeChildDiagnosticVariant:
+    component_ids = tuple(value.component_id for value in components)
+    if variant_id == "baseline.complete_whole_child":
+        return WholeChildDiagnosticVariant(
+            variant_id,
+            None,
+            tuple((value, baseline.fingerprint) for value in component_ids),
+        )
+    scope = next(
+        (value for value in scopes if variant_id == f"focus.{value.scope_id}"), None
+    )
+    if scope is None:
+        raise WholeChildComponentDiagnosticError(
+            f"Unknown architecture-derived diagnostic variant {variant_id!r}."
+        )
+    focused = set(scope.component_ids)
+    return WholeChildDiagnosticVariant(
+        variant_id,
+        scope.scope_id,
+        tuple(
+            (
+                value,
+                focus.fingerprint if value in focused else baseline.fingerprint,
+            )
+            for value in component_ids
+        ),
+    )
+
+
 def build_whole_child_component_diagnostic_plan(
     parent_graphs: Sequence[ModelCircuitGraph],
     child_graph: ModelCircuitGraph,
@@ -1317,6 +2115,13 @@ def build_whole_child_component_diagnostic_plan(
     )
     if baseline_strategy.fingerprint == focus_strategy.fingerprint:
         raise WholeChildComponentDiagnosticError("Strategies must be distinct.")
+    if _operator_implementation_binding(
+        baseline_strategy
+    ) != _operator_implementation_binding(focus_strategy):
+        raise WholeChildComponentDiagnosticError(
+            "Component diagnostics require two configurations of one production "
+            "fold operator; cross-operator plans need an explicit coordinator."
+        )
     if not isinstance(include_layer_scopes, bool):
         raise WholeChildComponentDiagnosticError(
             "include_layer_scopes must be boolean."
@@ -1470,27 +2275,22 @@ def _action_strategy(
 
 def _diagnostic_dispatch(
     diagnostic: WholeChildComponentDiagnosticPlan,
-    variant: WholeChildDiagnosticVariant,
     binding: WholeChildDiagnosticBinding,
+    base_fold_plan: DynamicFoldPlan,
 ) -> dict[str, Any]:
-    assignments = dict(variant.component_strategy_fingerprints)
     return {
-        "schema": "neural-forge-whole-child-component-dispatch-v1",
+        "schema": DISPATCH_SCHEMA,
         "binding": binding.as_dict(),
-        "assignments": assignments,
+        "plan_authentication_manifest": _diagnostic_plan_authentication_manifest(
+            diagnostic
+        ),
+        "base_fold_plan": base_fold_plan.as_dict(),
         "strategies": {
             diagnostic.baseline_strategy.fingerprint: (
                 diagnostic.baseline_strategy.as_dict()
             ),
             diagnostic.focus_strategy.fingerprint: diagnostic.focus_strategy.as_dict(),
         },
-        "components": [
-            {
-                **component.as_dict(),
-                "assigned_strategy_fingerprint": assignments[component.component_id],
-            }
-            for component in diagnostic.components
-        ],
         "complete_whole_child_fold_required": True,
         "exact_target_unique_parameters": (diagnostic.exact_target_unique_parameters),
     }
@@ -1553,7 +2353,7 @@ def compile_whole_child_component_diagnostic_variant(
         base_fold_plan,
     )
     dispatch_json = canonical_json_bytes(
-        _diagnostic_dispatch(diagnostic, variant, binding)
+        _diagnostic_dispatch(diagnostic, binding, base_fold_plan)
     ).decode("ascii")
     action_ids: dict[str, str] = {}
     action_strategies: dict[str, DiagnosticFoldStrategy] = {}
@@ -1699,7 +2499,9 @@ def bind_whole_child_component_diagnostic_variant(
     )
     variant = diagnostic.variant(_text(variant_id, "variant_id"))
     return WholeChildDiagnosticBinding(
-        plan_sha256=diagnostic.fingerprint,
+        plan_sha256=canonical_sha256(
+            _diagnostic_plan_authentication_manifest(diagnostic)
+        ),
         variant_id=variant.variant_id,
         variant_sha256=variant.fingerprint,
         target_graph_fingerprint=child_graph.fingerprint,
@@ -1754,7 +2556,7 @@ def validate_compiled_whole_child_component_diagnostic_variant(
         base_fold_plan,
     )
     dispatch_json = canonical_json_bytes(
-        _diagnostic_dispatch(diagnostic, variant, binding)
+        _diagnostic_dispatch(diagnostic, binding, base_fold_plan)
     ).decode("ascii")
     if (
         compiled_plan.parent_graph_fingerprints
@@ -1788,6 +2590,17 @@ def validate_compiled_whole_child_component_diagnostic_variant(
     for base_action in base_fold_plan.actions:
         action = by_base[base_action.action_id]
         strategy = _action_strategy(diagnostic, variant, base_action)
+        authenticated = authenticate_whole_child_component_dispatch(
+            action,
+            child_graph,
+            expected_method_id=strategy.method_id,
+            expected_method_spec_sha256=strategy.method_spec_sha256,
+            expected_evidence_requirements=strategy.evidence_requirements,
+        )
+        if authenticated is None or authenticated.binding != binding:
+            raise WholeChildComponentDiagnosticError(
+                "Compiled action did not replay the authenticated diagnostic dispatch."
+            )
         configuration = dict(action.configuration)
         if (
             action.method_id != strategy.method_id
@@ -1796,6 +2609,8 @@ def validate_compiled_whole_child_component_diagnostic_variant(
             or action.signature.family_id != strategy.family_id
             or action.signature.zero_gradient is not True
             or action.configuration != action.signature.configuration
+            or action.evidence_requirements != strategy.evidence_requirements
+            or not _is_open_ledger_decision(action.ledger_decision)
             or configuration.get(DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY) != dispatch_json
             or configuration.get(
                 "whole_child_component_diagnostic_selected_strategy_sha256"
@@ -1981,6 +2796,7 @@ __all__ = [
     "bind_whole_child_component_diagnostic_variant",
     "authenticate_whole_child_component_dispatch",
     "build_whole_child_component_diagnostic_plan",
+    "classify_diagnostic_measurement_role",
     "classify_diagnostic_parameter_semantic",
     "compile_whole_child_component_diagnostic_variant",
     "validate_compiled_whole_child_component_diagnostic_variant",
