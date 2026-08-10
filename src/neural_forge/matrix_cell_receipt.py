@@ -62,6 +62,20 @@ deviations are written down rather than silently absorbed:
    mandatory reason string, and the two flags are read by
    `first_divergent_metric` only -- never by `campaign_pass`, whose clause is
    still behavior plus the wreck detector and nothing else.
+7. `cell_kind` carries one extra value, ``composition``, and `CellId` parses one
+   extra literal form, ``COMP.<mode>[.<variant>]``.  ADDENDUM 4 pre-registers a
+   composition wave whose unit is *many* components in one child, which is the
+   one thing §1.1's ``component.technique.level.site`` id cannot name.  The
+   extension is deliberately the smallest one that keeps every other invariant:
+   `COMPONENTS` and `TECHNIQUES` are untouched (so `known_cell_ids`, the
+   renderer's columns and the axis tests still enumerate exactly the design's
+   axes), `ledger_line` gains no column (the mode is in the cell id, and
+   ``stored_parameter_ratio`` is already the right place for the composed
+   child's **net** child/parent storage), and the whole per-component story
+   rides in one new mandatory block, ``composition``, which
+   `_validate_composition` checks and which no acceptance clause reads.  The
+   failure chain is unchanged and walks the aggregate the runner seals: worst
+   write cosine, worst macrocell, global composed drift, composed free-run.
 6. `code_identity.compute_architecture` is new in wave 2 and mandatory.
    `NOTES-MX-E` §2: a batch was launched on what ``nvidia-smi`` calls the
    second RTX 3090, CUDA's default ``FASTEST_FIRST`` ordering resolved it to a
@@ -158,15 +172,37 @@ LEVELS: Mapping[str, Any] = {
     "NA": 1.0,
 }
 
-CELL_KINDS = ("control", "calibration", "cell")
+CELL_KINDS = ("control", "calibration", "cell", "composition")
 STATUSES = ("pass", "fail", "timeout", "infra", "pending-review")
 REVIEW_VERDICTS = ("pending", "coherent", "incoherent")
 TERMINATIONS = ("eos", "cap", "loop", "error")
 
 CONTROL_CELL_ID = "CTRL.copy_exact"
 
+#: ADDENDUM 4's three pre-registered composition modes, in the receipt's own
+#: spelling.  ``M-A`` installs every isolation winner as solved against parent
+#: evidence; ``M-B`` re-solves each winner in topological order against evidence
+#: recaptured through the partially folded child; ``M-C`` is the per-component
+#: hybrid, run only if A and B disagree.
+COMPOSITION_MODES: Mapping[str, str] = {
+    "MA": "M-A",
+    "MB": "M-B",
+    "MC": "M-C",
+}
+COMPOSITION_COMPONENT = "COMP"
+COMPOSITION_TECHNIQUE = "composition"
+COMPOSITION_TECHNIQUE_NAME = "heterogeneous_composition"
+
 _SITE = re.compile(r"\A(?:L(?P<layer>\d{2})|GLOBAL|FINAL)\Z")
 _SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
+#: ``COMP.MA`` or ``COMP.MA.RSTO`` -- the optional trailing token names a
+#: *recipe variant*, because ADDENDUM 1's selection rule (highest free-run) and
+#: the storage-honesty criterion can name different winners for the same
+#: component, and running both under the same mode is the only way to measure
+#: what the difference costs.
+_COMPOSITION_ID = re.compile(
+    r"\ACOMP\.(?P<mode>M[ABC])(?:\.(?P<variant>[A-Z0-9]{1,12}))?\Z"
+)
 
 
 # --------------------------------------------------------------------------
@@ -212,7 +248,15 @@ class CellId:
     axis, which is the design's explicit choice (§1.1).
     """
 
-    __slots__ = ("calibration", "component", "level", "site", "technique")
+    __slots__ = (
+        "calibration",
+        "component",
+        "composition_mode",
+        "composition_variant",
+        "level",
+        "site",
+        "technique",
+    )
 
     def __init__(
         self,
@@ -222,15 +266,21 @@ class CellId:
         level: str,
         site: str,
         calibration: bool = False,
+        composition_mode: str | None = None,
+        composition_variant: str | None = None,
     ) -> None:
         self.component = component
         self.technique = technique
         self.level = level
         self.site = site
         self.calibration = calibration
+        self.composition_mode = composition_mode
+        self.composition_variant = composition_variant
 
     @property
     def kind(self) -> str:
+        if self.composition_mode is not None:
+            return "composition"
         if self.technique == "copy_exact":
             return "control"
         return "calibration" if self.calibration else "cell"
@@ -244,6 +294,11 @@ class CellId:
 
     @property
     def text(self) -> str:
+        if self.composition_mode is not None:
+            body = f"{COMPOSITION_COMPONENT}.{self.composition_mode}"
+            if self.composition_variant:
+                body = f"{body}.{self.composition_variant}"
+            return body
         if self.kind == "control":
             return CONTROL_CELL_ID
         body = f"{self.component}.{self.technique}.{self.level}"
@@ -269,6 +324,21 @@ class CellId:
                 technique="copy_exact",
                 level="NA",
                 site="GLOBAL",
+            )
+        composed = _COMPOSITION_ID.match(text)
+        if composed is not None:
+            # A composed child has no single component, technique, level or
+            # site -- that is what makes it the composition wave.  The axis
+            # fields are held at the same sentinels the control cell uses, and
+            # every real per-component axis rides in the mandatory
+            # ``composition.components[]`` provenance array instead.
+            return cls(
+                component=COMPOSITION_COMPONENT,
+                technique=COMPOSITION_TECHNIQUE,
+                level="NA",
+                site="GLOBAL",
+                composition_mode=composed.group("mode"),
+                composition_variant=composed.group("variant"),
             )
         calibration = False
         if text.startswith("CAL."):
@@ -488,6 +558,145 @@ def validate_receipt(body: Mapping[str, Any]) -> None:
             "one that does (NOTES-MX-E 2)."
         )
     _validate_declared_inapplicability(body)
+    _validate_composition(body, cell)
+
+
+#: Every per-component entry in ``composition.components[]`` carries these.
+#: They are mandatory for the same reason §3's own fields are: a composed child
+#: whose receipt cannot say which technique solved which component against
+#: which evidence is not a localizable result, and ADDENDUM 4's entire point is
+#: that a composition failure must localize to the component that broke it.
+_COMPOSITION_COMPONENT_FIELDS = (
+    "component_id",
+    "component",
+    "technique_id",
+    "technique",
+    "level",
+    "site",
+    "isolation_cell_id",
+    "selection_reason",
+    "weight_keys",
+    "evidence",
+    "solve",
+    "boundary",
+    "calibration",
+    "after_install",
+    "storage",
+    "first_divergent_metric",
+)
+
+
+def _validate_composition(body: Mapping[str, Any], cell: "CellId") -> None:
+    """A composition receipt carries a complete per-component provenance array.
+
+    Checked structurally rather than trusted, because the composition wave's
+    deliverable *is* the provenance: which winner was installed, in what order,
+    solved against which evidence, and what each install cost.  A missing entry
+    would turn "the winners do not compose" into an unattributable sentence.
+    """
+
+    block = body.get("composition")
+    if cell.kind != "composition":
+        if block is not None:
+            raise MatrixCellReceiptError(
+                "Only a COMP.<mode> cell may carry a 'composition' block; "
+                f"{cell.text} is a {cell.kind} cell."
+            )
+        return
+    if not isinstance(block, Mapping):
+        raise MatrixCellReceiptError(
+            "A composition cell must carry a 'composition' block."
+        )
+    if block.get("mode") not in COMPOSITION_MODES.values():
+        raise MatrixCellReceiptError(
+            f"composition.mode must be one of {sorted(COMPOSITION_MODES.values())}."
+        )
+    if block["mode"] != COMPOSITION_MODES[str(cell.composition_mode)]:
+        raise MatrixCellReceiptError(
+            f"composition.mode {block['mode']!r} disagrees with cell id "
+            f"{cell.text!r}."
+        )
+    components = block.get("components")
+    if not isinstance(components, list):
+        raise MatrixCellReceiptError("composition.components must be a list.")
+    if not components and not str(block.get("incomplete_reason") or "").strip():
+        # The one legal empty case is a run that died or timed out before its
+        # first install completed.  It still has to seal -- a cell that dies
+        # silently costs the campaign a row *and* the reason (§2.3) -- so the
+        # emptiness is admitted only with a stated reason, never by default.
+        raise MatrixCellReceiptError(
+            "composition.components is empty with no "
+            "composition.incomplete_reason; a composed child with no folded "
+            "component is the control cell, not a composition."
+        )
+    order = block.get("install_order")
+    if not isinstance(order, list) or len(order) != len(components):
+        raise MatrixCellReceiptError(
+            "composition.install_order must name exactly one cell id per "
+            "component, in install order."
+        )
+    owned: dict[str, str] = {}
+    for index, entry in enumerate(components):
+        if not isinstance(entry, Mapping):
+            raise MatrixCellReceiptError(
+                f"composition.components[{index}] must be a mapping."
+            )
+        missing = [f for f in _COMPOSITION_COMPONENT_FIELDS if f not in entry]
+        if missing:
+            raise MatrixCellReceiptError(
+                f"composition.components[{index}] is missing {missing}."
+            )
+        if str(entry["isolation_cell_id"]) != str(order[index]):
+            raise MatrixCellReceiptError(
+                f"composition.install_order[{index}] is "
+                f"{order[index]!r} but components[{index}] is "
+                f"{entry['isolation_cell_id']!r}."
+            )
+        divergent = entry["first_divergent_metric"]
+        if divergent is not None and divergent not in CHAIN_LINKS:
+            raise MatrixCellReceiptError(
+                f"composition.components[{index}].first_divergent_metric must "
+                f"be one of {CHAIN_LINKS} or null."
+            )
+        keys = entry["weight_keys"]
+        if not isinstance(keys, list) or not keys:
+            raise MatrixCellReceiptError(
+                f"composition.components[{index}].weight_keys must be a "
+                "non-empty list of the parent tensors this fold replaced."
+            )
+        for key in keys:
+            # Two components that own the same parent tensor would each be
+            # scored against evidence the other invalidated, and the second
+            # install would silently erase the first.  A recipe that does that
+            # is a bug in the recipe, and this is where it is caught.
+            if str(key) in owned:
+                raise MatrixCellReceiptError(
+                    f"composition.components[{index}] "
+                    f"({entry['component_id']}) installs {key!r}, already "
+                    f"installed by {owned[str(key)]}; a composed child folds "
+                    "each parent tensor at most once."
+                )
+            owned[str(key)] = str(entry["component_id"])
+    storage = block.get("storage")
+    if not isinstance(storage, Mapping):
+        raise MatrixCellReceiptError("composition.storage is mandatory.")
+    for field in (
+        "child_parameter_count",
+        "parent_parameter_count",
+        "net_ratio",
+    ):
+        value = storage.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise MatrixCellReceiptError(
+                f"composition.storage.{field} must be a number; a composed "
+                "child that cannot state what it stores has not been measured "
+                "on the axis a fold is ultimately judged on."
+            )
+    if not isinstance(block.get("passed_through"), list):
+        raise MatrixCellReceiptError(
+            "composition.passed_through is mandatory (it may be empty): a "
+            "component left unfolded is a recorded decision, never a silence."
+        )
 
 
 def _validate_declared_inapplicability(body: Mapping[str, Any]) -> None:
@@ -685,18 +894,22 @@ def blank_receipt(
     """
 
     cell = CellId.parse(cell_id)
-    component = (
-        "copy_exact"
-        if cell.kind == "control"
-        else str(COMPONENTS[cell.component]["name"])
-    )
+    if cell.kind == "control":
+        component = "copy_exact"
+        technique = TECHNIQUES[cell.technique]
+    elif cell.kind == "composition":
+        component = "composed_child"
+        technique = COMPOSITION_TECHNIQUE_NAME
+    else:
+        component = str(COMPONENTS[cell.component]["name"])
+        technique = TECHNIQUES[cell.technique]
     return {
         "schema": SCHEMA,
         "cell_id": cell.text,
         "cell_instance_id": str(cell_instance_id),
         "cell_kind": cell.kind,
         "component": component,
-        "technique": TECHNIQUES[cell.technique],
+        "technique": technique,
         "level": cell.level,
         "site": cell.site,
         "campaign_wave": int(campaign_wave),
