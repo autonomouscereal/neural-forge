@@ -513,3 +513,24 @@ each documented:
 
 The harness faithfully implements the mechanism; the campaign's cells
 are calibrated.
+
+---
+
+## ADDENDUM 3 — 2026-08-10 (Cyril): graded outcomes, 0.90 is a goal not a gate
+
+Per Cyril's direct instruction: 0.90 free-run is the aspirational "works
+outright" threshold, not a dismissal line. Cell outcomes become GRADED:
+- **strong** — free-run ≥0.90 vs control AND coherent smoke (works outright)
+- **promising** — free-run ≥0.60 AND coherent smoke (the best-baseline
+  band; cells 1-3 live here; these cells get DEEPER adaptive exploration,
+  not pruning: more levels, technique hybrids, and priority in the
+  composition recipe when they are the best available at their component)
+- **weak** — free-run 0.20-0.60 or degraded smoke
+- **dead** — free-run <0.20 or degenerate smoke
+first_divergent_metric and all sealed fields are unchanged; only the
+interpretation layer and the adaptive policy read the grade. The
+composition endgame (Addendum 1) selects the best available grade per
+component — a component whose best is "promising" still ships its winner.
+Scope discipline: single-component cell numbers must never be quoted as
+whole-model results; the composed child's own receipts are the only
+whole-model claim.
