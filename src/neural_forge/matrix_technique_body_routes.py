@@ -76,6 +76,9 @@ from .hf_feature_fold import SparseFeatureFoldMap, build_sparse_feature_fold_map
 
 MATRIX_TECHNIQUE_ENTRY_SCHEMA = "neural-forge-matrix-technique-entry-v1"
 T5_BODY_ROUTE_RECORD_SCHEMA = "neural-forge-matrix-t5-body-route-record-v1"
+T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA = (
+    "neural-forge-matrix-t5-body-route-source-witness-v1"
+)
 
 T5_TECHNIQUE_ID = "T5"
 T5_TECHNIQUE_NAME = "sparse_omp_routes"
@@ -240,7 +243,16 @@ def _matrix(value: Any, name: str, *, dtype: Any, device: Any) -> Any:
     return result
 
 
-def _tensor_sha256(value: Any) -> str:
+def t5_tensor_sha256(value: Any) -> str:
+    """Return the canonical tensor digest used by every T5 record boundary.
+
+    This is intentionally the byte-identical implementation that the original
+    T5 record writer used.  It is public so downstream compiler admissions do
+    not grow subtly different tensor-hash dialects.  The float64 CPU
+    normalisation is part of the v1 record format and therefore cannot be
+    changed without a schema migration.
+    """
+
     torch = _torch()
     tensor = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
     return canonical_sha256(
@@ -250,6 +262,11 @@ def _tensor_sha256(value: Any) -> str:
             "bytes": tensor.reshape(-1).view(torch.uint8).numpy().tobytes().hex(),
         }
     )
+
+
+# Backwards compatibility for existing campaign helpers.  There remains one
+# implementation; new authentication code must use the public spelling.
+_tensor_sha256 = t5_tensor_sha256
 
 
 def _plain_json(value: Any) -> Any:
@@ -330,8 +347,7 @@ def resolve_component(component: Any, role: Any = None) -> tuple[str, str, str]:
     if role is None:
         if default_role is None:
             raise T5BodyRouteGeometryError(
-                "component='custom' requires an explicit role of "
-                "'reader' or 'writer'."
+                "component='custom' requires an explicit role of 'reader' or 'writer'."
             )
         return component_id, component_name, default_role
     chosen = _text(role, "role")
@@ -408,8 +424,7 @@ def select_kept_channels(
         raise T5BodyRouteGeometryError("kept_width exceeds the component width.")
     if policy not in _CHANNEL_SELECTION_POLICIES:
         raise T5BodyRouteGeometryError(
-            "channel_selection must be one of "
-            + ", ".join(_CHANNEL_SELECTION_POLICIES)
+            "channel_selection must be one of " + ", ".join(_CHANNEL_SELECTION_POLICIES)
         )
     if policy == "explicit":
         if explicit_ids is None:
@@ -553,9 +568,15 @@ def _omp_supports(
                     break
                 best = score.max(dim=1).values
                 tie = score >= best.unsqueeze(1)
-                candidate = torch.where(
-                    tie, axis.unsqueeze(0), torch.full_like(tie, width, dtype=axis.dtype)
-                ).min(dim=1).values
+                candidate = (
+                    torch.where(
+                        tie,
+                        axis.unsqueeze(0),
+                        torch.full_like(tie, width, dtype=axis.dtype),
+                    )
+                    .min(dim=1)
+                    .values
+                )
                 usable = pending & (best > 0.0) & (candidate < width)
                 pending = usable
                 if not bool(pending.any().item()):
@@ -591,7 +612,10 @@ def _omp_supports(
             chol = torch.cat(
                 (
                     torch.cat(
-                        (chol, torch.zeros((count, step, 1), dtype=dtype, device=device)),
+                        (
+                            chol,
+                            torch.zeros((count, step, 1), dtype=dtype, device=device),
+                        ),
                         dim=2,
                     ),
                     torch.cat(
@@ -626,9 +650,7 @@ def _omp_supports(
             solved = torch.linalg.solve_triangular(
                 chol.transpose(1, 2), intermediate, upper=True
             ).squeeze(2)
-            selected[:, step] = torch.where(
-                active, choice, torch.full_like(choice, -1)
-            )
+            selected[:, step] = torch.where(active, choice, torch.full_like(choice, -1))
             masked[row_axis[active], choice[active]] = True
             coefficients = torch.zeros((width, count), dtype=dtype, device=device)
             valid = selected[:, : step + 1] >= 0
@@ -785,9 +807,7 @@ def _write_side_solve(
     dropped = int(cross_gram.shape[1])
     coupling = torch.diagonal(metric_gram)
     if dropped > 1:
-        off_diagonal = float(
-            (metric_gram - torch.diag(coupling)).abs().max().item()
-        )
+        off_diagonal = float((metric_gram - torch.diag(coupling)).abs().max().item())
         scale = float(coupling.abs().max().item())
         coupled = off_diagonal > scale * float(torch.finfo(dtype).eps) * dropped
     else:
@@ -969,6 +989,10 @@ class _AuthenticatedBodyRouteSnapshot:
     support_target_ids: Any
     read_coefficients: Any
     write_coefficients: Any
+    child_weight: Any
+    expansion_route: Any
+    calibration: Mapping[str, Any]
+    solve: Mapping[str, Any]
 
 
 def _authenticated_body_route_fold(fold: Any) -> _AuthenticatedBodyRouteSnapshot:
@@ -1028,9 +1052,10 @@ def _authenticated_body_route_fold(fold: Any) -> _AuthenticatedBodyRouteSnapshot
             "BodyRouteFold installed_coefficients is unsupported."
         )
     record_solve = record.get("solve")
-    if not isinstance(record_solve, Mapping) or record_solve.get(
-        "installed_coefficients"
-    ) != installed_coefficients:
+    if (
+        not isinstance(record_solve, Mapping)
+        or record_solve.get("installed_coefficients") != installed_coefficients
+    ):
         raise T5BodyRouteAuthenticationError(
             "BodyRouteFold installed coefficients do not match the sealed solve."
         )
@@ -1294,7 +1319,666 @@ def _authenticated_body_route_fold(fold: Any) -> _AuthenticatedBodyRouteSnapshot
         support_target_ids=target_positions.clone(),
         read_coefficients=read.clone(),
         write_coefficients=write.clone(),
+        child_weight=child_weight.clone(),
+        expansion_route=expansion_route.clone(),
+        calibration=MappingProxyType(calibration_snapshot),
+        solve=MappingProxyType(solve_snapshot),
     )
+
+
+@dataclass(frozen=True)
+class T5BodyRouteSourceWitness:
+    """Authenticated live-source evidence for a promotable T5 writer route.
+
+    The record seal is not a signature and does not attest where the solver or
+    evidence cache came from.  Those origins remain authoritative only through
+    the exact graph/state/cache/selection identities supplied by the compiler.
+    What this value *does* prove is narrower and useful: the sealed T5 record,
+    cloned parent tensor, cloned fit/held-out rows, selected coefficient lane,
+    derived writer tensors, and reported calibration all agree exactly.
+
+    Tensor fields remain tensors for direct compiler consumption.  A frozen
+    dataclass cannot make a tensor's storage immutable, so every verifier call
+    snapshots them again before inspecting a digest or performing algebra.
+    """
+
+    parameter_path: str
+    graph_fingerprint: str
+    parent_state_fingerprint: str
+    component_id: str
+    component: str
+    layer_index: int
+    site: str
+    role: str
+    evidence_cache_sha256: str
+    evidence_selection_sha256: str
+    evidence_endpoint: str
+    body_route_record_sha256: str
+    coefficient_set: str
+    parent_weight: Any
+    component_rows: Any
+    heldout_component_rows: Any | None
+    report: Mapping[str, Any]
+    record: Mapping[str, Any]
+
+    @property
+    def witness_sha256(self) -> str:
+        return str(self.record["witness_sha256"])
+
+
+def _source_sha256(value: Any, name: str) -> str:
+    result = _text(value, name).lower()
+    if len(result) != 64 or any(
+        character not in "0123456789abcdef" for character in result
+    ):
+        raise T5BodyRouteAuthenticationError(
+            f"{name} must be a lowercase SHA-256 digest."
+        )
+    return result
+
+
+def _source_layer_index(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise T5BodyRouteAuthenticationError(
+            "layer_index must be a non-negative integer."
+        )
+    return value
+
+
+def _source_matrix_snapshot(value: Any, name: str) -> Any:
+    """Clone a source matrix before any caller-extensible hash callback runs."""
+
+    torch = _torch()
+    if (
+        type(value) is not torch.Tensor
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        or value.numel() == 0
+        or not torch.is_floating_point(value)
+        or torch.is_complex(value)
+        or value.requires_grad
+        or value.grad_fn is not None
+    ):
+        raise T5BodyRouteAuthenticationError(
+            f"{name} must be a nonempty finite dense real matrix without autograd."
+        )
+    result = value.detach().to(device="cpu").contiguous().clone()
+    if not bool(torch.isfinite(result).all().item()):
+        raise T5BodyRouteAuthenticationError(
+            f"{name} must be a nonempty finite dense real matrix without autograd."
+        )
+    return result
+
+
+def _source_binding(
+    *,
+    parameter_path: Any,
+    graph_fingerprint: Any,
+    parent_state_fingerprint: Any,
+    component_id: Any,
+    layer_index: Any,
+    site: Any,
+    role: Any,
+    evidence_cache_sha256: Any,
+    evidence_selection_sha256: Any,
+    evidence_endpoint: Any,
+    coefficient_set: Any,
+) -> dict[str, Any]:
+    layer = _source_layer_index(layer_index)
+    site_name = _text(site, "site")
+    expected_site = f"L{layer:02d}"
+    if site_name != expected_site:
+        raise T5BodyRouteAuthenticationError(
+            f"site must be the exact layer site {expected_site!r}."
+        )
+    role_name = _text(role, "role")
+    if role_name != "writer":
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witnesses currently authenticate writer routes only."
+        )
+    lane = _text(coefficient_set, "coefficient_set")
+    if lane not in ("read", "write"):
+        raise T5BodyRouteAuthenticationError(
+            "coefficient_set must be explicitly 'read' or 'write'."
+        )
+    return {
+        "parameter_path": _text(parameter_path, "parameter_path"),
+        "graph_fingerprint": _source_sha256(graph_fingerprint, "graph_fingerprint"),
+        "parent_state_fingerprint": _source_sha256(
+            parent_state_fingerprint, "parent_state_fingerprint"
+        ),
+        "component_id": _text(component_id, "component_id"),
+        "layer_index": layer,
+        "site": site_name,
+        "role": role_name,
+        "evidence_cache_sha256": _source_sha256(
+            evidence_cache_sha256, "evidence_cache_sha256"
+        ),
+        "evidence_selection_sha256": _source_sha256(
+            evidence_selection_sha256, "evidence_selection_sha256"
+        ),
+        "evidence_endpoint": _text(evidence_endpoint, "evidence_endpoint"),
+        "coefficient_set": lane,
+    }
+
+
+def _dense_snapshot_coefficients(
+    snapshot: _AuthenticatedBodyRouteSnapshot,
+    coefficients: Any,
+    *,
+    dtype: Any,
+) -> Any:
+    torch = _torch()
+    dropped_width = int(snapshot.dropped_source_ids.numel())
+    dense = torch.zeros(
+        (snapshot.target_width, dropped_width),
+        dtype=dtype,
+        device="cpu",
+    )
+    for dropped_index in range(dropped_width):
+        start = int(snapshot.support_offsets[dropped_index].item())
+        stop = int(snapshot.support_offsets[dropped_index + 1].item())
+        if stop > start:
+            dense[
+                snapshot.support_target_ids[start:stop],
+                dropped_index,
+            ] = coefficients[start:stop].to(dtype=dtype)
+    return dense
+
+
+def _writer_source_report(
+    *,
+    snapshot: _AuthenticatedBodyRouteSnapshot,
+    parent_weight: Any,
+    component_rows: Any,
+    heldout_component_rows: Any | None,
+    coefficient_set: str,
+) -> Mapping[str, Any]:
+    """Re-derive the writer tensors and every source-dependent fit claim."""
+
+    torch = _torch()
+    placement = snapshot.record.get("solve_placement")
+    if not isinstance(placement, Mapping) or placement.get("device") != "cpu":
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witnesses require the fold's exact CPU solve placement."
+        )
+    if snapshot.role != "writer":
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witnesses currently authenticate writer routes only."
+        )
+    dtype = snapshot.child_weight.dtype
+    weight = parent_weight.to(device="cpu", dtype=dtype).contiguous()
+    rows = component_rows.to(device="cpu", dtype=dtype).contiguous()
+    width = snapshot.source_width
+    kept_width = snapshot.target_width
+    if tuple(weight.shape)[1:] != (width,):
+        raise T5BodyRouteAuthenticationError(
+            "Witness parent_weight does not have the sealed writer geometry."
+        )
+    if int(rows.shape[1]) != width:
+        raise T5BodyRouteAuthenticationError(
+            "Witness component_rows does not have the sealed component width."
+        )
+    if snapshot.record.get("parent_weight_sha256") != t5_tensor_sha256(weight):
+        raise T5BodyRouteAuthenticationError(
+            "Live parent_weight does not match the T5 record."
+        )
+    if snapshot.record.get("component_rows_sha256") != t5_tensor_sha256(rows):
+        raise T5BodyRouteAuthenticationError(
+            "Live component_rows does not match the T5 record."
+        )
+
+    kept = snapshot.kept_source_ids
+    dropped = snapshot.dropped_source_ids
+    kept_rows = rows.index_select(1, kept)
+    dropped_rows = rows.index_select(1, dropped)
+    parent_math = weight.transpose(0, 1)
+    dense_read = _dense_snapshot_coefficients(
+        snapshot,
+        snapshot.read_coefficients,
+        dtype=dtype,
+    )
+    dense_write = _dense_snapshot_coefficients(
+        snapshot,
+        snapshot.write_coefficients,
+        dtype=dtype,
+    )
+    installed_dense = (
+        dense_read if snapshot.installed_coefficients == "read" else dense_write
+    )
+    selected_dense = dense_read if coefficient_set == "read" else dense_write
+
+    def writer_tensors(dense: Any) -> tuple[Any, Any]:
+        child_math = parent_math.index_select(0, kept) + (
+            dense @ parent_math.index_select(0, dropped)
+        )
+        child = child_math.transpose(0, 1).contiguous()
+        expansion = torch.zeros((kept_width, width), dtype=dtype, device="cpu")
+        expansion[
+            torch.arange(kept_width, dtype=torch.long),
+            kept,
+        ] = 1
+        expansion[:, dropped] = dense
+        return child, expansion
+
+    installed_child, installed_expansion = writer_tensors(installed_dense)
+    if not torch.equal(installed_child, snapshot.child_weight.to(dtype=dtype)):
+        raise T5BodyRouteAuthenticationError(
+            "T5 child_weight is not the exact writer fold of the live parent."
+        )
+    if not torch.equal(installed_expansion, snapshot.expansion_route.to(dtype=dtype)):
+        raise T5BodyRouteAuthenticationError(
+            "T5 expansion_route is not the exact installed coefficient lane."
+        )
+
+    selected_child, selected_expansion = writer_tensors(selected_dense)
+    dropped_count = int(dropped.numel())
+    read_reconstruction = kept_rows @ dense_read
+    installed_reconstruction = kept_rows @ installed_dense
+    parent_output = rows @ parent_math
+    installed_output = kept_rows @ installed_child.transpose(0, 1)
+    calibration = {
+        "no_contraction": dropped_count == 0,
+        "dropped_channel_count": dropped_count,
+        "fit_rows": int(rows.shape[0]),
+        "channel_reconstruction_relative_l2": (
+            _relative_l2(read_reconstruction - dropped_rows, dropped_rows)
+            if dropped_count
+            else 0.0
+        ),
+        "installed_channel_reconstruction_relative_l2": (
+            _relative_l2(
+                installed_reconstruction - dropped_rows,
+                dropped_rows,
+            )
+            if dropped_count
+            else 0.0
+        ),
+        "component_write_relative_l2": _relative_l2(
+            installed_output - parent_output,
+            parent_output,
+        ),
+        "component_write_cosine": float(
+            torch.nn.functional.cosine_similarity(
+                installed_output.reshape(1, -1),
+                parent_output.reshape(1, -1),
+            ).item()
+        ),
+        "heldout": None,
+        "exact_at_no_contraction": bool(
+            dropped_count > 0 or torch.equal(installed_output, parent_output)
+        ),
+    }
+
+    sealed_heldout = snapshot.calibration.get("heldout")
+    if sealed_heldout is not None and heldout_component_rows is None:
+        raise T5BodyRouteAuthenticationError(
+            "The T5 record has heldout calibration but the witness has no "
+            "heldout_component_rows."
+        )
+    if sealed_heldout is None and heldout_component_rows is not None:
+        raise T5BodyRouteAuthenticationError(
+            "The witness has heldout_component_rows but the T5 record has no "
+            "heldout calibration."
+        )
+    heldout_sha256: str | None = None
+    if heldout_component_rows is not None:
+        held = heldout_component_rows.to(device="cpu", dtype=dtype).contiguous()
+        if int(held.shape[1]) != width:
+            raise T5BodyRouteAuthenticationError(
+                "Witness heldout_component_rows has the wrong component width."
+            )
+        heldout_sha256 = t5_tensor_sha256(held)
+        held_kept = held.index_select(1, kept)
+        held_dropped = held.index_select(1, dropped)
+        held_parent = held @ parent_math
+        held_child = held_kept @ installed_child.transpose(0, 1)
+        calibration["heldout"] = {
+            "rows": int(held.shape[0]),
+            "channel_reconstruction_relative_l2": (
+                _relative_l2(
+                    held_kept @ dense_read - held_dropped,
+                    held_dropped,
+                )
+                if dropped_count
+                else 0.0
+            ),
+            "component_write_relative_l2": _relative_l2(
+                held_child - held_parent,
+                held_parent,
+            ),
+            "component_write_cosine": float(
+                torch.nn.functional.cosine_similarity(
+                    held_child.reshape(1, -1),
+                    held_parent.reshape(1, -1),
+                ).item()
+            ),
+        }
+
+    if _plain_json(calibration) != _plain_json(snapshot.calibration):
+        raise T5BodyRouteAuthenticationError(
+            "T5 calibration is stale or does not match the live source tensors."
+        )
+
+    prior_weight = weight.index_select(1, kept)
+    recomputed_norms = {
+        "prior_norm": float(torch.linalg.vector_norm(prior_weight).item()),
+        "correction_norm": float(
+            torch.linalg.vector_norm(installed_child - prior_weight).item()
+        ),
+        "route_coefficient_norm": float(
+            torch.linalg.vector_norm(installed_dense).item()
+        ),
+    }
+    for field, expected in recomputed_norms.items():
+        if snapshot.solve.get(field) != expected:
+            raise T5BodyRouteAuthenticationError(
+                f"T5 solve {field} is stale or source-inconsistent."
+            )
+
+    selected_output = kept_rows @ selected_child.transpose(0, 1)
+    return MappingProxyType(
+        {
+            "parent_weight_sha256": t5_tensor_sha256(weight),
+            "component_rows_sha256": t5_tensor_sha256(rows),
+            "heldout_component_rows_sha256": heldout_sha256,
+            "selected_child_weight_sha256": t5_tensor_sha256(selected_child),
+            "selected_expansion_route_sha256": t5_tensor_sha256(selected_expansion),
+            "selected_component_write_relative_l2": _relative_l2(
+                selected_output - parent_output,
+                parent_output,
+            ),
+            "selected_component_write_cosine": float(
+                torch.nn.functional.cosine_similarity(
+                    selected_output.reshape(1, -1),
+                    parent_output.reshape(1, -1),
+                ).item()
+            ),
+            "selected_route_coefficient_norm": float(
+                torch.linalg.vector_norm(selected_dense).item()
+            ),
+            "recomputed_calibration": calibration,
+            "recomputed_solve_norms": recomputed_norms,
+            "authority": {
+                "live_source_tensor_identity": True,
+                "writer_tensor_algebra": True,
+                "fit_and_heldout_metrics": True,
+                "solver_origin": "external-artifact-bound-not-attested",
+                "support_selection_optimality": False,
+            },
+        }
+    )
+
+
+def _source_witness_from_snapshots(
+    *,
+    fold: BodyRouteFold,
+    parent_weight: Any,
+    component_rows: Any,
+    heldout_component_rows: Any | None,
+    binding: Mapping[str, Any],
+) -> T5BodyRouteSourceWitness:
+    snapshot = _authenticated_body_route_fold(fold)
+    expected_fold = {
+        "component_id": binding["component_id"],
+        "site": binding["site"],
+        "role": binding["role"],
+    }
+    for field, expected in expected_fold.items():
+        if getattr(snapshot, field) != expected:
+            raise T5BodyRouteAuthenticationError(
+                f"Source witness {field} does not match the T5 fold."
+            )
+    report = _writer_source_report(
+        snapshot=snapshot,
+        parent_weight=parent_weight,
+        component_rows=component_rows,
+        heldout_component_rows=heldout_component_rows,
+        coefficient_set=str(binding["coefficient_set"]),
+    )
+    body = {
+        "schema": T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA,
+        **dict(binding),
+        "component": snapshot.record["component"],
+        "body_route_record_sha256": snapshot.record["record_sha256"],
+        "parent_weight_sha256": report["parent_weight_sha256"],
+        "component_rows_sha256": report["component_rows_sha256"],
+        "heldout_component_rows_sha256": report["heldout_component_rows_sha256"],
+        "report": _plain_json(report),
+    }
+    record = _sealed(body, field="witness_sha256")
+    return T5BodyRouteSourceWitness(
+        parameter_path=str(binding["parameter_path"]),
+        graph_fingerprint=str(binding["graph_fingerprint"]),
+        parent_state_fingerprint=str(binding["parent_state_fingerprint"]),
+        component_id=str(binding["component_id"]),
+        component=str(snapshot.record["component"]),
+        layer_index=int(binding["layer_index"]),
+        site=str(binding["site"]),
+        role=str(binding["role"]),
+        evidence_cache_sha256=str(binding["evidence_cache_sha256"]),
+        evidence_selection_sha256=str(binding["evidence_selection_sha256"]),
+        evidence_endpoint=str(binding["evidence_endpoint"]),
+        body_route_record_sha256=str(snapshot.record["record_sha256"]),
+        coefficient_set=str(binding["coefficient_set"]),
+        parent_weight=parent_weight.clone(),
+        component_rows=component_rows.clone(),
+        heldout_component_rows=(
+            None if heldout_component_rows is None else heldout_component_rows.clone()
+        ),
+        report=MappingProxyType(_plain_json(report)),
+        record=MappingProxyType(record),
+    )
+
+
+def build_t5_body_route_source_witness(
+    fold: BodyRouteFold,
+    *,
+    parent_weight: Any,
+    component_rows: Any,
+    heldout_component_rows: Any = None,
+    parameter_path: str,
+    graph_fingerprint: str,
+    parent_state_fingerprint: str,
+    component_id: str,
+    layer_index: int,
+    site: str,
+    role: str,
+    evidence_cache_sha256: str,
+    evidence_selection_sha256: str,
+    evidence_endpoint: str,
+    coefficient_set: str,
+) -> T5BodyRouteSourceWitness:
+    """Create a sealed, source-bound witness for one T5 writer route.
+
+    All source tensors are cloned before fold authentication or hashing, which
+    prevents callback-driven mutation of caller storage from changing what the
+    witness ultimately seals.
+    """
+
+    parent = _source_matrix_snapshot(parent_weight, "parent_weight")
+    rows = _source_matrix_snapshot(component_rows, "component_rows")
+    heldout = (
+        None
+        if heldout_component_rows is None
+        else _source_matrix_snapshot(heldout_component_rows, "heldout_component_rows")
+    )
+    binding = _source_binding(
+        parameter_path=parameter_path,
+        graph_fingerprint=graph_fingerprint,
+        parent_state_fingerprint=parent_state_fingerprint,
+        component_id=component_id,
+        layer_index=layer_index,
+        site=site,
+        role=role,
+        evidence_cache_sha256=evidence_cache_sha256,
+        evidence_selection_sha256=evidence_selection_sha256,
+        evidence_endpoint=evidence_endpoint,
+        coefficient_set=coefficient_set,
+    )
+    return _source_witness_from_snapshots(
+        fold=fold,
+        parent_weight=parent,
+        component_rows=rows,
+        heldout_component_rows=heldout,
+        binding=binding,
+    )
+
+
+def verify_t5_body_route_source_witness(
+    witness: T5BodyRouteSourceWitness,
+    fold: BodyRouteFold,
+    *,
+    parent_weight: Any,
+    component_rows: Any,
+    heldout_component_rows: Any = None,
+    parameter_path: str,
+    graph_fingerprint: str,
+    parent_state_fingerprint: str,
+    component_id: str,
+    layer_index: int,
+    site: str,
+    role: str,
+    evidence_cache_sha256: str,
+    evidence_selection_sha256: str,
+    evidence_endpoint: str,
+    coefficient_set: str,
+) -> T5BodyRouteSourceWitness:
+    """Re-authenticate a witness against live sources and caller authority.
+
+    The returned value owns fresh tensor snapshots; callers must consume it
+    rather than rereading the mutable input witness after this boundary.
+    """
+
+    if not isinstance(witness, T5BodyRouteSourceWitness):
+        raise T5BodyRouteAuthenticationError(
+            "A T5 source witness must be a T5BodyRouteSourceWitness."
+        )
+
+    # Snapshot both live and witness-owned tensors before hashing either set.
+    live_parent = _source_matrix_snapshot(parent_weight, "parent_weight")
+    live_rows = _source_matrix_snapshot(component_rows, "component_rows")
+    live_heldout = (
+        None
+        if heldout_component_rows is None
+        else _source_matrix_snapshot(heldout_component_rows, "heldout_component_rows")
+    )
+    witness_parent = _source_matrix_snapshot(
+        witness.parent_weight, "witness.parent_weight"
+    )
+    witness_rows = _source_matrix_snapshot(
+        witness.component_rows, "witness.component_rows"
+    )
+    witness_heldout = (
+        None
+        if witness.heldout_component_rows is None
+        else _source_matrix_snapshot(
+            witness.heldout_component_rows,
+            "witness.heldout_component_rows",
+        )
+    )
+    expected_binding = _source_binding(
+        parameter_path=parameter_path,
+        graph_fingerprint=graph_fingerprint,
+        parent_state_fingerprint=parent_state_fingerprint,
+        component_id=component_id,
+        layer_index=layer_index,
+        site=site,
+        role=role,
+        evidence_cache_sha256=evidence_cache_sha256,
+        evidence_selection_sha256=evidence_selection_sha256,
+        evidence_endpoint=evidence_endpoint,
+        coefficient_set=coefficient_set,
+    )
+    witness_binding = {field: getattr(witness, field) for field in expected_binding}
+    if witness_binding != expected_binding:
+        differing = next(
+            field
+            for field in expected_binding
+            if witness_binding.get(field) != expected_binding[field]
+        )
+        raise T5BodyRouteAuthenticationError(
+            f"T5 source witness {differing} does not match caller authority."
+        )
+
+    record = _plain_json(witness.record)
+    supplied = record.pop("witness_sha256", None)
+    if supplied != canonical_sha256(record):
+        raise T5BodyRouteAuthenticationError("T5 source witness seal is invalid.")
+    if record.get("schema") != T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA:
+        raise T5BodyRouteAuthenticationError("T5 source witness schema is unsupported.")
+    expected_record_metadata = {
+        **expected_binding,
+        "component": witness.component,
+        "body_route_record_sha256": witness.body_route_record_sha256,
+    }
+    for field, expected in expected_record_metadata.items():
+        if record.get(field) != expected:
+            raise T5BodyRouteAuthenticationError(
+                f"T5 source witness record {field} is inconsistent."
+            )
+
+    snapshot = _authenticated_body_route_fold(fold)
+    if witness.body_route_record_sha256 != snapshot.record["record_sha256"]:
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witness belongs to a different body-route record."
+        )
+    if witness.component != snapshot.record["component"]:
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witness component name is inconsistent."
+        )
+
+    tensor_pairs = (
+        ("parent_weight", witness_parent, live_parent),
+        ("component_rows", witness_rows, live_rows),
+    )
+    for name, sealed_tensor, live_tensor in tensor_pairs:
+        sealed_digest = t5_tensor_sha256(sealed_tensor)
+        if sealed_digest != record.get(f"{name}_sha256"):
+            raise T5BodyRouteAuthenticationError(
+                f"T5 source witness {name} failed authentication."
+            )
+        if t5_tensor_sha256(live_tensor) != sealed_digest:
+            raise T5BodyRouteAuthenticationError(
+                f"Live {name} differs from the T5 source witness."
+            )
+    if (witness_heldout is None) != (live_heldout is None):
+        raise T5BodyRouteAuthenticationError(
+            "Live heldout_component_rows presence differs from the witness."
+        )
+    if witness_heldout is None:
+        if record.get("heldout_component_rows_sha256") is not None:
+            raise T5BodyRouteAuthenticationError(
+                "T5 source witness heldout digest is inconsistent."
+            )
+    else:
+        witness_heldout_digest = t5_tensor_sha256(witness_heldout)
+        if witness_heldout_digest != record.get("heldout_component_rows_sha256"):
+            raise T5BodyRouteAuthenticationError(
+                "T5 source witness heldout_component_rows failed authentication."
+            )
+        if t5_tensor_sha256(live_heldout) != witness_heldout_digest:
+            raise T5BodyRouteAuthenticationError(
+                "Live heldout_component_rows differs from the T5 source witness."
+            )
+
+    authenticated = _source_witness_from_snapshots(
+        fold=fold,
+        parent_weight=live_parent,
+        component_rows=live_rows,
+        heldout_component_rows=live_heldout,
+        binding=expected_binding,
+    )
+    if _plain_json(witness.report) != _plain_json(authenticated.report):
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witness report is stale or inconsistent."
+        )
+    if _plain_json(witness.record) != _plain_json(authenticated.record):
+        raise T5BodyRouteAuthenticationError(
+            "T5 source witness canonical record is inconsistent."
+        )
+    return authenticated
 
 
 def sparse_feature_fold_map_from_body_route(
@@ -1447,8 +2131,7 @@ def fit_body_component_routes(
         )
     if channel_selection not in _CHANNEL_SELECTION_POLICIES:
         raise T5BodyRouteGeometryError(
-            "channel_selection must be one of "
-            + ", ".join(_CHANNEL_SELECTION_POLICIES)
+            "channel_selection must be one of " + ", ".join(_CHANNEL_SELECTION_POLICIES)
         )
     install = install_coefficients
     if install is None:
@@ -1459,9 +2142,7 @@ def fit_body_component_routes(
         )
 
     weight = _matrix(parent_weight, "parent_weight", dtype=dtype, device=solve_device)
-    rows = _matrix(
-        component_rows, "component_rows", dtype=dtype, device=solve_device
-    )
+    rows = _matrix(component_rows, "component_rows", dtype=dtype, device=solve_device)
     out_features, in_features = map(int, weight.shape)
     if resolved_role == "writer":
         width = in_features
@@ -1618,9 +2299,7 @@ def fit_body_component_routes(
             expanded = kept_columns @ expansion
             parent_output = rows
             child_output = expanded
-        component_relative = _relative_l2(
-            child_output - parent_output, parent_output
-        )
+        component_relative = _relative_l2(child_output - parent_output, parent_output)
         component_cosine = float(
             torch.nn.functional.cosine_similarity(
                 child_output.reshape(1, -1), parent_output.reshape(1, -1)
@@ -1637,8 +2316,7 @@ def fit_body_component_routes(
             )
             if int(held.shape[1]) != width:
                 raise T5BodyRouteEvidenceError(
-                    "heldout_component_rows width does not match the component "
-                    "axis."
+                    "heldout_component_rows width does not match the component axis."
                 )
             held_kept = held.index_select(1, kept_ids)
             held_dropped = held.index_select(1, dropped_ids)
@@ -1651,9 +2329,7 @@ def fit_body_component_routes(
             heldout_report = {
                 "rows": int(held.shape[0]),
                 "channel_reconstruction_relative_l2": (
-                    _relative_l2(
-                        held_kept @ dense_read - held_dropped, held_dropped
-                    )
+                    _relative_l2(held_kept @ dense_read - held_dropped, held_dropped)
                     if dropped_count
                     else 0.0
                 ),
@@ -1684,17 +2360,13 @@ def fit_body_component_routes(
         else:
             prior_weight = weight.index_select(
                 0,
-                torch.cat(
-                    [kept_ids + index * width for index in range(blocks)], dim=0
-                ),
+                torch.cat([kept_ids + index * width for index in range(blocks)], dim=0),
             )
         prior_norm = float(torch.linalg.vector_norm(prior_weight).item())
         correction_norm = float(
             torch.linalg.vector_norm(child_weight - prior_weight).item()
         )
-        route_coefficient_norm = float(
-            torch.linalg.vector_norm(dense_installed).item()
-        )
+        route_coefficient_norm = float(torch.linalg.vector_norm(dense_installed).item())
 
     parent_parameters = out_features * in_features
     child_parameters = int(child_weight.numel())
@@ -1705,18 +2377,14 @@ def fit_body_component_routes(
         "fit_rows": int(rows.shape[0]),
         "channel_reconstruction_relative_l2": read_relative,
         "installed_channel_reconstruction_relative_l2": (
-            _relative_l2(
-                installed_reconstruction - dropped_columns, dropped_columns
-            )
+            _relative_l2(installed_reconstruction - dropped_columns, dropped_columns)
             if dropped_count
             else 0.0
         ),
         "component_write_relative_l2": component_relative,
         "component_write_cosine": component_cosine,
         "heldout": heldout_report,
-        "exact_at_no_contraction": bool(
-            dropped_count > 0 or component_relative == 0.0
-        ),
+        "exact_at_no_contraction": bool(dropped_count > 0 or component_relative == 0.0),
     }
     solve = {
         "solver_path": f"{__name__}.fit_body_component_routes",
@@ -1892,9 +2560,7 @@ def fit_from_request(request: Mapping[str, Any]) -> Mapping[str, Any]:
         raise T5BodyRouteError("A technique request must be a mapping.")
     unknown = sorted(set(request) - _REQUEST_KEYS)
     if unknown:
-        raise T5BodyRouteError(
-            "Unsupported T5 request keys: " + ", ".join(unknown)
-        )
+        raise T5BodyRouteError("Unsupported T5 request keys: " + ", ".join(unknown))
     missing = sorted(set(_describe()["required_request_keys"]) - set(request))
     if missing:
         raise T5BodyRouteError("Missing T5 request keys: " + ", ".join(missing))
@@ -1994,9 +2660,7 @@ def _cell_heldout_rows(request: Any, spec: Any, parent: Any, blocks: int) -> Any
     torch = _torch()
     if int(getattr(request.evidence, "heldout_row_count", 0)) <= 0:
         return None
-    inputs = request.evidence.heldout_rows(spec.input_endpoint).to(
-        dtype=torch.float64
-    )
+    inputs = request.evidence.heldout_rows(spec.input_endpoint).to(dtype=torch.float64)
     if spec.contraction_axis == "input":
         return inputs
     derived = inputs @ parent.transpose(0, 1)
@@ -2054,14 +2718,10 @@ def t5_body_route_technique(request: Any) -> Any:
             kept_width=kept_width,
             block_count=blocks,
             active_k=int(request.knob("active_k", 8)),
-            channel_selection=str(
-                request.knob("channel_selection", "evidence-energy")
-            ),
+            channel_selection=str(request.knob("channel_selection", "evidence-energy")),
             write_solve_sweeps=int(request.knob("write_solve_sweeps", 4)),
             install_coefficients=request.knob("install_coefficients", None),
-            refit_ridge_relative=float(
-                request.knob("refit_ridge_relative", 1e-10)
-            ),
+            refit_ridge_relative=float(request.knob("refit_ridge_relative", 1e-10)),
             heldout_component_rows=heldout,
         )
     except T5BodyRouteError as exc:
@@ -2085,12 +2745,8 @@ def t5_body_route_technique(request: Any) -> Any:
             child_block = fold.child_weight[
                 block * fold.kept_width : (block + 1) * fold.kept_width, :
             ]
-            installed[block * width : (block + 1) * width, :] = (
-                expansion @ child_block
-            )
-        stored = int(fold.child_weight.numel()) + int(
-            fold.read_coefficients.numel()
-        )
+            installed[block * width : (block + 1) * width, :] = expansion @ child_block
+        stored = int(fold.child_weight.numel()) + int(fold.read_coefficients.numel())
 
     solve = dict(fold.solve)
     solve["technique_record_sha256"] = fold.record_sha256
@@ -2139,6 +2795,7 @@ _register_body_route_technique()
 __all__ = [
     "MATRIX_TECHNIQUE_ENTRY_SCHEMA",
     "T5_BODY_ROUTE_RECORD_SCHEMA",
+    "T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA",
     "T5_READ_SOLVE_ALGORITHM",
     "T5_SELECTION_ALGORITHM",
     "T5_TECHNIQUE_ID",
@@ -2147,11 +2804,13 @@ __all__ = [
     "BodyRouteFold",
     "MatrixTechniqueEntry",
     "T5BodyRouteAuthenticationError",
+    "T5BodyRouteSourceWitness",
     "T5BodyRouteConditioningError",
     "T5BodyRouteDisciplineError",
     "T5BodyRouteError",
     "T5BodyRouteEvidenceError",
     "T5BodyRouteGeometryError",
+    "build_t5_body_route_source_witness",
     "fit_body_component_routes",
     "fit_from_request",
     "matrix_technique_registry_entry",
@@ -2159,6 +2818,8 @@ __all__ = [
     "resolve_kept_width",
     "select_kept_channels",
     "sparse_feature_fold_map_from_body_route",
+    "t5_tensor_sha256",
     "t5_body_route_technique",
     "verify_sealed_body_route_record",
+    "verify_t5_body_route_source_witness",
 ]

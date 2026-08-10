@@ -30,12 +30,14 @@ from neural_forge.hf_feature_fold import FeatureFoldError  # noqa: E402
 from neural_forge.matrix_technique_body_routes import (  # noqa: E402
     MATRIX_TECHNIQUE_ENTRY_SCHEMA,
     T5_BODY_ROUTE_RECORD_SCHEMA,
+    T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA,
     T5BodyRouteConditioningError,
     T5BodyRouteDisciplineError,
     T5BodyRouteError,
     T5BodyRouteEvidenceError,
     T5BodyRouteGeometryError,
     T5BodyRouteAuthenticationError,
+    build_t5_body_route_source_witness,
     fit_body_component_routes,
     fit_from_request,
     matrix_technique_registry_entry,
@@ -43,7 +45,9 @@ from neural_forge.matrix_technique_body_routes import (  # noqa: E402
     resolve_kept_width,
     select_kept_channels,
     sparse_feature_fold_map_from_body_route,
+    t5_tensor_sha256,
     verify_sealed_body_route_record,
+    verify_t5_body_route_source_witness,
 )
 
 
@@ -169,6 +173,43 @@ def _reseal_adapter_fixture(fold, **changes):
     return replace(fold, record=MappingProxyType(record), **changes)
 
 
+_SOURCE_BINDING = {
+    "parameter_path": "model.layers.5.feed_forward.w2.weight",
+    "graph_fingerprint": "a" * 64,
+    "parent_state_fingerprint": "b" * 64,
+    "component_id": "C13",
+    "layer_index": 5,
+    "site": "L05",
+    "role": "writer",
+    "evidence_cache_sha256": "c" * 64,
+    "evidence_selection_sha256": "d" * 64,
+    "evidence_endpoint": "L05.mlp_down.input",
+    "coefficient_set": "write",
+}
+
+
+def _source_witness_fixture():
+    parent = _normal(60, 7, 12)
+    rows, heldout = _captured_split(61, 80, 24, 12, 6)
+    fold = fit_body_component_routes(
+        parent_weight=parent,
+        component_rows=rows,
+        heldout_component_rows=heldout,
+        component="C13",
+        level="M4",
+        site="L05",
+        active_k=3,
+    )
+    witness = build_t5_body_route_source_witness(
+        fold,
+        parent_weight=parent,
+        component_rows=rows,
+        heldout_component_rows=heldout,
+        **_SOURCE_BINDING,
+    )
+    return parent, rows, heldout, fold, witness
+
+
 # ---------------------------------------------------------------------------
 # Level and component algebra
 # ---------------------------------------------------------------------------
@@ -186,9 +227,7 @@ def test_levels_match_the_design_width_table():
 def test_x4_refuses_without_an_option_bank_width():
     with pytest.raises(T5BodyRouteGeometryError, match="option bank"):
         resolve_kept_width(level="X4", component_width=1024)
-    assert (
-        resolve_kept_width(level="X4", component_width=1024, kept_width=256) == 256
-    )
+    assert resolve_kept_width(level="X4", component_width=1024, kept_width=256) == 256
 
 
 def test_component_roles_follow_the_campaign_table():
@@ -288,8 +327,9 @@ def test_read_and_write_coefficients_share_supports_and_differ_when_coupled():
     assert int(fold.support_offsets[-1]) == int(fold.read_coefficients.numel())
     assert fold.solve["write_solve"]["coupled"] is True
     assert fold.solve["write_solve"]["objective_improved"] is True
-    assert fold.solve["write_solve"]["final_objective"] < (
-        fold.solve["write_solve"]["initial_objective"]
+    assert (
+        fold.solve["write_solve"]["final_objective"]
+        < (fold.solve["write_solve"]["initial_objective"])
     )
     assert not torch.allclose(fold.read_coefficients, fold.write_coefficients)
     assert fold.installed_coefficients == "write"
@@ -351,9 +391,9 @@ def test_routes_beat_plain_truncation_on_captured_shaped_evidence():
         heldout_component_rows=held,
     )
     kept = fold.kept_channel_ids
-    truncated = held.index_select(1, kept) @ weight.index_select(
-        1, kept
-    ).transpose(0, 1)
+    truncated = held.index_select(1, kept) @ weight.index_select(1, kept).transpose(
+        0, 1
+    )
     reference = held @ weight.transpose(0, 1)
     truncation_error = float(
         torch.linalg.matrix_norm(truncated - reference, ord="fro").item()
@@ -417,6 +457,273 @@ def test_reader_block_count_shares_one_route_across_projection_blocks():
         )
 
 
+def test_public_t5_tensor_digest_is_the_record_digest_dialect():
+    tensor = _normal(58, 3, 5)
+    assert t5_tensor_sha256(tensor) == body_routes._tensor_sha256(tensor)
+
+
+def test_t5_source_witness_api_is_publicly_exported():
+    assert {
+        "T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA",
+        "T5BodyRouteSourceWitness",
+        "build_t5_body_route_source_witness",
+        "t5_tensor_sha256",
+        "verify_t5_body_route_source_witness",
+    }.issubset(body_routes.__all__)
+
+
+def test_writer_source_witness_rederives_and_reauthenticates_live_sources():
+    parent, rows, heldout, fold, witness = _source_witness_fixture()
+    assert witness.record["schema"] == T5_BODY_ROUTE_SOURCE_WITNESS_SCHEMA
+    assert witness.body_route_record_sha256 == fold.record_sha256
+    assert witness.report["parent_weight_sha256"] == fold.record["parent_weight_sha256"]
+    assert (
+        witness.report["component_rows_sha256"] == fold.record["component_rows_sha256"]
+    )
+    assert (
+        witness.report["selected_child_weight_sha256"]
+        == fold.record["child_weight_sha256"]
+    )
+    assert (
+        witness.report["selected_expansion_route_sha256"]
+        == fold.record["expansion_route_sha256"]
+    )
+    assert witness.report["recomputed_calibration"] == dict(fold.calibration)
+    assert witness.report["authority"] == {
+        "live_source_tensor_identity": True,
+        "writer_tensor_algebra": True,
+        "fit_and_heldout_metrics": True,
+        "solver_origin": "external-artifact-bound-not-attested",
+        "support_selection_optimality": False,
+    }
+
+    authenticated = verify_t5_body_route_source_witness(
+        witness,
+        fold,
+        parent_weight=parent,
+        component_rows=rows,
+        heldout_component_rows=heldout,
+        **_SOURCE_BINDING,
+    )
+    assert authenticated.witness_sha256 == witness.witness_sha256
+    assert authenticated.parent_weight.data_ptr() != witness.parent_weight.data_ptr()
+    assert authenticated.component_rows.data_ptr() != witness.component_rows.data_ptr()
+
+
+def test_writer_source_witness_rejects_same_shape_other_parent_and_rows():
+    parent, rows, heldout, fold, _ = _source_witness_fixture()
+    with pytest.raises(T5BodyRouteAuthenticationError, match="parent_weight"):
+        build_t5_body_route_source_witness(
+            fold,
+            parent_weight=_normal(62, *parent.shape),
+            component_rows=rows,
+            heldout_component_rows=heldout,
+            **_SOURCE_BINDING,
+        )
+    with pytest.raises(T5BodyRouteAuthenticationError, match="component_rows"):
+        build_t5_body_route_source_witness(
+            fold,
+            parent_weight=parent,
+            component_rows=_normal(63, *rows.shape),
+            heldout_component_rows=heldout,
+            **_SOURCE_BINDING,
+        )
+
+
+def test_writer_source_witness_rejects_genuine_fold_from_another_source():
+    parent, rows, heldout, _, witness = _source_witness_fixture()
+    other_parent = _normal(64, *parent.shape)
+    other_rows, other_heldout = _captured_split(65, 80, 24, 12, 6)
+    other_fold = fit_body_component_routes(
+        parent_weight=other_parent,
+        component_rows=other_rows,
+        heldout_component_rows=other_heldout,
+        component="C13",
+        level="M4",
+        site="L05",
+        active_k=3,
+    )
+    with pytest.raises(T5BodyRouteAuthenticationError, match="different body-route"):
+        verify_t5_body_route_source_witness(
+            witness,
+            other_fold,
+            parent_weight=other_parent,
+            component_rows=other_rows,
+            heldout_component_rows=other_heldout,
+            **_SOURCE_BINDING,
+        )
+
+
+def test_writer_source_witness_rejects_coherently_resealed_zero_route():
+    parent, rows, heldout, fold, _ = _source_witness_fixture()
+    zero_read = torch.zeros_like(fold.read_coefficients)
+    zero_write = torch.zeros_like(fold.write_coefficients)
+    child = parent.index_select(1, fold.kept_channel_ids)
+    expansion = torch.zeros_like(fold.expansion_route)
+    expansion[
+        torch.arange(fold.kept_width, dtype=torch.long),
+        fold.kept_channel_ids,
+    ] = 1
+    record = dict(fold.record)
+    record.update(
+        {
+            "read_coefficients_sha256": t5_tensor_sha256(zero_read),
+            "write_coefficients_sha256": t5_tensor_sha256(zero_write),
+            "child_weight_sha256": t5_tensor_sha256(child),
+            "expansion_route_sha256": t5_tensor_sha256(expansion),
+        }
+    )
+    record.pop("record_sha256")
+    record["record_sha256"] = canonical_sha256(record)
+    tampered = replace(
+        fold,
+        read_coefficients=zero_read,
+        write_coefficients=zero_write,
+        child_weight=child,
+        expansion_route=expansion,
+        record=MappingProxyType(record),
+    )
+    with pytest.raises(T5BodyRouteAuthenticationError, match="calibration is stale"):
+        build_t5_body_route_source_witness(
+            tampered,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=heldout,
+            **_SOURCE_BINDING,
+        )
+
+
+def test_writer_source_witness_requires_exact_heldout_source():
+    parent, rows, heldout, fold, witness = _source_witness_fixture()
+    with pytest.raises(T5BodyRouteAuthenticationError, match="has no heldout"):
+        build_t5_body_route_source_witness(
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            **_SOURCE_BINDING,
+        )
+    changed = heldout.clone()
+    changed[0, 0] += 1.0
+    with pytest.raises(T5BodyRouteAuthenticationError, match="calibration is stale"):
+        build_t5_body_route_source_witness(
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=changed,
+            **_SOURCE_BINDING,
+        )
+    with pytest.raises(T5BodyRouteAuthenticationError, match="differs from"):
+        verify_t5_body_route_source_witness(
+            witness,
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=changed,
+            **_SOURCE_BINDING,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("parameter_path", "model.layers.5.feed_forward.other.weight"),
+        ("graph_fingerprint", "e" * 64),
+        ("parent_state_fingerprint", "f" * 64),
+        ("component_id", "C05"),
+        ("evidence_cache_sha256", "1" * 64),
+        ("evidence_selection_sha256", "2" * 64),
+        ("evidence_endpoint", "L05.other.input"),
+        ("coefficient_set", "read"),
+    ),
+)
+def test_writer_source_witness_binds_every_external_authority(field, value):
+    parent, rows, heldout, fold, witness = _source_witness_fixture()
+    binding = {**_SOURCE_BINDING, field: value}
+    with pytest.raises(T5BodyRouteAuthenticationError, match=field):
+        verify_t5_body_route_source_witness(
+            witness,
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=heldout,
+            **binding,
+        )
+
+
+def test_writer_source_witness_binds_layer_site_and_role():
+    parent, rows, heldout, fold, witness = _source_witness_fixture()
+    wrong_layer = {**_SOURCE_BINDING, "layer_index": 6, "site": "L06"}
+    with pytest.raises(T5BodyRouteAuthenticationError, match="layer_index"):
+        verify_t5_body_route_source_witness(
+            witness,
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=heldout,
+            **wrong_layer,
+        )
+    wrong_site = {**_SOURCE_BINDING, "site": "L06"}
+    with pytest.raises(T5BodyRouteAuthenticationError, match="exact layer site"):
+        verify_t5_body_route_source_witness(
+            witness,
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=heldout,
+            **wrong_site,
+        )
+    wrong_role = {**_SOURCE_BINDING, "role": "reader"}
+    with pytest.raises(T5BodyRouteAuthenticationError, match="writer routes only"):
+        verify_t5_body_route_source_witness(
+            witness,
+            fold,
+            parent_weight=parent,
+            component_rows=rows,
+            heldout_component_rows=heldout,
+            **wrong_role,
+        )
+
+
+def test_writer_source_witness_clones_sources_before_hash_callbacks(monkeypatch):
+    parent, rows, heldout, fold, baseline = _source_witness_fixture()
+    raced_parent = parent.clone()
+    raced_rows = rows.clone()
+    raced_heldout = heldout.clone()
+    digest = body_routes.t5_tensor_sha256
+    calls = 0
+
+    def digest_then_mutate_sources(value):
+        nonlocal calls
+        result = digest(value)
+        calls += 1
+        if calls == 1:
+            raced_parent.zero_()
+            raced_rows.zero_()
+            raced_heldout.zero_()
+        return result
+
+    monkeypatch.setattr(
+        body_routes,
+        "t5_tensor_sha256",
+        digest_then_mutate_sources,
+    )
+    raced = build_t5_body_route_source_witness(
+        fold,
+        parent_weight=raced_parent,
+        component_rows=raced_rows,
+        heldout_component_rows=raced_heldout,
+        **_SOURCE_BINDING,
+    )
+    assert calls > 1
+    assert not bool(raced_parent.any().item())
+    assert not bool(raced_rows.any().item())
+    assert not bool(raced_heldout.any().item())
+    assert raced.witness_sha256 == baseline.witness_sha256
+    assert torch.equal(raced.parent_weight, parent)
+    assert torch.equal(raced.component_rows, rows)
+    assert torch.equal(raced.heldout_component_rows, heldout)
+
+
 @pytest.mark.parametrize(
     ("role", "coefficient_set"),
     (("reader", "read"), ("writer", "write")),
@@ -449,9 +756,9 @@ def test_sparse_feature_adapter_has_exact_reader_and_writer_weight_parity(
         "target_width": fold.kept_width,
     }
     assert feature_map.admission_binding_sha256 == canonical_sha256(expected_binding)
-    assert feature_map.verify(expected_map_sha256=feature_map.map_sha256).map_sha256 == (
-        feature_map.map_sha256
-    )
+    assert feature_map.verify(
+        expected_map_sha256=feature_map.map_sha256
+    ).map_sha256 == (feature_map.map_sha256)
     if role == "reader":
         compiled = feature_map.fold_producer_weight(weight)
     else:
