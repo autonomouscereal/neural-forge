@@ -309,12 +309,30 @@ class TraceSiteEvidence:
 def _flatten_rows(value: torch.Tensor) -> torch.Tensor:
     """Flatten a sealed tensor to ``(rows, width)``.
 
-    Attention endpoints are captured as ``(batch, tokens, heads, head_dim)``;
-    the projection that produced them wrote ``heads * head_dim`` contiguous
-    channels, so the head axis folds into the width before anything else.
+    Every 3-D endpoint is ``(batch, tokens, width)`` and folds trivially.  The
+    per-head attention endpoints -- the only 4-D tensors ``_LAYOUT`` can ask for
+    (``attention.q_linear``, ``attention.k_linear``, ``attention.v``,
+    ``attention.context``) -- are captured by the frozen collector in the axis
+    order the attention op itself works in, ``(batch, heads, tokens, head_dim)``,
+    which is *not* what this used to assume.  A row has to mean the same token in
+    every endpoint, because a cell's calibration arm multiplies one endpoint's
+    rows by a parent weight and compares them to another endpoint's rows
+    positionally, so the head axis is transposed back behind the token axis
+    before it folds into the width.  That reproduces the ``heads * head_dim``
+    contiguous channel order the projection actually wrote.
+
+    Folding the last two axes instead -- the previous behaviour -- flattens a
+    prefill batch ``(1, 16, 256, 64)`` to ``(16, 16384)`` and a decode step
+    ``(1, 16, 1, 64)`` to ``(16, 64)``, so the per-endpoint concatenation across
+    phases raises before any number is computed.  Loud, but the near miss was
+    not: had the phases agreed in width, the rows would have been head-major
+    spans of concatenated tokens, silently misaligned against every 3-D endpoint
+    and against the parent weight the calibration arm multiplies by.
     """
 
     tensor = value.detach().to(device="cpu", dtype=torch.float64)
+    if tensor.ndim == 4:
+        tensor = tensor.permute(0, 2, 1, 3)
     if tensor.ndim >= 4:
         tensor = tensor.reshape(*tensor.shape[:-2], -1)
     return tensor.reshape(-1, int(tensor.shape[-1])).contiguous()

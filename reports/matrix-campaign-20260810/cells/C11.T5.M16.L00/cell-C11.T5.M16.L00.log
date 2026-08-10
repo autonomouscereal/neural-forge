@@ -1,0 +1,13 @@
+[2026-08-10T18:07:30.644+00:00] stage materialize at 0.2s
+[2026-08-10T18:07:41.959+00:00] stage evidence at 11.5s
+[2026-08-10T18:07:41.978+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T18:08:05.813+00:00] evidence: split authority evidence-manifest.json (18 fit / 6 heldout batches, 219a63c43df1)
+[2026-08-10T18:08:07.963+00:00] evidence: wrote authenticated cache to /home/cereal/nf-mxe/evidence-cache/L00-C11
+[2026-08-10T18:08:08.004+00:00] stage calibration at 37.5s
+[2026-08-10T18:08:08.076+00:00] calibration: copy_exact reproduction relL2=0.0016635042461871855 (tolerance 0.005)
+[2026-08-10T18:08:08.076+00:00] stage solve at 37.6s
+[2026-08-10T18:08:11.560+00:00] T5 C11.T5.M16.L00: role=reader kept=2400 dropped=160 blocks=1 k=8 rows=4751
+[2026-08-10T18:08:11.606+00:00] stage boundary at 41.1s
+[2026-08-10T18:08:11.852+00:00] stage behavior at 41.4s
+[2026-08-10T18:08:27.115+00:00] stage seal at 56.6s
+[2026-08-10T18:08:27.213+00:00] sealed C11.T5.M16.L00 status=fail first_divergent=composition receipt=dd5be1b352fe in 56.6s

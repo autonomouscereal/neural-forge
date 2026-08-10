@@ -1,0 +1,9 @@
+[2026-08-10T18:09:33.639+00:00] stage materialize at 0.2s
+[2026-08-10T18:09:44.166+00:00] stage evidence at 10.7s
+[2026-08-10T18:09:44.185+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T18:10:06.983+00:00] evidence: split authority evidence-manifest.json (18 fit / 6 heldout batches, 219a63c43df1)
+[2026-08-10T18:10:08.955+00:00] evidence: wrote authenticated cache to /home/cereal/nf-mxe/evidence-cache/L00-C03
+[2026-08-10T18:10:08.982+00:00] stage calibration at 35.5s
+[2026-08-10T18:10:09.039+00:00] CELL FAILED RuntimeError: The size of tensor a (3072) must match the size of tensor b (1024) at non-singleton dimension 1
+[2026-08-10T18:10:09.039+00:00] stage seal at 35.6s
+[2026-08-10T18:10:09.142+00:00] sealed C03.T5.M16.L00 status=infra first_divergent=infra receipt=2907d224b20f in 35.6s

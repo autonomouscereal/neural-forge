@@ -1,0 +1,11 @@
+[2026-08-10T18:06:53.701+00:00] stage materialize at 0.2s
+[2026-08-10T18:07:04.322+00:00] stage evidence at 10.8s
+[2026-08-10T18:07:05.375+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L00-C13
+[2026-08-10T18:07:05.376+00:00] stage calibration at 11.9s
+[2026-08-10T18:07:05.410+00:00] calibration: copy_exact reproduction relL2=0.0016604448034214672 (tolerance 0.005)
+[2026-08-10T18:07:05.411+00:00] stage solve at 11.9s
+[2026-08-10T18:07:08.798+00:00] T8 C13.T8.M16.L00: axis=input rank=1024 gram=0.00709 cos=0.99991 truncation=False
+[2026-08-10T18:07:08.808+00:00] stage boundary at 15.3s
+[2026-08-10T18:07:08.912+00:00] stage behavior at 15.4s
+[2026-08-10T18:07:24.247+00:00] stage seal at 30.7s
+[2026-08-10T18:07:24.349+00:00] sealed C13.T8.M16.L00 status=fail first_divergent=composition receipt=06dac323e512 in 30.7s

@@ -105,14 +105,70 @@ def test_prompt_set_seal_mismatch_is_fatal(tmp_path):
 
 
 def test_attention_endpoints_flatten_heads_into_the_projection_width():
-    # The trace cache stores q/k/v as (batch, tokens, heads, head_dim); the
-    # projection that produced them wrote heads*head_dim contiguous channels, so
-    # a cell scoring attn_v against its own write has to see 8*4, not 8 and 4.
-    value = torch.arange(2 * 3 * 8 * 4, dtype=torch.float32).reshape(2, 3, 8, 4)
+    # The trace cache stores q/k/v/context as (batch, HEADS, tokens, head_dim) --
+    # the axis order the attention op works in -- and the projection that
+    # produced them wrote heads*head_dim contiguous channels.  So a cell scoring
+    # attn_v against its own write has to see 8*4 as the width, one row per
+    # token, not one row per head.
+    value = torch.arange(2 * 8 * 3 * 4, dtype=torch.float32).reshape(2, 8, 3, 4)
     rows = runner._flatten_rows(value)
     assert tuple(rows.shape) == (6, 32)
     assert rows.dtype is torch.float64
-    assert torch.equal(rows[0], value[0, 0].reshape(-1).to(torch.float64))
+    # row 0 is batch 0 / token 0, its 32 channels head-major.
+    assert torch.equal(rows[0], value[0, :, 0, :].reshape(-1).to(torch.float64))
+
+
+def test_attention_flatten_inverts_the_projection_that_wrote_the_endpoint():
+    # The layout is not asserted from a convention, it is derived from the
+    # operation: HF writes q_proj(x).view(B, T, H, D).transpose(1, 2), and the
+    # calibration arm every attention cell must pass computes
+    # rows(operator.input) @ q_proj.T and compares it *positionally* to
+    # rows(attention.q_linear).  Those two have to agree exactly.
+    torch.manual_seed(0)
+    batch, tokens, heads, head_dim, hidden = 2, 5, 4, 3, 7
+    inputs = torch.randn((batch, tokens, hidden), dtype=torch.float64)
+    weight = torch.randn((heads * head_dim, hidden), dtype=torch.float64)
+    projected = inputs @ weight.T
+    sealed = (
+        projected.view(batch, tokens, heads, head_dim).transpose(1, 2).contiguous()
+    )
+    assert tuple(sealed.shape) == (batch, heads, tokens, head_dim)
+    # This is the calibration arm, verbatim: input rows times the parent weight,
+    # against the sealed write endpoint's rows.
+    reproduced = runner._flatten_rows(inputs) @ weight.T
+    assert torch.allclose(runner._flatten_rows(sealed), reproduced, atol=1e-12)
+
+
+def test_attention_phases_concatenate_at_the_real_capture_shapes():
+    # The exact shapes the fresh matrix-campaign capture holds at an attention
+    # site: one 256-token prefill and eight one-token forced decode steps.  The
+    # previous fold made these (16, 16384) and (16, 64) and the per-endpoint
+    # concatenation raised before any number was computed.
+    prefill = torch.zeros((1, 16, 256, 64), dtype=torch.bfloat16)
+    decode = torch.zeros((1, 16, 1, 64), dtype=torch.bfloat16)
+    rows = [runner._flatten_rows(prefill)] + [
+        runner._flatten_rows(decode) for _ in range(8)
+    ]
+    assert tuple(rows[0].shape) == (256, 1024)
+    assert tuple(rows[1].shape) == (1, 1024)
+    # 264 rows per batch is what the capture manifest declares (256 + 8).
+    assert tuple(torch.cat(rows, dim=0).shape) == (264, 1024)
+
+
+def test_grouped_query_endpoints_keep_their_own_narrower_width():
+    # k_linear/v carry key_value_heads, not query_heads, so the flattened width
+    # is 8*64 and a cell contracting attn_v's output axis contracts 512.
+    keys = torch.zeros((1, 8, 256, 64), dtype=torch.bfloat16)
+    assert tuple(runner._flatten_rows(keys).shape) == (256, 512)
+
+
+def test_three_dimensional_endpoints_are_untouched_by_the_head_transpose():
+    # Every conv/mlp/residual endpoint is 3-D, so the fix cannot have moved a
+    # single number in any cell that does not read a per-head endpoint.
+    value = torch.arange(2 * 3 * 5, dtype=torch.float32).reshape(2, 3, 5)
+    rows = runner._flatten_rows(value)
+    assert tuple(rows.shape) == (6, 5)
+    assert torch.equal(rows, value.reshape(6, 5).to(torch.float64))
 
 
 def test_site_evidence_keeps_endpoints_row_aligned():

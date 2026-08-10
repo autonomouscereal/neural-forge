@@ -1,0 +1,7 @@
+{
+  "_purpose": "Wave-1 cells 27 and 28, the T4 factored-writer cells, in the rank-knob form NOTES-MX-B 4.3 requires.  The design writes these cells at level M16, but a factored writer only costs less than a dense one below in*out/(in+out): maximum_shrinking_rank(1024, 1024) is 511, so M16's rank 960 on a 1024x1024 writer would STORE 1,966,080 against a dense 1,048,576 and the kernel fails closed.  The usable T4 regime on a square writer is a deep explicit rank, driven by the writer_rank knob.",
+  "_rank_choice_note": "31 is the rank of the goal document's own feasibility witness for the L13 short-conv writer: 63,488 stored against 1,048,576 dense, ratio 0.0605.  Cell 28 (attn_o at L02, the same 1024x1024 writer geometry at a different component and site) runs at the same rank so the pair differs only in where the writer sits, not in how hard the contraction is.  The M16 in the cell id is therefore a NOMINAL level label; the operative contraction is writer_rank and the receipt seals it as writer_rank / requested_writer_rank / maximum_shrinking_rank.",
+  "calibration_tolerance": 0.005,
+  "writer_rank": 31,
+  "t4_allow_parameter_increase": false
+}

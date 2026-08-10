@@ -1,0 +1,11 @@
+[2026-08-10T18:10:56.171+00:00] stage materialize at 0.2s
+[2026-08-10T18:11:06.698+00:00] stage evidence at 10.7s
+[2026-08-10T18:11:06.718+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T18:11:29.573+00:00] evidence: split authority evidence-manifest.json (18 fit / 6 heldout batches, 219a63c43df1)
+[2026-08-10T18:11:31.058+00:00] evidence: wrote authenticated cache to /home/cereal/nf-mxe/evidence-cache/L00-C14
+[2026-08-10T18:11:31.086+00:00] stage calibration at 35.1s
+/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-dee1c952/experiments/run_lfm2_matrix_cell.py:1634: UserWarning: The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4480.)
+  reproduced = held_input @ parent_weight.T
+[2026-08-10T18:11:31.090+00:00] CELL FAILED RuntimeError: The size of tensor a (1584) must match the size of tensor b (1024) at non-singleton dimension 1
+[2026-08-10T18:11:31.090+00:00] stage seal at 35.1s
+[2026-08-10T18:11:31.186+00:00] sealed C14.T1.NA.L00 status=infra first_divergent=infra receipt=66334299014d in 35.1s

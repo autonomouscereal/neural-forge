@@ -1,0 +1,5 @@
+{
+  "_purpose": "Wave-1 cells 4-30 (matrix campaign design 4.1, minus the done rows 0a/0b/1-3).  One shared knob file so that every cell in the batch runs at NOTES-MX-B's registered technique defaults and any later knob change is a measured response to a receipt rather than untracked tuning.",
+  "_calibration_tolerance_note": "Pre-registered in NOTES-MX-D 4 from measurement, not chosen, and carried forward unchanged: the campaign's evidence base is captured with a bfloat16 parent (identity 96a6779d), so the sealed activation rows carry ~2^-9 relative quantization and the runner's copy_exact calibration arm cannot beat that floor.  Measured on the C05 pilot at 0.001661 / 0.001650 / 0.001894 and reproduced by the real cells at 0.001657 / 0.001681 / 0.001895.  5e-3 clears the measured floor by ~2.6x and is still three decades below anything a genuine row-selection or endpoint error produces.  Applied uniformly to every component in this batch; each cell's own measured relL2 is sealed, so a component whose floor is materially different is visible in its own receipt rather than hidden by the tolerance.",
+  "calibration_tolerance": 0.005
+}

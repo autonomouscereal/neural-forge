@@ -1,0 +1,13 @@
+[2026-08-10T18:27:42.867+00:00] stage materialize at 0.2s
+[2026-08-10T18:27:53.081+00:00] stage evidence at 10.4s
+[2026-08-10T18:27:53.101+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T18:28:15.859+00:00] evidence: split authority evidence-manifest.json (18 fit / 6 heldout batches, 219a63c43df1)
+[2026-08-10T18:28:17.524+00:00] evidence: wrote authenticated cache to /home/cereal/nf-mxe/evidence-cache/L02-C07
+[2026-08-10T18:28:17.543+00:00] stage calibration at 34.8s
+[2026-08-10T18:28:17.558+00:00] calibration: copy_exact reproduction relL2=0.00209419469496765 (tolerance 0.005)
+[2026-08-10T18:28:17.558+00:00] stage solve at 34.8s
+[2026-08-10T18:28:17.558+00:00] T1 C07.T1.M16.L02: axis=output rank=480 rows=4751 in=1024 out=512
+[2026-08-10T18:28:17.815+00:00] stage boundary at 35.1s
+[2026-08-10T18:28:17.859+00:00] stage behavior at 35.2s
+[2026-08-10T18:28:33.051+00:00] stage seal at 50.3s
+[2026-08-10T18:28:33.144+00:00] sealed C07.T1.M16.L02 status=pending-review first_divergent=None receipt=1b7e75618682 in 50.3s
