@@ -1,14 +1,14 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-10T19:47:36+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-10T20:58:18+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**59 cells sealed** (126 ledger rows including re-runs); newest seal 2026-08-10T19:47:15.145+00:00.
+**88 cells sealed** (187 ledger rows including re-runs); newest seal 2026-08-10T20:57:37.430+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
-| `pass` | 11 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 46 | crossed a chain threshold; see first_divergent_metric |
-| `infra` | 2 | calibration refused the cell -- void, not evidence |
+| `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
+| `fail` | 69 | crossed a chain threshold; see first_divergent_metric |
+| `infra` | 1 | calibration refused the cell -- void, not evidence |
 
 ## 1. The matrix
 
@@ -18,13 +18,13 @@ Rows are components, columns are techniques.  A position shows the deepest level
 |---|---|---|---|---|---|---|---|---|---|
 | C01 token_interface_in | . | . | . | . | X4:free | . | . | . | . |
 | C03 conv_in_proj | . | . | . | . | M16:comp | . | . | . | . |
-| C04 conv_kernel | M16:infra | . | . | . | . | . | . | . | . |
-| C05 conv_out_proj | M16:comp | M16:comp | M16:comp | M16:solve | M16:comp | . | . | M16:comp | . |
-| C06 attn_q | PASS@M8 | . | . | . | . | . | PASS@M8 | . | . |
+| C04 conv_kernel | M16:comp | . | . | . | . | . | . | . | . |
+| C05 conv_out_proj | M16:comp | M16:comp | M16:comp | M16:solve | M16:comp | . | . | M16:comp | M8:comp |
+| C06 attn_q | PASS@M8 | . | . | . | M16:free | . | PASS@M8 | . | . |
 | C07 attn_k | PASS@M16 | . | . | . | . | . | . | . | . |
-| C08 attn_v | M16:free | . | . | . | M16:comp | . | . | . | . |
-| C09 attn_o | M16:free | M16:free | . | M16:solve | M16:comp | . | . | M16:comp | . |
-| C10 attn_per_head | M16:infra | . | . | . | . | . | . | . | . |
+| C08 attn_v | M16:free | . | M16:infra | . | M16:comp | . | . | . | . |
+| C09 attn_o | M16:free | M16:free | M16:free | M16:solve | M16:comp | . | . | M16:comp | . |
+| C10 attn_per_head | M16:comp | . | . | . | . | . | . | . | . |
 | C11 mlp_gate | . | . | . | . | M16:comp | . | . | . | . |
 | C12 mlp_up | . | . | . | . | M16:comp | . | . | . | . |
 | C13 mlp_down | M16:comp | M16:comp | M16:comp | . | M16:comp | . | . | M16:comp | . |
@@ -45,29 +45,33 @@ Rows are components, columns are techniques.  A position shows the deepest level
 |---|---|---|---|---|---|---|---|
 | C01 | T5 | . | . | . | . | 0/1 | fails at free-run |
 | C03 | T5 | 0/1 | . | . | . | . | fails at composition |
-| C04 | T1 | 0/1 | . | . | . | . | void (infra) -- no evidence |
-| C05 | T1 | 0/3 | 0/1 | . | 0/1 | . | fails at composition |
+| C04 | T1 | 0/1 | . | . | 0/1 | . | fails at composition |
+| C05 | T1 | 0/3 | 0/1 | . | 0/1 | 0/1 | fails at composition |
 | C05 | T2 | 0/1 | . | . | . | . | fails at composition |
-| C05 | T3 | 0/1 | . | . | . | . | fails at composition |
+| C05 | T3 | 0/3 | 0/1 | 0/1 | 0/1 | 0/1 | fails at composition |
 | C05 | T4 | 0/1 | . | . | . | . | fails at local-solve |
 | C05 | T5 | 0/3 | 0/1 | . | . | . | fails at composition |
 | C05 | T8 | 0/1 | . | . | . | . | fails at composition |
-| C06 | T1 | 3/3 | 1/1 | 0/1 | 0/1 | . | works to M8 |
+| C05 | T9 | . | 0/1 | 0/1 | . | . | fails at composition |
+| C06 | T1 | 3/3 | 3/3 | 0/1 | 0/1 | 1/3 | works to M8 |
+| C06 | T5 | 1/2 | . | . | . | . | fails at free-run |
 | C06 | T7 | 1/3 | 1/1 | 0/1 | . | . | non-monotone (not working) |
-| C07 | T1 | 3/3 | 0/1 | 0/1 | 0/1 | . | works to M16 |
+| C07 | T1 | 3/3 | 2/3 | 0/1 | 0/1 | 1/2 | works to M16 |
 | C08 | T1 | 0/1 | 0/1 | 0/1 | . | . | fails at composition |
+| C08 | T3 | 0/1 | . | . | . | . | void (infra) -- no evidence |
 | C08 | T5 | 0/1 | . | . | . | . | fails at composition |
 | C09 | T1 | 0/2 | 0/1 | 0/1 | . | . | fails at composition |
 | C09 | T2 | 0/1 | . | . | . | . | fails at free-run |
+| C09 | T3 | 0/1 | 0/1 | . | . | 0/1 | fails at composition |
 | C09 | T4 | 0/1 | . | . | . | . | fails at local-solve |
 | C09 | T5 | 0/1 | . | . | . | . | fails at composition |
 | C09 | T8 | 0/1 | . | . | . | . | fails at composition |
-| C10 | T1 | 0/1 | . | . | . | . | void (infra) -- no evidence |
+| C10 | T1 | 0/1 | 0/1 | . | . | . | fails at composition |
 | C11 | T5 | 0/1 | . | . | . | . | fails at composition |
 | C12 | T5 | 0/1 | . | . | . | . | fails at composition |
 | C13 | T1 | 0/3 | . | . | . | . | fails at composition |
 | C13 | T2 | 0/1 | . | . | . | . | fails at composition |
-| C13 | T3 | 0/1 | . | . | . | . | fails at composition |
+| C13 | T3 | 0/2 | 0/1 | 0/1 | . | . | fails at composition |
 | C13 | T5 | 0/3 | . | . | . | . | fails at composition |
 | C13 | T8 | 0/1 | . | . | . | . | fails at composition |
 | C14 | T1 | . | . | . | . | . | awaiting review |
@@ -78,10 +82,11 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 2 | 4% |
-| `local-solve` | 3 | 6% |
-| `composition` | 35 | 73% |
-| `free-run` | 8 | 17% |
+| `infra` | 1 | 1% |
+| `local-solve` | 3 | 4% |
+| `macrocell-band` | 1 | 1% |
+| `composition` | 53 | 76% |
+| `free-run` | 12 | 17% |
 
 ## 4. Band-versus-behavior agreement
 
@@ -89,10 +94,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 11 | 43 |
-| out of band | 0 | 0 |
+| in band (<= 0.4) | 18 | 65 |
+| out of band | 0 | 1 |
 
-Agreement 11/54 (20%).
+Agreement 19/84 (23%).
 
 ## 4b. Storage honesty
 
@@ -101,37 +106,67 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | cell | technique | level | stored | dense parent | stored/dense |
 |---|---|---|---:|---:|---:|
 | `C03.T5.M16.L00` | T5 | M16 | 2949632 | 3145728 | 0.9377 |
+| `C04.T1.M16.L00` | T1 | M16 | 2048 | 3072 | 0.6667 |
+| `C04.T1.M2.L00` | T1 | M2 | 1024 | 3072 | 0.3333 |
 | `C05.T1.M8.L05` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C05.T1.M2.L05` | T1 | M2 | 1048576 | 1048576 | 1.0000 |
+| `C05.T1.X4.L05` | T1 | X4 | 1441792 | 1048576 | 1.3750 |
 | `C05.T2.M16.L05` | T2 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C05.T3.M16.L00` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C05.T3.M16.L05` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C05.T3.M16.L13` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C05.T3.M8.L05` | T3 | M8 | 1835008 | 1048576 | 1.7500 |
+| `C05.T3.M4.L05` | T3 | M4 | 1572864 | 1048576 | 1.5000 |
+| `C05.T3.M2.L05` | T3 | M2 | 1048576 | 1048576 | 1.0000 |
+| `C05.T3.X4.L05` | T3 | X4 | 1441792 | 1048576 | 1.3750 |
 | `C05.T5.M8.L05` | T5 | M8 | 917504 | 1048576 | 0.8750 |
+| `C05.T9.M8.L05` | T9 | M8 | 1835008 | 1048576 | 1.7500 |
+| `C05.T9.M4.L05` | T9 | M4 | 1572864 | 1048576 | 1.5000 |
 | `C06.T1.M16.L08` | T1 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C06.T1.M16.L12` | T1 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C06.T1.M8.L02` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
+| `C06.T1.M8.L08` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
+| `C06.T1.M8.L12` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C06.T1.M4.L02` | T1 | M4 | 1572864 | 1048576 | 1.5000 |
 | `C06.T1.M2.L02` | T1 | M2 | 1048576 | 1048576 | 1.0000 |
+| `C06.T1.X4.L02` | T1 | X4 | 1572864 | 1048576 | 1.5000 |
+| `C06.T1.X4.L08` | T1 | X4 | 1572864 | 1048576 | 1.5000 |
+| `C06.T1.X4.L12` | T1 | X4 | 1572864 | 1048576 | 1.5000 |
+| `C06.T5.M16.L08` | T5 | M16 | 983552 | 1048576 | 0.9380 |
+| `C06.T5.M16.L12` | T5 | M16 | 983552 | 1048576 | 0.9380 |
 | `C06.T7.M16.L12` | T7 | M16 | 1044480 | 1048576 | 0.9961 |
 | `C06.T7.M8.L02` | T7 | M8 | 974848 | 1048576 | 0.9297 |
 | `C06.T7.M4.L02` | T7 | M4 | 835584 | 1048576 | 0.7969 |
 | `C07.T1.M16.L08` | T1 | M16 | 737280 | 524288 | 1.4062 |
 | `C07.T1.M16.L12` | T1 | M16 | 737280 | 524288 | 1.4062 |
 | `C07.T1.M8.L02` | T1 | M8 | 688128 | 524288 | 1.3125 |
+| `C07.T1.M8.L08` | T1 | M8 | 688128 | 524288 | 1.3125 |
+| `C07.T1.M8.L12` | T1 | M8 | 688128 | 524288 | 1.3125 |
 | `C07.T1.M4.L02` | T1 | M4 | 589824 | 524288 | 1.1250 |
 | `C07.T1.M2.L02` | T1 | M2 | 393216 | 524288 | 0.7500 |
+| `C07.T1.X4.L08` | T1 | X4 | 589824 | 524288 | 1.1250 |
+| `C07.T1.X4.L12` | T1 | X4 | 589824 | 524288 | 1.1250 |
 | `C08.T1.M8.L02` | T1 | M8 | 688128 | 524288 | 1.3125 |
 | `C08.T1.M4.L02` | T1 | M4 | 589824 | 524288 | 1.1250 |
 | `C09.T1.M16.L08` | T1 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C09.T1.M8.L02` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C09.T1.M4.L02` | T1 | M4 | 1572864 | 1048576 | 1.5000 |
 | `C09.T2.M16.L02` | T2 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C09.T3.M16.L02` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C09.T3.M8.L02` | T3 | M8 | 1835008 | 1048576 | 1.7500 |
+| `C09.T3.X4.L02` | T3 | X4 | 1572864 | 1048576 | 1.5000 |
+| `C10.T1.M16.L02` | T1 | M16 | 3014656 | 3145728 | 0.9583 |
+| `C10.T1.M8.L02` | T1 | M8 | 2883584 | 3145728 | 0.9167 |
 | `C13.T1.M16.L13` | T1 | M16 | 8601600 | 2621440 | 3.2812 |
 | `C13.T2.M16.L05` | T2 | M16 | 8601600 | 2621440 | 3.2812 |
 | `C13.T3.M16.L05` | T3 | M16 | 8601600 | 2621440 | 3.2812 |
+| `C13.T3.M16.L13` | T3 | M16 | 8601600 | 2621440 | 3.2812 |
+| `C13.T3.M8.L05` | T3 | M8 | 8028160 | 2621440 | 3.0625 |
+| `C13.T3.M4.L05` | T3 | M4 | 6881280 | 2621440 | 2.6250 |
 | `C13.T5.M16.L05` | T5 | M16 | 2457600 | 2621440 | 0.9375 |
 | `C14.T1.NA.L00` | T1 | NA | 1024 | 2048 | 0.5000 |
 
-8 of 30 sealed cells with a storage reading actually contract.
+14 of 60 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -162,16 +197,29 @@ conv_in_proj / sparse_omp_routes / level M16 / site L00 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt cbd74797fe81e3f2: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
-### `C04.T1.M16.L00` -- INFR
+### `C04.T1.M16.L00` -- FAIL
 
-conv_kernel / dense_prior_anchored_ridge / level M16 / site L00 / wave 2
+conv_kernel / dense_prior_anchored_ridge / level M16 / site L00 / wave 3
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `44a438a7` | sm86 | fail | composition | 0.9969 | 0.0752 | 0.0798 | 0.398 | 0.291 | 0.667 | 95.1 | 29.2 | `015b5bf7c9b6` |
+| `44a438a7` | sm86 | fail | composition | 0.9969 | 0.0752 | 0.0798 | 0.398 | 0.291 | 0.667 | 95.1 | 29.2 | `5c50fafd1148` |
 | `2dadae7a` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.3 | `a30591546f77` |
 | `f5c7bf74` | -- | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 34.9 | `6001d2de2582` |
 
-> CellTechniqueError: T1's reference kernel contracts linear maps; C04 has axis 'kernel' and needs its own kernel.
+> decode-smoke review by ClaudeCode-MXG of receipt 5c50fafd1148c061: three whole responses reviewed verbatim, all on task and terminating cleanly.  Recorded semantic drift, not degeneracy: the neighbour note relocates the trailer 'to a nearby park', the same drift wave 2 recorded on C06.T7.M4.L02.  Two FIR taps of three keeps the format and the register.
+
+### `C04.T1.M2.L00` -- FAIL
+
+conv_kernel / dense_prior_anchored_ridge / level M2 / site L00 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `1e78bb36` | sm86 | fail | macrocell-band | 0.9367 | 0.4432 | 0.4829 | 0.113 | 0.082 | 0.333 | 1.0 | 27.3 | `4821af5b606d` |
+| `1e78bb36` | sm86 | fail | macrocell-band | 0.9367 | 0.4432 | 0.4829 | 0.113 | 0.082 | 0.333 | 1.0 | 27.3 | `9f3f6a18b4d3` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 9f3f6a18b4d3e79f: the campaign's second incoherent verdict and its first degenerate-by-emptiness one: the third response is EMPTY -- the child emitted EOS with no content at all for the neighbour-note prompt.  The censoring rule does not apply (termination is eos, not cap), so this is a real failure and not a truncation.  The first response also opens with a stray 'narrative:' header and the second echoes the prompt and then answers a different question (breakfast/lunch/dinner instead of the one-pan order).  One FIR tap of three is past the component's edge, and the cell is the campaign's first macrocell-band failure independently.
 
 ### `C05.T1.M16.L00` -- FAIL
 
@@ -228,6 +276,17 @@ conv_out_proj / dense_prior_anchored_ridge / level M2 / site L05 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt 2a26719259f30feb: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C05.T1.X4.L05` -- FAIL
+
+conv_out_proj / dense_prior_anchored_ridge / level X4 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `b3ca12b0` | sm86 | fail | composition | 0.9740 | 0.0700 | 0.0872 | 0.314 | 0.266 | 1.375 | 2123.9 | 26.7 | `de6c28c9619d` |
+| `b3ca12b0` | sm86 | fail | composition | 0.9740 | 0.0700 | 0.0872 | 0.314 | 0.266 | 1.375 | 2123.9 | 26.7 | `db9acd921fc5` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt db9acd921fc588e1: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
 ### `C05.T2.M16.L05` -- FAIL
 
 conv_out_proj / cross_width_residual_charts / level M16 / site L05 / wave 2
@@ -239,6 +298,17 @@ conv_out_proj / cross_width_residual_charts / level M16 / site L05 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt 6e59fd005767d38a: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C05.T3.M16.L00` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level M16 / site L00 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `0a15d264` | sm86 | fail | composition | 0.9990 | 0.0332 | 0.0269 | 0.699 | 0.676 | 1.875 | 45814.4 | 42.5 | `70e3f3d30b77` |
+| `0a15d264` | sm86 | fail | composition | 0.9990 | 0.0332 | 0.0269 | 0.699 | 0.676 | 1.875 | 45814.4 | 42.5 | `38f89cee5917` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 38f89cee591712ff: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
 ### `C05.T3.M16.L05` -- FAIL
 
 conv_out_proj / balanced_basis_truncation / level M16 / site L05 / wave 2
@@ -249,6 +319,61 @@ conv_out_proj / balanced_basis_truncation / level M16 / site L05 / wave 2
 | `dca9532d` | sm86 | fail | composition | 0.9975 | 0.0220 | 0.0268 | 0.914 | 0.900 | 1.875 | 10573.8 | 41.9 | `2ae667eaaeec` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt 2ae667eaaeecaa37: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T3.M16.L13` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level M16 / site L13 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `9cd795bc` | sm86 | fail | composition | 0.9977 | 0.0125 | 0.0246 | 0.646 | 0.609 | 1.875 | 24777.3 | 44.5 | `e3570749a5df` |
+| `9cd795bc` | sm86 | fail | composition | 0.9977 | 0.0125 | 0.0246 | 0.646 | 0.609 | 1.875 | 24777.3 | 44.5 | `0e8104429ff4` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 0e8104429ff42d19: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T3.M8.L05` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level M8 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `0838e7bb` | sm86 | fail | composition | 0.9947 | 0.0321 | 0.0396 | 0.777 | 0.752 | 1.750 | 7120.4 | 38.0 | `d1ed3bac6d0e` |
+| `0838e7bb` | sm86 | fail | composition | 0.9947 | 0.0321 | 0.0396 | 0.777 | 0.752 | 1.750 | 7120.4 | 38.0 | `a44ca75d72a4` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt a44ca75d72a4faf4: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T3.M4.L05` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level M4 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `89e571a5` | sm86 | fail | composition | 0.9876 | 0.0492 | 0.0557 | 0.506 | 0.482 | 1.500 | 4402.1 | 37.7 | `1f9511cdd072` |
+| `89e571a5` | sm86 | fail | composition | 0.9876 | 0.0492 | 0.0557 | 0.506 | 0.482 | 1.500 | 4402.1 | 37.7 | `20ad5dd19128` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 20ad5dd191283416: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T3.M2.L05` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level M2 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `35f77090` | sm86 | fail | composition | 0.9630 | 0.0852 | 0.0970 | 0.277 | 0.229 | 1.000 | 1748.8 | 34.4 | `1b1c0fd048c5` |
+| `35f77090` | sm86 | fail | composition | 0.9630 | 0.0852 | 0.0970 | 0.277 | 0.229 | 1.000 | 1748.8 | 34.4 | `8e594f2420f8` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 8e594f2420f8531b: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T3.X4.L05` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level X4 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `763453f3` | sm86 | fail | composition | 0.9831 | 0.0576 | 0.0656 | 0.330 | 0.307 | 1.375 | 3448.4 | 35.4 | `b1c895fef767` |
+| `763453f3` | sm86 | fail | composition | 0.9831 | 0.0576 | 0.0656 | 0.330 | 0.307 | 1.375 | 3448.4 | 35.4 | `be619c5c27a0` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt be619c5c27a09b72: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
 ### `C05.T4.M16.L13` -- FAIL
 
@@ -316,6 +441,28 @@ conv_out_proj / gram_relation_matching / level M16 / site L00 / wave 1
 
 > decode-smoke review by claude-opus-5 of receipt b95d24ebc6f16c99: 3/3 on task, all EOS, and the weakest smoke of the three C05 techniques at L00. (1) circuit breaker: correct, but 'typically installed in high-voltage circuits, such as those used in power grids' is a false narrowing -- breakers are ubiquitous at household voltage. (2) dinner: a five-item menu that opens with 'Start with a hearty breakfast: omelette or pancakes' for a dinner prompt, then asserts '40 minutes and one pan' without a cooking order -- on task, both stated constraints missed, and the breakfast opener is the first content error of its kind in the campaign. (3) neighbour note: three sentences rather than four, and it offers to assist rather than asking. Fails at chain link 5, composed drift 0.0543; free-run 0.523 is the worst of the three techniques at this site.
 
+### `C05.T9.M8.L05` -- FAIL
+
+conv_out_proj / progressive_multi_pass / level M8 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `0a8445c2` | sm86 | fail | composition | 0.9924 | 0.0376 | 0.0539 | 0.746 | 0.746 | 1.750 | 4650.8 | 33.8 | `08543a204a90` |
+| `0a8445c2` | sm86 | fail | composition | 0.9924 | 0.0376 | 0.0539 | 0.746 | 0.746 | 1.750 | 4650.8 | 33.8 | `dc1170c65119` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt dc1170c65119f172: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T9.M4.L05` -- FAIL
+
+conv_out_proj / progressive_multi_pass / level M4 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `14821585` | sm86 | fail | composition | 0.9847 | 0.0546 | 0.0598 | 0.525 | 0.490 | 1.500 | 3936.7 | 62.4 | `365dbd44ce0f` |
+| `14821585` | sm86 | fail | composition | 0.9847 | 0.0546 | 0.0598 | 0.525 | 0.490 | 1.500 | 3936.7 | 62.4 | `b528687eb111` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt b528687eb111be09: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
 ### `C06.T1.M16.L02` -- PASS
 
 attn_q / dense_prior_anchored_ridge / level M16 / site L02 / wave 1
@@ -360,6 +507,28 @@ attn_q / dense_prior_anchored_ridge / level M8 / site L02 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt b5fb7c5edfb7a8d3: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C06.T1.M8.L08` -- PASS
+
+attn_q / dense_prior_anchored_ridge / level M8 / site L08 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `e413da70` | sm86 | pass | -- | 1.0000 | 0.0123 | 0.0032 | 0.977 | 0.971 | 1.750 | 31993.0 | 30.2 | `c057c17f06d3` |
+| `e413da70` | sm86 | pending-review | -- | 1.0000 | 0.0123 | 0.0032 | 0.977 | 0.971 | 1.750 | 31993.0 | 30.2 | `3b0bcd046cfe` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 3b0bcd046cfef7de: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T1.M8.L12` -- PASS
+
+attn_q / dense_prior_anchored_ridge / level M8 / site L12 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `54f1aff5` | sm86 | pass | -- | 1.0000 | 0.0044 | 0.0023 | 1.000 | 1.000 | 1.750 | 27233.8 | 26.6 | `70451d047508` |
+| `54f1aff5` | sm86 | pending-review | -- | 1.0000 | 0.0044 | 0.0023 | 1.000 | 1.000 | 1.750 | 27233.8 | 26.6 | `45a714796239` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 45a7147962397c30: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
 ### `C06.T1.M4.L02` -- FAIL
 
 attn_q / dense_prior_anchored_ridge / level M4 / site L02 / wave 2
@@ -381,6 +550,61 @@ attn_q / dense_prior_anchored_ridge / level M2 / site L02 / wave 2
 | `af059555` | sm86 | fail | composition | 0.9981 | 0.1369 | 0.0257 | 0.609 | 0.600 | 1.000 | 240109510.2 | 28.2 | `1e1579c339be` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt 1e1579c339be7a89: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T1.X4.L02` -- FAIL
+
+attn_q / dense_prior_anchored_ridge / level X4 / site L02 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `eef674c0` | sm86 | fail | free-run | 0.9998 | 0.0399 | 0.0082 | 0.871 | 0.840 | 1.500 | 240109510.2 | 32.6 | `45a321a8def0` |
+| `eef674c0` | sm86 | fail | free-run | 0.9998 | 0.0399 | 0.0082 | 0.871 | 0.840 | 1.500 | 240109510.2 | 32.6 | `c86ed42ec413` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt c86ed42ec41380d1: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T1.X4.L08` -- FAIL
+
+attn_q / dense_prior_anchored_ridge / level X4 / site L08 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `a068a5a6` | sm86 | fail | free-run | 0.9999 | 0.0337 | 0.0081 | 0.889 | 0.859 | 1.500 | 31993.0 | 27.2 | `019477b3589f` |
+| `a068a5a6` | sm86 | fail | free-run | 0.9999 | 0.0337 | 0.0081 | 0.889 | 0.859 | 1.500 | 31993.0 | 27.2 | `19ed6946a25b` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 19ed6946a25ba485: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T1.X4.L12` -- PASS
+
+attn_q / dense_prior_anchored_ridge / level X4 / site L12 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `e3cf2450` | sm86 | pass | -- | 0.9999 | 0.0121 | 0.0076 | 0.977 | 0.971 | 1.500 | 27233.8 | 29.9 | `b4fa97d7e232` |
+| `e3cf2450` | sm86 | pending-review | -- | 0.9999 | 0.0121 | 0.0076 | 0.977 | 0.971 | 1.500 | 27233.8 | 29.9 | `2776be7abd66` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 2776be7abd66e235: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T5.M16.L08` -- FAIL
+
+attn_q / sparse_omp_routes / level M16 / site L08 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d03bb9c7` | sm86 | fail | free-run | 0.9996 | 0.0817 | 0.0077 | 0.883 | 0.861 | 0.938 | 13.4 | 26.2 | `8a072b294ff6` |
+| `d03bb9c7` | sm86 | fail | free-run | 0.9996 | 0.0817 | 0.0077 | 0.883 | 0.861 | 0.938 | 13.4 | 26.2 | `59a104ad53f2` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 59a104ad53f2a121: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T5.M16.L12` -- PASS
+
+attn_q / sparse_omp_routes / level M16 / site L12 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `63eb7671` | sm86 | pass | -- | 0.9996 | 0.0309 | 0.0044 | 0.977 | 0.971 | 0.938 | 29.7 | 30.7 | `692fe640ab07` |
+| `63eb7671` | sm86 | pending-review | -- | 0.9996 | 0.0309 | 0.0044 | 0.977 | 0.971 | 0.938 | 29.7 | 30.7 | `0a40a83c2e55` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 0a40a83c2e55543a: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
 ### `C06.T7.M16.L02` -- PASS
 
@@ -481,6 +705,28 @@ attn_k / dense_prior_anchored_ridge / level M8 / site L02 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt 6e98df1706dee86a: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C07.T1.M8.L08` -- PASS
+
+attn_k / dense_prior_anchored_ridge / level M8 / site L08 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `423c4250` | sm86 | pass | -- | 0.9999 | 0.0000 | 0.0152 | 0.984 | 0.984 | 1.312 | 31993.0 | 28.8 | `7f1340fa3eae` |
+| `423c4250` | sm86 | pending-review | -- | 0.9999 | 0.0000 | 0.0152 | 0.984 | 0.984 | 1.312 | 31993.0 | 28.8 | `1b2a64030bcf` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 1b2a64030bcfc69b: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C07.T1.M8.L12` -- PASS
+
+attn_k / dense_prior_anchored_ridge / level M8 / site L12 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `49add93c` | sm86 | pass | -- | 0.9999 | 0.0000 | 0.0095 | 0.994 | 0.986 | 1.312 | 27233.8 | 28.5 | `98fb830f88e3` |
+| `49add93c` | sm86 | pending-review | -- | 0.9999 | 0.0000 | 0.0095 | 0.994 | 0.986 | 1.312 | 27233.8 | 28.5 | `a8f536cf080b` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt a8f536cf080b1a33: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
 ### `C07.T1.M4.L02` -- FAIL
 
 attn_k / dense_prior_anchored_ridge / level M4 / site L02 / wave 2
@@ -502,6 +748,28 @@ attn_k / dense_prior_anchored_ridge / level M2 / site L02 / wave 2
 | `48d4bb3a` | sm86 | fail | composition | 0.9944 | 0.0000 | 0.0485 | 0.529 | 0.457 | 0.750 | 240109510.2 | 43.9 | `ae0716981fcd` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt ae0716981fcd4c72: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C07.T1.X4.L08` -- FAIL
+
+attn_k / dense_prior_anchored_ridge / level X4 / site L08 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `b59851b7` | sm86 | fail | composition | 0.9995 | 0.0000 | 0.0207 | 0.746 | 0.715 | 1.125 | 31993.0 | 26.1 | `86ac6612b840` |
+| `b59851b7` | sm86 | fail | composition | 0.9995 | 0.0000 | 0.0207 | 0.746 | 0.715 | 1.125 | 31993.0 | 26.1 | `064740e1a4a3` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 064740e1a4a3e394: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C07.T1.X4.L12` -- PASS
+
+attn_k / dense_prior_anchored_ridge / level X4 / site L12 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `b2ef89c6` | sm86 | pass | -- | 0.9997 | 0.0000 | 0.0177 | 0.918 | 0.875 | 1.125 | 27233.8 | 31.3 | `c868a737dde0` |
+| `b2ef89c6` | sm86 | pending-review | -- | 0.9997 | 0.0000 | 0.0177 | 0.918 | 0.875 | 1.125 | 27233.8 | 31.3 | `8eed4a809aad` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 8eed4a809aaddd95: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
 ### `C08.T1.M16.L02` -- FAIL
 
@@ -535,6 +803,16 @@ attn_v / dense_prior_anchored_ridge / level M4 / site L02 / wave 2
 | `baca1a66` | sm86 | fail | composition | 0.9933 | 0.0000 | 0.0388 | 0.553 | 0.516 | 1.125 | 240109510.2 | 27.0 | `d610481b74f0` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt d610481b74f0cc64: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C08.T3.M16.L02` -- INFR
+
+attn_v / balanced_basis_truncation / level M16 / site L02 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `ffdab83a` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.8 | `9da6fc9119f8` |
+
+> CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C08 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
 
 ### `C08.T5.M16.L02` -- FAIL
 
@@ -602,6 +880,39 @@ attn_o / cross_width_residual_charts / level M16 / site L02 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt b3b3d5cc831c746c: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C09.T3.M16.L02` -- FAIL
+
+attn_o / balanced_basis_truncation / level M16 / site L02 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `f451e9d5` | sm86 | fail | free-run | 0.9999 | 0.0073 | 0.0116 | 0.760 | 0.734 | 1.875 | 1340248.9 | 42.0 | `1bacb6c05307` |
+| `f451e9d5` | sm86 | fail | free-run | 0.9999 | 0.0073 | 0.0116 | 0.760 | 0.734 | 1.875 | 1340248.9 | 42.0 | `7d94f8a4bc1a` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 7d94f8a4bc1a155e: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C09.T3.M8.L02` -- FAIL
+
+attn_o / balanced_basis_truncation / level M8 / site L02 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `63be61e4` | sm86 | fail | composition | 0.9996 | 0.0153 | 0.0230 | 0.707 | 0.617 | 1.750 | 198405.3 | 45.0 | `4a76f308902e` |
+| `63be61e4` | sm86 | fail | composition | 0.9996 | 0.0153 | 0.0230 | 0.707 | 0.617 | 1.750 | 198405.3 | 45.0 | `57822a57f25d` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 57822a57f25d2c76: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C09.T3.X4.L02` -- FAIL
+
+attn_o / balanced_basis_truncation / level X4 / site L02 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `96ce1405` | sm86 | fail | composition | 0.9980 | 0.0346 | 0.0474 | 0.709 | 0.643 | 1.500 | 27275.9 | 59.7 | `16fc91e4e79d` |
+| `96ce1405` | sm86 | fail | composition | 0.9980 | 0.0346 | 0.0474 | 0.709 | 0.643 | 1.500 | 27275.9 | 59.7 | `9b44697af981` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 9b44697af981efe7: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
 ### `C09.T4.M16.L02` -- FAIL
 
 attn_o / low_rank_factor_writers / level M16 / site L02 / wave 1
@@ -635,16 +946,29 @@ attn_o / gram_relation_matching / level M16 / site L02 / wave 1
 
 > decode-smoke review by claude-opus-5 of receipt 448022d7bb90aef6: 3/3 on task. (1) circuit breaker: correct, adds a true statement about overload surges damaging motors and lights, cap-censored inside 'connected to a switch or relay, which is'. (2) one-pan dinner: the control's dish, cap-censored. (3) neighbour note: polite, correctly shaped, EOS. Fails at chain link 5 (composed drift 0.0210) with a boundary indistinguishable from T5's at the same site.
 
-### `C10.T1.M16.L02` -- INFR
+### `C10.T1.M16.L02` -- FAIL
 
-attn_per_head / dense_prior_anchored_ridge / level M16 / site L02 / wave 2
+attn_per_head / dense_prior_anchored_ridge / level M16 / site L02 / wave 3
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `eeddc004` | sm86 | fail | composition | 0.9994 | 0.0166 | 0.0305 | 0.736 | 0.715 | 0.958 | 7040298.6 | 33.6 | `91d858476ee8` |
+| `eeddc004` | sm86 | fail | composition | 0.9994 | 0.0166 | 0.0305 | 0.736 | 0.715 | 0.958 | 7040298.6 | 33.6 | `19a501b8262d` |
 | `d3aed252` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.4 | `58cf73bb6cc1` |
 | `22f3a3d5` | -- | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 34.8 | `fb6e3f2a8652` |
 
-> CellTechniqueError: T1's reference kernel contracts linear maps; C10 has axis 'heads' and needs its own kernel.
+> decode-smoke review by ClaudeCode-MXG of receipt 19a501b8262dfb22: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C10.T1.M8.L02` -- FAIL
+
+attn_per_head / dense_prior_anchored_ridge / level M8 / site L02 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d43b57d8` | sm86 | fail | composition | 0.9984 | 0.0309 | 0.0434 | 0.654 | 0.611 | 0.917 | 367203.1 | 29.4 | `02f21ceebb7f` |
+| `d43b57d8` | sm86 | fail | composition | 0.9984 | 0.0309 | 0.0434 | 0.654 | 0.611 | 0.917 | 367203.1 | 29.4 | `0611d0e590ed` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 0611d0e590edb09d: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
 ### `C11.T5.M16.L00` -- FAIL
 
@@ -722,6 +1046,39 @@ mlp_down / balanced_basis_truncation / level M16 / site L05 / wave 2
 | `6da9e0bc` | sm86 | fail | composition | 0.9922 | 0.0437 | 0.0625 | 0.586 | 0.559 | 3.281 | 4445224.9 | 213.4 | `8ce72a8675cd` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt 8ce72a8675cd97c1: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C13.T3.M16.L13` -- FAIL
+
+mlp_down / balanced_basis_truncation / level M16 / site L13 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `96855f0f` | sm86 | fail | composition | 0.9977 | 0.0254 | 0.0464 | 0.582 | 0.529 | 3.281 | 240687.0 | 152.0 | `66305aabd296` |
+| `96855f0f` | sm86 | fail | composition | 0.9977 | 0.0254 | 0.0464 | 0.582 | 0.529 | 3.281 | 240687.0 | 152.0 | `fa938c98aeb9` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt fa938c98aeb9c04d: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C13.T3.M8.L05` -- FAIL
+
+mlp_down / balanced_basis_truncation / level M8 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `731542c8` | sm86 | fail | composition | 0.9853 | 0.0600 | 0.0876 | 0.410 | 0.303 | 3.062 | 3542114.5 | 177.7 | `1b4a92c998aa` |
+| `731542c8` | sm86 | fail | composition | 0.9853 | 0.0600 | 0.0876 | 0.410 | 0.303 | 3.062 | 3542114.5 | 177.7 | `e9d275dd7c65` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt e9d275dd7c654f76: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C13.T3.M4.L05` -- FAIL
+
+mlp_down / balanced_basis_truncation / level M4 / site L05 / wave 3
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `50d3f6fa` | sm86 | fail | composition | 0.9735 | 0.0806 | 0.1104 | 0.166 | 0.098 | 2.625 | 2192414.5 | 126.7 | `d031a95a4418` |
+| `50d3f6fa` | sm86 | fail | composition | 0.9735 | 0.0806 | 0.1104 | 0.166 | 0.098 | 2.625 | 2192414.5 | 126.7 | `023f6c3000bd` |
+
+> decode-smoke review by ClaudeCode-MXG of receipt 023f6c3000bd19ed: three whole responses reviewed verbatim.  Recorded degradation, not degeneracy: the dinner plan keeps its heading structure but its ingredient list is incoherent as a recipe (broth and stock listed twice, 'fresh herbs' by the cup) and it never reaches the cooking order the prompt asked for.  No repetition loop, EOS/cap distinct, the other two responses are on task.  Free-run 0.166 grades this cell dead on its own.
 
 ### `C13.T5.M16.L00` -- FAIL
 

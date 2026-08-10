@@ -1,0 +1,10 @@
+[2026-08-10T20:38:28.468+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-10T20:38:28.628+00:00] stage materialize at 0.4s
+[2026-08-10T20:38:39.143+00:00] stage evidence at 11.0s
+[2026-08-10T20:38:39.988+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L02-C08
+[2026-08-10T20:38:39.988+00:00] stage calibration at 11.8s
+[2026-08-10T20:38:39.999+00:00] calibration: copy_exact reproduction relL2=0.0022819167798863904 (tolerance 0.005)
+[2026-08-10T20:38:39.999+00:00] stage solve at 11.8s
+[2026-08-10T20:38:40.000+00:00] CELL FAILED CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C08 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
+[2026-08-10T20:38:40.000+00:00] stage seal at 11.8s
+[2026-08-10T20:38:40.089+00:00] sealed C08.T3.M16.L02 status=infra first_divergent=infra receipt=9da6fc9119f8 in 11.8s

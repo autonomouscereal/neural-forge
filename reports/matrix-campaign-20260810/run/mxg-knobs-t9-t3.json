@@ -1,0 +1,6 @@
+{
+  "_purpose": "The second T9 arm.  Scheduling T1 is provably a no-op on the input axis -- T1's basis is the eigenbasis of the design Gram, the rung bases are nested, and the prior-anchored correction at rung 2 is identically zero, so the two-step child equals the one-step child exactly.  T3's basis is NOT a function of the input alone: its observability lane is the parent weight, which the schedule replaces with the previous rung's child, so the rung-2 balanced basis genuinely differs from the direct one.  This is the only arm of the progressive hypothesis a single-component cell can actually move.",
+  "calibration_tolerance": 0.005,
+  "progressive_base_technique": "T3",
+  "progressive_intermediate_levels": ["M8"]
+}

@@ -1,0 +1,12 @@
+[2026-08-10T20:41:43.421+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-10T20:41:43.808+00:00] stage materialize at 0.8s
+[2026-08-10T20:41:59.098+00:00] stage evidence at 16.1s
+[2026-08-10T20:41:59.934+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L02-C09
+[2026-08-10T20:41:59.934+00:00] stage calibration at 16.9s
+[2026-08-10T20:41:59.934+00:00] calibration: DECLARED INAPPLICABLE for C10 -- attn_per_head owns four tensors and its output passes through a softmax; the generic gate takes weight_keys[0] (q_proj), finds the shapes agree, and computes a meaningless 4.4955 relL2 (NOTES-MX-E 4.5).
+[2026-08-10T20:41:59.934+00:00] stage solve at 16.9s
+[2026-08-10T20:41:59.957+00:00] C10 C10.T1.M16.L02: 16 heads of 64, keep 15 (drop 1); parent write replay relL2 0.00165326
+[2026-08-10T20:42:00.877+00:00] stage boundary at 17.9s
+[2026-08-10T20:42:00.938+00:00] stage behavior at 17.9s
+[2026-08-10T20:42:16.601+00:00] stage seal at 33.6s
+[2026-08-10T20:42:16.701+00:00] sealed C10.T1.M16.L02 status=fail first_divergent=composition receipt=19a501b8262d in 33.6s

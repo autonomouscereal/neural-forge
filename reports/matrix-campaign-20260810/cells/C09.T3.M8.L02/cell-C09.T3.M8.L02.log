@@ -1,0 +1,12 @@
+[2026-08-10T20:39:37.920+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-10T20:39:38.071+00:00] stage materialize at 0.4s
+[2026-08-10T20:39:48.386+00:00] stage evidence at 10.7s
+[2026-08-10T20:39:49.232+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L02-C09
+[2026-08-10T20:39:49.232+00:00] stage calibration at 11.6s
+[2026-08-10T20:39:49.263+00:00] calibration: copy_exact reproduction relL2=0.001653262018685718 (tolerance 0.005)
+[2026-08-10T20:39:49.263+00:00] stage solve at 11.6s
+[2026-08-10T20:39:49.264+00:00] T3 C09.T3.M8.L02: rank=896 endpoint=attention.context rows=4751 width=1024 observability=(1024, 1024)
+[2026-08-10T20:40:06.533+00:00] stage boundary at 28.9s
+[2026-08-10T20:40:06.590+00:00] stage behavior at 28.9s
+[2026-08-10T20:40:22.638+00:00] stage seal at 45.0s
+[2026-08-10T20:40:22.731+00:00] sealed C09.T3.M8.L02 status=fail first_divergent=composition receipt=57822a57f25d in 45.0s

@@ -1,0 +1,185 @@
+{
+ "reviewer": "ClaudeCode-MXG",
+ "reviews": [
+  {
+   "cell": "C04.T1.M16.L00",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C04.T1.M16.L00/wave3/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim, all on task and terminating cleanly.  Recorded semantic drift, not degeneracy: the neighbour note relocates the trailer 'to a nearby park', the same drift wave 2 recorded on C06.T7.M4.L02.  Two FIR taps of three keeps the format and the register."
+  },
+  {
+   "cell": "C04.T1.M2.L00",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C04.T1.M2.L00/cell-receipt.json",
+   "verdict": "incoherent",
+   "notes": "the campaign's second incoherent verdict and its first degenerate-by-emptiness one: the third response is EMPTY -- the child emitted EOS with no content at all for the neighbour-note prompt.  The censoring rule does not apply (termination is eos, not cap), so this is a real failure and not a truncation.  The first response also opens with a stray 'narrative:' header and the second echoes the prompt and then answers a different question (breakfast/lunch/dinner instead of the one-pan order).  One FIR tap of three is past the component's edge, and the cell is the campaign's first macrocell-band failure independently."
+  },
+  {
+   "cell": "C05.T1.X4.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T1.X4.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T3.M16.L00",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T3.M16.L00/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T3.M16.L13",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T3.M16.L13/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T3.M2.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T3.M2.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T3.M4.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T3.M4.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T3.M8.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T3.M8.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T3.X4.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T3.X4.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T9.M4.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T9.M4.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C05.T9.M8.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C05.T9.M8.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T1.M8.L08",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T1.M8.L08/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T1.M8.L12",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T1.M8.L12/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T1.X4.L02",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T1.X4.L02/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T1.X4.L08",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T1.X4.L08/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T1.X4.L12",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T1.X4.L12/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T5.M16.L08",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T5.M16.L08/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C06.T5.M16.L12",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C06.T5.M16.L12/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C07.T1.M8.L08",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C07.T1.M8.L08/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C07.T1.M8.L12",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C07.T1.M8.L12/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C07.T1.X4.L08",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C07.T1.X4.L08/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C07.T1.X4.L12",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C07.T1.X4.L12/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C09.T3.M16.L02",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C09.T3.M16.L02/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C09.T3.M8.L02",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C09.T3.M8.L02/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C09.T3.X4.L02",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C09.T3.X4.L02/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C10.T1.M16.L02",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C10.T1.M16.L02/wave3/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C10.T1.M8.L02",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C10.T1.M8.L02/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C13.T3.M16.L13",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C13.T3.M16.L13/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  },
+  {
+   "cell": "C13.T3.M4.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C13.T3.M4.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim.  Recorded degradation, not degeneracy: the dinner plan keeps its heading structure but its ingredient list is incoherent as a recipe (broth and stock listed twice, 'fresh herbs' by the cup) and it never reaches the cooking order the prompt asked for.  No repetition loop, EOS/cap distinct, the other two responses are on task.  Free-run 0.166 grades this cell dead on its own."
+  },
+  {
+   "cell": "C13.T3.M8.L05",
+   "receipt": "/mnt/ai_data/neural-forge-matrix/cells/C13.T3.M8.L05/cell-receipt.json",
+   "verdict": "coherent",
+   "notes": "three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed."
+  }
+ ]
+}

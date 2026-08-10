@@ -1,0 +1,6 @@
+{
+  "_purpose": "The T9 progressive probe, never run in this campaign.  One rung before the cell's own level: the schedule contracts 1024 -> 960 (M16) and then 960 -> the cell's level width, solving each rung against the previous rung's child rather than against the parent.  The final width is the cell's own level width by construction, so this cell and the direct C05.T1.M8.L05 cell store the same rank and differ in exactly one thing -- what taught the fit.",
+  "calibration_tolerance": 0.005,
+  "progressive_base_technique": "T1",
+  "progressive_intermediate_levels": ["M16"]
+}

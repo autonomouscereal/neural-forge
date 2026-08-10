@@ -1,0 +1,12 @@
+[2026-08-10T20:49:01.170+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-10T20:49:01.321+00:00] stage materialize at 0.5s
+[2026-08-10T20:49:11.647+00:00] stage evidence at 10.8s
+[2026-08-10T20:49:12.472+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L00-C04
+[2026-08-10T20:49:12.472+00:00] stage calibration at 11.6s
+[2026-08-10T20:49:12.472+00:00] calibration: DECLARED INAPPLICABLE for C04 -- the short-conv FIR kernel is (channels, 1, taps); parent_weight.T is not a linear map from the operator input, so there is no matmul for the generic gate to run (NOTES-MX-E 4.5).
+[2026-08-10T20:49:12.472+00:00] stage solve at 11.6s
+[2026-08-10T20:49:12.766+00:00] C04 C04.T1.M2.L00: 6 held-out sequences, parent replay relL2 0.00294585 (unsegmented 0.0238562), taps 3 -> 1
+[2026-08-10T20:49:15.141+00:00] stage boundary at 14.3s
+[2026-08-10T20:49:15.281+00:00] stage behavior at 14.4s
+[2026-08-10T20:49:28.131+00:00] stage seal at 27.3s
+[2026-08-10T20:49:28.218+00:00] sealed C04.T1.M2.L00 status=fail first_divergent=macrocell-band receipt=9f3f6a18b4d3 in 27.3s

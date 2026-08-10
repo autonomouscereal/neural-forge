@@ -1,0 +1,8 @@
+{
+  "_purpose": "C04's FIR tap contraction, the campaign's first cell on the `kernel` axis.  The knobs below are the kernel's registered defaults written out explicitly, because two of them are gates rather than tuning: the replay tolerance is the band `hf_lfm2_circuit_trace_cache._finalize_short_conv` itself accepts for reproducing a short conv's context from its taps (rtol 2e-2), and the discrimination ratio refuses the cell unless the deliberately unsegmented replay is materially worse than the derived one -- a segmentation check nothing can fail is not a check.",
+  "calibration_tolerance": 0.005,
+  "conv_fir_reconstruction_tolerance": 0.02,
+  "conv_fir_discrimination_ratio": 3.0,
+  "conv_fir_channel_weighting": "gate",
+  "conv_fir_ridge": 1e-6
+}

@@ -176,6 +176,18 @@ _LAYOUT: Mapping[str, Mapping[str, Any]] = {
         "write": "attention.o",
         "macrocell": "residual.post_layer",
     },
+    # C10's endpoints moved in wave 3, and the reason is the whole point of the
+    # component.  A head-axis contraction is a block edit of ``q_proj``'s rows
+    # and ``out_proj``'s columns, so the boundary where it is *observable* is
+    # the O projection: ``attention.o = attention.context @ out_proj.T`` is a
+    # single exact matmul between two sealed endpoints, one per-head channel
+    # block per head.  Pointing the cell at ``operator.input``/
+    # ``operator.output`` instead put a softmax between the input and the write
+    # and left no endpoint at which a dropped head is a nameable object, which
+    # is why wave 1's generic gate produced a meaningless 4.4955 (NOTES-MX-E
+    # 4.5) and why C10 had no kernel at all until one existed to fit here.
+    # These are C09's endpoints, so a C10 cell re-uses C09's authenticated site
+    # evidence rather than building a second copy of it.
     "C10": {
         "keys": (
             "model.layers.{layer}.self_attn.q_proj.weight",
@@ -184,8 +196,8 @@ _LAYOUT: Mapping[str, Mapping[str, Any]] = {
             "model.layers.{layer}.self_attn.out_proj.weight",
         ),
         "axis": "heads",
-        "input": "operator.input",
-        "write": "operator.output",
+        "input": "attention.context",
+        "write": "attention.o",
         "macrocell": "residual.post_layer",
     },
     "C11": {
