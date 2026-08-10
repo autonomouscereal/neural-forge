@@ -258,3 +258,26 @@ must still be one complete aggressively compacted child.
    do not retreat to marginal compaction.  Only after coherent LFM2 proof,
    broaden architecture/modality discovery, token/feature bridges, and target
    materializers behind the same compiler ABI.
+
+## Stage transition record — addendum (2026-08-10)
+
+**Stage 1 REOPENED by Cyril's direct review.** The ceiling report's
+measurements stand, but its "stage 1 conditions met" conclusion proved a
+narrower claim than the policy's bar: it exhausted remedies to ONE
+mechanism (single-shot dense width-wise body contraction, single parent),
+not every designed technique at every component. Stage 2 remains designed
+and its prep preserved (trainer, admission lane, 26 sealed corpus shards),
+but its gate is CLOSED again until the reopened stage-1 campaign
+concludes.
+
+**The reopened campaign (Cyril's directive):** test every folding
+technique the program has designed at every component level INDIVIDUALLY
+— one component folded at a time, everything else copy_exact — across
+marginal contraction levels, with per-cell sealed metrics, so the matrix
+says exactly which techniques work where and why failures occur. Extend
+the A9/A11 sparse-route mechanism (the only configuration that ever
+retained behavior) into the body: heads, attention, MLP, conv. Mine
+distillation mathematics for closed-form analogs (attention-relation
+matching, per-head relational targets, patient multi-layer objectives)
+as new fold techniques. Instrument everything: standardized per-cell
+receipts, progression logging, failure localization.
