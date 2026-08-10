@@ -5,9 +5,13 @@ from dataclasses import replace
 import pytest
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_fold_diagnostics import DiagnosticFoldStrategy
 from neural_forge.dynamic_fold_planner import (
     DynamicFoldPlanner,
     DynamicFoldPlanningError,
+    EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY,
+    canonical_resource_fingerprints,
+    external_resource_bindings_sha256,
     validate_fold_action_evidence_channels,
     validate_fold_method_contract,
 )
@@ -488,3 +492,156 @@ def test_evidence_channel_validation_hook_is_exact_by_default() -> None:
         ("structure", "diagnostic"),
         allow_additional=True,
     ) == ("diagnostic", "structure")
+
+
+def test_external_resource_fingerprint_helpers_are_canonical_and_strict() -> None:
+    resources = {
+        "second_bundle": "2" * 64,
+        "first_bundle": "1" * 64,
+    }
+
+    assert canonical_resource_fingerprints(resources) == (
+        ("first_bundle", "1" * 64),
+        ("second_bundle", "2" * 64),
+    )
+    assert external_resource_bindings_sha256(resources) == canonical_sha256(
+        dict(sorted(resources.items()))
+    )
+    assert canonical_resource_fingerprints(None) == ()
+    assert external_resource_bindings_sha256({}) is None
+
+    invalid = (
+        {"bundle": "A" * 64},
+        {"bundle": "0" * 63},
+        {" ": "0" * 64},
+        (("bundle", "0" * 64), (" bundle ", "1" * 64)),
+    )
+    for value in invalid:
+        with pytest.raises(DynamicFoldPlanningError):
+            canonical_resource_fingerprints(value)
+
+
+def test_external_resources_bind_every_action_identity_without_legacy_drift() -> None:
+    tokenizer = canonical_sha256({"tokenizer": "resource-binding"})
+    parent = inspect_model_circuits(
+        _llama(),
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    child = inspect_model_circuits(
+        _llama(),
+        model_name="child",
+        tokenizer_fingerprint=tokenizer,
+    )
+    plan_arguments = {
+        "child_state_fingerprint": canonical_sha256({"child": "blank"}),
+        "evidence_fingerprint": canonical_sha256({"cache": "resource-test"}),
+        "parent_state_fingerprints": _parent_states(),
+    }
+
+    def plan(resources=None):
+        return DynamicFoldPlanner(resource_fingerprints=resources).plan(
+            (parent,),
+            child,
+            **plan_arguments,
+        )
+
+    legacy = DynamicFoldPlanner().plan((parent,), child, **plan_arguments)
+    assert plan(None).as_dict() == legacy.as_dict()
+    assert plan({}).as_dict() == legacy.as_dict()
+
+    resources = {
+        "z_resource": "2" * 64,
+        "a_resource": "1" * 64,
+    }
+    reversed_resources = dict(reversed(tuple(resources.items())))
+    bound = plan(resources)
+    reordered = plan(reversed_resources)
+    changed = plan({**resources, "a_resource": "3" * 64})
+    expected_binding = external_resource_bindings_sha256(resources)
+
+    assert bound.as_dict() == reordered.as_dict()
+    assert bound.fingerprint != legacy.fingerprint
+    assert bound.fingerprint != changed.fingerprint
+    assert len(bound.actions) == len(legacy.actions) == len(changed.actions)
+    for legacy_action, bound_action, changed_action in zip(
+        legacy.actions,
+        bound.actions,
+        changed.actions,
+        strict=True,
+    ):
+        assert EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY not in dict(
+            legacy_action.configuration
+        )
+        assert (
+            dict(bound_action.configuration)[
+                EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY
+            ]
+            == expected_binding
+        )
+        assert bound_action.configuration == bound_action.signature.configuration
+        assert (
+            bound_action.signature.configuration_sha256
+            != legacy_action.signature.configuration_sha256
+        )
+        assert (
+            bound_action.signature.configuration_sha256
+            != changed_action.signature.configuration_sha256
+        )
+        assert (
+            bound_action.signature.candidate_sha256
+            != legacy_action.signature.candidate_sha256
+        )
+        assert (
+            bound_action.signature.candidate_sha256
+            != changed_action.signature.candidate_sha256
+        )
+        assert bound_action.action_id != legacy_action.action_id
+        assert bound_action.action_id != changed_action.action_id
+        assert bound_action.action_sha256 != legacy_action.action_sha256
+        assert bound_action.action_sha256 != changed_action.action_sha256
+
+
+def test_external_resource_configuration_key_is_reserved_and_diagnostic_safe() -> None:
+    digest = "a" * 64
+    strategy = DiagnosticFoldStrategy(
+        method_id="test_fold",
+        method_version=1,
+        family_id="test_fold_family",
+        method_spec_sha256=digest,
+        operator_type="test.Operator",
+        operator_source_sha256="b" * 64,
+        operator_prepare_implementation_fingerprint="c" * 64,
+        configuration=((EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY, digest),),
+    )
+    assert dict(strategy.configuration) == {
+        EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY: digest
+    }
+
+    tokenizer = canonical_sha256({"tokenizer": "reserved-resource-key"})
+    parent = inspect_model_circuits(
+        _llama(),
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    child = inspect_model_circuits(
+        _llama(),
+        model_name="child",
+        tokenizer_fingerprint=tokenizer,
+    )
+
+    class CollidingPlanner(DynamicFoldPlanner):
+        def _action(self, **kwargs):
+            configuration = dict(kwargs["configuration"])
+            configuration[EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY] = digest
+            kwargs["configuration"] = configuration
+            return super()._action(**kwargs)
+
+    with pytest.raises(DynamicFoldPlanningError, match="is reserved"):
+        CollidingPlanner(resource_fingerprints={"bundle": digest}).plan(
+            (parent,),
+            child,
+            child_state_fingerprint=canonical_sha256({"child": "blank"}),
+            evidence_fingerprint=canonical_sha256({"cache": "reserved-key"}),
+            parent_state_fingerprints=_parent_states(),
+        )

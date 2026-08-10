@@ -30,6 +30,7 @@ from .dynamic_fold_registry import (
 
 
 PLAN_SCHEMA = "neural-forge-dynamic-fold-plan-v1"
+EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY = "external_resource_bindings_sha256"
 
 CAUSAL_ATTENTION_BRANCH_METHOD = "causal_gqa_rope_residual_attention_layer"
 CAUSAL_GATED_MLP_BRANCH_METHOD = "causal_swiglu_residual_mlp_layer"
@@ -162,6 +163,57 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise DynamicFoldPlanningError(f"{name} must be a lowercase SHA-256 digest.")
     return value
+
+
+def canonical_resource_fingerprints(
+    values: Mapping[str, str] | Sequence[tuple[str, str]] | None,
+) -> tuple[tuple[str, str], ...]:
+    """Return immutable, canonical external-resource identity bindings."""
+
+    if values is None:
+        return ()
+    if isinstance(values, Mapping):
+        items = values.items()
+    elif isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+        items = values
+    else:
+        raise DynamicFoldPlanningError(
+            "resource_fingerprints must be a mapping or sequence of pairs."
+        )
+    result: list[tuple[str, str]] = []
+    for item in items:
+        if (
+            not isinstance(item, Sequence)
+            or isinstance(item, (str, bytes))
+            or len(item) != 2
+        ):
+            raise DynamicFoldPlanningError(
+                "resource_fingerprints entries must be name/digest pairs."
+            )
+        key, digest = item
+        result.append(
+            (
+                _text(key, "resource fingerprint name"),
+                _digest(digest, "resource fingerprint"),
+            )
+        )
+    result.sort()
+    if len(result) != len({key for key, _digest_value in result}):
+        raise DynamicFoldPlanningError(
+            "Resource fingerprint names repeat after canonicalization."
+        )
+    return tuple(result)
+
+
+def external_resource_bindings_sha256(
+    values: Mapping[str, str] | Sequence[tuple[str, str]] | None,
+) -> str | None:
+    """Fingerprint canonical external resources, or omit an empty binding."""
+
+    canonical = canonical_resource_fingerprints(values)
+    if not canonical:
+        return None
+    return canonical_sha256(dict(canonical))
 
 
 def _is_digest(value: Any) -> bool:
@@ -3441,9 +3493,18 @@ class DynamicFoldPlanner:
         methods: FoldMethodRegistry | None = None,
         ledger: ExperimentLedger | None = None,
         enabled_experimental_method_ids: Sequence[str] = (),
+        resource_fingerprints: Mapping[str, str]
+        | Sequence[tuple[str, str]]
+        | None = None,
     ) -> None:
         self.methods = methods or default_method_registry()
         self.ledger = ledger or ExperimentLedger()
+        self.resource_fingerprints = canonical_resource_fingerprints(
+            resource_fingerprints
+        )
+        self.external_resource_bindings_sha256 = external_resource_bindings_sha256(
+            self.resource_fingerprints
+        )
         if isinstance(enabled_experimental_method_ids, (str, bytes)):
             raise DynamicFoldPlanningError(
                 "enabled_experimental_method_ids must be a sequence of ids."
@@ -3510,6 +3571,20 @@ class DynamicFoldPlanner:
             + "->"
             + "+".join(sorted({value.kind for value in target_nodes}))
         )
+        if any(
+            str(key).strip() == EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY
+            for key in configuration
+        ):
+            raise DynamicFoldPlanningError(
+                f"{EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY!r} is reserved "
+                "for planner-authenticated external resources."
+            )
+        action_configuration = configuration
+        if self.external_resource_bindings_sha256 is not None:
+            action_configuration = dict(configuration)
+            action_configuration[EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY] = (
+                self.external_resource_bindings_sha256
+            )
         signature = ExperimentSignature(
             method_id=method.method_id,
             method_version=method.version,
@@ -3529,22 +3604,24 @@ class DynamicFoldPlanner:
             target_unit_ids=target_ids,
             topology_transition=transition,
             selection_policy=str(
-                configuration.get("selection_policy", "automatic_semantic_alignment")
+                action_configuration.get(
+                    "selection_policy", "automatic_semantic_alignment"
+                )
             ),
             fit_objective=str(
-                configuration.get(
+                action_configuration.get(
                     "fit_objective",
                     "closed_loop_parent_relative_residual_endpoint",
                 )
             ),
             promotion_gate=str(
-                configuration.get(
+                action_configuration.get(
                     "promotion_gate",
                     "automatic_behavior_then_final_manual_review",
                 )
             ),
             zero_gradient=True,
-            configuration=tuple(configuration.items()),
+            configuration=tuple(action_configuration.items()),
         )
         decision = self.ledger.decision(signature)
         action_id = f"action-{index:04d}-{signature.candidate_sha256[:12]}"
@@ -3568,7 +3645,7 @@ class DynamicFoldPlanner:
             target_logical_parameters=sum(
                 value.logical_parameter_count for value in target_nodes
             ),
-            configuration=tuple(configuration.items()),
+            configuration=tuple(action_configuration.items()),
             signature=signature,
             ledger_decision=decision,
         )
@@ -4583,11 +4660,13 @@ def plan_dynamic_fold(
     methods: FoldMethodRegistry | None = None,
     ledger: ExperimentLedger | None = None,
     enabled_experimental_method_ids: Sequence[str] = (),
+    resource_fingerprints: Mapping[str, str] | Sequence[tuple[str, str]] | None = None,
 ) -> DynamicFoldPlan:
     return DynamicFoldPlanner(
         methods=methods,
         ledger=ledger,
         enabled_experimental_method_ids=enabled_experimental_method_ids,
+        resource_fingerprints=resource_fingerprints,
     ).plan(
         parents,
         child,
@@ -4608,6 +4687,7 @@ __all__ = [
     "CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD",
     "CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD",
     "CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD",
+    "EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY",
     "NATIVE_CAUSAL_LAYER_BRANCH_METHODS",
     "NATIVE_CHIMERA_LAYER_BRANCH_METHODS",
     "NATIVE_RESIDUAL_CHART_INTERFACE_METHOD",
@@ -4618,6 +4698,8 @@ __all__ = [
     "FoldPlanGap",
     "PLAN_SCHEMA",
     "SourceCircuitRef",
+    "canonical_resource_fingerprints",
+    "external_resource_bindings_sha256",
     "plan_dynamic_fold",
     "validate_fold_action_evidence_channels",
     "validate_fold_method_contract",

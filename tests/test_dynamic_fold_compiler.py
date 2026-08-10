@@ -28,6 +28,10 @@ from neural_forge.dynamic_fold_executor import (
     StaticEvidenceProvider,
     fingerprint_model_state,
 )
+from neural_forge.dynamic_fold_planner import (
+    EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY,
+    external_resource_bindings_sha256,
+)
 from neural_forge.dynamic_fold_snapshot import DynamicFoldSnapshotConfig
 from neural_forge.dynamic_fold_registry import ExperimentLedger
 from neural_forge.dynamic_model_inspector import inspect_model_circuits
@@ -194,6 +198,7 @@ def test_public_compiler_inspects_plans_executes_and_audits() -> None:
     child = _model(20)
     evidence = canonical_sha256({"parent_cache": "once"})
     tokenizer = canonical_sha256({"tokenizer": "same"})
+    resources = {"test_feature_bundle": "a" * 64}
 
     compilation = compile_loaded_models(
         parent_models={"parent": parent},
@@ -206,12 +211,18 @@ def test_public_compiler_inspects_plans_executes_and_audits() -> None:
         evidence_fingerprint=evidence,
         parent_tokenizer_fingerprints={"parent": tokenizer},
         child_tokenizer_fingerprint=tokenizer,
+        resource_fingerprints=resources,
     )
 
     assert compilation.complete
     assert compilation.plan.ready
     assert fingerprint_model_state(parent) == fingerprint_model_state(child)
     assert compilation.as_dict()["run"]["optimizer_steps"] == 0
+    assert all(
+        dict(action.configuration)[EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY]
+        == external_resource_bindings_sha256(resources)
+        for action in compilation.plan.actions
+    )
 
 
 def test_public_compiler_requires_a_final_whole_output_gate() -> None:
@@ -558,6 +569,10 @@ def test_top_level_system_selects_fold_stack_after_target_synthesis(
     )
     snapshot_root = tmp_path / "snapshots"
     snapshot_root.mkdir()
+    resources = {
+        "z_stack_resource": "2" * 64,
+        "a_stack_resource": "1" * 64,
+    }
 
     def saver(model, destination):
         torch.save(model.state_dict(), destination / "model.pt")
@@ -588,7 +603,7 @@ def test_top_level_system_selects_fold_stack_after_target_synthesis(
             "test.whole_output",
             "e" * 64,
         )
-        return DynamicFoldSystemStack(
+        stack = DynamicFoldSystemStack(
             operators=FoldOperatorRegistry((ExactCopyOperator(),)),
             evidence_provider=StaticEvidenceProvider(evidence),
             evaluator=_Accept(),
@@ -602,7 +617,10 @@ def test_top_level_system_selects_fold_stack_after_target_synthesis(
             behavior_gate_version=1,
             behavior_baseline_fingerprint="e" * 64,
             snapshot_config=DynamicFoldSnapshotConfig.disk(snapshot_root),
+            resource_fingerprints=resources,
         )
+        assert stack.resource_fingerprints == tuple(sorted(resources.items()))
+        return stack
 
     result = run_dynamic_folding_system(
         parent_models={"parent": parent},
@@ -626,6 +644,11 @@ def test_top_level_system_selects_fold_stack_after_target_synthesis(
     assert result.published.artifact.fresh_reload_decision.accepted
     assert result.published.compilation.run.whole_model_snapshot_backend == "disk"
     assert list(snapshot_root.iterdir()) == []
+    assert all(
+        dict(action.configuration)[EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY]
+        == external_resource_bindings_sha256(resources)
+        for action in result.published.compilation.plan.actions
+    )
 
     def parent_forwarding_stack_factory(target):
         with torch.no_grad():

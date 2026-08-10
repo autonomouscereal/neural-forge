@@ -34,7 +34,12 @@ from .dynamic_fold_executor import (
     fingerprint_model_state,
     run_fold_only_callback,
 )
-from .dynamic_fold_planner import DynamicFoldPlan, DynamicFoldPlanner
+from .dynamic_fold_planner import (
+    DynamicFoldPlan,
+    DynamicFoldPlanner,
+    DynamicFoldPlanningError,
+    canonical_resource_fingerprints,
+)
 from .dynamic_fold_registry import (
     ClosureLevel,
     ExperimentLedger,
@@ -410,6 +415,7 @@ class DynamicFoldSystemStack:
     initializer: FoldInitializer | None = None
     snapshot_config: DynamicFoldSnapshotConfig | None = None
     evidence_fingerprint: str | None = None
+    resource_fingerprints: Mapping[str, str] | tuple[tuple[str, str], ...] = ()
     publication_recorder: (
         Callable[[SynthesizedPublishedDynamicFoldCompilation], None] | None
     ) = None
@@ -511,6 +517,19 @@ class DynamicFoldSystemStack:
                     "System stack evidence_fingerprint must be a lowercase "
                     "SHA-256 digest or None."
                 )
+        try:
+            resource_fingerprints = canonical_resource_fingerprints(
+                self.resource_fingerprints
+            )
+        except DynamicFoldPlanningError as exc:
+            raise DynamicFoldCompilerError(
+                "System stack resource_fingerprints are invalid."
+            ) from exc
+        object.__setattr__(
+            self,
+            "resource_fingerprints",
+            resource_fingerprints,
+        )
         if self.publication_recorder is not None and not callable(
             self.publication_recorder
         ):
@@ -563,6 +582,7 @@ class DynamicFoldingCompiler:
         initializer: FoldInitializer | None = None,
         final_evaluator: FoldEvaluator | None = None,
         stop_on_rejection: bool = True,
+        resource_fingerprints: Mapping[str, str] | None = None,
     ) -> DynamicFoldCompilation:
         parents = dict(parent_models)
         validate_disjoint_parent_models(parents)
@@ -597,7 +617,11 @@ class DynamicFoldingCompiler:
             tokenizer_fingerprint=child_tokenizer_fingerprint,
         )
         child_state = fingerprint_model_state(child_model)
-        planner = DynamicFoldPlanner(methods=self.methods, ledger=self.ledger)
+        planner = DynamicFoldPlanner(
+            methods=self.methods,
+            ledger=self.ledger,
+            resource_fingerprints=resource_fingerprints,
+        )
         plan = planner.plan(
             parent_graphs,
             child_graph,
@@ -676,6 +700,7 @@ class DynamicFoldingCompiler:
         exact_target_unique_parameters: int | None = None,
         initializer: FoldInitializer | None = None,
         stop_on_rejection: bool = True,
+        resource_fingerprints: Mapping[str, str] | None = None,
     ) -> PublishedDynamicFoldCompilation:
         """Run the compiler and publish only a freshly authenticated child."""
 
@@ -701,6 +726,7 @@ class DynamicFoldingCompiler:
             exact_target_unique_parameters=exact_target_unique_parameters,
             initializer=initializer,
             stop_on_rejection=stop_on_rejection,
+            resource_fingerprints=resource_fingerprints,
         )
         if not compilation.complete:
             if self.ledger.records == base_records:
@@ -859,6 +885,7 @@ class DynamicFoldingCompiler:
         parent_tokenizer_fingerprints: Mapping[str, str | None] | None = None,
         initializer: FoldInitializer | None = None,
         stop_on_rejection: bool = True,
+        resource_fingerprints: Mapping[str, str] | None = None,
     ) -> SynthesizedPublishedDynamicFoldCompilation:
         """Primary automatic path: request a target, never hand-build a child."""
 
@@ -913,6 +940,7 @@ class DynamicFoldingCompiler:
             exact_target_unique_parameters=(target_request.exact_unique_parameters),
             initializer=initializer,
             stop_on_rejection=stop_on_rejection,
+            resource_fingerprints=resource_fingerprints,
         )
         return SynthesizedPublishedDynamicFoldCompilation(
             target=target,
@@ -1064,6 +1092,7 @@ class DynamicFoldingCompiler:
             exact_target_unique_parameters=(target_request.exact_unique_parameters),
             initializer=stack.initializer,
             stop_on_rejection=stop_on_rejection,
+            resource_fingerprints=dict(stack.resource_fingerprints),
         )
         result = SynthesizedPublishedDynamicFoldCompilation(
             target=target,
@@ -1135,6 +1164,7 @@ def compile_loaded_models(
     methods: FoldMethodRegistry | None = None,
     ledger: ExperimentLedger | None = None,
     snapshot_config: DynamicFoldSnapshotConfig | None = None,
+    resource_fingerprints: Mapping[str, str] | None = None,
 ) -> DynamicFoldCompilation:
     return DynamicFoldingCompiler(
         inspectors=inspectors,
@@ -1154,6 +1184,7 @@ def compile_loaded_models(
         exact_target_unique_parameters=exact_target_unique_parameters,
         initializer=initializer,
         final_evaluator=final_evaluator,
+        resource_fingerprints=resource_fingerprints,
     )
 
 
@@ -1181,6 +1212,7 @@ def compile_and_publish_loaded_models(
     methods: FoldMethodRegistry | None = None,
     ledger: ExperimentLedger | None = None,
     snapshot_config: DynamicFoldSnapshotConfig | None = None,
+    resource_fingerprints: Mapping[str, str] | None = None,
 ) -> PublishedDynamicFoldCompilation:
     """Primary end-to-end API: compile, gate, save, reload, and certify."""
 
@@ -1208,6 +1240,7 @@ def compile_and_publish_loaded_models(
         child_tokenizer_fingerprint=child_tokenizer_fingerprint,
         exact_target_unique_parameters=exact_target_unique_parameters,
         initializer=initializer,
+        resource_fingerprints=resource_fingerprints,
     )
 
 
@@ -1233,6 +1266,7 @@ def synthesize_compile_and_publish_models(
     methods: FoldMethodRegistry | None = None,
     ledger: ExperimentLedger | None = None,
     snapshot_config: DynamicFoldSnapshotConfig | None = None,
+    resource_fingerprints: Mapping[str, str] | None = None,
 ) -> SynthesizedPublishedDynamicFoldCompilation:
     """Fully automatic target-synthesis and certified folding entrypoint."""
 
@@ -1258,6 +1292,7 @@ def synthesize_compile_and_publish_models(
         loader_id=loader_id,
         parent_tokenizer_fingerprints=parent_tokenizer_fingerprints,
         initializer=initializer,
+        resource_fingerprints=resource_fingerprints,
     )
 
 
