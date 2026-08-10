@@ -71,6 +71,7 @@ from types import MappingProxyType
 from typing import Any
 
 from .dynamic_circuit_ir import canonical_sha256
+from .hf_feature_fold import SparseFeatureFoldMap, build_sparse_feature_fold_map
 
 
 MATRIX_TECHNIQUE_ENTRY_SCHEMA = "neural-forge-matrix-technique-entry-v1"
@@ -952,6 +953,454 @@ class BodyRouteFold:
             return expanded.reshape(int(narrow.shape[0]), blocks * self.parent_width)
 
 
+@dataclass(frozen=True)
+class _AuthenticatedBodyRouteSnapshot:
+    record: Mapping[str, Any]
+    component_id: str
+    site: str
+    level: str
+    role: str
+    installed_coefficients: str
+    source_width: int
+    target_width: int
+    kept_source_ids: Any
+    dropped_source_ids: Any
+    support_offsets: Any
+    support_target_ids: Any
+    read_coefficients: Any
+    write_coefficients: Any
+
+
+def _authenticated_body_route_fold(fold: Any) -> _AuthenticatedBodyRouteSnapshot:
+    """Authenticate the sealed T5 result before it becomes compiler input.
+
+    The v1 body-route record seals the route tensors individually but carries
+    source-channel support ids.  This boundary therefore rechecks both the
+    record seal and the live tensors, then validates the CSR geometry and the
+    installed dense route before any ids are translated into target space.
+    """
+
+    torch = _torch()
+    if not isinstance(fold, BodyRouteFold):
+        raise T5BodyRouteAuthenticationError(
+            "sparse feature folding requires a BodyRouteFold."
+        )
+    # Freeze every scalar/mapping reference before validation.  The dataclass
+    # prevents normal rebinding, but this also keeps all later checks on one
+    # coherent metadata snapshot rather than repeatedly reading the caller.
+    component_id = fold.component_id
+    component = fold.component
+    role = fold.role
+    site = fold.site
+    level = fold.level
+    parent_width = fold.parent_width
+    target_width = fold.kept_width
+    block_count = fold.block_count
+    installed_coefficients = fold.installed_coefficients
+    solve_snapshot = _plain_json(fold.solve)
+    calibration_snapshot = _plain_json(fold.calibration)
+    record = verify_sealed_body_route_record(fold.record)
+
+    expected_metadata = {
+        "technique_id": T5_TECHNIQUE_ID,
+        "technique": T5_TECHNIQUE_NAME,
+        "component_id": component_id,
+        "component": component,
+        "role": role,
+        "site": site,
+        "level": level,
+        "parent_width": parent_width,
+        "kept_width": target_width,
+        "dropped_width": parent_width - target_width,
+        "block_count": block_count,
+    }
+    for field, expected in expected_metadata.items():
+        if record.get(field) != expected:
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {field} does not match its sealed record."
+            )
+    if role not in ("reader", "writer"):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold role must be 'reader' or 'writer'."
+        )
+    if installed_coefficients not in ("read", "write"):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold installed_coefficients is unsupported."
+        )
+    record_solve = record.get("solve")
+    if not isinstance(record_solve, Mapping) or record_solve.get(
+        "installed_coefficients"
+    ) != installed_coefficients:
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold installed coefficients do not match the sealed solve."
+        )
+    if solve_snapshot != record_solve:
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold solve does not match its sealed record."
+        )
+    if calibration_snapshot != record.get("calibration"):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold calibration does not match its sealed record."
+        )
+
+    width = _positive_int(parent_width, "BodyRouteFold parent_width")
+    kept_width = _positive_int(target_width, "BodyRouteFold kept_width")
+    if kept_width > width:
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold kept_width exceeds parent_width."
+        )
+    dropped_width = width - kept_width
+
+    def index_tensor(value: Any, name: str, *, count: int | None = None) -> Any:
+        if (
+            type(value) is not torch.Tensor
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.ndim != 1
+            or value.dtype != torch.long
+            or value.requires_grad
+        ):
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} must be a dense rank-one torch.long tensor."
+            )
+        result = value.detach().to(device="cpu").contiguous().clone()
+        if count is not None and int(result.numel()) != count:
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} has the wrong element count."
+            )
+        return result
+
+    def coefficient_tensor(value: Any, name: str, *, count: int) -> Any:
+        if (
+            type(value) is not torch.Tensor
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.ndim != 1
+            or not torch.is_floating_point(value)
+            or torch.is_complex(value)
+            or value.requires_grad
+        ):
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} must be a dense rank-one real tensor."
+            )
+        result = value.detach().to(device="cpu").contiguous().clone()
+        if int(result.numel()) != count:
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} does not match the support edge count."
+            )
+        if not bool(torch.isfinite(result).all().item()):
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} contains NaN or infinity."
+            )
+        return result
+
+    kept = index_tensor(
+        fold.kept_channel_ids,
+        "kept_channel_ids",
+        count=kept_width,
+    )
+    if kept_width > 1 and not bool((kept[1:] > kept[:-1]).all().item()):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold kept_channel_ids must be strictly increasing."
+        )
+    if bool(((kept < 0) | (kept >= width)).any().item()):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold kept_channel_ids contains an out-of-range channel."
+        )
+
+    offsets = index_tensor(
+        fold.support_offsets,
+        "support_offsets",
+        count=dropped_width + 1,
+    )
+    if int(offsets[0].item()) != 0 or bool(
+        ((offsets[1:] - offsets[:-1]) < 0).any().item()
+    ):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold support_offsets must begin at zero and be monotonic."
+        )
+    edge_count = int(offsets[-1].item())
+    supports = index_tensor(
+        fold.support_channel_ids,
+        "support_channel_ids",
+        count=edge_count,
+    )
+    read = coefficient_tensor(
+        fold.read_coefficients,
+        "read_coefficients",
+        count=edge_count,
+    )
+    write = coefficient_tensor(
+        fold.write_coefficients,
+        "write_coefficients",
+        count=edge_count,
+    )
+
+    def matrix_tensor(value: Any, name: str) -> Any:
+        if (
+            type(value) is not torch.Tensor
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.ndim != 2
+            or not torch.is_floating_point(value)
+            or torch.is_complex(value)
+            or value.requires_grad
+        ):
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} must be a finite dense real matrix."
+            )
+        result = value.detach().to(device="cpu").contiguous().clone()
+        if not bool(torch.isfinite(result).all().item()):
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {name} must be a finite dense real matrix."
+            )
+        return result
+
+    # Clone both matrices before the first tensor hash.  A mutation triggered
+    # from hashing any route tensor therefore cannot alter the expansion or
+    # child matrix later observed by this authentication pass.
+    child_weight = matrix_tensor(fold.child_weight, "child_weight")
+    expansion_route = matrix_tensor(fold.expansion_route, "expansion_route")
+
+    sealed_tensors = {
+        "kept_channel_ids_sha256": kept,
+        "support_offsets_sha256": offsets,
+        "support_channel_ids_sha256": supports,
+        "read_coefficients_sha256": read,
+        "write_coefficients_sha256": write,
+    }
+    for field, tensor in sealed_tensors.items():
+        if record.get(field) != _tensor_sha256(tensor):
+            raise T5BodyRouteAuthenticationError(
+                f"BodyRouteFold {field.removesuffix('_sha256')} failed authentication."
+            )
+
+    # The sealed supports use parent/source channel ids.  Every one must name
+    # an admitted anchor, including zero-valued edges that will be omitted
+    # later; otherwise an invalid route could be hidden by zero filtering.
+    if edge_count:
+        target_positions = torch.searchsorted(kept, supports)
+        in_range = target_positions < kept_width
+        if not bool(in_range.all().item()) or not torch.equal(
+            kept.index_select(0, target_positions), supports
+        ):
+            raise T5BodyRouteAuthenticationError(
+                "BodyRouteFold support_channel_ids contains a channel that was "
+                "not admitted by kept_channel_ids."
+            )
+    else:
+        target_positions = torch.empty((0,), dtype=torch.long)
+
+    for dropped_index in range(dropped_width):
+        start = int(offsets[dropped_index].item())
+        stop = int(offsets[dropped_index + 1].item())
+        route = target_positions[start:stop]
+        if int(torch.unique(route).numel()) != int(route.numel()):
+            raise T5BodyRouteAuthenticationError(
+                "BodyRouteFold contains duplicate supports in one dropped route."
+            )
+
+    if tuple(expansion_route.shape) != (kept_width, width):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold expansion_route has the wrong geometry."
+        )
+
+    parent_parameters = record.get("parent_parameters")
+    if (
+        isinstance(parent_parameters, bool)
+        or not isinstance(parent_parameters, int)
+        or parent_parameters <= 0
+        or parent_parameters % width
+    ):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold parent parameter geometry is invalid."
+        )
+    if role == "writer":
+        expected_child_shape = (parent_parameters // width, kept_width)
+    else:
+        parent_rows = block_count * width
+        if parent_parameters % parent_rows:
+            raise T5BodyRouteAuthenticationError(
+                "BodyRouteFold reader parameter geometry is invalid."
+            )
+        expected_child_shape = (
+            block_count * kept_width,
+            parent_parameters // parent_rows,
+        )
+    if tuple(child_weight.shape) != expected_child_shape:
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold child_weight has the wrong geometry."
+        )
+    if record.get("child_parameters") != int(child_weight.numel()):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold child parameter count is inconsistent."
+        )
+    if record.get("child_weight_sha256") != _tensor_sha256(child_weight):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold child_weight failed authentication."
+        )
+    if record.get("expansion_route_sha256") != _tensor_sha256(expansion_route):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold expansion_route failed authentication."
+        )
+
+    # The record authenticates both the expansion and the CSR offsets.  This
+    # relation check additionally proves that they describe the same decoder.
+    installed = read if installed_coefficients == "read" else write
+    dropped = torch.arange(width, dtype=torch.long)
+    membership = torch.ones(width, dtype=torch.bool)
+    membership[kept] = False
+    dropped = dropped[membership]
+    expected_expansion = torch.zeros(
+        (kept_width, width),
+        dtype=expansion_route.dtype,
+        device="cpu",
+    )
+    expected_expansion[
+        torch.arange(kept_width, dtype=torch.long),
+        kept,
+    ] = 1
+    for dropped_index in range(dropped_width):
+        start = int(offsets[dropped_index].item())
+        stop = int(offsets[dropped_index + 1].item())
+        if stop > start:
+            expected_expansion[
+                target_positions[start:stop],
+                dropped[dropped_index],
+            ] = installed[start:stop].to(dtype=expansion_route.dtype)
+    if not torch.equal(
+        expansion_route,
+        expected_expansion,
+    ):
+        raise T5BodyRouteAuthenticationError(
+            "BodyRouteFold expansion_route does not match its authenticated "
+            "supports, offsets, and installed coefficients."
+        )
+    # Everything leaving the authentication boundary is a private clone.
+    # The caller-owned BodyRouteFold tensors remain mutable even though the
+    # dataclass is frozen, so no promotion code may reread them after here.
+    return _AuthenticatedBodyRouteSnapshot(
+        record=MappingProxyType(_plain_json(record)),
+        component_id=component_id,
+        site=site,
+        level=level,
+        role=role,
+        installed_coefficients=installed_coefficients,
+        source_width=width,
+        target_width=kept_width,
+        kept_source_ids=kept.clone(),
+        dropped_source_ids=dropped.clone(),
+        support_offsets=offsets.clone(),
+        support_target_ids=target_positions.clone(),
+        read_coefficients=read.clone(),
+        write_coefficients=write.clone(),
+    )
+
+
+def sparse_feature_fold_map_from_body_route(
+    fold: BodyRouteFold,
+    *,
+    coefficient_set: str,
+    admission_binding: Mapping[str, Any] | None = None,
+) -> SparseFeatureFoldMap:
+    """Translate one sealed T5 route into the generic compile-time fold map.
+
+    T5 records supports as source-channel ids, while
+    :class:`SparseFeatureFoldMap` records decoder supports in target
+    coordinates.  The translation is deterministic, removes exact-zero
+    sparse edges, and preserves an empty CSR interval for every dropped source
+    channel whose route becomes empty.
+    """
+
+    torch = _torch()
+    snapshot = _authenticated_body_route_fold(fold)
+    if coefficient_set not in ("read", "write"):
+        raise T5BodyRouteGeometryError(
+            "coefficient_set must be explicitly 'read' or 'write'."
+        )
+    origin_binding = {
+        "body_route_record_sha256": snapshot.record["record_sha256"],
+        "coefficient_set": coefficient_set,
+        "component_id": snapshot.component_id,
+        "site": snapshot.site,
+        "level": snapshot.level,
+        "role": snapshot.role,
+        "installed_coefficients": snapshot.installed_coefficients,
+        "source_width": snapshot.source_width,
+        "target_width": snapshot.target_width,
+    }
+    if admission_binding is None:
+        caller_binding: dict[str, Any] = {}
+    elif isinstance(admission_binding, Mapping):
+        caller_binding = {}
+        for key, value in admission_binding.items():
+            name = str(key)
+            if name in origin_binding:
+                raise T5BodyRouteAuthenticationError(
+                    f"admission_binding cannot override reserved origin key {name!r}."
+                )
+            if name in caller_binding:
+                raise T5BodyRouteAuthenticationError(
+                    "admission_binding contains duplicate keys after canonical "
+                    "string conversion."
+                )
+            caller_binding[name] = value
+    else:
+        raise T5BodyRouteAuthenticationError(
+            "admission_binding must be a mapping or None."
+        )
+    bound_admission = {**caller_binding, **origin_binding}
+    coefficients = (
+        snapshot.read_coefficients
+        if coefficient_set == "read"
+        else snapshot.write_coefficients
+    )
+    offsets = snapshot.support_offsets
+    kept = snapshot.kept_source_ids
+    dropped = snapshot.dropped_source_ids
+    target_positions = snapshot.support_target_ids
+
+    translated_supports: list[Any] = []
+    translated_coefficients: list[Any] = []
+    translated_offsets = [0]
+    for dropped_index in range(int(dropped.numel())):
+        start = int(offsets[dropped_index].item())
+        stop = int(offsets[dropped_index + 1].item())
+        route_coefficients = coefficients[start:stop]
+        nonzero = route_coefficients != 0
+        if bool(nonzero.any().item()):
+            translated_supports.append(target_positions[start:stop][nonzero])
+            translated_coefficients.append(route_coefficients[nonzero])
+            translated_offsets.append(
+                translated_offsets[-1] + int(nonzero.sum().item())
+            )
+        else:
+            # An equal consecutive offset is the canonical representation of
+            # an orthogonal/zero route; the dropped source channel remains in
+            # the partition even though it contributes no decoder edge.
+            translated_offsets.append(translated_offsets[-1])
+
+    if translated_supports:
+        support_target_ids = torch.cat(translated_supports).to(dtype=torch.long)
+        sparse_coefficients = torch.cat(translated_coefficients)
+    else:
+        support_target_ids = torch.empty((0,), dtype=torch.long)
+        sparse_coefficients = coefficients.new_empty((0,))
+
+    feature_map = build_sparse_feature_fold_map(
+        kept_source_ids=kept,
+        dropped_source_ids=dropped,
+        support_offsets=torch.tensor(translated_offsets, dtype=torch.long),
+        support_target_ids=support_target_ids,
+        coefficients=sparse_coefficients,
+        source_width=snapshot.source_width,
+        target_width=snapshot.target_width,
+        admission_binding=bound_admission,
+    )
+    feature_map.verify(expected_map_sha256=feature_map.map_sha256)
+    return feature_map
+
+
 def fit_body_component_routes(
     *,
     parent_weight: Any,
@@ -1315,12 +1764,14 @@ def fit_body_component_routes(
         "block_count": blocks,
         "channel_selection": channel_selection,
         "kept_channel_ids_sha256": _tensor_sha256(kept_ids.to(dtype=torch.float64)),
+        "support_offsets_sha256": _tensor_sha256(offsets),
         "support_channel_ids_sha256": _tensor_sha256(
             support_channel_ids.to(dtype=torch.float64)
         ),
         "read_coefficients_sha256": _tensor_sha256(read_flat),
         "write_coefficients_sha256": _tensor_sha256(write_flat),
         "child_weight_sha256": _tensor_sha256(child_weight),
+        "expansion_route_sha256": _tensor_sha256(expansion),
         "parent_weight_sha256": _tensor_sha256(weight),
         "component_rows_sha256": _tensor_sha256(rows),
         "parent_parameters": parent_parameters,
@@ -1707,6 +2158,7 @@ __all__ = [
     "resolve_component",
     "resolve_kept_width",
     "select_kept_channels",
+    "sparse_feature_fold_map_from_body_route",
     "t5_body_route_technique",
     "verify_sealed_body_route_record",
 ]

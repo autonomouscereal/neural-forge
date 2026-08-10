@@ -16,6 +16,7 @@ with no optimizer, no gradient, and no model execution:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import MappingProxyType
 
 import pytest
@@ -23,6 +24,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import neural_forge.matrix_technique_body_routes as body_routes  # noqa: E402
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.hf_feature_fold import FeatureFoldError  # noqa: E402
 from neural_forge.matrix_technique_body_routes import (  # noqa: E402
     MATRIX_TECHNIQUE_ENTRY_SCHEMA,
     T5_BODY_ROUTE_RECORD_SCHEMA,
@@ -31,12 +35,14 @@ from neural_forge.matrix_technique_body_routes import (  # noqa: E402
     T5BodyRouteError,
     T5BodyRouteEvidenceError,
     T5BodyRouteGeometryError,
+    T5BodyRouteAuthenticationError,
     fit_body_component_routes,
     fit_from_request,
     matrix_technique_registry_entry,
     resolve_component,
     resolve_kept_width,
     select_kept_channels,
+    sparse_feature_fold_map_from_body_route,
     verify_sealed_body_route_record,
 )
 
@@ -85,6 +91,82 @@ def _captured_split(
     )
     rows = factors @ mixing + noise * perturbation
     return rows[:fit_rows].contiguous(), rows[fit_rows:].contiguous()
+
+
+def _exact_sparse_adapter_fixture(role: str):
+    rows = torch.tensor(
+        [
+            [8.0, 0.0, 1.0, 0.0],
+            [0.0, 8.0, 0.0, 1.0],
+            [8.0, 0.0, 1.0, 0.0],
+            [0.0, 8.0, 0.0, 1.0],
+        ],
+        dtype=torch.float64,
+    )
+    if role == "writer":
+        weight = torch.tensor(
+            [[1.0, 2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0]],
+            dtype=torch.float64,
+        )
+        component = "mlp_down"
+        extra = {"write_metric": torch.eye(4, dtype=torch.float64)}
+    else:
+        weight = torch.tensor(
+            [
+                [1.0, 2.0, 3.0],
+                [2.0, 4.0, 6.0],
+                [4.0, 5.0, 6.0],
+                [8.0, 10.0, 12.0],
+            ],
+            dtype=torch.float64,
+        )
+        component = "mlp_gate"
+        extra = {}
+    fold = fit_body_component_routes(
+        parent_weight=weight,
+        component_rows=rows,
+        component=component,
+        level="X4",
+        kept_width=2,
+        active_k=1,
+        channel_selection="explicit",
+        kept_channel_ids=[0, 1],
+        refit_ridge_relative=0.0,
+        write_ridge_relative=0.0,
+        **extra,
+    )
+    return weight, fold
+
+
+def _reseal_adapter_fixture(fold, **changes):
+    record = dict(fold.record)
+    if "kept_channel_ids" in changes:
+        record["kept_channel_ids_sha256"] = body_routes._tensor_sha256(
+            changes["kept_channel_ids"]
+        )
+    if "support_channel_ids" in changes:
+        record["support_channel_ids_sha256"] = body_routes._tensor_sha256(
+            changes["support_channel_ids"]
+        )
+    if "support_offsets" in changes:
+        record["support_offsets_sha256"] = body_routes._tensor_sha256(
+            changes["support_offsets"]
+        )
+    if "read_coefficients" in changes:
+        record["read_coefficients_sha256"] = body_routes._tensor_sha256(
+            changes["read_coefficients"]
+        )
+    if "write_coefficients" in changes:
+        record["write_coefficients_sha256"] = body_routes._tensor_sha256(
+            changes["write_coefficients"]
+        )
+    if "expansion_route" in changes:
+        record["expansion_route_sha256"] = body_routes._tensor_sha256(
+            changes["expansion_route"]
+        )
+    record.pop("record_sha256")
+    record["record_sha256"] = canonical_sha256(record)
+    return replace(fold, record=MappingProxyType(record), **changes)
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +417,270 @@ def test_reader_block_count_shares_one_route_across_projection_blocks():
         )
 
 
+@pytest.mark.parametrize(
+    ("role", "coefficient_set"),
+    (("reader", "read"), ("writer", "write")),
+)
+def test_sparse_feature_adapter_has_exact_reader_and_writer_weight_parity(
+    role, coefficient_set
+):
+    weight, fold = _exact_sparse_adapter_fixture(role)
+    caller_binding = {"compiler_plan_sha256": "a" * 64, "phase": "component"}
+    feature_map = sparse_feature_fold_map_from_body_route(
+        fold,
+        coefficient_set=coefficient_set,
+        admission_binding=caller_binding,
+    )
+
+    assert feature_map.kept_source_ids.tolist() == [0, 1]
+    assert feature_map.dropped_source_ids.tolist() == [2, 3]
+    # T5 stored source ids [0, 1]; the generic map stores target positions.
+    assert feature_map.support_target_ids.tolist() == [0, 1]
+    expected_binding = {
+        **caller_binding,
+        "body_route_record_sha256": fold.record_sha256,
+        "coefficient_set": coefficient_set,
+        "component_id": fold.component_id,
+        "site": fold.site,
+        "level": fold.level,
+        "role": fold.role,
+        "installed_coefficients": fold.installed_coefficients,
+        "source_width": fold.parent_width,
+        "target_width": fold.kept_width,
+    }
+    assert feature_map.admission_binding_sha256 == canonical_sha256(expected_binding)
+    assert feature_map.verify(expected_map_sha256=feature_map.map_sha256).map_sha256 == (
+        feature_map.map_sha256
+    )
+    if role == "reader":
+        compiled = feature_map.fold_producer_weight(weight)
+    else:
+        compiled = feature_map.fold_consumer_weight(weight)
+    assert torch.equal(compiled, fold.child_weight)
+
+
+def test_sparse_feature_adapter_removes_zero_edges_but_retains_empty_routes():
+    _, fold = _exact_sparse_adapter_fixture("reader")
+    read = fold.read_coefficients.clone()
+    read[0] = 0.0
+    expansion = fold.expansion_route.clone()
+    expansion[:, 2] = 0.0
+    zero_route_fold = _reseal_adapter_fixture(
+        fold,
+        read_coefficients=read,
+        expansion_route=expansion,
+    )
+
+    feature_map = sparse_feature_fold_map_from_body_route(
+        zero_route_fold,
+        coefficient_set="read",
+    )
+    assert feature_map.support_offsets.tolist() == [0, 0, 1]
+    assert feature_map.support_target_ids.tolist() == [1]
+    assert feature_map.coefficients.tolist() == [0.125]
+    decoded = feature_map.decode(torch.tensor([[2.0, 3.0]], dtype=torch.float64))
+    assert torch.equal(
+        decoded,
+        torch.tensor([[2.0, 3.0, 0.0, 0.375]], dtype=torch.float64),
+    )
+
+
+def test_sparse_feature_adapter_rejects_authenticated_unkept_support():
+    _, fold = _exact_sparse_adapter_fixture("reader")
+    supports = fold.support_channel_ids.clone()
+    supports[0] = 2
+    malformed = _reseal_adapter_fixture(fold, support_channel_ids=supports)
+    with pytest.raises(T5BodyRouteAuthenticationError, match="not admitted"):
+        sparse_feature_fold_map_from_body_route(
+            malformed,
+            coefficient_set="read",
+        )
+
+
+def test_sparse_feature_adapter_rejects_coherent_unsealed_route_repartition():
+    _, fold = _exact_sparse_adapter_fixture("reader")
+    offsets = torch.tensor([0, 2, 2], dtype=torch.long)
+    expansion = torch.zeros_like(fold.expansion_route)
+    expansion[0, 0] = 1.0
+    expansion[1, 1] = 1.0
+    expansion[:, 2] = fold.read_coefficients
+    tampered = replace(
+        fold,
+        support_offsets=offsets,
+        expansion_route=expansion,
+    )
+    with pytest.raises(
+        T5BodyRouteAuthenticationError,
+        match="support_offsets failed authentication",
+    ):
+        sparse_feature_fold_map_from_body_route(
+            tampered,
+            coefficient_set="read",
+        )
+
+
+def test_sparse_feature_adapter_fails_closed_on_legacy_unbound_route_record():
+    _, fold = _exact_sparse_adapter_fixture("reader")
+    legacy_record = dict(fold.record)
+    legacy_record.pop("support_offsets_sha256")
+    legacy_record.pop("expansion_route_sha256")
+    legacy_record.pop("record_sha256")
+    legacy_record["record_sha256"] = canonical_sha256(legacy_record)
+    legacy = replace(fold, record=MappingProxyType(legacy_record))
+    with pytest.raises(
+        T5BodyRouteAuthenticationError,
+        match="support_offsets failed authentication",
+    ):
+        sparse_feature_fold_map_from_body_route(
+            legacy,
+            coefficient_set="read",
+        )
+
+
+def test_sparse_feature_adapter_uses_authenticated_snapshot_after_boundary(
+    monkeypatch,
+):
+    _, clean_fold = _exact_sparse_adapter_fixture("reader")
+    baseline = sparse_feature_fold_map_from_body_route(
+        clean_fold,
+        coefficient_set="read",
+        admission_binding={"compiler_plan_sha256": "c" * 64},
+    )
+    _, raced_fold = _exact_sparse_adapter_fixture("reader")
+    authenticate = body_routes._authenticated_body_route_fold
+
+    def authenticate_then_mutate(candidate):
+        snapshot = authenticate(candidate)
+        candidate.read_coefficients[0] = 9.0
+        candidate.support_offsets[1] = 2
+        return snapshot
+
+    monkeypatch.setattr(
+        body_routes,
+        "_authenticated_body_route_fold",
+        authenticate_then_mutate,
+    )
+    raced = sparse_feature_fold_map_from_body_route(
+        raced_fold,
+        coefficient_set="read",
+        admission_binding={"compiler_plan_sha256": "c" * 64},
+    )
+    assert raced_fold.read_coefficients[0].item() == 9.0
+    assert raced_fold.support_offsets.tolist() == [0, 2, 2]
+    assert raced.map_sha256 == baseline.map_sha256
+    assert raced.admission_binding_sha256 == baseline.admission_binding_sha256
+    assert torch.equal(raced.coefficients, baseline.coefficients)
+    assert torch.equal(raced.support_offsets, baseline.support_offsets)
+
+
+def test_sparse_feature_authentication_clones_before_tensor_hash_callbacks(
+    monkeypatch,
+):
+    _, clean_fold = _exact_sparse_adapter_fixture("reader")
+    baseline = sparse_feature_fold_map_from_body_route(
+        clean_fold,
+        coefficient_set="read",
+        admission_binding={"compiler_plan_sha256": "d" * 64},
+    )
+    _, raced_fold = _exact_sparse_adapter_fixture("reader")
+    tensor_sha256 = body_routes._tensor_sha256
+    hash_calls = 0
+
+    def hash_then_mutate_caller(value):
+        nonlocal hash_calls
+        digest = tensor_sha256(value)
+        hash_calls += 1
+        # The fifth sealed-route hash is the non-installed write lane.  Mutate
+        # every original route boundary immediately after that digest, while
+        # authentication is still executing.
+        if hash_calls == 5:
+            raced_fold.write_coefficients[0] = 9.0
+            raced_fold.support_offsets[1] = 2
+            raced_fold.support_channel_ids[0] = 1
+            raced_fold.expansion_route.zero_()
+        return digest
+
+    monkeypatch.setattr(body_routes, "_tensor_sha256", hash_then_mutate_caller)
+    raced = sparse_feature_fold_map_from_body_route(
+        raced_fold,
+        coefficient_set="read",
+        admission_binding={"compiler_plan_sha256": "d" * 64},
+    )
+    assert hash_calls == 7
+    assert raced_fold.write_coefficients[0].item() == 9.0
+    assert raced_fold.support_offsets.tolist() == [0, 2, 2]
+    assert raced_fold.support_channel_ids.tolist() == [1, 1]
+    assert not bool(raced_fold.expansion_route.any().item())
+    assert raced.map_sha256 == baseline.map_sha256
+    assert raced.admission_binding_sha256 == baseline.admission_binding_sha256
+    assert torch.equal(raced.coefficients, baseline.coefficients)
+    assert torch.equal(raced.support_offsets, baseline.support_offsets)
+    assert torch.equal(raced.support_target_ids, baseline.support_target_ids)
+
+
+def test_sparse_feature_adapter_is_deterministic_and_provenance_bound():
+    _, fold = _exact_sparse_adapter_fixture("writer")
+    first = sparse_feature_fold_map_from_body_route(
+        fold,
+        coefficient_set="write",
+        admission_binding={"compiler_plan_sha256": "b" * 64},
+    )
+    second = sparse_feature_fold_map_from_body_route(
+        fold,
+        coefficient_set="write",
+        admission_binding={"compiler_plan_sha256": "b" * 64},
+    )
+    read_lane = sparse_feature_fold_map_from_body_route(
+        fold,
+        coefficient_set="read",
+        admission_binding={"compiler_plan_sha256": "b" * 64},
+    )
+    assert first.map_sha256 == second.map_sha256
+    assert first.admission_binding_sha256 == second.admission_binding_sha256
+    assert first.map_sha256 != read_lane.map_sha256
+    assert first.admission_binding_sha256 != read_lane.admission_binding_sha256
+
+    changed_record = dict(fold.record)
+    changed_record["site"] = "L99"
+    changed_record.pop("record_sha256")
+    changed_record["record_sha256"] = canonical_sha256(changed_record)
+    changed_origin = replace(
+        fold,
+        site="L99",
+        record=MappingProxyType(changed_record),
+    )
+    changed_map = sparse_feature_fold_map_from_body_route(
+        changed_origin,
+        coefficient_set="write",
+        admission_binding={"compiler_plan_sha256": "b" * 64},
+    )
+    assert first.map_sha256 != changed_map.map_sha256
+    assert first.admission_binding_sha256 != changed_map.admission_binding_sha256
+
+    with pytest.raises(T5BodyRouteAuthenticationError, match="reserved origin key"):
+        sparse_feature_fold_map_from_body_route(
+            fold,
+            coefficient_set="write",
+            admission_binding={"body_route_record_sha256": "0" * 64},
+        )
+    with pytest.raises(FeatureFoldError, match="external seal"):
+        first.verify(expected_map_sha256="0" * 64)
+
+
+def test_sparse_feature_adapter_rejects_tampering_and_requires_lane_choice():
+    _, fold = _exact_sparse_adapter_fixture("reader")
+    tampered_record = dict(fold.record)
+    tampered_record["site"] = "tampered"
+    tampered = replace(fold, record=MappingProxyType(tampered_record))
+    with pytest.raises(T5BodyRouteAuthenticationError, match="seal is invalid"):
+        sparse_feature_fold_map_from_body_route(
+            tampered,
+            coefficient_set="read",
+        )
+    with pytest.raises(T5BodyRouteGeometryError, match="explicitly"):
+        sparse_feature_fold_map_from_body_route(fold, coefficient_set="installed")
+
+
 def test_writer_block_count_is_refused():
     with pytest.raises(T5BodyRouteGeometryError, match="single component axis"):
         fit_body_component_routes(
@@ -466,6 +812,12 @@ def test_record_seals_and_detects_tampering():
     assert verified["record_sha256"] == fold.record_sha256
     assert verified["operation_audit"]["backward_calls"] == 0
     assert verified["operation_audit"]["parent_forward_calls"] == 0
+    assert verified["support_offsets_sha256"] == body_routes._tensor_sha256(
+        fold.support_offsets
+    )
+    assert verified["expansion_route_sha256"] == body_routes._tensor_sha256(
+        fold.expansion_route
+    )
     tampered = dict(fold.record)
     tampered["kept_width"] = int(tampered["kept_width"]) - 1
     with pytest.raises(Exception, match="seal is invalid"):
