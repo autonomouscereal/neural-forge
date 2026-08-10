@@ -13,6 +13,8 @@ from neural_forge.hf_lfm2_direct_local import (
     Lfm2DirectLocalCheckpointIO,
     Lfm2DirectLocalError,
     PORTABLE_LOAD_RECEIPT_SCHEMA,
+    RUNTIME_TENSOR_ALIAS_MANIFEST_SCHEMA,
+    build_lfm2_direct_local_runtime_alias_manifest,
     fingerprint_lfm2_direct_local_state,
     load_lfm2_direct_local_config,
     load_lfm2_direct_local_model,
@@ -86,6 +88,180 @@ def _model():
     )
     torch.manual_seed(8675309)
     return transformers.Lfm2ForCausalLM(config).eval()
+
+
+class _AliasAdversary(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        partial_storage = torch.arange(12, dtype=torch.float32)
+        self.partial_left = torch.nn.Parameter(partial_storage[:8])
+        self.partial_right = torch.nn.Parameter(partial_storage[4:])
+
+        tied = torch.nn.Parameter(torch.arange(4, dtype=torch.float32))
+        self.tied_primary = tied
+        self.tied_alias = tied
+        self.equal_but_distinct = torch.nn.Parameter(tied.detach().clone())
+
+        disjoint_storage = torch.arange(12, dtype=torch.float32)
+        self.disjoint_left = torch.nn.Parameter(disjoint_storage[:3])
+        self.disjoint_right = torch.nn.Parameter(disjoint_storage[9:])
+
+        buffer_storage = torch.arange(10, dtype=torch.float64)
+        self.register_buffer("persistent_window", buffer_storage[1:6])
+        self.register_buffer(
+            "transient_window",
+            buffer_storage[4:9],
+            persistent=False,
+        )
+
+
+class _EmptyAliasAdversary(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        shared_storage = torch.empty(0, dtype=torch.float32)
+        self.shared_left = torch.nn.Parameter(shared_storage[:])
+        self.shared_right = torch.nn.Parameter(shared_storage.view(0))
+        self.independent = torch.nn.Parameter(torch.empty(0, dtype=torch.float32))
+
+
+def _entry_map(manifest):
+    return {
+        (entry["kind"], entry["name"]): entry for entry in manifest["state_entries"]
+    }
+
+
+def _overlap_map(manifest):
+    return {
+        frozenset(
+            {
+                (pair["left"]["kind"], pair["left"]["name"]),
+                (pair["right"]["kind"], pair["right"]["name"]),
+            }
+        ): pair
+        for pair in manifest["overlapping_byte_span_pairs"]
+    }
+
+
+def test_runtime_alias_manifest_seals_partial_tied_and_buffer_views() -> None:
+    model = _AliasAdversary()
+    manifest = build_lfm2_direct_local_runtime_alias_manifest(model)
+    body = dict(manifest)
+    seal = body.pop("manifest_sha256")
+    entries = _entry_map(manifest)
+    overlaps = _overlap_map(manifest)
+
+    assert manifest["schema"] == RUNTIME_TENSOR_ALIAS_MANIFEST_SCHEMA
+    assert seal == canonical_sha256(body)
+    assert manifest["state_entry_count"] == len(entries)
+    assert set(entries) == {
+        *{
+            ("parameter", name)
+            for name, _value in model.named_parameters(remove_duplicate=False)
+        },
+        *{
+            ("buffer", name)
+            for name, _value in model.named_buffers(remove_duplicate=False)
+        },
+    }
+    assert manifest["storage_addresses_serialized"] is False
+
+    left = entries[("parameter", "partial_left")]
+    right = entries[("parameter", "partial_right")]
+    assert left["storage_group_id"] == right["storage_group_id"]
+    assert left["storage_byte_span"] == {
+        "start": 0,
+        "end_exclusive": 32,
+        "bounding_byte_count": 32,
+        "empty": False,
+    }
+    assert right["storage_byte_span"] == {
+        "start": 16,
+        "end_exclusive": 48,
+        "bounding_byte_count": 32,
+        "empty": False,
+    }
+    partial_pair = overlaps[
+        frozenset(
+            {
+                ("parameter", "partial_left"),
+                ("parameter", "partial_right"),
+            }
+        )
+    ]
+    assert partial_pair["overlap_kind"] == "partial_span"
+    assert partial_pair["overlap_byte_count"] == 16
+
+    tied_primary = entries[("parameter", "tied_primary")]
+    tied_alias = entries[("parameter", "tied_alias")]
+    assert tied_primary["storage_group_id"] == tied_alias["storage_group_id"]
+    tied_pair = overlaps[
+        frozenset(
+            {
+                ("parameter", "tied_primary"),
+                ("parameter", "tied_alias"),
+            }
+        )
+    ]
+    assert tied_pair["overlap_kind"] == "exact_span"
+
+    persistent = entries[("buffer", "persistent_window")]
+    transient = entries[("buffer", "transient_window")]
+    assert persistent["persistent"] is True
+    assert transient["persistent"] is False
+    assert persistent["dtype"] == "torch.float64"
+    assert persistent["storage_group_id"] == transient["storage_group_id"]
+
+
+def test_runtime_alias_manifest_distinguishes_shared_disjoint_and_nonaliases() -> None:
+    manifest = build_lfm2_direct_local_runtime_alias_manifest(_AliasAdversary())
+    entries = _entry_map(manifest)
+    overlaps = _overlap_map(manifest)
+
+    tied = entries[("parameter", "tied_primary")]
+    distinct = entries[("parameter", "equal_but_distinct")]
+    assert tied["storage_group_id"] != distinct["storage_group_id"]
+
+    disjoint_left = entries[("parameter", "disjoint_left")]
+    disjoint_right = entries[("parameter", "disjoint_right")]
+    assert disjoint_left["storage_group_id"] == disjoint_right["storage_group_id"]
+    assert (
+        frozenset(
+            {
+                ("parameter", "disjoint_left"),
+                ("parameter", "disjoint_right"),
+            }
+        )
+        not in overlaps
+    )
+
+
+def test_runtime_alias_manifest_preserves_zero_byte_storage_groups() -> None:
+    manifest = build_lfm2_direct_local_runtime_alias_manifest(_EmptyAliasAdversary())
+    entries = _entry_map(manifest)
+    overlaps = _overlap_map(manifest)
+
+    shared_left = entries[("parameter", "shared_left")]
+    shared_right = entries[("parameter", "shared_right")]
+    independent = entries[("parameter", "independent")]
+    assert shared_left["storage_group_id"] == shared_right["storage_group_id"]
+    assert shared_left["storage_group_id"] != independent["storage_group_id"]
+    assert shared_left["storage_byte_span"]["empty"] is True
+    assert shared_right["storage_byte_span"]["empty"] is True
+    assert independent["storage_byte_span"]["empty"] is True
+    assert overlaps == {}
+
+
+def test_runtime_alias_manifest_is_deterministic_for_unchanged_state() -> None:
+    model = _AliasAdversary()
+
+    first = build_lfm2_direct_local_runtime_alias_manifest(model)
+    second = build_lfm2_direct_local_runtime_alias_manifest(model)
+    independently_allocated = build_lfm2_direct_local_runtime_alias_manifest(
+        _AliasAdversary()
+    )
+
+    assert first == second == independently_allocated
+    assert first["manifest_sha256"] == second["manifest_sha256"]
 
 
 def _dynamic_untied_model():

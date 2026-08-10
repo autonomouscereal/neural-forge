@@ -39,6 +39,9 @@ PORTABLE_LOAD_RECEIPT_SCHEMA = (
 CANONICAL_FP32_RUNTIME_RELOCATION_SCHEMA = (
     "neural-forge-lfm2-canonical-fp32-runtime-relocation-v1"
 )
+RUNTIME_TENSOR_ALIAS_MANIFEST_SCHEMA = (
+    "neural-forge-lfm2-direct-local-runtime-tensor-alias-manifest-v1"
+)
 BRIDGE_REFERENCE_FILENAME = "neural_forge_tokenizer_bridge_reference.json"
 _RESERVED_MODEL_FILES = frozenset(
     {
@@ -242,10 +245,10 @@ def _named_lfm2_runtime_tensors(
     return tuple(sorted(rows, key=lambda row: (row[1], row[0])))
 
 
-def _lfm2_direct_local_state_alias_abi(model: Any) -> dict[str, Any]:
-    """Seal names, views, and complete shared-storage/overlap topology."""
-
-    entries = _named_lfm2_runtime_tensors(model)
+def _lfm2_direct_local_state_alias_abi_from_entries(
+    entries: tuple[tuple[str, str, bool | None, Any], ...],
+) -> dict[str, Any]:
+    """Build the legacy alias ABI from one already-enumerated runtime state."""
     identities: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     tensors = []
     for name, kind, persistent, value in entries:
@@ -292,6 +295,196 @@ def _lfm2_direct_local_state_alias_abi(model: Any) -> dict[str, Any]:
         "non_persistent_buffers_included": True,
     }
     return {**body, "abi_sha256": canonical_sha256(body)}
+
+
+def _lfm2_direct_local_state_alias_abi(model: Any) -> dict[str, Any]:
+    """Seal names, views, and complete shared-storage/overlap topology."""
+
+    return _lfm2_direct_local_state_alias_abi_from_entries(
+        _named_lfm2_runtime_tensors(model)
+    )
+
+
+def _runtime_tensor_storage_byte_span(value: Any) -> dict[str, Any]:
+    """Return the storage-relative bounding byte interval of one strided view."""
+
+    element_size = int(value.element_size())
+    storage_offset = int(value.storage_offset())
+    storage_nbytes = int(value.untyped_storage().nbytes())
+    if int(value.numel()) == 0:
+        start = storage_offset * element_size
+        end = start
+    else:
+        minimum_offset = storage_offset
+        maximum_offset = storage_offset
+        for size, stride in zip(value.shape, value.stride(), strict=True):
+            delta = (int(size) - 1) * int(stride)
+            minimum_offset += min(0, delta)
+            maximum_offset += max(0, delta)
+        start = minimum_offset * element_size
+        end = (maximum_offset + 1) * element_size
+    if start < 0 or end < start or end > storage_nbytes:
+        raise Lfm2DirectLocalError(
+            "LFM2 runtime tensor view has an invalid storage-relative byte span."
+        )
+    return {
+        "start": start,
+        "end_exclusive": end,
+        "bounding_byte_count": end - start,
+        "empty": int(value.numel()) == 0,
+    }
+
+
+def _runtime_tensor_storage_identity(value: Any) -> tuple[Any, ...]:
+    storage = value.untyped_storage()
+    storage_nbytes = int(storage.nbytes())
+    if storage_nbytes > 0:
+        return (
+            str(value.device),
+            int(storage.data_ptr()),
+            storage_nbytes,
+        )
+    # Empty tensors have no addressable bytes and commonly report data_ptr=0.
+    # PyTorch's internal storage handle is nevertheless stable across distinct
+    # views of the same zero-byte storage.  Use it only for in-process grouping;
+    # it is never serialized into the manifest.
+    storage_handle = getattr(storage, "_cdata", None)
+    if isinstance(storage_handle, bool) or not isinstance(storage_handle, int):
+        raise Lfm2DirectLocalError(
+            "An empty LFM2 runtime tensor has no stable storage identity."
+        )
+    return (str(value.device), "empty", storage_handle)
+
+
+def build_lfm2_direct_local_runtime_alias_manifest(model: Any) -> dict[str, Any]:
+    """Describe every live state view and its complete shared-storage topology.
+
+    Storage addresses are used only to discover membership and are never
+    serialized. Stable group identifiers derive solely from canonical member
+    names, so repeated manifests for unchanged runtime state are byte-stable.
+    Byte spans are storage-relative bounding intervals; for non-contiguous
+    views they may include holes, which is declared explicitly in the manifest.
+    """
+
+    entries = _named_lfm2_runtime_tensors(model)
+    legacy_alias_abi = _lfm2_direct_local_state_alias_abi_from_entries(entries)
+    state_entries: list[dict[str, Any]] = []
+    storage_members: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for name, kind, persistent, value in entries:
+        byte_span = _runtime_tensor_storage_byte_span(value)
+        entry = {
+            "name": name,
+            "kind": kind,
+            "persistent": persistent,
+            "shape": [int(size) for size in value.shape],
+            "stride": [int(size) for size in value.stride()],
+            "storage_offset": int(value.storage_offset()),
+            "dtype": str(value.dtype),
+            "device": str(value.device),
+            "numel": int(value.numel()),
+            "element_size_bytes": int(value.element_size()),
+            "storage_nbytes": int(value.untyped_storage().nbytes()),
+            "storage_byte_span": byte_span,
+            "contiguous": bool(value.is_contiguous()),
+        }
+        state_entries.append(entry)
+        storage_members.setdefault(_runtime_tensor_storage_identity(value), []).append(
+            entry
+        )
+
+    ordered_groups = sorted(
+        storage_members.values(),
+        key=lambda members: sorted((row["kind"], row["name"]) for row in members),
+    )
+    entry_group_ids: dict[tuple[str, str], str] = {}
+    storage_groups: list[dict[str, Any]] = []
+    overlap_pairs: list[dict[str, Any]] = []
+    for group_index, members in enumerate(ordered_groups):
+        group_id = f"storage-{group_index:06d}"
+        ordered_members = sorted(members, key=lambda row: (row["kind"], row["name"]))
+        member_references = []
+        for member in ordered_members:
+            entry_group_ids[(member["kind"], member["name"])] = group_id
+            member_references.append(
+                {
+                    "kind": member["kind"],
+                    "name": member["name"],
+                    "storage_byte_span": dict(member["storage_byte_span"]),
+                }
+            )
+        group_overlap_pairs = []
+        for left_index, left in enumerate(ordered_members):
+            left_span = left["storage_byte_span"]
+            for right in ordered_members[left_index + 1 :]:
+                right_span = right["storage_byte_span"]
+                overlap_start = max(left_span["start"], right_span["start"])
+                overlap_end = min(
+                    left_span["end_exclusive"],
+                    right_span["end_exclusive"],
+                )
+                if overlap_start >= overlap_end:
+                    continue
+                if left_span == right_span:
+                    overlap_kind = "exact_span"
+                elif (
+                    left_span["start"] <= right_span["start"]
+                    and left_span["end_exclusive"] >= right_span["end_exclusive"]
+                ) or (
+                    right_span["start"] <= left_span["start"]
+                    and right_span["end_exclusive"] >= left_span["end_exclusive"]
+                ):
+                    overlap_kind = "containment"
+                else:
+                    overlap_kind = "partial_span"
+                pair = {
+                    "storage_group_id": group_id,
+                    "left": {"kind": left["kind"], "name": left["name"]},
+                    "right": {"kind": right["kind"], "name": right["name"]},
+                    "overlap_kind": overlap_kind,
+                    "overlap_start": overlap_start,
+                    "overlap_end_exclusive": overlap_end,
+                    "overlap_byte_count": overlap_end - overlap_start,
+                }
+                group_overlap_pairs.append(pair)
+                overlap_pairs.append(pair)
+        storage_groups.append(
+            {
+                "storage_group_id": group_id,
+                "device": ordered_members[0]["device"],
+                "storage_nbytes": ordered_members[0]["storage_nbytes"],
+                "members": member_references,
+                "member_count": len(member_references),
+                "shared": len(member_references) > 1,
+                "byte_span_overlap_pair_count": len(group_overlap_pairs),
+            }
+        )
+
+    canonical_entries = [
+        {
+            **entry,
+            "storage_group_id": entry_group_ids[(entry["kind"], entry["name"])],
+        }
+        for entry in state_entries
+    ]
+    body = {
+        "schema": RUNTIME_TENSOR_ALIAS_MANIFEST_SCHEMA,
+        "state_entries": canonical_entries,
+        "storage_groups": storage_groups,
+        "overlapping_byte_span_pairs": overlap_pairs,
+        "state_entry_count": len(canonical_entries),
+        "storage_group_count": len(storage_groups),
+        "shared_storage_group_count": sum(
+            bool(group["shared"]) for group in storage_groups
+        ),
+        "overlapping_byte_span_pair_count": len(overlap_pairs),
+        "legacy_alias_abi_sha256": legacy_alias_abi["abi_sha256"],
+        "storage_addresses_serialized": False,
+        "storage_byte_spans_are_relative": True,
+        "noncontiguous_byte_spans_are_bounding_intervals": True,
+        "partial_and_overlapping_storage_views_sealed": True,
+        "non_persistent_buffers_included": True,
+    }
+    return {**body, "manifest_sha256": canonical_sha256(body)}
 
 
 def _lfm2_direct_local_state_storage_pointers(model: Any) -> set[int]:
@@ -1637,7 +1830,9 @@ __all__ = [
     "Lfm2DirectLocalError",
     "Lfm2DirectLocalPortableLoadReceipt",
     "PORTABLE_LOAD_RECEIPT_SCHEMA",
+    "RUNTIME_TENSOR_ALIAS_MANIFEST_SCHEMA",
     "SCHEMA",
+    "build_lfm2_direct_local_runtime_alias_manifest",
     "count_lfm2_direct_local_unique_parameter_elements",
     "fingerprint_lfm2_direct_local_runtime_tensor_state",
     "fingerprint_lfm2_direct_local_state",
