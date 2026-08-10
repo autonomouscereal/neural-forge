@@ -461,3 +461,27 @@ dated addendum, never an edit.
 | full campaign compute | 30–40 GPU-hours ≈ 2–3 server-days |
 | new code | 1 harness runner, 1 Stein module, T5 body generalization, 3 serialization closures, ledger renderer |
 | new evidence captures | 0 (probe/smoke prompt sealing only; all activation evidence is the existing sealed caches) |
+
+---
+
+## ADDENDUM 1 — 2026-08-10 (Cyril): the composition endgame
+
+The matrix's deliverable is not a per-technique ranking for its own sake.
+Per Cyril's direct clarification: **the child does not need one technique
+everywhere — different techniques may fold different components,
+dynamically, and all that matters is that the composed child works.**
+A9/A11-style routes are first-class candidates at ANY component, not
+only the token interface.
+
+Therefore the campaign's final wave is the **heterogeneous composition
+run**: for each component, select the technique+level the matrix verdicts
+name as best (pre-registered selection rule: highest free-run-vs-control
+at the largest level that passes; ties broken by composed-terminal
+margin), assemble the full-child recipe from those winners, and execute
+it as one planned transaction — the dynamic fold planner already selects
+operators per branch, so the recipe is a planner selection policy fed by
+the matrix ledger. The composed child then takes the frozen review. The
+matrix tells us which techniques work where; the composition run tests
+whether the winners compose — and its per-component receipts inherit the
+same first_divergent_metric chain so a composition failure localizes to
+the component that broke it.
