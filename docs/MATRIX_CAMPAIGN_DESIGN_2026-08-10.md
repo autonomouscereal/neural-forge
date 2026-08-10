@@ -534,3 +534,31 @@ component — a component whose best is "promising" still ships its winner.
 Scope discipline: single-component cell numbers must never be quoted as
 whole-model results; the composed child's own receipts are the only
 whole-model claim.
+
+---
+
+## ADDENDUM 4 — 2026-08-10 (Cyril): composition modes, tested not assumed
+
+Isolation cells prove each component's best technique against
+PARENT-context inputs. A composed child's downstream components see
+FOLDED upstream outputs instead — so isolation winners may not combine
+directly. ONLY AFTER the per-component winners are proven, the
+composition wave tests the modes as an experiment, not an assumption:
+
+- **M-A direct assembly**: install every component's isolation-solved
+  winner as-is. Cheapest; measures how much the parent-frame/child-frame
+  mismatch costs.
+- **M-B sequential conditioned composition**: fold components in
+  topological order; each component uses ITS winner technique but
+  re-solves against the actually-folded upstream child state (layer 2's
+  winner refits on folded layer 1's outputs, and so on downstream). The
+  closed-loop machinery already implements sequence-conditioned solving;
+  the new element is heterogeneous per-component techniques inside it.
+- **M-C (if A and B disagree per component)**: hybrid — components whose
+  M-A install survives keep it; components that degrade under M-A are
+  re-solved M-B style in order.
+
+All three carry the standard cell receipts (per-component
+first_divergent_metric) so mode differences localize. The mode
+comparison is itself a sealed campaign result: "winners combine
+directly" and "winners need conditioning" are both findings.
