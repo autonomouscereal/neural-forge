@@ -82,6 +82,8 @@ __all__ = [
     "registered_pairs",
     "resolve",
     "resolve_level_width",
+    "sealable_report",
+    "sealable_solve_number",
 ]
 
 
@@ -456,6 +458,11 @@ class CellTechniqueResult:
         omp                      dict|None -- k, support_reuse_prefix_steps,
                                              double_mgs (T5 only)
 
+    Every numeric field there has to be **finite or null**.  The receipt is
+    content-addressed with ``allow_nan=False``, so a non-finite number is not a
+    bad reading, it is an unsealable cell -- `sealable_solve_number` is the
+    encoder, and `validate_result` refuses the rest before anything installs.
+
     ``predict`` is optional and, when supplied, maps evidence rows at the
     component's ``input_endpoint`` to the component's write.  The harness uses
     it for the held-out boundary score; without it the harness falls back to the
@@ -490,6 +497,84 @@ REQUIRED_SOLVE_FIELDS = (
     "allowed_clamp_ratio",
     "clamp_engaged",
 )
+
+def sealable_solve_number(value: Any) -> float | None:
+    """Encode one solve measurement the way the receipt schema declares.
+
+    Every numeric slot under ``solve`` is declared ``float | int | null`` by the
+    receipt schema and is content-addressed by
+    `matrix_cell_receipt.seal_receipt`, which canonicalizes with
+    ``allow_nan=False``.  A ``float("inf")`` in one of them therefore does not
+    fail the *cell*; it destroys the *receipt*, after the solve has been paid
+    for.
+
+    ``None`` -- JSON ``null`` -- is the schema's own encoding for a numeric
+    slot with no value.  `matrix_cell_receipt.blank_receipt` starts every one
+    of them there, "never ``0.0``, so a forgotten measurement fails loudly
+    instead of quietly claiming a perfect zero", and `first_divergent_metric`
+    carries an explicit branch for a null clamp ratio.  So a non-finite reading
+    serializes as ``None`` and never as an invented number: ``0.0`` would be a
+    positive claim the solve never made, and ``inf`` cannot be sealed at all --
+    it raises ``Out of range float values are not JSON compliant`` inside the
+    sealer, which is how the first completed A9 route lost a 32-minute compile
+    (NOTES-MX-C 4.2).
+
+    What a caller must **not** do is derive a flag from the return value.
+    ``condition_cap_saturated`` is exactly the statement "the condition number
+    was unbounded", so it has to be read off the raw measurement *before* this
+    function is applied; sanitizing first would silently retire the chain's
+    second link.
+    """
+
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _non_finite_kind(number: float) -> str:
+    if math.isnan(number):
+        return "nan"
+    return "positive-infinity" if number > 0.0 else "negative-infinity"
+
+
+def sealable_report(value: Any, path: str = "") -> tuple[Any, dict[str, str]]:
+    """Encode a verbatim solver report so the receipt can seal it, losing nothing.
+
+    A kernel that embeds its solver's own telemetry under ``solve`` -- which is
+    the right thing to do, it is the solver's own words -- inherits that
+    solver's sentinels.  `Lfm2PriorCorrectionReport` is allowed to report
+    ``system_condition_number: inf`` by design, and one ``inf`` *anywhere*
+    under ``solve`` is enough to make the whole receipt unsealable, nested or
+    not.  Non-finite leaves therefore become ``None`` and the dotted path of
+    every one that moved is returned beside the body, so the reason is recorded
+    rather than quietly dropped.
+    """
+
+    if isinstance(value, Mapping):
+        body: dict[str, Any] = {}
+        moved: dict[str, str] = {}
+        for key, item in value.items():
+            child, child_moved = sealable_report(
+                item, f"{path}.{key}" if path else str(key)
+            )
+            body[str(key)] = child
+            moved.update(child_moved)
+        return body, moved
+    if isinstance(value, (list, tuple)):
+        items: list[Any] = []
+        moved = {}
+        for index, item in enumerate(value):
+            child, child_moved = sealable_report(item, f"{path}[{index}]")
+            items.append(child)
+            moved.update(child_moved)
+        return items, moved
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value, {}
+    number = float(value)
+    if math.isfinite(number):
+        return value, {}
+    return None, {path: _non_finite_kind(number)}
 
 
 def validate_result(
@@ -538,6 +623,23 @@ def validate_result(
         raise CellTechniqueError(
             f"{request.cell.text} solve telemetry is missing {missing}; the "
             "receipt schema makes these mandatory (design 3)."
+        )
+    # A non-finite solve number is not a bad measurement, it is an unsealable
+    # receipt: the cell would run its solve, its boundary, its composed forward
+    # and all of its free-run generations and *then* die inside `seal_receipt`
+    # with nothing to show for any of it.  Refusing here costs the same cell and
+    # yields an `infra` receipt with a reason in it, which is the whole point of
+    # running this guard before anything is installed.  The scan is recursive
+    # because an embedded solver report is just as fatal to the seal as a
+    # top-level field, and harder to spot.
+    _, unsealable = sealable_report(dict(result.solve))
+    if unsealable:
+        raise CellTechniqueError(
+            f"{request.cell.text} solve telemetry is non-finite at "
+            f"{sorted(unsealable)}; the receipt is canonicalized with "
+            "allow_nan=False.  Encode an absent measurement with "
+            "sealable_solve_number()/sealable_report() and derive any flag that "
+            "depended on the sentinel from the raw reading first."
         )
     if int(result.stored_parameter_count) <= 0:
         raise CellTechniqueError("stored_parameter_count must be positive.")
@@ -782,27 +884,69 @@ def t1_dense_prior_anchored_ridge(
     requested = clamp.get("requested_prior_delta_ratio")
     allowed = clamp.get("allowed_prior_delta_ratio")
     lambda_used = relative.get("relative_ridge_lambda")
-    condition_value = float("inf") if condition is None else float(condition)
-    saturated = not math.isfinite(condition_value)
-    if lambda_used:
+    # The cap flag is read off the RAW conditioning, before the number is
+    # encoded for the seal, because the flag *is* what the old ``inf`` sentinel
+    # meant and the two unbounded readings are the same statement to the
+    # chain's second link: `_solved_system_conditioning` reports a genuine
+    # ``inf`` for an exactly singular solved system, and a solve that reported
+    # no conditioning at all is unbounded-until-proven-otherwise.  Sanitizing
+    # first would turn both into "condition number 0.0, cap not saturated",
+    # which is the one reading that is definitely false.
+    condition_reported = condition is not None and math.isfinite(float(condition))
+    saturated = not condition_reported
+    condition_value = sealable_solve_number(condition)
+    if lambda_used and condition_value is not None:
         # A relative ridge caps the solved condition number at 1/lambda; a solve
         # that lands on the cap was limited by the regularizer, not the
-        # evidence, and the chain's second link exists to say so.
+        # evidence, and the chain's second link exists to say so.  (An unbounded
+        # reading is already saturated above, so this arm only has to decide the
+        # finite case.)
         saturated = saturated or condition_value >= 0.99 / float(lambda_used)
+    clamp_engaged = bool(clamp.get("clamp_engaged") or False)
+    requested_value = sealable_solve_number(requested)
+    allowed_value = sealable_solve_number(allowed)
+    if clamp_engaged and (requested_value is None or allowed_value is None):
+        # `Lfm2PriorCorrectionReport` emits the clamp block only when the clamp
+        # was actually evaluated, and then both ratios are real floats, so this
+        # is unreachable through that report.  It is checked anyway because the
+        # other place it would be discovered is `first_divergent_metric`, which
+        # refuses to walk link 2 without them -- at seal time, after the solve.
+        raise CellTechniqueError(
+            f"{request.cell.text} reports an engaged prior-delta clamp with no "
+            "requested/allowed ratio; the chain's second link is unwalkable."
+        )
+    # The verbatim report is sealed too, and it carries its own copy of the
+    # condition number -- so sanitizing only the flat field would leave an
+    # ``inf`` one level down and the seal would die anyway, for a reason nobody
+    # reading the flat block could see.
+    report_body, report_non_finite = sealable_report(telemetry)
     solve = {
         "solver_path": conditioning.get("solver_path") or "unreported",
         "ridge_relative": float(lambda_used or 0.0),
         "condition_number": condition_value,
         "condition_cap_saturated": bool(saturated),
+        # Which unbounded reading the null above stands for.  Diagnostic only --
+        # the chain reads the flag, never this -- but a reader of the receipt
+        # cannot otherwise tell a singular system from a solve that measured no
+        # conditioning, and those are different findings.
+        "condition_number_unbounded_reason": (
+            None
+            if condition_reported
+            else ("solver-reported-none" if condition is None else "singular-system")
+        ),
         "prior_norm": float(telemetry.get("prior_norm", 0.0)),
         "correction_norm": float(telemetry.get("correction_norm", 0.0)),
-        "requested_clamp_ratio": float(requested) if requested is not None else 0.0,
-        "allowed_clamp_ratio": (
-            float(allowed) if allowed is not None else float("inf")
-        ),
-        "clamp_engaged": bool(clamp.get("clamp_engaged") or False),
+        # Both ratios are null exactly when the clamp lane was never evaluated
+        # (no prior, no budget, or a zero correction -- the common case on the
+        # output axis, where the projected prior is already the reduced-rank
+        # optimum).  ``allowed`` used to be ``float("inf")`` there, which is the
+        # defect that would have killed wave-1 cells 12-21 and 29 at the seal.
+        "requested_clamp_ratio": requested_value,
+        "allowed_clamp_ratio": allowed_value,
+        "clamp_engaged": clamp_engaged,
         "omp": None,
-        "prior_correction_report": telemetry,
+        "prior_correction_report": report_body,
+        "prior_correction_report_non_finite": report_non_finite,
         "contraction_basis_rank": rank,
         "effective_ridge": float(relative.get("effective_ridge", ridge)),
         "update_scale": float(telemetry.get("update_scale", 1.0)),
@@ -876,14 +1020,27 @@ def t1_standalone_norm_refit(
         "requested_clamp_ratio": (
             0.0 if prior_norm == 0.0 else correction / prior_norm
         ),
-        "allowed_clamp_ratio": float("inf"),
+        # The closed-form gain refit runs no prior-delta clamp lane at all, so
+        # there is no budget to report and the schema's null says so.  It used
+        # to be ``float("inf")`` unconditionally, which no C14 cell could ever
+        # seal: the fit, the boundary score, the composed forward and the whole
+        # free-run probe would run and then `seal_receipt` would raise on the
+        # canonical JSON.  The requested ratio above is a real measurement and
+        # stays one -- what the refit asked for is known, what it was allowed is
+        # not a number that exists.
+        "allowed_clamp_ratio": None,
         "clamp_engaged": False,
         "omp": None,
-        "norm_fit_relative_rmse": float(fitted.train_metrics.relative_rmse),
+        # A relative RMSE divides by the target norm, so a degenerate all-zero
+        # target endpoint reports a non-finite ratio.  Same rule as everywhere
+        # else in this block: a ratio that does not exist seals as null.
+        "norm_fit_relative_rmse": sealable_solve_number(
+            fitted.train_metrics.relative_rmse
+        ),
         "norm_validation_relative_rmse": (
             None
             if fitted.validation_metrics is None
-            else float(fitted.validation_metrics.relative_rmse)
+            else sealable_solve_number(fitted.validation_metrics.relative_rmse)
         ),
     }
 

@@ -847,14 +847,22 @@ def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def append_ledger(path: str | Path, body: Mapping[str, Any]) -> Path:
-    """Append one sealed receipt's ledger row.  Append-only, never overwrite."""
+    """Append one sealed receipt's ledger row.  Append-only, never overwrite.
+
+    Written as bytes with an explicit ``\\n``.  The campaign's ledger lives on
+    the Linux run host and is mirrored into the repository, and a review sealed
+    from a Windows workstation used to append ``\\r\\n`` through text-mode
+    translation -- so the two copies of an append-only file diverged byte for
+    byte while carrying the same rows.  `read_ledger` splits on either, so this
+    was invisible until the mirror was digested against the original.
+    """
 
     line = ledger_line(body)
     destination = Path(path).expanduser().absolute()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("a", encoding="ascii") as handle:
-        handle.write(canonical_json_bytes(line).decode("ascii"))
-        handle.write("\n")
+    with destination.open("ab") as handle:
+        handle.write(canonical_json_bytes(line))
+        handle.write(b"\n")
     return destination
 
 

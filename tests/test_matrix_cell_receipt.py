@@ -353,6 +353,27 @@ def test_ledger_is_append_only_and_rerenders(tmp_path):
     assert report.count("22222222") == 1
 
 
+def test_ledger_bytes_are_platform_independent(tmp_path):
+    """One append-only file, one byte sequence, on every host that appends.
+
+    The campaign's ledger lives on the Linux run host and is mirrored into the
+    repository; reviews are sealed from a Windows workstation.  Appending
+    through a text-mode handle translated ``\\n`` to ``\\r\\n`` there, so the
+    two copies of an append-only file carried identical rows and different
+    bytes.  `read_ledger` splits on either, which is exactly why the divergence
+    survived until the mirror was digested against the original.
+    """
+
+    ledger = tmp_path / "ledger.jsonl"
+    for instance in ("1" * 32, "2" * 32):
+        append_ledger(ledger, seal_receipt(_receipt(instance=instance)))
+    raw = ledger.read_bytes()
+    assert b"\r" not in raw
+    assert raw.count(b"\n") == 2
+    assert raw.endswith(b"\n")
+    assert len(read_ledger(ledger)) == 2
+
+
 def test_render_survives_a_traceback_shaped_note(tmp_path):
     # Receipt notes carry tracebacks and JSON tails verbatim; a raw newline or
     # pipe inside a Markdown table cell destroys the table silently, which is

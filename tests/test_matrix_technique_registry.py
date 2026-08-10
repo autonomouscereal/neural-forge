@@ -24,6 +24,7 @@ and the technique lane meet here and nowhere else.  What is pinned:
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -35,7 +36,13 @@ if str(_ROOT / "src") not in sys.path:
 
 torch = pytest.importorskip("torch")
 
-from neural_forge.matrix_cell_receipt import CellId  # noqa: E402
+from neural_forge.matrix_cell_receipt import (  # noqa: E402
+    CellId,
+    blank_receipt,
+    first_divergent_metric,
+    seal_receipt,
+    verify_seal,
+)
 from neural_forge.matrix_technique_registry import (  # noqa: E402
     CellTechniqueError,
     CellTechniqueRequest,
@@ -46,6 +53,7 @@ from neural_forge.matrix_technique_registry import (  # noqa: E402
     registered_pairs,
     resolve,
     resolve_level_width,
+    sealable_solve_number,
     validate_result,
 )
 
@@ -299,6 +307,58 @@ def test_result_guard_rejects_non_finite_weights():
         validate_result(request, result)
 
 
+def test_result_guard_rejects_non_finite_solve_telemetry():
+    """The defect class, caught before it can cost a cell its receipt.
+
+    A ``float("inf")`` in a solve slot seals nothing: the receipt is
+    canonicalized with ``allow_nan=False``, so the cell would solve, score,
+    compose and free-run and only then raise inside `seal_receipt`.  Refusing at
+    the guard turns that into an `infra` receipt with a reason in it, and covers
+    the technique lane's kernels as well as this file's.
+    """
+
+    state = _parent_state(torch.Generator().manual_seed(1))
+    key = "model.layers.5.feed_forward.w2.weight"
+    request = _request("C13.T1.M16.L05", state, _Evidence({}, {}), level_width=60)
+    for field, value in (
+        ("allowed_clamp_ratio", float("inf")),
+        ("condition_number", float("inf")),
+        ("requested_clamp_ratio", float("nan")),
+        ("prior_norm", float("-inf")),
+    ):
+        solve = _valid_solve()
+        solve[field] = value
+        result = CellTechniqueResult(
+            installed_weights={key: state[key]},
+            stored_parameter_count=10,
+            solve=solve,
+        )
+        with pytest.raises(CellTechniqueError, match=f"non-finite at \\['{field}'\\]"):
+            validate_result(request, result)
+    # ...and a null in the same slot is fine, because null is what the receipt
+    # schema declares for a measurement that does not exist.
+    solve = _valid_solve()
+    solve["allowed_clamp_ratio"] = None
+    solve["requested_clamp_ratio"] = None
+    validate_result(
+        request,
+        CellTechniqueResult(
+            installed_weights={key: state[key]},
+            stored_parameter_count=10,
+            solve=solve,
+        ),
+    )
+
+
+def test_sealable_solve_number_encodes_absence_as_null_not_zero():
+    assert sealable_solve_number(2.5) == 2.5
+    assert sealable_solve_number(0) == 0.0
+    assert sealable_solve_number(None) is None
+    assert sealable_solve_number(float("inf")) is None
+    assert sealable_solve_number(float("-inf")) is None
+    assert sealable_solve_number(float("nan")) is None
+
+
 def test_route_techniques_may_publish_a_child_instead_of_installing_a_tensor():
     state = _parent_state(torch.Generator().manual_seed(1))
     request = _request("C01.T5.X4", state, _Evidence({}, {}), level_width=4096)
@@ -531,6 +591,256 @@ def test_t1_refuses_components_it_does_not_model():
     )
     with pytest.raises(CellTechniqueError, match="needs its own kernel"):
         resolve("T1", "C04")(request)
+
+
+# ------------------------------------------------- the seal, per defect site
+#
+# NOTES-MX-C 4.2/5: the first route that ever ran to completion compiled for 32
+# minutes and then died in `seal_receipt` on ``allowed_clamp_ratio: inf`` --
+# "Out of range float values are not JSON compliant".  The runner's copy of that
+# defect is fixed and pinned; these are the three registry copies of it, and
+# each one is a wave-1 cell that would otherwise buy its GPU time and get no
+# receipt and no ledger row for it.  Every test below walks a *real* kernel's
+# solve block through the *real* sealer.
+
+
+def _seal_solve(solve, *, cell_id):
+    """Seal one kernel's real solve block into a real receipt."""
+
+    receipt = blank_receipt(
+        cell_id=cell_id,
+        cell_instance_id="0" * 32,
+        campaign_wave=1,
+        repo_head="86bd44eb",
+        src_tree_sha="c" * 64,
+        probe_set_sha="d" * 64,
+        smoke_prompt_sha="e" * 64,
+    )
+    receipt["solve"] = {**receipt["solve"], **dict(solve)}
+    receipt["calibration"] = {"copy_exact_reproduction_relL2": 0.0, "passed": True}
+    receipt["behavior"] = {
+        "free_run": {
+            "probe_prompts": 8,
+            "tokens_per_prompt": 64,
+            "token_match_vs_control": 1.0,
+            "mean_lcp": 1.0,
+        },
+        "decode_smoke": [
+            {"prompt_sha": "f" * 64, "output_verbatim": "text", "terminated": "eos"}
+        ],
+    }
+    sealed = seal_receipt(receipt)
+    verify_seal(sealed)
+    return sealed
+
+
+class _StubReport:
+    """One `Lfm2PriorCorrectionReport.as_dict()` body, verbatim."""
+
+    def __init__(self, body):
+        self._body = body
+
+    def as_dict(self):
+        return dict(self._body)
+
+
+def _t1_request_with_report(monkeypatch, telemetry, *, generator_seed=21):
+    """Run T1 against a stubbed solver report, so the sentinel is exact.
+
+    The stub is not a fiction: `_solved_system_conditioning` really does return
+    ``math.inf`` for an exactly singular system -- pinned below -- and the point
+    of stubbing is to reach that branch deterministically instead of hoping a
+    random Gram lands with an exactly zero singular value.
+    """
+
+    from neural_forge import hf_lfm2_structural_residual_attention_fold as fold
+
+    def fake_fit_linear(input_rows, target_rows, *, prior, **kwargs):
+        # The solved factor is the projected prior itself, which is a real
+        # tensor of the right geometry; this test is about the telemetry.
+        return prior.clone(), _StubReport(telemetry)
+
+    monkeypatch.setattr(fold, "_fit_linear", fake_fit_linear)
+    generator = torch.Generator().manual_seed(generator_seed)
+    state = _parent_state(generator)
+    key = "model.layers.0.feed_forward.w1.weight"
+    fit_in, fit_out = _linear_evidence(state[key], 128, generator)
+    evidence = _Evidence(
+        {"mlp.input": fit_in, "mlp.gate": fit_out},
+        {"mlp.input": fit_in, "mlp.gate": fit_out},
+    )
+    return _request(
+        "C11.T1.M4.L00",
+        state,
+        evidence,
+        level_width=HIDDEN // 2,
+        knobs={"ridge": 1e-8, "max_prior_delta_ratio": None},
+    )
+
+
+def test_a_singular_solved_system_really_reports_an_infinite_condition_number():
+    """The sentinel the fix has to survive is the production solver's own."""
+
+    from neural_forge.hf_lfm2_structural_residual_attention_fold import (
+        _solved_system_conditioning,
+    )
+
+    _, smallest, condition = _solved_system_conditioning(
+        torch.zeros((4, 4), dtype=torch.float64)
+    )
+    assert smallest == 0.0
+    assert math.isinf(condition)
+
+
+def test_t1_seals_an_unbounded_condition_number_and_keeps_the_cap_flag(monkeypatch):
+    """Registry site :785 -- the sentinel here is load-bearing, twice over.
+
+    ``condition_cap_saturated`` *is* the statement the ``inf`` used to make, so
+    the flag is derived from the raw reading and only then is the number encoded
+    for the seal.  Both unbounded readings -- a singular system, and a solve that
+    measured no conditioning -- keep the flag and stop the chain at link 2.
+    """
+
+    request = _t1_request_with_report(
+        monkeypatch,
+        {
+            "prior_norm": 1.0,
+            "correction_norm": 0.0,
+            "update_scale": 1.0,
+            "solver_conditioning": {
+                "solver_path": "primal_solve",
+                "system_singular_value_maximum": 4.0,
+                "system_singular_value_minimum": 0.0,
+                "system_condition_number": float("inf"),
+            },
+        },
+    )
+    result = resolve("T1", "C11")(request)
+    validate_result(request, result)
+    assert result.solve["condition_number"] is None
+    assert result.solve["condition_cap_saturated"] is True
+    assert result.solve["condition_number_unbounded_reason"] == "singular-system"
+    # The verbatim report is sealed too and carries its own copy of the same
+    # sentinel; sanitizing only the flat field would still lose the receipt.
+    conditioning = result.solve["prior_correction_report"]["solver_conditioning"]
+    assert conditioning["system_condition_number"] is None
+    assert result.solve["prior_correction_report_non_finite"] == {
+        "solver_conditioning.system_condition_number": "positive-infinity"
+    }
+    sealed = _seal_solve(result.solve, cell_id="C11.T1.M4.L00")
+    assert first_divergent_metric(sealed) == "solve-conditioning"
+    assert sealed["outcome"]["status"] == "fail"
+
+
+def test_t1_treats_an_unreported_condition_number_as_unbounded(monkeypatch):
+    request = _t1_request_with_report(
+        monkeypatch,
+        {"prior_norm": 1.0, "correction_norm": 0.0, "update_scale": 1.0},
+    )
+    result = resolve("T1", "C11")(request)
+    validate_result(request, result)
+    assert result.solve["condition_number"] is None
+    assert result.solve["condition_cap_saturated"] is True
+    assert result.solve["condition_number_unbounded_reason"] == "solver-reported-none"
+    assert result.solve["prior_correction_report_non_finite"] == {}
+    sealed = _seal_solve(result.solve, cell_id="C11.T1.M4.L00")
+    assert first_divergent_metric(sealed) == "solve-conditioning"
+
+
+def test_t1_refuses_an_engaged_clamp_with_no_ratios(monkeypatch):
+    """`first_divergent_metric` would refuse this *at seal time*, after the solve."""
+
+    request = _t1_request_with_report(
+        monkeypatch,
+        {
+            "prior_norm": 1.0,
+            "correction_norm": 0.5,
+            "update_scale": 0.5,
+            "solver_conditioning": {
+                "solver_path": "primal_solve",
+                "system_condition_number": 12.0,
+            },
+            "prior_delta_clamp": {
+                "requested_prior_delta_ratio": None,
+                "allowed_prior_delta_ratio": None,
+                "clamp_engaged": True,
+            },
+        },
+    )
+    with pytest.raises(CellTechniqueError, match="second link is unwalkable"):
+        resolve("T1", "C11")(request)
+
+
+def test_t1_unclamped_solve_seals_null_clamp_ratios():
+    """Registry site :801 -- wave-1 cells 12-21 and 29, on the real solver.
+
+    With no prior-delta budget the clamp lane is never evaluated, so the report
+    emits no ratios at all.  ``allowed_clamp_ratio`` used to become
+    ``float("inf")`` right here, and the cell would have run to completion and
+    then failed to seal.
+    """
+
+    generator = torch.Generator().manual_seed(23)
+    state = _parent_state(generator)
+    key = "model.layers.5.feed_forward.w2.weight"
+    fit_in, fit_out = _linear_evidence(state[key], 256, generator)
+    evidence = _Evidence(
+        {"mlp.post_swiglu": fit_in, "mlp.down": fit_out},
+        {"mlp.post_swiglu": fit_in, "mlp.down": fit_out},
+    )
+    request = _request(
+        "C13.T1.M16.L05",
+        state,
+        evidence,
+        level_width=INTERMEDIATE * 15 // 16,
+        knobs={"ridge": 1e-8, "max_prior_delta_ratio": None},
+    )
+    result = resolve("T1", "C13")(request)
+    validate_result(request, result)
+    assert result.solve["clamp_engaged"] is False
+    assert result.solve["allowed_clamp_ratio"] is None
+    assert result.solve["requested_clamp_ratio"] is None
+    assert math.isfinite(result.solve["condition_number"])
+    assert result.solve["condition_cap_saturated"] is False
+    sealed = _seal_solve(result.solve, cell_id="C13.T1.M16.L05")
+    # An unevaluated clamp is not a conditioning failure, and a null ratio must
+    # not be read as one: the chain walks straight past link 2.
+    assert first_divergent_metric(sealed) is None
+    assert sealed["outcome"]["status"] == "pending-review"
+
+
+def test_c14_norm_refit_solve_block_is_sealable():
+    """Registry site :879 -- wave-1 cell 30, which could not have sealed at all.
+
+    The gain refit set ``allowed_clamp_ratio: float("inf")`` unconditionally, so
+    every C14 instance was going to fit, score, compose, free-run and then die
+    in the sealer.  The requested ratio is a real measurement and stays one.
+    """
+
+    generator = torch.Generator().manual_seed(24)
+    state = _parent_state(generator)
+    gain = torch.rand((HIDDEN,), dtype=torch.float64, generator=generator) + 0.5
+    rows = torch.randn((512, HIDDEN), dtype=torch.float64, generator=generator)
+    held = torch.randn((128, HIDDEN), dtype=torch.float64, generator=generator)
+
+    def normalized(values):
+        return values * torch.rsqrt(values.square().mean(dim=-1, keepdim=True) + 1e-5)
+
+    evidence = _Evidence(
+        {"residual.pre": rows, "operator.input": normalized(rows) * gain},
+        {"residual.pre": held, "operator.input": normalized(held) * gain},
+    )
+    request = _request(
+        "C14.T1.NA.L00", state, evidence, level_width=HIDDEN, knobs={"norm_ridge": 0.0}
+    )
+    result = resolve("T1", "C14")(request)
+    validate_result(request, result)
+    assert result.solve["allowed_clamp_ratio"] is None
+    assert result.solve["clamp_engaged"] is False
+    assert result.solve["requested_clamp_ratio"] > 0.0
+    sealed = _seal_solve(result.solve, cell_id="C14.T1.NA.L00")
+    assert first_divergent_metric(sealed) is None
+    assert sealed["solve"]["allowed_clamp_ratio"] is None
 
 
 def test_c14_standalone_norm_refit_recovers_a_planted_gain():

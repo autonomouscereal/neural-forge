@@ -485,3 +485,31 @@ matrix tells us which techniques work where; the composition run tests
 whether the winners compose — and its per-component receipts inherit the
 same first_divergent_metric chain so a composition failure localizes to
 the component that broke it.
+
+---
+
+## ADDENDUM 2 — 2026-08-10: the calibration criterion, final form
+
+Cell 0b's criterion moved twice, each fall forced by a measured wall and
+each documented:
+1. **Bit-identity of the A9 route artifact** (original): unreachable —
+   the dtype-resolution v2 makes A9's sealed bf16-on-Pascal
+   configuration unreproducible on any host that can read evidence.
+2. **Behavioral token-match ≥0.90 vs the sealed A9 dossier** (first
+   recalibration): unreachable in principle — on SM86 all eleven dtype
+   roles reproduce A9's contract exactly, but the fp32 OMP candidate
+   search is architecture-non-portable, so any recompilation is the
+   same mechanism at a nearby point; token-matching two chaotic
+   decoders measures decode divergence, not harness fidelity
+   (NOTES-MX-C).
+3. **Quality-band (final)**: the recompiled child's dossier is graded
+   under the frozen V5 protocol (digest verified) and must land within
+   ±2 useful-or-partial cases of the sealed A9 child's 8/15 at the same
+   cap. The ±2 is measured, not chosen: it is the frontier re-score's
+   own reviewer-sensitivity interval (6–9 around 8) on this exact
+   15-case surface. VERDICT: PASS with band delta 0 — identical
+   category on all fifteen cases, two responses byte-identical
+   (NOTES-MX-D §2, sealed review 5b8e6ee3…, receipt 28564b71…).
+
+The harness faithfully implements the mechanism; the campaign's cells
+are calibrated.
