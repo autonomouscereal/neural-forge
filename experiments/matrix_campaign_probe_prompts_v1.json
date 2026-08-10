@@ -1,0 +1,17 @@
+{
+  "kind": "free-run-probe",
+  "prompt_set_sha256": "cf2f20a4a4c7e93125dbff51e7e35efbb1088b74408f933125dd7c9b0cae8430",
+  "prompts": [
+    "The maintenance log for the north pump station reads as follows:",
+    "Three things every new apprentice on a rope-access team is taught first:",
+    "In 1911 the harbour master recorded an unusual tide, and the entry begins:",
+    "A short definition of thermal runaway, written for a technician:",
+    "The recipe calls for two cups of buckwheat flour, and then",
+    "Dear Ms. Okonkwo,\n\nThank you for the drawings. My one concern is",
+    "def rolling_median(values, window):\n    \"\"\"Return the rolling median of",
+    "Q: Why does a cast-iron pan need seasoning?\nA:"
+  ],
+  "purpose": "Fixed 8-prompt free-run probe for the stage-1 matrix campaign (design 2.1 stage 5).  Raw continuation prompts, no chat template, 64 greedy tokens each.  Disjoint from the 16 whole-response review prompts in lfm2_semantic_whole_response_prompts_v1.json so a cell can never be scored on text its review will also judge.",
+  "schema": "neural-forge-matrix-prompt-set-v1",
+  "sealed_for_campaign": "matrix-campaign-20260810"
+}
