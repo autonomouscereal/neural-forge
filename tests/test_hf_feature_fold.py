@@ -14,8 +14,10 @@ from neural_forge.hf_feature_fold import (  # noqa: E402
     FeatureFoldMemoryError,
     FeatureFoldRankError,
     FeatureFoldShapeError,
+    SparseFeatureFoldMap,
     build_coupled_feature_fold_map,
     build_feature_fold_map,
+    build_sparse_feature_fold_map,
 )
 
 
@@ -368,3 +370,265 @@ def test_shape_rank_and_nonfinite_inputs_fail_closed() -> None:
         fold.apply(bad_runtime)
     with pytest.raises(FeatureFoldShapeError, match="last dimension"):
         fold.decode(torch.ones(2, 3))
+
+
+def _asymmetric_sparse_fold(*, binding=None) -> SparseFeatureFoldMap:
+    return build_sparse_feature_fold_map(
+        kept_source_ids=torch.tensor([0, 3], dtype=torch.long),
+        dropped_source_ids=torch.tensor([1, 2, 4], dtype=torch.long),
+        support_offsets=torch.tensor([0, 2, 3, 5], dtype=torch.long),
+        support_target_ids=torch.tensor([0, 1, 1, 0, 1], dtype=torch.long),
+        coefficients=torch.tensor([0.5, -0.25, 1.5, -0.75, 0.2]),
+        source_width=5,
+        target_width=2,
+        admission_binding={"receipt_sha256": "a" * 64} if binding is None else binding,
+    )
+
+
+def test_asymmetric_sparse_map_matches_explicit_gather_decoder_algebra() -> None:
+    fold = _asymmetric_sparse_fold()
+    gather = fold.materialize_dense(max_elements=20, dtype=torch.float64)
+    decoder = fold.materialize_decoder_dense(max_elements=20, dtype=torch.float64)
+    source_rows = _rows(7, 5, 101)
+    target_rows = _rows(7, 2, 102)
+    producer = _rows(5, 4, 103)
+    consumer = _rows(6, 5, 104)
+
+    torch.testing.assert_close(fold.encode(source_rows), source_rows @ gather)
+    torch.testing.assert_close(fold.decode(target_rows), target_rows @ decoder)
+    torch.testing.assert_close(
+        fold.fold_producer_weight(producer),
+        gather.T @ producer,
+    )
+    torch.testing.assert_close(
+        fold.fold_consumer_weight(consumer),
+        consumer @ decoder.T,
+    )
+    torch.testing.assert_close(
+        decoder @ gather,
+        torch.eye(2, dtype=torch.float64),
+        atol=0.0,
+        rtol=0.0,
+    )
+    projection = gather @ decoder
+    torch.testing.assert_close(projection @ projection, projection)
+
+
+def test_asymmetric_sparse_map_report_proves_compile_time_only_state() -> None:
+    fold = _asymmetric_sparse_fold()
+    report = fold.verify(expected_map_sha256=fold.map_sha256)
+    assert report.full_target_rank is True
+    assert report.exact_anchor_identity is True
+    assert report.compile_time_only is True
+    assert report.runtime_parameter_count == 0
+    assert report.runtime_buffer_count == 0
+    assert report.runtime_sidecar_count == 0
+    assert report.map_stored_elements == 19
+    assert report.map_sha256 == fold.map_sha256
+    assert report.as_dict()["tensor_sha256s"]["support_offsets"]
+    assert not isinstance(fold, torch.nn.Module)
+
+
+def test_asymmetric_sparse_map_is_deterministic_and_binds_admission() -> None:
+    first = _asymmetric_sparse_fold()
+    second = _asymmetric_sparse_fold()
+    changed_binding = _asymmetric_sparse_fold(binding={"receipt_sha256": "b" * 64})
+    assert first.map_sha256 == second.map_sha256
+    assert first.report == second.report
+    assert first.map_sha256 != changed_binding.map_sha256
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        (
+            "kept_source_ids",
+            torch.tensor([0, 0], dtype=torch.long),
+            "strictly increasing",
+        ),
+        (
+            "dropped_source_ids",
+            torch.tensor([1, 2, 3], dtype=torch.long),
+            "partition",
+        ),
+        (
+            "support_offsets",
+            torch.tensor([0, 2, 1, 5], dtype=torch.long),
+            "monotonically nondecreasing",
+        ),
+        (
+            "support_target_ids",
+            torch.tensor([0, 0, 1, 0, 1], dtype=torch.long),
+            "duplicate support",
+        ),
+        (
+            "support_target_ids",
+            torch.tensor([0, 1, 2, 0, 1], dtype=torch.long),
+            "out-of-range",
+        ),
+        (
+            "coefficients",
+            torch.tensor([0.5, -0.25, 0.0, -0.75, 0.2]),
+            "omit zero",
+        ),
+    ],
+)
+def test_asymmetric_sparse_map_rejects_malformed_routes(
+    field: str,
+    replacement,
+    message: str,
+) -> None:
+    arguments = {
+        "kept_source_ids": torch.tensor([0, 3], dtype=torch.long),
+        "dropped_source_ids": torch.tensor([1, 2, 4], dtype=torch.long),
+        "support_offsets": torch.tensor([0, 2, 3, 5], dtype=torch.long),
+        "support_target_ids": torch.tensor([0, 1, 1, 0, 1], dtype=torch.long),
+        "coefficients": torch.tensor([0.5, -0.25, 1.5, -0.75, 0.2]),
+    }
+    arguments[field] = replacement
+    with pytest.raises(FeatureFoldShapeError, match=message):
+        build_sparse_feature_fold_map(
+            **arguments,
+            source_width=5,
+            target_width=2,
+        )
+
+
+def test_asymmetric_sparse_map_rejects_nonfinite_autograd_and_noncanonical_inputs() -> (
+    None
+):
+    with pytest.raises(FeatureFoldFiniteError, match="NaN or infinity"):
+        build_sparse_feature_fold_map(
+            kept_source_ids=torch.tensor([0, 3], dtype=torch.long),
+            dropped_source_ids=torch.tensor([1, 2, 4], dtype=torch.long),
+            support_offsets=torch.tensor([0, 2, 3, 5], dtype=torch.long),
+            support_target_ids=torch.tensor([0, 1, 1, 0, 1], dtype=torch.long),
+            coefficients=torch.tensor([0.5, float("nan"), 1.5, -0.75, 0.2]),
+            source_width=5,
+            target_width=2,
+        )
+    with pytest.raises(FeatureFoldShapeError, match="without autograd"):
+        build_sparse_feature_fold_map(
+            kept_source_ids=torch.tensor([0, 3], dtype=torch.long),
+            dropped_source_ids=torch.tensor([1, 2, 4], dtype=torch.long),
+            support_offsets=torch.tensor([0, 2, 3, 5], dtype=torch.long),
+            support_target_ids=torch.tensor([0, 1, 1, 0, 1], dtype=torch.long),
+            coefficients=torch.ones(5, requires_grad=True),
+            source_width=5,
+            target_width=2,
+        )
+    with pytest.raises(FeatureFoldShapeError, match="torch.long"):
+        build_sparse_feature_fold_map(
+            kept_source_ids=torch.tensor([0, 3], dtype=torch.int32),
+            dropped_source_ids=torch.tensor([1, 2, 4], dtype=torch.long),
+            support_offsets=torch.tensor([0, 2, 3, 5], dtype=torch.long),
+            support_target_ids=torch.tensor([0, 1, 1, 0, 1], dtype=torch.long),
+            coefficients=torch.ones(5),
+            source_width=5,
+            target_width=2,
+        )
+    with pytest.raises(FeatureFoldShapeError, match="canonical JSON"):
+        _asymmetric_sparse_fold(binding={"bad": float("nan")})
+
+    class TensorSubclass(torch.Tensor):
+        pass
+
+    with pytest.raises(FeatureFoldShapeError, match="torch.long"):
+        build_sparse_feature_fold_map(
+            kept_source_ids=torch.tensor([0, 3], dtype=torch.long).as_subclass(
+                TensorSubclass
+            ),
+            dropped_source_ids=torch.tensor([1, 2, 4], dtype=torch.long),
+            support_offsets=torch.tensor([0, 2, 3, 5], dtype=torch.long),
+            support_target_ids=torch.tensor([0, 1, 1, 0, 1], dtype=torch.long),
+            coefficients=torch.ones(5),
+            source_width=5,
+            target_width=2,
+        )
+
+
+def test_asymmetric_sparse_map_allows_zero_length_orthogonal_route() -> None:
+    fold = build_sparse_feature_fold_map(
+        kept_source_ids=torch.tensor([0, 1, 2], dtype=torch.long),
+        dropped_source_ids=torch.tensor([3], dtype=torch.long),
+        support_offsets=torch.tensor([0, 0], dtype=torch.long),
+        support_target_ids=torch.empty(0, dtype=torch.long),
+        coefficients=torch.empty(0),
+        source_width=4,
+        target_width=3,
+    )
+    gather = fold.materialize_dense(max_elements=20, dtype=torch.float64)
+    decoder = fold.materialize_decoder_dense(max_elements=20, dtype=torch.float64)
+    torch.testing.assert_close(
+        decoder @ gather,
+        torch.eye(3, dtype=torch.float64),
+        atol=0.0,
+        rtol=0.0,
+    )
+    assert bool((decoder[:, 3] == 0).all())
+    values = _rows(5, 3, 130)
+    decoded = fold.decode(values)
+    torch.testing.assert_close(decoded[:, :3], values)
+    assert bool((decoded[:, 3] == 0).all())
+
+
+def test_asymmetric_sparse_map_detects_tensor_report_and_external_seal_tampering() -> (
+    None
+):
+    fold = _asymmetric_sparse_fold()
+    fold.coefficients[0] += 0.125
+    with pytest.raises(feature_fold.FeatureFoldError, match="authentication"):
+        fold.verify()
+
+    report_fold = _asymmetric_sparse_fold()
+    object.__setattr__(report_fold.report, "runtime_sidecar_count", 1)
+    with pytest.raises(feature_fold.FeatureFoldError, match="report authentication"):
+        report_fold.verify()
+
+    external_fold = _asymmetric_sparse_fold()
+    with pytest.raises(feature_fold.FeatureFoldError, match="external seal"):
+        external_fold.verify(expected_map_sha256="f" * 64)
+    with pytest.raises(FeatureFoldShapeError, match="lowercase SHA-256"):
+        external_fold.verify(expected_map_sha256="F" * 64)
+
+
+def test_asymmetric_sparse_map_identity_empty_routes_and_memory_guards() -> None:
+    identity = build_sparse_feature_fold_map(
+        kept_source_ids=torch.arange(3, dtype=torch.long),
+        dropped_source_ids=torch.empty(0, dtype=torch.long),
+        support_offsets=torch.tensor([0], dtype=torch.long),
+        support_target_ids=torch.empty(0, dtype=torch.long),
+        coefficients=torch.empty(0),
+        source_width=3,
+        target_width=3,
+    )
+    values = _rows(4, 3, 110)
+    torch.testing.assert_close(identity.encode(values), values)
+    torch.testing.assert_close(identity.decode(values), values)
+    torch.testing.assert_close(identity.fold_producer_weight(values.T), values.T)
+    torch.testing.assert_close(identity.fold_consumer_weight(values), values)
+    with pytest.raises(FeatureFoldMemoryError, match="exceeding"):
+        identity.materialize_dense(max_elements=8)
+    with pytest.raises(FeatureFoldMemoryError, match="exceeding"):
+        identity.materialize_decoder_dense(max_elements=8)
+
+
+def test_asymmetric_sparse_operations_are_detached_and_preserve_runtime_dtype() -> None:
+    fold = _asymmetric_sparse_fold()
+    rows = _rows(4, 5, 120).float().requires_grad_(True)
+    target = _rows(4, 2, 121).bfloat16().requires_grad_(True)
+    producer = _rows(5, 3, 122).float().requires_grad_(True)
+    consumer = _rows(3, 5, 123).bfloat16().requires_grad_(True)
+    outputs = (
+        fold.encode(rows),
+        fold.decode(target),
+        fold.fold_producer_weight(producer),
+        fold.fold_consumer_weight(consumer),
+    )
+    assert [output.dtype for output in outputs] == [
+        torch.float32,
+        torch.bfloat16,
+        torch.float32,
+        torch.bfloat16,
+    ]
+    assert all(not output.requires_grad for output in outputs)

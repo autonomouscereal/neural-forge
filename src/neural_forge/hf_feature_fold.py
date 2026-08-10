@@ -14,13 +14,17 @@ decoded rectangular path is therefore the source-space projection ``M @ M.T``.
 
 from __future__ import annotations
 
+import hashlib
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256
+
 
 DEFAULT_MAX_DENSE_ELEMENTS = 1_000_000
+SPARSE_FEATURE_FOLD_SCHEMA = "neural-forge-sparse-feature-fold-map-v1"
 
 
 class FeatureFoldError(ValueError):
@@ -206,6 +210,52 @@ class FeatureFoldReport:
 
     def __getitem__(self, key: str) -> Any:
         return self.as_dict()[key]
+
+
+@dataclass(frozen=True, slots=True)
+class SparseFeatureFoldReport:
+    """Authenticated storage and zero-runtime-state proof for a sparse map."""
+
+    schema: str
+    source_width: int
+    target_width: int
+    kept_source_count: int
+    dropped_source_count: int
+    support_edge_count: int
+    coefficient_dtype: str
+    tensor_sha256s: tuple[tuple[str, str], ...]
+    admission_binding_sha256: str
+    map_stored_elements: int
+    map_stored_bytes: int
+    full_target_rank: bool
+    exact_anchor_identity: bool
+    compile_time_only: bool
+    runtime_parameter_count: int
+    runtime_buffer_count: int
+    runtime_sidecar_count: int
+    map_sha256: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "source_width": self.source_width,
+            "target_width": self.target_width,
+            "kept_source_count": self.kept_source_count,
+            "dropped_source_count": self.dropped_source_count,
+            "support_edge_count": self.support_edge_count,
+            "coefficient_dtype": self.coefficient_dtype,
+            "tensor_sha256s": dict(self.tensor_sha256s),
+            "admission_binding_sha256": self.admission_binding_sha256,
+            "map_stored_elements": self.map_stored_elements,
+            "map_stored_bytes": self.map_stored_bytes,
+            "full_target_rank": self.full_target_rank,
+            "exact_anchor_identity": self.exact_anchor_identity,
+            "compile_time_only": self.compile_time_only,
+            "runtime_parameter_count": self.runtime_parameter_count,
+            "runtime_buffer_count": self.runtime_buffer_count,
+            "runtime_sidecar_count": self.runtime_sidecar_count,
+            "map_sha256": self.map_sha256,
+        }
 
 
 def _require_torch():
@@ -554,6 +604,600 @@ class FeatureFoldMap:
         """Alias for the explicitly guarded dense helper."""
 
         return self.materialize_dense(**kwargs)
+
+
+def _authenticated_tensor_sha256(tensor: Any) -> str:
+    """Hash exact canonical tensor metadata and bytes without dtype coercion."""
+
+    torch = _require_torch()
+    if not isinstance(tensor, torch.Tensor):
+        raise FeatureFoldShapeError("Authenticated value must be a torch.Tensor.")
+    value = tensor.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    for field in (
+        "neural-forge-feature-fold-tensor-v1",
+        str(value.dtype),
+        repr(tuple(int(size) for size in value.shape)),
+        repr(tuple(int(stride) for stride in value.stride())),
+    ):
+        digest.update(field.encode("utf-8"))
+        digest.update(b"\0")
+    raw = value.view(torch.uint8).numpy().tobytes(order="C")
+    digest.update(raw)
+    return digest.hexdigest()
+
+
+def _sparse_index_tensor(torch, value: Any, name: str, *, allow_empty: bool):
+    if (
+        type(value) is not torch.Tensor
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 1
+        or value.dtype != torch.long
+        or value.requires_grad
+    ):
+        raise FeatureFoldShapeError(
+            f"{name} must be a dense non-meta rank-one torch.long tensor "
+            "without autograd state."
+        )
+    if not allow_empty and int(value.numel()) == 0:
+        raise FeatureFoldShapeError(f"{name} cannot be empty.")
+    return value.detach().to(device="cpu").contiguous().clone()
+
+
+def _sparse_coefficient_tensor(torch, value: Any, name: str, *, allow_empty: bool):
+    if (
+        type(value) is not torch.Tensor
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 1
+        or not torch.is_floating_point(value)
+        or torch.is_complex(value)
+        or value.requires_grad
+    ):
+        raise FeatureFoldShapeError(
+            f"{name} must be a dense non-meta rank-one real floating tensor "
+            "without autograd state."
+        )
+    if not allow_empty and int(value.numel()) == 0:
+        raise FeatureFoldShapeError(f"{name} cannot be empty.")
+    result = value.detach().to(device="cpu").contiguous().clone()
+    if not bool(torch.isfinite(result).all()):
+        raise FeatureFoldFiniteError(f"{name} contains NaN or infinity.")
+    if bool((result == 0).any()):
+        raise FeatureFoldShapeError(
+            f"{name} must omit zero-valued sparse support edges."
+        )
+    return result
+
+
+class SparseFeatureFoldMap:
+    """Asymmetric anchor/decoder feature transport with zero runtime state.
+
+    ``G[source, target]`` is an implicit one-hot anchor gather and
+    ``D[target, source]`` is an implicit sparse decoder.  The represented
+    operations are::
+
+        encode(x)               = x @ G
+        decode(z)               = z @ D
+        fold_producer_weight(W) = G.T @ W
+        fold_consumer_weight(W) = W @ D.T
+
+    The map exists only while compiling target weights.  It is neither an
+    ``nn.Module`` nor child runtime state, and every public operation returns a
+    detached tensor.
+    """
+
+    __slots__ = (
+        "_admission_binding_sha256",
+        "_sealed_map_sha256",
+        "coefficients",
+        "dropped_source_ids",
+        "kept_source_ids",
+        "report",
+        "source_width",
+        "support_offsets",
+        "support_target_ids",
+        "target_width",
+    )
+
+    def __init__(
+        self,
+        kept_source_ids: Any,
+        dropped_source_ids: Any,
+        support_offsets: Any,
+        support_target_ids: Any,
+        coefficients: Any,
+        *,
+        source_width: int,
+        target_width: int,
+        admission_binding: Mapping[str, Any] | None = None,
+    ) -> None:
+        torch = _require_torch()
+        source_width = _positive_int(source_width, "source_width")
+        target_width = _positive_int(
+            target_width,
+            "target_width",
+            maximum=source_width,
+        )
+        kept = _sparse_index_tensor(
+            torch,
+            kept_source_ids,
+            "kept_source_ids",
+            allow_empty=False,
+        )
+        dropped = _sparse_index_tensor(
+            torch,
+            dropped_source_ids,
+            "dropped_source_ids",
+            allow_empty=True,
+        )
+        offsets = _sparse_index_tensor(
+            torch,
+            support_offsets,
+            "support_offsets",
+            allow_empty=False,
+        )
+        supports = _sparse_index_tensor(
+            torch,
+            support_target_ids,
+            "support_target_ids",
+            allow_empty=True,
+        )
+        values = _sparse_coefficient_tensor(
+            torch,
+            coefficients,
+            "coefficients",
+            allow_empty=True,
+        )
+        if admission_binding is None:
+            binding_body: dict[str, Any] = {}
+        elif isinstance(admission_binding, Mapping):
+            binding_body = {str(key): value for key, value in admission_binding.items()}
+        else:
+            raise FeatureFoldShapeError("admission_binding must be a mapping.")
+        try:
+            binding_sha256 = canonical_sha256(binding_body)
+        except (TypeError, ValueError) as exc:
+            raise FeatureFoldShapeError(
+                "admission_binding must be canonical JSON."
+            ) from exc
+
+        self.source_width = source_width
+        self.target_width = target_width
+        self.kept_source_ids = kept
+        self.dropped_source_ids = dropped
+        self.support_offsets = offsets
+        self.support_target_ids = supports
+        self.coefficients = values
+        self._admission_binding_sha256 = binding_sha256
+        self._validate_state()
+        map_sha256 = canonical_sha256(self._map_body())
+        self._sealed_map_sha256 = map_sha256
+        self.report = self._build_report(map_sha256)
+
+    @property
+    def map_sha256(self) -> str:
+        return self._sealed_map_sha256
+
+    @property
+    def admission_binding_sha256(self) -> str:
+        return self._admission_binding_sha256
+
+    @property
+    def stored_elements(self) -> int:
+        return sum(int(value.numel()) for value in self._tensor_inventory().values())
+
+    @property
+    def stored_bytes(self) -> int:
+        return sum(
+            int(value.numel()) * int(value.element_size())
+            for value in self._tensor_inventory().values()
+        )
+
+    def _tensor_inventory(self) -> dict[str, Any]:
+        return {
+            "kept_source_ids": self.kept_source_ids,
+            "dropped_source_ids": self.dropped_source_ids,
+            "support_offsets": self.support_offsets,
+            "support_target_ids": self.support_target_ids,
+            "coefficients": self.coefficients,
+        }
+
+    def _tensor_sha256s(self) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (name, _authenticated_tensor_sha256(value))
+            for name, value in self._tensor_inventory().items()
+        )
+
+    def _map_body(self) -> dict[str, Any]:
+        return {
+            "schema": SPARSE_FEATURE_FOLD_SCHEMA,
+            "source_width": self.source_width,
+            "target_width": self.target_width,
+            "tensor_sha256s": dict(self._tensor_sha256s()),
+            "admission_binding_sha256": self._admission_binding_sha256,
+            "compile_time_only": True,
+            "runtime_parameter_count": 0,
+            "runtime_buffer_count": 0,
+            "runtime_sidecar_count": 0,
+        }
+
+    def _build_report(self, map_sha256: str) -> SparseFeatureFoldReport:
+        return SparseFeatureFoldReport(
+            schema=SPARSE_FEATURE_FOLD_SCHEMA,
+            source_width=self.source_width,
+            target_width=self.target_width,
+            kept_source_count=int(self.kept_source_ids.numel()),
+            dropped_source_count=int(self.dropped_source_ids.numel()),
+            support_edge_count=int(self.support_target_ids.numel()),
+            coefficient_dtype=str(self.coefficients.dtype),
+            tensor_sha256s=self._tensor_sha256s(),
+            admission_binding_sha256=self._admission_binding_sha256,
+            map_stored_elements=self.stored_elements,
+            map_stored_bytes=self.stored_bytes,
+            full_target_rank=True,
+            exact_anchor_identity=True,
+            compile_time_only=True,
+            runtime_parameter_count=0,
+            runtime_buffer_count=0,
+            runtime_sidecar_count=0,
+            map_sha256=map_sha256,
+        )
+
+    def _validate_state(self) -> None:
+        torch = _require_torch()
+        source_width = _positive_int(self.source_width, "source_width")
+        target_width = _positive_int(
+            self.target_width,
+            "target_width",
+            maximum=source_width,
+        )
+        kept = _sparse_index_tensor(
+            torch,
+            self.kept_source_ids,
+            "kept_source_ids",
+            allow_empty=False,
+        )
+        dropped = _sparse_index_tensor(
+            torch,
+            self.dropped_source_ids,
+            "dropped_source_ids",
+            allow_empty=True,
+        )
+        offsets = _sparse_index_tensor(
+            torch,
+            self.support_offsets,
+            "support_offsets",
+            allow_empty=False,
+        )
+        supports = _sparse_index_tensor(
+            torch,
+            self.support_target_ids,
+            "support_target_ids",
+            allow_empty=True,
+        )
+        values = _sparse_coefficient_tensor(
+            torch,
+            self.coefficients,
+            "coefficients",
+            allow_empty=True,
+        )
+        if int(kept.numel()) != target_width:
+            raise FeatureFoldShapeError(
+                "kept_source_ids must contain exactly target_width anchors."
+            )
+        if int(dropped.numel()) != source_width - target_width:
+            raise FeatureFoldShapeError(
+                "dropped_source_ids must contain the exact source complement."
+            )
+        for name, indices in (
+            ("kept_source_ids", kept),
+            ("dropped_source_ids", dropped),
+        ):
+            if int(indices.numel()) > 1 and not bool(
+                (indices[1:] > indices[:-1]).all()
+            ):
+                raise FeatureFoldShapeError(
+                    f"{name} must be strictly increasing and duplicate-free."
+                )
+            if int(indices.numel()) and bool(
+                ((indices < 0) | (indices >= source_width)).any()
+            ):
+                raise FeatureFoldShapeError(f"{name} contains an out-of-range index.")
+        partition = torch.cat((kept, dropped)).sort().values
+        if not torch.equal(partition, torch.arange(source_width, dtype=torch.long)):
+            raise FeatureFoldShapeError(
+                "kept_source_ids and dropped_source_ids must form a complete, "
+                "disjoint source partition."
+            )
+        if int(offsets.numel()) != int(dropped.numel()) + 1:
+            raise FeatureFoldShapeError(
+                "support_offsets must contain dropped_source_count + 1 entries."
+            )
+        if int(offsets[0].item()) != 0:
+            raise FeatureFoldShapeError("support_offsets must begin at zero.")
+        if int(offsets[-1].item()) != int(supports.numel()):
+            raise FeatureFoldShapeError(
+                "support_offsets must end at the support edge count."
+            )
+        differences = offsets[1:] - offsets[:-1]
+        if int(dropped.numel()) and bool((differences < 0).any()):
+            raise FeatureFoldShapeError(
+                "support_offsets must be monotonically nondecreasing."
+            )
+        if int(supports.numel()) != int(values.numel()):
+            raise FeatureFoldShapeError(
+                "support_target_ids and coefficients must have equal length."
+            )
+        if int(supports.numel()) and bool(
+            ((supports < 0) | (supports >= target_width)).any()
+        ):
+            raise FeatureFoldShapeError(
+                "support_target_ids contains an out-of-range target index."
+            )
+        for dropped_index in range(int(dropped.numel())):
+            start = int(offsets[dropped_index].item())
+            stop = int(offsets[dropped_index + 1].item())
+            route = supports[start:stop]
+            if int(torch.unique(route).numel()) != int(route.numel()):
+                raise FeatureFoldShapeError(
+                    "A dropped source route contains duplicate support targets."
+                )
+
+    def verify(
+        self, *, expected_map_sha256: str | None = None
+    ) -> SparseFeatureFoldReport:
+        """Reauthenticate tensors, geometry, report, and an optional external seal."""
+
+        self._validate_state()
+        current_sha256 = canonical_sha256(self._map_body())
+        if current_sha256 != self._sealed_map_sha256:
+            raise FeatureFoldError("Sparse feature-fold tensor authentication failed.")
+        expected_report = self._build_report(current_sha256)
+        if self.report != expected_report:
+            raise FeatureFoldError("Sparse feature-fold report authentication failed.")
+        if expected_map_sha256 is not None:
+            if (
+                not isinstance(expected_map_sha256, str)
+                or len(expected_map_sha256) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in expected_map_sha256
+                )
+            ):
+                raise FeatureFoldShapeError(
+                    "expected_map_sha256 must be a lowercase SHA-256 digest."
+                )
+            if expected_map_sha256 != current_sha256:
+                raise FeatureFoldError("Sparse feature-fold external seal mismatched.")
+        return self.report
+
+    def _runtime_tensors(self, reference: Any) -> tuple[Any, Any, Any, Any, Any]:
+        torch = _require_torch()
+        offsets = self.support_offsets.clone()
+        lengths = offsets[1:] - offsets[:-1]
+        dropped_edge_ids = torch.repeat_interleave(
+            torch.arange(
+                int(self.dropped_source_ids.numel()),
+                dtype=torch.long,
+            ),
+            lengths,
+        )
+        return (
+            self.kept_source_ids.to(device=reference.device).clone(),
+            self.dropped_source_ids.to(device=reference.device).clone(),
+            self.support_target_ids.to(device=reference.device).clone(),
+            self.coefficients.to(
+                device=reference.device,
+                dtype=reference.dtype,
+            ).clone(),
+            dropped_edge_ids.to(device=reference.device),
+        )
+
+    def encode(self, source_rows: Any):
+        """Gather admitted anchor columns, implementing ``source_rows @ G``."""
+
+        torch = _require_torch()
+        self.verify()
+        source_rows = _finite_runtime_tensor(
+            torch,
+            source_rows,
+            "source_rows",
+            width=self.source_width,
+        )
+        kept, _, _, _, _ = self._runtime_tensors(source_rows)
+        return source_rows.detach().index_select(-1, kept).contiguous()
+
+    def apply(self, source_rows: Any):
+        return self.encode(source_rows)
+
+    def __call__(self, source_rows: Any):
+        return self.encode(source_rows)
+
+    def decode(self, target_rows: Any):
+        """Decode anchors and sparse dropped-channel routes, implementing ``z @ D``."""
+
+        torch = _require_torch()
+        self.verify()
+        target_rows = _finite_runtime_tensor(
+            torch,
+            target_rows,
+            "target_rows",
+            width=self.target_width,
+        )
+        kept, dropped, supports, coefficients, dropped_edges = self._runtime_tensors(
+            target_rows
+        )
+        flat = target_rows.detach().reshape(-1, self.target_width)
+        decoded = flat.new_zeros((int(flat.shape[0]), self.source_width))
+        decoded.index_copy_(1, kept, flat)
+        if int(dropped.numel()):
+            edge_values = flat.index_select(1, supports) * coefficients.unsqueeze(0)
+            dropped_values = flat.new_zeros((int(flat.shape[0]), int(dropped.numel())))
+            dropped_values.index_add_(1, dropped_edges, edge_values)
+            decoded.index_copy_(1, dropped, dropped_values)
+        result = decoded.reshape(*target_rows.shape[:-1], self.source_width)
+        if not bool(torch.isfinite(result).all()):
+            raise FeatureFoldFiniteError("Sparse decoding produced NaN or infinity.")
+        return result.contiguous()
+
+    def fold_producer_weight(self, source_weight: Any):
+        """Return ``G.T @ W`` for producer ``W[out=source_width, in]``."""
+
+        torch = _require_torch()
+        self.verify()
+        source_weight = _real_tensor(
+            torch,
+            source_weight,
+            "source_weight",
+            dimensions=2,
+        )
+        if int(source_weight.shape[0]) != self.source_width:
+            raise FeatureFoldShapeError(
+                f"source_weight rows must equal {self.source_width}."
+            )
+        if not bool(torch.isfinite(source_weight.detach()).all()):
+            raise FeatureFoldFiniteError("source_weight contains NaN or infinity.")
+        kept, _, _, _, _ = self._runtime_tensors(source_weight)
+        return source_weight.detach().index_select(0, kept).contiguous()
+
+    def fold_consumer_weight(self, source_weight: Any):
+        """Return ``W @ D.T`` without materializing the sparse decoder."""
+
+        torch = _require_torch()
+        self.verify()
+        source_weight = _real_tensor(
+            torch,
+            source_weight,
+            "source_weight",
+            dimensions=2,
+        )
+        if int(source_weight.shape[1]) != self.source_width:
+            raise FeatureFoldShapeError(
+                f"source_weight columns must equal {self.source_width}."
+            )
+        if not bool(torch.isfinite(source_weight.detach()).all()):
+            raise FeatureFoldFiniteError("source_weight contains NaN or infinity.")
+        kept, dropped, supports, coefficients, dropped_edges = self._runtime_tensors(
+            source_weight
+        )
+        detached = source_weight.detach()
+        result = detached.index_select(1, kept).clone()
+        if int(dropped.numel()):
+            dropped_columns = detached.index_select(1, dropped)
+            edge_columns = dropped_columns.index_select(1, dropped_edges)
+            result.index_add_(1, supports, edge_columns * coefficients.unsqueeze(0))
+        if not bool(torch.isfinite(result).all()):
+            raise FeatureFoldFiniteError(
+                "Sparse consumer folding produced NaN or infinity."
+            )
+        return result.contiguous()
+
+    def materialize_dense(
+        self,
+        *,
+        max_elements: int = DEFAULT_MAX_DENSE_ELEMENTS,
+        dtype: Any | None = None,
+        device: Any = "cpu",
+    ):
+        """Materialize anchor gather ``G`` under a caller-provided size guard."""
+
+        torch = _require_torch()
+        self.verify()
+        max_elements = _positive_int(max_elements, "max_elements")
+        elements = self.source_width * self.target_width
+        if elements > max_elements:
+            raise FeatureFoldMemoryError(
+                f"Dense map needs {elements} elements, exceeding "
+                f"max_elements={max_elements}."
+            )
+        dtype = self.coefficients.dtype if dtype is None else dtype
+        probe = torch.empty((), dtype=dtype)
+        if not torch.is_floating_point(probe) or torch.is_complex(probe):
+            raise FeatureFoldShapeError("dtype must be a real floating dtype.")
+        kept = self.kept_source_ids.to(device=device).clone()
+        dense = torch.zeros(
+            (self.source_width, self.target_width),
+            dtype=dtype,
+            device=device,
+        )
+        dense[kept, torch.arange(self.target_width, device=device)] = 1
+        return dense
+
+    def materialize_decoder_dense(
+        self,
+        *,
+        max_elements: int = DEFAULT_MAX_DENSE_ELEMENTS,
+        dtype: Any | None = None,
+        device: Any = "cpu",
+    ):
+        """Materialize sparse decoder ``D`` only for guarded verification."""
+
+        torch = _require_torch()
+        self.verify()
+        max_elements = _positive_int(max_elements, "max_elements")
+        elements = self.source_width * self.target_width
+        if elements > max_elements:
+            raise FeatureFoldMemoryError(
+                f"Dense decoder needs {elements} elements, exceeding "
+                f"max_elements={max_elements}."
+            )
+        dtype = self.coefficients.dtype if dtype is None else dtype
+        probe = torch.empty((), dtype=dtype)
+        if not torch.is_floating_point(probe) or torch.is_complex(probe):
+            raise FeatureFoldShapeError("dtype must be a real floating dtype.")
+        kept = self.kept_source_ids.to(device=device).clone()
+        dropped = self.dropped_source_ids.to(device=device).clone()
+        supports = self.support_target_ids.to(device=device).clone()
+        coefficients = self.coefficients.to(device=device, dtype=dtype).clone()
+        offsets = self.support_offsets.clone()
+        lengths = offsets[1:] - offsets[:-1]
+        dropped_edges = torch.repeat_interleave(
+            torch.arange(int(dropped.numel()), dtype=torch.long),
+            lengths,
+        ).to(device=device)
+        decoder = torch.zeros(
+            (self.target_width, self.source_width),
+            dtype=dtype,
+            device=device,
+        )
+        decoder[torch.arange(self.target_width, device=device), kept] = 1
+        if int(dropped.numel()):
+            decoder.index_put_(
+                (supports, dropped.index_select(0, dropped_edges)),
+                coefficients,
+                accumulate=True,
+            )
+        return decoder
+
+    def to_dense(self, **kwargs: Any):
+        return self.materialize_dense(**kwargs)
+
+
+def build_sparse_feature_fold_map(
+    *,
+    kept_source_ids: Any,
+    dropped_source_ids: Any,
+    support_offsets: Any,
+    support_target_ids: Any,
+    coefficients: Any,
+    source_width: int,
+    target_width: int,
+    admission_binding: Mapping[str, Any] | None = None,
+) -> SparseFeatureFoldMap:
+    """Build an authenticated compile-time asymmetric sparse fold map."""
+
+    return SparseFeatureFoldMap(
+        kept_source_ids,
+        dropped_source_ids,
+        support_offsets,
+        support_target_ids,
+        coefficients,
+        source_width=source_width,
+        target_width=target_width,
+        admission_binding=admission_binding,
+    )
 
 
 def _activation_matrices(torch, values: Any) -> tuple[Any, ...]:
@@ -1182,6 +1826,7 @@ build_activation_aware_feature_fold = build_feature_fold_map
 
 __all__ = [
     "DEFAULT_MAX_DENSE_ELEMENTS",
+    "SPARSE_FEATURE_FOLD_SCHEMA",
     "FeatureFoldError",
     "FeatureFoldFiniteError",
     "FeatureFoldMap",
@@ -1189,7 +1834,10 @@ __all__ = [
     "FeatureFoldRankError",
     "FeatureFoldReport",
     "FeatureFoldShapeError",
+    "SparseFeatureFoldMap",
+    "SparseFeatureFoldReport",
     "build_activation_aware_feature_fold",
     "build_coupled_feature_fold_map",
     "build_feature_fold_map",
+    "build_sparse_feature_fold_map",
 ]
