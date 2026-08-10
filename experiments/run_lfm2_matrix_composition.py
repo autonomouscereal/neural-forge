@@ -194,8 +194,22 @@ def _inherited_split_manifest(
 
     So the split is inherited by ``record_id`` -- the per-batch input digest,
     which is identical across captures because the corpus is -- and the
-    deviation is sealed on the manifest's face, together with what the seeded
-    rule *would* have produced, so nobody has to take the inheritance on trust.
+    deviation is sealed on the manifest's face, so nobody has to take the
+    inheritance on trust.
+
+    **The body carries nothing that is not the split.**  It used to carry a
+    ``captured_at`` timestamp and the step's conditioning provenance, and the
+    shared content-addressed capture root found out why that is wrong within
+    one run: two M-B cells whose recipes share a prefix reuse the same capture,
+    re-derive the same split over the same records, and got two different
+    ``manifest_sha256`` values because the manifests were written a hundred
+    minutes apart.  `load_site_evidence` then correctly refused to reuse the
+    site payload one of them had already built -- "Cached site evidence was
+    built under a different split manifest" -- and the second cell sealed
+    `infra` at its first conditioned step.  The guard was right; the manifest
+    was not.  A split manifest is a statement about a split, so it is a pure
+    function of the cache identity and the inherited rows, and the run-specific
+    provenance rides in a sidecar and in the receipt where it belongs.
     """
 
     from neural_forge.dynamic_circuit_ir import canonical_sha256
@@ -228,11 +242,9 @@ def _inherited_split_manifest(
             "folded child so the next component's winner is re-solved against "
             "the inputs it will actually see."
         ),
-        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "cache_directory": str(step["cache_directory"]),
         "trace_cache_key": str(cache.cache_key),
         "parent_identity_sha256": str(cache.parent_fingerprint),
-        "conditioning": dict(step["conditioning"]),
         "split": {
             "authority": "inherited-from-parent-evidence-base-by-record-id",
             "method": "inherit",
@@ -315,17 +327,49 @@ def capture_conditioned_evidence(
         cache=cache,
         base_manifest=base_manifest,
         record_ids=record_ids,
-        step={
-            "cache_directory": str(cache_directory),
-            "conditioning": conditioning,
-        },
+        step={"cache_directory": str(cache_directory)},
     )
     manifest_path = Path(output_root) / f"split-manifest-{cache.cache_key[:16]}.json"
     from neural_forge.dynamic_circuit_ir import canonical_json_bytes
 
-    temporary = manifest_path.with_suffix(".json.partial")
-    temporary.write_bytes(canonical_json_bytes(manifest))
-    temporary.replace(manifest_path)
+    encoded = canonical_json_bytes(manifest)
+    if manifest_path.is_file():
+        # An earlier step, or an earlier cell, already sealed the split for this
+        # exact capture.  It must agree byte for byte; a disagreement means two
+        # runs derived different splits over the same rows, which is the one
+        # thing the inheritance rule exists to prevent.
+        existing = manifest_path.read_bytes()
+        if existing != encoded:
+            raise MatrixCompositionRunError(
+                f"{manifest_path} already carries a different split manifest "
+                "for this capture; two runs derived different splits over the "
+                "same records."
+            )
+    else:
+        temporary = manifest_path.with_suffix(".json.partial")
+        temporary.write_bytes(encoded)
+        temporary.replace(manifest_path)
+    # The run-specific provenance rides beside the manifest, never inside it:
+    # which components were already folded, in what order, and which component
+    # this capture was cut for.  Digesting it would make the split manifest a
+    # function of the run instead of the split.
+    sidecar_directory = Path(output_root) / "conditioning"
+    sidecar_directory.mkdir(parents=True, exist_ok=True)
+    sidecar = sidecar_directory / (
+        f"{cache.cache_key[:16]}-{conditioning['install_index']:02d}-"
+        f"{conditioning['next_component']}.json"
+    )
+    sidecar_body = {
+        "schema": RUNNER_SCHEMA,
+        "kind": "conditioned-capture-provenance",
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "trace_cache_key": str(cache.cache_key),
+        "split_manifest_sha256": str(manifest["manifest_sha256"]),
+        "child_identity_sha256": str(fingerprint["identity_sha256"]),
+        "child_state_dict_sha256": str(fingerprint["state_dict_sha256"]),
+        "conditioning": dict(conditioning),
+    }
+    _atomic_write_json(sidecar, sidecar_body)
     elapsed = time.monotonic() - started
     _log(
         f"conditioned capture sealed {cache.cache_key[:16]} in {elapsed:.1f}s "
@@ -336,6 +380,8 @@ def capture_conditioned_evidence(
         "cache_directory": str(cache_directory),
         "split_manifest_path": str(manifest_path),
         "split_manifest_sha256": str(manifest["manifest_sha256"]),
+        "conditioning_provenance_path": str(sidecar),
+        "conditioning_provenance_sha256": cell_runner._file_sha256(sidecar),
         "child_identity_sha256": str(fingerprint["identity_sha256"]),
         "child_state_dict_sha256": str(fingerprint["state_dict_sha256"]),
         "capture_wall_time_seconds": float(elapsed),
