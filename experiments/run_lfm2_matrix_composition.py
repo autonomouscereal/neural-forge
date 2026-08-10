@@ -812,11 +812,19 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
             }
             if mode == "M-B" and index > 0:
                 watchdog.stage(f"capture-{index}-{step_cell.text}")
+                # One flat, content-addressed root for every conditioned
+                # capture in the campaign.  `build_lfm2_circuit_trace_cache` is
+                # "build or reuse an immutable content-addressed cache", and a
+                # conditioned capture's key is a function of the child state,
+                # the corpus and the capture selection -- so two runs whose
+                # recipes share a prefix (RBEH and RSTO both fold C03 then C14)
+                # capture that prefix once, and a re-run of an M-B cell never
+                # re-captures anything.  On this host that is not a nicety: the
+                # share writes at ~20 MB/s and one capture is 8.1 GB.
                 captured = capture_conditioned_evidence(
                     capture_model=capture_state["model"],
                     child_model=model,
-                    output_root=Path(args.conditioned_capture_root)
-                    / f"step-{index:02d}-{step_cell.text}",
+                    output_root=Path(args.conditioned_capture_root),
                     batches=capture_state["batches"],
                     capture_config=capture_state["config"],
                     base_manifest=base_manifest,
@@ -833,8 +841,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
                 split_manifest = Path(captured["split_manifest_path"])
                 evidence_cache = (
                     Path(args.conditioned_capture_root)
-                    / f"step-{index:02d}-{step_cell.text}"
-                    / f"evidence-cache-{step_cell.site}-{step_cell.component}"
+                    / "evidence-cache"
+                    / f"{captured['trace_cache_key'][:16]}-"
+                    f"{evidence_cache_name(step_cell)}"
                 )
             else:
                 trace_cache_path = Path(args.parent_trace_cache)
@@ -1170,6 +1179,25 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
             f"{'contracts' if storage['contracts'] else 'COSTS MORE THAN THE PARENT'}."
         )
         diagnostics["terminal_metrics"] = terminal_metrics
+        # The composed child's own folded tensors, so the frozen review can be
+        # taken on *this* child instead of on a replay that has to argue it is
+        # the same one.  Only the folded tensors are written -- every other
+        # tensor is the parent's, bit-identically -- so the file is tens of
+        # megabytes and the digests in the receipt prove which child it is.
+        tensor_path = output / "composed-child-tensors.pt"
+        torch.save(
+            {
+                key: model.state_dict()[key].detach().to("cpu")
+                for entry in entries
+                for key in entry["installed_weight_keys"]
+            },
+            tensor_path,
+        )
+        composition["composed_child_tensors_sha256"] = cell_runner._file_sha256(
+            tensor_path
+        )
+        composition["composed_child_tensors_path"] = str(tensor_path)
+        receipt["composition"] = composition
         _atomic_write_json(
             output / "composed-child-state-digest.json",
             {
