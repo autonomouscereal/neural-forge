@@ -151,12 +151,35 @@ def _number(value: Any, digits: int = 4) -> str:
     return f"{number:.{digits}f}"
 
 
+def _sites(entries: Sequence[Mapping[str, Any]]) -> str:
+    """The comma-joined site set of a group of ledger rows, in site order.
+
+    ADDENDUM 5 rule 2-S: a level claim is never written without the sites it
+    was sealed at, so every claim this renderer prints has to be able to say
+    which sites it is made of.
+    """
+
+    return ",".join(sorted({str(entry.get("site", "?")) for entry in entries}))
+
+
+def _passing_sites(entries: Sequence[Mapping[str, Any]]) -> list[str]:
+    return sorted({str(e.get("site", "?")) for e in entries if e.get("status") == "pass"})
+
+
 def _cell_summary(entries: Sequence[Mapping[str, Any]]) -> str:
     """The glyph for one (component, technique) matrix position.
 
-    Reports how deep the row got: the deepest level that passed, or -- when
-    nothing passed -- the shallowest attempt and the link it broke at, because
-    §4.2's escalation policy keys entirely off *which* link failed.
+    Reports how deep the row got **and where**: the deepest level with a
+    passing site and the sites it passed at, or -- when nothing passed -- the
+    shallowest attempt and the link it broke at, because §4.2's escalation
+    policy keys entirely off *which* link failed.
+
+    ADDENDUM 5 changed the first half of that sentence.  This used to require
+    *every* attempted site at a level to pass before it would print
+    ``PASS@<level>``, which is site-blind in both directions: it hid
+    `C06.T1.X4`'s real L12 pass behind two shallower failures, and where it did
+    print a pass it named no site at all.  Rule 2-S makes the site set part of
+    the claim, so the glyph is ``PASS@<level>@<sites>``.
     """
 
     if not entries:
@@ -165,12 +188,15 @@ def _cell_summary(entries: Sequence[Mapping[str, Any]]) -> str:
     for entry in entries:
         by_level[str(entry.get("level", "NA"))].append(entry)
     deepest_pass = None
+    deepest_sites: list[str] = []
     for level in LEVEL_ORDER:
         rows = by_level.get(level, [])
-        if rows and all(r.get("status") == "pass" for r in rows):
+        passing = _passing_sites(rows)
+        if passing:
             deepest_pass = level
+            deepest_sites = passing
     if deepest_pass is not None:
-        return f"PASS@{deepest_pass}"
+        return f"PASS@{deepest_pass}@{','.join(deepest_sites)}"
     for level in LEVEL_ORDER:
         rows = by_level.get(level, [])
         if not rows:
@@ -230,8 +256,9 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
     add("")
     add(
         "Rows are components, columns are techniques.  A position shows the "
-        "deepest level whose cells all passed, or the shallowest level attempted "
-        "and the chain link it broke at.  `.` is untested."
+        "deepest level with a passing site **and the sites it passed at** "
+        "(ADDENDUM 5 rule 2-S), or the shallowest level attempted and the chain "
+        "link it broke at.  `.` is untested."
     )
     add("")
     technique_ids = [t for t in TECHNIQUES if t != "copy_exact"]
@@ -275,35 +302,77 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
     add("## 2. Level ladders")
     add("")
     add(
-        "§5 rule 2: a technique+component works *at level L* only if it passes "
-        "at L and every shallower level, at >= 2 of its 3 sites.  A pass deeper "
-        "than a fail is flagged `non-monotone` and does not count."
+        "ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites "
+        "S*, where S is exactly the set of sites with a sealed passing receipt "
+        "at L **and at every shallower level attempted at that site**.  The "
+        "claim is never printed without its site set; the `good/attempted` "
+        "count survives as a breadth annotation, never as the licence for an "
+        "unqualified claim.  (This supersedes §5 rule 2, whose site-blind "
+        "reading `NOTES-MX-G` §4.6 showed to be ambiguous.)"
     )
     add("")
-    add("| component | technique | M16 | M8 | M4 | M2 | X4 | verdict |")
+    add("| component | technique | M16 | M8 | M4 | M2 | X4 | verdict (site-scoped) |")
     add("|---|---|---|---|---|---|---|---|")
     for (component, technique), entries in sorted(grouped.items()):
         rungs: list[str] = []
         by_level = defaultdict(list)
         for entry in entries:
             by_level[str(entry.get("level"))].append(entry)
-        passed_levels: list[str] = []
+        # Rule 2-S walks each *site's* own ladder: a site holds a claim at level
+        # L only when it passed at L and at every shallower level it attempted.
+        # Aggregating first and asking about sites afterwards is exactly the
+        # site-blind step the addendum retires.
+        site_claim: dict[str, str | None] = {}
+        for site in sorted({str(e.get("site", "?")) for e in entries}):
+            deepest: str | None = None
+            # ``NA`` is walked with the ladder because C14 has no level axis at
+            # all (norms are diagonal) and its sealed PASS used to fall through
+            # every branch below and print `awaiting review` over a reviewed,
+            # passing cell.
+            for level in (*LEVEL_LADDER, "NA"):
+                rows_here = [
+                    r
+                    for r in by_level.get(level, [])
+                    if str(r.get("site", "?")) == site
+                ]
+                if not rows_here:
+                    continue
+                if all(r.get("status") == "pass" for r in rows_here):
+                    deepest = level
+                else:
+                    break
+            site_claim[site] = deepest
         for level in LEVEL_LADDER:
             rows_at = by_level.get(level, [])
             if not rows_at:
                 rungs.append(".")
                 continue
-            good = sum(1 for r in rows_at if r.get("status") == "pass")
-            rungs.append(f"{good}/{len(rows_at)}")
-            if good >= min(2, len(rows_at)) and good == len(rows_at):
-                passed_levels.append(level)
-        verdict = "untested"
-        if passed_levels:
-            ordered = [lv for lv in LEVEL_LADDER if lv in passed_levels]
-            monotone = ordered == [lv for lv in LEVEL_LADDER[: len(ordered)]]
-            verdict = (
-                f"works to {ordered[-1]}" if monotone else "non-monotone (not working)"
+            good = _passing_sites(rows_at)
+            rungs.append(
+                f"{len(good)}/{len(rows_at)}"
+                + (f" {','.join(good)}" if good else "")
             )
+        verdict = "untested"
+        claimed = {s: lv for s, lv in site_claim.items() if lv is not None}
+        if claimed:
+            ladder = (*LEVEL_LADDER, "NA")
+            deepest_level = max(claimed.values(), key=ladder.index)
+            at = sorted(s for s, lv in claimed.items() if lv == deepest_level)
+            shallower = sorted(
+                f"{s}:{lv}" for s, lv in claimed.items() if lv != deepest_level
+            )
+            attempted = len({str(e.get("site", "?")) for e in entries})
+            verdict = (
+                f"works at NA (no level axis) at {','.join(at)} "
+                f"({len(at)}/{attempted} sites)"
+                if deepest_level == "NA"
+                else (
+                    f"works to {deepest_level} at {','.join(at)} "
+                    f"({len(at)}/{attempted} sites)"
+                )
+            )
+            if shallower:
+                verdict += f"; shallower elsewhere: {'; '.join(shallower)}"
         elif entries:
             links = Counter(
                 str(r.get("first_divergent_metric"))

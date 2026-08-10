@@ -562,3 +562,65 @@ All three carry the standard cell receipts (per-component
 first_divergent_metric) so mode differences localize. The mode
 comparison is itself a sealed campaign result: "winners combine
 directly" and "winners need conditioning" are both findings.
+
+---
+
+## ADDENDUM 5 — 2026-08-10: a level claim is SITE-SCOPED
+
+Wave 3 was the first wave to produce a technique×component whose rungs
+disagree across sites, and it exposed that §5 rule 2's number and the
+renderer's implementation of it are two different tests
+(`NOTES-MX-G` §4.6). `C07.T1` at M8 is 3/3 at M16 and 2/3 at M8, so the
+literal clause ("passes at ℓ and every shallower level at ≥2 of its 3
+sites") says `works to M8` while `render_matrix_ledger.py:298`'s
+`good >= min(2, n) and good == len(rows_at)` says `works to M16`. The
+same wave produced `C06.T1.X4.L12` at 0.977 and `C07.T1.X4.L12` at
+0.918 — passes that hold at **L12 only**, against 0.871/0.889 and
+0.746 at the shallower sites of the same component, technique and
+level. §5 rule 6 already forbids a result from generalizing across
+sites; nothing in the rendered artifact said so on its face.
+
+This addendum does not change what passes. It changes what a pass may
+be **called**, and it makes the renderer say it.
+
+**Rule 2 is superseded by rule 2-S, registered here.** A level claim is
+site-scoped:
+
+> **2-S.** A technique+component is marked `works at level ℓ at sites
+> S` where **S is exactly the set of sites with a sealed PASSING receipt
+> at ℓ and at every shallower level attempted at that site**. The claim
+> is never written without its site set. A technique+component with a
+> pass at one site and a fail at another at the same level is neither
+> `works` nor `non-monotone` in general — it works at the sites in S and
+> is closed or untested elsewhere, and the two statements are printed
+> together. The ≥2-of-3 count survives as a *breadth* annotation
+> (`3/3`, `2/3`, `1/3`) reported beside S, never as the licence for an
+> unqualified claim.
+
+Three consequences, stated so they cannot be re-litigated later:
+
+1. **The C07/T1 ambiguity dissolves rather than being decided.** The
+   old question — does 2 of 3 license `works to M8`? — asked for a
+   whole-component verdict that rule 2-S does not issue. The sealed
+   answer is now `C07/T1 works to M8 at L08 and L12 (2/3); at L02 it
+   fails free-run at M8 (0.793) and works to M16 only`. Both readings
+   of the old clause are recoverable from that sentence; neither is
+   needed.
+2. **No claim in this campaign extends past its sealed sites.** In
+   particular `C05.T3.M16` is a claim **at L05 only** (0.914 there,
+   0.699/0.646 at L00/L13), and `C06.T1.X4` / `C07.T1.X4` are claims
+   **at L12 only**. The composition wave installs winners at their
+   proven sites and passes every other site through unfolded; an
+   extrapolation to an unsealed site is a new cell, not a deduction.
+3. **The rendered ledger is the campaign artifact, so it carries the
+   scope.** `render_matrix_ledger.py` prints `PASS@<level>@<sites>` in
+   the matrix, a per-site rung breakdown in the ladders, and a verdict
+   of the form `works to <level> at <sites> (<good>/<attempted> sites)`.
+   Receipts and the ledger are unchanged — the site was always a sealed
+   field; only the *aggregation* was site-blind.
+
+Earlier renders of `LEDGER.md` that print an unqualified `works to ℓ`
+are superseded by the site-scoped render, not amended in place; the
+ledger rows they were produced from are untouched and re-render under
+2-S without a re-run.
+
