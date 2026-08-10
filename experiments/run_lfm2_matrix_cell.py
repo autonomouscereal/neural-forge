@@ -320,6 +320,93 @@ def _flatten_rows(value: torch.Tensor) -> torch.Tensor:
     return tensor.reshape(-1, int(tensor.shape[-1])).contiguous()
 
 
+SPLIT_MANIFEST_SCHEMA = "neural-forge-lfm2-matrix-campaign-evidence-manifest-v1"
+
+
+def _authenticated_split_manifest(
+    path: Path,
+    *,
+    trace_cache: Any,
+    references: Sequence[Any],
+) -> dict[str, Any]:
+    """Bind a fresh capture's sealed split to the cache it was captured from.
+
+    This is `hf_lfm2_exact4x_first_divergence.authoritative_split_by_batch`'s
+    contract, checked against the capture manifest instead of the balanced-basis
+    report: the manifest must re-seal to its own recorded digest, name this
+    exact cache and parent, carry one row per batch, agree with every batch
+    reference's ``input_sha256``, and use both splits.  Anything less and the
+    cell is scored on a split nobody can reproduce, so every failure here is a
+    refusal.
+    """
+
+    body = json.loads(Path(path).read_text(encoding="utf-8"))
+    if body.get("schema") != SPLIT_MANIFEST_SCHEMA:
+        raise MatrixCellRunError(
+            f"{path} is not a {SPLIT_MANIFEST_SCHEMA} manifest."
+        )
+    declared = body.get("manifest_sha256")
+    recomputed = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in body.items() if key != "manifest_sha256"},
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    ).hexdigest()
+    if declared != recomputed:
+        raise MatrixCellRunError(
+            f"Evidence split manifest seal is broken: {declared} != {recomputed}."
+        )
+    if body.get("trace_cache_key") != trace_cache.cache_key:
+        raise MatrixCellRunError(
+            "Evidence split manifest names trace cache "
+            f"{body.get('trace_cache_key')}, not {trace_cache.cache_key}."
+        )
+    if body.get("parent_identity_sha256") != trace_cache.parent_fingerprint:
+        raise MatrixCellRunError(
+            "Evidence split manifest names a different parent than the cache."
+        )
+    rows = (body.get("split") or {}).get("rows")
+    if not isinstance(rows, list) or len(rows) != len(references):
+        raise MatrixCellRunError(
+            "Evidence split manifest has no complete per-batch split."
+        )
+    seen: dict[int, str] = {}
+    for row in rows:
+        index = row.get("batch_index") if isinstance(row, Mapping) else None
+        split = row.get("split") if isinstance(row, Mapping) else None
+        record_id = row.get("record_id") if isinstance(row, Mapping) else None
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index < 0
+            or index >= len(references)
+            or index in seen
+            or split not in ("fit", "heldout")
+            or record_id != getattr(references[index], "input_sha256", None)
+        ):
+            raise MatrixCellRunError(
+                "Evidence split manifest rows differ from the trace references."
+            )
+        seen[index] = str(split)
+    if set(seen) != set(range(len(references))) or set(seen.values()) != {
+        "fit",
+        "heldout",
+    }:
+        raise MatrixCellRunError(
+            "The split must cover every batch and both evidence halves."
+        )
+    _log(
+        f"evidence: split authority {path.name} "
+        f"({body['split']['fit_batches']} fit / "
+        f"{body['split']['heldout_batches']} heldout batches, "
+        f"{body['manifest_sha256'][:12]})"
+    )
+    return body
+
+
 def load_site_evidence(
     *,
     trace_cache_path: Path,
@@ -333,6 +420,7 @@ def load_site_evidence(
     basis_phase_key_sha256: str | None,
     basis_phase_hmac_key_file: Path | None,
     basis_phase_hmac_key_id: str | None,
+    evidence_split_manifest: Path | None,
     target_hidden_size: int,
 ) -> tuple[TraceSiteEvidence, dict[str, Any]]:
     """Open the sealed trace cache for one site, or reuse an authenticated cache.
@@ -341,6 +429,16 @@ def load_site_evidence(
     reuse only after re-deriving the payload digest and only when the trace
     cache key, layer, endpoint set and split still bind; it never widens what
     the first pass was allowed to read.
+
+    Two split authorities exist and exactly one must be supplied.  The sealed
+    balanced-basis phase is the original: every exact-4x lane inherits its
+    FIT/heldout split from it, so a cell scored against that evidence base has
+    to as well.  A *freshly captured* matrix-campaign cache has no basis phase
+    bound to it -- the campaign never fits the exact-4x basis -- so it carries
+    its own sealed capture manifest instead, which declares the same
+    `whole-record-seeded-sha256-ranking` split over the same record ids.  Both
+    paths bind the split to the cache identity and to the per-batch record ids;
+    neither one invents a split, and with neither supplied the runner refuses.
     """
 
     from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
@@ -356,6 +454,13 @@ def load_site_evidence(
     )
     from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache
 
+    # Checked before anything is opened: two authorities can disagree, and the
+    # cheapest moment to refuse a contradictory configuration is the first one.
+    if basis_phase_cache_root is not None and evidence_split_manifest is not None:
+        raise MatrixCellRunError(
+            "Supply exactly one split authority: the sealed balanced-basis "
+            "phase or the fresh capture's sealed split manifest, never both."
+        )
     phases = phase_names(forced_decode_count)
     ordered_endpoints = tuple(sorted(set(endpoints)))
     binding_probe = {
@@ -368,6 +473,18 @@ def load_site_evidence(
         payload_path = cache_directory / "payload.pt"
         if _file_sha256(payload_path) != binding["payload_sha256"]:
             raise MatrixCellRunError("Cached site evidence payload digest changed.")
+        if evidence_split_manifest is not None:
+            # A cached payload carries a split.  Reusing it under a different
+            # split manifest would silently re-label held-out rows as fit.
+            declared = json.loads(
+                Path(evidence_split_manifest).read_text(encoding="utf-8")
+            ).get("manifest_sha256")
+            if binding.get("evidence_split_manifest_sha256") != declared:
+                raise MatrixCellRunError(
+                    "Cached site evidence was built under a different split "
+                    f"manifest: {binding.get('evidence_split_manifest_sha256')!r} "
+                    f"!= {declared!r}."
+                )
         for field, expected in binding_probe.items():
             if binding.get(field) != expected:
                 raise MatrixCellRunError(
@@ -413,7 +530,18 @@ def load_site_evidence(
     _log("opening the sealed selective trace session (hashes every batch)")
     with trace_cache.selective_authenticated_session() as session:
         basis_phase = None
-        if basis_phase_cache_root is not None:
+        split_manifest: dict[str, Any] | None = None
+        if evidence_split_manifest is not None:
+            split_manifest = _authenticated_split_manifest(
+                Path(evidence_split_manifest),
+                trace_cache=trace_cache,
+                references=session.batch_references,
+            )
+            split_by_batch = {
+                int(row["batch_index"]): str(row["split"])
+                for row in split_manifest["split"]["rows"]
+            }
+        elif basis_phase_cache_root is not None:
             secret = Path(basis_phase_hmac_key_file).read_bytes()
             try:
                 authority = PhaseAnchorAuthority(
@@ -435,12 +563,13 @@ def load_site_evidence(
                 basis_phase.report, session.batch_references
             )
         else:
-            # Without the sealed balanced-basis phase there is no authoritative
-            # split to inherit, and inventing one would make every cell's
-            # held-out number incomparable with the sealed ledger.  Fail closed.
+            # With no split authority at all there is nothing to inherit, and
+            # inventing one would make every cell's held-out number
+            # incomparable with the sealed ledger.  Fail closed.
             raise MatrixCellRunError(
-                "A site cell needs the sealed balanced-basis phase to inherit "
-                "the authoritative FIT/heldout split."
+                "A site cell needs the sealed balanced-basis phase, or the "
+                "fresh capture's sealed split manifest, to inherit the "
+                "authoritative FIT/heldout split."
             )
         ordered_fit = [i for i, s in sorted(split_by_batch.items()) if s == "fit"]
         ordered_heldout = [i for i, s in sorted(split_by_batch.items()) if s != "fit"]
@@ -495,6 +624,16 @@ def load_site_evidence(
         "parent_identity_sha256": trace_cache.parent_fingerprint,
         "trace_selective_session_sha256": session_sha256,
         "basis_map_sha256": None if basis_phase is None else basis_phase.map_sha256,
+        "split_authority": (
+            "balanced-basis-phase" if basis_phase is not None else
+            "matrix-campaign-capture-manifest"
+        ),
+        "evidence_split_manifest_sha256": (
+            None if split_manifest is None else split_manifest["manifest_sha256"]
+        ),
+        "implementation_sha256": (
+            trace_cache.manifest.get("implementation", {}).get("implementation_sha256")
+        ),
         "selection_sha256": evidence.selection_sha256,
         "evidence_cache_reused": False,
         "fit_rows": evidence.fit_row_count,
@@ -769,6 +908,64 @@ def _token_match(
 # --------------------------------------------------------------------------
 
 
+def route_solve_block(
+    receipt: Mapping[str, Any],
+    receipt_path: Path,
+) -> dict[str, Any]:
+    """The receipt's ``solve`` block for a route cell.
+
+    Split out of `_a9_token_route` so it can be exercised without a GPU-hour.
+    It has to be: `allowed_clamp_ratio` used to be `float("inf")` here, and
+    `seal_receipt` canonicalizes with ``allow_nan=False``, so the first route
+    that ever ran to completion died at the seal with "IR payload is not
+    canonical JSON" *after* the whole compile and all sixteen whole-response
+    generations.  Every number this returns has to be finite.
+    """
+
+    diagnostic = receipt.get("cached_hidden_diagnostic", {})
+    if not isinstance(diagnostic, Mapping):
+        diagnostic = {}
+    return {
+        "solver_path": "hf_lfm2_sparse_semantic_codebook.residual_omp",
+        "ridge_relative": 0.0,
+        "condition_number": 1.0,
+        "condition_cap_saturated": False,
+        "prior_norm": 0.0,
+        "correction_norm": 0.0,
+        # The route runs no prior-correction clamp lane at all, so neither
+        # ratio has a value to report.  0.0/0.0 with ``clamp_engaged: False``
+        # is the estate's own convention for exactly that
+        # (`blank_technique_solve`, and the T5 body-route kernel), and the
+        # chain divides these two only when the clamp actually engaged.
+        "requested_clamp_ratio": 0.0,
+        "allowed_clamp_ratio": 0.0,
+        "clamp_engaged": False,
+        "omp": {
+            "k": int(receipt.get("active_k", 0) or 0),
+            "support_reuse_prefix_steps": int(
+                receipt.get("candidate_support_cache_audit", {})
+                .get("artifact_analytic_operation_audit", {})
+                .get("loaded_prefix_steps_skipping_dictionary_search", 0)
+            ),
+            "double_mgs": True,
+        },
+        "route_run_receipt_sha256": _file_sha256(receipt_path),
+        "cached_hidden_top1_match_count": diagnostic.get(
+            "cached_hidden_top1_match_count"
+        ),
+        "cached_hidden_top5_match_count": diagnostic.get(
+            "cached_hidden_top5_match_count"
+        ),
+        "cached_hidden_top10_match_count": diagnostic.get(
+            "cached_hidden_top10_match_count"
+        ),
+        "cached_hidden_row_count": diagnostic.get("cached_hidden_row_count"),
+        "cached_hidden_mean_reciprocal_rank": diagnostic.get(
+            "cached_hidden_mean_reciprocal_rank"
+        ),
+    }
+
+
 def _a9_token_route(request: CellTechniqueRequest) -> CellTechniqueResult:
     """Run the sealed A9 route through the cell CLI (design §4.1 cell 0b).
 
@@ -896,41 +1093,7 @@ def _a9_token_route(request: CellTechniqueRequest) -> CellTechniqueResult:
     if not receipt_path.is_file():
         raise CellTechniqueError("A9 route produced no run-receipt.json.")
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    diagnostic = receipt.get("cached_hidden_diagnostic", {})
-    solve = {
-        "solver_path": "hf_lfm2_sparse_semantic_codebook.residual_omp",
-        "ridge_relative": 0.0,
-        "condition_number": 1.0,
-        "condition_cap_saturated": False,
-        "prior_norm": 0.0,
-        "correction_norm": 0.0,
-        "requested_clamp_ratio": 0.0,
-        "allowed_clamp_ratio": float("inf"),
-        "clamp_engaged": False,
-        "omp": {
-            "k": int(receipt.get("active_k", 0)),
-            "support_reuse_prefix_steps": int(
-                receipt.get("candidate_support_cache_audit", {})
-                .get("artifact_analytic_operation_audit", {})
-                .get("loaded_prefix_steps_skipping_dictionary_search", 0)
-            ),
-            "double_mgs": True,
-        },
-        "route_run_receipt_sha256": _file_sha256(receipt_path),
-        "cached_hidden_top1_match_count": diagnostic.get(
-            "cached_hidden_top1_match_count"
-        ),
-        "cached_hidden_top5_match_count": diagnostic.get(
-            "cached_hidden_top5_match_count"
-        ),
-        "cached_hidden_top10_match_count": diagnostic.get(
-            "cached_hidden_top10_match_count"
-        ),
-        "cached_hidden_row_count": diagnostic.get("cached_hidden_row_count"),
-        "cached_hidden_mean_reciprocal_rank": diagnostic.get(
-            "cached_hidden_mean_reciprocal_rank"
-        ),
-    }
+    solve = route_solve_block(receipt, receipt_path)
     return CellTechniqueResult(
         installed_weights={},
         stored_parameter_count=int(
@@ -971,22 +1134,41 @@ register("T5", _a9_token_route, component="C01")
 register("T5", _a9_token_route, component="C02")
 
 
+#: The two pre-registered readings of cell 0b's calibration gate.
+#:
+#: ``artifact-bit-identity`` is NOTES-MX-A §5.2's original registration: the
+#: reproduced route's compiled artifact identity must be bit-identical to the
+#: sealed A9 artifact (tolerance 0) and the advisory cached-hidden counts must
+#: match exactly.  A9's receipt records the route as deterministic, so anything
+#: short of bit-identity meant the harness was driving a different mechanism.
+#:
+#: ``behavioral-agreement`` is the campaign addendum's reading, and it exists
+#: because §5.2's own failure analysis proved bit-identity unreachable *through
+#: no harness fault*: the estate's runtime dtype resolver gained a
+#: `pre-ampere-bfloat16-body-fallback-to-float32` rule after A9 was sealed,
+#: which moves the numeric-dtype contract, which moves every downstream phase
+#: key.  Under this reading the artifact comparison is still computed and
+#: sealed -- it is the evidence of *what* moved -- but it is diagnostic, and the
+#: gate asks the infrastructure question instead: did the harness drive the
+#: mechanism all the way to a complete, sealed route artifact with a gradeable
+#: dossier?  The behavioral question is then answered where the campaign's
+#: metric policy says it must be, at chain link 6, against the sealed A9
+#: decoded responses at the design's own 0.90 threshold.
+ROUTE_CALIBRATION_MODES = ("artifact-bit-identity", "behavioral-agreement")
+
+
 def _a9_calibration(
     result: CellTechniqueResult,
     sealed: Mapping[str, Any],
+    *,
+    mode: str = "artifact-bit-identity",
 ) -> dict[str, Any]:
-    """Compare a reproduced A9 route against the sealed A9 numbers.
+    """Compare a reproduced A9 route against the sealed A9 numbers."""
 
-    Tolerance, pre-registered here because the design does not name one for this
-    cell: the route's compiled artifact identity must be **bit-identical**
-    (tolerance 0) and the advisory cached-hidden counts must match exactly.
-    A9's own receipt records the route as deterministic -- deterministic double
-    modified Gram-Schmidt, deterministic tie-breaking on target id, integer-only
-    support prefixes -- and the sealed codebook phase is reused rather than
-    recompiled, so anything short of bit-identity means the harness is driving a
-    different mechanism and §4.1's "if calibration fails, STOP" applies.
-    """
-
+    if mode not in ROUTE_CALIBRATION_MODES:
+        raise MatrixCellRunError(
+            f"route_calibration_mode must be one of {ROUTE_CALIBRATION_MODES}."
+        )
     observed = dict(result.artifact_identities)
     checks: list[dict[str, Any]] = []
     for field in (
@@ -1019,10 +1201,50 @@ def _a9_calibration(
                 "matched": sealed.get(field) == result.solve.get(field),
             }
         )
+    bit_identical = all(entry["matched"] for entry in checks)
+    if mode == "artifact-bit-identity":
+        return {
+            "mode": mode,
+            "checks": checks,
+            "artifact_bit_identical": bit_identical,
+            "passed": bit_identical,
+            "tolerance": "bit-identical artifact digests; exact cached-hidden counts",
+        }
+
+    # behavioral-agreement: the gate is the infrastructure question only.  The
+    # route must have published every artifact the mechanism is supposed to
+    # produce, including the dossier the behavioral link is scored against;
+    # a route that produced no gradeable text is void, not evidence.
+    produced = {
+        field: observed.get(field)
+        for field in (
+            "sparse_semantic_codebook_artifact_sha256",
+            "base_codebook_artifact_sha256",
+            "result_sha256",
+            "whole_response_dossier_sha256",
+        )
+    }
+    complete = all(
+        isinstance(value, str) and value and value != "None"
+        for value in produced.values()
+    )
+    dossier = result.child_directory is not None and (
+        (result.child_directory / "whole-response-dossier.json").is_file()
+    )
     return {
+        "mode": mode,
         "checks": checks,
-        "passed": all(entry["matched"] for entry in checks),
-        "tolerance": "bit-identical artifact digests; exact cached-hidden counts",
+        "artifact_bit_identical": bit_identical,
+        "artifact_comparison_is_diagnostic": True,
+        "route_published_artifacts": produced,
+        "route_artifacts_complete": complete,
+        "route_dossier_present": bool(dossier),
+        "passed": bool(complete and dossier),
+        "tolerance": (
+            "route completeness only; behavioral agreement with the sealed A9 "
+            "dossier is decided at chain link 6 "
+            "(behavior.free_run.token_match_vs_control >= 0.90)"
+        ),
     }
 
 
@@ -1124,6 +1346,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--basis-phase-key-sha256")
     parser.add_argument("--basis-phase-hmac-key-file", type=Path)
     parser.add_argument("--basis-phase-hmac-key-id")
+    parser.add_argument(
+        "--evidence-split-manifest",
+        type=Path,
+        help=(
+            "A fresh matrix-campaign capture's sealed split manifest, used "
+            "instead of --basis-phase-* when the evidence base is a recapture "
+            "with no balanced-basis phase bound to it."
+        ),
+    )
     parser.add_argument("--target-hidden-size", type=int, default=816)
     parser.add_argument("--forced-decode-count", type=int, default=8)
     parser.add_argument("--fit-batch-limit", type=int)
@@ -1333,11 +1564,19 @@ def run(args: argparse.Namespace) -> int:
             route_result = technique(request)
             validate_result(request, route_result)
             solve_block.update(dict(route_result.solve))
-            calibration = _a9_calibration(route_result, sealed)
+            calibration = _a9_calibration(
+                route_result,
+                sealed,
+                mode=str(
+                    knobs.get("route_calibration_mode", "artifact-bit-identity")
+                ),
+            )
             diagnostics["route_calibration"] = calibration
             calibration_block = {
                 "copy_exact_reproduction_relL2": 0.0 if calibration["passed"] else None,
                 "passed": bool(calibration["passed"]),
+                "mode": calibration["mode"],
+                "artifact_bit_identical": calibration["artifact_bit_identical"],
             }
             _atomic_write_json(output / "route-calibration.json", calibration)
 
@@ -1378,6 +1617,7 @@ def run(args: argparse.Namespace) -> int:
                 basis_phase_key_sha256=args.basis_phase_key_sha256,
                 basis_phase_hmac_key_file=args.basis_phase_hmac_key_file,
                 basis_phase_hmac_key_id=args.basis_phase_hmac_key_id,
+                evidence_split_manifest=args.evidence_split_manifest,
                 target_hidden_size=int(args.target_hidden_size),
             )
 
@@ -1579,6 +1819,16 @@ def run(args: argparse.Namespace) -> int:
             {
                 "parent_trace_cache_sha": evidence_binding.get("trace_cache_key"),
                 "chart_sha": evidence_binding.get("basis_map_sha256"),
+                # Which authority declared the FIT/heldout split, and the
+                # collector that produced the evidence.  A receipt whose
+                # evidence base was recaptured has to say so on its face.
+                "split_authority": evidence_binding.get("split_authority"),
+                "evidence_split_manifest_sha256": evidence_binding.get(
+                    "evidence_split_manifest_sha256"
+                ),
+                "trace_cache_implementation_sha256": evidence_binding.get(
+                    "implementation_sha256"
+                ),
                 "heldout_split": {
                     "fit_rows": int(evidence_binding.get("fit_rows", 0) or 0),
                     "heldout_rows": int(evidence_binding.get("heldout_rows", 0) or 0),
