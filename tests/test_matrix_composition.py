@@ -691,6 +691,31 @@ def test_net_storage_ignores_the_c14_bookkeeping_artifact():
     assert storage["per_component"][0]["effective_ratio"] == pytest.approx(1.0)
 
 
+def test_net_storage_credits_a_head_drop_that_installs_two_of_four_tensors():
+    # C10 installs q_proj and out_proj but its sealed stored count covers all
+    # four owned projections, because the kernel refuses to bank the kv rows a
+    # dead group would free while the child still stores them.  Charging it the
+    # installed set would credit the child with +917,504 parameters it does not
+    # have -- the difference between "contracts" and "does not".
+    heads = _entry(
+        "C10.T1.M16.L02",
+        component_id="C10",
+        component="attn_per_head",
+        technique_id="T1",
+        weight_keys=list(component_weight_keys(CellId.parse("C10.T1.M16.L02"))),
+        storage={
+            "stored_parameter_count": 3_014_656,
+            "installed_parameter_count": 2_097_152,
+            "owned_parameter_count": 3_145_728,
+            "declared_ratio": 3_014_656 / 3_145_728,
+        },
+    )
+    storage = net_storage(229_693_184, [heads])
+    assert storage["per_component"][0]["coverage_basis"] == "owned"
+    assert storage["net_delta"] == -131_072
+    assert storage["contracts"] is True
+
+
 def test_net_storage_adds_a_costly_fold_to_the_child():
     ridge = _entry(
         "C09.T1.M16.L02",

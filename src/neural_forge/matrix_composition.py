@@ -891,26 +891,44 @@ def net_storage(
     """Exact stored-parameter accounting for the composed child.
 
     The per-component ratio a cell seals is `stored / spec.parent_parameter_count`
-    and it is **not** additive: `spec.parent_parameter_count` counts every tensor
-    the component *owns*, while a kernel may install only some of them.  C14 is
-    the live case -- it owns `operator_norm` and `ffn_norm`, refits only the
-    first, and seals 0.5x, which reads as a 50% saving over a pair of tensors the
-    child still stores in full (`NOTES-MX-F` §4.1 called it a bookkeeping
-    artifact and it is one).
+    and it is **not** additive, because a kernel may install fewer tensors than
+    its component owns and the two live cases disagree about which set its
+    stored count is measured over:
 
-    So the net is computed over the tensors that were actually replaced:
-    ``child = parent - sum(numel of installed keys) + sum(stored)``.  Both
-    numbers ride in the receipt: `declared_ratio` stays comparable with the
-    isolation cell, `effective_*` is what the child weighs.
+    * **C14** owns `operator_norm` and `ffn_norm`, refits only the first, and
+      seals ``stored = 1024`` against ``owned = 2048`` -- 0.5x, which reads as a
+      50% saving over a pair of tensors the child still stores in full
+      (`NOTES-MX-F` §4.1 called it a bookkeeping artifact and it is one).  Its
+      stored count covers the **installed** tensor.
+    * **C10** owns all four attention projections, installs `q_proj` and
+      `out_proj`, and seals ``stored = 3,014,656`` -- which explicitly *includes*
+      the untouched `k_proj`/`v_proj` numels, because "the kv rows a dead group
+      would free are only a saving if the child actually stops storing them, and
+      this child stores them" (`matrix_technique_head_drop`).  Its stored count
+      covers the **owned** set.
+
+    Charging both to the same formula gets one of them wrong by 917,504
+    parameters, which is the difference between a composed child that contracts
+    and one that does not.  The coverage is therefore *derived*, mechanically,
+    from the sealed numbers themselves: a stored count that exceeds the tensors
+    actually installed cannot be a statement about only those tensors, so it is
+    read as covering the owned set; otherwise it covers the installed set.  When
+    a kernel installs everything it owns -- every single-tensor component --
+    both readings coincide and the rule is inert.
     """
 
-    replaced = 0
+    covered_total = 0
     stored = 0
     rows: list[dict[str, Any]] = []
     for entry in entries:
         installed = int(entry["storage"]["installed_parameter_count"])
+        owned = int(entry["storage"]["owned_parameter_count"])
         component_stored = int(entry["storage"]["stored_parameter_count"])
-        replaced += installed
+        if installed != owned and component_stored > installed:
+            covered, basis = owned, "owned"
+        else:
+            covered, basis = installed, "installed"
+        covered_total += covered
         stored += component_stored
         rows.append(
             {
@@ -918,16 +936,17 @@ def net_storage(
                 "cell_id": str(entry["isolation_cell_id"]),
                 "installed_parameter_count": installed,
                 "stored_parameter_count": component_stored,
-                "owned_parameter_count": int(
-                    entry["storage"]["owned_parameter_count"]
-                ),
+                "owned_parameter_count": owned,
+                "covered_parameter_count": covered,
+                "coverage_basis": basis,
                 "declared_ratio": entry["storage"].get("declared_ratio"),
                 "effective_ratio": (
-                    None if installed <= 0 else float(component_stored) / float(installed)
+                    None if covered <= 0 else float(component_stored) / float(covered)
                 ),
-                "effective_delta": component_stored - installed,
+                "effective_delta": component_stored - covered,
             }
         )
+    replaced = covered_total
     child = int(parent_parameter_count) - replaced + stored
     if int(parent_parameter_count) <= 0:
         raise MatrixCompositionError("The parent parameter count must be positive.")
