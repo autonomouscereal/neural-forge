@@ -1,0 +1,83 @@
+{
+ "conditioned_evidence_tree": {
+  "bytes": 17560743935,
+  "path": "/mnt/ai_data/neural-forge-matrix/wave8/evidence-conditioned",
+  "reason": "M-B conditioning was measured and answered NO (8/15 against its own unconditioned control's 11/15); no lane is built on it, the tree is content-addressed, and any future M-B run re-derives it from the same recipe and knob file."
+ },
+ "deleted": [
+  {
+   "bytes": 16779624,
+   "cell_id": "COMP.MA.MXL1",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL1/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "d93cc0de8feb6de95146185261193378bb1460c3ee3e236d2d783e242c48cfa3",
+   "sha256": "d93cc0de8feb6de95146185261193378bb1460c3ee3e236d2d783e242c48cfa3"
+  },
+  {
+   "bytes": 10488168,
+   "cell_id": "COMP.MA.MXL2",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL2/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "d3cbd5f03ad4574cc47fc7243dd3da89da7299d6a63d52dc2a62e7c327fc4715",
+   "sha256": "d3cbd5f03ad4574cc47fc7243dd3da89da7299d6a63d52dc2a62e7c327fc4715"
+  },
+  {
+   "bytes": 10488168,
+   "cell_id": "COMP.MA.MXL3",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL3/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "7a20f72d9d768844c8f850f1d7dade34604e6420609e3dcdbaf5a9723b4a6971",
+   "sha256": "7a20f72d9d768844c8f850f1d7dade34604e6420609e3dcdbaf5a9723b4a6971"
+  },
+  {
+   "bytes": 10488168,
+   "cell_id": "COMP.MA.MXL4",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL4/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "52e820ab7f723c96830a7d17a1e912985cb4b0c9d7b9f2e19e1730ad9d6a1854",
+   "sha256": "52e820ab7f723c96830a7d17a1e912985cb4b0c9d7b9f2e19e1730ad9d6a1854"
+  },
+  {
+   "bytes": 65015380,
+   "cell_id": "COMP.MA.MXL7",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL7/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "3ba59a7244235ca09ba783c57172448b2ee3cf02a9f90ea40e6413c7a649d2e0",
+   "sha256": "3ba59a7244235ca09ba783c57172448b2ee3cf02a9f90ea40e6413c7a649d2e0"
+  },
+  {
+   "bytes": 127931801,
+   "cell_id": "COMP.MA.MXL8",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL8/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "c53cb9f0727ff34beecab0213cdb458ed0dcebeb4c7f0e46b5a487bdcc8985a1",
+   "sha256": "c53cb9f0727ff34beecab0213cdb458ed0dcebeb4c7f0e46b5a487bdcc8985a1"
+  },
+  {
+   "bytes": 96473589,
+   "cell_id": "COMP.MA.MXL9",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave8/cells/COMP.MA.MXL9/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxl/recipes/) on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "eb7feb146a73fcfaf2c78f098f8796996bc71c42b3d9ddaa6b7b325ad6e3aaea",
+   "sha256": "eb7feb146a73fcfaf2c78f098f8796996bc71c42b3d9ddaa6b7b325ad6e3aaea"
+  }
+ ],
+ "deleted_bytes": 337664898,
+ "deleted_file_count": 7,
+ "kept": {
+  "COMP.MA.MXL10": "the M-A control showing the same-block conflict disappears at S8 (11/15 against the sealed 6/15 of COMP.MA.MXJ3)",
+  "COMP.MA.MXL11": "deepest coherent child of wave 8 (0.955444x, 6 components, 9/15)",
+  "COMP.MA.MXL5": "the SwiGLU-lane child (0.972579x, 10/15) and one half of the matched pair against wave 7 COMP.MA.MXK10 at the identical net ratio",
+  "COMP.MA.MXL6": "deepest three-component coherent child (0.978304x) and the only child holding two MLP folds at a true eighth",
+  "COMP.MB.MXL12": "the M-B conditioned arm; meaningful only beside COMP.MA.MXL10, and 40 minutes of conditioned capture to re-derive"
+ },
+ "schema": "neural-forge-lfm2-matrix-pruned-tensors-manifest-v1",
+ "wave": 8
+}

@@ -435,3 +435,58 @@ composed tensors re-digested to the value its receipt sealed.
 Every verdict in this wave was computed by `behavior_verdict_for` from counts
 sealed through `seal_matrix_behavior_review.py`. No verdict was stated by hand,
 and the ADDENDUM 8 success flag is likewise computed rather than asserted.
+
+**Retention.** Five children's composed tensors are kept — `MXL11` (the
+frontier), `MXL5` (the matched-pair half), `MXL10` and `MXL12` (the two arms of
+the conditioning result, worthless singly), and `MXL6` (deepest three-component,
+the only child with two MLP folds at an eighth). **Seven files, 0.31 GiB** were
+sha256-digested into `wave8/pruned-tensors-manifest.json` and deleted; **all
+seven digests matched the digest their own receipt had sealed before deletion.**
+The **16.35 GiB** M-B conditioned evidence tree was removed with it — the
+conditioning answer was no, no lane is built on it, and it is content-addressed.
+Every pruned child keeps its receipt, diagnostics, state digest and **full
+frozen-review dossier**, all committed, so the evidence of every child survives
+where its tensors do not.
+
+---
+
+## 8. Verification
+
+The matrix test subset, run server-side on a `git archive` of **this wave's own
+commit** (`67242214`, `src` + `experiments` + `tests`, tarball
+`298e8d95e8fe10c7…`) unpacked to `/mnt/ai_data/neural-forge-matrix/wave8/testtree`
+— no worktree, and therefore none of the Codex lane's uncommitted files:
+
+```
+python -m pytest tests/test_matrix_composition.py tests/test_matrix_cell_receipt.py \
+                 tests/test_run_lfm2_matrix_cell.py tests/test_matrix_technique_registry.py \
+                 tests/test_run_lfm2_matrix_cell_fresh_evidence.py \
+                 tests/test_matrix_technique_charts.py tests/test_matrix_technique_new_axes.py \
+                 tests/test_matrix_addendum6.py tests/test_matrix_addendum7.py -q
+# -> 10 failed, 175 passed, 1 skipped
+```
+
+**Identical to wave 7's result at `17377c16` — same count, same ten test
+names.** Wave 8 changes no source file, so it can add no failures, and it does
+not. The ten are the documented set, reported and not fixed:
+
+* the `blank_receipt` `compute_architecture` `TypeError` family — four in
+  `test_matrix_technique_registry`, one in
+  `test_run_lfm2_matrix_cell_fresh_evidence` — whose fix is **uncommitted in the
+  Codex lane** and which a `git archive` cannot see;
+* `test_most_specific_registration_wins`, which monkeypatches the global
+  technique dispatch table and never restores it, so every later test in the
+  same process that resolves T3 gets its stub — this is what turns 6 real
+  failures into 10 in a shared process;
+* `test_factor_pair_storage_model_reproduces_a_sealed_wave2_receipt`, pre-existing
+  and failing at wave-6 and wave-7 HEAD as well.
+
+`test_matrix_composition` — the module the whole wave rides on — is **33 of 33**.
+`test_matrix_cell_receipt` is 31 of 31. `test_matrix_addendum7` is 15 of 15.
+
+**The Codex lane was not touched.** 331 uncommitted paths, including the frozen
+`src/neural_forge/hf_lfm2_circuit_trace_cache.py`, were present throughout and
+are present unchanged; every commit in this wave staged by explicit path and
+`git diff --cached` was checked to contain zero paths outside
+`reports/matrix-campaign-20260810/{wave8,run/mxl,ledger.jsonl,LEDGER.md}` and
+`docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md`.
