@@ -310,7 +310,7 @@ byte-identical in every wave-6 dossier.
 |---|---|
 | ledger before the wave | `/mnt/ai_data/neural-forge-matrix/backup/ledger.jsonl.pre-mxj-20260811T161256` (`e212e7f6…`) |
 | ledger before the merge | `…/backup/ledger.jsonl.before-mxj-merge-20260811T171810` (`e212e7f6…`) |
-| `LEDGER.md` before the render | `…/backup/LEDGER.md.before-mxj-20260811T171935` |
+| `LEDGER.md` before the render | `…/backup/LEDGER.md.before-mxj-20260811T172007` |
 | pruned heavy artifacts | `reports/matrix-campaign-20260810/wave6/pruned-tensors-manifest.json` |
 
 **The ledger.** 322 → **348 rows (+26)**: 13 composed-child instances and 13
@@ -383,7 +383,59 @@ Every verdict was computed by `behavior_verdict_for` from counts the reviewer
 sealed through `seal_matrix_behavior_review.py`; no verdict in this wave was
 stated by hand.
 
-## 10. Paths
+## 10. Verification
+
+The matrix test subset, run server-side on a `git archive` of **this wave's own
+commit** (`2ce9ea27`, tarball `c1a7046a…`) unpacked to
+`/mnt/ai_data/neural-forge-matrix/wave6/testtree` — no worktree, and therefore
+none of the Codex lane's uncommitted files:
+
+```
+python -m pytest tests/test_matrix_composition.py tests/test_matrix_cell_receipt.py \
+                 tests/test_run_lfm2_matrix_cell.py tests/test_matrix_technique_registry.py \
+                 tests/test_run_lfm2_matrix_cell_fresh_evidence.py \
+                 tests/test_matrix_technique_charts.py tests/test_matrix_technique_new_axes.py -q
+# -> 9 failed, 146 passed, 1 skipped
+```
+
+Run **one file per process**, which is the number that means something, because
+four of those nine are cross-file pollution rather than failures:
+
+| file | result |
+|---|---|
+| `test_matrix_composition` | **33 passed** |
+| `test_matrix_cell_receipt` | **31 passed** |
+| `test_run_lfm2_matrix_cell` | **24 passed, 1 skipped** |
+| `test_matrix_technique_registry` | 4 failed, 25 passed |
+| `test_run_lfm2_matrix_cell_fresh_evidence` | 1 failed, 12 passed |
+| `test_matrix_technique_charts` | **9 passed** |
+| `test_matrix_technique_new_axes` | **16 passed** |
+
+**5 real failures, 150 passed, 1 skipped**, and all five are the one documented
+pre-existing cause:
+
+```
+TypeError: blank_receipt() missing 1 required keyword-only argument: 'compute_architecture'
+```
+
+That fix lives in the Codex lane's **uncommitted** `test_matrix_technique_registry.py`
+and `test_run_lfm2_matrix_cell_fresh_evidence.py`, which a `git archive` of a
+commit cannot see and which this wave does not touch.
+
+**The four extra failures in the combined run are a test-isolation wart, not a
+regression.** `test_most_specific_registration_wins` monkeypatches the global
+technique dispatch table and does not restore it, so every later test in the
+same process that resolves `T3` gets its stub — which is why
+`test_matrix_technique_charts` fails 1 in the combined run and passes 9 of 9
+alone. Pre-existing, in the Codex lane's files, reported rather than fixed.
+
+`test_matrix_composition` — the module this entire wave leans on — is **33 of 33
+green**, and nothing under `src/`, `experiments/` or `tests/` was modified by
+wave 6. Both commits stage only `reports/matrix-campaign-20260810/` paths, and
+the Codex lane's 24 modified-or-untracked working-tree files are exactly as they
+were found.
+
+## 11. Paths
 
 * composed children: `reports/matrix-campaign-20260810/cells/COMP.M{A,B}.MXJ*/`
   — `cell-receipt.json`, `cell-receipt-behavior-reviewed.json`,
