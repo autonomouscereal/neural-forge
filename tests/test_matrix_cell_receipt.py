@@ -141,11 +141,22 @@ def test_cell_id_round_trips_every_designed_form():
 
 
 def test_cell_id_rejects_off_axis_cells():
-    # A site the design did not choose is not a cell; §1.1 picks three sites
-    # per body component deliberately, so L07 has to be refused rather than
-    # silently measured.
+    # A site the *schema version* does not register is not a cell.  Under v1
+    # that was §1.1's chosen three sites per body component, so L07 was refused
+    # rather than silently measured; ADDENDUM 7's v2 registers L07 for an MLP
+    # component and still refuses a layer that does not exist and a component
+    # whose block kind is not at that layer.  Both are asserted, because the
+    # widening is only sound if it widened to the architecture and not to
+    # everything.
     with pytest.raises(MatrixCellReceiptError):
-        CellId.parse("C13.T5.M16.L07")
+        CellId.parse("C13.T5.M16.L07", schema_version=1)
+    assert CellId.parse("C13.T5.M16.L07", schema_version=2).site == "L07"
+    with pytest.raises(MatrixCellReceiptError):
+        CellId.parse("C13.T5.M16.L14")  # the parent has fourteen layers, 0..13
+    with pytest.raises(MatrixCellReceiptError):
+        CellId.parse("C07.T5.M16.L05")  # attn_k at a short_conv layer
+    with pytest.raises(MatrixCellReceiptError):
+        CellId.parse("C05.T8.M16.L04")  # conv_out_proj at an attention layer
     with pytest.raises(MatrixCellReceiptError):
         CellId.parse("C99.T5.M16.L05")
     with pytest.raises(MatrixCellReceiptError):

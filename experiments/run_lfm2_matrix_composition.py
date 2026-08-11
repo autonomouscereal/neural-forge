@@ -30,7 +30,9 @@ the same `_greedy_fixed`, the same `_token_match`, the same `_row_metrics` and
 the same control artifact, and the cheapest way to guarantee that is to call
 them.
 
-The receipt is `neural-forge-lfm2-matrix-cell-receipt-v1` with the mandatory
+The receipt is `matrix_cell_receipt.SCHEMA` -- ``…receipt-v2`` from ADDENDUM 7
+on, ``…receipt-v1`` for everything waves 1-6 sealed, and the only difference
+between them is which sites `CellId.parse` accepts -- with the mandatory
 ``composition`` block (`matrix_cell_receipt._validate_composition`): a
 per-component provenance array, the install order, the conditioned-evidence
 digests, and the composed child's exact net storage.  The runner writes

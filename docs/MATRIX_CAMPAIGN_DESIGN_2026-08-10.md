@@ -768,3 +768,137 @@ composition modes remain the only path to a multi-component claim.
 Rule 2-S (ADDENDUM 5) is unchanged and applies to the storage levels
 exactly as it applies to the marginal ones: a level claim is site-scoped,
 always printed with its site set.
+
+---
+
+## ADDENDUM 7 — 2026-08-11: the site registry opens to full model depth
+
+### 7.1 Why
+
+Wave 6 climbed a per-layer ladder and it stopped after three rungs. Not
+because the model refused — `NOTES-MX-J` §5 records the actual reason:
+
+> The brief asked for `C13 T8` across L00–L13. **That is not expressible in
+> this campaign**: `matrix_cell_receipt.COMPONENTS` registers `C13`, `C11`,
+> `C05`, `C12` at sites `(0, 5, 13)` and `C06`–`C09` at `(2, 8, 12)`, and
+> `_validate_cell` enforces it.
+
+Three sites per body component was the right call in wave 1, when ~300 cells
+had to fit inside a budget and the sites were chosen for what they would teach:
+L0/L13 the measured operator-damage extremes (S3), L5 a quiet mid conv layer,
+L2/L8/L12 the largest attention whole-layer gains. It stopped being a sampling
+policy and became a ceiling the moment the campaign started assembling children.
+`NOTES-MX-J` §5.1 put a number on the ceiling:
+
+> Even a hypothetical child that folded all five alive-parent-band components at
+> all three of their registered sites at a true quarter would store 23,592,960
+> parent parameters → 5,884,002 stored → net **0.9229×** … eleven of the
+> fourteen layers have no registered site at all.
+
+**Eleven of fourteen layers unreachable is a statement about the registry, not
+about the technique surface or the model.** ADDENDUM 7 removes it.
+
+### 7.2 What changed
+
+**One thing: the site tuples.** `COMPONENTS` now registers every
+*architecturally valid* layer per component, read off the parent's own
+`config.json` `layer_types` and re-checked against the shipped
+`model.safetensors` key set:
+
+| block kind | layers | count |
+|---|---|---:|
+| `short_conv` (`conv.in_proj`, `conv.conv`, `conv.out_proj`) | 0, 1, 3, 5, 7, 9, 11, 13 | 8 |
+| `full_attention` (`self_attn.{q,k,v,out}_proj`) | 2, 4, 6, 8, 10, 12 | 6 |
+| `feed_forward` SwiGLU (`w1`, `w2`, `w3`) | **all fourteen** | 14 |
+| `operator_norm` / `ffn_norm` | all fourteen (+ the global `embedding_norm` at `FINAL`) | 14 + 1 |
+
+so:
+
+| component | v1 sites | v2 sites |
+|---|---|---|
+| C03 `conv_in_proj`, C04 `conv_kernel`, C05 `conv_out_proj` | 0, 5, 13 | 0, 1, 3, 5, 7, 9, 11, 13 |
+| C06 `attn_q`, C07 `attn_k`, C08 `attn_v`, C09 `attn_o` | 2, 8, 12 | 2, 4, 6, 8, 10, 12 |
+| C10 `attn_per_head` | 2, 8 | 2, 4, 6, 8, 10, 12 |
+| C11 `mlp_gate`, C12 `mlp_up`, C13 `mlp_down` | 0, 5, 13 | 0 … 13 |
+| C14 `norms` | 0, FINAL | 0 … 13, FINAL |
+| C01, C02, C15 | global | global (unchanged) |
+
+The widening is to the architecture and **not** to `range(14)`: a short_conv
+component is still refused at an attention layer, an attention component is
+still refused at a short_conv layer, and nothing reaches a fifteenth layer.
+`tests/test_matrix_addendum7.py` asserts all three, because a blanket widening
+would pass a "C13 at L07 is now legal" test and fail these.
+
+**Nothing else moves.** The mandatory field set, `first_divergent_metric`'s
+seven links, `campaign_pass`, the degeneracy clause, the storage levels, the
+composition block, the canonical JSON and the seal are byte-for-byte what they
+were. `test_a_v1_receipt_still_seals_verifies_and_walks_the_same_chain` pins
+that: two bodies differing only in their schema string walk the same chain,
+resolve the same outcome and are equal field-for-field.
+
+### 7.3 The schema is versioned, and the widening does not reach backwards
+
+`SCHEMA_V1 = "…matrix-cell-receipt-v1"` and
+`SCHEMA_V2 = "…matrix-cell-receipt-v2"` are both live.
+`RECEIPT_SCHEMA_VERSIONS` maps each to an integer, `validate_receipt` reads a
+body's version **off the body**, and `CellId.parse(..., schema_version=)`
+enforces that version's registry.
+
+- Every receipt sealed in waves 1–6 declares v1 and is validated against v1's
+  narrow registry **for ever**. Re-verifying any of the 348 rows recomputes
+  exactly the clauses it was sealed under. There is no migration, no rewrite and
+  no retro-validation.
+- A body that declares v1 and names a v2-only site is **refused**. A wave-1 row
+  cannot acquire a meaning it was not sealed with, in either direction.
+- New work defaults to v2 — recipes, runners, and the renderer's enumeration of
+  pending positions.
+
+The ledger gains one column, `receipt_schema_version`, and `LEDGER_SCHEMA`
+deliberately does **not** move: waves 1–6's rows stay readable by the same
+reader, and a row without the key is a v1 row, which is the same statement the
+key makes explicitly for every row appended from wave 7 on.
+
+The 21 authenticated site evidence caches on the run host are named by
+`evidence_cache_name`, which picks the lowest component id sharing an endpoint
+set among the components *legal at that site* — so widening the legal set is
+exactly the kind of change that could silently rename a cache and invalidate it.
+It does not: every component v2 adds at an already-registered site has a higher
+id than the canonical one already there. `test_every_v1_site_keeps_its_evidence_cache_name`
+checks all 34 of them by literal rather than by argument.
+
+### 7.4 What the ceiling becomes
+
+Registered-site mass at a true `S4` (stored ≤ 0.25× the component's parent
+parameters), against the parent's 229,693,184:
+
+| registry | foldable parent mass | stored at S4 | net |
+|---|---:|---:|---:|
+| v1, the five alive-parent-band components at their 3 registered sites | 23,592,960 | 5,898,240 | **0.9230×** |
+| v1, every registered site of every body component | 45,625,344 | 11,406,336 | 0.8510× |
+| **v2, the five alive-parent-band components at every valid site** | **91,226,112** | 22,806,528 | **0.7021×** |
+| v2, the four that compose (C05 dropped, `NOTES-MX-J` §2) at every valid site | 82,837,504 | 20,709,376 | 0.7295× |
+| **v2, every body component at every valid site** | **162,583,552** | 40,645,888 | **0.4691×** |
+
+(C10 `attn_per_head` is excluded from the mass everywhere: it owns the same four
+tensors C06–C09 do, and counting it again would count them twice.
+`NOTES-MX-J` §5.1's 5,884,002 is the *measured* stored count of the five
+realized cells; 5,898,240 above is the same mass at the exact S4 bound.)
+
+The floor under all five is the same 67,108,864-parameter tied embedding table,
+which no body component in the matrix touches and which is 29.2% of the parent
+on its own. **A whole-model 4× is not reachable without C01/C02/C15**, and
+ADDENDUM 7 does not change that; what it changes is that the body is no longer
+capped at 0.92×.
+
+### 7.5 What v2 does *not* license
+
+Rule 2-S (ADDENDUM 5) is unchanged and is now load-bearing: **a level claim is
+site-scoped and is always printed with its site set.** A site being *registered*
+is not evidence about that site. Wave 6 measured C13 at L00 as hostile
+(0.422844 install drift, 5/15) and at L13 as impaired (7/15) while L05 held the
+parent band — three sites of one component, three different answers — so no
+result at one layer may be extrapolated to its neighbour. Every rung of a v2
+ladder is a measurement or it is nothing.
+
+§5 rule 6 is unchanged: one component per cell, and ADDENDUM 4's composition
+modes remain the only path to a multi-component claim.

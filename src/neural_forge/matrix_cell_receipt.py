@@ -97,6 +97,20 @@ deviations are written down rather than silently absorbed:
    exists (wave 1) do not validate under this schema; they are preserved
    byte-for-byte as sealed and are read through the ledger, which is where
    their comparability claim was always recorded.
+9. The schema is **versioned**, and ADDENDUM 7 (wave 7) is the first bump:
+   ``…receipt-v1`` and ``…receipt-v2`` are both live schema strings and
+   `RECEIPT_SCHEMA_VERSIONS` maps each to an integer.  v2 widens the site
+   registry to every architecturally valid layer per component -- the parent's
+   own ``layer_types``: short_conv at 0/1/3/5/7/9/11/13, full_attention at
+   2/4/6/8/10/12, and a ``feed_forward`` in all fourteen -- and moves nothing
+   else.  The mandatory field set, the failure chain, ``campaign_pass``, the
+   seal and the canonical JSON are identical under both.  `validate_receipt`
+   reads a body against the version the body itself declares, so the 348 rows
+   waves 1-6 sealed re-verify under v1's narrow registry for ever; a v1 receipt
+   is never re-validated against v2, and a v2 cell id is never accepted by a v1
+   receipt.  `NOTES-MX-J` §5 is why: the wave-6 site ladder hit the registry
+   wall after three rungs, and §5.1 measured the ceiling that policy implies at
+   ~0.923x net with eleven of the fourteen layers unreachable.
 """
 
 from __future__ import annotations
@@ -110,7 +124,22 @@ from typing import Any
 
 from .dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
 
-SCHEMA = "neural-forge-lfm2-matrix-cell-receipt-v1"
+#: The receipt schema is *versioned*, and both versions are live.  ADDENDUM 7
+#: widens the site registry to every architecturally valid layer, which changes
+#: exactly one thing about a receipt: which cell ids `CellId.parse` will accept.
+#: A receipt sealed under v1 is validated against v1's narrow site policy, for
+#: ever -- a sealed row is never re-read under a rule it was not sealed under --
+#: and a receipt sealed under v2 is validated against v2's wide one.  Nothing
+#: else moves: the mandatory field set, the failure chain, `campaign_pass` and
+#: the seal are byte-for-byte identical between the two versions.
+SCHEMA_V1 = "neural-forge-lfm2-matrix-cell-receipt-v1"
+SCHEMA_V2 = "neural-forge-lfm2-matrix-cell-receipt-v2"
+#: The version new receipts are sealed under.
+SCHEMA = SCHEMA_V2
+#: schema string -> integer version, the only mapping that decides which site
+#: policy a body is read against.
+RECEIPT_SCHEMA_VERSIONS: Mapping[str, int] = {SCHEMA_V1: 1, SCHEMA_V2: 2}
+LATEST_SCHEMA_VERSION = 2
 LEDGER_SCHEMA = "neural-forge-lfm2-matrix-cell-ledger-v1"
 
 
@@ -122,28 +151,105 @@ class MatrixCellReceiptError(RuntimeError):
 # the axes (design §1.1)
 # --------------------------------------------------------------------------
 
+#: The parent's real layer-type map, read off `config.json`'s ``layer_types``
+#: and re-checked against the shipped ``model.safetensors`` key set: fourteen
+#: blocks, eight of them short_conv and six full_attention, and a SwiGLU
+#: ``feed_forward`` in **every** one of the fourteen.  This is the fact
+#: ADDENDUM 7's widening is derived from, so it is written down once, here,
+#: rather than restated per component.
+CONV_LAYERS: tuple[int, ...] = (0, 1, 3, 5, 7, 9, 11, 13)
+ATTENTION_LAYERS: tuple[int, ...] = (2, 4, 6, 8, 10, 12)
+MLP_LAYERS: tuple[int, ...] = tuple(range(14))
+
 #: component id -> (weight-group name, geometry note, site policy).
 #: ``site policy`` is ``"global"`` for components with no layer index and a
-#: tuple of permitted layer indices otherwise.  Sites are chosen, not
-#: exhaustive: L0/L13 are the measured operator-damage extremes (S3), L5 is a
-#: quiet mid conv layer, L2/L8/L12 are the largest attention whole-layer gains.
+#: tuple of permitted layer indices otherwise.
+#:
+#: **Schema v1 (waves 1-6).**  Sites were chosen, not exhaustive: L0/L13 are the
+#: measured operator-damage extremes (S3), L5 is a quiet mid conv layer, and
+#: L2/L8/L12 are the largest attention whole-layer gains.  Three sites per body
+#: component, deliberately, because wave 1 had ~300 cells to fit in a budget.
+#:
+#: **Schema v2 (ADDENDUM 7, wave 7).**  That policy became the binding
+#: constraint: `NOTES-MX-J` §5 climbed the C13 ladder to the end of the registry
+#: in three rungs and could go no further, and §5.1 computed the ceiling the
+#: policy implies -- ~0.923x net even if every registered site folded at a true
+#: quarter, because eleven of the fourteen layers had no registered site at all.
+#: v2 widens each component to **every architecturally valid layer** and changes
+#: nothing else.  The two maps live side by side because a receipt is validated
+#: against the version it was sealed under and never against a later one.
+_COMPONENTS_V1_SITES: Mapping[str, Any] = {
+    "C01": "global",
+    "C02": "global",
+    "C03": (0, 5, 13),
+    "C04": (0, 5, 13),
+    "C05": (0, 5, 13),
+    "C06": (2, 8, 12),
+    "C07": (2, 8, 12),
+    "C08": (2, 8, 12),
+    "C09": (2, 8, 12),
+    "C10": (2, 8),
+    "C11": (0, 5, 13),
+    "C12": (0, 5, 13),
+    "C13": (0, 5, 13),
+    "C14": (0, "final"),
+    "C15": "global",
+}
+
 COMPONENTS: Mapping[str, Mapping[str, Any]] = {
     "C01": {"name": "token_interface_in", "kind": "token", "sites": "global"},
     "C02": {"name": "token_interface_out", "kind": "token", "sites": "global"},
-    "C03": {"name": "conv_in_proj", "kind": "short_conv", "sites": (0, 5, 13)},
-    "C04": {"name": "conv_kernel", "kind": "short_conv", "sites": (0, 5, 13)},
-    "C05": {"name": "conv_out_proj", "kind": "short_conv", "sites": (0, 5, 13)},
-    "C06": {"name": "attn_q", "kind": "full_attention", "sites": (2, 8, 12)},
-    "C07": {"name": "attn_k", "kind": "full_attention", "sites": (2, 8, 12)},
-    "C08": {"name": "attn_v", "kind": "full_attention", "sites": (2, 8, 12)},
-    "C09": {"name": "attn_o", "kind": "full_attention", "sites": (2, 8, 12)},
-    "C10": {"name": "attn_per_head", "kind": "full_attention", "sites": (2, 8)},
-    "C11": {"name": "mlp_gate", "kind": "mlp", "sites": (0, 5, 13)},
-    "C12": {"name": "mlp_up", "kind": "mlp", "sites": (0, 5, 13)},
-    "C13": {"name": "mlp_down", "kind": "mlp", "sites": (0, 5, 13)},
-    "C14": {"name": "norms", "kind": "norm", "sites": (0, "final")},
+    "C03": {"name": "conv_in_proj", "kind": "short_conv", "sites": CONV_LAYERS},
+    "C04": {"name": "conv_kernel", "kind": "short_conv", "sites": CONV_LAYERS},
+    "C05": {"name": "conv_out_proj", "kind": "short_conv", "sites": CONV_LAYERS},
+    "C06": {"name": "attn_q", "kind": "full_attention", "sites": ATTENTION_LAYERS},
+    "C07": {"name": "attn_k", "kind": "full_attention", "sites": ATTENTION_LAYERS},
+    "C08": {"name": "attn_v", "kind": "full_attention", "sites": ATTENTION_LAYERS},
+    "C09": {"name": "attn_o", "kind": "full_attention", "sites": ATTENTION_LAYERS},
+    "C10": {
+        "name": "attn_per_head",
+        "kind": "full_attention",
+        "sites": ATTENTION_LAYERS,
+    },
+    "C11": {"name": "mlp_gate", "kind": "mlp", "sites": MLP_LAYERS},
+    "C12": {"name": "mlp_up", "kind": "mlp", "sites": MLP_LAYERS},
+    "C13": {"name": "mlp_down", "kind": "mlp", "sites": MLP_LAYERS},
+    "C14": {"name": "norms", "kind": "norm", "sites": MLP_LAYERS + ("final",)},
     "C15": {"name": "lm_head", "kind": "token", "sites": "global"},
 }
+
+
+def component_sites(component: str, schema_version: int = LATEST_SCHEMA_VERSION) -> Any:
+    """The site policy for one component **under one schema version**.
+
+    The single place either map is read from, so that widening a component in
+    v2 cannot accidentally widen what a v1 receipt is allowed to say.
+    """
+
+    if component not in COMPONENTS:
+        raise MatrixCellReceiptError(f"Unknown component {component!r}.")
+    version = int(schema_version)
+    if version == 1:
+        return _COMPONENTS_V1_SITES[component]
+    if version == LATEST_SCHEMA_VERSION:
+        return COMPONENTS[component]["sites"]
+    raise MatrixCellReceiptError(
+        f"Unknown receipt schema version {schema_version!r}; "
+        f"known versions are {sorted(set(RECEIPT_SCHEMA_VERSIONS.values()))}."
+    )
+
+
+def schema_version_of(body: Mapping[str, Any]) -> int:
+    """The integer schema version a receipt body declares.  Fails closed."""
+
+    declared = body.get("schema") if isinstance(body, Mapping) else None
+    version = RECEIPT_SCHEMA_VERSIONS.get(str(declared))
+    if version is None:
+        raise MatrixCellReceiptError(
+            f"Receipt schema must be one of {sorted(RECEIPT_SCHEMA_VERSIONS)}; "
+            f"got {declared!r}."
+        )
+    return version
 
 #: technique id -> canonical technique name used in the receipt body.
 TECHNIQUES: Mapping[str, str] = {
@@ -368,7 +474,21 @@ class CellId:
         return hash(self.text)
 
     @classmethod
-    def parse(cls, value: str) -> "CellId":
+    def parse(
+        cls, value: str, *, schema_version: int = LATEST_SCHEMA_VERSION
+    ) -> "CellId":
+        """Parse a cell id, enforcing ``schema_version``'s site registry.
+
+        The version is a parameter and not a module constant because ADDENDUM 7
+        widened the registry: a cell id naming L04 is legal under v2 and was
+        never legal under v1, and `validate_receipt` reads a receipt against the
+        version that receipt declares so that a sealed v1 row keeps meaning
+        exactly what it meant when it was sealed.  Everything that is *writing*
+        new work -- recipes, runners, the renderer's empty-cell enumeration --
+        gets the latest version by default, which is the whole point of the
+        wave.
+        """
+
         text = str(value).strip()
         if text == CONTROL_CELL_ID:
             return cls(
@@ -416,7 +536,7 @@ class CellId:
             raise MatrixCellReceiptError(
                 f"Site {site!r} must be L<nn>, GLOBAL, or FINAL."
             )
-        sites = COMPONENTS[component]["sites"]
+        sites = component_sites(component, schema_version)
         if sites == "global":
             if site != "GLOBAL":
                 raise MatrixCellReceiptError(
@@ -429,7 +549,8 @@ class CellId:
             }
             if site not in allowed:
                 raise MatrixCellReceiptError(
-                    f"{component} is measured at {sorted(allowed)}, not {site!r}."
+                    f"{component} is measured at {sorted(allowed)} under receipt "
+                    f"schema v{int(schema_version)}, not {site!r}."
                 )
         if component == "C14" and level != "NA":
             raise MatrixCellReceiptError(
@@ -542,8 +663,11 @@ def validate_receipt(body: Mapping[str, Any]) -> None:
 
     if not isinstance(body, Mapping):
         raise MatrixCellReceiptError("A receipt must be a mapping.")
-    if body.get("schema") != SCHEMA:
-        raise MatrixCellReceiptError(f"Receipt schema must be {SCHEMA!r}.")
+    # ADDENDUM 7.  The version is read off the body, never assumed: a v1 receipt
+    # is validated against v1's narrow site registry for as long as it exists,
+    # so re-verifying any of the 348 rows waves 1-6 sealed recomputes exactly
+    # the clauses they were sealed under.
+    schema_version = schema_version_of(body)
     for path, types in _MANDATORY.items():
         value = _lookup(body, path)
         if isinstance(value, bool) and bool not in types:
@@ -555,7 +679,7 @@ def validate_receipt(body: Mapping[str, Any]) -> None:
                 f"Receipt field {path!r} has type {type(value).__name__}; "
                 f"expected one of {tuple(t.__name__ for t in types)}."
             )
-    cell = CellId.parse(str(body["cell_id"]))
+    cell = CellId.parse(str(body["cell_id"]), schema_version=schema_version)
     if body["cell_kind"] not in CELL_KINDS:
         raise MatrixCellReceiptError(f"cell_kind must be one of {CELL_KINDS}.")
     if body["cell_kind"] != cell.kind:
@@ -936,6 +1060,7 @@ def blank_receipt(
     probe_set_sha: str,
     smoke_prompt_sha: str,
     compute_architecture: str,
+    schema_version: int = LATEST_SCHEMA_VERSION,
 ) -> dict[str, Any]:
     """Return a fully-keyed receipt body with every mandatory field present.
 
@@ -943,9 +1068,20 @@ def blank_receipt(
     forgot to measure something therefore fails the chain walk loudly instead
     of quietly claiming a perfect zero, which is the same fail-closed posture
     the layer-0 study's calibration gate takes.
+
+    ``schema_version`` defaults to the latest because a new receipt is new work
+    and new work gets ADDENDUM 7's widened site registry.  It is settable so a
+    replay of a wave-1..6 cell can be sealed under the version that wave used.
     """
 
-    cell = CellId.parse(cell_id)
+    schema = {1: SCHEMA_V1, LATEST_SCHEMA_VERSION: SCHEMA_V2}.get(
+        int(schema_version)
+    )
+    if schema is None:
+        raise MatrixCellReceiptError(
+            f"Unknown receipt schema version {schema_version!r}."
+        )
+    cell = CellId.parse(cell_id, schema_version=int(schema_version))
     if cell.kind == "control":
         component = "copy_exact"
         technique = TECHNIQUES[cell.technique]
@@ -956,7 +1092,7 @@ def blank_receipt(
         component = str(COMPONENTS[cell.component]["name"])
         technique = TECHNIQUES[cell.technique]
     return {
-        "schema": SCHEMA,
+        "schema": schema,
         "cell_id": cell.text,
         "cell_instance_id": str(cell_instance_id),
         "cell_kind": cell.kind,
@@ -1378,15 +1514,24 @@ def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
 
     verify_seal(body)
     validate_receipt(body)
+    version = schema_version_of(body)
+    parsed = CellId.parse(str(body["cell_id"]), schema_version=version)
     return {
         "schema": LEDGER_SCHEMA,
+        # ADDENDUM 7.  One new column, and the ledger schema deliberately does
+        # *not* move with it: the 348 rows waves 1-6 appended stay readable, and
+        # a row without this key is a v1 row, which is the same statement the
+        # key makes explicitly for every row appended from wave 7 on.  Which
+        # site registry a row was sealed under is now a fact about the row
+        # rather than a fact about the date on it.
+        "receipt_schema_version": version,
         "cell_id": body["cell_id"],
         "cell_instance_id": body["cell_instance_id"],
         "cell_kind": body["cell_kind"],
         "component": body["component"],
         "technique": body["technique"],
-        "technique_id": CellId.parse(str(body["cell_id"])).technique,
-        "component_id": CellId.parse(str(body["cell_id"])).component,
+        "technique_id": parsed.technique,
+        "component_id": parsed.component,
         "level": body["level"],
         "site": body["site"],
         "campaign_wave": body["campaign_wave"],
@@ -1502,11 +1647,15 @@ def prompt_sha256(prompt: str) -> str:
 def known_cell_ids(
     components: Iterable[str] | None = None,
     techniques: Iterable[str] | None = None,
+    schema_version: int = LATEST_SCHEMA_VERSION,
 ) -> tuple[str, ...]:
     """Enumerate the syntactically legal cell ids for the requested axes.
 
     Used by the renderer to draw empty (pending) matrix positions, and by the
-    tests to prove the parser accepts exactly the design's axes.
+    tests to prove the parser accepts exactly the design's axes.  Under v2 that
+    enumeration is much larger, because ADDENDUM 7 widened the site axis and
+    the renderer's grid of pending positions is exactly what a site policy
+    change is supposed to move.
     """
 
     chosen_components = tuple(components or COMPONENTS)
@@ -1517,7 +1666,7 @@ def known_cell_ids(
     )
     result: list[str] = []
     for component in chosen_components:
-        sites = COMPONENTS[component]["sites"]
+        sites = component_sites(component, schema_version)
         site_ids = (
             ("GLOBAL",)
             if sites == "global"
