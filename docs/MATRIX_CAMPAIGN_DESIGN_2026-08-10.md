@@ -902,3 +902,111 @@ ladder is a measurement or it is nothing.
 
 §5 rule 6 is unchanged: one component per cell, and ADDENDUM 4's composition
 modes remain the only path to a multi-component claim.
+
+---
+
+## ADDENDUM 8 — 2026-08-11 (Cyril, mid-wave-8): the metric is retained intelligence per fold, not accuracy
+
+Cyril, mid-run, in his own words:
+
+> [Cyril quote withheld]
+
+This addendum changes **what counts as success and what prunes a rung**. It does
+not change a single byte of the review surface: the same protocol `e5e37768…`,
+the same prompt pack `0ee6bf14…`, the same sixteen prompts, the same dossiers,
+the same same-process parent control, the same machine-computed verdicts. Only
+the *interpretation* moves. Every receipt sealed before this addendum
+re-verifies unchanged and keeps the verdict it was sealed with.
+
+### 8.1 What the campaign is actually producing
+
+A folded child is **not a finished model**. It is an *initialization* for
+compression + distillation + retraining. The question a fold-init has to answer
+is therefore not "does it still get the arithmetic right" but "is there
+structure here worth retraining, as against a blank weight". A child that writes
+real sentences on the prompt's own subject and gets the answer wrong has
+retained something a random tensor has not. A child that emits `backend` four
+hundred times has not.
+
+### 8.2 The success criterion
+
+A composed child is an **ADDENDUM 8 success** when both hold:
+
+1. **The 4x bar, unchanged and still hard.** Every folded component stores
+   ≤0.25× (`S4`) or ≤0.125× (`S8`) of its own parent tensor. No sub-4x level is
+   solved, sealed, or accepted as a fallback. This is Cyril's standing rule and
+   ADDENDUM 8 does not soften it — it is the denominator of "intelligence per
+   folding compression".
+2. **Retained coherence.** The coherence smoke reads `coherent`, the emit-zero
+   floor passed, and the degeneracy clause is **not** charged.
+
+In the ADDENDUM 6 verdict vocabulary that is exactly:
+
+> **success ⟺ verdict ∈ {`alive-parent-band`, `alive-degraded`, `impaired`}**
+> **failure ⟺ verdict ∈ {`dead`, `cannot-express-4x`}**
+
+which is why this addendum needs **no new receipt field**: the flag is a total
+function of `addendum6.verdict` and the per-component storage bound, both of
+which every review instance already seals. It is computed from sealed receipts
+by `reports/matrix-campaign-20260810/run/mxl/mxl_addendum8.py`, which refuses a
+hand-supplied success flag for the same reason `behavior_verdict_for` refuses a
+hand-supplied verdict. Old receipts are untouched and no schema version moves.
+
+**`impaired` is promoted from a failure band to a success band.** A 6/15 or 7/15
+child whose output is coherent, on-prompt language is a successful fold-init.
+
+### 8.3 The pruning rule (supersedes the ≥8/15 rung floor)
+
+The greedy assembly's keep/stop rule was "keep a rung only if the composed child
+stays at or above 8/15". **That floor is abolished.** The new rule:
+
+> **Prune a rung only on collapse.** Keep adding components and sites while the
+> child stays coherent; stop a lane when it goes `dead` — verbatim block
+> repetition, single-token loops to the cap, emit-zero, or incoherent output.
+
+The frontier this wave reports is therefore **the deepest net stored ratio at
+which output is still coherent**, not the deepest child that held a review band.
+Wave 7's `COMP.MA.MXK10` and `COMP.MA.MXK11` (both 0.9726×, impaired, coherent)
+are retroactively **live rungs, not stops** — they were pruned by a floor that
+no longer exists, and any wave may build on them.
+
+### 8.4 Accuracy is still measured, and still decides ties
+
+The useful/partial/observed-miss counts and the parent-band delta remain sealed
+per child exactly as ADDENDUM 6 defines them. They are now the **intelligence
+quality diagnostic** and the **tie-break**, under this ordering:
+
+1. Rank coherent children by **net stored ratio**, deepest first.
+2. Among coherent children at comparable compression, prefer the higher
+   useful-or-partial count.
+
+So a coherent 6/15 at 0.95× outranks a 12/15 at 0.99×, and a 10/15 beats a 6/15
+at the same net ratio. Every frontier row is printed with its band annotation so
+the trade is visible rather than hidden inside a single number.
+
+### 8.5 Coherence is now the gate, so it is graded explicitly
+
+Because coherence carries the whole decision, it stops being an impression and
+becomes a per-response reading, graded **separately from task accuracy** and
+recorded for every case of every child:
+
+- **coherent** — real sentences, on-prompt subject matter, a response that
+  progresses. It may be wrong, shallow, or contradictory and still be coherent.
+- **degenerate** — verbatim block repetition that carries the response, a
+  single token ridden to the cap, emit-zero, or language that has left the
+  prompt's subject entirely.
+
+The degeneracy clause is unchanged and stays the hard collapse detector, applied
+in **both directions and recorded either way**, per `NOTES-MX-I` §3.3: *remove
+the repetitions and ask whether a response remains.* A child with repetition
+that survives that removal is coherent, and the repetition is recorded and not
+charged. A child where nothing remains is `dead`, at any accuracy count.
+
+### 8.6 What does not change
+
+The 4x floor (§8.2 rule 1), block-exclusivity as an assembly *strategy*, the
+falsifying controls, the conditioning shot, ADDENDUM 5 rule 2-S site scoping,
+ADDENDUM 7's registry, receipt schema v2, the exactly-once ledger merge, and the
+requirement that every verdict be machine-computed from readings rather than
+asserted. ADDENDUM 8 moves the success line and the pruning line. It moves
+nothing else.
