@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,23 +21,43 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
 )
+from neural_forge.dynamic_model_inspector import inspect_model_circuits  # noqa: E402
+from neural_forge.dynamic_lfm2_adapter import (  # noqa: E402
+    Lfm2DenseBudgetedSelectedTarget,
+)
 from neural_forge.hf_feature_fold import build_feature_fold_map  # noqa: E402
 from neural_forge.hf_lfm2_dense_budget_model_fold import (  # noqa: E402
+    LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME,
     Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetFoldError,
+    Lfm2DenseBudgetModelOperator,
     _Lfm2DenseFoldProgress,
     _factorize_short_conv_dense_writer_action,
     _fold_dense_blank_from_parent,
     _seal_short_conv_output_action_evidence,
+)
+from neural_forge.hf_lfm2_sparse_feature_fold_bundle import (  # noqa: E402
+    AXIS_MLP_POST_SWIGLU,
+    AXIS_SHORT_CONV_CONTEXT,
+    Lfm2SparseFeatureFoldBundle,
+    admit_lfm2_sparse_feature_axis,
+    build_lfm2_sparse_feature_fold_bundle,
 )
 from neural_forge import hf_lfm2_dense_budget_model_fold as dense_fold_module  # noqa: E402
 from neural_forge.hf_lfm2_dynamic_blank_materializer import (  # noqa: E402
     extract_lfm2_dynamic_physical_layout_from_config,
     materialize_lfm2_dynamic_blank_child,
 )
+from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
+    Lfm2CircuitTraceCache,
+)
 from neural_forge.hf_lfm2_dynamic_physical_layout import (  # noqa: E402
     Lfm2HeterogeneousLayerPhysicalLayout,
     build_lfm2_heterogeneous_physical_layout,
+)
+from neural_forge.matrix_technique_body_routes import (  # noqa: E402
+    build_t5_body_route_source_witness,
+    fit_body_component_routes,
 )
 
 
@@ -96,6 +118,203 @@ def _residual_map(parent, target_width: int):
         balance_strength=0.25,
         allow_sign_flip=False,
     )
+
+
+_SPARSE_CACHE_KEY = "b" * 64
+
+
+def _sparse_axis_paths(layer_index: int, axis_kind: str) -> tuple[str, dict[str, str]]:
+    if axis_kind == AXIS_MLP_POST_SWIGLU:
+        site = f"model.layers.{layer_index}.feed_forward"
+        return site, {
+            "w1": f"{site}.w1.weight",
+            "w3": f"{site}.w3.weight",
+            "w2": f"{site}.w2.weight",
+        }
+    site = f"model.layers.{layer_index}.conv"
+    packed = f"{site}.in_proj.weight"
+    return site, {
+        "in_proj_b": packed,
+        "in_proj_c": packed,
+        "in_proj_x": packed,
+        "fir_kernel": f"{site}.conv.weight",
+        "out_proj": f"{site}.out_proj.weight",
+    }
+
+
+def _sparse_short_slices(width: int) -> dict[str, tuple[int, int]]:
+    return {
+        "in_proj_b": (0, width),
+        "in_proj_c": (width, 2 * width),
+        "in_proj_x": (2 * width, 3 * width),
+    }
+
+
+def _sparse_source_artifacts(witness) -> dict[str, str]:
+    return {
+        "parent_state": witness.parent_state_fingerprint,
+        "component_evidence_cache": witness.evidence_cache_sha256,
+        "component_evidence_selection": witness.evidence_selection_sha256,
+        "body_route_record": witness.body_route_record_sha256,
+        "body_route_source_witness": witness.witness_sha256,
+    }
+
+
+def _sparse_bundle_fixture(
+    parent,
+    child,
+    *,
+    parent_state_fingerprint: str | None = None,
+    evidence_cache_sha256: str = _SPARSE_CACHE_KEY,
+    route_seed_offset: int = 0,
+):
+    source_graph = inspect_model_circuits(parent, model_name="sparse-parent")
+    target_graph = inspect_model_circuits(child, model_name="sparse-child")
+    parent_state = (
+        fingerprint_model_state(parent)
+        if parent_state_fingerprint is None
+        else parent_state_fingerprint
+    )
+    axes = []
+    for layer_index, (source_layer, target_layer) in enumerate(
+        zip(parent.model.layers, child.model.layers, strict=True)
+    ):
+        specifications = [
+            (
+                AXIS_MLP_POST_SWIGLU,
+                "C13",
+                source_layer.feed_forward.w2.weight,
+                int(target_layer.feed_forward.w1.weight.shape[0]),
+                "w2",
+                "mlp.post_swiglu",
+            )
+        ]
+        if not source_layer.is_attention_layer:
+            specifications.append(
+                (
+                    AXIS_SHORT_CONV_CONTEXT,
+                    "C05",
+                    source_layer.conv.out_proj.weight,
+                    int(target_layer.conv.in_proj.weight.shape[0]) // 3,
+                    "out_proj",
+                    "short_conv.context",
+                )
+            )
+        for (
+            axis_kind,
+            component,
+            live_writer,
+            target_width,
+            writer_role,
+            evidence_endpoint,
+        ) in specifications:
+            source_width = int(live_writer.shape[1])
+            generator = torch.Generator().manual_seed(
+                51_000 + route_seed_offset + layer_index * 10 + len(axes)
+            )
+            rows = torch.randn(
+                (max(48, source_width * 3), source_width),
+                generator=generator,
+                dtype=torch.float64,
+            )
+            normalized_writer = live_writer.detach().to(
+                device="cpu", dtype=torch.float64
+            )
+            fold = fit_body_component_routes(
+                parent_weight=normalized_writer,
+                component_rows=rows,
+                component=component,
+                level="X4",
+                site=f"L{layer_index:02d}",
+                kept_width=target_width,
+                active_k=min(2, target_width),
+                channel_selection="explicit",
+                kept_channel_ids=tuple(range(target_width)),
+                install_coefficients="write",
+            )
+            site, paths = _sparse_axis_paths(layer_index, axis_kind)
+            selection_sha256 = canonical_sha256(
+                {
+                    "axis_kind": axis_kind,
+                    "layer_index": layer_index,
+                    "kept_channel_ids": list(range(target_width)),
+                    "route_seed_offset": route_seed_offset,
+                }
+            )
+            witness = build_t5_body_route_source_witness(
+                fold,
+                parent_weight=normalized_writer,
+                component_rows=rows,
+                parameter_path=paths[writer_role],
+                graph_fingerprint=source_graph.fingerprint,
+                parent_state_fingerprint=parent_state,
+                component_id=fold.component_id,
+                layer_index=layer_index,
+                site=f"L{layer_index:02d}",
+                role="writer",
+                evidence_cache_sha256=evidence_cache_sha256,
+                evidence_selection_sha256=selection_sha256,
+                evidence_endpoint=evidence_endpoint,
+                coefficient_set="write",
+            )
+            kwargs = {
+                "source_graph": source_graph,
+                "target_graph": target_graph,
+                "source_graph_sha256": source_graph.fingerprint,
+                "target_graph_sha256": target_graph.fingerprint,
+                "layer_index": layer_index,
+                "site": site,
+                "axis_kind": axis_kind,
+                "source_parameter_paths": paths,
+                "target_parameter_paths": paths,
+                "body_route_fold": fold,
+                "source_witness": witness,
+                "coefficient_set": "write",
+                "source_artifact_sha256s": _sparse_source_artifacts(witness),
+            }
+            if axis_kind == AXIS_SHORT_CONV_CONTEXT:
+                kwargs.update(
+                    source_parameter_row_slices=_sparse_short_slices(source_width),
+                    target_parameter_row_slices=_sparse_short_slices(target_width),
+                )
+            axes.append(admit_lfm2_sparse_feature_axis(**kwargs))
+    bundle = build_lfm2_sparse_feature_fold_bundle(
+        source_graph=source_graph,
+        target_graph=target_graph,
+        source_graph_sha256=source_graph.fingerprint,
+        target_graph_sha256=target_graph.fingerprint,
+        axes=axes,
+    )
+    return bundle, source_graph, target_graph
+
+
+def _blank_state(model) -> dict[str, torch.Tensor]:
+    return {name: value.detach().clone() for name, value in model.state_dict().items()}
+
+
+def _assert_state_exact(model, expected: dict[str, torch.Tensor]) -> None:
+    assert tuple(model.state_dict()) == tuple(expected)
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+
+
+def _unsafe_bundle_axes(bundle, axes) -> Lfm2SparseFeatureFoldBundle:
+    """Build an intentionally unverified object for materializer tamper tests."""
+
+    result = object.__new__(Lfm2SparseFeatureFoldBundle)
+    for name, value in (
+        ("source_graph", bundle.source_graph),
+        ("target_graph", bundle.target_graph),
+        ("source_graph_sha256", bundle.source_graph_sha256),
+        ("target_graph_sha256", bundle.target_graph_sha256),
+        ("axes", tuple(axes)),
+        ("attention_sites", bundle.attention_sites),
+        ("provenance", bundle.provenance),
+        ("report", bundle.report),
+        ("bundle_sha256", bundle.bundle_sha256),
+    ):
+        object.__setattr__(result, name, value)
+    return result
 
 
 def _heterogeneous_child(*, factorized_writer: bool = False):
@@ -173,6 +392,40 @@ def _heterogeneous_child(*, factorized_writer: bool = False):
     )
     _zero(child)
     return child
+
+
+def _sparse_parent(*, seed: int):
+    return _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=("conv", "full_attention", "full_attention", "conv"),
+        ),
+        seed=seed,
+    )
+
+
+def test_legacy_dense_import_does_not_register_t5_body_routes() -> None:
+    script = """
+import json
+from neural_forge.matrix_technique_registry import registered_pairs
+before = registered_pairs()
+import neural_forge.hf_lfm2_dense_budget_model_fold  # noqa: F401
+after = registered_pairs()
+print(json.dumps({"before": before, "after": after}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(completed.stdout)
+    assert payload["after"] == payload["before"]
+    assert all(pair[0] != "T5" for pair in payload["after"])
 
 
 def test_moving_gauge_resume_preserves_policy_and_marks_terminal_override(
@@ -276,6 +529,9 @@ def test_fold_uses_each_materialized_layer_physical_geometry() -> None:
     assert report["complete_target_parameter_overwrite"] is True
     assert report["training_used"] is False
     assert report["parent_forward_calls"] == 0
+    assert report["sparse_feature_fold_bundle_used"] is False
+    assert report["sparse_feature_fold_bundle"] is None
+    assert report["dynamic_body_feature_map_solve_count"] == 6
     assert fingerprint_model_state(parent) == parent_before
     assert [layer["swiglu"]["target_neurons"] for layer in report["layers"]] == [
         7,
@@ -319,6 +575,405 @@ def test_fold_uses_each_materialized_layer_physical_geometry() -> None:
         ).logits
     assert tuple(logits.shape) == (1, 3, 23)
     assert bool(torch.isfinite(logits).all())
+
+
+def test_authenticated_sparse_bundle_materializes_exact_six_axis_formulas(
+    tmp_path: Path,
+) -> None:
+    layer_types = (
+        "conv",
+        "full_attention",
+        "full_attention",
+        "conv",
+    )
+    parent = _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=layer_types,
+        ),
+        seed=4111,
+    )
+    child = _heterogeneous_child()
+    mapping = _residual_map(parent, 8)
+    bundle, source_graph, target_graph = _sparse_bundle_fixture(parent, child)
+    axes = {(axis.layer_index, axis.axis_kind): axis for axis in bundle.axes}
+
+    report = _fold_dense_blank_from_parent(
+        parent,
+        child,
+        mapping,
+        sparse_feature_fold_bundle=bundle,
+        source_graph=source_graph,
+        target_graph=target_graph,
+        trace_cache_key=_SPARSE_CACHE_KEY,
+    )
+
+    assert len(bundle.axes) == 6
+    assert report["dynamic_body_feature_map_solve_count"] == 0
+    sparse_report = report["sparse_feature_fold_bundle"]
+    assert sparse_report["resource_name"] == (
+        LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME
+    )
+    assert sparse_report["bundle_sha256"] == bundle.bundle_sha256
+    assert sparse_report["admitted_axis_sha256s"] == (
+        sparse_report["consumed_axis_sha256s"]
+    )
+    assert sparse_report["admitted_axis_count"] == 6
+    assert sparse_report["consumed_axis_count"] == 6
+    assert sparse_report["all_admissions_consumed"] is True
+    assert sparse_report["live_source_values_reauthenticated"] is True
+    assert sparse_report["runtime_parameter_count"] == 0
+    assert sparse_report["runtime_buffer_count"] == 0
+    assert sparse_report["runtime_sidecar_count"] == 0
+
+    for layer_index, (source_layer, target_layer) in enumerate(
+        zip(parent.model.layers, child.model.layers, strict=True)
+    ):
+        feature_map = axes[
+            (layer_index, AXIS_MLP_POST_SWIGLU)
+        ].feature_map
+        expected_w1 = feature_map.fold_producer_weight(
+            mapping.fold_consumer_weight(
+                source_layer.feed_forward.w1.weight.detach().to(torch.float64)
+            )
+        )
+        expected_w3 = feature_map.fold_producer_weight(
+            mapping.fold_consumer_weight(
+                source_layer.feed_forward.w3.weight.detach().to(torch.float64)
+            )
+        )
+        expected_w2 = mapping.fold_producer_weight(
+            feature_map.fold_consumer_weight(
+                source_layer.feed_forward.w2.weight.detach().to(torch.float64)
+            )
+        )
+        for actual, expected in (
+            (target_layer.feed_forward.w1.weight, expected_w1),
+            (target_layer.feed_forward.w3.weight, expected_w3),
+            (target_layer.feed_forward.w2.weight, expected_w2),
+        ):
+            torch.testing.assert_close(
+                actual,
+                expected.to(dtype=actual.dtype),
+                rtol=0,
+                atol=0,
+            )
+        if source_layer.is_attention_layer:
+            continue
+        conv_map = axes[
+            (layer_index, AXIS_SHORT_CONV_CONTEXT)
+        ].feature_map
+        source_blocks = source_layer.conv.in_proj.weight.chunk(3, dim=0)
+        expected_in = torch.cat(
+            tuple(
+                conv_map.fold_producer_weight(
+                    mapping.fold_consumer_weight(block.detach().to(torch.float64))
+                )
+                for block in source_blocks
+            ),
+            dim=0,
+        )
+        expected_out = mapping.fold_producer_weight(
+            conv_map.fold_consumer_weight(
+                source_layer.conv.out_proj.weight.detach().to(torch.float64)
+            )
+        )
+        expected_fir = source_layer.conv.conv.weight.detach().index_select(
+            0,
+            conv_map.kept_source_ids,
+        )
+        for actual, expected in (
+            (target_layer.conv.in_proj.weight, expected_in),
+            (target_layer.conv.out_proj.weight, expected_out),
+            (target_layer.conv.conv.weight, expected_fir),
+        ):
+            torch.testing.assert_close(
+                actual,
+                expected.to(dtype=actual.dtype),
+                rtol=0,
+                atol=0,
+            )
+
+    assert not hasattr(child, "sparse_feature_fold_bundle")
+    assert all("sparse_feature" not in name for name in child.state_dict())
+    descriptor = extract_lfm2_dynamic_physical_layout_from_config(child.config)
+    source_receipt = materialize_lfm2_dynamic_blank_child(
+        child,
+        child.config,
+        descriptor,
+        expected_descriptor_sha256=descriptor.descriptor_sha256,
+    )
+    inputs = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    with torch.inference_mode():
+        expected_logits = child(inputs, use_cache=False).logits
+    checkpoint = tmp_path / "sparse-bundle-folded-child"
+    child.save_pretrained(checkpoint, safe_serialization=True)
+    assert all("sparse" not in path.name for path in checkpoint.iterdir())
+    config_payload = json.loads(
+        (checkpoint / "config.json").read_text(encoding="utf-8")
+    )
+    fresh_config = transformers.Lfm2Config(**config_payload)
+    recovered = extract_lfm2_dynamic_physical_layout_from_config(fresh_config)
+    fresh = transformers.Lfm2ForCausalLM(fresh_config)
+    fresh_receipt = materialize_lfm2_dynamic_blank_child(
+        fresh,
+        fresh_config,
+        recovered,
+        expected_descriptor_sha256=recovered.descriptor_sha256,
+    )
+    state = safetensors_torch.load_file(str(checkpoint / "model.safetensors"))
+    loaded = fresh.load_state_dict(state, strict=True)
+    with torch.inference_mode():
+        actual_logits = fresh(inputs, use_cache=False).logits
+    assert loaded.missing_keys == []
+    assert loaded.unexpected_keys == []
+    assert fresh_receipt == source_receipt
+    assert recovered == descriptor
+    assert sum(parameter.numel() for parameter in fresh.parameters()) == (
+        descriptor.accounting.unique_parameter_elements
+    )
+    assert tuple(fresh.state_dict()) == tuple(child.state_dict())
+    for name, expected in child.state_dict().items():
+        torch.testing.assert_close(fresh.state_dict()[name], expected, rtol=0, atol=0)
+    torch.testing.assert_close(actual_logits, expected_logits, rtol=0, atol=0)
+    assert not hasattr(fresh, "sparse_feature_fold_bundle")
+
+
+@pytest.mark.parametrize("identity", ("parent_state", "trace_cache"))
+def test_sparse_bundle_wrong_state_or_cache_fails_before_any_target_write(
+    identity: str,
+) -> None:
+    parent = _sparse_parent(seed=4121)
+    child = _heterogeneous_child()
+    fixture_kwargs = (
+        {"parent_state_fingerprint": "c" * 64}
+        if identity == "parent_state"
+        else {"evidence_cache_sha256": "d" * 64}
+    )
+    bundle, source_graph, target_graph = _sparse_bundle_fixture(
+        parent,
+        child,
+        **fixture_kwargs,
+    )
+    before = _blank_state(child)
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="live parent state|sealed trace cache",
+    ):
+        _fold_dense_blank_from_parent(
+            parent,
+            child,
+            _residual_map(parent, 8),
+            sparse_feature_fold_bundle=bundle,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=_SPARSE_CACHE_KEY,
+        )
+
+    _assert_state_exact(child, before)
+
+
+@pytest.mark.parametrize("coverage", ("missing", "extra"))
+def test_sparse_bundle_coverage_fails_before_any_target_write(coverage: str) -> None:
+    parent = _sparse_parent(seed=4131)
+    child = _heterogeneous_child()
+    bundle, source_graph, target_graph = _sparse_bundle_fixture(parent, child)
+    if coverage == "missing":
+        candidate = build_lfm2_sparse_feature_fold_bundle(
+            source_graph=source_graph,
+            target_graph=target_graph,
+            source_graph_sha256=source_graph.fingerprint,
+            target_graph_sha256=target_graph.fingerprint,
+            axes=bundle.axes[:-1],
+        )
+    else:
+        candidate = _unsafe_bundle_axes(bundle, (*bundle.axes, bundle.axes[0]))
+    before = _blank_state(child)
+
+    with pytest.raises(Lfm2DenseBudgetFoldError):
+        _fold_dense_blank_from_parent(
+            parent,
+            child,
+            _residual_map(parent, 8),
+            sparse_feature_fold_bundle=candidate,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=_SPARSE_CACHE_KEY,
+        )
+
+    _assert_state_exact(child, before)
+
+
+@pytest.mark.parametrize("payload", ("map", "fold", "witness"))
+def test_sparse_bundle_tamper_fails_before_any_target_write(payload: str) -> None:
+    parent = _sparse_parent(seed=4141)
+    child = _heterogeneous_child()
+    bundle, source_graph, target_graph = _sparse_bundle_fixture(parent, child)
+    axis = bundle.axes[0]
+    if payload == "map":
+        axis.feature_map.kept_source_ids[0] = axis.feature_map.kept_source_ids[1]
+    elif payload == "fold":
+        assert int(axis.body_route_fold.write_coefficients.numel()) > 0
+        axis.body_route_fold.write_coefficients[0] += 0.5
+    else:
+        axis.source_witness.parent_weight[0, 0] += 0.5
+    before = _blank_state(child)
+
+    with pytest.raises(Lfm2DenseBudgetFoldError, match="failed authentication"):
+        _fold_dense_blank_from_parent(
+            parent,
+            child,
+            _residual_map(parent, 8),
+            sparse_feature_fold_bundle=bundle,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=_SPARSE_CACHE_KEY,
+        )
+
+    _assert_state_exact(child, before)
+
+
+def test_sparse_bundle_live_writer_mutation_is_reauthenticated_before_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = _sparse_parent(seed=4151)
+    child = _heterogeneous_child()
+    bundle, source_graph, target_graph = _sparse_bundle_fixture(parent, child)
+    sealed_state = fingerprint_model_state(parent)
+    with torch.no_grad():
+        parent.model.layers[0].feed_forward.w2.weight[0, 0] += 1.0
+    monkeypatch.setattr(
+        dense_fold_module,
+        "fingerprint_model_state",
+        lambda _model: sealed_state,
+    )
+    before = _blank_state(child)
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="live route/value authentication",
+    ):
+        _fold_dense_blank_from_parent(
+            parent,
+            child,
+            _residual_map(parent, 8),
+            sparse_feature_fold_bundle=bundle,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=_SPARSE_CACHE_KEY,
+        )
+
+    _assert_state_exact(child, before)
+
+
+def test_sparse_bundle_verify_axis_swap_fails_before_any_target_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = _sparse_parent(seed=4156)
+    child = _heterogeneous_child()
+    bundle_a, source_graph, target_graph = _sparse_bundle_fixture(parent, child)
+    bundle_b, source_graph_b, target_graph_b = _sparse_bundle_fixture(
+        parent,
+        child,
+        route_seed_offset=1_000,
+    )
+    assert source_graph_b.fingerprint == source_graph.fingerprint
+    assert target_graph_b.fingerprint == target_graph.fingerprint
+    assert bundle_b.bundle_sha256 != bundle_a.bundle_sha256
+    assert tuple(axis.admission_sha256 for axis in bundle_b.axes) != tuple(
+        axis.admission_sha256 for axis in bundle_a.axes
+    )
+    original_verify = Lfm2SparseFeatureFoldBundle.verify
+    verify_calls = 0
+
+    def _verify_then_swap(self):
+        nonlocal verify_calls
+        verified = original_verify(self)
+        if self is bundle_a:
+            verify_calls += 1
+            object.__setattr__(self, "axes", bundle_b.axes)
+        return verified
+
+    monkeypatch.setattr(Lfm2SparseFeatureFoldBundle, "verify", _verify_then_swap)
+    before = _blank_state(child)
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="sealed admission order|pre-write closure",
+    ):
+        _fold_dense_blank_from_parent(
+            parent,
+            child,
+            _residual_map(parent, 8),
+            sparse_feature_fold_bundle=bundle_a,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=_SPARSE_CACHE_KEY,
+        )
+
+    assert verify_calls == 1
+    _assert_state_exact(child, before)
+
+
+def test_sparse_bundle_rejects_factorized_short_conv_before_write() -> None:
+    parent = _sparse_parent(seed=4161)
+    dense_child = _heterogeneous_child()
+    bundle, source_graph, target_graph = _sparse_bundle_fixture(parent, dense_child)
+    factorized_child = _heterogeneous_child(factorized_writer=True)
+    before = _blank_state(factorized_child)
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires dense source and target",
+    ):
+        _fold_dense_blank_from_parent(
+            parent,
+            factorized_child,
+            _residual_map(parent, 8),
+            sparse_feature_fold_bundle=bundle,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=_SPARSE_CACHE_KEY,
+        )
+
+    _assert_state_exact(factorized_child, before)
+
+
+def test_sparse_bundle_restart_capsule_configuration_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    parent = _sparse_parent(seed=4171)
+    child = _heterogeneous_child()
+    bundle, _source_graph, _target_graph = _sparse_bundle_fixture(parent, child)
+    selected_target = object.__new__(Lfm2DenseBudgetedSelectedTarget)
+    trace_cache = object.__new__(Lfm2CircuitTraceCache)
+    monkeypatch.setattr(
+        dense_fold_module,
+        "_verify_dense_trace_cache",
+        lambda cache, _lease: cache,
+    )
+    capsule_root = tmp_path / "capsules"
+    config = Lfm2DenseBudgetFoldConfig(
+        restart_capsule_directory=capsule_root,
+        resume_from_restart_capsule=capsule_root,
+    )
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="cannot use restart capsules",
+    ):
+        Lfm2DenseBudgetModelOperator(
+            selected_target,
+            trace_cache,
+            config=config,
+            sparse_feature_fold_bundle=bundle,
+        )
 
 
 def test_structural_fold_progress_is_hash_chained_and_semantics_preserving(

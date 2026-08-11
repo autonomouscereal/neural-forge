@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -18,6 +21,10 @@ from neural_forge.dynamic_fold_compiler import DynamicFoldingCompiler
 from neural_forge.dynamic_fold_executor import (
     FoldDecision,
     fingerprint_model_state,
+)
+from neural_forge.dynamic_fold_planner import (
+    EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY,
+    external_resource_bindings_sha256,
 )
 from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache
 from neural_forge.dynamic_fold_registry import ExperimentLedger
@@ -48,6 +55,7 @@ from neural_forge.dynamic_system import (
 )
 from neural_forge.dynamic_target_synthesis import (
     DynamicTargetAdapterRegistry,
+    DynamicTargetRequest,
     DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
@@ -66,11 +74,18 @@ from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
 )
 from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_BUDGET_MODEL_METHOD,
+    LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME,
     Lfm2DenseCacheVerificationLease,
     Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetFoldError,
     _build_residual_basis,
     _initial_structural_fold_or_authenticated_resume,
+)
+from neural_forge.hf_lfm2_sparse_feature_fold_bundle import (
+    AXIS_MLP_POST_SWIGLU,
+    AXIS_SHORT_CONV_CONTEXT,
+    admit_lfm2_sparse_feature_axis,
+    build_lfm2_sparse_feature_fold_bundle,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
@@ -82,6 +97,10 @@ from neural_forge.dynamic_closed_loop_fold import ClosedLoopCompilerConfig
 from neural_forge.hf_tokenizer_bridge import (
     TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
     seal_strict_tokenizer_bridge_artifact,
+)
+from neural_forge.matrix_technique_body_routes import (
+    build_t5_body_route_source_witness,
+    fit_body_component_routes,
 )
 
 
@@ -348,6 +367,488 @@ def sealed_parent(tmp_path_factory):
         input_device="cpu",
     )
     return parent, cache
+
+
+def _synthesize_dense_target(
+    parent,
+    cache,
+    *,
+    child_name: str,
+    blank_seed: int,
+):
+    tokenizer = _tokenizer_fingerprint()
+    request = _authenticated_dense_request(
+        parent,
+        child_name=child_name,
+        exact_unique_parameters=_target_unique_parameters(),
+        blank_seed=blank_seed,
+    )
+    return DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry(
+            (
+                Lfm2TargetSynthesisAdapter(
+                    terminal_topology=Lfm2Topology(1, 1, 6),
+                    evidence_fingerprint=cache.cache_key,
+                    device="cpu",
+                    dtype=torch.float32,
+                ),
+            )
+        ),
+    ).synthesize(
+        request=request,
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+
+
+def _sparse_axis_paths(layer_index: int, axis_kind: str) -> dict[str, str]:
+    if axis_kind == AXIS_MLP_POST_SWIGLU:
+        prefix = f"model.layers.{layer_index}.feed_forward"
+        return {
+            "w1": f"{prefix}.w1.weight",
+            "w3": f"{prefix}.w3.weight",
+            "w2": f"{prefix}.w2.weight",
+        }
+    prefix = f"model.layers.{layer_index}.conv"
+    packed = f"{prefix}.in_proj.weight"
+    return {
+        "in_proj_b": packed,
+        "in_proj_c": packed,
+        "in_proj_x": packed,
+        "fir_kernel": f"{prefix}.conv.weight",
+        "out_proj": f"{prefix}.out_proj.weight",
+    }
+
+
+def _short_conv_slices(width: int) -> dict[str, tuple[int, int]]:
+    return {
+        "in_proj_b": (0, width),
+        "in_proj_c": (width, 2 * width),
+        "in_proj_x": (2 * width, 3 * width),
+    }
+
+
+def _sparse_feature_bundle(
+    parent,
+    cache,
+    target,
+    *,
+    source_graph=None,
+    target_graph=None,
+    parent_state_fingerprint: str | None = None,
+    evidence_cache_sha256: str | None = None,
+):
+    tokenizer = _tokenizer_fingerprint()
+    source_graph = (
+        inspect_model_circuits(
+            parent,
+            model_name="parent",
+            tokenizer_fingerprint=tokenizer,
+        )
+        if source_graph is None
+        else source_graph
+    )
+    target_graph = target.graph if target_graph is None else target_graph
+    parent_state = (
+        fingerprint_model_state(parent)
+        if parent_state_fingerprint is None
+        else parent_state_fingerprint
+    )
+    cache_sha = (
+        cache.cache_key if evidence_cache_sha256 is None else evidence_cache_sha256
+    )
+    axes = []
+    axis_specs = (
+        (0, AXIS_MLP_POST_SWIGLU),
+        (0, AXIS_SHORT_CONV_CONTEXT),
+        (1, AXIS_MLP_POST_SWIGLU),
+    )
+    for ordinal, (layer_index, axis_kind) in enumerate(axis_specs):
+        source_layer = parent.model.layers[layer_index]
+        target_layer = target.model.model.layers[layer_index]
+        if axis_kind == AXIS_MLP_POST_SWIGLU:
+            component = "C13"
+            endpoint = "mlp.post_swiglu"
+            graph_site = f"model.layers.{layer_index}.feed_forward"
+            parent_weight = source_layer.feed_forward.w2.weight
+            target_width = int(target_layer.feed_forward.w2.weight.shape[1])
+        else:
+            component = "C05"
+            endpoint = "short_conv.context"
+            graph_site = f"model.layers.{layer_index}.conv"
+            parent_weight = source_layer.conv.out_proj.weight
+            target_width = int(target_layer.conv.out_proj.weight.shape[1])
+        parent_weight = (
+            parent_weight.detach().to(device="cpu", dtype=torch.float64).contiguous()
+        )
+        source_width = int(parent_weight.shape[1])
+        generator = torch.Generator().manual_seed(31_000 + ordinal)
+        component_rows = torch.randn(
+            (2 * source_width + 3, source_width),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        heldout_rows = torch.randn(
+            (source_width + 2, source_width),
+            generator=generator,
+            dtype=torch.float64,
+        )
+        authority_site = f"L{layer_index:02d}"
+        fold = fit_body_component_routes(
+            parent_weight=parent_weight,
+            component_rows=component_rows,
+            heldout_component_rows=heldout_rows,
+            component=component,
+            level="X4",
+            site=authority_site,
+            kept_width=target_width,
+            active_k=min(2, target_width),
+            channel_selection="explicit",
+            kept_channel_ids=tuple(range(target_width)),
+            install_coefficients="write",
+        )
+        paths = _sparse_axis_paths(layer_index, axis_kind)
+        selection_sha = canonical_sha256(
+            {
+                "schema": "test-lfm2-sparse-feature-selection-v1",
+                "layer_index": layer_index,
+                "axis_kind": axis_kind,
+                "kept_channel_ids": list(range(target_width)),
+            }
+        )
+        writer_role = "w2" if axis_kind == AXIS_MLP_POST_SWIGLU else "out_proj"
+        witness = build_t5_body_route_source_witness(
+            fold,
+            parent_weight=parent_weight,
+            component_rows=component_rows,
+            heldout_component_rows=heldout_rows,
+            parameter_path=paths[writer_role],
+            graph_fingerprint=source_graph.fingerprint,
+            parent_state_fingerprint=parent_state,
+            component_id=fold.component_id,
+            layer_index=layer_index,
+            site=authority_site,
+            role="writer",
+            evidence_cache_sha256=cache_sha,
+            evidence_selection_sha256=selection_sha,
+            evidence_endpoint=endpoint,
+            coefficient_set="write",
+        )
+        source_artifacts = {
+            "parent_state": witness.parent_state_fingerprint,
+            "component_evidence_cache": witness.evidence_cache_sha256,
+            "component_evidence_selection": (witness.evidence_selection_sha256),
+            "body_route_record": witness.body_route_record_sha256,
+            "body_route_source_witness": witness.witness_sha256,
+        }
+        axis_kwargs = {
+            "source_graph": source_graph,
+            "target_graph": target_graph,
+            "source_graph_sha256": source_graph.fingerprint,
+            "target_graph_sha256": target_graph.fingerprint,
+            "layer_index": layer_index,
+            "site": graph_site,
+            "axis_kind": axis_kind,
+            "source_parameter_paths": paths,
+            "target_parameter_paths": paths,
+            "body_route_fold": fold,
+            "source_witness": witness,
+            "coefficient_set": "write",
+            "source_artifact_sha256s": source_artifacts,
+        }
+        if axis_kind == AXIS_SHORT_CONV_CONTEXT:
+            axis_kwargs.update(
+                source_parameter_row_slices=_short_conv_slices(source_width),
+                target_parameter_row_slices=_short_conv_slices(target_width),
+            )
+        axes.append(admit_lfm2_sparse_feature_axis(**axis_kwargs))
+    return build_lfm2_sparse_feature_fold_bundle(
+        source_graph=source_graph,
+        target_graph=target_graph,
+        source_graph_sha256=source_graph.fingerprint,
+        target_graph_sha256=target_graph.fingerprint,
+        axes=axes,
+        source_artifact_sha256s={
+            "parent_trace_cache": cache_sha,
+            "parent_state": parent_state,
+        },
+    )
+
+
+def _dense_stack_resources(cache, *, sparse_feature_fold_bundle=None):
+    final_gate = _Accept()
+
+    def fresh_gate(_model):
+        return FoldDecision.accept("unused fresh sparse-bundle gate")
+
+    binding = _behavior_binding(cache.cache_key)
+    expose_behavior_gate_binding(final_gate, binding)
+    expose_behavior_gate_binding(fresh_gate, binding)
+    return Lfm2DynamicStackResources(
+        parent_cache_fingerprint=cache.cache_key,
+        parent_cache_payload=cache,
+        evidence_builder=lambda _request: None,
+        final_evaluator=final_gate,
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=fresh_gate,
+        saver_id="test-sparse-feature-bundle-saver-v1",
+        loader_id="test-sparse-feature-bundle-loader-v1",
+        ledger=ExperimentLedger(),
+        dense_fold_config=Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="weight_complete",
+            run_closed_loop=False,
+        ),
+        sparse_feature_fold_bundle=sparse_feature_fold_bundle,
+    )
+
+
+def test_dynamic_lfm2_system_sparse_feature_bundle_import_is_lazy() -> None:
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-c",
+            "import sys\n"
+            "import neural_forge.dynamic_lfm2_system\n"
+            "assert 'neural_forge.hf_lfm2_sparse_feature_fold_bundle' "
+            "not in sys.modules\n"
+            "assert 'neural_forge.matrix_technique_body_routes' "
+            "not in sys.modules\n",
+        ),
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_dense_stack_sparse_feature_bundle_is_typed_and_legacy_empty(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-sparse-bundle-typing",
+        blank_seed=22_001,
+    )
+
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="sparse_feature_fold_bundle has the wrong type",
+    ):
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle=object(),
+        )
+
+    stack = Lfm2DynamicFoldStackAdapter(_dense_stack_resources(cache)).build(target)
+    operator = stack.operators.get(DENSE_BUDGET_MODEL_METHOD)
+    assert stack.resource_fingerprints == ()
+    assert operator.sparse_feature_fold_bundle is None
+    assert operator.resource_fingerprint is None
+
+
+def test_dense_stack_threads_sparse_feature_bundle_into_action_identity(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    parent_state = fingerprint_model_state(parent)
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-sparse-bundle-action",
+        blank_seed=22_002,
+    )
+    bundle = _sparse_feature_bundle(parent, cache, target)
+    adapter = Lfm2DynamicFoldStackAdapter(
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle=bundle,
+        )
+    )
+
+    assert adapter.supports(target)
+    stack = adapter.build(target)
+    operator = stack.operators.get(DENSE_BUDGET_MODEL_METHOD)
+    expected_resources = {
+        LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME: bundle.bundle_sha256
+    }
+    expected_aggregate = external_resource_bindings_sha256(expected_resources)
+    assert operator.sparse_feature_fold_bundle is bundle
+    assert stack.resource_fingerprints == tuple(sorted(expected_resources.items()))
+    assert operator.resource_fingerprint == expected_aggregate
+
+    compilation = DynamicFoldingCompiler(
+        operators=stack.operators,
+        ledger=ExperimentLedger(),
+    ).compile(
+        parent_models={"parent": parent},
+        child_model=target.model,
+        child_name=target.graph.model_name,
+        evidence_provider=stack.evidence_provider,
+        evaluator=stack.evaluator,
+        final_evaluator=stack.final_evaluator,
+        evidence_fingerprint=cache.cache_key,
+        parent_tokenizer_fingerprints={"parent": _tokenizer_fingerprint()},
+        child_tokenizer_fingerprint=_tokenizer_fingerprint(),
+        exact_target_unique_parameters=_target_unique_parameters(),
+        initializer=stack.initializer,
+        resource_fingerprints=dict(stack.resource_fingerprints),
+    )
+
+    assert compilation.complete
+    assert len(compilation.plan.actions) == 1
+    action = compilation.plan.actions[0]
+    assert (
+        dict(action.configuration)[EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY]
+        == expected_aggregate
+    )
+    assert action.signature.configuration == action.configuration
+    assert fingerprint_model_state(parent) == parent_state
+
+
+@pytest.mark.parametrize(
+    ("foreign_binding", "message"),
+    (
+        ("source_graph", "source graph differs"),
+        ("target_graph", "target graph differs"),
+        ("parent_state", "parent state differs"),
+        ("evidence_cache", "evidence cache differs"),
+    ),
+)
+def test_dense_stack_rejects_foreign_sparse_feature_bundle_bindings(
+    sealed_parent,
+    foreign_binding,
+    message,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name=f"dense-sparse-bundle-foreign-{foreign_binding}",
+        blank_seed=22_100 + len(foreign_binding),
+    )
+    source_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=_tokenizer_fingerprint(),
+    )
+    bundle_kwargs = {}
+    if foreign_binding == "source_graph":
+        bundle_kwargs["source_graph"] = replace(
+            source_graph,
+            model_name="foreign-parent",
+        )
+    elif foreign_binding == "target_graph":
+        bundle_kwargs["target_graph"] = replace(
+            target.graph,
+            model_name="foreign-child",
+        )
+    elif foreign_binding == "parent_state":
+        bundle_kwargs["parent_state_fingerprint"] = "f" * 64
+    else:
+        bundle_kwargs["evidence_cache_sha256"] = "e" * 64
+    bundle = _sparse_feature_bundle(
+        parent,
+        cache,
+        target,
+        **bundle_kwargs,
+    )
+    adapter = Lfm2DynamicFoldStackAdapter(
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle=bundle,
+        )
+    )
+
+    assert not adapter.supports(target)
+    with pytest.raises(DynamicLfm2AdapterError, match=message):
+        adapter.build(target)
+
+
+def test_dense_stack_reauthenticates_sparse_feature_bundle_after_resource_init(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-sparse-bundle-tamper",
+        blank_seed=22_003,
+    )
+    bundle = _sparse_feature_bundle(parent, cache, target)
+    resources = _dense_stack_resources(
+        cache,
+        sparse_feature_fold_bundle=bundle,
+    )
+    object.__setattr__(bundle, "bundle_sha256", "f" * 64)
+    adapter = Lfm2DynamicFoldStackAdapter(resources)
+
+    assert not adapter.supports(target)
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="bundle failed authentication",
+    ):
+        adapter.build(target)
+
+
+def test_non_dense_lfm2_target_refuses_unused_sparse_feature_bundle(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    dense_target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-sparse-bundle-for-legacy-refusal",
+        blank_seed=22_004,
+    )
+    bundle = _sparse_feature_bundle(parent, cache, dense_target)
+    tokenizer = _tokenizer_fingerprint()
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    legacy_target = DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry(
+            (
+                Lfm2TargetSynthesisAdapter(
+                    terminal_topology=Lfm2Topology(2, 2, 11),
+                    evidence_fingerprint=cache.cache_key,
+                    device="cpu",
+                    dtype=torch.float32,
+                ),
+            )
+        ),
+    ).synthesize(
+        request=DynamicTargetRequest(
+            child_name="legacy-lfm2-sparse-bundle-refusal",
+            target_family="lfm2",
+            target_modalities=("text",),
+            exact_unique_parameters=(parent_graph.unique_parameter_count - 2 * 3 * 8),
+            tokenizer_fingerprint=tokenizer,
+            blank_seed=22_005,
+        ),
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+    adapter = Lfm2DynamicFoldStackAdapter(
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle=bundle,
+        )
+    )
+
+    assert not adapter.supports(legacy_target)
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="only consumed by dense budget",
+    ):
+        adapter.build(legacy_target)
 
 
 def test_authenticated_resume_skips_structural_fold_while_fresh_executes_it() -> None:

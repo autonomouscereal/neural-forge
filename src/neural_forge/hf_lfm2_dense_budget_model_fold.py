@@ -30,7 +30,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
 from .dynamic_child_replay_phase_cache import (
@@ -59,7 +59,12 @@ from .dynamic_fold_diagnostics import (
     WholeChildComponentDiagnosticError,
     authenticate_whole_child_component_dispatch,
 )
-from .dynamic_fold_planner import DynamicFoldPlan, FoldAction
+from .dynamic_fold_planner import (
+    EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY,
+    DynamicFoldPlan,
+    FoldAction,
+    external_resource_bindings_sha256,
+)
 from .dynamic_lfm2_adapter import (
     Lfm2DenseBudgetedSelectedTarget,
     encode_lfm2_layer_types,
@@ -67,7 +72,7 @@ from .dynamic_lfm2_adapter import (
     validate_lfm2_dense_budgeted_child,
 )
 from .hf_attention_fold import build_gqa_attention_fold_maps
-from .hf_feature_fold import build_feature_fold_map
+from .hf_feature_fold import FeatureFoldError, SparseFeatureFoldMap, build_feature_fold_map
 from .hf_lfm2_circuit_trace_cache import (
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
@@ -128,9 +133,15 @@ from .lfm2_native_exact4x_target import (
     lfm2_identity_tokenizer_evidence_sha256,
 )
 
+if TYPE_CHECKING:
+    from .hf_lfm2_sparse_feature_fold_bundle import Lfm2SparseFeatureFoldBundle
+
 
 DENSE_BUDGET_MODEL_METHOD = "lfm2_dense_budget_residual_attention_model"
 DENSE_BUDGET_FOLD_SCHEMA = "neural-forge-lfm2-dense-budget-model-fold-v1"
+LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME = "lfm2_sparse_feature_fold_bundle"
+_SPARSE_AXIS_MLP_POST_SWIGLU = "mlp_post_swiglu"
+_SPARSE_AXIS_SHORT_CONV_CONTEXT = "short_conv_context"
 VOCABULARY_MARGIN_CANDIDATE_GATE_SCHEMA = (
     "neural-forge-lfm2-dense-budget-vocabulary-margin-candidate-gate-v1"
 )
@@ -2497,6 +2508,442 @@ def _evaluate_vocabulary_margin_candidate_gate(
     return {**body, "audit_sha256": canonical_sha256(body)}
 
 
+@dataclass(frozen=True, slots=True)
+class _AuthenticatedSparseAxisMaterialization:
+    """Private, post-authentication tensors consumed by one structural layer."""
+
+    layer_index: int
+    axis_kind: str
+    admission_sha256: str
+    map_sha256: str
+    witness_sha256: str
+    feature_map: SparseFeatureFoldMap
+    source_writer: Any
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthenticatedSparseBundleMaterialization:
+    """One pre-write snapshot of every compile-time sparse bundle authority."""
+
+    axes: Mapping[tuple[int, str], _AuthenticatedSparseAxisMaterialization]
+    bundle_sha256: str
+    provenance_sha256: str
+    parent_state_fingerprint: str
+    trace_cache_key: str
+    admitted_sha256s: tuple[str, ...]
+
+
+def _sparse_axis_paths(
+    layer_index: int,
+    axis_kind: str,
+) -> tuple[str, dict[str, str]]:
+    if axis_kind == _SPARSE_AXIS_MLP_POST_SWIGLU:
+        site = f"model.layers.{layer_index}.feed_forward"
+        return site, {
+            "w1": f"{site}.w1.weight",
+            "w3": f"{site}.w3.weight",
+            "w2": f"{site}.w2.weight",
+        }
+    if axis_kind == _SPARSE_AXIS_SHORT_CONV_CONTEXT:
+        site = f"model.layers.{layer_index}.conv"
+        packed = f"{site}.in_proj.weight"
+        return site, {
+            "in_proj_b": packed,
+            "in_proj_c": packed,
+            "in_proj_x": packed,
+            "fir_kernel": f"{site}.conv.weight",
+            "out_proj": f"{site}.out_proj.weight",
+        }
+    raise Lfm2DenseBudgetFoldError(
+        f"Sparse bundle axis kind {axis_kind!r} is not materializable."
+    )
+
+
+def _short_conv_axis_slices(width: int) -> dict[str, tuple[int, int]]:
+    return {
+        "in_proj_b": (0, width),
+        "in_proj_c": (width, 2 * width),
+        "in_proj_x": (2 * width, 3 * width),
+    }
+
+
+def _sparse_axis_identity(axis: Any) -> tuple[int, str, str, str, str]:
+    """Capture the exact sealed identities consumed from one admitted axis."""
+
+    identity = (
+        axis.layer_index,
+        axis.axis_kind,
+        _digest(axis.admission_sha256, "axis admission_sha256"),
+        _digest(axis.feature_map.map_sha256, "axis feature_map_sha256"),
+        _digest(axis.source_witness.witness_sha256, "axis source_witness_sha256"),
+    )
+    if (
+        axis.report.get("admission_sha256") != identity[2]
+        or axis.report.get("feature_map_sha256") != identity[3]
+        or axis.report.get("source_witness_sha256") != identity[4]
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold axis live identities differ from its sealed report."
+        )
+    return identity
+
+
+def _authenticate_sparse_bundle_for_materialization(
+    sparse_feature_fold_bundle: Lfm2SparseFeatureFoldBundle,
+    *,
+    parent_model: Any,
+    source_graph: ModelCircuitGraph | None,
+    target_graph: ModelCircuitGraph | None,
+    trace_cache_key: str | None,
+    source_layers: Sequence[Any],
+    target_layers: Sequence[Any],
+    source_types: Sequence[str],
+    short_conv_geometries: Mapping[
+        int,
+        tuple[_ShortConvPhysicalGeometry, _ShortConvPhysicalGeometry],
+    ],
+) -> _AuthenticatedSparseBundleMaterialization:
+    """Authenticate and clone all sparse authority before the first child write."""
+
+    from .hf_lfm2_sparse_feature_fold_bundle import (
+        AXIS_MLP_POST_SWIGLU,
+        AXIS_SHORT_CONV_CONTEXT,
+        Lfm2SparseFeatureFoldBundle,
+        Lfm2SparseFeatureFoldBundleError,
+        lfm2_sparse_feature_axis_binding,
+    )
+    from .matrix_technique_body_routes import (
+        T5BodyRouteAuthenticationError,
+        sparse_feature_fold_map_from_body_route,
+        verify_sealed_body_route_record,
+        verify_t5_body_route_source_witness,
+    )
+
+    if (
+        AXIS_MLP_POST_SWIGLU != _SPARSE_AXIS_MLP_POST_SWIGLU
+        or AXIS_SHORT_CONV_CONTEXT != _SPARSE_AXIS_SHORT_CONV_CONTEXT
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle axis identifiers changed incompatibly."
+        )
+    if not isinstance(sparse_feature_fold_bundle, Lfm2SparseFeatureFoldBundle):
+        raise Lfm2DenseBudgetFoldError(
+            "sparse_feature_fold_bundle must be Lfm2SparseFeatureFoldBundle."
+        )
+    if not isinstance(source_graph, ModelCircuitGraph) or not isinstance(
+        target_graph, ModelCircuitGraph
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse bundle materialization requires the live source and target graphs."
+        )
+    cache_key = _digest(trace_cache_key, "trace_cache_key")
+    try:
+        bundle = sparse_feature_fold_bundle.verify()
+        verified_axes = tuple(bundle.axes)
+        verified_axis_identities = tuple(
+            _sparse_axis_identity(axis) for axis in verified_axes
+        )
+        sealed_bundle_sha256 = _digest(bundle.bundle_sha256, "bundle_sha256")
+        sealed_provenance_sha256 = _digest(
+            bundle.provenance["provenance_sha256"],
+            "bundle provenance_sha256",
+        )
+        sealed_report_admissions = tuple(
+            _digest(value, "bundle axis admission_sha256")
+            for value in bundle.report["axis_admission_sha256s"]
+        )
+        sealed_provenance_admissions = tuple(
+            _digest(value, "bundle provenance axis admission_sha256")
+            for value in bundle.provenance["axis_admission_sha256s"]
+        )
+        verified_axis_admissions = tuple(
+            identity[2] for identity in verified_axis_identities
+        )
+    except (
+        Lfm2SparseFeatureFoldBundleError,
+        FeatureFoldError,
+        T5BodyRouteAuthenticationError,
+        AttributeError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle failed authentication before materialization."
+        ) from exc
+    if (
+        bundle.report.get("bundle_sha256") != sealed_bundle_sha256
+        or bundle.report.get("provenance_sha256") != sealed_provenance_sha256
+        or sealed_report_admissions != verified_axis_admissions
+        or sealed_provenance_admissions != verified_axis_admissions
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle live axes differ from its sealed admission order."
+        )
+    verified_axis_keys = tuple(
+        (identity[0], identity[1]) for identity in verified_axis_identities
+    )
+    verified_identity_by_key = dict(
+        zip(verified_axis_keys, verified_axis_identities, strict=True)
+    )
+    verified_axes_by_key = dict(zip(verified_axis_keys, verified_axes, strict=True))
+    if len(verified_axes_by_key) != len(verified_axes):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle contains duplicate materialization axes."
+        )
+    if (
+        bundle.source_graph_sha256 != source_graph.fingerprint
+        or bundle.target_graph_sha256 != target_graph.fingerprint
+        or bundle.source_graph.fingerprint != source_graph.fingerprint
+        or bundle.target_graph.fingerprint != target_graph.fingerprint
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle names different live source/target graphs."
+        )
+    if tuple(bundle.attention_sites):
+        raise Lfm2DenseBudgetFoldError(
+            "Dense sparse bundle materialization admits MLP and ShortConv axes only."
+        )
+
+    expected_keys = {
+        (layer_index, _SPARSE_AXIS_MLP_POST_SWIGLU)
+        for layer_index in range(len(source_layers))
+    }
+    for layer_index, layer_type in enumerate(source_types):
+        if layer_type == "full_attention":
+            continue
+        source_geometry, target_geometry = short_conv_geometries[layer_index]
+        if source_geometry.writer_rank is not None or target_geometry.writer_rank is not None:
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold ShortConv admission requires dense source and "
+                "target out_proj.weight writers."
+            )
+        if source_geometry.fir_length != 3 or target_geometry.fir_length != 3:
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold ShortConv admission currently requires three "
+                "authenticated FIR taps."
+            )
+        expected_keys.add((layer_index, _SPARSE_AXIS_SHORT_CONV_CONTEXT))
+    actual_keys = set(verified_axis_keys)
+    if actual_keys != expected_keys or len(actual_keys) != len(verified_axes):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle does not cover every MLP and dense "
+            "ShortConv axis exactly once."
+        )
+
+    parent_state = fingerprint_model_state(parent_model)
+    authenticated: dict[
+        tuple[int, str], _AuthenticatedSparseAxisMaterialization
+    ] = {}
+    for key in sorted(verified_axes_by_key):
+        axis = verified_axes_by_key[key]
+        sealed_axis_identity = verified_identity_by_key[key]
+        if _sparse_axis_identity(axis) != sealed_axis_identity:
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold axis changed after bundle authentication."
+            )
+        source_layer = source_layers[axis.layer_index]
+        target_layer = target_layers[axis.layer_index]
+        site, source_paths = _sparse_axis_paths(axis.layer_index, axis.axis_kind)
+        _target_site, target_paths = _sparse_axis_paths(
+            axis.layer_index, axis.axis_kind
+        )
+        if axis.axis_kind == _SPARSE_AXIS_MLP_POST_SWIGLU:
+            source_width = int(source_layer.feed_forward.w1.weight.shape[0])
+            target_width = int(target_layer.feed_forward.w1.weight.shape[0])
+            source_slices: Mapping[str, Sequence[int]] | None = None
+            target_slices: Mapping[str, Sequence[int]] | None = None
+            writer_role = "w2"
+            evidence_endpoint = "mlp.post_swiglu"
+            live_writer = source_layer.feed_forward.w2.weight
+        else:
+            source_geometry, target_geometry = short_conv_geometries[axis.layer_index]
+            source_width = source_geometry.internal_channels
+            target_width = target_geometry.internal_channels
+            source_slices = _short_conv_axis_slices(source_width)
+            target_slices = _short_conv_axis_slices(target_width)
+            writer_role = "out_proj"
+            evidence_endpoint = "short_conv.context"
+            live_writer = source_layer.conv.out_proj.weight
+        if (
+            axis.coefficient_set != "write"
+            or axis.site != site
+            or dict(axis.source_parameter_paths) != source_paths
+            or dict(axis.target_parameter_paths) != target_paths
+            or dict(axis.source_parameter_row_slices)
+            != ({} if source_slices is None else dict(source_slices))
+            or dict(axis.target_parameter_row_slices)
+            != ({} if target_slices is None else dict(target_slices))
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold axis differs from its exact materialized "
+                f"layer contract: layer={axis.layer_index}, kind={axis.axis_kind}."
+            )
+        witness = axis.source_witness
+        if (
+            witness.parent_state_fingerprint != parent_state
+            or witness.evidence_cache_sha256 != cache_key
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold witness differs from the live parent state "
+                "or sealed trace cache."
+            )
+        normalized_live_writer = (
+            live_writer.detach()
+            .to(device="cpu", dtype=witness.parent_weight.dtype)
+            .contiguous()
+            .clone()
+        )
+        try:
+            authority = verify_sealed_body_route_record(axis.body_route_fold.record)
+            caller_binding = lfm2_sparse_feature_axis_binding(
+                source_graph=source_graph,
+                target_graph=target_graph,
+                source_graph_sha256=source_graph.fingerprint,
+                target_graph_sha256=target_graph.fingerprint,
+                layer_index=axis.layer_index,
+                site=site,
+                axis_kind=axis.axis_kind,
+                source_parameter_paths=source_paths,
+                target_parameter_paths=target_paths,
+                source_parameter_row_slices=source_slices,
+                target_parameter_row_slices=target_slices,
+                source_width=source_width,
+                target_width=target_width,
+                authority_schema=authority["schema"],
+                authority_record_sha256=authority["record_sha256"],
+            )
+            private_map = sparse_feature_fold_map_from_body_route(
+                axis.body_route_fold,
+                coefficient_set="write",
+                admission_binding=caller_binding,
+            )
+            authenticated_witness = verify_t5_body_route_source_witness(
+                witness,
+                axis.body_route_fold,
+                parent_weight=normalized_live_writer,
+                component_rows=witness.component_rows,
+                heldout_component_rows=witness.heldout_component_rows,
+                parameter_path=source_paths[writer_role],
+                graph_fingerprint=source_graph.fingerprint,
+                parent_state_fingerprint=parent_state,
+                component_id=(
+                    "C13"
+                    if axis.axis_kind == _SPARSE_AXIS_MLP_POST_SWIGLU
+                    else "C05"
+                ),
+                layer_index=axis.layer_index,
+                site=f"L{axis.layer_index:02d}",
+                role="writer",
+                evidence_cache_sha256=cache_key,
+                evidence_selection_sha256=witness.evidence_selection_sha256,
+                evidence_endpoint=evidence_endpoint,
+                coefficient_set="write",
+            )
+        except (
+            FeatureFoldError,
+            Lfm2SparseFeatureFoldBundleError,
+            T5BodyRouteAuthenticationError,
+        ) as exc:
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold axis failed live route/value authentication."
+            ) from exc
+        if (
+            private_map.map_sha256 != sealed_axis_identity[3]
+            or private_map.admission_binding_sha256
+            != axis.report["admission_binding_sha256"]
+            or authenticated_witness.witness_sha256 != sealed_axis_identity[4]
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold private snapshot differs from its admission seal."
+            )
+        authenticated[key] = _AuthenticatedSparseAxisMaterialization(
+            layer_index=axis.layer_index,
+            axis_kind=axis.axis_kind,
+            admission_sha256=sealed_axis_identity[2],
+            map_sha256=private_map.map_sha256,
+            witness_sha256=authenticated_witness.witness_sha256,
+            feature_map=private_map,
+            source_writer=authenticated_witness.parent_weight,
+        )
+    if fingerprint_model_state(parent_model) != parent_state:
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse bundle source model changed during pre-write authentication."
+        )
+    authenticated_axis_identities = tuple(
+        (
+            key[0],
+            key[1],
+            authenticated[key].admission_sha256,
+            authenticated[key].map_sha256,
+            authenticated[key].witness_sha256,
+        )
+        for key in verified_axis_keys
+    )
+    if authenticated_axis_identities != verified_axis_identities:
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold private snapshots differ from the verified bundle."
+        )
+    try:
+        final_bundle = sparse_feature_fold_bundle.verify()
+        final_axes = tuple(final_bundle.axes)
+        final_axis_identities = tuple(
+            _sparse_axis_identity(axis) for axis in final_axes
+        )
+        final_axis_keys = tuple(
+            (identity[0], identity[1]) for identity in final_axis_identities
+        )
+        final_report_admissions = tuple(
+            _digest(value, "final bundle axis admission_sha256")
+            for value in final_bundle.report["axis_admission_sha256s"]
+        )
+        final_provenance_admissions = tuple(
+            _digest(value, "final bundle provenance axis admission_sha256")
+            for value in final_bundle.provenance["axis_admission_sha256s"]
+        )
+        final_bundle_sha256 = _digest(
+            final_bundle.bundle_sha256,
+            "final bundle_sha256",
+        )
+        final_provenance_sha256 = _digest(
+            final_bundle.provenance["provenance_sha256"],
+            "final bundle provenance_sha256",
+        )
+    except (
+        Lfm2SparseFeatureFoldBundleError,
+        FeatureFoldError,
+        T5BodyRouteAuthenticationError,
+        AttributeError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle changed during pre-write authentication."
+        ) from exc
+    if (
+        final_bundle_sha256 != sealed_bundle_sha256
+        or final_provenance_sha256 != sealed_provenance_sha256
+        or final_report_admissions != sealed_report_admissions
+        or final_provenance_admissions != sealed_provenance_admissions
+        or final_axis_keys != verified_axis_keys
+        or final_axis_identities != verified_axis_identities
+        or authenticated_axis_identities != final_axis_identities
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Sparse feature-fold bundle identity changed during pre-write closure."
+        )
+    admitted = tuple(
+        verified_identity_by_key[key][2] for key in sorted(verified_identity_by_key)
+    )
+    return _AuthenticatedSparseBundleMaterialization(
+        axes=MappingProxyType(authenticated),
+        bundle_sha256=sealed_bundle_sha256,
+        provenance_sha256=sealed_provenance_sha256,
+        parent_state_fingerprint=parent_state,
+        trace_cache_key=cache_key,
+        admitted_sha256s=admitted,
+    )
+
+
 def _fold_dense_blank_from_parent(
     parent_model: Any,
     child_model: Any,
@@ -2505,6 +2952,10 @@ def _fold_dense_blank_from_parent(
     *,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     progress: _Lfm2DenseFoldProgress | None = None,
+    sparse_feature_fold_bundle: Lfm2SparseFeatureFoldBundle | None = None,
+    source_graph: ModelCircuitGraph | None = None,
+    target_graph: ModelCircuitGraph | None = None,
+    trace_cache_key: str | None = None,
 ) -> dict[str, Any]:
     """Overwrite every learned child tensor from the complete parent state."""
 
@@ -2612,6 +3063,28 @@ def _fold_dense_blank_from_parent(
                 source_geometry,
                 target_geometry,
             )
+    authenticated_sparse_bundle = (
+        None
+        if sparse_feature_fold_bundle is None
+        else _authenticate_sparse_bundle_for_materialization(
+            sparse_feature_fold_bundle,
+            parent_model=parent_model,
+            source_graph=source_graph,
+            target_graph=target_graph,
+            trace_cache_key=trace_cache_key,
+            source_layers=source_layers,
+            target_layers=target_layers,
+            source_types=source_types,
+            short_conv_geometries=short_conv_geometries,
+        )
+    )
+    sparse_axes = (
+        {}
+        if authenticated_sparse_bundle is None
+        else dict(authenticated_sparse_bundle.axes)
+    )
+    consumed_sparse_admissions: list[str] = []
+    dynamic_body_feature_map_solve_count = 0
     factor_layer_indices = tuple(
         index
         for index, (_source, target) in short_conv_geometries.items()
@@ -2775,19 +3248,29 @@ def _fold_dense_blank_from_parent(
             target_mlp = target_layer.feed_forward
             source_intermediate = int(source_mlp.w1.weight.shape[0])
             target_intermediate = int(target_mlp.w1.weight.shape[0])
-            mlp_map = build_feature_fold_map(
-                (
-                    source_mlp.w1.weight.detach().T,
-                    source_mlp.w3.weight.detach().T,
-                    source_mlp.w2.weight.detach(),
-                ),
-                target_intermediate,
-                source_width=source_intermediate,
-                chunk_size=min(256, source_intermediate),
-                sketch_size=min(64, max(8, int(mapping.source_width))),
-                balance_strength=0.35,
-                allow_sign_flip=False,
+            sparse_mlp_axis = sparse_axes.pop(
+                (layer_index, _SPARSE_AXIS_MLP_POST_SWIGLU),
+                None,
             )
+            if sparse_mlp_axis is None:
+                mlp_map = build_feature_fold_map(
+                    (
+                        source_mlp.w1.weight.detach().T,
+                        source_mlp.w3.weight.detach().T,
+                        source_mlp.w2.weight.detach(),
+                    ),
+                    target_intermediate,
+                    source_width=source_intermediate,
+                    chunk_size=min(256, source_intermediate),
+                    sketch_size=min(64, max(8, int(mapping.source_width))),
+                    balance_strength=0.35,
+                    allow_sign_flip=False,
+                )
+                dynamic_body_feature_map_solve_count += 1
+                source_down_weight = source_mlp.w2.weight.detach()
+            else:
+                mlp_map = sparse_mlp_axis.feature_map
+                source_down_weight = sparse_mlp_axis.source_writer
             folded_gate = mapping.fold_consumer_weight(
                 source_mlp.w1.weight.detach().to(device="cpu", dtype=torch.float64)
             )
@@ -2795,7 +3278,7 @@ def _fold_dense_blank_from_parent(
                 source_mlp.w3.weight.detach().to(device="cpu", dtype=torch.float64)
             )
             folded_down = mlp_map.fold_consumer_weight(
-                source_mlp.w2.weight.detach().to(device="cpu", dtype=torch.float64)
+                source_down_weight.to(device="cpu", dtype=torch.float64)
             )
             _copy_parameter(
                 target_mlp.w1.weight,
@@ -2815,6 +3298,10 @@ def _fold_dense_blank_from_parent(
                 name=f"model.layers.{layer_index}.feed_forward.w2.weight",
                 written=written,
             )
+            if sparse_mlp_axis is not None:
+                consumed_sparse_admissions.append(
+                    sparse_mlp_axis.admission_sha256
+                )
 
             if layer_type == "full_attention":
                 source_attention = source_layer.self_attn
@@ -2953,24 +3440,33 @@ def _fold_dense_blank_from_parent(
                 )
                 source_channels = source_geometry.internal_channels
                 target_channels = target_geometry.internal_channels
-                source_dense_writer = _short_conv_dense_writer_action(
-                    source_conv,
-                    source_geometry,
-                    label=f"source layer {layer_index}.conv.out_proj",
+                sparse_short_conv_axis = sparse_axes.pop(
+                    (layer_index, _SPARSE_AXIS_SHORT_CONV_CONTEXT),
+                    None,
                 )
-                internal_map = build_feature_fold_map(
-                    (
-                        *(block.detach().T for block in source_blocks),
-                        source_dense_writer,
-                        source_kernel.T,
-                    ),
-                    target_channels,
-                    source_width=source_channels,
-                    chunk_size=min(256, source_channels),
-                    sketch_size=min(64, max(8, source_channels)),
-                    balance_strength=0.35,
-                    allow_sign_flip=False,
-                )
+                if sparse_short_conv_axis is None:
+                    source_dense_writer = _short_conv_dense_writer_action(
+                        source_conv,
+                        source_geometry,
+                        label=f"source layer {layer_index}.conv.out_proj",
+                    )
+                    internal_map = build_feature_fold_map(
+                        (
+                            *(block.detach().T for block in source_blocks),
+                            source_dense_writer,
+                            source_kernel.T,
+                        ),
+                        target_channels,
+                        source_width=source_channels,
+                        chunk_size=min(256, source_channels),
+                        sketch_size=min(64, max(8, source_channels)),
+                        balance_strength=0.35,
+                        allow_sign_flip=False,
+                    )
+                    dynamic_body_feature_map_solve_count += 1
+                else:
+                    source_dense_writer = sparse_short_conv_axis.source_writer
+                    internal_map = sparse_short_conv_axis.feature_map
                 _copy_parameter(
                     target_conv.in_proj.weight,
                     torch.cat(
@@ -3035,10 +3531,20 @@ def _fold_dense_blank_from_parent(
                     del decoder, encoder
                 _copy_parameter(
                     target_conv.conv.weight,
-                    _transport_depthwise_kernel(
-                        internal_map,
-                        source_kernel,
-                    ).unsqueeze(1),
+                    (
+                        _transport_depthwise_kernel(
+                            internal_map,
+                            source_kernel,
+                        ).unsqueeze(1)
+                        if sparse_short_conv_axis is None
+                        else source_conv.conv.weight.detach()
+                        .to(device="cpu", dtype=torch.float64)
+                        .index_select(
+                            0,
+                            internal_map.kept_source_ids,
+                        )
+                        .contiguous()
+                    ),
                     name=f"model.layers.{layer_index}.conv.conv.weight",
                     written=written,
                 )
@@ -3112,7 +3618,11 @@ def _fold_dense_blank_from_parent(
                     ),
                     "input_projection": "F.T @ W_block @ B",
                     "output_projection": "B.T @ W @ F",
-                    "depthwise_fir": "diag(F.T @ diag(kernel_tap) @ F)",
+                    "depthwise_fir": (
+                        "diag(F.T @ diag(kernel_tap) @ F)"
+                        if sparse_short_conv_axis is None
+                        else "authenticated_exact_anchor_row_selection"
+                    ),
                     "source_internal_channels": source_channels,
                     "target_internal_channels": target_channels,
                     "internal_feature_fold": internal_map.report.as_dict(),
@@ -3121,7 +3631,16 @@ def _fold_dense_blank_from_parent(
                     "target_writer_topology": target_geometry.writer_topology,
                     "target_writer_rank": target_geometry.writer_rank,
                     "factorization": factorization_report,
+                    "sparse_axis_admission_sha256": (
+                        None
+                        if sparse_short_conv_axis is None
+                        else sparse_short_conv_axis.admission_sha256
+                    ),
                 }
+                if sparse_short_conv_axis is not None:
+                    consumed_sparse_admissions.append(
+                        sparse_short_conv_axis.admission_sha256
+                    )
                 factor_output_action_evidence.pop(layer_index, None)
                 del (
                     dense_writer_action,
@@ -3132,6 +3651,7 @@ def _fold_dense_blank_from_parent(
                     source_in_bias,
                     source_kernel,
                     source_output_bias,
+                    sparse_short_conv_axis,
                     target_in_bias,
                     target_output_bias,
                 )
@@ -3146,11 +3666,24 @@ def _fold_dense_blank_from_parent(
                         "source_neurons_dropped": 0,
                         "full_source_coverage": True,
                         "feature_fold": mlp_map.report.as_dict(),
+                        "sparse_axis_admission_sha256": (
+                            None
+                            if sparse_mlp_axis is None
+                            else sparse_mlp_axis.admission_sha256
+                        ),
                     },
                     "operator": operator_report,
                 }
             )
-            del folded_down, folded_gate, folded_up, mlp_map, operator_report
+            del (
+                folded_down,
+                folded_gate,
+                folded_up,
+                mlp_map,
+                operator_report,
+                source_down_weight,
+                sparse_mlp_axis,
+            )
             layer_cleanup = _release_cpu_allocator_retention(
                 caller_declared_release_plan_units=(
                     17 if canonical_kind == "full_attention" else 15
@@ -3164,6 +3697,21 @@ def _fold_dense_blank_from_parent(
                     layer_kind=canonical_kind,
                     **layer_cleanup,
                 )
+
+        if sparse_axes:
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold materialization left authenticated axes "
+                f"unconsumed: {sorted(sparse_axes)}."
+            )
+        if (
+            authenticated_sparse_bundle is not None
+            and tuple(consumed_sparse_admissions)
+            != authenticated_sparse_bundle.admitted_sha256s
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Sparse feature-fold admissions were not consumed exactly once "
+                "in canonical layer/axis order."
+            )
 
         source_final_norm = parent_model.model.embedding_norm
         target_final_norm = child_model.model.embedding_norm
@@ -3203,6 +3751,43 @@ def _fold_dense_blank_from_parent(
             target_nonzero_parameter_elements=nonzero,
             complete_target_parameter_overwrite=True,
         )
+    sparse_bundle_report = None
+    if authenticated_sparse_bundle is not None:
+        ordered_axes = tuple(
+            authenticated_sparse_bundle.axes[key]
+            for key in sorted(authenticated_sparse_bundle.axes)
+        )
+        sparse_bundle_report = {
+            "resource_name": LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME,
+            "bundle_sha256": authenticated_sparse_bundle.bundle_sha256,
+            "provenance_sha256": authenticated_sparse_bundle.provenance_sha256,
+            "source_graph_sha256": source_graph.fingerprint,
+            "target_graph_sha256": target_graph.fingerprint,
+            "parent_state_fingerprint": (
+                authenticated_sparse_bundle.parent_state_fingerprint
+            ),
+            "trace_cache_key": authenticated_sparse_bundle.trace_cache_key,
+            "admitted_axis_sha256s": list(
+                authenticated_sparse_bundle.admitted_sha256s
+            ),
+            "consumed_axis_sha256s": list(consumed_sparse_admissions),
+            "map_sha256s": [axis.map_sha256 for axis in ordered_axes],
+            "source_witness_sha256s": [
+                axis.witness_sha256 for axis in ordered_axes
+            ],
+            "admitted_axis_count": len(ordered_axes),
+            "consumed_axis_count": len(consumed_sparse_admissions),
+            "all_admissions_consumed": True,
+            "dynamic_body_feature_map_solve_count": 0,
+            "live_source_values_reauthenticated": True,
+            "compile_time_only": True,
+            "runtime_parameter_count": 0,
+            "runtime_buffer_count": 0,
+            "runtime_sidecar_count": 0,
+        }
+        sparse_bundle_report["materialization_sha256"] = canonical_sha256(
+            sparse_bundle_report
+        )
     return {
         "schema": DENSE_BUDGET_FOLD_SCHEMA,
         "layers": layer_reports,
@@ -3221,6 +3806,13 @@ def _fold_dense_blank_from_parent(
         "backward_calls": 0,
         "parent_forward_calls": 0,
         "parent_trace_regeneration_calls": 0,
+        "dynamic_body_feature_map_solve_count": (
+            dynamic_body_feature_map_solve_count
+        ),
+        "sparse_feature_fold_bundle_used": (
+            authenticated_sparse_bundle is not None
+        ),
+        "sparse_feature_fold_bundle": sparse_bundle_report,
         "factor_writer_layer_count": len(factor_layer_indices),
         "factor_writer_cached_output_action_evidence_count": (
             factor_output_action_evidence_count
@@ -3405,6 +3997,7 @@ class Lfm2DenseBudgetModelOperator:
             | PrecomputedDownstreamObservability
             | None
         ) = None,
+        sparse_feature_fold_bundle: Lfm2SparseFeatureFoldBundle | None = None,
         evidence_set: Lfm2SealedEvidenceSet | None = None,
         progress_sink: (
             Callable[[str, Mapping[str, JsonScalar]], None] | None
@@ -3461,6 +4054,53 @@ class Lfm2DenseBudgetModelOperator:
         self.config = config or Lfm2DenseBudgetFoldConfig()
         if not isinstance(self.config, Lfm2DenseBudgetFoldConfig):
             raise Lfm2DenseBudgetFoldError("config must be Lfm2DenseBudgetFoldConfig.")
+        if sparse_feature_fold_bundle is not None:
+            from .hf_lfm2_sparse_feature_fold_bundle import (
+                Lfm2SparseFeatureFoldBundle,
+                Lfm2SparseFeatureFoldBundleError,
+            )
+            from .matrix_technique_body_routes import (
+                T5BodyRouteAuthenticationError,
+            )
+
+            if not isinstance(
+                sparse_feature_fold_bundle,
+                Lfm2SparseFeatureFoldBundle,
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "sparse_feature_fold_bundle must be "
+                    "Lfm2SparseFeatureFoldBundle."
+                )
+            try:
+                sparse_feature_fold_bundle.verify()
+            except (
+                Lfm2SparseFeatureFoldBundleError,
+                FeatureFoldError,
+                T5BodyRouteAuthenticationError,
+            ) as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Sparse feature-fold bundle failed constructor authentication."
+                ) from exc
+            if (
+                self.config.restart_capsule_directory is not None
+                or self.config.resume_from_restart_capsule is not None
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Sparse feature-fold bundles cannot use restart capsules until "
+                    "the capsule schema binds bundle admission consumption."
+                )
+        self.sparse_feature_fold_bundle = sparse_feature_fold_bundle
+        self.resource_fingerprint = (
+            None
+            if sparse_feature_fold_bundle is None
+            else external_resource_bindings_sha256(
+                {
+                    LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME: (
+                        sparse_feature_fold_bundle.bundle_sha256
+                    )
+                }
+            )
+        )
         if evidence_set is not None and evidence_set.has_extension_evidence:
             # Honest gates.  These three consumers still bind exactly the base
             # sealed corpus, so a base+extension request would silently be
@@ -3931,6 +4571,29 @@ class Lfm2DenseBudgetModelOperator:
             raise Lfm2DenseBudgetFoldError(
                 "Dense action must own the authenticated complete source and target."
             )
+        expected_source_units = {
+            f"{source.parent_name}:{node.node_id}" for node in parent_graph.nodes
+        }
+        if (
+            action.signature.method_id != self.method_id
+            or action.signature.parent_graph_fingerprints
+            != (parent_graph.fingerprint,)
+            or action.signature.child_graph_fingerprint
+            != context.child_graph.fingerprint
+            or dict(action.signature.parent_state_fingerprints)
+            != {
+                source.parent_name: self.selected_target.source_state_fingerprint
+            }
+            or set(action.signature.source_unit_ids) != expected_source_units
+            or set(action.signature.target_unit_ids)
+            != {node.node_id for node in context.child_graph.nodes}
+            or action.signature.child_state_fingerprint
+            != context.child_state_fingerprint
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense action signature differs from the live source/target "
+                "graph and state identities."
+            )
         expected_paths = {
             name
             for name, _parameter in context.child_model.named_parameters(
@@ -3943,6 +4606,27 @@ class Lfm2DenseBudgetModelOperator:
                 "Dense action does not own every target parameter path."
             )
         configuration = dict(action.configuration)
+        if dict(action.signature.configuration) != configuration:
+            raise Lfm2DenseBudgetFoldError(
+                "Dense action and signature configurations differ."
+            )
+        aggregate_present = (
+            EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY in configuration
+        )
+        if self.resource_fingerprint is None:
+            if aggregate_present:
+                raise Lfm2DenseBudgetFoldError(
+                    "Dense action declares unexpected external resource bindings."
+                )
+        elif (
+            not aggregate_present
+            or configuration[EXTERNAL_RESOURCE_BINDINGS_CONFIGURATION_KEY]
+            != self.resource_fingerprint
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense action external resource aggregate differs from the "
+                "authenticated sparse feature-fold bundle."
+            )
         expected = {
             "catalog_id": self.selected_target.catalog_id,
             "source_depth": len(parent_graph.layer_indices),
@@ -4001,6 +4685,39 @@ class Lfm2DenseBudgetModelOperator:
             raise Lfm2DenseBudgetFoldError(
                 "Dense source checkpoint changed after target selection."
             )
+        if self.sparse_feature_fold_bundle is not None:
+            from .hf_lfm2_sparse_feature_fold_bundle import (
+                Lfm2SparseFeatureFoldBundleError,
+            )
+            from .matrix_technique_body_routes import (
+                T5BodyRouteAuthenticationError,
+            )
+
+            try:
+                bundle = self.sparse_feature_fold_bundle.verify()
+            except (
+                Lfm2SparseFeatureFoldBundleError,
+                FeatureFoldError,
+                T5BodyRouteAuthenticationError,
+            ) as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Sparse feature-fold bundle changed after operator construction."
+                ) from exc
+            if (
+                bundle.source_graph_sha256 != parent_graph.fingerprint
+                or bundle.target_graph_sha256 != context.child_graph.fingerprint
+                or any(
+                    axis.source_witness.parent_state_fingerprint
+                    != self.selected_target.source_state_fingerprint
+                    or axis.source_witness.evidence_cache_sha256
+                    != self.trace_cache.cache_key
+                    for axis in bundle.axes
+                )
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Sparse feature-fold bundle differs from the action graphs, "
+                    "parent state, or sealed trace cache."
+                )
         validate_lfm2_dense_budgeted_child(
             self.selected_target,
             context.child_model,
@@ -4091,6 +4808,14 @@ class Lfm2DenseBudgetModelOperator:
                     "pre-closed-loop structural snapshot required by a "
                     "component-dispatch diagnostic."
                 )
+            if self.sparse_feature_fold_bundle is not None and (
+                self.config.restart_capsule_directory is not None
+                or self.config.resume_from_restart_capsule is not None
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Sparse feature-fold bundle execution cannot use restart "
+                    "capsules until their schema binds bundle consumption."
+                )
             # A capsule already contains the structural parent-to-blank fold
             # plus its accepted closed-loop prefix.  Restore it before any
             # structural materialization and do not recompute work whose exact
@@ -4108,9 +4833,71 @@ class Lfm2DenseBudgetModelOperator:
                     self.tokenizer_bridge_artifact,
                     selective_session=self.selective_session,
                     progress=fold_progress,
+                    sparse_feature_fold_bundle=(
+                        self.sparse_feature_fold_bundle
+                    ),
+                    source_graph=parent_graph,
+                    target_graph=context.child_graph,
+                    trace_cache_key=self.trace_cache.cache_key,
                 ),
                 fold_progress=fold_progress,
             )
+            sparse_bundle_action_binding: Mapping[str, Any] | None = None
+            if self.sparse_feature_fold_bundle is not None:
+                materialization = initial_report.get(
+                    "sparse_feature_fold_bundle"
+                )
+                if (
+                    not isinstance(materialization, Mapping)
+                    or materialization.get("bundle_sha256")
+                    != self.sparse_feature_fold_bundle.bundle_sha256
+                    or materialization.get("all_admissions_consumed") is not True
+                    or materialization.get("runtime_sidecar_count") != 0
+                ):
+                    raise Lfm2DenseBudgetFoldError(
+                        "Sparse feature-fold structural report lost exact bundle "
+                        "consumption authority."
+                    )
+                binding_body = {
+                    "schema": (
+                        "neural-forge-lfm2-sparse-feature-fold-action-binding-v1"
+                    ),
+                    "resource_name": (
+                        LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME
+                    ),
+                    "bundle_sha256": (
+                        self.sparse_feature_fold_bundle.bundle_sha256
+                    ),
+                    "external_resource_bindings_sha256": self.resource_fingerprint,
+                    "action_sha256": action.action_sha256,
+                    "configuration_sha256": (
+                        action.signature.configuration_sha256
+                    ),
+                    "source_graph_sha256": parent_graph.fingerprint,
+                    "target_graph_sha256": context.child_graph.fingerprint,
+                    "parent_state_fingerprint": parent_before,
+                    "trace_cache_key": self.trace_cache.cache_key,
+                    "materialization_sha256": materialization[
+                        "materialization_sha256"
+                    ],
+                    "all_admissions_consumed": True,
+                    "compile_time_only": True,
+                    "runtime_parameter_count": 0,
+                    "runtime_buffer_count": 0,
+                    "runtime_sidecar_count": 0,
+                }
+                sparse_bundle_action_binding = MappingProxyType(
+                    {
+                        **binding_body,
+                        "binding_sha256": canonical_sha256(binding_body),
+                    }
+                )
+                initial_report = {
+                    **dict(initial_report),
+                    "sparse_feature_fold_action_binding": dict(
+                        sparse_bundle_action_binding
+                    ),
+                }
             initial_state = context.child_state_fingerprint
             structural_snapshot = (
                 None
@@ -4443,6 +5230,11 @@ class Lfm2DenseBudgetModelOperator:
                 ),
                 "initial_structural_fold": initial_report,
                 "initial_structural_state_fingerprint": initial_state,
+                "sparse_feature_fold_bundle_binding": (
+                    None
+                    if sparse_bundle_action_binding is None
+                    else dict(sparse_bundle_action_binding)
+                ),
                 "closed_loop_enabled": execute_closed_loop,
                 "macro_cell_attractor_gate_enabled": (
                     self.config.macro_cell_attractor_gate_config is not None
@@ -4810,6 +5602,7 @@ __all__ = [
     "LFM2_COMPONENT_DISPATCH_EXECUTION_SCHEMA",
     "LFM2_COMPONENT_FOLD_STAGE_CONFIGURATION_KEY",
     "LFM2_COMPONENT_STRUCTURAL_STAGE",
+    "LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME",
     "Lfm2DenseBudgetAdmissionEvaluator",
     "Lfm2DenseBudgetEvidenceProvider",
     "Lfm2DenseBudgetFoldConfig",

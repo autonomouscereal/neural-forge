@@ -73,6 +73,9 @@ if TYPE_CHECKING:
     from .hf_lfm2_dense_budget_model_fold import (
         Lfm2DenseCacheVerificationLease,
     )
+    from .hf_lfm2_sparse_feature_fold_bundle import (
+        Lfm2SparseFeatureFoldBundle,
+    )
 
 
 LFM2_STACK_ADAPTER_ID = "neural_forge.lfm2.closed_loop_catalog"
@@ -117,6 +120,7 @@ class Lfm2DynamicStackResources:
     parent_cache_integrity_check: Callable[[Any], str] | None = None
     snapshot_config: DynamicFoldSnapshotConfig | None = None
     dense_fold_config: Any | None = None
+    sparse_feature_fold_bundle: Lfm2SparseFeatureFoldBundle | None = None
     residual_basis_phase_cache_context: (
         Lfm2BalancedBasisPhaseCacheContext | None
     ) = None
@@ -276,6 +280,32 @@ class Lfm2DynamicStackResources:
                 raise DynamicLfm2AdapterError(
                     "dense_fold_config has the wrong type."
                 )
+        if self.sparse_feature_fold_bundle is not None:
+            try:
+                from .hf_lfm2_sparse_feature_fold_bundle import (
+                    Lfm2SparseFeatureFoldBundle,
+                    Lfm2SparseFeatureFoldBundleError,
+                )
+            except ImportError as exc:  # pragma: no cover - optional dependency
+                raise DynamicLfm2AdapterError(
+                    "The sparse-feature LFM2 bundle primitive is unavailable."
+                ) from exc
+            bundle = self.sparse_feature_fold_bundle
+            if not isinstance(bundle, Lfm2SparseFeatureFoldBundle):
+                raise DynamicLfm2AdapterError(
+                    "sparse_feature_fold_bundle has the wrong type."
+                )
+            try:
+                authenticated_bundle = bundle.verify()
+            except Lfm2SparseFeatureFoldBundleError as exc:
+                raise DynamicLfm2AdapterError(
+                    "sparse_feature_fold_bundle failed authentication."
+                ) from exc
+            object.__setattr__(
+                self,
+                "sparse_feature_fold_bundle",
+                authenticated_bundle,
+            )
         if (
             self.residual_basis_phase_cache_context is not None
             and not isinstance(
@@ -793,6 +823,54 @@ class Lfm2DynamicFoldStackAdapter:
                 verification_lease.verify(trace_cache)
         return trace_cache
 
+    def _dense_sparse_feature_fold_bundle(
+        self,
+        selected: Lfm2DenseBudgetedSelectedTarget,
+        target: DynamicTargetSynthesisResult,
+    ) -> Lfm2SparseFeatureFoldBundle | None:
+        """Reauthenticate one optional compile-time bundle for this exact target."""
+
+        bundle = self.resources.sparse_feature_fold_bundle
+        if bundle is None:
+            return None
+        try:
+            from .hf_lfm2_sparse_feature_fold_bundle import (
+                Lfm2SparseFeatureFoldBundleError,
+            )
+
+            authenticated = bundle.verify()
+        except Lfm2SparseFeatureFoldBundleError as exc:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature bundle failed authentication."
+            ) from exc
+        if authenticated.source_graph_sha256 != selected.source_graph_fingerprint:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature bundle source graph differs from the "
+                "selected parent."
+            )
+        if authenticated.target_graph_sha256 != target.graph.fingerprint:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature bundle target graph differs from the "
+                "synthesized child."
+            )
+        parent_state_fingerprints = {
+            axis.source_witness.parent_state_fingerprint for axis in authenticated.axes
+        }
+        if parent_state_fingerprints != {selected.source_state_fingerprint}:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature bundle parent state differs from the "
+                "selected source checkpoint."
+            )
+        evidence_cache_fingerprints = {
+            axis.source_witness.evidence_cache_sha256 for axis in authenticated.axes
+        }
+        if evidence_cache_fingerprints != {self.resources.parent_cache_fingerprint}:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature bundle evidence cache differs from the "
+                "stack parent cache."
+            )
+        return authenticated
+
     def _dense_tokenizer_bridge(
         self,
         selected: Lfm2DenseBudgetedSelectedTarget,
@@ -957,7 +1035,13 @@ class Lfm2DynamicFoldStackAdapter:
             self._dense_parent_trace_cache(verify=True)
             self._dense_tokenizer_bridge(selected, verify=True)
             self._dense_tokenizer_bridge_trace(selected, verify=True)
+            self._dense_sparse_feature_fold_bundle(selected, target)
         else:
+            if self.resources.sparse_feature_fold_bundle is not None:
+                raise DynamicLfm2AdapterError(
+                    "Sparse-feature fold bundles are only consumed by dense "
+                    "budget LFM2 targets."
+                )
             if (
                 selected.signature.evidence_fingerprint
                 != self.resources.parent_cache_fingerprint
@@ -1190,6 +1274,7 @@ class Lfm2DynamicFoldStackAdapter:
                 self._dense_parent_trace_cache(verify=False)
                 self._dense_tokenizer_bridge(selected, verify=False)
                 self._dense_tokenizer_bridge_trace(selected, verify=False)
+                self._dense_sparse_feature_fold_bundle(selected, target)
             except DynamicLfm2AdapterError:
                 return False
             return bool(
@@ -1202,6 +1287,8 @@ class Lfm2DynamicFoldStackAdapter:
                     )
                 }
             )
+        if self.resources.sparse_feature_fold_bundle is not None:
+            return False
         return bool(
             target.resource_profile.family == "lfm2"
             and target.resource_profile.modalities == ("text",)
@@ -1224,6 +1311,7 @@ class Lfm2DynamicFoldStackAdapter:
                     Lfm2DenseBudgetFoldConfig,
                     Lfm2DenseBudgetFoldOnlyInitializer,
                     Lfm2DenseBudgetModelOperator,
+                    LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME,
                 )
             except ImportError as exc:  # pragma: no cover - optional dependency
                 raise DynamicLfm2AdapterError(
@@ -1232,6 +1320,9 @@ class Lfm2DynamicFoldStackAdapter:
             dense_config = self.resources.dense_fold_config
             if dense_config is None:
                 dense_config = Lfm2DenseBudgetFoldConfig()
+            sparse_feature_fold_bundle = self._dense_sparse_feature_fold_bundle(
+                selected, target
+            )
             cache = self._dense_parent_trace_cache(verify=False)
             verification_lease = self._dense_parent_cache_lease(cache)
             evidence_set = self._dense_evidence_set()
@@ -1278,6 +1369,7 @@ class Lfm2DynamicFoldStackAdapter:
                 autoregressive_hankel_observability=(
                     self.resources.autoregressive_hankel_observability
                 ),
+                sparse_feature_fold_bundle=sparse_feature_fold_bundle,
                 progress_sink=self.resources.dense_fold_progress_sink,
             )
             try:
@@ -1324,6 +1416,15 @@ class Lfm2DynamicFoldStackAdapter:
                 snapshot_config=self.resources.snapshot_config,
                 evidence_fingerprint=(
                     self.resources.parent_cache_fingerprint
+                ),
+                resource_fingerprints=(
+                    {}
+                    if sparse_feature_fold_bundle is None
+                    else {
+                        LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME: (
+                            sparse_feature_fold_bundle.bundle_sha256
+                        )
+                    }
                 ),
                 publication_recorder=None,
             )
