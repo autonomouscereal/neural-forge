@@ -1,0 +1,105 @@
+{
+ "deleted": [
+  {
+   "bytes": 23071080,
+   "cell_id": "COMP.MA.MXK1",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK1/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "147428036d6a8c9e40ecbb9490cc5ff6bee611c4410fee77ecfe021c06c40e1d",
+   "sha256": "147428036d6a8c9e40ecbb9490cc5ff6bee611c4410fee77ecfe021c06c40e1d"
+  },
+  {
+   "bytes": 33557171,
+   "cell_id": "COMP.MA.MXK10",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK10/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "e23d89bbd9906578303e8a4e69d4a63fcd811c5e093a547fb03770f6149c9d0d",
+   "sha256": "e23d89bbd9906578303e8a4e69d4a63fcd811c5e093a547fb03770f6149c9d0d"
+  },
+  {
+   "bytes": 33557171,
+   "cell_id": "COMP.MA.MXK11",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK11/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "c79a0af96be9a42cd1c1047f683147997d05fc34d8b6bed4ebbe14087b510383",
+   "sha256": "c79a0af96be9a42cd1c1047f683147997d05fc34d8b6bed4ebbe14087b510383"
+  },
+  {
+   "bytes": 16779955,
+   "cell_id": "COMP.MA.MXK12",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK12/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "fb26d70bb0f2d9958a25c993438a037e3dab056a25ce38d0ce8888e7aaeb230e",
+   "sha256": "fb26d70bb0f2d9958a25c993438a037e3dab056a25ce38d0ce8888e7aaeb230e"
+  },
+  {
+   "bytes": 23071080,
+   "cell_id": "COMP.MA.MXK15",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK15/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "8698a87c8382f16caf2cfe9f456463b70b43b7798c11c0e8c71459b097daf9ee",
+   "sha256": "8698a87c8382f16caf2cfe9f456463b70b43b7798c11c0e8c71459b097daf9ee"
+  },
+  {
+   "bytes": 23071080,
+   "cell_id": "COMP.MA.MXK2",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK2/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "3d75115fdeea77d7d8e716d83e4700c8c758f78672608cfcb00bdfcae8350f67",
+   "sha256": "3d75115fdeea77d7d8e716d83e4700c8c758f78672608cfcb00bdfcae8350f67"
+  },
+  {
+   "bytes": 23071080,
+   "cell_id": "COMP.MA.MXK3",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK3/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "78f82f88cafa33b6deca8c58026693f1a13c43105f061528ea5114bac506d6c2",
+   "sha256": "78f82f88cafa33b6deca8c58026693f1a13c43105f061528ea5114bac506d6c2"
+  },
+  {
+   "bytes": 14682472,
+   "cell_id": "COMP.MA.MXK4",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK4/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "8c8d3e91b9a34b416c8538dbf80a1c6671e5683f1aa74006ace603c51f83beb2",
+   "sha256": "8c8d3e91b9a34b416c8538dbf80a1c6671e5683f1aa74006ace603c51f83beb2"
+  },
+  {
+   "bytes": 33557171,
+   "cell_id": "COMP.MA.MXK7",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK7/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "8406dcb9c601ed288c024c9ba576f1d17264ab7ccf78d25c4423fd06f04b6cee",
+   "sha256": "8406dcb9c601ed288c024c9ba576f1d17264ab7ccf78d25c4423fd06f04b6cee"
+  },
+  {
+   "bytes": 25168563,
+   "cell_id": "COMP.MA.MXK8",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave7/cells/COMP.MA.MXK8/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from deployment neural-forge-matrix-17377c16 with this cell's sealed recipe on a pinned sm86 RTX 3090; the composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.",
+   "receipt_declared_sha256": "6c89b2e2e2aedbcd993f5a8478ff815bb808e637cdd6e9626261188258032d82",
+   "sha256": "6c89b2e2e2aedbcd993f5a8478ff815bb808e637cdd6e9626261188258032d82"
+  }
+ ],
+ "deleted_bytes": 249586823,
+ "deleted_file_count": 10,
+ "kept": {
+  "COMP.MA.MXK13": "deepest child at or above the A9 band (9/15, net 0.979732x) and the S8 arm of the MXK5/MXK13 level pair",
+  "COMP.MA.MXK14": "highest-scoring child of either wave (13/15, net 0.994287x) and the S8 arm of the MXK6/MXK14 level pair",
+  "COMP.MA.MXK5": "deepest alive-parent-band child of wave 7 (10/15, net 0.981152x)",
+  "COMP.MA.MXK6": "S4 arm of the MXK6/MXK14 level pair, and leg 1 of the C05 separating experiment (C05 with no MLP fold in block L05)",
+  "COMP.MA.MXK9": "leg 2 of the C05 separating experiment (C05 sharing block L05 with mlp_gate); the mechanism claim is a three-child bracket"
+ },
+ "schema": "neural-forge-lfm2-matrix-pruned-tensors-manifest-v1",
+ "wave": 7
+}

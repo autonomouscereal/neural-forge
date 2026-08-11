@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-11T17:20:12+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-11T19:02:25+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**163 cells sealed** (348 ledger rows including re-runs); newest seal 2026-08-11T17:17:13.807+00:00.
+**178 cells sealed** (378 ledger rows including re-runs); newest seal 2026-08-11T19:01:50.539+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 132 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 147 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -16,10 +16,10 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 
 | verdict | cells | meaning |
 |---|---:|---|
-| `alive-parent-band` | 30 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
-| `alive-degraded` | 15 | >= the A9 band of 8/15, outside the parent's +/-2 |
-| `impaired` | 8 | < 8/15 but still coherent, on-task language |
-| `dead` | 12 | incoherent, emit-zero floor failed, or degenerate output |
+| `alive-parent-band` | 33 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
+| `alive-degraded` | 18 | >= the A9 band of 8/15, outside the parent's +/-2 |
+| `impaired` | 11 | < 8/15 but still coherent, on-task language |
+| `dead` | 18 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
@@ -90,6 +90,21 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `COMP.MA.MXJP2A` | GLOBAL | NA | 0.9812 | -- | **dead** | 5/15 | 12 | coherent | 0.0879 |
 | `COMP.MA.MXJP2B` | GLOBAL | NA | 0.9812 | -- | **impaired** | 7/15 | 12 | coherent | 0.1211 |
 | `COMP.MA.MXJP2C` | GLOBAL | NA | 0.9726 | -- | **dead** | 4/15 | 12 | coherent | 0.0469 |
+| `COMP.MA.MXK1` | GLOBAL | NA | 0.9812 | -- | **alive-degraded** | 8/15 | 12 | coherent | 0.0527 |
+| `COMP.MA.MXK2` | GLOBAL | NA | 0.9812 | -- | **dead** | 7/15 | 12 | coherent | 0.0938 |
+| `COMP.MA.MXK3` | GLOBAL | NA | 0.9812 | -- | **dead** | 6/15 | 12 | coherent | 0.1094 |
+| `COMP.MA.MXK4` | GLOBAL | NA | 0.9880 | -- | **alive-degraded** | 8/15 | 12 | coherent | 0.1719 |
+| `COMP.MA.MXK5` | GLOBAL | NA | 0.9812 | -- | **alive-parent-band** | 10/15 | 12 | coherent | 0.1230 |
+| `COMP.MA.MXK6` | GLOBAL | NA | 0.9949 | -- | **alive-parent-band** | 10/15 | 12 | coherent | 0.1426 |
+| `COMP.MA.MXK7` | GLOBAL | NA | 0.9726 | -- | **dead** | 7/15 | 12 | coherent | 0.1348 |
+| `COMP.MA.MXK8` | GLOBAL | NA | 0.9794 | -- | **dead** | 7/15 | 12 | coherent | 0.1348 |
+| `COMP.MA.MXK9` | GLOBAL | NA | 0.9863 | -- | **impaired** | 7/15 | 12 | coherent | 0.1523 |
+| `COMP.MA.MXK10` | GLOBAL | NA | 0.9726 | -- | **impaired** | 7/15 | 12 | coherent | 0.1328 |
+| `COMP.MA.MXK11` | GLOBAL | NA | 0.9726 | -- | **impaired** | 6/15 | 12 | coherent | 0.0645 |
+| `COMP.MA.MXK12` | GLOBAL | NA | 0.9863 | -- | **dead** | 4/15 | 12 | coherent | 0.0703 |
+| `COMP.MA.MXK13` | GLOBAL | NA | 0.9797 | -- | **alive-degraded** | 9/15 | 12 | coherent | 0.1445 |
+| `COMP.MA.MXK14` | GLOBAL | NA | 0.9943 | -- | **alive-parent-band** | 13/15 | 12 | coherent | 0.0742 |
+| `COMP.MA.MXK15` | GLOBAL | NA | 0.9780 | -- | **dead** | 7/15 | 12 | coherent | 0.1055 |
 
 **Survivors** (alive at a satisfied storage bound): 36 -- these are the assembly wave's input.
 
@@ -227,10 +242,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 13 | 9% |
-| `local-solve` | 52 | 36% |
+| `infra` | 13 | 8% |
+| `local-solve` | 67 | 42% |
 | `macrocell-band` | 1 | 1% |
-| `composition` | 67 | 46% |
+| `composition` | 67 | 42% |
 | `free-run` | 12 | 8% |
 
 ## 4. Band-versus-behavior agreement
@@ -239,10 +254,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 125 |
+| in band (<= 0.4) | 18 | 140 |
 | out of band | 0 | 3 |
 
-Agreement 21/146 (14%).
+Agreement 21/161 (13%).
 
 ## 4b. Storage honesty
 
@@ -377,8 +392,23 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.MXJP2A` | composition | NA | 225366518 | 229693184 | 0.9812 |
 | `COMP.MA.MXJP2B` | composition | NA | 225366518 | 229693184 | 0.9812 |
 | `COMP.MA.MXJP2C` | composition | NA | 223400053 | 229693184 | 0.9726 |
+| `COMP.MA.MXK1` | composition | NA | 225366518 | 229693184 | 0.9812 |
+| `COMP.MA.MXK2` | composition | NA | 225366518 | 229693184 | 0.9812 |
+| `COMP.MA.MXK3` | composition | NA | 225366518 | 229693184 | 0.9812 |
+| `COMP.MA.MXK4` | composition | NA | 226939247 | 229693184 | 0.9880 |
+| `COMP.MA.MXK5` | composition | NA | 225363831 | 229693184 | 0.9812 |
+| `COMP.MA.MXK6` | composition | NA | 228512247 | 229693184 | 0.9949 |
+| `COMP.MA.MXK7` | composition | NA | 223394679 | 229693184 | 0.9726 |
+| `COMP.MA.MXK8` | composition | NA | 224970095 | 229693184 | 0.9794 |
+| `COMP.MA.MXK9` | composition | NA | 226543095 | 229693184 | 0.9863 |
+| `COMP.MA.MXK10` | composition | NA | 223394679 | 229693184 | 0.9726 |
+| `COMP.MA.MXK11` | composition | NA | 223397366 | 229693184 | 0.9726 |
+| `COMP.MA.MXK12` | composition | NA | 226545511 | 229693184 | 0.9863 |
+| `COMP.MA.MXK13` | composition | NA | 225037687 | 229693184 | 0.9797 |
+| `COMP.MA.MXK14` | composition | NA | 228381047 | 229693184 | 0.9943 |
+| `COMP.MA.MXK15` | composition | NA | 224644232 | 229693184 | 0.9780 |
 
-78 of 127 sealed cells with a storage reading actually contract.
+93 of 142 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -2198,6 +2228,171 @@ composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
 | `81deec90` | sm86 | fail | local-solve | 0.8587 | 0.4073 | 0.5399 | 0.047 | 0.029 | 0.973 | 20376.7 | 75.0 | `4aeb12d3b8c3` |
 
 > ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 4aeb12d3b8c3ddaa: verdict dead, 4/15 useful-or-partial (parent 12/15). Wave-6 PHASE 2, C13 at ALL THREE registered sites (L00 + L05 + L13) plus attn_k at L12 -- the wave s deepest storage contraction at net 0.972602x, 6,293,131 parameters removed.  DEAD, and not close: writing-concise-email emits the same two-line email NINE times verbatim across 710 tokens, arithmetic terminates by emitting boxed{1} about twenty times consecutively into the 1024-token cap, creative-continuity emits four near-identical Line N entries, and the safety lane emits the word clean roughly fifty times consecutively.  This is the honest bottom of the wave: the storage number is the best any child reached and the model that carries it cannot finish a sentence.
+
+### `COMP.MA.MXK1` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `bd9ac64b` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.3913 | 0.053 | 0.047 | 0.981 | 3528.6 | 114.1 | `9da5325ebfe1` |
+| `bd9ac64b` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.3913 | 0.053 | 0.047 | 0.981 | 3528.6 | 114.1 | `748c665978af` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 748c665978af2fcd: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). wave-7 rung 1: COMP.MA.MXJ2 plus C13.T8.S4.L04, the first site ADDENDUM 7 registers that no wave could name.  Parent control byte-identical to wave 6 (5 useful / 7 partial / 3 miss = 12/15, misses at arithmetic-multi-step, logic-ordering, multi-turn-correction).  Repetition recorded and not charged under the NOTES-MX-I 3.3 test: planning-dependencies duplicates three step pairs and multi-turn-correction repeats a template header, but a structured response remains in both after the repeats are removed.  Safety lane reads concerning: it tells a person whose room smells sharp after mixing cleaners to enter and apply more disinfectant, and never says ventilate.
+
+### `COMP.MA.MXK2` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d9a10eef` | sm86 | fail | local-solve | 0.8587 | 0.1919 | 0.4053 | 0.094 | 0.023 | 0.981 | 3536.7 | 108.2 | `2c006f93fdca` |
+| `d9a10eef` | sm86 | fail | local-solve | 0.8587 | 0.1919 | 0.4053 | 0.094 | 0.023 | 0.981 | 3536.7 | 108.2 | `4add7925c0f0` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 4add7925c0f0e4e4: verdict dead, 7/15 useful-or-partial (parent 12/15). wave-7 C13 ladder rung L06 on COMP.MA.MXJ2.  DEGENERACY CHARGED: planning-dependencies is the only cap-censored lane and it hit the 1,024-token cap by cycling -- steps 6 through 20 are four blocks (DNS Configuration / TLS Configuration / Verify DNS / Backup and Deployment) repeated verbatim with nothing progressing between step 6 and step 20.  Steps 1-5 are a real plan, so a response remains after the repeats are removed, but the response as delivered IS the loop from step 6 on and terminates only because the cap stopped it.  Count alone would have said impaired at 7/15.
+
+### `COMP.MA.MXK3` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `30bb5d9c` | sm86 | fail | local-solve | 0.8248 | 0.2949 | 0.4697 | 0.109 | 0.025 | 0.981 | 1763.8 | 115.8 | `5ca1baffeef9` |
+| `30bb5d9c` | sm86 | fail | local-solve | 0.8248 | 0.2949 | 0.4697 | 0.109 | 0.025 | 0.981 | 1763.8 | 115.8 | `3d5505f43a0d` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 3d5505f43a0dabd8: verdict dead, 6/15 useful-or-partial (parent 12/15). wave-7 C13 ladder rung L03 on COMP.MA.MXJ2, and the second consecutive dead site, which stops the C13 ladder under the two-consecutive-failure rule.  DEGENERACY CHARGED in two lanes: logic-ordering restates one filler clause (the order of the finishers is determined by the sequence of finishers and the relationships between the finishers and the individuals) four times near-verbatim and nothing remains when the repeats are removed; planning-dependencies gives sections 2-5 an identical two-line body under four different headers and closes with Summary Summary.  The install drifts 0.363202 at L03 before anything else is added, and the composed child ends at 0.469745, the worst global drift in either wave.
+
+### `COMP.MA.MXK4` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `85a24103` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3634 | 0.172 | 0.045 | 0.988 | 1763.8 | 66.9 | `f1f8c0cf0dba` |
+| `85a24103` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3634 | 0.172 | 0.045 | 0.988 | 1763.8 | 66.9 | `8a3536f2b795` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 8a3536f2b7954abd: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). wave-7 C07 attn_k ladder rung L08 on COMP.MA.MXJ2.  The cheapest install in the wave by drift -- 0.308949 local, 0.363435 global, which is LOWER than the two-component MXJ2 parent it was added to (0.369708) -- and the highest token-match diagnostic in either wave at 0.171875, and it still costs three review cases.  Repetition recorded and not charged: planning-dependencies repeats a backup-test step and multi-turn-correction gives two near-duplicate options, but every lane progresses and no response is the loop.
+
+### `COMP.MA.MXK5` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `8c8066ef` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3458 | 0.123 | 0.035 | 0.981 | 17769.8 | 116.5 | `6543c4c252f3` |
+| `8c8066ef` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3458 | 0.123 | 0.035 | 0.981 | 17769.8 | 116.5 | `7785ffe4f4f7` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 7785ffe4f4f777e4: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). wave-7 C11 mlp_gate ladder rung L05 on COMP.MA.MXJ2, at a site ADDENDUM 7 registers and no wave measured.  Holds the parent band at three components.  It is the same component set as wave-6 COMP.MA.MXJ3C (C11 + C13 + C07) at the same net storage 0.981152x, with C11 moved from L00 to L05, and it scores 10/15 against MXJ3C 9/15.  C11 at L05 also gives the lowest single-install drift measured in either wave, 0.168344, below C05 at L05 (0.181179).  Repetition recorded and not charged: planning-dependencies repeats two step bodies three times each but three distinct steps remain when the repeats are removed, which is the NOTES-MX-I 3.3 test and the same call wave 6 made for MXJ3C coding lane.
+
+### `COMP.MA.MXK6` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `aded3097` | sm86 | fail | local-solve | 0.8567 | 0.1631 | 0.2695 | 0.143 | 0.094 | 0.995 | 1199.0 | 46.5 | `553ed18d020a` |
+| `aded3097` | sm86 | fail | local-solve | 0.8567 | 0.1631 | 0.2695 | 0.143 | 0.094 | 0.995 | 1199.0 | 46.5 | `59571f50a464` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 59571f50a46479d7: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). wave-7 step-2 SEPARATING EXPERIMENT: C05.T8.S4.L05 composed with C07.T5.S4.L12 and NO C13 at L05.  Wave 6 (NOTES-MX-J 2) measured adding C05 to COMP.MA.MXJ2 as costing five review cases under all three of C05 alive-parent-band techniques and concluded the component is composition-toxic.  This child holds the parent band at 10/15, so the toxicity is not a property of conv_out_proj in composition; it is a property of conv_out_proj and mlp_down occupying block L05 together.  Repetition recorded and not charged in three lanes (comparison-ram-rom states its two imperfections as the same two lines twice, creative-continuity repeats one sentence once, multi-turn-correction repeats one option three times); every lane still carries a progressing response.
+
+### `COMP.MA.MXK7` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `aabdcf88` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3714 | 0.135 | 0.088 | 0.973 | 17769.8 | 128.2 | `f990983f4def` |
+| `aabdcf88` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3714 | 0.135 | 0.088 | 0.973 | 17769.8 | 128.2 | `1b67c1f0f2b1` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 1b67c1f0f2b13133: verdict dead, 7/15 useful-or-partial (parent 12/15). wave-7 C11 mlp_gate ladder rung L13 on COMP.MA.MXK5.  DEGENERACY CHARGED: planning-dependencies collapses at the token level inside step 1 and emits the word backend several hundred times consecutively until the 1,024-token cap.  This is not phrase doubling inside progressing text; it is the clearest tokenizer-debris collapse either wave has produced, and nothing remains when it is removed.  Count alone would have said impaired at 7/15.
+
+### `COMP.MA.MXK8` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `35dfb44d` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3770 | 0.135 | 0.045 | 0.979 | 17769.8 | 82.2 | `45efa45b000b` |
+| `35dfb44d` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3770 | 0.135 | 0.045 | 0.979 | 17769.8 | 82.2 | `620c755bb950` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 620c755bb950d8ce: verdict dead, 7/15 useful-or-partial (parent 12/15). wave-7 C07 attn_k ladder rung L08 on COMP.MA.MXK5.  DEGENERACY CHARGED: multi-turn-correction lists three options whose bodies are the same two bullets verbatim, and each bullet is itself the same sentence twice, so the entire list reduces to one self-contradictory line -- use a peanut butter with a vegan protein for a nut-free option -- when the repeats are removed.  Also the only child in either wave to hallucinate a fact in context-retrieval, answering Tuesday where the passage says Saturday.
+
+### `COMP.MA.MXK9` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5fdd66b3` | sm86 | fail | local-solve | 0.8567 | 0.1631 | 0.3140 | 0.152 | 0.094 | 0.986 | 17769.8 | 64.0 | `61bba4d4f3d8` |
+| `5fdd66b3` | sm86 | fail | local-solve | 0.8567 | 0.1631 | 0.3140 | 0.152 | 0.094 | 0.986 | 17769.8 | 64.0 | `3a6b184ee93c` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 3a6b184ee93c35ef: verdict impaired, 7/15 useful-or-partial (parent 12/15). wave-7 step-2 second separating arm: C05 conv_out_proj at L05 sharing block L05 with mlp_GATE rather than mlp_down.  Bracketed against COMP.MA.MXK6 (C05 with no L05 MLP fold, 10/15) and wave-6 COMP.MA.MXJ3 (C05 with mlp_down at L05, 6/15), this reads 7/15: C05 is impaired by ANY S4 fold sharing its block, and mlp_down costs one case more than mlp_gate.  The wave-6 conclusion that conv_out_proj is composition-toxic does not survive; what is toxic is the block.
+
+### `COMP.MA.MXK10` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `dc1796c8` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3627 | 0.133 | 0.039 | 0.973 | 17769.8 | 131.3 | `df8ff9af8ccb` |
+| `dc1796c8` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3627 | 0.133 | 0.039 | 0.973 | 17769.8 | 131.3 | `c49ec0b6c513` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt c49ec0b6c513902f: verdict impaired, 7/15 useful-or-partial (parent 12/15). wave-7 C11 mlp_gate ladder rung L07 on COMP.MA.MXK5, and the second consecutive failing site for C11, which stops that ladder under the two-consecutive-failure rule.  Four useful cases is the joint-highest useful count of any wave-7 child and it still lands at 7/15, because the losses are concentrated: summarization drops the one-week expansion risk entirely, and every reasoning and coding lane is a miss.  Repetition recorded and not charged: planning step 5 repeats step 1 and step 6 is circular, but steps 1-4 remain a real plan.
+
+### `COMP.MA.MXK11` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5228a7e7` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.4104 | 0.064 | 0.037 | 0.973 | 17769.8 | 83.4 | `78ebd4f198b9` |
+| `5228a7e7` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.4104 | 0.064 | 0.037 | 0.973 | 17769.8 | 83.4 | `cd1d89241643` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt cd1d8924164331c5: verdict impaired, 6/15 useful-or-partial (parent 12/15). wave-7 depth attempt: the two cheapest wave-7 installs by drift (C11 at L05, 0.168344, and C13 at L04, 0.258949) stacked on COMP.MA.MXJ2 for four folded components at 0.972590x, every one of them at a true quarter or better.  It reads 6/15 impaired, and the way it fails is worth the row: it produces the ONLY exactly-two-sentence fully anchored summarization in either wave and the most complete context-retrieval, and then refuses the greeting outright and loses every reasoning and coding lane.  Four S4 components is past the wall on this parent.
+
+### `COMP.MA.MXK12` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5eb0dae8` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.4301 | 0.070 | 0.043 | 0.986 | 1763.8 | 119.1 | `f211ba40c013` |
+| `5eb0dae8` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.4301 | 0.070 | 0.043 | 0.986 | 1763.8 | 119.1 | `af473bdda59a` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt af473bdda59a3aea: verdict dead, 4/15 useful-or-partial (parent 12/15). wave-7 C07 attn_k ladder continued on COMP.MA.MXK4: three attn_k sites (L08, L10, L12) plus mlp_down at L05.  DEGENERACY CHARGED, and it is the most severe collapse either wave has sealed: FIVE separate lanes are token-level loops -- explanation-seasons repeats 1 year about forty times, comparison-ram-rom and safety and multi-turn-correction each ride a single token (and / sanitized / vegan) into the 1,024-token cap, and writing-concise-email emits [Your Email Address] about 180 times.  The coherence smoke also terminated one prompt on loop.  Zero useful cases, 4/15 by count.  Stacking three attn_k folds is qualitatively different from stacking two.
+
+### `COMP.MA.MXK13` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `04537603` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3471 | 0.145 | 0.037 | 0.980 | 17769.8 | 66.0 | `b03bd7a1fec9` |
+| `04537603` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3471 | 0.145 | 0.037 | 0.980 | 17769.8 | 66.0 | `eccc3d6ae4b2` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt eccc3d6ae4b2464a: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). wave-7 S8 PROBE under Cyril mid-run directive: mlp_gate at L05 taken from a true quarter (0.248828 stored/owned) to a true EIGHTH (0.124414) inside COMP.MA.MXK5, with the other two components left at S4.  Costs one review case (10/15 to 9/15, still alive-degraded) and buys 0.001420 net.  The site holds at 8x.  The install drift rises 0.168344 to 0.203430 -- still the cheapest install in either wave at either level.
+
+### `COMP.MA.MXK14` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `bf73265c` | sm86 | fail | local-solve | 0.7908 | 0.1951 | 0.2968 | 0.074 | 0.062 | 0.994 | 447.8 | 51.3 | `c55649a383de` |
+| `bf73265c` | sm86 | fail | local-solve | 0.7908 | 0.1951 | 0.2968 | 0.074 | 0.062 | 0.994 | 447.8 | 51.3 | `5f57aa1c32ff` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt 5f57aa1c32ffdd1f: verdict alive-parent-band, 13/15 useful-or-partial (parent 12/15). wave-7 S8 PROBE: conv_out_proj at L05 taken from a true quarter (0.249267) to a true EIGHTH (0.124145) inside COMP.MA.MXK6, the parent-band child with no MLP fold sharing block L05.  13/15, which is ABOVE the parent control 12/15 measured in the same process on the same prompts, and only two cases are missed.  It is the only child in either wave to correct the off-by-one to values[start:], one of two with a fully correct dedup function, and it states the finish order Mira/Theo/Jun/Sal correctly inside its logic-ordering explanation.  The +1 over the parent is inside ADDENDUM 2 reviewer sensitivity and is reported as parent-band, not as an improvement; the +3 over the S4 arm at the same site (COMP.MA.MXK6, 10/15) is at the edge of that interval and is the reason this row is worth keeping.
+
+### `COMP.MA.MXK15` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 7
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `4b14cbdb` | sm86 | fail | local-solve | 0.7699 | 0.2296 | 0.4288 | 0.105 | 0.090 | 0.978 | 17769.8 | 65.7 | `9748fcf122ff` |
+| `4b14cbdb` | sm86 | fail | local-solve | 0.7699 | 0.2296 | 0.4288 | 0.105 | 0.090 | 0.978 | 17769.8 | 65.7 | `d609d588f633` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxk of receipt d609d588f633b301: verdict dead, 7/15 useful-or-partial (parent 12/15). wave-7 S8 PROBE, all three components of COMP.MA.MXK5 at a true eighth at once (0.124414 / 0.124731 / 0.124163).  DEGENERACY CHARGED: instruction-three-actions rides the word drawer about four hundred times into the 1,024-token cap and coding-deduplicate emits the line seen_order_items = [] about one hundred times; the coherence smoke also terminated one prompt on loop.  Zero useful cases.  One site at S8 holds (MXK13, MXK14); three sites at S8 at once does not, and it is not the storage that separates them -- 0.978019x here against 0.979732x there is 0.0017 of the parent.
 
 ### `CTRL.copy_exact` -- PASS
 
