@@ -2735,9 +2735,28 @@ def t5_body_route_technique(request: Any) -> Any:
 
     kept_ids = fold.kept_channel_ids.to(device=parent.device)
     installed = torch.zeros_like(parent)
+    # What the child has to KEEP in order to evaluate this component -- the
+    # index side of a sparse structure included.  ADDENDUM 6 §6.2 makes the
+    # stored count the thing a folding claim rests on, and commit 8d59c4d2
+    # already found the composition layer charging a fold for tensors it did
+    # not keep and crediting it for tensors it did; the same mistake is
+    # available one level down, where a route's coefficients are counted and
+    # the ids that say where they go are not.  `BodyRouteFold.apply` is the
+    # authority for which tensors are load-bearing:
+    #
+    #   writer  narrow child weight + kept_channel_ids (the index_select)
+    #   reader  narrow child weight + the CSR triple the dense expansion_route
+    #           is materialized from (offsets, support ids, coefficients)
+    #
+    # `expansion_route` itself is never counted: it is the dense realization of
+    # that triple, authenticated against it by `_authenticated_body_route_fold`,
+    # and a child that stored it would not be storing a route at all.
     if fold.role == "writer":
         installed[:, kept_ids] = fold.child_weight
-        stored = int(fold.child_weight.numel())
+        stored_terms = {
+            "child_weight": int(fold.child_weight.numel()),
+            "kept_channel_ids": int(fold.kept_channel_ids.numel()),
+        }
     else:
         width = fold.parent_width
         expansion = fold.expansion_route.transpose(0, 1)
@@ -2746,7 +2765,13 @@ def t5_body_route_technique(request: Any) -> Any:
                 block * fold.kept_width : (block + 1) * fold.kept_width, :
             ]
             installed[block * width : (block + 1) * width, :] = expansion @ child_block
-        stored = int(fold.child_weight.numel()) + int(fold.read_coefficients.numel())
+        stored_terms = {
+            "child_weight": int(fold.child_weight.numel()),
+            "route_coefficients": int(fold.read_coefficients.numel()),
+            "route_support_ids": int(fold.support_channel_ids.numel()),
+            "route_support_offsets": int(fold.support_offsets.numel()),
+        }
+    stored = int(sum(stored_terms.values()))
 
     solve = dict(fold.solve)
     solve["technique_record_sha256"] = fold.record_sha256
@@ -2754,6 +2779,9 @@ def t5_body_route_technique(request: Any) -> Any:
     solve["kept_width"] = fold.kept_width
     solve["block_count"] = blocks
     solve["route_support_entries"] = int(fold.support_channel_ids.numel())
+    # The stored count, itemized, so a reader can audit the ADDENDUM 6 bound
+    # against the tensors it is a sum over rather than take the total on faith.
+    solve["stored_parameter_terms"] = dict(sorted(stored_terms.items()))
     solve["component_rows_source"] = (
         spec.input_endpoint
         if spec.contraction_axis == "input"

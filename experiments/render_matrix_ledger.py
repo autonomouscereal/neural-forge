@@ -56,12 +56,40 @@ from neural_forge.matrix_cell_receipt import (  # noqa: E402
     read_ledger,
 )
 
-LEVEL_ORDER = ("M16", "M8", "M4", "M2", "X4", "NA")
+LEVEL_ORDER = ("M16", "M8", "M4", "M2", "X4", "S2", "S4", "S8", "NA")
 
 #: The marginal ladder §5 rule 2 walks, shallowest first.  ``M2`` joined it in
 #: wave 2 as the family's floor and the break-even point for every technique
 #: whose stored form is a basis plus a solved factor (`NOTES-MX-E` §4.1).
-LEVEL_LADDER = ("M16", "M8", "M4", "M2", "X4")
+#: ADDENDUM 6's storage family joins it at the deep end: ``S2``/``S4``/``S8``
+#: bound what is *stored* rather than how wide a factor is, and a rung there is
+#: the only rung that supports a folding claim.
+LEVEL_LADDER = ("M16", "M8", "M4", "M2", "X4", "S2", "S4", "S8")
+
+#: ADDENDUM 6 §6.1's verdicts in descending order, with the reading each one
+#: licenses.  These lead the report: the campaign's primary grade is the frozen
+#: whole-model review, and token match is a diagnostic beside it.
+BEHAVIOR_ORDER = (
+    "alive-parent-band",
+    "alive-degraded",
+    "impaired",
+    "dead",
+    "cannot-express-4x",
+)
+
+BEHAVIOR_MEANING = {
+    "alive-parent-band": (
+        "within 2 cases of the parent's own 12/15 on the frozen surface, "
+        "coherent, emit-zero floor passed"
+    ),
+    "alive-degraded": ">= the A9 band of 8/15, outside the parent's +/-2",
+    "impaired": "< 8/15 but still coherent, on-task language",
+    "dead": "incoherent, emit-zero floor failed, or degenerate output",
+    "cannot-express-4x": (
+        "the technique cannot state this component at the level's storage "
+        "bound; nothing was measured about the model"
+    ),
+}
 
 #: One glyph per status.  Chosen so the matrix reads at a glance in a terminal
 #: and in a Markdown viewer: a filled mark is a real behavioral pass, a hollow
@@ -218,6 +246,87 @@ def _cell_summary(entries: Sequence[Mapping[str, Any]]) -> str:
     return "."
 
 
+def _render_addendum6(
+    body: Sequence[Mapping[str, Any]], add: Any
+) -> None:
+    """Section 0: the behaviour verdicts, which ADDENDUM 6 makes the grade.
+
+    Printed first and printed site-scoped.  Rule 2-S is not relaxed by the new
+    grading -- a verdict is a claim about one component at one technique at one
+    level **at one site**, and a table that aggregated over sites would be the
+    same site-blind mistake ADDENDUM 5 retired, just with a nicer column.
+    """
+
+    graded = [row for row in body if row.get("behavior_verdict")]
+    add("## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)")
+    add("")
+    add(
+        "ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review "
+        "of the **whole model** with that cell's component folded and every "
+        "other component copy_exact, scored against the parent's own 12/15 on "
+        "the same surface in the same process.  `token_match_vs_control` is a "
+        "diagnostic column here and gates nothing -- wave 4 sealed a child at "
+        "0.551 token match and 12/15, the parent's own band."
+    )
+    add("")
+    if not graded:
+        add("_(no cell has been behaviour-reviewed under ADDENDUM 6 yet)_")
+        add("")
+        return
+    counts = Counter(str(row["behavior_verdict"]) for row in graded)
+    add("| verdict | cells | meaning |")
+    add("|---|---:|---|")
+    for verdict in BEHAVIOR_ORDER:
+        if counts.get(verdict):
+            add(f"| `{verdict}` | {counts[verdict]} | {BEHAVIOR_MEANING[verdict]} |")
+    add("")
+    add(
+        "| cell | site | level | stored/parent | bound | verdict | review | "
+        "parent | smoke | token-match (diag) |"
+    )
+    add("|---|---|---|---:|---|---|---:|---:|---|---:|")
+    for row in sorted(graded, key=_sort_key):
+        score = row.get("behavior_useful_or_partial")
+        bound = row.get("storage_bound_ratio")
+        satisfied = row.get("storage_bound_satisfied")
+        bound_text = (
+            "--"
+            if bound is None
+            else f"{_number(bound, 3)} {'ok' if satisfied else 'MISS'}"
+        )
+        add(
+            f"| `{row['cell_id']}` | {row.get('site')} | {row.get('level')} "
+            f"| {_number(row.get('stored_parameter_ratio'))} "
+            f"| {bound_text} "
+            f"| **{row['behavior_verdict']}** "
+            f"| {'--' if score is None else f'{score}/15'} "
+            f"| {row.get('behavior_parent_useful_or_partial') or '--'} "
+            f"| {row.get('decode_smoke_review')} "
+            f"| {_number(row.get('token_match_vs_control'))} |"
+        )
+    add("")
+    survivors = [
+        row
+        for row in graded
+        if str(row["behavior_verdict"]) in ("alive-parent-band", "alive-degraded")
+        and row.get("storage_bound_satisfied")
+    ]
+    add(
+        f"**Survivors** (alive at a satisfied storage bound): {len(survivors)} "
+        "-- these are the assembly wave's input."
+    )
+    if survivors:
+        add("")
+        for row in sorted(survivors, key=_sort_key):
+            add(
+                f"- `{row['cell_id']}` at {row.get('site')}: "
+                f"{row['behavior_verdict']}, "
+                f"{row.get('behavior_useful_or_partial')}/15, stores "
+                f"{_number(row.get('stored_parameter_ratio'))}x"
+            )
+    add("")
+
+
 def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
     latest = _latest_by_cell(rows)
     body = sorted(latest.values(), key=_sort_key)
@@ -250,6 +359,9 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
         if statuses.get(status):
             add(f"| `{status}` | {statuses[status]} | {meaning[status]} |")
     add("")
+
+    # ------------------------------------------------------------------ 0
+    _render_addendum6(body, add)
 
     # ------------------------------------------------------------------ 1
     add("## 1. The matrix")
@@ -311,8 +423,12 @@ def render(rows: Sequence[Mapping[str, Any]], *, ledger_path: Path) -> str:
         "reading `NOTES-MX-G` §4.6 showed to be ambiguous.)"
     )
     add("")
-    add("| component | technique | M16 | M8 | M4 | M2 | X4 | verdict (site-scoped) |")
-    add("|---|---|---|---|---|---|---|---|")
+    add(
+        "| component | technique | "
+        + " | ".join(LEVEL_LADDER)
+        + " | verdict (site-scoped) |"
+    )
+    add("|---|---|" + "---|" * len(LEVEL_LADDER) + "---|")
     for (component, technique), entries in sorted(grouped.items()):
         rungs: list[str] = []
         by_level = defaultdict(list)

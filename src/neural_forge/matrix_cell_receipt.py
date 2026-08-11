@@ -76,6 +76,16 @@ deviations are written down rather than silently absorbed:
    `_validate_composition` checks and which no acceptance clause reads.  The
    failure chain is unchanged and walks the aggregate the runner seals: worst
    write cosine, worst macrocell, global composed drift, composed free-run.
+8. `LEVELS` carries the storage-defined family ``S2``/``S4``/``S8`` and a
+   receipt may carry an ``addendum6`` block.  ADDENDUM 6 retires token match as
+   a gate and puts a *storage bound* where the design had a width fraction: an
+   ``S`` level names what the child may store, not how wide a factor is, and
+   `STORAGE_LEVEL_RATIOS` is the bound.  The behaviour verdict rides in its own
+   block on a review instance rather than redefining ``outcome.status``, so
+   every receipt sealed before the addendum re-verifies its seal and recomputes
+   the same chain it always did -- `campaign_pass` and `first_divergent_metric`
+   are byte-for-byte the clauses waves 1-4 were sealed under.  The renderer, not
+   the schema, is what leads with the new verdict.
 6. `code_identity.compute_architecture` is new in wave 2 and mandatory.
    `NOTES-MX-E` §2: a batch was launched on what ``nvidia-smi`` calls the
    second RTX 3090, CUDA's default ``FASTEST_FIRST`` ordering resolved it to a
@@ -163,19 +173,61 @@ TECHNIQUES: Mapping[str, str] = {
 #: level above M2 therefore *costs* storage on a square component, and M2 is
 #: the exact break-even.  Naming it makes the break-even a measurable cell
 #: rather than a footnote.
+#:
+#: ADDENDUM 6 adds the **storage-defined** family ``S2``/``S4``/``S8``.  Every
+#: level above names a *width* -- a fraction of the component's own axis, or the
+#: width the exact-4x layout assigns it -- and waves 1-3 measured the gap that
+#: opens between a width and a size: `C13.T3.M16.L05` contracts the width to
+#: 15/16 and stores **3.28x** the dense tensor it replaced.  An ``S`` level
+#: names the size instead: ``S4`` is satisfied only when the child stores at
+#: most a quarter of the component's parent parameters, whatever width that
+#: takes for the technique in question.  The bound lives in
+#: `STORAGE_LEVEL_RATIOS` and is enforced against the receipt's own counts.
 LEVELS: Mapping[str, Any] = {
     "M16": 15.0 / 16.0,
     "M8": 7.0 / 8.0,
     "M4": 3.0 / 4.0,
     "M2": 1.0 / 2.0,
     "X4": None,  # the width the canonical exact-4x layout assigns this component
+    "S2": None,  # ADDENDUM 6: stored <= 0.5x  the component's parent parameters
+    "S4": None,  # ADDENDUM 6: stored <= 0.25x -- the X4 proof bar
+    "S8": None,  # ADDENDUM 6: stored <= 0.125x
     "NA": 1.0,
+}
+
+#: ADDENDUM 6 §6.2: level id -> the fraction of the component's parent
+#: parameter count the child is allowed to store.  A cell at one of these
+#: levels is a *storage claim*; a cell at any other level is not.
+STORAGE_LEVEL_RATIOS: Mapping[str, float] = {
+    "S2": 0.5,
+    "S4": 0.25,
+    "S8": 0.125,
 }
 
 CELL_KINDS = ("control", "calibration", "cell", "composition")
 STATUSES = ("pass", "fail", "timeout", "infra", "pending-review")
 REVIEW_VERDICTS = ("pending", "coherent", "incoherent")
 TERMINATIONS = ("eos", "cap", "loop", "error")
+
+#: ADDENDUM 6 §6.1's verdicts, in descending order.  These grade the *whole
+#: model* with one folded component installed, read off the verbatim text of the
+#: frozen 15-prompt review, and they are the campaign's primary grade from wave
+#: 5 onward.  ``cannot-express-4x`` is deliberately not a behavioural verdict at
+#: all: it says the technique's storage algebra cannot state the component at
+#: the level, so nothing about the model was measured.
+BEHAVIOR_VERDICTS = (
+    "alive-parent-band",
+    "alive-degraded",
+    "impaired",
+    "dead",
+    "cannot-express-4x",
+)
+
+#: The two measured reference bands of ADDENDUM 6 §6.1, on the frozen surface.
+PARENT_REVIEW_BAND = 12
+A9_REVIEW_BAND = 8
+#: ADDENDUM 2's measured reviewer-sensitivity interval on this 15-case surface.
+PARENT_BAND_TOLERANCE = 2
 
 CONTROL_CELL_ID = "CTRL.copy_exact"
 
@@ -1087,6 +1139,183 @@ def seal_review(
     return seal_receipt(sealed)
 
 
+def behavior_verdict_for(
+    *,
+    useful_or_partial: int,
+    coherent: bool,
+    emit_zero_floor_passed: bool | None,
+    degenerate: bool,
+) -> str:
+    """ADDENDUM 6 §6.1's verdict, mechanically, from the graded review.
+
+    Mechanical for the same reason `first_divergent_metric` is: the grade is a
+    judgement of text, but the *verdict the grade implies* must not be, or a
+    reviewer could move the line after seeing which side of it a cell fell on.
+    The reviewer supplies four readings -- the useful-or-partial count, whether
+    the coherence smoke read coherent, the sealed wreck detector, and whether
+    any lane showed degenerate output (looping, collapse, script drift) -- and
+    the band arithmetic happens here.
+    """
+
+    score = int(useful_or_partial)
+    if score < 0 or score > 15:
+        raise MatrixCellReceiptError(
+            f"useful_or_partial={score} is outside the surface's 15 "
+            "intelligence cases (the safety case never scores)."
+        )
+    if degenerate or not coherent or emit_zero_floor_passed is False:
+        return "dead"
+    if score >= PARENT_REVIEW_BAND - PARENT_BAND_TOLERANCE:
+        return "alive-parent-band"
+    if score >= A9_REVIEW_BAND:
+        return "alive-degraded"
+    return "impaired"
+
+
+def seal_behavior_review(
+    body: Mapping[str, Any],
+    *,
+    verdict: str,
+    reviewer: str,
+    useful: int | None,
+    partial: int | None,
+    observed_miss: int | None,
+    parent_useful_or_partial: int | None,
+    dossier_sha256: str | None,
+    protocol_sha256: str | None,
+    prompt_pack_sha256: str | None,
+    smoke_verdict: str,
+    per_case: Mapping[str, str] | None = None,
+    safety: str | None = None,
+    instance_suffix: str = "a6review",
+    notes: str = "",
+) -> dict[str, Any]:
+    """Seal ADDENDUM 6's behaviour verdict as a **new instance**, never an edit.
+
+    Same discipline as `seal_review`, one level up: the frozen 15-prompt review
+    is a judgement of verbatim text that cannot exist when the cell is sealed,
+    the runner may not certify its own behaviour, and the append-only ledger
+    keeps the unreviewed instance.  What is new is *what* is being certified --
+    ADDENDUM 6 makes the whole-model review the primary grade, so the verdict
+    needs the digests of the surface it was taken on (protocol, prompt pack,
+    dossier) or it is an unfalsifiable claim about text nobody can find.
+
+    ``outcome`` is left exactly as the runner's own chain computed it.  The
+    addendum is explicit that it does not redefine ``status`` or
+    ``first_divergent_metric``; a wave-1 receipt and a wave-5 receipt still
+    walk the same chain, and the new grade sits beside it rather than on top
+    of it.  `campaign_pass` cannot see this block at all.
+    """
+
+    if verdict not in BEHAVIOR_VERDICTS:
+        raise MatrixCellReceiptError(
+            f"An ADDENDUM 6 behaviour verdict is one of {BEHAVIOR_VERDICTS}."
+        )
+    if smoke_verdict not in REVIEW_VERDICTS:
+        raise MatrixCellReceiptError(
+            f"smoke_verdict must be one of {REVIEW_VERDICTS}."
+        )
+    counted = [
+        value for value in (useful, partial, observed_miss) if value is not None
+    ]
+    score: int | None = None
+    if verdict == "cannot-express-4x":
+        # Nothing was generated, so there is nothing to count.  A score here
+        # would be a reading of a review that never happened.
+        if counted:
+            raise MatrixCellReceiptError(
+                "cannot-express-4x seals no review counts: no model was run."
+            )
+    else:
+        if len(counted) != 3:
+            raise MatrixCellReceiptError(
+                "A behaviour verdict needs useful/partial/observed_miss counts."
+            )
+        if int(useful) + int(partial) + int(observed_miss) != 15:  # type: ignore[arg-type]
+            raise MatrixCellReceiptError(
+                "useful + partial + observed_miss must be the surface's 15 "
+                "intelligence cases (the safety case is reported separately)."
+            )
+        score = int(useful) + int(partial)  # type: ignore[arg-type]
+        if dossier_sha256 is None:
+            raise MatrixCellReceiptError(
+                "A behaviour verdict must name the dossier it graded."
+            )
+    reviewed_from = verify_seal(body)
+    sealed = json.loads(json.dumps(dict(body), sort_keys=True))
+    sealed["cell_instance_id"] = f"{sealed['cell_instance_id']}-{instance_suffix}"
+    sealed["addendum6"] = {
+        "schema": "neural-forge-lfm2-matrix-addendum6-behavior-verdict-v1",
+        "verdict": verdict,
+        "reviewer": str(reviewer),
+        "reviewed_from_receipt_sha": reviewed_from,
+        "reviewed_at": _now(),
+        "useful": None if useful is None else int(useful),
+        "partial": None if partial is None else int(partial),
+        "observed_miss": None if observed_miss is None else int(observed_miss),
+        "useful_or_partial": score,
+        "parent_useful_or_partial": (
+            None if parent_useful_or_partial is None else int(parent_useful_or_partial)
+        ),
+        "band_delta_vs_parent": (
+            None
+            if score is None or parent_useful_or_partial is None
+            else int(score) - int(parent_useful_or_partial)
+        ),
+        "parent_reference_band": PARENT_REVIEW_BAND,
+        "a9_reference_band": A9_REVIEW_BAND,
+        "parent_band_tolerance": PARENT_BAND_TOLERANCE,
+        "smoke_verdict": smoke_verdict,
+        "safety": None if safety is None else str(safety),
+        "per_case": None if per_case is None else {
+            str(key): str(value) for key, value in sorted(dict(per_case).items())
+        },
+        "frozen_review_dossier_sha256": dossier_sha256,
+        "protocol_sha256": protocol_sha256,
+        "prompt_pack_sha256": prompt_pack_sha256,
+        "storage_bound_ratio": _lookup_optional(body, "solve.storage_bound_ratio"),
+        "storage_bound_satisfied": _lookup_optional(
+            body, "solve.storage_bound_satisfied"
+        ),
+        "stored_parameter_ratio": _stored_parameter_ratio(body),
+        "notes": str(notes),
+        "rubric": (
+            "ADDENDUM 6 6.1: frozen 15-prompt whole-model review, digest-pinned "
+            "protocol, graded against the parent's own same-process band; "
+            "cap-hit outputs censored, not failed; token match is diagnostic "
+            "only and gates nothing."
+        ),
+    }
+    # The decode-smoke verdict rides where §5 rule 1 has always kept it, so a
+    # cell reviewed under ADDENDUM 6 is still readable by every pre-addendum
+    # tool without a special case.
+    sealed["outcome"] = {
+        "status": sealed["outcome"]["status"],
+        "first_divergent_metric": sealed["outcome"]["first_divergent_metric"],
+        "decode_smoke_review": smoke_verdict,
+        "notes": (
+            f"ADDENDUM 6 behaviour review by {reviewer} of receipt "
+            f"{reviewed_from[:16]}: verdict {verdict}"
+            + ("" if score is None else f", {score}/15 useful-or-partial")
+            + (f" (parent {parent_useful_or_partial}/15)" if parent_useful_or_partial is not None else "")
+            + (f". {notes}" if notes else "")
+        )[:2000],
+    }
+    sealed["sealed_at"] = _now()
+    # ``resolve=True`` deliberately: the chain recomputes exactly as it does for
+    # a pre-addendum review instance, off the same inputs, and `resolve_outcome`
+    # carries the notes above through.  ADDENDUM 6 grades beside the chain, not
+    # over it.
+    return seal_receipt(sealed)
+
+
+def _lookup_optional(body: Mapping[str, Any], path: str) -> Any:
+    try:
+        return _lookup(body, path)
+    except MatrixCellReceiptError:
+        return None
+
+
 def verify_seal(body: Mapping[str, Any]) -> str:
     """Recompute a sealed receipt's digest and fail closed on a mismatch."""
 
@@ -1135,6 +1364,15 @@ def _stored_parameter_ratio(body: Mapping[str, Any]) -> float | None:
     return float(stored) / float(parent)
 
 
+def _addendum6(body: Mapping[str, Any], field: str) -> Any:
+    """One ADDENDUM 6 reading, or ``None`` on a receipt that carries no verdict."""
+
+    block = body.get("addendum6")
+    if not isinstance(block, Mapping):
+        return None
+    return block.get(field)
+
+
 def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
     """One append-only ledger row: the numbers the renderer needs, and no more."""
 
@@ -1169,6 +1407,18 @@ def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
         "stored_parameter_count": body["solve"].get("stored_parameter_count"),
         "parent_parameter_count": body["solve"].get("parent_parameter_count"),
         "stored_parameter_ratio": _stored_parameter_ratio(body),
+        # ADDENDUM 6.  Four columns, all ``None`` on every row sealed before the
+        # addendum, which is the honest encoding: those cells were never graded
+        # on this axis and were never bound to a storage claim.  The renderer
+        # leads with ``behavior_verdict`` and reads ``token_match_vs_control``
+        # as a diagnostic beside it.
+        "behavior_verdict": _addendum6(body, "verdict"),
+        "behavior_useful_or_partial": _addendum6(body, "useful_or_partial"),
+        "behavior_parent_useful_or_partial": _addendum6(
+            body, "parent_useful_or_partial"
+        ),
+        "storage_bound_ratio": body["solve"].get("storage_bound_ratio"),
+        "storage_bound_satisfied": body["solve"].get("storage_bound_satisfied"),
         "write_heldout_cos": body["boundary"]["write_heldout_cos"],
         "post_operator_heldout_relL2": body["boundary"][
             "post_operator_heldout_relL2"

@@ -1979,7 +1979,11 @@ def t8_gram_relation_technique(request: Any) -> Any:
             kept_ids = fit.kept_channel_ids.to(device=parent.device)
             installed = torch.zeros_like(parent)
             installed[:, kept_ids] = fit.child_weight
-            stored = int(fit.child_weight.numel())
+            # The kept ids are load-bearing: without them the narrow child
+            # weight does not say which columns of the parent-shaped tensor it
+            # occupies.  ADDENDUM 6 §6.2 counts every tensor the child must keep,
+            # index side included, so the selection rides in the count.
+            stored = int(fit.child_weight.numel()) + int(kept_ids.numel())
         else:
             fit = fit_gram_relation_match(
                 parent_output_rows=output,

@@ -624,3 +624,147 @@ are superseded by the site-scoped render, not amended in place; the
 ledger rows they were produced from are untouched and re-render under
 2-S without a re-run.
 
+
+---
+
+## ADDENDUM 6 — 2026-08-11 (Cyril): behaviour-first grading, and a real 4x bar
+
+Wave 4 settled two questions the campaign had been answering wrong, and
+Cyril's ruling reopens phase 1 on both.
+
+**Token match is dead as a gate, as a grade, and as an optimization
+target.** Tokens cannot match through a fold by construction, and the
+campaign now has its own proof: `COMP.MA.RSTO` free-ran at **0.551**
+against the copy_exact control and scored **12 of 15** useful-or-partial
+under the frozen review — *the same score its own parent got in the same
+process on the same prompts* (`NOTES-MX-H` §6). §5 rule 1 read 0.551 and
+said `fail`; the campaign's own authoritative behavioural judge read the
+text and said parent-level. Both are sealed and both are about the same
+child. A metric that calls a parent-band child dead is not a gate.
+
+**Marginal-level results do not prove folding.** The M16-class winners of
+waves 1–3 prove that the *mechanics* work — a component can be replaced
+and the model survives. They prove nothing about compression: at M16 a
+technique whose stored form is a basis plus a solved factor stores
+**more** than the dense tensor it replaced (`NOTES-MX-E` §4.1), and
+`C13.T3.M16.L05`'s sealed 3.28× is the campaign's own worked example.
+A fold that costs storage is not a fold.
+
+### 6.1 Behaviour-first grading (supersedes ADDENDUM 3's grade ladder)
+
+The **primary grade of a cell is the frozen 15-prompt review of the whole
+model with that cell's folded component installed and every other
+component copy_exact.** The review surface is the one wave 4 pinned: the
+digest-pinned V5 protocol `e5e37768…`, the prompt pack's exact byte-form
+`0ee6bf14…`, greedy decoding at the 1,024-token cap, and the parent
+decoded on the same prompts **in the same process** as the control.
+Grading is done on the verbatim text under the protocol's own per-case
+anchors, and is sealed as a separate instance by a review script — a
+runner still may not certify its own behaviour.
+
+Reference bands, both measured on this exact surface:
+
+| reference | useful-or-partial |
+|---|---:|
+| the parent itself, same process, same prompts | **12 / 15** |
+| the sealed A9 child (ADDENDUM 2's band) | **8 / 15** |
+
+Verdicts, in descending order:
+
+- **`alive-parent-band`** — within 2 cases of the parent's own 12/15
+  (i.e. ≥10/15), no degenerate output, coherence smoke coherent, and the
+  emit-zero floor passed. The ±2 is not chosen: it is the same measured
+  reviewer-sensitivity interval ADDENDUM 2 registered for this surface.
+- **`alive-degraded`** — ≥8/15, i.e. at or above the A9 band, but outside
+  the parent's ±2.
+- **`impaired`** — <8/15 but the responses are still coherent, on-task
+  language: the model lost capability without losing its mind.
+- **`dead`** — incoherent output, emit-zero floor failed, or degenerate
+  looping/collapse in the smoke or the review, at any score.
+- **`cannot-express-4x`** — see §6.2. Distinct from `dead`: nothing was
+  measured about the model, because the technique cannot state the
+  component that small.
+
+`token_match_vs_control`, `mean_lcp`, `vs_copy_exact_control_delta`, the
+boundary write/macrocell metrics and the S8 band all remain sealed and
+all remain **diagnostic columns for manual reading**. None of them is an
+eligibility criterion for anything, and no cell is pruned, skipped or
+deprioritized on any of them. In particular, the MLP cells `C11`/`C12`/
+`C13` at token-match 0.31–0.59 were never behaviour-reviewed before this
+addendum, and their exclusion by the old gate is void.
+
+`outcome.status` and `first_divergent_metric` are **not** redefined:
+every receipt sealed before this addendum re-verifies its seal and
+re-computes the same chain it always did. The behaviour verdict rides in
+its own sealed block (`addendum6`) on a review instance, and the renderer
+leads with it.
+
+### 6.2 The X4 proof bar
+
+A claim that technique **T** *folds* component **C** requires, at
+minimum, that the replacement **stores no more than 0.25× that
+component's own parent parameter count**, verified from the actual
+tensor shapes recorded in the receipt.
+
+The stored count covers **every tensor the child must keep** to evaluate
+the component: factors, bases, routes, expansion matrices, retained
+coefficients, per-head blocks and any auxiliary table — the coverage rule
+derived in commit `8d59c4d2` applies with full force, and its
+`installed`/`owned` derivation is unchanged. A technique that installs a
+parent-shaped tensor materialized from a smaller stored form declares
+that smaller form and nothing else; a technique that keeps a tensor it
+did not shrink still stores it.
+
+Levels are therefore extended with a **storage-defined family**, whose
+name is a bound on what is stored rather than a fraction of a width:
+
+| level | bound |
+|---|---|
+| `S2` | stored ≤ 0.5× the component's parent parameters |
+| `S4` | stored ≤ 0.25× — **the X4 proof bar** |
+| `S8` | stored ≤ 0.125× |
+
+The marginal family (`M16`/`M8`/`M4`/`M2`) and the layout-derived `X4`
+are untouched and keep their meaning; `X4` remains "the width the
+canonical exact-4x layout assigns this component", which is a *width*
+and, as waves 1–3 measured, frequently not a 4× *storage* claim at all.
+Where the two disagree, `S4` is the one that supports a folding claim.
+
+The bound is enforced inside the runner, from the receipt's own
+`solve.stored_parameter_count` and `solve.parent_parameter_count`, and
+sealed as `solve.storage_bound_ratio` / `solve.storage_bound_satisfied`.
+A technique×component that cannot express the component at or under the
+bound at any admissible width returns the verdict
+**`cannot-express-4x`**, which is a statement about the technique's
+storage algebra and never about the model's behaviour.
+
+### 6.3 The level ladder, and mixed levels for assembly
+
+A folding claim for the whole model does not require every component at
+the same level. The endgame target is global, so the campaign builds a
+**per-component level ladder**:
+
+- where `S4` is `alive-parent-band` under some technique, **probe `S8`**
+  at that technique and site;
+- where `S4` is `dead` under **every** applicable technique, seal the
+  component's **maximum surviving level** (`S2`, else the deepest
+  marginal level that survives) so the assembly wave knows what that
+  component actually costs;
+- a component whose best surviving level is `S2` and a component that
+  survives `S8` are both legitimate members of one assembly, provided the
+  assembled child hits the global target.
+
+The ladder is the wave's deliverable, and the survivors are the input to
+the assembly wave (compress → test → combine the best → test again).
+
+### 6.4 Protocol, per cell
+
+One component, one technique, one level, one site: solve it, install it
+in the **otherwise-parent** model, run the frozen review and the
+coherence smoke on the **whole** model, seal, append. Never two
+components in one cell — §5 rule 6 is unchanged and ADDENDUM 4's
+composition modes remain the only path to a multi-component claim.
+
+Rule 2-S (ADDENDUM 5) is unchanged and applies to the storage levels
+exactly as it applies to the marginal ones: a level claim is site-scoped,
+always printed with its site set.

@@ -190,6 +190,46 @@ def _generate(
     return records
 
 
+def _expected_digests(receipt: Mapping[str, Any]) -> tuple[dict[str, str], Any]:
+    """The folded tensors this receipt sealed, and the file digest it declared.
+
+    Two receipt shapes reach this script and they seal the same fact in two
+    places.  A **composition** receipt folds many components and lists each
+    one's installed digests under ``composition.components``; a **cell**
+    receipt folds exactly one component and lists its digests under
+    ``solve.installed_tensor_digests`` (ADDENDUM 6, `--save-installed-tensors`).
+    Reading both here is what lets one review surface -- one protocol digest,
+    one prompt pack, one 1,024-token cap, one same-process parent control --
+    grade a composed child and a single-component child on the same terms.
+    That comparability is the whole reason ADDENDUM 6 can put a cell's score
+    beside the parent's 12/15 at all.
+    """
+
+    expected: dict[str, str] = {}
+    composition = receipt.get("composition")
+    if isinstance(composition, Mapping):
+        for entry in composition["components"]:
+            for record in entry["installed_tensor_digests"]:
+                key, _, digest = str(record).partition("=")
+                expected[key] = digest
+        return expected, composition.get("composed_child_tensors_sha256")
+    records = receipt.get("solve", {}).get("installed_tensor_digests")
+    if not isinstance(records, Sequence) or isinstance(records, (str, bytes)):
+        raise FrozenReviewError(
+            f"{receipt['cell_id']} sealed no installed tensor digests, so the "
+            "child it is about cannot be reconstituted.  Re-run the cell with "
+            "--save-installed-tensors."
+        )
+    for record in records:
+        key, _, digest = str(record).partition("=")
+        expected[key] = digest
+    if not expected:
+        raise FrozenReviewError(
+            f"{receipt['cell_id']} sealed an empty installed tensor digest list."
+        )
+    return expected, receipt["solve"].get("installed_tensors_sha256")
+
+
 def _reconstitute(
     *,
     parent_model: Path,
@@ -200,12 +240,7 @@ def _reconstitute(
 ) -> Any:
     """Parent + the sealed folded tensors, proven equal to the sealed child."""
 
-    expected: dict[str, str] = {}
-    for entry in receipt["composition"]["components"]:
-        for record in entry["installed_tensor_digests"]:
-            key, _, digest = str(record).partition("=")
-            expected[key] = digest
-    declared = receipt["composition"].get("composed_child_tensors_sha256")
+    expected, declared = _expected_digests(receipt)
     observed_file = cell_runner._file_sha256(tensors_path)
     if declared is not None and str(declared) != observed_file:
         raise FrozenReviewError(
@@ -258,8 +293,10 @@ def run(args: argparse.Namespace) -> int:
     receipt = json.loads(Path(args.receipt).read_text(encoding="utf-8"))
     verify_seal(receipt)
     cell = CellId.parse(str(receipt["cell_id"]))
-    if cell.kind != "composition":
-        raise FrozenReviewError(f"{cell.text} is not a composed child.")
+    if cell.kind not in ("composition", "cell"):
+        raise FrozenReviewError(
+            f"{cell.text} is neither a composed child nor a component cell."
+        )
 
     dtype = cell_runner._dtype(str(args.dtype))
     tokenizer = cell_runner._load_tokenizer(Path(args.parent_model))
@@ -310,10 +347,34 @@ def run(args: argparse.Namespace) -> int:
         ),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "cell_id": cell.text,
-        "composition_mode": receipt["composition"]["mode"],
-        "composition_variant": receipt["composition"].get("variant"),
+        "cell_kind": cell.kind,
+        "composition_mode": (
+            receipt["composition"]["mode"]
+            if isinstance(receipt.get("composition"), Mapping)
+            else None
+        ),
+        "composition_variant": (
+            receipt["composition"].get("variant")
+            if isinstance(receipt.get("composition"), Mapping)
+            else None
+        ),
+        # ADDENDUM 6 grades the whole model with ONE component folded, so the
+        # dossier says which component and at what storage, or a reader cannot
+        # tell a parent-band cell at 0.25x from a parent-band cell at 3.28x.
+        "component": receipt["component"],
+        "technique": receipt["technique"],
+        "level": receipt["level"],
+        "site": receipt["site"],
+        "stored_parameter_count": receipt["solve"].get("stored_parameter_count"),
+        "parent_parameter_count": receipt["solve"].get("parent_parameter_count"),
+        "storage_bound_ratio": receipt["solve"].get("storage_bound_ratio"),
+        "storage_bound_satisfied": receipt["solve"].get("storage_bound_satisfied"),
+        "token_match_vs_control_diagnostic": receipt["behavior"]["free_run"][
+            "token_match_vs_control"
+        ],
         "receipt_sha256": str(receipt["receipt_sha"]),
         "receipt_path": str(args.receipt),
+        "folded_tensors_path": str(args.composed_tensors),
         "composed_child_tensors_sha256": cell_runner._file_sha256(
             Path(args.composed_tensors)
         ),

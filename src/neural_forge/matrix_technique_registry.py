@@ -67,7 +67,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from .matrix_cell_receipt import COMPONENTS, LEVELS, CellId
+from .matrix_cell_receipt import COMPONENTS, LEVELS, STORAGE_LEVEL_RATIOS, CellId
 
 __all__ = [
     "CellTechnique",
@@ -84,6 +84,8 @@ __all__ = [
     "resolve_level_width",
     "sealable_report",
     "sealable_solve_number",
+    "storage_model",
+    "storage_width_for_ratio",
 ]
 
 
@@ -357,6 +359,22 @@ def resolve_level_width(
         raise CellTechniqueError(
             f"{spec.component_id} is not diagonal; NA is not a level for it."
         )
+    if level in STORAGE_LEVEL_RATIOS:
+        # ADDENDUM 6: an S level is a bound on what is *stored*, so the width
+        # that satisfies it is a function of the technique's storage algebra and
+        # cannot be read off the component alone.  The caller resolves it (with
+        # `storage_width_for_ratio`) and passes it in; the runner then checks
+        # the realized count against the bound, so a wrong width is caught by a
+        # measurement rather than trusted from a formula.
+        if x4_width is None:
+            raise CellTechniqueError(
+                f"Level {level} bounds STORAGE, not width: pass the width whose "
+                "stored form satisfies "
+                f"{STORAGE_LEVEL_RATIOS[level]}x of "
+                f"{spec.component_id}'s {spec.parent_parameter_count} parent "
+                "parameters (see storage_width_for_ratio)."
+            )
+        return int(x4_width)
     if level == "X4":
         if x4_width is not None:
             return int(x4_width)
@@ -375,6 +393,138 @@ def resolve_level_width(
             "which is not a contraction."
         )
     return width
+
+
+# --------------------------------------------------------------------------
+# ADDENDUM 6: what a technique STORES, as a function of the width it is given
+# --------------------------------------------------------------------------
+#
+# ADDENDUM 6 §6.2 puts a bound on stored parameters where the design had a
+# fraction of a width, and the two are not the same statement: `C13.T3.M16.L05`
+# contracts the width to 15/16 and stores 3.28x the tensor it replaced.  To ask
+# "what width does this technique need in order to store a quarter", the
+# campaign has to know each technique's storage algebra *before* it spends a
+# GPU-hour finding out.
+#
+# These models are the algebra, written once, and they are checked two ways:
+# `tests/test_matrix_technique_registry.py` pins them against sealed receipts
+# from waves 1-3, and the runner re-checks the realized count against the bound
+# after the solve.  A model is a planning aid; the receipt is the proof.  Where
+# they disagree the receipt wins and the cell fails its bound.
+
+
+def _factor_pair_storage(spec: "ComponentSpec", width: int) -> int:
+    """``r * (in + out)`` -- a basis on one axis plus a solved factor.
+
+    T1, T2, T3 and T4 all store exactly this: one ``w x r`` basis (POD,
+    balanced, chart encoder or SVD factor) and one solved ``r x w'`` factor.
+    It is why `NOTES-MX-E` §4.1's break-even is ``r < w/2`` on a square
+    component and why every marginal level above M2 costs storage there.
+    """
+
+    return int(width) * (
+        int(spec.parent_input_width) + int(spec.parent_output_width)
+    )
+
+
+def _t5_route_storage(spec: "ComponentSpec", width: int, *, active_k: int = 8) -> int:
+    """T5's sparse-route storage, index side included.
+
+    A route is not just its coefficients.  A ``writer`` keeps the narrow child
+    weight **and the kept-channel ids** it indexes with; a ``reader`` keeps the
+    narrow child weight **and the CSR triple** -- offsets, support ids and
+    coefficients -- that the dense ``expansion_route`` is materialized from.
+    Counting only the coefficient values is the same class of error commit
+    `8d59c4d2` found in the composition accounting, one level down.
+    """
+
+    keep = int(width)
+    if spec.contraction_axis == "input":  # writer: installed[:, kept] = child
+        return keep * int(spec.parent_output_width) + keep
+    # reader: child is (kept x in), plus the CSR route over the output axis.
+    dropped = max(int(spec.parent_output_width) - keep, 0)
+    edges = dropped * int(active_k)
+    offsets = int(spec.parent_output_width) + 1
+    return keep * int(spec.parent_input_width) + 2 * edges + offsets
+
+
+def _t8_storage(spec: "ComponentSpec", width: int) -> int:
+    """T8 stores a narrow writer (plus its ids) or a rank-``r`` factor pair."""
+
+    if spec.contraction_axis == "input":
+        return int(width) * int(spec.parent_output_width) + int(width)
+    return _factor_pair_storage(spec, width)
+
+
+def _conv_fir_storage(spec: "ComponentSpec", width: int) -> int:
+    """C04: the FIR taps themselves, ``channels x kept_taps``."""
+
+    return int(spec.parent_output_width) * int(width)
+
+
+#: technique id -> ``(spec, width) -> stored parameters``.  A technique with no
+#: entry has no published storage algebra and cannot be planned at an S level
+#: without one; that is a refusal, not a guess.
+_STORAGE_MODELS: Mapping[str, Callable[["ComponentSpec", int], int]] = {
+    "T1": _factor_pair_storage,
+    "T2": _factor_pair_storage,
+    "T3": _factor_pair_storage,
+    "T4": _factor_pair_storage,
+    "T5": _t5_route_storage,
+    "T8": _t8_storage,
+}
+
+#: Per-component overrides: C04's kernel is FIR taps, not a matrix
+#: factorization, so T1 at C04 stores something T1 elsewhere does not.
+_STORAGE_MODELS_BY_COMPONENT: Mapping[
+    tuple[str, str], Callable[["ComponentSpec", int], int]
+] = {
+    ("T1", "C04"): _conv_fir_storage,
+}
+
+
+def storage_model(
+    technique: str, component: str
+) -> Callable[["ComponentSpec", int], int]:
+    """Most-specific-wins storage algebra for one technique at one component."""
+
+    found = _STORAGE_MODELS_BY_COMPONENT.get((technique, component))
+    if found is not None:
+        return found
+    found = _STORAGE_MODELS.get(technique)
+    if found is None:
+        raise CellTechniqueError(
+            f"Technique {technique!r} publishes no storage model, so its width "
+            "for a storage-bounded level cannot be planned.  Register one in "
+            "matrix_technique_registry._STORAGE_MODELS."
+        )
+    return found
+
+
+def storage_width_for_ratio(
+    spec: "ComponentSpec",
+    technique: str,
+    ratio: float,
+    *,
+    minimum_width: int = 1,
+) -> int | None:
+    """The widest width whose stored form fits ``ratio`` x the parent, or ``None``.
+
+    ``None`` is ADDENDUM 6's ``cannot-express-4x``: there is no admissible width
+    at which this technique stores the component that small, so no cell is run
+    and no behavioural claim is made.  Searched rather than inverted because a
+    storage model is allowed to be non-affine (T5's route term shrinks as the
+    kept width grows), and a search over at most a few thousand integers costs
+    nothing beside a solve.
+    """
+
+    model = storage_model(technique, spec.component_id)
+    budget = float(ratio) * float(spec.parent_parameter_count)
+    best: int | None = None
+    for width in range(int(minimum_width), int(spec.own_width)):
+        if float(model(spec, width)) <= budget:
+            best = width
+    return best
 
 
 # --------------------------------------------------------------------------

@@ -68,6 +68,7 @@ import torch  # noqa: E402
 
 from neural_forge.matrix_cell_receipt import (  # noqa: E402
     CONTROL_CELL_ID,
+    STORAGE_LEVEL_RATIOS,
     CellId,
     MatrixCellReceiptError,
     append_ledger,
@@ -87,6 +88,7 @@ from neural_forge.matrix_technique_registry import (  # noqa: E402
     register,
     resolve,
     resolve_level_width,
+    storage_width_for_ratio,
     validate_result,
 )
 
@@ -1460,7 +1462,39 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fit-batch-limit", type=int)
     parser.add_argument("--heldout-batch-limit", type=int)
     # technique knobs
-    parser.add_argument("--x4-width", type=int)
+    parser.add_argument(
+        "--x4-width",
+        type=int,
+        help=(
+            "The stored width for a level the registry refuses to guess.  For "
+            "X4 that is the canonical exact-4x layout's width for this "
+            "component; for ADDENDUM 6's S2/S4/S8 it is the width whose stored "
+            "form fits the level's storage bound (see --plan-storage-width, "
+            "which computes it and exits)."
+        ),
+    )
+    parser.add_argument(
+        "--plan-storage-width",
+        action="store_true",
+        help=(
+            "Print the widest width satisfying this cell's storage bound and "
+            "exit without running anything.  Prints nothing and exits 3 when "
+            "the technique cannot express the component at the bound "
+            "(ADDENDUM 6's cannot-express-4x)."
+        ),
+    )
+    parser.add_argument(
+        "--save-installed-tensors",
+        action="store_true",
+        help=(
+            "Persist the folded tensors beside the receipt as "
+            "installed-tensors.pt, with per-key digests sealed under "
+            "solve.installed_tensor_digests.  ADDENDUM 6 grades the WHOLE "
+            "model with this component installed, and the frozen review is a "
+            "separate process that has to be able to reconstitute exactly the "
+            "child this receipt is about."
+        ),
+    )
     parser.add_argument(
         "--knobs",
         type=Path,
@@ -1801,6 +1835,28 @@ def run(args: argparse.Namespace) -> int:
             solve_block.update(dict(result.solve))
             solve_block["stored_parameter_count"] = int(result.stored_parameter_count)
             solve_block["parent_parameter_count"] = int(spec.parent_parameter_count)
+            solve_block.update(
+                _storage_bound_block(
+                    level=cell.level,
+                    stored=int(result.stored_parameter_count),
+                    parent=int(spec.parent_parameter_count),
+                    level_width=int(level_width),
+                )
+            )
+            if solve_block.get("storage_bound_satisfied") is False:
+                # ADDENDUM 6 §6.2.  The solve happened, so the numbers that
+                # prove the miss are sealed -- but this cell is not the storage
+                # claim its level names, and installing it would produce a
+                # behavioural reading nobody may quote as a 4x result.  The
+                # refusal is a technique statement, never a model one.
+                raise CellTechniqueError(
+                    f"{cell.text} stores {result.stored_parameter_count} "
+                    f"against a bound of "
+                    f"{solve_block['storage_bound_parameters']} "
+                    f"({solve_block['storage_bound_ratio']}x of "
+                    f"{spec.parent_parameter_count} parent parameters) at width "
+                    f"{level_width}: cannot-express-4x at this width."
+                )
 
             watchdog.stage("boundary")
             predict = result.predict or (
@@ -1902,6 +1958,31 @@ def run(args: argparse.Namespace) -> int:
             diagnostics["write_metrics"] = write_metrics
             diagnostics["macrocell_metrics"] = macro_metrics
             _install_component(model, result.installed_weights)
+            if args.save_installed_tensors:
+                # Persisted from the model's own state dict, after the install,
+                # in the dtype the child actually runs in -- not from the
+                # technique's float64 return.  The frozen review reconstitutes
+                # the child in a separate process and refuses unless every
+                # digest matches, so a digest taken over anything other than
+                # the installed tensor would make that check unsatisfiable.
+                state = model.state_dict()
+                saved = {
+                    key: state[key].detach().to(device="cpu").clone()
+                    for key in sorted(result.installed_weights)
+                }
+                tensors_path = output / "installed-tensors.pt"
+                torch.save(saved, tensors_path)
+                solve_block["installed_tensor_digests"] = [
+                    f"{key}={_tensor_sha256(value)}"
+                    for key, value in sorted(saved.items())
+                ]
+                solve_block["installed_tensors_sha256"] = _file_sha256(tensors_path)
+                _log(
+                    f"installed tensors saved: {len(saved)} keys -> "
+                    f"{tensors_path.name} "
+                    f"({solve_block['installed_tensors_sha256'][:16]})"
+                )
+                receipt["solve"] = solve_block
 
         # ------------------------------------------------------------------
         # behavior: identical for every cell kind
@@ -2096,6 +2177,78 @@ def run(args: argparse.Namespace) -> int:
     return 0 if sealed["outcome"]["status"] in ("pass", "pending-review") else 1
 
 
+def _storage_bound_block(
+    *,
+    level: str,
+    stored: int,
+    parent: int,
+    level_width: int,
+) -> dict[str, Any]:
+    """ADDENDUM 6 §6.2's bound, evaluated against the numbers the solve produced.
+
+    Sealed for **every** cell, not only the storage-levelled ones: a marginal
+    cell's ``storage_bound_ratio`` is null because it made no storage claim,
+    and that null is the honest reading -- it is different from a cell that
+    claimed a quarter and missed.  The realized ratio itself is already in the
+    ledger for both.
+    """
+
+    ratio = STORAGE_LEVEL_RATIOS.get(str(level))
+    realized = None if parent <= 0 else float(stored) / float(parent)
+    if ratio is None:
+        return {
+            "storage_bound_ratio": None,
+            "storage_bound_parameters": None,
+            "storage_bound_satisfied": None,
+            "storage_realized_ratio": realized,
+            "storage_level_width": int(level_width),
+        }
+    budget = int(float(ratio) * float(parent))
+    return {
+        "storage_bound_ratio": float(ratio),
+        "storage_bound_parameters": budget,
+        "storage_bound_satisfied": bool(int(stored) <= budget),
+        "storage_realized_ratio": realized,
+        "storage_level_width": int(level_width),
+    }
+
+
+def _plan_storage_width(args: argparse.Namespace) -> int:
+    """Print the widest width satisfying an S level's bound, then exit.
+
+    Costs one parent *shape* read and no GPU: the storage algebra is a function
+    of geometry, so the campaign can find out that a technique cannot express a
+    component at a quarter before it queues a twenty-minute solve for it.
+    """
+
+    cell = CellId.parse(args.cell_id)
+    ratio = STORAGE_LEVEL_RATIOS.get(cell.level)
+    if ratio is None:
+        raise MatrixCellRunError(
+            f"--plan-storage-width needs a storage level; {cell.level} is not "
+            f"one of {sorted(STORAGE_LEVEL_RATIOS)}."
+        )
+    spec = component_spec(cell, _parent_shapes(Path(args.parent_model)))
+    width = storage_width_for_ratio(spec, cell.technique, float(ratio))
+    if width is None:
+        _log(
+            f"{cell.text}: cannot-express-4x -- no width in 1..{spec.own_width} "
+            f"stores <= {ratio}x of {spec.parent_parameter_count} parameters "
+            f"under {cell.technique}'s storage model."
+        )
+        return 3
+    from neural_forge.matrix_technique_registry import storage_model
+
+    stored = storage_model(cell.technique, cell.component)(spec, width)
+    _log(
+        f"{cell.text}: width {width} of {spec.own_width} stores {stored} "
+        f"({stored / spec.parent_parameter_count:.6f}x of "
+        f"{spec.parent_parameter_count}, bound {ratio}x)"
+    )
+    print(int(width))
+    return 0
+
+
 def _storage_note(solve: Mapping[str, Any]) -> str:
     """The one line `NOTES-MX-E` §4.1 says every cell should have carried.
 
@@ -2242,7 +2395,10 @@ def _dossier_responses(body: Mapping[str, Any]) -> dict[str, str]:
 
 
 def main() -> int:
-    return run(_parser().parse_args())
+    arguments = _parser().parse_args()
+    if arguments.plan_storage_width:
+        return _plan_storage_width(arguments)
+    return run(arguments)
 
 
 if __name__ == "__main__":

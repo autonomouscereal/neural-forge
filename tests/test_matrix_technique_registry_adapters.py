@@ -223,7 +223,16 @@ def test_t5_writer_cell_installs_a_functionally_identical_parent_shape():
     installed = result.installed_weights[key]
     assert installed.shape == request.parent_weights[key].shape
     kept = int(request.level_width)
-    assert result.stored_parameter_count == HIDDEN * kept
+    # ADDENDUM 6 6.2: the narrow child weight AND the kept-channel ids it is
+    # index_select-ed by.  The ids are what make the narrow weight mean
+    # anything, so a stored count that omitted them would understate the fold
+    # -- the same class of error commit 8d59c4d2 found in the composition
+    # accounting, one level down.
+    assert result.stored_parameter_count == HIDDEN * kept + kept
+    assert result.solve["stored_parameter_terms"] == {
+        "child_weight": HIDDEN * kept,
+        "kept_channel_ids": kept,
+    }
     # Exactly ``level_width`` input columns survive; the rest are zero, which is
     # what makes "the child gathers the kept channels" and "the parent-shaped
     # tensor" the same function.
@@ -243,9 +252,14 @@ def test_t5_reader_cell_composes_the_route_into_the_parent_shape():
     installed = result.installed_weights[key]
     assert installed.shape == (INTERMEDIATE, HIDDEN)
     kept = int(request.level_width)
-    assert result.stored_parameter_count == kept * HIDDEN + int(
-        result.solve["route_support_entries"]
-    )
+    # The route's index side counts: a CSR triple is offsets + support ids +
+    # coefficients, and a child that kept only the coefficients could not say
+    # where any of them go (ADDENDUM 6 6.2).
+    terms = result.solve["stored_parameter_terms"]
+    assert terms["child_weight"] == kept * HIDDEN
+    assert terms["route_coefficients"] == int(result.solve["route_support_entries"])
+    assert terms["route_support_ids"] == int(result.solve["route_support_entries"])
+    assert result.stored_parameter_count == sum(terms.values())
     rows = request.evidence.fit_rows(request.component.input_endpoint)
     assert torch.allclose(
         result.predict(rows), rows @ installed.transpose(0, 1), atol=1e-9
@@ -272,10 +286,11 @@ def test_t5_conv_in_proj_shares_one_route_across_the_three_blocks():
     key = request.component.weight_keys[0]
     installed = result.installed_weights[key]
     assert installed.shape == (3 * HIDDEN, HIDDEN)
-    assert result.stored_parameter_count == (
-        result.solve["kept_width"] * 3 * HIDDEN
-        + int(result.solve["route_support_entries"])
-    )
+    terms = result.solve["stored_parameter_terms"]
+    assert terms["child_weight"] == result.solve["kept_width"] * 3 * HIDDEN
+    assert terms["route_coefficients"] == int(result.solve["route_support_entries"])
+    assert terms["route_support_ids"] == int(result.solve["route_support_entries"])
+    assert result.stored_parameter_count == sum(terms.values())
 
 
 def test_t5_refuses_a_component_axis_it_cannot_route():
@@ -362,7 +377,8 @@ def test_t8_input_axis_cell_installs_a_contracted_writer():
     installed = result.installed_weights[key]
     assert installed.shape == (HIDDEN, HIDDEN)
     kept = int(request.level_width)
-    assert result.stored_parameter_count == HIDDEN * kept
+    # Same rule as T5's writer: the kept ids are stored, not free.
+    assert result.stored_parameter_count == HIDDEN * kept + kept
     assert int((installed.abs().sum(dim=0) > 0).sum().item()) == kept
     assert result.solve["row_weighting"] == "inverse-parent-row-norm-squared"
 

@@ -1,6 +1,6 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-11T00:29:01+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-11T13:29:45+00:00 from `C:\Users\cereal\Documents\ai training\neural-forge\reports\matrix-campaign-20260810\ledger.jsonl`.
 
 **92 cells sealed** (202 ledger rows including re-runs); newest seal 2026-08-11T00:27:06.704+00:00.
 
@@ -9,6 +9,12 @@ Rendered 2026-08-11T00:29:01+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
 | `fail` | 73 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 1 | calibration refused the cell -- void, not evidence |
+
+## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
+
+ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **whole model** with that cell's component folded and every other component copy_exact, scored against the parent's own 12/15 on the same surface in the same process.  `token_match_vs_control` is a diagnostic column here and gates nothing -- wave 4 sealed a child at 0.551 token match and 12/15, the parent's own band.
+
+_(no cell has been behaviour-reviewed under ADDENDUM 6 yet)_
 
 ## 1. The matrix
 
@@ -41,41 +47,41 @@ Rows are components, columns are techniques.  A position shows the deepest level
 
 ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites S*, where S is exactly the set of sites with a sealed passing receipt at L **and at every shallower level attempted at that site**.  The claim is never printed without its site set; the `good/attempted` count survives as a breadth annotation, never as the licence for an unqualified claim.  (This supersedes §5 rule 2, whose site-blind reading `NOTES-MX-G` §4.6 showed to be ambiguous.)
 
-| component | technique | M16 | M8 | M4 | M2 | X4 | verdict (site-scoped) |
-|---|---|---|---|---|---|---|---|
-| C01 | T5 | . | . | . | . | 0/1 | fails at free-run |
-| C03 | T5 | 0/1 | . | . | . | . | fails at composition |
-| C04 | T1 | 0/1 | . | . | 0/1 | . | fails at composition |
-| C05 | T1 | 0/3 | 0/1 | . | 0/1 | 0/1 | fails at composition |
-| C05 | T2 | 0/1 | . | . | . | . | fails at composition |
-| C05 | T3 | 0/3 | 0/1 | 0/1 | 0/1 | 0/1 | fails at composition |
-| C05 | T4 | 0/1 | . | . | . | . | fails at local-solve |
-| C05 | T5 | 0/3 | 0/1 | . | . | . | fails at composition |
-| C05 | T8 | 0/1 | . | . | . | . | fails at composition |
-| C05 | T9 | . | 0/1 | 0/1 | . | . | fails at composition |
-| C06 | T1 | 3/3 L02,L08,L12 | 3/3 L02,L08,L12 | 0/1 | 0/1 | 1/3 L12 | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M8; L08:M8 |
-| C06 | T5 | 1/2 L12 | . | . | . | . | works to M16 at L12 (1/2 sites) |
-| C06 | T7 | 1/3 L02 | 1/1 L02 | 0/1 | . | . | works to M8 at L02 (1/3 sites) |
-| C07 | T1 | 3/3 L02,L08,L12 | 2/3 L08,L12 | 0/1 | 0/1 | 1/2 L12 | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M16; L08:M8 |
-| C08 | T1 | 0/1 | 0/1 | 0/1 | . | . | fails at composition |
-| C08 | T3 | 0/1 | . | . | . | . | void (infra) -- no evidence |
-| C08 | T5 | 0/1 | . | . | . | . | fails at composition |
-| C09 | T1 | 0/2 | 0/1 | 0/1 | . | . | fails at composition |
-| C09 | T2 | 0/1 | . | . | . | . | fails at free-run |
-| C09 | T3 | 0/1 | 0/1 | . | . | 0/1 | fails at composition |
-| C09 | T4 | 0/1 | . | . | . | . | fails at local-solve |
-| C09 | T5 | 0/1 | . | . | . | . | fails at composition |
-| C09 | T8 | 0/1 | . | . | . | . | fails at composition |
-| C10 | T1 | 0/1 | 0/1 | . | . | . | fails at composition |
-| C11 | T5 | 0/1 | . | . | . | . | fails at composition |
-| C12 | T5 | 0/1 | . | . | . | . | fails at composition |
-| C13 | T1 | 0/3 | . | . | . | . | fails at composition |
-| C13 | T2 | 0/1 | . | . | . | . | fails at composition |
-| C13 | T3 | 0/2 | 0/1 | 0/1 | . | . | fails at composition |
-| C13 | T5 | 0/3 | . | . | . | . | fails at composition |
-| C13 | T8 | 0/1 | . | . | . | . | fails at composition |
-| C14 | T1 | . | . | . | . | . | works at NA (no level axis) at L00 (1/1 sites) |
-| COMP | composition | . | . | . | . | . | fails at composition |
+| component | technique | M16 | M8 | M4 | M2 | X4 | S2 | S4 | S8 | verdict (site-scoped) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| C01 | T5 | . | . | . | . | 0/1 | . | . | . | fails at free-run |
+| C03 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C04 | T1 | 0/1 | . | . | 0/1 | . | . | . | . | fails at composition |
+| C05 | T1 | 0/3 | 0/1 | . | 0/1 | 0/1 | . | . | . | fails at composition |
+| C05 | T2 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C05 | T3 | 0/3 | 0/1 | 0/1 | 0/1 | 0/1 | . | . | . | fails at composition |
+| C05 | T4 | 0/1 | . | . | . | . | . | . | . | fails at local-solve |
+| C05 | T5 | 0/3 | 0/1 | . | . | . | . | . | . | fails at composition |
+| C05 | T8 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C05 | T9 | . | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
+| C06 | T1 | 3/3 L02,L08,L12 | 3/3 L02,L08,L12 | 0/1 | 0/1 | 1/3 L12 | . | . | . | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M8; L08:M8 |
+| C06 | T5 | 1/2 L12 | . | . | . | . | . | . | . | works to M16 at L12 (1/2 sites) |
+| C06 | T7 | 1/3 L02 | 1/1 L02 | 0/1 | . | . | . | . | . | works to M8 at L02 (1/3 sites) |
+| C07 | T1 | 3/3 L02,L08,L12 | 2/3 L08,L12 | 0/1 | 0/1 | 1/2 L12 | . | . | . | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M16; L08:M8 |
+| C08 | T1 | 0/1 | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
+| C08 | T3 | 0/1 | . | . | . | . | . | . | . | void (infra) -- no evidence |
+| C08 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C09 | T1 | 0/2 | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
+| C09 | T2 | 0/1 | . | . | . | . | . | . | . | fails at free-run |
+| C09 | T3 | 0/1 | 0/1 | . | . | 0/1 | . | . | . | fails at composition |
+| C09 | T4 | 0/1 | . | . | . | . | . | . | . | fails at local-solve |
+| C09 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C09 | T8 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C10 | T1 | 0/1 | 0/1 | . | . | . | . | . | . | fails at composition |
+| C11 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C12 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C13 | T1 | 0/3 | . | . | . | . | . | . | . | fails at composition |
+| C13 | T2 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C13 | T3 | 0/2 | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
+| C13 | T5 | 0/3 | . | . | . | . | . | . | . | fails at composition |
+| C13 | T8 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C14 | T1 | . | . | . | . | . | . | . | . | works at NA (no level axis) at L00 (1/1 sites) |
+| COMP | composition | . | . | . | . | . | . | . | . | fails at composition |
 
 ## 3. Failure classes
 
