@@ -1,0 +1,394 @@
+{
+  "cell_id": "C13.T3.M16.L13",
+  "cell_instance_id": "edecf954d11b4eb69bb389056abadd7f",
+  "compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+  "device": "cuda:0",
+  "dtype": "float32",
+  "macrocell_metrics": {
+    "aggregate_relative_l2": 0.02718351636362014,
+    "mean_cosine": 0.9995737028883871,
+    "mean_norm_ratio": 0.9997660350201075,
+    "mean_relative_l2": 0.025432950299837602,
+    "median_relative_l2": 0.020623619978475782,
+    "rows": 1584
+  },
+  "over_target": false,
+  "parent_state_keys": 133,
+  "probe_prompts": 8,
+  "registry": {
+    "entries": [
+      {
+        "callable": "t1_dense_prior_anchored_ridge",
+        "component": null,
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "T1"
+      },
+      {
+        "callable": "c04_fir_tap_contraction_technique",
+        "component": "C04",
+        "module": "neural_forge.matrix_technique_conv_fir",
+        "technique": "T1"
+      },
+      {
+        "callable": "c10_head_drop_technique",
+        "component": "C10",
+        "module": "neural_forge.matrix_technique_head_drop",
+        "technique": "T1"
+      },
+      {
+        "callable": "t1_standalone_norm_refit",
+        "component": "C14",
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "T1"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "_a9_token_route",
+        "component": "C01",
+        "module": "__main__",
+        "technique": "T5"
+      },
+      {
+        "callable": "_a9_token_route",
+        "component": "C02",
+        "module": "__main__",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t7_attention_relation_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T7"
+      },
+      {
+        "callable": "t7_attention_relation_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T7"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "copy_exact_technique",
+        "component": null,
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "copy_exact"
+      }
+    ],
+    "schema": "neural-forge-matrix-technique-registry-v1"
+  },
+  "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+  "smoke_prompts": 3,
+  "target_seconds": 720.0,
+  "technique_modules": {
+    "matrix_technique_body_routes": "imported",
+    "matrix_technique_charts": "imported",
+    "matrix_technique_conv_fir": "imported",
+    "matrix_technique_head_drop": "imported",
+    "matrix_technique_lowrank_writers": "imported",
+    "matrix_technique_progressive": "imported",
+    "matrix_technique_relation_matching": "imported"
+  },
+  "terminal_metrics": {
+    "aggregate_relative_l2": 0.049261986348969236,
+    "mean_cosine": 0.9988539791897415,
+    "mean_norm_ratio": 1.000015602556679,
+    "mean_relative_l2": 0.04641528304241699,
+    "median_relative_l2": 0.042431547928526325,
+    "rows": 8
+  },
+  "wall_time_seconds": 160.57894473406486,
+  "write_metrics": {
+    "aggregate_relative_l2": 0.0675210238373285,
+    "mean_cosine": 0.9977430396693934,
+    "mean_norm_ratio": 0.9983675214422933,
+    "mean_relative_l2": 0.06278683182961194,
+    "median_relative_l2": 0.05815061090229327,
+    "rows": 1584
+  }
+}
