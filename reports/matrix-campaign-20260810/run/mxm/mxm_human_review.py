@@ -127,16 +127,26 @@ def recipe_table(receipt: dict) -> str:
     removed = int(storage["parent_parameter_count"]) - int(
         storage["child_parameter_count"]
     )
+    folds_embedding = any(
+        str(entry["component_id"]) == "C01" for entry in composition["components"]
+    )
     lines.append("")
+    tail = (
+        "The tied embedding table \u2014 67,108,864 parameters, **29.2% of the "
+        "parent** \u2014 is folded here, which is why this net number moves as far "
+        "as it does.  Waves 1-8 could not touch it and were bounded at "
+        "0.469\u00d7 even with the whole body at a true quarter."
+        if folds_embedding
+        else "The net whole-model number is larger than any per-component number "
+        "because the 67,108,864-parameter tied embedding table (29.2% of the "
+        "parent) is untouched by every component in this recipe."
+    )
     lines.append(
-        f"**Net whole-model stored ratio {float(storage['net_ratio']):.6f}×** — "
-        f"{int(storage['child_parameter_count']):,} unique parameters against the "
-        f"parent's {int(storage['parent_parameter_count']):,} "
-        f"(**−{removed:,}**).  Every folded component above stores at or below a "
-        "true quarter (S4) or eighth (S8) of its own parent tensor; the net "
-        "whole-model number is larger than any per-component number because the "
-        "67,108,864-parameter tied embedding table (29.2% of the parent) is "
-        "untouched by every component in the matrix."
+        f"**Net whole-model stored ratio {float(storage['net_ratio']):.6f}\u00d7** "
+        f"\u2014 {int(storage['child_parameter_count']):,} unique parameters against "
+        f"the parent's {int(storage['parent_parameter_count']):,} "
+        f"(**\u2212{removed:,}**).  Every folded component above stores at or below "
+        "a true quarter (S4) or eighth (S8) of its own parent tensor.  " + tail
     )
     return "\n".join(lines) + "\n"
 
@@ -187,7 +197,8 @@ def build_child(cell: str, wave: str, out_root: Path) -> None:
     body.append("")
     body.append(
         f"**Net stored ratio {float(composition['storage']['net_ratio']):.6f}× · "
-        f"{len(composition['components'])} folded components · "
+        f"{len(composition['components'])} folded "
+        f"component{'' if len(composition['components']) == 1 else 's'} · "
         f"machine verdict `{block['verdict']}` · "
         f"{block['useful_or_partial']}/15 useful-or-partial against the parent's "
         f"{block['parent_useful_or_partial']}/15**"

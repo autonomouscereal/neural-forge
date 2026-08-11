@@ -1,6 +1,6 @@
 # COMP.MA.MXM6 — human review
 
-**Net stored ratio 0.780861× · 1 folded components · machine verdict `dead` · 9/15 useful-or-partial against the parent's 12/15**
+**Net stored ratio 0.780861× · 1 folded component · machine verdict `dead` · 9/15 useful-or-partial against the parent's 12/15**
 
 > The verdict and the count below are ANNOTATIONS.  ADDENDUM 8 makes retained coherence the success criterion and accuracy the tie-break, and the decision about whether this is a good enough fold-init is Cyril's, not the machine's.  Every response is reproduced in full and unedited.
 
@@ -10,7 +10,7 @@
 |---:|---|---|---|---|---:|---:|---:|---:|
 | 1 | `C01.T5.S4` | token_interface_in | S4 | GLOBAL | 77 | 16,774,144 | 67,108,864 | **0.249954** |
 
-**Net whole-model stored ratio 0.780861×** — 179,358,464 unique parameters against the parent's 229,693,184 (**−50,334,720**).  Every folded component above stores at or below a true quarter (S4) or eighth (S8) of its own parent tensor; the net whole-model number is larger than any per-component number because the 67,108,864-parameter tied embedding table (29.2% of the parent) is untouched by every component in the matrix.
+**Net whole-model stored ratio 0.780861×** — 179,358,464 unique parameters against the parent's 229,693,184 (**−50,334,720**).  Every folded component above stores at or below a true quarter (S4) or eighth (S8) of its own parent tensor.  The tied embedding table — 67,108,864 parameters, **29.2% of the parent** — is folded here, which is why this net number moves as far as it does.  Waves 1-8 could not touch it and were bounded at 0.469× even with the whole body at a true quarter.
 
 
 Install order: C01.T5.S4

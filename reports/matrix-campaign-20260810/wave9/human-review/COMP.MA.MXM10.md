@@ -14,7 +14,7 @@
 | 4 | `C07.T5.S4.L12` | attn_k | S4 | L12 | 121 | 130,552 | 524,288 | **0.249008** |
 | 5 | `C01.T5.S4` | token_interface_in | S4 | GLOBAL | 77 | 16,774,144 | 67,108,864 | **0.249954** |
 
-**Net whole-model stored ratio 0.753440×** — 173,059,959 unique parameters against the parent's 229,693,184 (**−56,633,225**).  Every folded component above stores at or below a true quarter (S4) or eighth (S8) of its own parent tensor; the net whole-model number is larger than any per-component number because the 67,108,864-parameter tied embedding table (29.2% of the parent) is untouched by every component in the matrix.
+**Net whole-model stored ratio 0.753440×** — 173,059,959 unique parameters against the parent's 229,693,184 (**−56,633,225**).  Every folded component above stores at or below a true quarter (S4) or eighth (S8) of its own parent tensor.  The tied embedding table — 67,108,864 parameters, **29.2% of the parent** — is folded here, which is why this net number moves as far as it does.  Waves 1-8 could not touch it and were bounded at 0.469× even with the whole body at a true quarter.
 
 
 Install order: C11.T8.S4.L05 → C12.T8.S4.L05 → C13.T8.S4.L05 → C07.T5.S4.L12 → C01.T5.S4
