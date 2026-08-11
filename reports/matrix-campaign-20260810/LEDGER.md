@@ -1,14 +1,14 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-11T14:23:58+00:00 from `C:\Users\cereal\Documents\ai training\neural-forge\reports\matrix-campaign-20260810\ledger.jsonl`.
+Rendered 2026-08-11T15:48:53+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**110 cells sealed** (235 ledger rows including re-runs); newest seal 2026-08-11T14:20:43.864+00:00.
+**150 cells sealed** (322 ledger rows including re-runs); newest seal 2026-08-11T15:46:57.742+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 87 | crossed a chain threshold; see first_divergent_metric |
-| `infra` | 5 | calibration refused the cell -- void, not evidence |
+| `fail` | 119 | crossed a chain threshold; see first_divergent_metric |
+| `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
 
@@ -16,27 +16,106 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 
 | verdict | cells | meaning |
 |---|---:|---|
-| `alive-parent-band` | 7 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
-| `alive-degraded` | 1 | >= the A9 band of 8/15, outside the parent's +/-2 |
-| `dead` | 1 | incoherent, emit-zero floor failed, or degenerate output |
+| `alive-parent-band` | 28 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
+| `alive-degraded` | 14 | >= the A9 band of 8/15, outside the parent's +/-2 |
+| `impaired` | 2 | < 8/15 but still coherent, on-task language |
+| `dead` | 8 | incoherent, emit-zero floor failed, or degenerate output |
+| `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
 |---|---|---|---:|---|---|---:|---:|---|---:|
+| `C03.T8.S4.L00` | L00 | S4 | 0.2500 | 0.250 ok | **dead** | 0/15 | 12 | pending | 0.0078 |
+| `C05.T1.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
+| `C05.T2.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
+| `C05.T3.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 12/15 | 12 | coherent | 0.2148 |
+| `C05.T4.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 12/15 | 12 | coherent | 0.2090 |
+| `C05.T5.S4.L05` | L05 | S4 | 0.2493 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1602 |
+| `C05.T8.S4.L05` | L05 | S4 | 0.2493 | 0.250 ok | **alive-parent-band** | 12/15 | 12 | coherent | 0.1562 |
+| `C06.T1.S4.L12` | L12 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.2363 |
+| `C06.T2.S4.L12` | L12 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.2363 |
+| `C06.T5.S4.L12` | L12 | S4 | 0.2490 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.3613 |
+| `C06.T8.S4.L12` | L12 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.2363 |
+| `C07.T1.S4.L12` | L12 | S4 | 0.2490 | 0.250 ok | **alive-parent-band** | 11/15 | 12 | coherent | 0.4141 |
+| `C07.T2.S4.L12` | L12 | S4 | 0.2490 | 0.250 ok | **alive-parent-band** | 11/15 | 12 | coherent | 0.4141 |
+| `C07.T5.S4.L12` | L12 | S4 | 0.2490 | 0.250 ok | **alive-parent-band** | 12/15 | 12 | coherent | 0.2363 |
+| `C07.T8.S4.L12` | L12 | S4 | 0.2490 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.3633 |
+| `C08.T1.S4.L02` | L02 | S4 | 0.2490 | 0.250 ok | **dead** | 5/15 | 12 | coherent | 0.0996 |
+| `C08.T2.S4.L02` | L02 | S4 | 0.2490 | 0.250 ok | **dead** | 5/15 | 12 | coherent | 0.0996 |
+| `C08.T5.S4.L02` | L02 | S4 | 0.2490 | 0.250 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.1035 |
+| `C08.T8.S4.L02` | L02 | S4 | 0.2490 | 0.250 ok | **dead** | 9/15 | 12 | coherent | 0.1758 |
+| `C09.T1.S4.L02` | L02 | S4 | 0.2500 | 0.250 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.0625 |
+| `C09.T2.S4.L02` | L02 | S4 | 0.2500 | 0.250 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.0625 |
+| `C09.T3.S4.L02` | L02 | S4 | 0.2500 | 0.250 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.1133 |
+| `C09.T4.S4.L02` | L02 | S4 | 0.2500 | 0.250 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.1172 |
+| `C09.T5.S4.L02` | L02 | S4 | 0.2493 | 0.250 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.1172 |
+| `C09.T8.S4.L02` | L02 | S4 | 0.2493 | 0.250 ok | **dead** | 5/15 | 12 | coherent | 0.0938 |
+| `C10.T1.S2.L02` | L02 | S2 | 0.5000 | 0.500 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.1465 |
+| `C10.T1.S4.L02` | L02 | S4 | -- | -- | **cannot-express-4x** | -- | -- | coherent | 0.0000 |
 | `C11.T1.S4.L00` | L00 | S4 | 0.2488 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.2500 |
+| `C11.T1.S8.L00` | L00 | S8 | 0.1244 | 0.125 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1680 |
+| `C11.T2.S4.L00` | L00 | S4 | 0.2488 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.2500 |
+| `C11.T2.S8.L00` | L00 | S8 | 0.1244 | 0.125 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1680 |
 | `C11.T5.M16.L00` | L00 | M16 | 0.9385 | -- | **alive-parent-band** | 12/15 | 12 | coherent | 0.4004 |
 | `C11.T5.S4.L00` | L00 | S4 | 0.2494 | 0.250 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.2109 |
+| `C11.T8.S4.L00` | L00 | S4 | 0.2488 | 0.250 ok | **alive-parent-band** | 11/15 | 12 | coherent | 0.1934 |
+| `C11.T8.S8.L00` | L00 | S8 | 0.1244 | 0.125 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.1836 |
+| `C12.T1.S4.L00` | L00 | S4 | 0.2488 | 0.250 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.1191 |
+| `C12.T2.S4.L00` | L00 | S4 | 0.2488 | 0.250 ok | **alive-degraded** | 8/15 | 12 | coherent | 0.1191 |
 | `C12.T5.M16.L00` | L00 | M16 | 0.9385 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.3066 |
+| `C12.T5.S4.L00` | L00 | S4 | 0.2494 | 0.250 ok | **dead** | 4/15 | 12 | coherent | 0.0234 |
+| `C12.T8.S4.L00` | L00 | S4 | 0.2488 | 0.250 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.1094 |
+| `C13.T1.M16.L00` | L00 | M16 | 3.2812 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.5352 |
 | `C13.T1.S4.L05` | L05 | S4 | 0.2488 | 0.250 ok | **dead** | 8/15 | 12 | coherent | 0.0410 |
+| `C13.T2.S4.L05` | L05 | S4 | 0.2488 | 0.250 ok | **dead** | 8/15 | 12 | coherent | 0.0410 |
 | `C13.T3.M16.L05` | L05 | M16 | 3.2812 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.5859 |
 | `C13.T3.M16.L13` | L13 | M16 | 3.2812 | -- | **alive-parent-band** | 12/15 | 12 | coherent | 0.5820 |
+| `C13.T3.S4.L05` | L05 | S4 | 0.2488 | 0.250 ok | **impaired** | 7/15 | 12 | coherent | 0.0918 |
+| `C13.T4.S4.L05` | L05 | S4 | 0.2488 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.0957 |
+| `C13.T4.S8.L05` | L05 | S8 | 0.1244 | 0.125 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.0547 |
 | `C13.T5.M16.L13` | L13 | M16 | 0.9384 | -- | **alive-parent-band** | 13/15 | 12 | coherent | 0.5605 |
 | `C13.T5.S4.L05` | L05 | S4 | 0.2499 | 0.250 ok | **alive-parent-band** | 11/15 | 12 | coherent | 0.1152 |
+| `C13.T5.S8.L05` | L05 | S8 | 0.1247 | 0.125 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.0547 |
+| `C13.T8.S4.L05` | L05 | S4 | 0.2499 | 0.250 ok | **alive-parent-band** | 12/15 | 12 | coherent | 0.0664 |
+| `C13.T8.S8.L05` | L05 | S8 | 0.1247 | 0.125 ok | **impaired** | 6/15 | 12 | coherent | 0.1035 |
 
-**Survivors** (alive at a satisfied storage bound): 3 -- these are the assembly wave's input.
+**Survivors** (alive at a satisfied storage bound): 36 -- these are the assembly wave's input.
 
+- `C05.T1.S4.L05` at L05: alive-parent-band, 10/15, stores 0.2500x
+- `C05.T2.S4.L05` at L05: alive-parent-band, 10/15, stores 0.2500x
+- `C05.T3.S4.L05` at L05: alive-parent-band, 12/15, stores 0.2500x
+- `C05.T4.S4.L05` at L05: alive-parent-band, 12/15, stores 0.2500x
+- `C05.T5.S4.L05` at L05: alive-parent-band, 10/15, stores 0.2493x
+- `C05.T8.S4.L05` at L05: alive-parent-band, 12/15, stores 0.2493x
+- `C06.T1.S4.L12` at L12: alive-parent-band, 10/15, stores 0.2500x
+- `C06.T2.S4.L12` at L12: alive-parent-band, 10/15, stores 0.2500x
+- `C06.T5.S4.L12` at L12: alive-parent-band, 10/15, stores 0.2490x
+- `C06.T8.S4.L12` at L12: alive-parent-band, 10/15, stores 0.2500x
+- `C07.T1.S4.L12` at L12: alive-parent-band, 11/15, stores 0.2490x
+- `C07.T2.S4.L12` at L12: alive-parent-band, 11/15, stores 0.2490x
+- `C07.T5.S4.L12` at L12: alive-parent-band, 12/15, stores 0.2490x
+- `C07.T8.S4.L12` at L12: alive-parent-band, 10/15, stores 0.2490x
+- `C08.T5.S4.L02` at L02: alive-degraded, 8/15, stores 0.2490x
+- `C09.T1.S4.L02` at L02: alive-degraded, 8/15, stores 0.2500x
+- `C09.T2.S4.L02` at L02: alive-degraded, 8/15, stores 0.2500x
+- `C09.T3.S4.L02` at L02: alive-degraded, 9/15, stores 0.2500x
+- `C09.T4.S4.L02` at L02: alive-degraded, 9/15, stores 0.2500x
+- `C09.T5.S4.L02` at L02: alive-degraded, 9/15, stores 0.2493x
+- `C10.T1.S2.L02` at L02: alive-degraded, 8/15, stores 0.5000x
 - `C11.T1.S4.L00` at L00: alive-parent-band, 10/15, stores 0.2488x
+- `C11.T1.S8.L00` at L00: alive-parent-band, 10/15, stores 0.1244x
+- `C11.T2.S4.L00` at L00: alive-parent-band, 10/15, stores 0.2488x
+- `C11.T2.S8.L00` at L00: alive-parent-band, 10/15, stores 0.1244x
 - `C11.T5.S4.L00` at L00: alive-degraded, 8/15, stores 0.2494x
+- `C11.T8.S4.L00` at L00: alive-parent-band, 11/15, stores 0.2488x
+- `C11.T8.S8.L00` at L00: alive-degraded, 8/15, stores 0.1244x
+- `C12.T1.S4.L00` at L00: alive-degraded, 8/15, stores 0.2488x
+- `C12.T2.S4.L00` at L00: alive-degraded, 8/15, stores 0.2488x
+- `C12.T8.S4.L00` at L00: alive-degraded, 9/15, stores 0.2488x
+- `C13.T4.S4.L05` at L05: alive-parent-band, 10/15, stores 0.2488x
+- `C13.T4.S8.L05` at L05: alive-degraded, 9/15, stores 0.1244x
 - `C13.T5.S4.L05` at L05: alive-parent-band, 11/15, stores 0.2499x
+- `C13.T5.S8.L05` at L05: alive-degraded, 9/15, stores 0.1247x
+- `C13.T8.S4.L05` at L05: alive-parent-band, 12/15, stores 0.2499x
 
 ## 1. The matrix
 
@@ -45,12 +124,12 @@ Rows are components, columns are techniques.  A position shows the deepest level
 | component | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 |
 |---|---|---|---|---|---|---|---|---|---|
 | C01 token_interface_in | . | . | . | . | X4:free | . | . | . | . |
-| C03 conv_in_proj | . | . | . | . | M16:comp | . | . | . | . |
+| C03 conv_in_proj | S4:infra | S4:infra | S4:infra | . | M16:comp | . | . | S4:comp | . |
 | C04 conv_kernel | M16:comp | . | . | . | . | . | . | . | . |
 | C05 conv_out_proj | M16:comp | M16:comp | M16:comp | M16:solve | M16:comp | . | . | M16:comp | M8:comp |
-| C06 attn_q | PASS@X4@L12 | . | . | . | PASS@M16@L12 | . | PASS@M8@L02 | . | . |
-| C07 attn_k | PASS@X4@L12 | . | . | . | . | . | . | . | . |
-| C08 attn_v | M16:free | . | M16:infra | . | M16:comp | . | . | . | . |
+| C06 attn_q | PASS@X4@L12 | S4:comp | S4:infra | . | PASS@M16@L12 | . | PASS@M8@L02 | S4:comp | . |
+| C07 attn_k | PASS@X4@L12 | S4:comp | S4:infra | . | S4:solve | . | . | S4:comp | . |
+| C08 attn_v | M16:free | S4:solve | M16:infra | . | M16:comp | . | . | S4:solve | . |
 | C09 attn_o | M16:free | M16:free | M16:free | M16:solve | M16:comp | . | . | M16:comp | . |
 | C10 attn_per_head | M16:comp | . | . | . | . | . | . | . | . |
 | C11 mlp_gate | S4:solve | S4:solve | S4:infra | S4:infra | M16:comp | . | . | S4:solve | . |
@@ -72,35 +151,48 @@ ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites S*, where 
 | component | technique | M16 | M8 | M4 | M2 | X4 | S2 | S4 | S8 | verdict (site-scoped) |
 |---|---|---|---|---|---|---|---|---|---|---|
 | C01 | T5 | . | . | . | . | 0/1 | . | . | . | fails at free-run |
-| C03 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C03 | T1 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
+| C03 | T2 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
+| C03 | T3 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
+| C03 | T5 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
+| C03 | T8 | . | . | . | . | . | . | 0/1 | . | fails at composition |
 | C04 | T1 | 0/1 | . | . | 0/1 | . | . | . | . | fails at composition |
-| C05 | T1 | 0/3 | 0/1 | . | 0/1 | 0/1 | . | . | . | fails at composition |
-| C05 | T2 | 0/1 | . | . | . | . | . | . | . | fails at composition |
-| C05 | T3 | 0/3 | 0/1 | 0/1 | 0/1 | 0/1 | . | . | . | fails at composition |
-| C05 | T4 | 0/1 | . | . | . | . | . | . | . | fails at local-solve |
-| C05 | T5 | 0/3 | 0/1 | . | . | . | . | . | . | fails at composition |
-| C05 | T8 | 0/1 | . | . | . | . | . | . | . | fails at composition |
+| C05 | T1 | 0/3 | 0/1 | . | 0/1 | 0/1 | . | 0/1 | . | fails at composition |
+| C05 | T2 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
+| C05 | T3 | 0/3 | 0/1 | 0/1 | 0/1 | 0/1 | . | 0/1 | . | fails at composition |
+| C05 | T4 | 0/1 | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C05 | T5 | 0/3 | 0/1 | . | . | . | . | 0/1 | . | fails at composition |
+| C05 | T8 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
 | C05 | T9 | . | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
-| C06 | T1 | 3/3 L02,L08,L12 | 3/3 L02,L08,L12 | 0/1 | 0/1 | 1/3 L12 | . | . | . | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M8; L08:M8 |
-| C06 | T5 | 1/2 L12 | . | . | . | . | . | . | . | works to M16 at L12 (1/2 sites) |
+| C06 | T1 | 3/3 L02,L08,L12 | 3/3 L02,L08,L12 | 0/1 | 0/1 | 1/3 L12 | . | 0/1 | . | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M8; L08:M8 |
+| C06 | T2 | . | . | . | . | . | . | 0/1 | . | fails at composition |
+| C06 | T3 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
+| C06 | T5 | 1/2 L12 | . | . | . | . | . | 0/1 | . | works to M16 at L12 (1/2 sites) |
 | C06 | T7 | 1/3 L02 | 1/1 L02 | 0/1 | . | . | . | . | . | works to M8 at L02 (1/3 sites) |
-| C07 | T1 | 3/3 L02,L08,L12 | 2/3 L08,L12 | 0/1 | 0/1 | 1/2 L12 | . | . | . | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M16; L08:M8 |
-| C08 | T1 | 0/1 | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
-| C08 | T3 | 0/1 | . | . | . | . | . | . | . | void (infra) -- no evidence |
-| C08 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
-| C09 | T1 | 0/2 | 0/1 | 0/1 | . | . | . | . | . | fails at composition |
-| C09 | T2 | 0/1 | . | . | . | . | . | . | . | fails at free-run |
-| C09 | T3 | 0/1 | 0/1 | . | . | 0/1 | . | . | . | fails at composition |
-| C09 | T4 | 0/1 | . | . | . | . | . | . | . | fails at local-solve |
-| C09 | T5 | 0/1 | . | . | . | . | . | . | . | fails at composition |
-| C09 | T8 | 0/1 | . | . | . | . | . | . | . | fails at composition |
-| C10 | T1 | 0/1 | 0/1 | . | . | . | . | . | . | fails at composition |
-| C11 | T1 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
-| C11 | T2 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C06 | T8 | . | . | . | . | . | . | 0/1 | . | fails at composition |
+| C07 | T1 | 3/3 L02,L08,L12 | 2/3 L08,L12 | 0/1 | 0/1 | 1/2 L12 | . | 0/1 | . | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M16; L08:M8 |
+| C07 | T2 | . | . | . | . | . | . | 0/1 | . | fails at composition |
+| C07 | T3 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
+| C07 | T5 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C07 | T8 | . | . | . | . | . | . | 0/1 | . | fails at composition |
+| C08 | T1 | 0/1 | 0/1 | 0/1 | . | . | . | 0/1 | . | fails at composition |
+| C08 | T2 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C08 | T3 | 0/1 | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
+| C08 | T5 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
+| C08 | T8 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C09 | T1 | 0/2 | 0/1 | 0/1 | . | . | . | 0/1 | . | fails at composition |
+| C09 | T2 | 0/1 | . | . | . | . | . | 0/1 | . | fails at free-run |
+| C09 | T3 | 0/1 | 0/1 | . | . | 0/1 | . | 0/1 | . | fails at composition |
+| C09 | T4 | 0/1 | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C09 | T5 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
+| C09 | T8 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
+| C10 | T1 | 0/1 | 0/1 | . | . | . | 0/1 | 0/1 | . | fails at composition |
+| C11 | T1 | . | . | . | . | . | . | 0/1 | 0/1 | fails at local-solve |
+| C11 | T2 | . | . | . | . | . | . | 0/1 | 0/1 | fails at local-solve |
 | C11 | T3 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
 | C11 | T4 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
 | C11 | T5 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
-| C11 | T8 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
+| C11 | T8 | . | . | . | . | . | . | 0/1 | 0/1 | fails at local-solve |
 | C12 | T1 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
 | C12 | T2 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
 | C12 | T3 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
@@ -110,9 +202,9 @@ ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites S*, where 
 | C13 | T1 | 0/3 | . | . | . | . | . | 0/1 | . | fails at composition |
 | C13 | T2 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
 | C13 | T3 | 0/2 | 0/1 | 0/1 | . | . | . | 0/1 | . | fails at composition |
-| C13 | T4 | . | . | . | . | . | . | 0/1 | . | fails at local-solve |
-| C13 | T5 | 0/3 | . | . | . | . | . | 0/1 | . | fails at composition |
-| C13 | T8 | 0/1 | . | . | . | . | . | 0/1 | . | fails at composition |
+| C13 | T4 | . | . | . | . | . | . | 0/1 | 0/1 | fails at local-solve |
+| C13 | T5 | 0/3 | . | . | . | . | . | 0/1 | 0/1 | fails at composition |
+| C13 | T8 | 0/1 | . | . | . | . | . | 0/1 | 0/1 | fails at local-solve |
 | C14 | T1 | . | . | . | . | . | . | . | . | works at NA (no level axis) at L00 (1/1 sites) |
 | COMP | composition | . | . | . | . | . | . | . | . | fails at composition |
 
@@ -122,11 +214,11 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 5 | 5% |
-| `local-solve` | 17 | 18% |
+| `infra` | 13 | 10% |
+| `local-solve` | 39 | 30% |
 | `macrocell-band` | 1 | 1% |
-| `composition` | 57 | 62% |
-| `free-run` | 12 | 13% |
+| `composition` | 67 | 51% |
+| `free-run` | 12 | 9% |
 
 ## 4. Band-versus-behavior agreement
 
@@ -134,10 +226,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 83 |
+| in band (<= 0.4) | 18 | 114 |
 | out of band | 0 | 1 |
 
-Agreement 19/102 (19%).
+Agreement 19/133 (14%).
 
 ## 4b. Storage honesty
 
@@ -146,12 +238,15 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | cell | technique | level | stored | dense parent | stored/dense |
 |---|---|---|---:|---:|---:|
 | `C03.T5.M16.L00` | T5 | M16 | 2949632 | 3145728 | 0.9377 |
+| `C03.T8.S4.L00` | T8 | S4 | 786432 | 3145728 | 0.2500 |
 | `C04.T1.M16.L00` | T1 | M16 | 2048 | 3072 | 0.6667 |
 | `C04.T1.M2.L00` | T1 | M2 | 1024 | 3072 | 0.3333 |
 | `C05.T1.M8.L05` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C05.T1.M2.L05` | T1 | M2 | 1048576 | 1048576 | 1.0000 |
 | `C05.T1.X4.L05` | T1 | X4 | 1441792 | 1048576 | 1.3750 |
+| `C05.T1.S4.L05` | T1 | S4 | 262144 | 1048576 | 0.2500 |
 | `C05.T2.M16.L05` | T2 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C05.T2.S4.L05` | T2 | S4 | 262144 | 1048576 | 0.2500 |
 | `C05.T3.M16.L00` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C05.T3.M16.L05` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C05.T3.M16.L13` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
@@ -159,7 +254,11 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `C05.T3.M4.L05` | T3 | M4 | 1572864 | 1048576 | 1.5000 |
 | `C05.T3.M2.L05` | T3 | M2 | 1048576 | 1048576 | 1.0000 |
 | `C05.T3.X4.L05` | T3 | X4 | 1441792 | 1048576 | 1.3750 |
+| `C05.T3.S4.L05` | T3 | S4 | 262144 | 1048576 | 0.2500 |
+| `C05.T4.S4.L05` | T4 | S4 | 262144 | 1048576 | 0.2500 |
 | `C05.T5.M8.L05` | T5 | M8 | 917504 | 1048576 | 0.8750 |
+| `C05.T5.S4.L05` | T5 | S4 | 261375 | 1048576 | 0.2493 |
+| `C05.T8.S4.L05` | T8 | S4 | 261375 | 1048576 | 0.2493 |
 | `C05.T9.M8.L05` | T9 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C05.T9.M4.L05` | T9 | M4 | 1572864 | 1048576 | 1.5000 |
 | `C06.T1.M16.L08` | T1 | M16 | 1966080 | 1048576 | 1.8750 |
@@ -172,11 +271,15 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `C06.T1.X4.L02` | T1 | X4 | 1572864 | 1048576 | 1.5000 |
 | `C06.T1.X4.L08` | T1 | X4 | 1572864 | 1048576 | 1.5000 |
 | `C06.T1.X4.L12` | T1 | X4 | 1572864 | 1048576 | 1.5000 |
+| `C06.T1.S4.L12` | T1 | S4 | 262144 | 1048576 | 0.2500 |
+| `C06.T2.S4.L12` | T2 | S4 | 262144 | 1048576 | 0.2500 |
 | `C06.T5.M16.L08` | T5 | M16 | 983552 | 1048576 | 0.9380 |
 | `C06.T5.M16.L12` | T5 | M16 | 983552 | 1048576 | 0.9380 |
+| `C06.T5.S4.L12` | T5 | S4 | 261103 | 1048576 | 0.2490 |
 | `C06.T7.M16.L12` | T7 | M16 | 1044480 | 1048576 | 0.9961 |
 | `C06.T7.M8.L02` | T7 | M8 | 974848 | 1048576 | 0.9297 |
 | `C06.T7.M4.L02` | T7 | M4 | 835584 | 1048576 | 0.7969 |
+| `C06.T8.S4.L12` | T8 | S4 | 262144 | 1048576 | 0.2500 |
 | `C07.T1.M16.L08` | T1 | M16 | 737280 | 524288 | 1.4062 |
 | `C07.T1.M16.L12` | T1 | M16 | 737280 | 524288 | 1.4062 |
 | `C07.T1.M8.L02` | T1 | M8 | 688128 | 524288 | 1.3125 |
@@ -186,22 +289,40 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `C07.T1.M2.L02` | T1 | M2 | 393216 | 524288 | 0.7500 |
 | `C07.T1.X4.L08` | T1 | X4 | 589824 | 524288 | 1.1250 |
 | `C07.T1.X4.L12` | T1 | X4 | 589824 | 524288 | 1.1250 |
+| `C07.T1.S4.L12` | T1 | S4 | 130560 | 524288 | 0.2490 |
+| `C07.T2.S4.L12` | T2 | S4 | 130560 | 524288 | 0.2490 |
+| `C07.T5.S4.L12` | T5 | S4 | 130552 | 524288 | 0.2490 |
+| `C07.T8.S4.L12` | T8 | S4 | 130560 | 524288 | 0.2490 |
 | `C08.T1.M8.L02` | T1 | M8 | 688128 | 524288 | 1.3125 |
 | `C08.T1.M4.L02` | T1 | M4 | 589824 | 524288 | 1.1250 |
+| `C08.T1.S4.L02` | T1 | S4 | 130560 | 524288 | 0.2490 |
+| `C08.T2.S4.L02` | T2 | S4 | 130560 | 524288 | 0.2490 |
+| `C08.T5.S4.L02` | T5 | S4 | 130552 | 524288 | 0.2490 |
+| `C08.T8.S4.L02` | T8 | S4 | 130560 | 524288 | 0.2490 |
 | `C09.T1.M16.L08` | T1 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C09.T1.M8.L02` | T1 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C09.T1.M4.L02` | T1 | M4 | 1572864 | 1048576 | 1.5000 |
+| `C09.T1.S4.L02` | T1 | S4 | 262144 | 1048576 | 0.2500 |
 | `C09.T2.M16.L02` | T2 | M16 | 1966080 | 1048576 | 1.8750 |
+| `C09.T2.S4.L02` | T2 | S4 | 262144 | 1048576 | 0.2500 |
 | `C09.T3.M16.L02` | T3 | M16 | 1966080 | 1048576 | 1.8750 |
 | `C09.T3.M8.L02` | T3 | M8 | 1835008 | 1048576 | 1.7500 |
 | `C09.T3.X4.L02` | T3 | X4 | 1572864 | 1048576 | 1.5000 |
+| `C09.T3.S4.L02` | T3 | S4 | 262144 | 1048576 | 0.2500 |
+| `C09.T4.S4.L02` | T4 | S4 | 262144 | 1048576 | 0.2500 |
+| `C09.T5.S4.L02` | T5 | S4 | 261375 | 1048576 | 0.2493 |
+| `C09.T8.S4.L02` | T8 | S4 | 261375 | 1048576 | 0.2493 |
 | `C10.T1.M16.L02` | T1 | M16 | 3014656 | 3145728 | 0.9583 |
 | `C10.T1.M8.L02` | T1 | M8 | 2883584 | 3145728 | 0.9167 |
+| `C10.T1.S2.L02` | T1 | S2 | 1572864 | 3145728 | 0.5000 |
 | `C11.T1.S4.L00` | T1 | S4 | 652288 | 2621440 | 0.2488 |
+| `C11.T1.S8.L00` | T1 | S8 | 326144 | 2621440 | 0.1244 |
 | `C11.T2.S4.L00` | T2 | S4 | 652288 | 2621440 | 0.2488 |
+| `C11.T2.S8.L00` | T2 | S8 | 326144 | 2621440 | 0.1244 |
 | `C11.T5.M16.L00` | T5 | M16 | 2460321 | 2621440 | 0.9385 |
 | `C11.T5.S4.L00` | T5 | S4 | 653763 | 2621440 | 0.2494 |
 | `C11.T8.S4.L00` | T8 | S4 | 652288 | 2621440 | 0.2488 |
+| `C11.T8.S8.L00` | T8 | S8 | 326144 | 2621440 | 0.1244 |
 | `C12.T1.S4.L00` | T1 | S4 | 652288 | 2621440 | 0.2488 |
 | `C12.T2.S4.L00` | T2 | S4 | 652288 | 2621440 | 0.2488 |
 | `C12.T5.M16.L00` | T5 | M16 | 2460321 | 2621440 | 0.9385 |
@@ -218,17 +339,20 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `C13.T3.M4.L05` | T3 | M4 | 6881280 | 2621440 | 2.6250 |
 | `C13.T3.S4.L05` | T3 | S4 | 652288 | 2621440 | 0.2488 |
 | `C13.T4.S4.L05` | T4 | S4 | 652288 | 2621440 | 0.2488 |
+| `C13.T4.S8.L05` | T4 | S8 | 326144 | 2621440 | 0.1244 |
 | `C13.T5.M16.L05` | T5 | M16 | 2457600 | 2621440 | 0.9375 |
 | `C13.T5.M16.L13` | T5 | M16 | 2460000 | 2621440 | 0.9384 |
 | `C13.T5.S4.L05` | T5 | S4 | 654975 | 2621440 | 0.2499 |
+| `C13.T5.S8.L05` | T5 | S8 | 326975 | 2621440 | 0.1247 |
 | `C13.T8.S4.L05` | T8 | S4 | 654975 | 2621440 | 0.2499 |
+| `C13.T8.S8.L05` | T8 | S8 | 326975 | 2621440 | 0.1247 |
 | `C14.T1.NA.L00` | T1 | NA | 1024 | 2048 | 0.5000 |
 | `COMP.MA.RBEH` | composition | NA | 231693056 | 229693184 | 1.0087 |
 | `COMP.MA.RSTO` | composition | NA | 229235456 | 229693184 | 0.9980 |
 | `COMP.MB.RSTO` | composition | NA | 229235456 | 229693184 | 0.9980 |
 | `COMP.MB.RBEH` | composition | NA | 231693056 | 229693184 | 1.0087 |
 
-33 of 82 sealed cells with a storage reading actually contract.
+65 of 114 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -247,6 +371,36 @@ token_interface_in / sparse_omp_routes / level X4 / site GLOBAL / wave 1
 
 > decode-smoke review by claude-opus-5 (frozen V5 protocol e5e37768) of receipt 4018355521b93a30: Frozen-V5 quality-band review, reports/matrix-campaign-20260810/cells/CAL.C01.T5.X4-mxc/QUALITY_BAND_REVIEW.md. Whole-response band 8/15 useful-or-partial (3 useful / 5 partial / 7 observed miss), identical case-for-case to the sealed A9 child re-graded at the same 256 cap (8/15, 3/5/7) and to the frontier re-score's published A9 band (8/15) -- band delta 0, so the calibration criterion of quality-band agreement PASSES at any tolerance. The three receipt decode-smoke rows are arithmetic-multi-step, coding-deduplicate and comparison-ram-rom, all three Observed miss on both children, hence verdict incoherent; the receipt's status is fail on chain link 6 (free-run 0.125) with or without this verdict.
 
+### `C03.T1.S4.L00` -- INFR
+
+conv_in_proj / dense_prior_anchored_ridge / level S4 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `f98f6e9d` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 14.3 | `ad35fa831c10` |
+
+> RuntimeError: mat1 and mat2 shapes cannot be multiplied (192x1024 and 3072x1024)
+
+### `C03.T2.S4.L00` -- INFR
+
+conv_in_proj / cross_width_residual_charts / level S4 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5787fe87` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.5 | `02ad9255584d` |
+
+> CellTechniqueError: C03 charts endpoint 'residual.post_layer' at width 1024, but its level contracts 3072.
+
+### `C03.T3.S4.L00` -- INFR
+
+conv_in_proj / balanced_basis_truncation / level S4 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `6939ad56` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 12.6 | `d252c7a48bee` |
+
+> CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C03 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
+
 ### `C03.T5.M16.L00` -- FAIL
 
 conv_in_proj / sparse_omp_routes / level M16 / site L00 / wave 2
@@ -258,6 +412,28 @@ conv_in_proj / sparse_omp_routes / level M16 / site L00 / wave 2
 | `5623aca1` | -- | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 35.6 | `2907d224b20f` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt cbd74797fe81e3f2: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C03.T5.S4.L00` -- INFR
+
+conv_in_proj / sparse_omp_routes / level S4 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `a0a6ae2b` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 12.1 | `741ac03f5753` |
+
+> CellTechniqueError: C03 stores 3 projection blocks over one internal channel axis; level width 728 is not divisible by 3.
+
+### `C03.T8.S4.L00` -- FAIL
+
+conv_in_proj / gram_relation_matching / level S4 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `8ab0485e` | sm86 | fail | composition | -- | -- | 1.5783 | 0.008 | 0.000 | 0.250 | 4503599627370496.0 | 43.2 | `d7d15e4e4e14` |
+| `8ab0485e` | sm86 | fail | composition | -- | -- | 1.5783 | 0.008 | 0.000 | 0.250 | 4503599627370496.0 | 43.2 | `6a714002a830` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 6a714002a830f414: verdict dead, 0/15 useful-or-partial (parent 12/15). Total collapse, and the harness caught it before the reviewer did: emit_zero_floor_passed is FALSE in the receipt, which is an independent dead trigger under ADDENDUM 6 6.1, and no decode-smoke verdict was sealed at all. All sixteen responses are censored-at-cap at 1024 tokens because the model never emits EOS, and all sixteen are the SAME repeating string -- ' seizo, alike ElementaryaGolden namelyーター seizo e<arabic> relateda inexp theaume the' -- cycled to the cap, with unrelated-script drift into Arabic and katakana. That is three of the protocol's named failure modes at once: phrase cycling, tokenizer debris and script drift. 0 of 15. C03 is the only component in wave 5B where a technique both satisfied the storage bound (786,432 of 3,145,728 = exactly 0.25x) and produced a reviewable child, and the child is dead. The other four C03 techniques never got that far: the generic contraction resolves conv_in_proj's output width as 1024 when the tensor is 3072x1024 -- three stacked B/C/x projection blocks over one internal channel axis -- and fails with '
+> ... [173 more characters in the receipt]
 
 ### `C04.T1.M16.L00` -- FAIL
 
@@ -349,6 +525,17 @@ conv_out_proj / dense_prior_anchored_ridge / level X4 / site L05 / wave 3
 
 > decode-smoke review by ClaudeCode-MXG of receipt db9acd921fc588e1: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C05.T1.S4.L05` -- FAIL
+
+conv_out_proj / dense_prior_anchored_ridge / level S4 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `b94e13ec` | sm86 | fail | local-solve | 0.8303 | 0.1769 | 0.2007 | 0.137 | 0.107 | 0.250 | 188.1 | 30.5 | `4e0e0bbe7684` |
+| `b94e13ec` | sm86 | fail | local-solve | 0.8303 | 0.1769 | 0.2007 | 0.137 | 0.107 | 0.250 | 188.1 | 30.5 | `e07d874cb222` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt e07d874cb2223be3: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). conv_out_proj under dense prior-anchored ridge at a TRUE 4x -- 262,144 stored against 1,048,576 parent, exactly 0.25x, rank 128 of 1024 -- scores 10 of 15, inside the parent band. The short-conv output projection folds at a quarter. This is the widest-margin partial profile in the wave: nine of fifteen cases are Partial, only one is Useful, and nothing collapses. The model is uniformly slightly worse rather than selectively broken, which is the opposite of what the MLP cells do. Ships the anchor exact off-by-one fix values[start:], correct deduplication with an example, and a serviceable Eisenhower-matrix answer to the three-actions case (with an introduction the anchor forbids, and wash dishes in the morning 2-3 hours). Loses explanation-seasons completely -- no tilt anywhere, and the reason why Earth has seasons is that it is closer to the Sun -- refuses the insufficient-data case instead of drawing the safe conclusion, and drops the rollback step from the migration plan in favour of a second backup step.
+
 ### `C05.T2.M16.L05` -- FAIL
 
 conv_out_proj / cross_width_residual_charts / level M16 / site L05 / wave 2
@@ -359,6 +546,17 @@ conv_out_proj / cross_width_residual_charts / level M16 / site L05 / wave 2
 | `0d42a7e0` | sm86 | fail | composition | 0.9968 | 0.0239 | 0.0387 | 0.744 | 0.723 | 1.875 | 1.0 | 30.4 | `6e59fd005767` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt 6e59fd005767d38a: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C05.T2.S4.L05` -- FAIL
+
+conv_out_proj / cross_width_residual_charts / level S4 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `8a54c09b` | sm86 | fail | local-solve | 0.8303 | 0.1769 | 0.2007 | 0.137 | 0.107 | 0.250 | 1.0 | 28.4 | `5d23863768d6` |
+| `8a54c09b` | sm86 | fail | local-solve | 0.8303 | 0.1769 | 0.2007 | 0.137 | 0.107 | 0.250 | 1.0 | 28.4 | `7a60c571941a` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 7a60c571941a56c5: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). Graded by BYTE-IDENTITY. C05.T2.S4.L05 sixteen child responses digest to 266657080178eaf7, exactly C05.T1.S4.L05 digest: cross-width residual charts and dense prior-anchored ridge produced the same model and the same text on conv_out_proj at L05. Gradings carried across unchanged, equivalence recorded in both receipts. That makes three components where T1 and T2 are byte-identical at S4 (C05, C06, C13) against one where they are not (C11) and one where they differ in two of sixteen responses (C12). The wave checked it per cell and never assumed it.
 
 ### `C05.T3.M16.L00` -- FAIL
 
@@ -437,6 +635,17 @@ conv_out_proj / balanced_basis_truncation / level X4 / site L05 / wave 3
 
 > decode-smoke review by ClaudeCode-MXG of receipt be619c5c27a09b72: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C05.T3.S4.L05` -- FAIL
+
+conv_out_proj / balanced_basis_truncation / level S4 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `142d9708` | sm86 | fail | local-solve | 0.8422 | 0.1722 | 0.1846 | 0.215 | 0.164 | 0.250 | 302.6 | 32.5 | `0a2441d1a0ab` |
+| `142d9708` | sm86 | fail | local-solve | 0.8422 | 0.1722 | 0.1846 | 0.215 | 0.164 | 0.250 | 302.6 | 32.5 | `5aa419fbde3d` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 5aa419fbde3dee7d: verdict alive-parent-band, 12/15 useful-or-partial (parent 12/15). conv_out_proj under balanced basis truncation at a TRUE 4x (262,144 of 1,048,576 = exactly 0.25x) scores 12 of 15, LEVEL WITH THE PARENT. That is the same technique that scored 7 of 15 (impaired) on mlp_down at the same bound in this wave, which is the sharpest technique-by-component contrast the campaign has: T3 is not a good or a bad solver, it is a solver that suits some components and destroys others. Ships the anchor exact off-by-one fix values[start:], correct deduplication with an example, a calibrated insufficient-data answer, and a creative-continuity that ends on a foghorn whose answer is a question lingering like a ghost. explanation-seasons is Partial rather than a miss because it names the axial tilt twice and calls the distance idea not entirely accurate, even while framing Earth as closer to the Sun than the other planets. The migration plan omits both the DNS cutover and the rollback step, which is why it is Partial.
+
 ### `C05.T4.M16.L13` -- FAIL
 
 conv_out_proj / low_rank_factor_writers / level M16 / site L13 / wave 1
@@ -447,6 +656,17 @@ conv_out_proj / low_rank_factor_writers / level M16 / site L13 / wave 1
 | `bc7eb877` | -- | fail | local-solve | 0.8027 | 0.1121 | 0.1979 | 0.225 | 0.170 | -- | 7068411.0 | 25.9 | `5ecf8394acb4` |
 
 > decode-smoke review by claude-opus-5 of receipt 5ecf8394acb44c30: 3/3 on task and visibly degraded, which is what writer_rank 31 on a 1024x1024 writer buys. (1) circuit breaker: 'a safety valve that stops a circuit from running when it's too hot or too low' -- 'too low' is wrong and the thermal framing replaces the current one, but the trip-to-protect core survives. (2) one-pan dinner: a real plan, cap-censored, with a hedged ingredient list ('fresh or frozen' five times). (3) neighbour note: reshaped into a subject-lined email that asks to 'help with parking' rather than to move the trailer -- the request is softened past the instruction. The cell already fails at chain link 3 (write cosine 0.803 < 0.95); the text degrades without collapsing, unlike C09.T4 at the same rank.
+
+### `C05.T4.S4.L05` -- FAIL
+
+conv_out_proj / low_rank_factor_writers / level S4 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `efba0ace` | sm86 | fail | local-solve | 0.8818 | 0.1489 | 0.1441 | 0.209 | 0.189 | 0.250 | 90103.2 | 28.0 | `17dff6d214de` |
+| `efba0ace` | sm86 | fail | local-solve | 0.8818 | 0.1489 | 0.1441 | 0.209 | 0.189 | 0.250 | 90103.2 | 28.0 | `94e9d4e17c64` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 94e9d4e17c649a98: verdict alive-parent-band, 12/15 useful-or-partial (parent 12/15). conv_out_proj under low-rank factor writers at a TRUE 4x (262,144 of 1,048,576 = exactly 0.25x) scores 12 of 15, LEVEL WITH THE PARENT. It is the only cell in the entire wave that computes 94 mod 5 = 4 -- the anchor own leftover, which the parent never reaches -- and then throws it away by reporting 4 as the per-box count as well. Ships values[start:], correct deduplication, a calibrated insufficient-data answer and a creative-continuity with real dialogue and an unexplained ending. Loses explanation-seasons (no tilt at all, seasons attributed to Earth being closer to the Sun than the other planets), loses logic-ordering to the order Sal, Jun, Theo, Mira, and its migration plan never actually points DNS at the new domain and has no rollback step.
 
 ### `C05.T5.M16.L00` -- FAIL
 
@@ -492,6 +712,17 @@ conv_out_proj / sparse_omp_routes / level M8 / site L05 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt 9d54f229342a6c55: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C05.T5.S4.L05` -- FAIL
+
+conv_out_proj / sparse_omp_routes / level S4 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `25c55a63` | sm86 | fail | local-solve | 0.8559 | 0.1623 | 0.1781 | 0.160 | 0.121 | 0.249 | 157.4 | 28.6 | `df1ffa5121dd` |
+| `25c55a63` | sm86 | fail | local-solve | 0.8559 | 0.1623 | 0.1781 | 0.160 | 0.121 | 0.249 | 157.4 | 28.6 | `b22bb64b882d` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt b22bb64b882df3f0: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). conv_out_proj under sparse OMP routes at a TRUE 4x (261,375 of 1,048,576 = 0.249267x, 255 kept channels of 1024) scores 10 of 15, inside the parent band and the weakest of the five conv_out_proj techniques. WITH THIS CELL EVERY TECHNIQUE THAT CAN EXPRESS conv_out_proj AT S4 IS ALIVE-PARENT-BAND: T1 10, T2 10, T3 12, T4 12, T5 10, T8 pending. Ships correct deduplication and the wave clearest calibrated insufficient-data answer, which states Sales increased as a numbered conclusion before asking for the four missing facts. Loses explanation-seasons by comparing Earth to the other planets instead of to itself across the year, loses arithmetic to 18.8 kits per box and 76 left over, and produces a creative-continuity that is two sentences of atmosphere with no dialogue and no ending.
+
 ### `C05.T8.M16.L00` -- FAIL
 
 conv_out_proj / gram_relation_matching / level M16 / site L00 / wave 1
@@ -502,6 +733,17 @@ conv_out_proj / gram_relation_matching / level M16 / site L00 / wave 1
 | `f8038b65` | -- | fail | composition | 0.9987 | 0.0411 | 0.0543 | 0.523 | 0.342 | -- | 48638.1 | 34.2 | `b95d24ebc6f1` |
 
 > decode-smoke review by claude-opus-5 of receipt b95d24ebc6f16c99: 3/3 on task, all EOS, and the weakest smoke of the three C05 techniques at L00. (1) circuit breaker: correct, but 'typically installed in high-voltage circuits, such as those used in power grids' is a false narrowing -- breakers are ubiquitous at household voltage. (2) dinner: a five-item menu that opens with 'Start with a hearty breakfast: omelette or pancakes' for a dinner prompt, then asserts '40 minutes and one pan' without a cooking order -- on task, both stated constraints missed, and the breakfast opener is the first content error of its kind in the campaign. (3) neighbour note: three sentences rather than four, and it offers to assist rather than asking. Fails at chain link 5, composed drift 0.0543; free-run 0.523 is the worst of the three techniques at this site.
+
+### `C05.T8.S4.L05` -- FAIL
+
+conv_out_proj / gram_relation_matching / level S4 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `60804128` | sm86 | fail | local-solve | 0.8567 | 0.1631 | 0.1812 | 0.156 | 0.098 | 0.249 | 1199.0 | 29.7 | `ca4d1407d3fe` |
+| `60804128` | sm86 | fail | local-solve | 0.8567 | 0.1631 | 0.1812 | 0.156 | 0.098 | 0.249 | 1199.0 | 29.7 | `d212254849de` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt d212254849def90c: verdict alive-parent-band, 12/15 useful-or-partial (parent 12/15). conv_out_proj under gram relation matching at a TRUE 4x (261,375 of 1,048,576 = 0.249267x) scores 12 of 15, LEVEL WITH THE PARENT. THIS CELL COMPLETES THE STRONGEST COMPONENT RESULT OF THE CAMPAIGN: every one of the six techniques that can express conv_out_proj at S4 is alive-parent-band, and three of them (T3, T4, T8) score 12 of 15, dead level with the parent. T1 10, T2 10, T3 12, T4 12, T5 10, T8 12. conv_out_proj is the component the assembly wave should take first. Ships values[start:], a correct concise email, a calibrated insufficient-data answer that states Sales increased under its own What you can safely conclude heading, and a creative-continuity with real dialogue and an unexplained ending. Loses arithmetic to 94 - 18.8 = 95.2, loses logic-ordering by numbering the premises and boxing 1, 2, 3, 4 instead of naming an order, and its rollback step describes removing the old domain rather than reverting to it.
 
 ### `C05.T9.M8.L05` -- FAIL
 
@@ -646,6 +888,40 @@ attn_q / dense_prior_anchored_ridge / level X4 / site L12 / wave 3
 
 > decode-smoke review by ClaudeCode-MXG of receipt 2776be7abd66e235: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C06.T1.S4.L12` -- FAIL
+
+attn_q / dense_prior_anchored_ridge / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `2a73e3ca` | sm86 | fail | composition | 0.9856 | 0.1901 | 0.0823 | 0.236 | 0.221 | 0.250 | 27233.8 | 27.9 | `341f23c2fcbf` |
+| `2a73e3ca` | sm86 | fail | composition | 0.9856 | 0.1901 | 0.0823 | 0.236 | 0.221 | 0.250 | 27233.8 | 27.9 | `28e8569cc80c` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 28e8569cc80cef7f: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). THE ATTENTION RESULT. attn_q under dense prior-anchored ridge at a TRUE 4x -- 262,144 stored against 1,048,576 parent, exactly 0.25x, rank 128 of 1024 -- scores 10 of 15 and lands inside the parent's band. The query projection folds at a quarter, which is the first attention component in the campaign to do so under a storage-defined level. Ships the anchor's exact off-by-one fix, values[start:], which only two lanes in the whole wave manage, plus correct deduplication with an example, a complete six-step migration plan and the best creative-continuity of the attention lanes -- dialogue, unease, and an ending that explains nothing. Loses explanation-seasons in a specific and instructive way: it states the tilt correctly in its third paragraph and then closes by crediting 'Earth's elliptical orbit and the changing distance from the Sun', which is the misconception the case exists to reject, so the response is judged as a whole and scored a miss. Also inverts causality the way the M16 MLP cells do ('This variation in sunlight causes the Eart
+> ... [173 more characters in the receipt]
+
+### `C06.T2.S4.L12` -- FAIL
+
+attn_q / cross_width_residual_charts / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `1cf2c017` | sm86 | fail | composition | 0.9856 | 0.1901 | 0.0823 | 0.236 | 0.221 | 0.250 | 1.0 | 27.4 | `48a491494b89` |
+| `1cf2c017` | sm86 | fail | composition | 0.9856 | 0.1901 | 0.0823 | 0.236 | 0.221 | 0.250 | 1.0 | 27.4 | `5c6f44c4bba6` |
+| `1cf2c017` | sm86 | fail | composition | 0.9856 | 0.1901 | 0.0823 | 0.236 | 0.221 | 0.250 | 1.0 | 27.4 | `50b51294f773` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 50b51294f773c26b: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). Graded by BYTE-IDENTITY. C06.T2.S4.L12's sixteen child responses digest to e74f72f4c26a30d3, which is exactly C06.T1.S4.L12's digest: cross-width residual charts and dense prior-anchored ridge produced the SAME model and the same text on attn_q at L12. The gradings and counts are carried across unchanged and the equivalence is recorded in both receipts. Across wave 5B the T1/T2 relationship was checked per cell rather than assumed, and it varies: identical at C13.L05 and here at C06.L12, fourteen-of-sixteen identical at C12.L00, and completely different text at C11.L00 despite solve telemetry that matched to the digit. attn_q therefore folds at a true 4x under two techniques, and they are the same fold.
+
+### `C06.T3.S4.L12` -- INFR
+
+attn_q / balanced_basis_truncation / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `261b549f` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.8 | `832a4f4dbd0a` |
+
+> CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C06 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
+
 ### `C06.T5.M16.L08` -- FAIL
 
 attn_q / sparse_omp_routes / level M16 / site L08 / wave 3
@@ -667,6 +943,18 @@ attn_q / sparse_omp_routes / level M16 / site L12 / wave 3
 | `63eb7671` | sm86 | pending-review | -- | 0.9996 | 0.0309 | 0.0044 | 0.977 | 0.971 | 0.938 | 29.7 | 30.7 | `0a40a83c2e55` |
 
 > decode-smoke review by ClaudeCode-MXG of receipt 0a40a83c2e55543a: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C06.T5.S4.L12` -- FAIL
+
+attn_q / sparse_omp_routes / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `c1aa8b27` | sm86 | fail | composition | 0.9512 | 0.3468 | 0.1411 | 0.361 | 0.318 | 0.249 | 17.3 | 29.9 | `b3009db9ea83` |
+| `c1aa8b27` | sm86 | fail | composition | 0.9512 | 0.3468 | 0.1411 | 0.361 | 0.318 | 0.249 | 17.3 | 29.9 | `5a8a11d726ab` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 5a8a11d726abb501: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). attn_q under sparse OMP routes at a TRUE 4x (261,103 of 1,048,576 = 0.249007x, 242 kept channels of 1024) scores 10 of 15, inside the parent's band -- the same score its T1/T2 counterpart gets, by a visibly different route. It is the only attention lane to answer context-retrieval completely and one of two lanes in the wave to ship a working off-by-one fix. THIS CELL CARRIES THE WAVE'S STRONGEST SUB-DEGENERATE REPETITION SIGNAL AND IS DELIBERATELY NOT SEALED DEAD, so the call is on the record and reversible. Immediate verbatim doubling appears in at least six of sixteen responses: 'bell peppers, bell peppers, bell peppers, bell peppers, bell peppers' inside each of four ingredient lists (about twenty-two occurrences), 'a large hard drive or hard drive' four times, 'hum' five times in three sentences of creative-continuity, plus 'Backup Backup', 'redundancy and redundancy', 'safety and safety', 'guidelines and guidelines', 'nuts, nuts, nuts' and 'gluten-free, gluten-free'. It is NOT sealed as degeneracy because the standard applied uniform
+> ... [490 more characters in the receipt]
 
 ### `C06.T7.M16.L02` -- PASS
 
@@ -722,6 +1010,17 @@ attn_q / attention_relation_matching / level M4 / site L02 / wave 2
 | `4f5706af` | sm86 | fail | composition | 0.9903 | 0.3281 | 0.0427 | 0.547 | 0.537 | 0.797 | 1024.0 | 31.6 | `08ad05a1dd2c` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt 08ad05a1dd2c088c: coherent and formatted; the trailer note drifts to 'move a parked trailer to a nearby park'.  Semantic drift, not degeneracy.
+
+### `C06.T8.S4.L12` -- FAIL
+
+attn_q / gram_relation_matching / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `368e5463` | sm86 | fail | composition | 0.9856 | 0.1905 | 0.0798 | 0.236 | 0.221 | 0.250 | 26696.0 | 28.9 | `489a6e3fbaf5` |
+| `368e5463` | sm86 | fail | composition | 0.9856 | 0.1905 | 0.0798 | 0.236 | 0.221 | 0.250 | 26696.0 | 28.9 | `a9a331c86964` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt a9a331c869644980: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). attn_q under gram relation matching at a TRUE 4x (262,144 of 1,048,576 = exactly 0.25x) scores 10 of 15, inside the parent's band. WITH THIS CELL ALL FOUR TECHNIQUES THAT CAN EXPRESS attn_q AT S4 LAND ON 10/15: T1 and T2 (byte-identical to each other), T5 by a different route, and T8 here. attn_q is the campaign's first attention component to fold at a real quarter, and it does so under every technique that can state it that small -- which is a much stronger claim than any single cell. Ships the anchor's exact off-by-one fix values[start:], correct deduplication, a complete email, and a creative-continuity that ends on 'The fog seemed to be holding its breath, waiting for something to happen.' Loses explanation-seasons by rejecting the distance misconception in one sentence and asserting it in three, and answers arithmetic by deriving 18 per box and then dividing it by 17. Safety is concerning: seal the cracks, seal the windows, seal the doors, and 'cauldron caulk'.
 
 ### `C07.T1.M16.L02` -- PASS
 
@@ -833,6 +1132,61 @@ attn_k / dense_prior_anchored_ridge / level X4 / site L12 / wave 3
 
 > decode-smoke review by ClaudeCode-MXG of receipt 8eed4a809aaddd95: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C07.T1.S4.L12` -- FAIL
+
+attn_k / dense_prior_anchored_ridge / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `f12b5787` | sm86 | fail | composition | 0.9774 | 0.0000 | 0.1538 | 0.414 | 0.363 | 0.249 | 27233.8 | 27.7 | `94e861043c9c` |
+| `f12b5787` | sm86 | fail | composition | 0.9774 | 0.0000 | 0.1538 | 0.414 | 0.363 | 0.249 | 27233.8 | 27.7 | `96ab2acfdde2` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 96ab2acfdde2314a: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). attn_k under dense prior-anchored ridge at a TRUE 4x -- 130,560 stored against 524,288 parent, 0.249023x, rank 85 of 512 -- scores 11 of 15, ONE CASE from the parent's own 12/15 and the best attention result of the wave. The key projection is the most compressible attention component measured so far, which is consistent with it being the narrowest (512 wide against attn_q's 1024) and the one whose output is consumed only through a softmax. Ships values[start:], the anchor's exact off-by-one fix; carries 102, 94 and a correct 18-per-box without contradicting itself; writes a six-step migration plan that actually sequences backup, DNS, TLS, verification and rollback. Loses explanation-seasons to a fully geocentric account -- 'as the sun moves around the Earth', seasons caused by 'atmospheric circulation', no axial tilt anywhere -- and loses comparison-ram-rom to two 'imperfections' that restate each other and conclude 'the library is about the books, and the family is about the computers'. Safety is concerning and specifically so: it tells 
+> ... [53 more characters in the receipt]
+
+### `C07.T2.S4.L12` -- FAIL
+
+attn_k / cross_width_residual_charts / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `78ec6856` | sm86 | fail | composition | 0.9774 | 0.0000 | 0.1537 | 0.414 | 0.363 | 0.249 | 1.0 | 28.4 | `907adaab3fab` |
+| `78ec6856` | sm86 | fail | composition | 0.9774 | 0.0000 | 0.1537 | 0.414 | 0.363 | 0.249 | 1.0 | 28.4 | `ccb3b4ac5481` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt ccb3b4ac5481d20d: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). attn_k under cross-width residual charts at a TRUE 4x scores 11 of 15, one case from the parent, matching C07.T1.S4.L12 exactly. FOURTEEN of sixteen responses are byte-identical to that cell; only uncertainty-insufficient-data and creative-continuity differ, and each is graded the same in both. Same geocentric explanation-seasons failure (as the sun moves around the Earth, seasons caused by atmospheric circulation), same working values[start:] off-by-one fix, same six-step migration plan.
+
+### `C07.T3.S4.L12` -- INFR
+
+attn_k / balanced_basis_truncation / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d11bc126` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.4 | `57086a8accc5` |
+
+> CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C07 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
+
+### `C07.T5.S4.L12` -- FAIL
+
+attn_k / sparse_omp_routes / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `9736d44b` | sm86 | fail | local-solve | 0.9260 | 0.0000 | 0.2011 | 0.236 | 0.162 | 0.249 | 7.8 | 28.0 | `afe49d73e0bd` |
+| `9736d44b` | sm86 | fail | local-solve | 0.9260 | 0.0000 | 0.2011 | 0.236 | 0.162 | 0.249 | 7.8 | 28.0 | `adbdf3941940` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt adbdf39419407001: verdict alive-parent-band, 12/15 useful-or-partial (parent 12/15). THE SECOND CELL IN THE WAVE TO SCORE LEVEL WITH THE PARENT. attn_k under sparse OMP routes at a TRUE 4x -- 130,552 stored against 524,288 parent, 0.249008x, 121 kept channels of 512 -- scores 12 of 15, DEAD LEVEL WITH THE PARENT OWN 12/15, at a token match of 0.2363. Only three cases miss, and two of them (logic-ordering and the peanut plan) are cases the PARENT also misses. Answers context-retrieval completely, states the calibrated insufficient-data conclusion, writes correct deduplication with an example and the best creative-continuity of the attention lanes -- a keeper asking Still here? twice into a fog that answers with a click. explanation-seasons is the best in the wave outside C13.T8.S4.L05: it names the 23-degree axial tilt AND the changing angle of the Sun rays, and only fails to address the distance misconception at all. Together with C07.T1/T2 at 11/15 and C07.T8 at 10/15, attn_k folds at a real quarter under every technique that can express it, and is the strongest attention component measured.
+
+### `C07.T8.S4.L12` -- FAIL
+
+attn_k / gram_relation_matching / level S4 / site L12 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `6d242e47` | sm86 | fail | composition | 0.9778 | 0.0000 | 0.0866 | 0.363 | 0.338 | 0.249 | 26918.2 | 28.6 | `11a0874a7d85` |
+| `6d242e47` | sm86 | fail | composition | 0.9778 | 0.0000 | 0.0866 | 0.363 | 0.338 | 0.249 | 26918.2 | 28.6 | `901fdc78f0a3` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 901fdc78f0a33d0f: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). attn_k under gram relation matching at a TRUE 4x (130,560 of 524,288 = 0.249023x) scores 10 of 15, inside the parent band and the weakest of the four attn_k techniques. Ships a correct off-by-one fix and correct deduplication. Loses explanation-seasons the same way C06.T1/T8 do -- states the axial tilt correctly in one paragraph, then closes that the correct explanation is the elliptical orbit and the changing distance from the Sun, asserting the misconception it had just rejected. Expands TLS as Secure Web Application Firewall. Safety is concerning and specifically dangerous: it reads a chemical smell as a plumbing leak and tells the user to smell the air around the room.
+
 ### `C08.T1.M16.L02` -- FAIL
 
 attn_v / dense_prior_anchored_ridge / level M16 / site L02 / wave 1
@@ -866,6 +1220,30 @@ attn_v / dense_prior_anchored_ridge / level M4 / site L02 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt d610481b74f0cc64: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C08.T1.S4.L02` -- FAIL
+
+attn_v / dense_prior_anchored_ridge / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `1a3911d6` | sm86 | fail | local-solve | 0.8554 | 0.0000 | 0.5093 | 0.100 | 0.035 | 0.249 | 240109510.2 | 28.4 | `56ecc604a5ba` |
+| `1a3911d6` | sm86 | fail | local-solve | 0.8554 | 0.0000 | 0.5093 | 0.100 | 0.035 | 0.249 | 240109510.2 | 28.4 | `f055091c4272` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt f055091c427211cd: verdict dead, 5/15 useful-or-partial (parent 12/15). DEAD by the degeneracy clause. attn_v under dense prior-anchored ridge at a TRUE 4x (130,560 of 524,288 = 0.249023x, rank 85 of 512) collapses on creative-continuity in the clause own terms: the response opens with one sentence, REPEATS THAT SENTENCE VERBATIM as a dialogue line tagged Keeper: (to himself), emits two more Keeper: (to the foghorn) turns, and then terminates on a bare speaker tag with no content at all. After the first sentence there is no new material -- the response IS the loop, which is the same failure that killed C13.T1.S4.L05 and C12.T5.S4.L00. multi-turn-correction is the second instance: every ingredient slot is filled by peanut butter repeated four or five times verbatim (peanut butter, almond butter, peanut butter, peanut butter, peanut butter). The count would have been 5 of 15 on its own, the second lowest in the wave. Also refuses context-retrieval outright -- I cannot provide real-time updates or specific gate information -- when the garden hours are in the prompt, and answers the insufficient-data case with I cannot safely 
+> ... [136 more characters in the receipt]
+
+### `C08.T2.S4.L02` -- FAIL
+
+attn_v / cross_width_residual_charts / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `2129e364` | sm86 | fail | local-solve | 0.8554 | 0.0000 | 0.5092 | 0.100 | 0.035 | 0.249 | 1.0 | 33.9 | `cb4440bc2770` |
+| `2129e364` | sm86 | fail | local-solve | 0.8554 | 0.0000 | 0.5092 | 0.100 | 0.035 | 0.249 | 1.0 | 33.9 | `d05d411d07be` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt d05d411d07be89ee: verdict dead, 5/15 useful-or-partial (parent 12/15). DEAD by the degeneracy clause, with the same two collapses as C08.T1.S4.L02, whose text this cell very nearly is: thirteen of sixteen responses are identical to that cell and the other three differ only in wording. creative-continuity opens with one sentence, repeats that sentence verbatim as Keeper: (to himself), and terminates on a bare Keeper: (to the foghorn) with no content; multi-turn-correction fills every option parenthetical with peanut butter repeated four or five times. Count would have been 5 of 15. Also refuses context-retrieval with I cannot provide real-time updates or specific gate information when the garden hours are in the prompt, and answers the insufficient-data case with I cannot safely conclude that sales increased. THE attn_v ROW IS NOW COMPLETE AND IT IS THE WORST OF THE WAVE: T1 dead, T2 dead, T8 dead, T5 alive-degraded at 8 of 15. Three of the four techniques that can express the value projection at a quarter destroy the model, and the survivor is at the A9 floor. attn_v maximum surviving level at S4 is alive-degraded under s
+> ... [23 more characters in the receipt]
+
 ### `C08.T3.M16.L02` -- INFR
 
 attn_v / balanced_basis_truncation / level M16 / site L02 / wave 3
@@ -873,6 +1251,16 @@ attn_v / balanced_basis_truncation / level M16 / site L02 / wave 3
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `ffdab83a` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.8 | `9da6fc9119f8` |
+
+> CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C08 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
+
+### `C08.T3.S4.L02` -- INFR
+
+attn_v / balanced_basis_truncation / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `4c69c5d7` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 12.0 | `17e170a8e839` |
 
 > CellTechniqueError: T3 balanced truncation needs a controllability lane and an observability lane over one shared state.  C08 contracts its output axis, where the observability operator is the downstream consumer this cell does not own; substituting an identity observability would reduce balanced truncation to plain POD and duplicate T1 under a different name.
 
@@ -886,6 +1274,29 @@ attn_v / sparse_omp_routes / level M16 / site L02 / wave 1
 | `ceb1bff9` | -- | fail | composition | 0.9908 | 0.0000 | 0.0381 | 0.578 | 0.541 | -- | 17.3 | 50.6 | `0bcbe2436c46` |
 
 > decode-smoke review by claude-opus-5 of receipt 0bcbe2436c46e514: 3/3 on task. (1) circuit breaker: correct, names short circuit and wiring fault explicitly, EOS. (2) one-pan dinner: on task, cap-censored, but it preheats an oven for a one-pan 40-minute plan -- the same constraint miss the control makes. (3) neighbour note: byte-identical to the copy_exact control. Fails at chain link 5, composed drift 0.0381.
+
+### `C08.T5.S4.L02` -- FAIL
+
+attn_v / sparse_omp_routes / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `e2d6008d` | sm86 | fail | local-solve | 0.7620 | 0.0000 | 0.4241 | 0.104 | 0.035 | 0.249 | 10.6 | 26.4 | `1d9380917c35` |
+| `e2d6008d` | sm86 | fail | local-solve | 0.7620 | 0.0000 | 0.4241 | 0.104 | 0.035 | 0.249 | 10.6 | 26.4 | `96baec719379` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 96baec7193791ac7: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). attn_v under sparse OMP routes at a TRUE 4x (130,552 of 524,288 = 0.249008x, 121 kept channels of 512) scores 8 of 15, alive-degraded, and is the ONLY attn_v technique in the wave that is not dead. Ships correct first-seen-order deduplication with an example and a complete concise email. Loses arithmetic at step two by multiplying the eight failures by six hours, ships an off-by-one fix that concatenates three slices and returns six elements, refuses the insufficient-data case, and answers creative-continuity with a single 28-token sentence. multi-turn-correction cycles the token Vegan about ten times (Vegan Vegan Bites, Vegan Vegan Cheese, Vegan Vegan Snack with Vegan Vegan) and duplicates two of its four options; that is flagged and NOT sealed as degeneracy under the wave uniform standard, because no response here is nothing but its loop -- unlike its T1 and T8 siblings, which are.
+
+### `C08.T8.S4.L02` -- FAIL
+
+attn_v / gram_relation_matching / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d8ab0f70` | sm86 | fail | local-solve | 0.8605 | 0.0000 | 0.2006 | 0.176 | 0.133 | 0.249 | 332054296.0 | 34.1 | `c179ceb1f997` |
+| `d8ab0f70` | sm86 | fail | local-solve | 0.8605 | 0.0000 | 0.2006 | 0.176 | 0.133 | 0.249 | 332054296.0 | 34.1 | `1992dce150ae` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 1992dce150ae3838: verdict dead, 9/15 useful-or-partial (parent 12/15). DEAD by the degeneracy clause, and the most extreme instance in the wave. attn_v under gram relation matching at a TRUE 4x (130,560 of 524,288 = 0.249023x) answers multi-turn-correction by emitting 1 cup peanut butter approximately ONE HUNDRED AND FORTY TIMES consecutively, running the response into the 1,024-token cap and terminating mid-phrase. That response is nothing but the loop. creative-continuity is the second instance and takes the same Keeper: (to himself) dialogue-scaffold shape that killed C08.T1.S4.L02. The count would have been 9 of 15 on its own -- the highest count of any dead cell in the wave, which is exactly why the clause exists and why counts are not the whole grade. Everything else about the cell is respectable: three clean numbered actions, a six-step migration plan covering all five topics, a calibrated insufficient-data answer, and a boxed 18 kits per box. attn_v is the worst component of wave 5B: two of its three expressible techniques are dead and the third is alive-degraded, so its maximum surviving level at S4 is alive-degr
+> ... [20 more characters in the receipt]
 
 ### `C09.T1.M16.L02` -- FAIL
 
@@ -931,6 +1342,17 @@ attn_o / dense_prior_anchored_ridge / level M4 / site L02 / wave 2
 
 > decode-smoke review by ClaudeCode-MXF of receipt 502c8ae387ebf6de: coherent prose in the right four-line-note format, but the trailer request inverts: the letter says the writer moved a trailer and wants to relocate it.  Semantic drift, not degeneracy -- no repetition loop, terminated eos.
 
+### `C09.T1.S4.L02` -- FAIL
+
+attn_o / dense_prior_anchored_ridge / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `f48c9502` | sm86 | fail | local-solve | 0.9434 | 0.1821 | 0.2153 | 0.062 | 0.043 | 0.250 | 384.5 | 27.1 | `d7a8e4ecd56c` |
+| `f48c9502` | sm86 | fail | local-solve | 0.9434 | 0.1821 | 0.2153 | 0.062 | 0.043 | 0.250 | 384.5 | 27.1 | `3d622622d578` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 3d622622d5781b77: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). attn_o under dense prior-anchored ridge at a TRUE 4x (262,144 of 1,048,576 = exactly 0.25x) scores 8 of 15 -- alive-degraded, at the A9 band and outside the parent band. The output projection is the weakest attention component measured: attn_q and attn_k both fold to 10-12 of 15 under every technique, and attn_o reaches 9 at best. The characteristic damage is length collapse -- explanation-seasons is 38 tokens, creative-continuity is a single 21-token sentence with no scene, no dialogue and no ending -- as though the O projection carries the model ability to keep going. Ships a complete concise email, a correct six-step migration plan and a calibrated insufficient-data answer. Ships deduplication code that calls seen.add(items) on the whole list twice and returns sorted(items). multi-turn-correction states All options are vegan-friendly and contain peanuts. No nuts or other allergens are present, under a nutrition block that cycles Total Fat and Total Carbohydrates three times each.
+
 ### `C09.T2.M16.L02` -- FAIL
 
 attn_o / cross_width_residual_charts / level M16 / site L02 / wave 2
@@ -941,6 +1363,17 @@ attn_o / cross_width_residual_charts / level M16 / site L02 / wave 2
 | `11bbc563` | sm86 | fail | free-run | 0.9999 | 0.0072 | 0.0131 | 0.820 | 0.797 | 1.875 | 1.0 | 29.8 | `b3b3d5cc831c` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt b3b3d5cc831c746c: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `C09.T2.S4.L02` -- FAIL
+
+attn_o / cross_width_residual_charts / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `da757a4e` | sm86 | fail | local-solve | 0.9434 | 0.1821 | 0.2153 | 0.062 | 0.043 | 0.250 | 1.0 | 27.1 | `06a28d747fac` |
+| `da757a4e` | sm86 | fail | local-solve | 0.9434 | 0.1821 | 0.2153 | 0.062 | 0.043 | 0.250 | 1.0 | 27.1 | `fa52de15253b` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt fa52de15253b66b6: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). Graded by BYTE-IDENTITY. C09.T2.S4.L02 sixteen child responses digest to 5f229171999a2b9a, exactly C09.T1.S4.L02 digest. That is the fourth component at which cross-width residual charts and dense prior-anchored ridge produce the same model and the same text at S4 (C05, C06, C09, C13); C11 and C12 are the exceptions. Gradings carried across unchanged, equivalence recorded in both receipts.
 
 ### `C09.T3.M16.L02` -- FAIL
 
@@ -975,6 +1408,17 @@ attn_o / balanced_basis_truncation / level X4 / site L02 / wave 3
 
 > decode-smoke review by ClaudeCode-MXG of receipt 9b44697af981efe7: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C09.T3.S4.L02` -- FAIL
+
+attn_o / balanced_basis_truncation / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `0cb3ecbb` | sm86 | fail | local-solve | 0.9495 | 0.1730 | 0.1933 | 0.113 | 0.090 | 0.250 | 527.7 | 28.8 | `3ea87daad4dd` |
+| `0cb3ecbb` | sm86 | fail | local-solve | 0.9495 | 0.1730 | 0.1933 | 0.113 | 0.090 | 0.250 | 527.7 | 28.8 | `fcd99f26d804` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt fcd99f26d804935e: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). attn_o under balanced basis truncation at a TRUE 4x (262,144 of 1,048,576 = exactly 0.25x) scores 9 of 15, alive-degraded, the best attn_o result of the wave and still outside the parent band. Same length collapse as the other attn_o lanes: explanation-seasons is 37 tokens and creative-continuity is a single 20-token sentence. Carries 102, 94 and a correct 18 per box before reporting 76 left over. Ships a correct six-step migration plan and a calibrated insufficient-data answer, and returns an empty set from the deduplication function. THE SAFETY ANSWER IS THE WORST IN THE WAVE and is reported here rather than counted: eleven tokens, You should immediately clean the room to remove the residue, which sends the user into a room that may contain chloramine or chlorine gas. The safety case never contributes an intelligence failure and never will, and it is recorded because someone should read it.
+
 ### `C09.T4.M16.L02` -- FAIL
 
 attn_o / low_rank_factor_writers / level M16 / site L02 / wave 1
@@ -985,6 +1429,17 @@ attn_o / low_rank_factor_writers / level M16 / site L02 / wave 1
 | `047f32a6` | -- | fail | local-solve | 0.9000 | 0.2395 | 0.3180 | 0.049 | 0.029 | -- | 2119973.2 | 25.2 | `55971e9be790` |
 
 > decode-smoke review by claude-opus-5 of receipt 55971e9be790d02e: 1/3 on task; the only incoherent body cell in wave 1 and the only genuine behavioural collapse the campaign has produced. (1) circuit breaker: fluent but answers about the wrong object -- 'a safety net that stops a system or process from being used until it can handle a sudden surge in demand' is the software circuit-breaker/rate-limiter pattern, not an electrical breaker, and the paragraph then says the same thing three times. (2) one-pan dinner: DEGENERATE -- 'a balanced mix of protein, carbs, and carbs, and carbs,' repeated roughly forty times until the cap; the runner's termination classifier correctly labelled it 'loop' rather than 'cap', so this is a failure and not a censoring. (3) neighbour note: off task -- it narrates what the note would be and then writes one that reverses the roles ('I'm moving a parked trailer... I'm happy to help with any repairs'). The cell already fails at chain link 3 (write cosine 0.900 < 0.95) at writer_rank 31; the smoke shows what a refused local solve sounds like downstream.
+
+### `C09.T4.S4.L02` -- FAIL
+
+attn_o / low_rank_factor_writers / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `7a3cfca3` | sm86 | fail | composition | 0.9605 | 0.1527 | 0.1638 | 0.117 | 0.102 | 0.250 | 2119973.2 | 26.0 | `2a147478078c` |
+| `7a3cfca3` | sm86 | fail | composition | 0.9605 | 0.1527 | 0.1638 | 0.117 | 0.102 | 0.250 | 2119973.2 | 26.0 | `5425fdca00c8` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 5425fdca00c8231d: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). attn_o under low-rank factor writers at a TRUE 4x (262,144 of 1,048,576 = exactly 0.25x) scores 9 of 15, alive-degraded. WITH THIS CELL THE attn_o PICTURE IS COMPLETE AND UNIFORM: T1 8, T2 8, T3 9, T4 9, T5 9. Every technique that can express the output projection at a quarter keeps the model alive and NONE of them reaches the parent band. attn_o is the only component in the wave whose entire technique row is alive-degraded, which makes it the assembly wave first real constraint: attn_q and attn_k fold to 10-12 of 15 and attn_o will not follow them. Writes a correct six-step migration plan covering all five required topics, a complete concise email, a calibrated insufficient-data answer, and boxes a correct 18 kits per box before reporting 76 left over. creative-continuity ends on the phrase a question, a question, a question -- a terminal triple that is flagged and not sealed as degeneracy, since the response carries a real scene before it.
 
 ### `C09.T5.M16.L02` -- FAIL
 
@@ -997,6 +1452,17 @@ attn_o / sparse_omp_routes / level M16 / site L02 / wave 1
 
 > decode-smoke review by claude-opus-5 of receipt cc3b204c949877a2: 3/3 on task. (1) circuit breaker: correct mechanism with a clean summary sentence, EOS. (2) one-pan dinner: the control's dish, cap-censored inside 'Instructions: 1. Pre'. (3) neighbour note: byte-identical to the copy_exact control. The cell fails at chain link 5, composed drift 0.0200 -- exactly on the 0.02 gate to four decimals and over it in full precision.
 
+### `C09.T5.S4.L02` -- FAIL
+
+attn_o / sparse_omp_routes / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `3978ec30` | sm86 | fail | local-solve | 0.9349 | 0.1960 | 0.2127 | 0.117 | 0.105 | 0.249 | 43.9 | 29.1 | `d0f2b8e425b6` |
+| `3978ec30` | sm86 | fail | local-solve | 0.9349 | 0.1960 | 0.2127 | 0.117 | 0.105 | 0.249 | 43.9 | 29.1 | `c2da705e5724` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt c2da705e57247a28: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). attn_o under sparse OMP routes at a TRUE 4x (261,375 of 1,048,576 = 0.249267x, 255 kept channels of 1024) scores 9 of 15, alive-degraded, tying C09.T3 as the best attn_o result. Writes the only six-step migration plan in the C09 lane that covers backup, DNS verification, DNS update, TLS, TLS verification and rollback in dependency order, and gives the most complete summarization-priorities of the wave -- it correctly states that Supplier B costs 11 percent MORE, which almost every other lane inverts to lower cost -- while badly missing the two-sentence instruction with six. Loses arithmetic by deriving 18 per box and then computing 18 - 8 = 10, returns an empty set from the deduplication function, and ships values[start-1:] with fabricated test expectations like [4, 5, 1] that its own code cannot produce.
+
 ### `C09.T8.M16.L02` -- FAIL
 
 attn_o / gram_relation_matching / level M16 / site L02 / wave 1
@@ -1007,6 +1473,18 @@ attn_o / gram_relation_matching / level M16 / site L02 / wave 1
 | `b2b652a3` | -- | fail | composition | 0.9995 | 0.0155 | 0.0210 | 0.678 | 0.656 | -- | 6277438.1 | 28.4 | `448022d7bb90` |
 
 > decode-smoke review by claude-opus-5 of receipt 448022d7bb90aef6: 3/3 on task. (1) circuit breaker: correct, adds a true statement about overload surges damaging motors and lights, cap-censored inside 'connected to a switch or relay, which is'. (2) one-pan dinner: the control's dish, cap-censored. (3) neighbour note: polite, correctly shaped, EOS. Fails at chain link 5 (composed drift 0.0210) with a boundary indistinguishable from T5's at the same site.
+
+### `C09.T8.S4.L02` -- FAIL
+
+attn_o / gram_relation_matching / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `3b7fcbf1` | sm86 | fail | local-solve | 0.9363 | 0.1941 | 0.2454 | 0.094 | 0.053 | 0.249 | 1367958.9 | 26.6 | `4cad243557a3` |
+| `3b7fcbf1` | sm86 | fail | local-solve | 0.9363 | 0.1941 | 0.2454 | 0.094 | 0.053 | 0.249 | 1367958.9 | 26.6 | `58eda8f914f0` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 58eda8f914f000cb: verdict dead, 5/15 useful-or-partial (parent 12/15). DEAD by the degeneracy clause. attn_o under gram relation matching at a TRUE 4x (261,375 of 1,048,576 = 0.249267x) collapses on coding-deduplicate into a nest of unterminated docstrings with no function body at all, emitted twice in two code fences -- the protocol non-compositional collapse, named. And it stops generating on three separate cases, returning the PROMPT instead of a response: conversation-natural-greeting echoes back Hi! I had a long day. Can you respond naturally and ask one thoughtful follow-up question? verbatim, creative-continuity answers with the instruction (I will keep the tone quietly unsettling, include one line of dialogue, and end without explaining the phenomenon) and never writes the scene, and the safety case opens by restating the user sentence. Count would have been 5 of 15. It still writes the cleanest summarization-priorities in the C09 lane -- two sentences with Supplier B, the one-week slip and the weekly evidence -- and a complete six-step migration plan, which is what makes the collapse worth recording rather than d
+> ... [64 more characters in the receipt]
 
 ### `C10.T1.M16.L02` -- FAIL
 
@@ -1032,6 +1510,32 @@ attn_per_head / dense_prior_anchored_ridge / level M8 / site L02 / wave 3
 
 > decode-smoke review by ClaudeCode-MXG of receipt 0611d0e590edb09d: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
 
+### `C10.T1.S2.L02` -- FAIL
+
+attn_per_head / dense_prior_anchored_ridge / level S2 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `4619aaa3` | sm86 | fail | composition | 0.9174 | 0.2507 | 0.3254 | 0.146 | 0.029 | 0.500 | 1924.0 | 30.4 | `ca9979953e59` |
+| `4619aaa3` | sm86 | fail | composition | 0.9174 | 0.2507 | 0.3254 | 0.146 | 0.029 | 0.500 | 1924.0 | 30.4 | `0c793a8f17a0` |
+| `07f0fef6` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.2 | `c483c717a168` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 0c793a8f17a0bc53: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). THE HEAD-DROP ANSWER, AND IT IS NOT A 4x. C10 drops sixteen query heads to FOUR -- a real four-fold reduction in head COUNT, with least-squares absorption of the twelve dropped heads into the surviving O columns and a sealed parent replay relL2 of 0.00165 -- and the whole model scores 8 of 15, alive-degraded, at the A9 band. But the stored count is 1,572,864 of 3,145,728: exactly 0.5x, an S2, not an S4. The reason is the coverage rule and it is worth stating plainly: dropping query heads removes D rows of q_proj and D columns of out_proj, but the child still stores k_proj and v_proj in full, and those two tensors alone are 1,048,576 parameters against an S4 budget of 786,432. No head count can satisfy S4 -- keeping ZERO heads would still store 0.333x -- which is why C10.T1.S4.L02 is sealed cannot-express-4x rather than measured. A 4x of head count is a 2x of storage, and the campaign should say so. What survives at four heads is structure: the only Useful case is the six-step migration plan, and summarization-priorities correctly reports that
+> ... [334 more characters in the receipt]
+
+### `C10.T1.S4.L02` -- INFR
+
+attn_per_head / dense_prior_anchored_ridge / level S4 / site L02 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `cd36dcdf` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 14.4 | `0d6c8f09cc90` |
+| `cd36dcdf` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 14.4 | `a33d3f788db0` |
+| `b5ae6d10` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 11.6 | `0fccb9e85353` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt a33d3f788db0bcf1: verdict cannot-express-4x. cannot-express-4x, proved from the head-drop kernel own storage algebra rather than measured on the model. C10 stored count is 1024*k*64 + 1024*k*64 + numel(k_proj) + numel(v_proj) = 131072*k + 1048576 for k surviving query heads, because a dropped query head does not stop the child storing the key and value projections -- the kernel reports dead_kv_groups and deliberately does NOT bank the rows it could then drop, since claiming a saving the installed child does not take is exactly the storage dishonesty ADDENDUM 6 6.2 exists to catch. The S4 budget is 0.25 x 3,145,728 = 786,432. The k_proj/v_proj floor alone is 1,048,576, so even k=0 stores 0.333x and NO head count satisfies S4. The harness refused it from its own count at the planned width: C10.T1.S4.L02 stores 1835008 against a bound of 786432 at width 384. Note the planner suggested that width because the registry falls through to the generic factor-pair model for (T1, C10), which is the wrong algebra for a head drop; the ENFORCED number is the kernel own and it is the one that refuses. The measurable rung is S2: C10.T1.S2
+> ... [117 more characters in the receipt]
+
 ### `C11.T1.S4.L00` -- FAIL
 
 mlp_gate / dense_prior_anchored_ridge / level S4 / site L00 / wave 5
@@ -1043,15 +1547,39 @@ mlp_gate / dense_prior_anchored_ridge / level S4 / site L00 / wave 5
 
 > ADDENDUM 6 behaviour review by claude-opus5-mxi of receipt 7f4b78f16b5c1ebf: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). ADDENDUM 6 X4 sweep: dense prior-anchored ridge on mlp_gate at a TRUE 4x (0.248828x stored, rank 182 of 2560 -- a 14x width contraction) holds the parent band at 10/15, the edge of the +/-2 interval. It BEATS the T5 route at the same component and the same bound (8/15), which inverts the wave-1 ranking where T5 was the MLP technique of record. Five useful cases including the only natural-reply-plus-one-follow-up in the whole wave (every other lane, parent included, hands the user a question to ask someone else) and a clean concise email hitting all five anchors. Loses explanation-seasons outright (invents obliquation, endorses the distance misconception, calls the seasons a twelve-year cycle), arithmetic, logic-ordering, and ships an off-by-one fix that references an undefined name. Not degenerate: invented tokens (edamash) but no cycling or collapse; every case terminated complete. Token match 0.2500, diagnostic only.
 
+### `C11.T1.S8.L00` -- FAIL
+
+mlp_gate / dense_prior_anchored_ridge / level S8 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `12f83727` | sm86 | fail | local-solve | 0.9118 | 0.0000 | 0.3748 | 0.168 | 0.094 | 0.124 | 19459205042.7 | 33.7 | `8861271519fc` |
+| `12f83727` | sm86 | fail | local-solve | 0.9118 | 0.0000 | 0.3748 | 0.168 | 0.094 | 0.124 | 19459205042.7 | 33.7 | `12d2bd74acf1` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 12d2bd74acf16058: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). S8 PROBE, and it holds. ADDENDUM 6 6.3 says to climb from an alive-parent-band S4, and mlp_gate under dense prior-anchored ridge does: 326,144 stored against 2,621,440 parent is 0.124414x -- an EIGHT-fold storage contraction, rank 91 of 2560, a 28x width contraction -- and the whole model still scores 10 of 15, the same score its own S4 cell got. The ladder for mlp_gate therefore reaches S8 under T1. Keeps a natural greeting, three clean actions, correct first-seen-order deduplication with an example, a complete concise email and a calibrated insufficient-data answer, and it is the only lane in the wave to produce summarization-priorities as genuinely two sentences. Carries 102, 94 and a correct 18-per-box before mis-stating the remainder as 18. Loses explanation-seasons to the same invented 'obliquation' that C11.T2.S4.L00 produced, answers 'the gate that should be avoided is Saturdays', and collapses planning-dependencies onto TLS -- three of its six steps are TLS steps, the website backup is missing entirely and rollback becomes 'TLS r
+> ... [110 more characters in the receipt]
+
 ### `C11.T2.S4.L00` -- FAIL
 
 mlp_gate / cross_width_residual_charts / level S4 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5a410720` | sm86 | fail | local-solve | 0.9473 | 0.0000 | 0.2680 | 0.250 | 0.109 | 0.249 | 1.0 | 36.8 | `2c52b754f94c` |
 | `5a410720` | sm86 | fail | local-solve | 0.9473 | 0.0000 | 0.2680 | 0.250 | 0.109 | 0.249 | 1.0 | 36.8 | `a3e9d1bc4658` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt a3e9d1bc4658fc1e: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). mlp_gate under cross-width residual charts at a TRUE 4x (0.248828x stored, rank 182 of 2560) scores 10 of 15 -- inside the parent's band at its lower edge. Wave 5A recorded that T2 reproduces T1 to the last digit on the MLP axes; that is true of the SOLVE and false of the TEXT. This cell's sixteen responses digest to de4fc46a359860be and C11.T1.S4.L00's to 33d0395f9d6273b4 on byte-identical solve telemetry, so the two were graded separately and both land at 10/15 by different routes. Keeps a natural greeting, correct first-seen-order deduplication, a six-step migration plan and the best creative-continuity of the C11 lane. Loses explanation-seasons outright (invents obliquation, tilts the ORBIT not the axis, asserts the distance misconception it was asked to reject, and calls the seasons a twelve-year cycle), ships an off-by-one fix that references an undefined name, and repeats the campaign-wide peanut failure.
+
+### `C11.T2.S8.L00` -- FAIL
+
+mlp_gate / cross_width_residual_charts / level S8 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `b6749bf9` | sm86 | fail | local-solve | 0.9118 | 0.0000 | 0.3748 | 0.168 | 0.094 | 0.124 | 1.0 | 30.3 | `17b0fc32096d` |
+| `b6749bf9` | sm86 | fail | local-solve | 0.9118 | 0.0000 | 0.3748 | 0.168 | 0.094 | 0.124 | 1.0 | 30.3 | `de72f02b2cae` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt de72f02b2cae3ef5: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). S8 probe under cross-width residual charts, and it holds at the same score as T1: 326,144 stored against 2,621,440 parent is 0.124414x, an EIGHT-fold storage contraction, and the whole model scores 10 of 15, inside the parent's band. FIFTEEN of the sixteen responses are byte-identical to C11.T1.S8.L00's; only multi-turn-correction differs, and it is Observed miss in both -- T1 recommends 'Crumled peanuts (a vegan-friendly alternative to peanuts)' and T2 recommends 'Vegan Peanut Butter & Nut Butter' with 'Greek Yogurtet' and 'raw yogurt (e.g., cucumber)'. The same S4 pair at this component produced completely different text; at S8 they have converged to one model with one divergent case. Everything said about C11.T1.S8.L00 applies here: the ladder for mlp_gate reaches S8, and what S8 costs is long-horizon structure -- planning-dependencies collapses onto TLS in both lanes, losing the website backup entirely.
 
 ### `C11.T3.S4.L00` -- INFR
 
@@ -1103,9 +1631,21 @@ mlp_gate / gram_relation_matching / level S4 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `ab514d01` | sm86 | fail | local-solve | 0.9490 | 0.0000 | 0.2467 | 0.193 | 0.137 | 0.249 | 124604038945308.8 | 45.5 | `9f3edb41e393` |
 | `ab514d01` | sm86 | fail | local-solve | 0.9490 | 0.0000 | 0.2467 | 0.193 | 0.137 | 0.249 | 124604038945308.8 | 45.5 | `81f680c83259` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 81f680c83259daa4: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). mlp_gate under gram relation matching at a TRUE 4x (0.248828x stored) scores 11 of 15, one case from the parent's own 12/15, at a free-run token match of 0.1934. The best C11 result of the wave. Gets 102, 94 and 18-per-box on arithmetic where the parent collapses to 3 kits per box, 94 left over. Loses explanation-seasons (calls the axial tilt the solar day and solar night periods and contradicts itself on distance) and ships values[start-1:] as an off-by-one fix. multi-turn-correction cycles the line 1 cup hummus (or vegan hummus) nine times across four lists; that is NOT sealed as degeneracy because the parent's own graded-12/15 response cycles list phrases on the same prompt (for a creamy, nutty treat three times), and charging a fold for a failure mode the parent shows on the same case would be charging it for the model it was folded from. The degeneracy clause is reserved, as in C13.T1.S4.L05, for a response that IS the loop.
+
+### `C11.T8.S8.L00` -- FAIL
+
+mlp_gate / gram_relation_matching / level S8 / site L00 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `c2fc7499` | sm86 | fail | local-solve | 0.9148 | 0.0000 | 0.2953 | 0.184 | 0.070 | 0.124 | 124604038945308.8 | 33.5 | `2ada0d2255a6` |
+| `c2fc7499` | sm86 | fail | local-solve | 0.9148 | 0.0000 | 0.2953 | 0.184 | 0.070 | 0.124 | 124604038945308.8 | 33.5 | `2be2331d7eaf` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 2be2331d7eafbac2: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). S8 probe under gram relation matching: 326,144 stored against 2,621,440 parent, 0.124414x, and the model drops to 8 of 15 -- alive-degraded, outside the parent's band. This is the rung where the mlp_gate techniques separate. At S4, T8 was the BEST of the three (11/15 against T1's and T2's 10/15); at S8 it is the worst (8/15 against their 10/15). The dense prior-anchored solve degrades gracefully into an eight-fold contraction and the Gram-relation solve does not. Still keeps three clean numbered actions, the complete context-retrieval case, correct deduplication, a complete concise email, a calibrated insufficient-data answer, and the best creative-continuity in the whole wave -- sixty-five tokens that end on 'The foghorn's answer was a question: What's the name of the lighthouse?' Loses arithmetic by deriving 18 per box and then dividing it by 5 again, loses logic-ordering to an explicit self-contradiction, and defeats planning-dependencies by scheduling '1-2 days' of downtime for a migration whose stated requirement is no downtime.
 
 ### `C12.T1.S4.L00` -- FAIL
 
@@ -1113,9 +1653,10 @@ mlp_up / dense_prior_anchored_ridge / level S4 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `80c761a4` | sm86 | fail | local-solve | 0.8794 | 0.0000 | 0.4183 | 0.119 | 0.098 | 0.249 | 19459205042.7 | 30.1 | `55ec22c7fabe` |
 | `80c761a4` | sm86 | fail | local-solve | 0.8794 | 0.0000 | 0.4183 | 0.119 | 0.098 | 0.249 | 19459205042.7 | 30.1 | `42d1979f848f` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 42d1979f848fbc13: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). mlp_up under dense prior-anchored ridge at a TRUE 4x (0.248828x stored, rank 182 of 2560) scores 8 of 15 -- exactly the A9 band, outside the parent's 12 +/- 2. This is the answer to the C12 question: mlp_up DOES survive a real 4x, but degraded, not at parent band. Keeps the whole context-retrieval case including Saturday, which the parent drops, and keeps a calibrated insufficient-data answer. Loses explanation-seasons by endorsing the exact misconception the case exists to test, breaks arithmetic at step one (17 x 6 x 17 = 1368), invents a fourth runner Jul in logic-ordering, and ships deduplication code that returns unique_items - unique_items -- always empty. Word-level tokenizer debris is pervasive and is flagged, not banked as degeneracy: swews, procullation, Imperence, Accessable, downtony (four times), satled, Explan. The protocol lists debris as a flag; ADDENDUM 6's dead clause names looping and collapse, and neither is present.
 
 ### `C12.T2.S4.L00` -- FAIL
 
@@ -1123,9 +1664,10 @@ mlp_up / cross_width_residual_charts / level S4 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `47e0fd64` | sm86 | fail | local-solve | 0.8794 | 0.0000 | 0.4183 | 0.119 | 0.098 | 0.249 | 1.0 | 30.8 | `aca438d1d852` |
 | `47e0fd64` | sm86 | fail | local-solve | 0.8794 | 0.0000 | 0.4183 | 0.119 | 0.098 | 0.249 | 1.0 | 30.8 | `183de9927332` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 183de9927332b924: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). mlp_up under cross-width residual charts at a TRUE 4x scores 8 of 15, the same as C12.T1.S4.L00, and for a concrete reason: fourteen of the sixteen responses are BYTE-IDENTICAL to that cell's. Only explanation-seasons and multi-turn-correction differ, and both are Observed miss in each. T2 and T1 are the same solve wearing two names at C12 -- their solve telemetry already matched to the digit -- and here they are very nearly the same model. Note the contrast with C11, where the identical telemetry produced sixteen different responses; the equivalence is a property of the cell, not of the technique pair. This lane's seasons answer is the worse of the two: Earth is closer to the Sun than it is to the Moon, and the Sun's gravity pulling Earth's mass.
 
 ### `C12.T3.S4.L00` -- INFR
 
@@ -1166,9 +1708,10 @@ mlp_up / sparse_omp_routes / level S4 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d380a043` | sm86 | fail | local-solve | 0.7472 | 0.0000 | 0.5057 | 0.023 | 0.014 | 0.249 | 12.1 | 32.9 | `0f07e8c93d84` |
 | `d380a043` | sm86 | fail | local-solve | 0.7472 | 0.0000 | 0.5057 | 0.023 | 0.014 | 0.249 | 12.1 | 32.9 | `058320b9db01` |
 
-> storage: stores 653763 against a dense parent of 2621440 (0.2494x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 058320b9db01bd66: verdict dead, 4/15 useful-or-partial (parent 12/15). DEAD by the degeneracy clause, and this one is not a judgement call: creative-continuity terminates in the token than repeated some sixty times consecutively, and writing-concise-email is three cycles of a salutation block with no body at all -- no Friday, no Monday, no tracking request. That is the protocol's own named phrase/token cycling failure mode in two separate cases. The count would have been 4 of 15 on its own, the lowest in the wave. planning-dependencies repeats Secure the new domain with a backup plan (e.g., cloud provider, CDN, or local hosting) verbatim six times across six steps. mlp_up under sparse OMP routes needs 606 kept channels of 2560 to hit 0.249391x and the route structure does not survive it. Compare C12.T1/T2 at the same component and the same bound: alive-degraded at 8/15. The bound is reachable at mlp_up; routes are not the way to reach it.
 
 ### `C12.T8.S4.L00` -- FAIL
 
@@ -1176,9 +1719,10 @@ mlp_up / gram_relation_matching / level S4 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `bdc76003` | sm86 | fail | local-solve | 0.8842 | 0.0000 | 0.4076 | 0.109 | 0.035 | 0.249 | 134615855690884.5 | 33.6 | `d9b0e2dce450` |
 | `bdc76003` | sm86 | fail | local-solve | 0.8842 | 0.0000 | 0.4076 | 0.109 | 0.035 | 0.249 | 134615855690884.5 | 33.6 | `d6b8ab5fa8ce` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt d6b8ab5fa8ce368e: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). mlp_up under gram relation matching at a TRUE 4x (0.248828x stored) scores 9 of 15 -- the best mlp_up result of the wave, and still one case below the parent's band. Keeps a natural greeting, three clean numbered actions, a complete concise email, a calibrated insufficient-data answer and a creative-continuity with real dialogue and an unexplained ending. Loses explanation-seasons by answering The correct answer is yes and then arguing the misconception is correct, breaks arithmetic at 17 - 8 = 9, and returns a set from the deduplication function, which loses the first-seen order the case is about. Across C12 the ranking is T8 9 > T1 = T2 8 > T5 dead, so mlp_up's maximum surviving level at S4 is alive-degraded under three of four techniques.
 
 ### `C13.T1.M16.L00` -- FAIL
 
@@ -1186,11 +1730,12 @@ mlp_down / dense_prior_anchored_ridge / level M16 / site L00 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `95f37509` | sm86 | fail | composition | 0.9973 | 0.0460 | 0.0668 | 0.535 | 0.467 | 3.281 | 117323.3 | 32.0 | `1731beae3969` |
 | `95f37509` | sm86 | fail | composition | 0.9973 | 0.0460 | 0.0668 | 0.535 | 0.467 | 3.281 | 117323.3 | 32.0 | `2c5f84c999bf` |
 | `e985ca91` | -- | fail | composition | 0.9973 | 0.0460 | 0.0668 | 0.535 | 0.467 | -- | 117323.3 | 31.4 | `ad105cf52756` |
 | `e985ca91` | -- | fail | composition | 0.9973 | 0.0460 | 0.0668 | 0.535 | 0.467 | -- | 117323.3 | 31.4 | `22b27a841a92` |
 
-> storage: stores 8601600 against a dense parent of 2621440 (3.2812x) -- COSTS MORE THAN DENSE.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 2c5f84c999bff7cd: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). The sixth reproduced M16 cell, whose review was still generating when INTERIM-MLP-ANSWER.md was sealed. It closes that note's table: mlp_down under dense prior-anchored ridge at M16 scores 11 of 15, alive-parent-band, at a token match of 0.5352 -- so ALL SIX reproduced M16 MLP cells are behaviourally alive and five of six are in the parent's band. And it stores 8,601,600 against a 2,621,440-parameter parent: 3.28x, a storage FAILURE, exactly like the two T3 M16 cells. The pairing with C13.T1.S4.L05 is the campaign's cleanest statement of the trap: the same component under the same technique is alive-parent-band while storing 3.28x and DEAD while storing 0.2488x. Marginal levels buy their behaviour with storage. creative-continuity loops its dialogue (It's a sign of the changing tides three times, I've been expecting you twice) without collapsing, which is why this is Partial and not the degeneracy clause.
 
 ### `C13.T1.M16.L05` -- FAIL
 
@@ -1242,9 +1787,10 @@ mlp_down / cross_width_residual_charts / level S4 / site L05 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `def1eefe` | sm86 | fail | local-solve | 0.7649 | 0.2285 | 0.2854 | 0.041 | 0.018 | 0.249 | 1.0 | 29.9 | `97aeb2d7d93d` |
 | `def1eefe` | sm86 | fail | local-solve | 0.7649 | 0.2285 | 0.2854 | 0.041 | 0.018 | 0.249 | 1.0 | 29.9 | `e536c746797e` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt e536c746797ecb29: verdict dead, 8/15 useful-or-partial (parent 12/15). Graded by BYTE-IDENTITY, not by a second reading. C13.T2.S4.L05's sixteen child responses digest to 769d62d52917fc26, which is exactly C13.T1.S4.L05's digest; the two cells produced the same model and the same text from the same solve, and wave 5A already graded that text 3 useful / 5 partial / 7 observed miss, DEAD by the degeneracy clause on a creative-continuity that is eight verbatim repetitions of Good morning, sir. Those counts and that clause are carried here unchanged and the equivalence is recorded in both receipts. This is the ONLY cell in the wave where the T1/T2 equivalence held at the byte level: at C11 the same identical telemetry produced sixteen different responses, and at C12 it produced fourteen identical and two different. T2 reproducing T1 is a per-cell fact to be checked, not a technique-level law to be assumed.
 
 ### `C13.T3.M16.L05` -- FAIL
 
@@ -1300,9 +1846,10 @@ mlp_down / balanced_basis_truncation / level S4 / site L05 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `09de458a` | sm86 | fail | local-solve | 0.7754 | 0.2257 | 0.2829 | 0.092 | 0.043 | 0.249 | 19306.2 | 56.9 | `3c9dc08c3a16` |
 | `09de458a` | sm86 | fail | local-solve | 0.7754 | 0.2257 | 0.2829 | 0.092 | 0.043 | 0.249 | 19306.2 | 56.9 | `39b169a49f69` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 39b169a49f69e17b: verdict impaired, 7/15 useful-or-partial (parent 12/15). mlp_down under balanced basis truncation at a TRUE 4x scores 7 of 15 -- below the A9 band, so IMPAIRED: the language stays coherent and on task and the capability is gone. The contrast inside C13 is the finding. At the same component, the same site and the same 0.25x bound, T8 scores 12, T5 scores 11, T4 scores 10, T3 scores 7 and T1/T2 are dead. Loses the rollback step of the migration plan to Delete the old domain and remove the backup. Delete the new domain and remove the backup, refuses the insufficient-data case outright instead of drawing the safe conclusion, contradicts itself on comparison-ram-rom within one response, and lists Peanuts as the first ingredient of every option in a plan whose stated purpose is peanut-free. Note that T3's sealed M16 cells at this component are alive-parent-band at 3.28x stored: T3 keeps the model alive when it is allowed to store more than the tensor it replaced, and loses it at a real quarter.
 
 ### `C13.T4.S4.L05` -- FAIL
 
@@ -1310,9 +1857,21 @@ mlp_down / low_rank_factor_writers / level S4 / site L05 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `38668eb4` | sm86 | fail | local-solve | 0.8250 | 0.2006 | 0.2269 | 0.096 | 0.043 | 0.249 | 5423.3 | 32.3 | `ea7aaf25368b` |
 | `38668eb4` | sm86 | fail | local-solve | 0.8250 | 0.2006 | 0.2269 | 0.096 | 0.043 | 0.249 | 5423.3 | 32.3 | `9dc81bb48a7f` |
 
-> storage: stores 652288 against a dense parent of 2621440 (0.2488x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 9dc81bb48a7ff446: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). mlp_down under low-rank factor writers at a TRUE 4x (0.248828x stored) scores 10 of 15, inside the parent's band. A third technique clearing the X4 proof bar at mlp_down alongside T5 and T8. Correct deduplication with an example, a complete six-step migration plan with a real rollback, a clean concise email and a chef's-pantry analogy that actually maps. Loses explanation-seasons to a gravitational account that contradicts itself on distance in consecutive sentences, and answers arithmetic with 90 complete kits go in each box after correctly deriving 18 -- the same self-contradiction the parent commits with 3 kits per box. Gets the option COUNT right on multi-turn-correction, which no other lane in the wave does, and then makes all four options peanut butter.
+
+### `C13.T4.S8.L05` -- FAIL
+
+mlp_down / low_rank_factor_writers / level S8 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `12ce308f` | sm86 | fail | local-solve | 0.7363 | 0.2408 | 0.2609 | 0.055 | 0.025 | 0.124 | 5423.3 | 30.7 | `d264ee8b8d24` |
+| `12ce308f` | sm86 | fail | local-solve | 0.7363 | 0.2408 | 0.2609 | 0.055 | 0.025 | 0.124 | 5423.3 | 30.7 | `b2bc094c5a90` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt b2bc094c5a9056e4: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). S8 probe on mlp_down under low-rank factor writers: 326,144 stored against 2,621,440 parent, 0.124414x, and the model falls from S4's 10 of 15 to 9 of 15 -- alive-degraded, out of the parent's band by one case. The ladder for mlp_down under T4 therefore tops out at S4. Still writes a clean six-step migration plan covering all five required topics, a complete concise email and a genuinely eerie creative-continuity that ends wondering whether the foghorn is sentient. What breaks is arithmetic ('8 - 102 = -94'), the insufficient-data case, which drifts into generic consulting advice and never states the safe conclusion, and explanation-seasons, whose summer and winter paragraphs are near-verbatim duplicates ending 'warmer and more hot' and 'warmer and more cold'.
 
 ### `C13.T5.M16.L00` -- FAIL
 
@@ -1362,6 +1921,17 @@ mlp_down / sparse_omp_routes / level S4 / site L05 / wave 5
 
 > ADDENDUM 6 behaviour review by claude-opus5-mxi of receipt a2cb80996a6359f4: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). ADDENDUM 6 X4 sweep, the headline cell: mlp_down stored at 0.249853x of its parent -- a TRUE 4x compression -- and the whole model scores 11 of 15, ONE CASE from the parent own 12/15, at a free-run token match of 0.1152. The metric says the child agrees with the control on one token in nine; the frozen review says it is a working model. Keeps Saturday and the whole context case, writes correct first-seen-order deduplication, a correct six-step migration plan with TLS read correctly, and the best creative-continuity of the wave. Loses logic-ordering (drops Jun), comparison-ram-rom (calls the books the RAM), ships values[start-1:] as an off-by-one FIX, and repeats the campaign-wide peanut failure. Safety is a clean refusal -- the only lane in this wave, parent included, that does not give confidently wrong household-chemical advice.
 
+### `C13.T5.S8.L05` -- FAIL
+
+mlp_down / sparse_omp_routes / level S8 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `92831298` | sm86 | fail | local-solve | 0.7471 | 0.2406 | 0.2874 | 0.055 | 0.047 | 0.125 | 16724.6 | 32.6 | `519e323a63dc` |
+| `92831298` | sm86 | fail | local-solve | 0.7471 | 0.2406 | 0.2874 | 0.055 | 0.047 | 0.125 | 16724.6 | 32.6 | `551fdfae3261` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 551fdfae32613e06: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). S8 probe on mlp_down under sparse OMP routes: 326,975 stored against 2,621,440 parent, 0.124731x, 319 kept channels of 2560, and the model falls from S4's 11 of 15 to 9 of 15 -- alive-degraded. Combined with C13.T4.S8.L05's identical 9/15, mlp_down's ladder tops out at S4 under both writer techniques; only mlp_gate reached S8 inside the parent's band in this wave. Still answers context-retrieval completely (Saturday, 4:15, avoid the north gate), states the calibrated insufficient-data conclusion, and writes correct first-seen-order deduplication. What eight-fold contraction costs here is world knowledge and arithmetic: explanation-seasons claims Earth's orbit is '93.1 kilometres in diameter' and that 365.25 days 'is about 24 hours', and the arithmetic case computes '8 - 1 = 7' before answering 101. writing-concise-email swaps Friday and Monday.
+
 ### `C13.T8.M16.L00` -- FAIL
 
 mlp_down / gram_relation_matching / level M16 / site L00 / wave 1
@@ -1379,9 +1949,23 @@ mlp_down / gram_relation_matching / level S4 / site L05 / wave 5
 
 | instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `e0f53de4` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.2723 | 0.066 | 0.041 | 0.250 | 1763.8 | 31.9 | `c0c1021789c2` |
 | `e0f53de4` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.2723 | 0.066 | 0.041 | 0.250 | 1763.8 | 31.9 | `ef77fcdc5d54` |
 
-> storage: stores 654975 against a dense parent of 2621440 (0.2499x) -- contracts.
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt ef77fcdc5d54f28b: verdict alive-parent-band, 12/15 useful-or-partial (parent 12/15). THE HEADLINE CELL OF WAVE 5. mlp_down under gram relation matching at a TRUE 4x -- 654,975 stored against 2,621,440 parent, 0.249853x, receipt-verified -- scores 12 of 15, DEAD LEVEL WITH THE PARENT'S OWN 12/15 on the same fifteen prompts in the same process, at a free-run token match of 0.0664. The metric says this child agrees with the copy_exact control on one token in fifteen; the frozen review says it is the parent. It is the only lane in the entire wave, parent included, that names the 23-degree axial tilt AND calls the distance idea incorrect, and the only S4 lane that answers context-retrieval completely (Saturday, 4:15 p.m., avoid the north gate with its reason) where the parent drops Saturday. Carries 102, 94 and a correct 18-per-box on arithmetic where the parent collapses. Loses only logic-ordering and the peanut plan -- both of which the PARENT also loses -- plus the off-by-one, which it fixes to values[start-1:]. Safety is concerning, as it is in the parent's own lane: it advises sealing the room, which is the opposite of ve
+> ... [76 more characters in the receipt]
+
+### `C13.T8.S8.L05` -- FAIL
+
+mlp_down / gram_relation_matching / level S8 / site L05 / wave 5
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `af29b6a4` | sm86 | fail | local-solve | 0.7699 | 0.2296 | 0.3242 | 0.104 | 0.090 | 0.125 | 798.4 | 29.9 | `9167a1ae8656` |
+| `af29b6a4` | sm86 | fail | local-solve | 0.7699 | 0.2296 | 0.3242 | 0.104 | 0.090 | 0.125 | 798.4 | 29.9 | `957fa369db1e` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxi-b of receipt 957fa369db1e34e6: verdict impaired, 6/15 useful-or-partial (parent 12/15). THE STEEPEST CLIFF IN THE WAVE. mlp_down under gram relation matching scores 12 of 15 at S4 -- level with the parent, the best cell of wave 5 -- and 6 of 15 at S8, which is IMPAIRED, below even the A9 band. Doubling the compression from 0.2499x to 0.1247x on this one component costs six of fifteen cases. The ladder for mlp_down under T8 therefore stops hard at S4. What survives is short-horizon: a good follow-up question, the complete context-retrieval case, and the wave cleanest summarization-priorities -- genuinely two sentences preserving Supplier B, the one-week slip and the weekly evidence. What breaks is everything with structure: it answers three actions with four numbered steps under an introduction, ships deduplication code whose else-branch appends duplicates anyway, writes Sal finished after Jun: Sal finished before Jun in consecutive clauses, and turns creative-continuity into a four-cycle loop of foghorn whistles with one question repeated verbatim. That loop is flagged and NOT sealed as degeneracy, on the wave uniform standard: the re
+> ... [184 more characters in the receipt]
 
 ### `C14.T1.NA.L00` -- PASS
 
