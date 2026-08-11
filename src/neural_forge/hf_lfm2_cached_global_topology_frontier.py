@@ -115,7 +115,7 @@ GLOBAL_TOPOLOGY_SCORE_METHOD = (
     "role-balanced-functional-loss-plus-mean-cached-component-risk-v1"
 )
 RETARGETED_CAPACITY_EVIDENCE_SCHEMA = (
-    "neural-forge-lfm2-retargeted-capacity-evidence-v2"
+    "neural-forge-lfm2-retargeted-capacity-evidence-v3"
 )
 GLOBAL_TOPOLOGY_CAPACITY_PHASE = "lfm2-global-capacity-union-v1"
 GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE = "lfm2-global-functional-width-v1"
@@ -1900,6 +1900,8 @@ def _restore_capacity_option_bank(
                                     "causal_score_tail_fraction",
                                     "context_tail_fraction",
                                     "key_value_memory_tail_fraction",
+                                    "query_key_rope_pair_tail_fraction",
+                                    "value_context_rope_pair_tail_fraction",
                                     "predicted_defect",
                                     "causal_query_row_count",
                                     "cached_key_value_row_count",

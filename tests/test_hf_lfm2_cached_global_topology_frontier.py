@@ -46,6 +46,7 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (  # noqa: E402
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (  # noqa: E402
     ATTENTION_GEOMETRY_ENABLED_POLICY,
     AUTOMATIC_MLP_OPTION_POLICY,
+    CAPACITY_OPTION_BANK_SCHEMA,
     EXPLICIT_MLP_OPTION_POLICY,
     MLP_CAPACITY_RISK_METHOD,
     SHORT_CONV_WRITER_ACTION_RISK_METHOD,
@@ -408,19 +409,19 @@ def test_illegal_required_hidden_fails_before_cached_evidence(tmp_path) -> None:
 
 
 def test_historical_phase_compatibility_is_exact_directional_and_source_bound() -> None:
-    assert (
-        hashlib.sha256(Path(global_frontier.__file__).read_bytes()).hexdigest()
-        == _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
-    )
+    active_global_source_sha256 = hashlib.sha256(
+        Path(global_frontier.__file__).read_bytes()
+    ).hexdigest()
+    active_algorithm_sha256 = global_frontier._global_algorithm_fingerprint()
+    # The v5 attention-risk schema intentionally leaves the last explicitly
+    # approved v4 compatibility tuple behind.
+    assert active_global_source_sha256 != _CURRENT_GLOBAL_FRONTIER_SOURCE_SHA256
+    assert active_algorithm_sha256 != _CURRENT_GLOBAL_ALGORITHM_SHA256
     assert (
         hashlib.sha256(
             Path(global_frontier._cached_functional_width_module.__file__).read_bytes()
         ).hexdigest()
         == _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
-    )
-    assert (
-        global_frontier._global_algorithm_fingerprint()
-        == _CURRENT_GLOBAL_ALGORITHM_SHA256
     )
     exact = topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
         historical_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
@@ -468,6 +469,17 @@ def test_historical_phase_compatibility_is_exact_directional_and_source_bound() 
                 _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
             ),
             current_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+        )
+        is None
+    )
+    assert (
+        topology_compatibility.explicit_global_topology_phase_compatibility_receipt(
+            historical_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
+            current_global_frontier_source_sha256=active_global_source_sha256,
+            current_functional_width_source_sha256=(
+                _CURRENT_FUNCTIONAL_WIDTH_SOURCE_SHA256
+            ),
+            current_algorithm_sha256=active_algorithm_sha256,
         )
         is None
     )
@@ -929,6 +941,81 @@ def test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_c
         )
 
 
+def test_capacity_restore_requires_v5_rope_pair_risks_and_refuses_tamper(
+    tmp_path,
+) -> None:
+    _parent_model, graph, cache, kwargs = _phase_cache_case(tmp_path)
+    frontier = build_lfm2_cached_global_topology_frontier(graph, cache, **kwargs)
+    raw = frontier.selected_capacity_option_bank.as_dict()
+
+    restored = global_frontier._restore_capacity_option_bank(raw)
+
+    assert restored.as_dict() == raw
+    assert raw["schema"] == CAPACITY_OPTION_BANK_SCHEMA
+    attention_row = next(
+        row
+        for layer in raw["layer_evidence"]
+        for row in layer["attention_geometry_risks"]
+    )
+    assert "query_key_rope_pair_tail_fraction" in attention_row
+    assert "value_context_rope_pair_tail_fraction" in attention_row
+
+    stale = json.loads(json.dumps(dict(raw)))
+    stale["schema"] = "neural-forge-lfm2-cached-capacity-option-bank-v4"
+    with pytest.raises(
+        FoldPhaseCacheIntegrityError,
+        match="schema is unsupported",
+    ):
+        global_frontier._restore_capacity_option_bank(stale)
+
+    missing = json.loads(json.dumps(dict(raw)))
+    missing_row = next(
+        row
+        for layer in missing["layer_evidence"]
+        for row in layer["attention_geometry_risks"]
+    )
+    missing_row.pop("query_key_rope_pair_tail_fraction")
+    with pytest.raises(FoldPhaseCacheIntegrityError):
+        global_frontier._restore_capacity_option_bank(missing)
+
+    inconsistent = json.loads(json.dumps(dict(raw)))
+    inconsistent_row = next(
+        row
+        for layer in inconsistent["layer_evidence"]
+        for row in layer["attention_geometry_risks"]
+    )
+    inconsistent_row["predicted_defect"] = 0.0
+    inconsistent_body = dict(inconsistent)
+    inconsistent_body.pop("evidence_sha256")
+    inconsistent["evidence_sha256"] = canonical_sha256(inconsistent_body)
+    with pytest.raises(
+        FoldPhaseCacheIntegrityError,
+        match="failed typed authentication",
+    ) as inconsistent_error:
+        global_frontier._restore_capacity_option_bank(inconsistent)
+    assert "predicted_defect must equal the maximum" in str(
+        inconsistent_error.value.__cause__
+    )
+
+    full_dim_tamper = json.loads(json.dumps(dict(raw)))
+    full_dim_row = next(
+        row
+        for layer in full_dim_tamper["layer_evidence"]
+        for row in layer["attention_geometry_risks"]
+    )
+    full_dim_row["value_context_rope_pair_tail_fraction"] = 0.999
+    full_dim_row["predicted_defect"] = 0.999
+    full_dim_body = dict(full_dim_tamper)
+    full_dim_body.pop("evidence_sha256")
+    full_dim_tamper["evidence_sha256"] = canonical_sha256(full_dim_body)
+    with pytest.raises(
+        FoldPhaseCacheIntegrityError,
+        match="failed typed authentication",
+    ) as full_dim_error:
+        global_frontier._restore_capacity_option_bank(full_dim_tamper)
+    assert "exact zero RoPE-pair tails" in str(full_dim_error.value.__cause__)
+
+
 def test_global_frontier_phase_cache_resumes_after_capacity_only_interruption(
     tmp_path,
 ) -> None:
@@ -1042,7 +1129,7 @@ def test_historical_capacity_reuse_rejects_semantic_neighbor_and_payload_tamper(
         )
         with pytest.raises(
             FoldPhaseCacheIntegrityError,
-            match="different exact compatibility receipt",
+            match="no exact directional compatibility receipt",
         ):
             build_lfm2_cached_global_topology_frontier(
                 graph,
@@ -1060,11 +1147,14 @@ def test_historical_capacity_reuse_rejects_semantic_neighbor_and_payload_tamper(
                 ),
                 **kwargs,
             )
-    for field_name, message in (
-        ("expected_completion_sha256", "completion differs"),
-        ("expected_evidence_sha256", "evidence differs"),
+    for field_name in (
+        "expected_completion_sha256",
+        "expected_evidence_sha256",
     ):
-        with pytest.raises(FoldPhaseCacheIntegrityError, match=message):
+        with pytest.raises(
+            FoldPhaseCacheIntegrityError,
+            match="no exact directional compatibility receipt",
+        ):
             build_lfm2_cached_global_topology_frontier(
                 graph,
                 cache,

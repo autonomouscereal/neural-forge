@@ -34,7 +34,11 @@ from neural_forge.dynamic_circuit_ir import (  # noqa: E402
 )
 from neural_forge.dynamic_fold_phase_cache import (  # noqa: E402
     DynamicFoldPhaseCache,
+    FoldPhaseCacheIntegrityError,
     FoldPhaseKey,
+)
+from neural_forge.dynamic_parameter_frontier import (  # noqa: E402
+    Lfm2HeterogeneousLayoutSelectionInput,
 )
 import neural_forge.dynamic_fold_phase_cache as phase_cache_module  # noqa: E402
 import neural_forge.hf_lfm2_cached_global_topology_frontier as global_frontier  # noqa: E402
@@ -75,6 +79,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
     build_lfm2_attention_layer_option,
+    build_lfm2_heterogeneous_target_pins,
     build_lfm2_short_conv_layer_option,
     discover_lfm2_source_layers,
 )
@@ -294,6 +299,8 @@ def _explicit_union_bank(
             causal_score_tail_fraction=0.0,
             context_tail_fraction=0.0,
             key_value_memory_tail_fraction=0.0,
+            query_key_rope_pair_tail_fraction=0.0,
+            value_context_rope_pair_tail_fraction=0.0,
             predicted_defect=defect,
             causal_query_row_count=256,
             cached_key_value_row_count=256,
@@ -512,6 +519,17 @@ def test_authenticated_a0007_da5_phases_restore_and_recompute_current_selection(
                 for key, value in golden_files[relative_path].items()
                 if key != "mode"
             }
+    legacy_capacity_bank = capacity_payload["capacity_option_bank"]
+    if legacy_capacity_bank["schema"].endswith("-v4"):
+        # A0007 remains authenticated historical evidence, but its attention
+        # risks predate the required RoPE-pair fields.  Never reinterpret it as
+        # v5; a regenerated v5 fixture may continue through the reuse path below.
+        with pytest.raises(
+            FoldPhaseCacheIntegrityError,
+            match="schema is unsupported",
+        ):
+            global_frontier._restore_capacity_option_bank(legacy_capacity_bank)
+        return
     graph = _source_graph(_SCHEDULE, intermediate=2_560)
     fixture_graph_sha256 = capacity_payload["capacity_option_bank"][
         "source_graph_fingerprint"
@@ -739,6 +757,92 @@ def test_authenticated_a0007_da5_phases_restore_and_recompute_current_selection(
         ) == golden_raw_sha256s[phase_name]
 
 
+def test_d24_attention_option_unlocks_exact_all_dense_h816_body() -> None:
+    graph = _source_graph(_SCHEDULE, intermediate=2_560)
+    discovered = discover_lfm2_source_layers(graph)
+    attention_geometries = ((12, 6, 64), (16, 8, 24), (16, 8, 64))
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=_SCHEDULE,
+        source_widths=(2_560,) * len(_SCHEDULE),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=attention_geometries,
+        target_hidden_size=816,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=53_552_368,
+        conv_kernel_size=3,
+        discover_exact_short_conv_writer_ranks=False,
+    )
+    options = []
+    for layer, widths in zip(discovered, policy.widths_by_layer, strict=True):
+        for width in widths:
+            if layer.layer_type == "conv":
+                options.extend(
+                    build_lfm2_short_conv_layer_option(
+                        source_layer_sha256=layer.source_layer_sha256,
+                        mlp_intermediate_size=width,
+                        internal_width=internal_width,
+                        writer_rank=None,
+                        selection_evidence_sha256=_digest(
+                            f"d24-exact-{layer.ordinal}-{width}-{internal_width}"
+                        ),
+                        structural_risk=0.0,
+                    )
+                    for internal_width in (704, 1_024)
+                )
+            else:
+                options.extend(
+                    build_lfm2_attention_layer_option(
+                        source_layer_sha256=layer.source_layer_sha256,
+                        mlp_intermediate_size=width,
+                        query_heads=query_heads,
+                        key_value_heads=key_value_heads,
+                        head_dim=head_dim,
+                        selection_evidence_sha256=_digest(
+                            "d24-exact-"
+                            f"{layer.ordinal}-{width}-{query_heads}-"
+                            f"{key_value_heads}-{head_dim}"
+                        ),
+                        structural_risk=0.0,
+                    )
+                    for query_heads, key_value_heads, head_dim in attention_geometries
+                )
+    pins = build_lfm2_heterogeneous_target_pins(
+        hidden_size=816,
+        vocab_size=4_096,
+        conv_kernel_size=3,
+        rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=1,
+        eos_token_id=7,
+        pad_token_id=0,
+        block_auto_adjust_ff_dim=False,
+        target_vocab_evidence_sha256=_digest("d24-exact-target-vocabulary"),
+        runtime_evidence_sha256=_digest("d24-exact-runtime"),
+        token_bridge_evidence_sha256=_digest("d24-exact-token-bridge"),
+    )
+
+    selection = Lfm2HeterogeneousLayoutSelectionInput(
+        target_pins=pins,
+        layer_options=tuple(options),
+    ).select(graph, exact_target_unique_parameters=53_552_368)
+    descriptor = selection.descriptor
+
+    assert descriptor.accounting.unique_parameter_elements == 53_552_368
+    assert all(
+        layer.short_conv_writer_rank is None
+        for layer in descriptor.layers
+        if layer.layer_type == "conv"
+    )
+    assert sum(
+        layer.head_dim == 24
+        for layer in descriptor.layers
+        if layer.layer_type == "full_attention"
+    ) == 1
+
+
 def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
     tmp_path,
     monkeypatch,
@@ -808,12 +912,7 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
     )
     phase_root = tmp_path / "derived-phases"
     current_algorithm_sha256 = global_frontier._global_algorithm_fingerprint()
-    with monkeypatch.context() as historical_patch:
-        historical_patch.setattr(
-            global_frontier,
-            "_global_algorithm_fingerprint",
-            lambda: _PUBLISHED_GLOBAL_ALGORITHM_SHA256,
-        )
+    with monkeypatch.context():
         historical_context = Lfm2GlobalTopologyPhaseCacheContext(
             cache=DynamicFoldPhaseCache(phase_root),
             evidence_split_sha256=_digest("exact4x-evidence-splits"),
@@ -866,30 +965,6 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
                 },
             )
         )
-    compatibility_receipt = (
-        global_frontier._current_historical_phase_compatibility_receipt(
-            historical_algorithm_sha256=_PUBLISHED_GLOBAL_ALGORITHM_SHA256,
-            current_algorithm_sha256=current_algorithm_sha256,
-        )
-    )
-    compatibility_receipt_sha256 = str(
-        compatibility_receipt["compatibility_receipt_sha256"]
-    )
-    capacity_reuse = Lfm2ExistingGlobalTopologyPhaseReuseRequest(
-        phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
-        phase_key_sha256=capacity_key.phase_key_sha256,
-        expected_completion_sha256=capacity_entry.completion_sha256,
-        expected_evidence_sha256=bank.evidence_sha256,
-        expected_compatibility_receipt_sha256=compatibility_receipt_sha256,
-    )
-    functional_reuse = Lfm2ExistingGlobalTopologyPhaseReuseRequest(
-        phase_name=GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
-        phase_key_sha256=functional_key.phase_key_sha256,
-        expected_completion_sha256=functional_entry.completion_sha256,
-        expected_evidence_sha256=functional.evidence_sha256,
-        expected_compatibility_receipt_sha256=compatibility_receipt_sha256,
-    )
-
     def forbidden_session(_self):
         raise AssertionError(
             "seeded no-carrier control evidence must not reopen trace payloads"
@@ -923,14 +998,14 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
         global_frontier,
         "build_lfm2_cached_heterogeneous_capacity_option_bank",
         lambda *_args, **_kwargs: pytest.fail(
-            "historical capacity hit attempted a cold build"
+            "current v5 capacity hit attempted a cold build"
         ),
     )
     monkeypatch.setattr(
         global_frontier,
         "build_lfm2_cached_functional_width_evidence",
         lambda *_args, **_kwargs: pytest.fail(
-            "historical functional hit attempted a cold build"
+            "current v5 functional hit attempted a cold build"
         ),
     )
     progress = []
@@ -938,8 +1013,6 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
         cache=DynamicFoldPhaseCache(phase_root),
         evidence_split_sha256=_digest("exact4x-evidence-splits"),
         progress=lambda stage, details: progress.append((stage, dict(details))),
-        existing_capacity_phase_reuse=capacity_reuse,
-        existing_functional_phase_reuse=functional_reuse,
     )
     kwargs = {
         "runtime": runtime,
@@ -970,8 +1043,6 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
                 progress=lambda stage, details: hit_progress.append(
                     (stage, dict(details))
                 ),
-                existing_capacity_phase_reuse=capacity_reuse,
-                existing_functional_phase_reuse=functional_reuse,
             ),
         },
     )
@@ -988,26 +1059,15 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
     )
     assert dict(hot.as_dict()) == dict(cold.as_dict())
     assert hot.frontier_sha256 == cold.frontier_sha256
-    reuse_receipts = [
+    phase_hits = [
         details
         for stage, details in progress
-        if stage == "global_topology_existing_phase_reuse_hit"
+        if stage == "global_topology_phase_cache_hit"
     ]
-    assert [value["phase_name"] for value in reuse_receipts] == [
+    assert [value["phase_name"] for value in phase_hits] == [
         GLOBAL_TOPOLOGY_CAPACITY_PHASE,
         GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
     ]
-    for receipt in reuse_receipts:
-        body = dict(receipt)
-        seal = body.pop("reuse_receipt_sha256")
-        assert seal == canonical_sha256(body)
-        assert receipt["semantic_phase_contract_exact"] is True
-        assert receipt["historical_artifact_rewritten"] is False
-        assert receipt["cache_miss_build_allowed"] is False
-        assert receipt["current_algorithm_sha256"] == current_algorithm_sha256
-        assert receipt["historical_algorithm_sha256"] == (
-            _PUBLISHED_GLOBAL_ALGORITHM_SHA256
-        )
     assert any(
         stage == "global_topology_phase_cache_published"
         and details["phase_name"] == GLOBAL_TOPOLOGY_SELECTION_PHASE
@@ -1039,10 +1099,10 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
     )
     assert (
         sum(
-            stage == "global_topology_existing_phase_reuse_hit"
+            stage == "global_topology_phase_cache_hit"
             for stage, _details in hit_progress
         )
-        == 2
+        == 3
     )
     assert any(
         stage == "global_topology_phase_cache_hit"

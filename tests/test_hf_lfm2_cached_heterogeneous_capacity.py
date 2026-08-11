@@ -34,9 +34,12 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     CAPACITY_OPTION_BANK_SCHEMA,
     MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS,
     SHORT_CONV_WRITER_ACTION_RISK_METHOD,
+    Lfm2CachedAttentionGeometryRisk,
     Lfm2CachedHeterogeneousCapacityOptionBank,
     Lfm2CachedHeterogeneousCapacityError,
+    _AttentionGeometryAccumulator,
     _ShortConvWriterActionAccumulator,
+    _rope_pair_major_matrix,
     _cached_mlp_nonlinear_statistics,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
     derive_lfm2_automatic_mlp_width_policy,
@@ -62,9 +65,11 @@ def _digest(label: str) -> str:
 
 
 def test_writer_capacity_contract_uses_new_schema_generation() -> None:
-    assert CAPACITY_EVIDENCE_SCHEMA.endswith("-v4")
-    assert CAPACITY_OPTION_BANK_SCHEMA.endswith("-v4")
+    assert CAPACITY_EVIDENCE_SCHEMA.endswith("-v5")
+    assert CAPACITY_OPTION_BANK_SCHEMA.endswith("-v5")
     assert SHORT_CONV_WRITER_ACTION_RISK_METHOD.endswith("-v2")
+    assert ATTENTION_GEOMETRY_RISK_METHOD.endswith("-v2")
+    assert ATTENTION_GEOMETRY_ENABLED_POLICY.endswith("-v1")
 
 
 def _bf16_runtime_closed_mlp_evidence() -> dict[str, torch.Tensor]:
@@ -488,7 +493,12 @@ def test_cached_attention_geometry_risk_streams_causal_qk_kv_context(
             graph,
             cache,
             short_conv_internal_widths=(12, 14),
-            attention_head_options=((2, 1, 8), (4, 2, 8)),
+            attention_head_options=(
+                (2, 1, 4),
+                (2, 1, 8),
+                (4, 2, 6),
+                (4, 2, 8),
+            ),
             mlp_intermediate_sizes=(18, 20),
             attention_geometry_risk_enabled=True,
             attention_geometry_score_query_chunk_size=1,
@@ -509,16 +519,31 @@ def test_cached_attention_geometry_risk_streams_causal_qk_kv_context(
     for evidence in attention_evidence:
         assert tuple(
             report.geometry for report in evidence.attention_geometry_risks
-        ) == ((2, 1, 8), (4, 2, 8))
-        low, full = evidence.attention_geometry_risks
+        ) == ((2, 1, 4), (2, 1, 8), (4, 2, 6), (4, 2, 8))
+        low, reduced_full_dim, nondividing, full = evidence.attention_geometry_risks
         assert low.fold_method_id == ATTENTION_GEOMETRY_RISK_METHOD
         assert low.causal_query_row_count > 0
         assert low.cached_key_value_row_count >= low.causal_query_row_count
         assert low.predicted_defect > 0.0
+        assert low.query_key_rope_pair_tail_fraction > 0.0
+        assert low.value_context_rope_pair_tail_fraction > 0.0
+        assert nondividing.query_key_rope_pair_tail_fraction > 0.0
+        assert nondividing.value_context_rope_pair_tail_fraction > 0.0
+        assert reduced_full_dim.query_key_rope_pair_tail_fraction == 0.0
+        assert reduced_full_dim.value_context_rope_pair_tail_fraction == 0.0
+        assert reduced_full_dim.predicted_defect == max(
+            reduced_full_dim.coupled_group_tail_fraction,
+            reduced_full_dim.query_offset_tail_fraction,
+            reduced_full_dim.causal_score_tail_fraction,
+            reduced_full_dim.context_tail_fraction,
+            reduced_full_dim.key_value_memory_tail_fraction,
+        )
         assert full.predicted_defect == 0.0
         assert full.causal_score_tail_fraction == 0.0
         assert full.context_tail_fraction == 0.0
         assert full.key_value_memory_tail_fraction == 0.0
+        assert full.query_key_rope_pair_tail_fraction == 0.0
+        assert full.value_context_rope_pair_tail_fraction == 0.0
 
         options = tuple(
             option
@@ -532,20 +557,216 @@ def test_cached_attention_geometry_risk_streams_causal_qk_kv_context(
             )
             for option in options
         }
-        assert risk[(2, 1, 8)] > risk[(4, 2, 8)]
+        assert risk[(2, 1, 4)] > risk[(4, 2, 8)]
+        assert risk[(4, 2, 6)] > risk[(4, 2, 8)]
+
+
+def _synthetic_attention_geometry_accumulator(
+    *,
+    head_dim: int = 8,
+) -> _AttentionGeometryAccumulator:
+    generator = torch.Generator().manual_seed(811)
+    accumulator = _AttentionGeometryAccumulator(layer_index=2)
+    accumulator.add_phase(
+        phase="prefill",
+        query=torch.randn(2, 4, 3, head_dim, generator=generator),
+        key=torch.randn(2, 2, 3, head_dim, generator=generator),
+        value=torch.randn(2, 2, 3, head_dim, generator=generator),
+        context=torch.randn(2, 4, 3, head_dim, generator=generator),
+        pre_residual=torch.zeros(2, 3, 16),
+        post_residual=torch.ones(2, 3, 16),
+        key_cache=None,
+        value_cache=None,
+        key_history=None,
+        value_history=None,
+        qk_scores=None,
+        additive_mask=None,
+        probabilities=None,
+        context_from_probabilities=None,
+        score_query_chunk_size=2,
+    )
+    return accumulator
+
+
+def test_rope_pair_major_matrix_uses_split_half_lfm2_pairs() -> None:
+    values = torch.arange(8, dtype=torch.float64).reshape(1, 1, 1, 8)
+
+    rows = _rope_pair_major_matrix(values)
+
+    assert torch.equal(
+        rows,
+        torch.tensor(
+            [[0.0, 4.0], [1.0, 5.0], [2.0, 6.0], [3.0, 7.0]],
+            dtype=torch.float64,
+        ),
+    )
+    assert not torch.equal(
+        rows,
+        torch.tensor(
+            [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0], [6.0, 7.0]],
+            dtype=torch.float64,
+        ),
+    )
+
+
+def test_rope_pair_major_matrix_rejects_untyped_or_nonfinite_evidence() -> None:
+    invalid_values = (
+        object(),
+        torch.ones(8),
+        torch.ones(1, 1, 8),
+        torch.ones(1, 1, 1, 8, dtype=torch.int64),
+        torch.ones(1, 1, 1, 8, dtype=torch.complex64),
+        torch.empty(1, 1, 0, 8),
+        torch.tensor([[[[0.0, 1.0, float("nan"), 3.0]]]]),
+        torch.tensor([[[[0.0, 1.0, float("inf"), 3.0]]]]),
+    )
+
+    for value in invalid_values:
+        with pytest.raises(
+            Lfm2CachedHeterogeneousCapacityError,
+            match="nonempty rank-four real finite floating tensor",
+        ):
+            _rope_pair_major_matrix(value)
+
+
+def test_attention_risk_authenticates_maximum_and_full_dim_zero_pair_tail() -> None:
+    values = {
+        "query_heads": 4,
+        "key_value_heads": 2,
+        "head_dim": 4,
+        "source_query_heads": 4,
+        "source_key_value_heads": 2,
+        "source_head_dim": 8,
+        "fold_method_id": ATTENTION_GEOMETRY_RISK_METHOD,
+        "coupled_group_tail_fraction": 0.2,
+        "query_offset_tail_fraction": 0.1,
+        "causal_score_tail_fraction": 0.0,
+        "context_tail_fraction": 0.0,
+        "key_value_memory_tail_fraction": 0.0,
+        "query_key_rope_pair_tail_fraction": 0.3,
+        "value_context_rope_pair_tail_fraction": 0.25,
+        "predicted_defect": 0.3,
+        "causal_query_row_count": 8,
+        "cached_key_value_row_count": 8,
+    }
+
+    assert Lfm2CachedAttentionGeometryRisk(**values).predicted_defect == 0.3
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="predicted_defect must equal the maximum",
+    ):
+        Lfm2CachedAttentionGeometryRisk(**{**values, "predicted_defect": 0.2})
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="exact zero RoPE-pair tails",
+    ):
+        Lfm2CachedAttentionGeometryRisk(
+            **{
+                **values,
+                "head_dim": 8,
+                "query_key_rope_pair_tail_fraction": 0.01,
+                "value_context_rope_pair_tail_fraction": 0.0,
+                "predicted_defect": 0.2,
+            }
+        )
+
+
+def test_cached_rope_pair_dimension_risk_is_monotone_and_full_dim_zero() -> None:
+    accumulator = _synthetic_attention_geometry_accumulator()
+
+    d2, d4, d6, d8 = accumulator.risks(
+        ((4, 2, 2), (4, 2, 4), (4, 2, 6), (4, 2, 8))
+    )
+
+    assert (
+        d2.query_key_rope_pair_tail_fraction
+        > d4.query_key_rope_pair_tail_fraction
+        > d6.query_key_rope_pair_tail_fraction
+        > 0.0
+    )
+    assert (
+        d2.value_context_rope_pair_tail_fraction
+        > d4.value_context_rope_pair_tail_fraction
+        > d6.value_context_rope_pair_tail_fraction
+        > 0.0
+    )
+    assert d8.query_key_rope_pair_tail_fraction == 0.0
+    assert d8.value_context_rope_pair_tail_fraction == 0.0
+    assert d8.predicted_defect == 0.0
+    assert d6.head_dim == 6  # Even non-dividing reductions are legal: 8 -> 6.
+    assert all(
+        report.predicted_defect
+        == max(
+            report.query_key_rope_pair_tail_fraction,
+            report.value_context_rope_pair_tail_fraction,
+        )
+        for report in (d2, d4, d6)
+    )
+
+
+def test_cached_rope_pair_dimension_risk_rejects_odd_and_expanding_dims() -> None:
+    accumulator = _synthetic_attention_geometry_accumulator()
+
+    for invalid in ((4, 2, 3), (4, 2, 10)):
+        with pytest.raises(
+            Lfm2CachedHeterogeneousCapacityError,
+            match="positive even head_dim no larger than the source",
+        ):
+            accumulator.risks((invalid,))
 
     with pytest.raises(
         Lfm2CachedHeterogeneousCapacityError,
-        match="preserve head_dim",
+        match="head_dim must be positive and even",
     ):
-        build_lfm2_cached_heterogeneous_capacity_option_bank(
-            graph,
-            cache,
-            short_conv_internal_widths=(12, 14),
-            attention_head_options=((2, 1, 4), (4, 2, 8)),
-            mlp_intermediate_sizes=(18, 20),
-            attention_geometry_risk_enabled=True,
+        _synthetic_attention_geometry_accumulator(head_dim=7)
+
+
+def test_exact4x_policy_admits_authenticated_d24_attention_lattice() -> None:
+    layer_types = (
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    )
+
+    common = {
+        "layer_types": layer_types,
+        "source_widths": (2_560,) * len(layer_types),
+        "short_conv_internal_widths": (704, 1_024),
+        "target_hidden_size": 816,
+        "target_vocab_size": 4_096,
+        "exact_target_unique_parameters": 53_552_368,
+        "conv_kernel_size": 3,
+        "discover_exact_short_conv_writer_ranks": False,
+    }
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="no dense compact MLP/operator integer-lattice witness",
+    ):
+        derive_lfm2_automatic_mlp_width_policy(
+            **common,
+            attention_head_options=((12, 6, 64), (16, 8, 64)),
         )
+
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        **common,
+        attention_head_options=((12, 6, 64), (16, 8, 64), (16, 8, 24)),
+    )
+
+    assert policy.policy_id == AUTOMATIC_MLP_OPTION_POLICY
+    assert policy.exact_witness_search_candidate_count == 6
+    assert policy.exact_witness_search_retained_count == 1
+    assert policy.short_conv_writer_ranks == ()
 
 
 def test_production_exact4x_width_policy_is_broad_and_operator_exchangeable() -> None:

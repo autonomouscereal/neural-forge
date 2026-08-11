@@ -35,14 +35,14 @@ from .hf_lfm2_retained_trace_rows import (
     Lfm2RetainedTraceRowsError,
 )
 
-CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v4"
-CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v4"
+CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v5"
+CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v5"
 MLP_CAPACITY_RISK_METHOD = "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1"
 SHORT_CONV_WRITER_ACTION_RISK_METHOD = (
     "lfm2-cached-short-conv-output-action-streamed-covariance-v2"
 )
 ATTENTION_GEOMETRY_RISK_METHOD = (
-    "lfm2-cached-causal-qk-kv-context-residual-spectral-tail-v1"
+    "lfm2-cached-causal-qk-kv-context-residual-rope-pair-spectral-tail-v2"
 )
 ATTENTION_GEOMETRY_DISABLED_POLICY = "disabled-v1"
 ATTENTION_GEOMETRY_ENABLED_POLICY = "all-authenticated-causal-rows-v1"
@@ -142,6 +142,8 @@ class Lfm2CachedAttentionGeometryRisk:
     causal_score_tail_fraction: float
     context_tail_fraction: float
     key_value_memory_tail_fraction: float
+    query_key_rope_pair_tail_fraction: float
+    value_context_rope_pair_tail_fraction: float
     predicted_defect: float
     causal_query_row_count: int
     cached_key_value_row_count: int
@@ -162,17 +164,22 @@ class Lfm2CachedAttentionGeometryRisk:
             self.source_head_dim,
             "source_head_dim",
         )
+        if source_head_dim % 2:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached attention source_head_dim must be positive and even."
+            )
         if (
             query > source_query
             or key_value > source_key_value
             or query % key_value
             or source_query % source_key_value
             or query // key_value > source_query // source_key_value
-            or head_dim != source_head_dim
+            or head_dim > source_head_dim
+            or head_dim % 2
         ):
             raise Lfm2CachedHeterogeneousCapacityError(
-                "Attention geometry risk does not describe a legal preserved-head "
-                "GQA compaction."
+                "Attention geometry risk does not describe a legal even-dimensional "
+                "source-subset GQA compaction."
             )
         if self.fold_method_id != ATTENTION_GEOMETRY_RISK_METHOD:
             raise Lfm2CachedHeterogeneousCapacityError(
@@ -184,11 +191,38 @@ class Lfm2CachedAttentionGeometryRisk:
             "causal_score_tail_fraction",
             "context_tail_fraction",
             "key_value_memory_tail_fraction",
+            "query_key_rope_pair_tail_fraction",
+            "value_context_rope_pair_tail_fraction",
             "predicted_defect",
         ):
             value = _finite_nonnegative(getattr(self, name), name)
             if value > 1.0 + 1e-12:
                 raise Lfm2CachedHeterogeneousCapacityError(f"{name} cannot exceed one.")
+        tails = (
+            float(self.coupled_group_tail_fraction),
+            float(self.query_offset_tail_fraction),
+            float(self.causal_score_tail_fraction),
+            float(self.context_tail_fraction),
+            float(self.key_value_memory_tail_fraction),
+            float(self.query_key_rope_pair_tail_fraction),
+            float(self.value_context_rope_pair_tail_fraction),
+        )
+        if not math.isclose(
+            float(self.predicted_defect),
+            max(tails),
+            rel_tol=1e-12,
+            abs_tol=1e-15,
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Attention predicted_defect must equal the maximum authenticated "
+                "geometry tail."
+            )
+        if head_dim == source_head_dim and any(
+            value != 0.0 for value in tails[-2:]
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Full-dimensional attention must have exact zero RoPE-pair tails."
+            )
         _positive_int(self.causal_query_row_count, "causal_query_row_count")
         _positive_int(
             self.cached_key_value_row_count,
@@ -213,6 +247,12 @@ class Lfm2CachedAttentionGeometryRisk:
             "causal_score_tail_fraction": self.causal_score_tail_fraction,
             "context_tail_fraction": self.context_tail_fraction,
             "key_value_memory_tail_fraction": (self.key_value_memory_tail_fraction),
+            "query_key_rope_pair_tail_fraction": (
+                self.query_key_rope_pair_tail_fraction
+            ),
+            "value_context_rope_pair_tail_fraction": (
+                self.value_context_rope_pair_tail_fraction
+            ),
             "predicted_defect": self.predicted_defect,
             "causal_query_row_count": self.causal_query_row_count,
             "cached_key_value_row_count": self.cached_key_value_row_count,
@@ -713,6 +753,38 @@ def _head_major_matrix(value: Any) -> Any:
     return value.movedim(1, 0).reshape(int(value.shape[1]), -1).contiguous()
 
 
+def _rope_pair_major_matrix(value: Any) -> Any:
+    """Flatten LFM2 RoPE pairs ``(p, p + D/2)`` into pair-major rows."""
+
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.ndim != 4
+        or not value.is_floating_point()
+        or value.is_complex()
+        or any(int(size) <= 0 for size in value.shape)
+        or not bool(torch.isfinite(value).all().item())
+    ):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Cached attention RoPE-pair evidence must be a nonempty rank-four "
+            "real finite floating tensor."
+        )
+    head_dim = int(value.shape[-1])
+    if head_dim <= 0 or head_dim % 2:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Cached attention RoPE-pair evidence requires a positive even head_dim."
+        )
+    pair_count = head_dim // 2
+    paired = torch.stack(
+        (value[..., :pair_count], value[..., pair_count:]),
+        dim=-1,
+    )
+    return paired.movedim(-2, 0).reshape(pair_count, -1).contiguous()
+
+
 def _group_major_matrix(value: Any, key_value_heads: int) -> Any:
     batch, query_heads = int(value.shape[0]), int(value.shape[1])
     offsets = query_heads // key_value_heads
@@ -893,6 +965,7 @@ class _AttentionGeometryAccumulator:
         self.group_grams: dict[str, Any] = {}
         self.offset_grams: dict[str, Any] = {}
         self.head_grams: dict[str, Any] = {}
+        self.rope_pair_grams: dict[str, Any] = {}
         self.causal_query_row_count = 0
         self.cached_key_value_row_count = 0
 
@@ -1110,6 +1183,11 @@ class _AttentionGeometryAccumulator:
                     "authenticated pre-O head context."
                 )
         topology = (query_heads, key_value_heads, head_dim)
+        if head_dim % 2:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                f"{phase} cached attention head_dim must be positive and even for "
+                "authenticated LFM2 RoPE-pair evidence."
+            )
         observed = (
             self.source_query_heads,
             self.source_key_value_heads,
@@ -1159,6 +1237,18 @@ class _AttentionGeometryAccumulator:
             "residual_context",
             _head_major_matrix(residual_context),
         )
+        for name, tensor in (
+            ("query", q),
+            ("key", memory_key),
+            ("value", memory_value),
+            ("context", c),
+            ("residual_context", residual_context),
+        ):
+            self._add_gram(
+                self.rope_pair_grams,
+                name,
+                _rope_pair_major_matrix(tensor),
+            )
 
         repeated_key = None
         key_positions = None
@@ -1311,6 +1401,10 @@ class _AttentionGeometryAccumulator:
             self.source_head_dim,
             "source_head_dim",
         )
+        if source_head_dim % 2:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached attention source_head_dim must be positive and even."
+            )
         source_offsets = source_query // source_key_value
         group = self._normalized_combined_gram(
             self.group_grams,
@@ -1353,10 +1447,23 @@ class _AttentionGeometryAccumulator:
             ("key", "value"),
             source_key_value,
         )
+        source_rope_pairs = source_head_dim // 2
+        qk_rope_pairs = self._normalized_combined_gram(
+            self.rope_pair_grams,
+            ("query", "key"),
+            source_rope_pairs,
+        )
+        value_context_rope_pairs = self._normalized_combined_gram(
+            self.rope_pair_grams,
+            ("value", "context", "residual_context"),
+            source_rope_pairs,
+        )
         reports = []
         for query_heads, key_value_heads, head_dim in attention_options:
+            target_head_dim = _positive_int(head_dim, "head_dim")
             if (
-                head_dim != source_head_dim
+                target_head_dim > source_head_dim
+                or target_head_dim % 2
                 or query_heads > source_query
                 or key_value_heads > source_key_value
                 or query_heads % key_value_heads
@@ -1364,15 +1471,22 @@ class _AttentionGeometryAccumulator:
             ):
                 raise Lfm2CachedHeterogeneousCapacityError(
                     "Attention-geometry allocation requires every candidate to "
-                    "preserve head_dim and remain a legal source-subset GQA topology."
+                    "use a positive even head_dim no larger than the source and "
+                    "remain a legal source-subset GQA topology."
                 )
             target_offsets = query_heads // key_value_heads
+            target_rope_pairs = target_head_dim // 2
             tails = (
                 self._spectral_tail(group, key_value_heads),
                 self._spectral_tail(offset, target_offsets),
                 self._spectral_tail(score, query_heads),
                 self._spectral_tail(context, query_heads),
                 self._spectral_tail(memory, key_value_heads),
+                self._spectral_tail(qk_rope_pairs, target_rope_pairs),
+                self._spectral_tail(
+                    value_context_rope_pairs,
+                    target_rope_pairs,
+                ),
             )
             reports.append(
                 Lfm2CachedAttentionGeometryRisk(
@@ -1388,6 +1502,8 @@ class _AttentionGeometryAccumulator:
                     causal_score_tail_fraction=tails[2],
                     context_tail_fraction=tails[3],
                     key_value_memory_tail_fraction=tails[4],
+                    query_key_rope_pair_tail_fraction=tails[5],
+                    value_context_rope_pair_tail_fraction=tails[6],
                     predicted_defect=max(tails),
                     causal_query_row_count=self.causal_query_row_count,
                     cached_key_value_row_count=(self.cached_key_value_row_count),
