@@ -1,6 +1,8 @@
 {
   "authority": "Cyril, mid-wave directive relayed 2026-08-11: keep the complete paper trail, the primary sealed evidence cache, the current deployment and the tensor artifacts of the best folds; delete the wave-4 M-B conditioned captures, installed tensors beyond the keep list, superseded deployments beyond current+1, and scratch.",
-  "deleted": false,
+  "deleted": true,
+  "deleted_bytes": 62031765960,
+  "deleted_file_count": 430,
   "df_at_manifest_time": "Filesystem              1B-blocks          Used         Avail Use% Mounted on\n/dev/sda2           1966736678912 1859132592128    7623835648 100% /\n//192.168.50.250/ai 4844514443264 2963080740864 1881433702400  62% /mnt/ai_data\n",
   "entries": [
     {

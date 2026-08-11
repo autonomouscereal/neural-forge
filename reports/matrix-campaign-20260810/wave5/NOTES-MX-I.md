@@ -6,18 +6,21 @@ before it ran out of budget. Wave 5B finished the sweep: eleven ungraded
 dossiers graded, six S8 probes solved and reviewed, and every remaining
 component taken to a true `S4` under every technique that can express it.
 
-**Ninety-three cells now carry a sealed ADDENDUM 6 verdict.** The campaign has
-its answer, and it is not the one the token-match era predicted.
+**Fifty-three cells now carry a sealed ADDENDUM 6 verdict** — 28
+`alive-parent-band`, 14 `alive-degraded`, 8 `dead`, 2 `impaired`, 1
+`cannot-express-4x`. The campaign has its answer, and it is not the one the
+token-match era predicted.
 
 ---
 
 ## 1. The headline
 
-**Nine of the fifteen component slots the campaign can measure fold at a real
-quarter of their stored parameters with the whole model still inside the
-parent's own quality band.** Three cells score **12 of 15 — dead level with the
-parent** — at storage ratios of 0.2499×, 0.2490× and 0.2493×, on free-run token
-matches of 0.066, 0.249 and 0.156.
+**Five of the ten components the campaign could measure at a storage-defined
+`S4` fold at a real quarter of their stored parameters with the whole model
+still inside the parent's own quality band** — `conv_out_proj`, `attn_q`,
+`attn_k`, `mlp_gate` and `mlp_down`, across twenty separate cells. Five cells
+score **12 of 15 — dead level with the parent** — at storage ratios between
+0.2490× and 0.2500×, on free-run token matches from 0.066 to 0.249.
 
 | cell | component | stored / parent | **review** | vs parent | token match (diag) |
 |---|---|---:|---:|---:|---:|
@@ -103,10 +106,23 @@ as a value.
 
 ### 3.3 Counts and degeneracy disagree, and the clause earns its keep
 
-Six cells are sealed `dead` in this wave. **Only one of them is dead on its
-count.** `C08.T8.S4.L02` would have scored 9 of 15 — inside `alive-degraded`, one
-case off the parent band — and it is dead because a response is nothing but a
-loop. `C13.T1`/`C13.T2` would have been 8, `C09.T8` and `C08.T1`/`C08.T2` 5.
+Eight cells are sealed `dead` across wave 5, seven of them in 5B. **Not one is
+dead on its count**, and only one has an independent non-behavioural trigger:
+
+| cell | count | what the count alone would have given | why it is dead |
+|---|---:|---|---|
+| `C08.T8.S4.L02` | 9/15 | alive-degraded | 140 consecutive `1 cup peanut butter` |
+| `C13.T1`/`C13.T2.S4.L05` | 8/15 | alive-degraded | 8 repetitions of "Good morning, sir" |
+| `C08.T1`/`C08.T2.S4.L02` | 5/15 | impaired | terminates on an empty speaker tag |
+| `C09.T8.S4.L02` | 5/15 | impaired | unterminated docstrings, no function body |
+| `C12.T5.S4.L00` | 4/15 | impaired | ~60 consecutive `than` |
+| `C03.T8.S4.L00` | 0/15 | impaired | **emit-zero floor failed** + all 16 identical |
+
+`C08.T8.S4.L02` is the case that justifies the clause: 9 of 15 is one case off
+the parent band, and the model emits `1 cup peanut butter` a hundred and forty
+times into the cap. A count cannot see that. `C03.T8.S4.L00` is the only cell
+the harness condemned on its own — `emit_zero_floor_passed` is `false` in the
+receipt, which is a dead trigger under §6.1 independent of any reading.
 
 The standard applied uniformly across wave 5, and stated here so it can be
 overturned deliberately rather than drifted:
