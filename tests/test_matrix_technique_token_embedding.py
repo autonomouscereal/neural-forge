@@ -58,11 +58,14 @@ from neural_forge.matrix_technique_registry import (  # noqa: E402
 from neural_forge.matrix_technique_token_embedding import (  # noqa: E402
     TOKEN_FREQUENCY_SCHEMA,
     TokenEmbeddingFoldError,
+    c01_sparse_route_sparsity_for_ratio,
+    c01_sparse_route_storage,
     c01_token_route_storage,
     factor_token_embedding,
     load_token_frequencies,
     maximum_shrinking_rank,
     route_token_embedding,
+    sparse_route_token_embedding,
     t4_token_embedding_technique,
     t5_token_embedding_route_technique,
 )
@@ -557,3 +560,295 @@ def test_a_head_that_covers_the_table_is_refused():
 def test_a_tail_rank_past_the_tails_full_rank_is_refused():
     with pytest.raises(TokenEmbeddingFoldError, match="exceeds the tail"):
         route_token_embedding(embedding=_table(), head_size=8, tail_rank=HIDDEN + 1)
+
+
+# ---------------------------------------------------------------------------
+# Wave 10: the A9/A11 sparse-OMP tail
+#
+# 8. **The two tails are handed the same head.**  The head-to-head this wave
+#    exists to run is only a comparison of tails if the head-selection rule is
+#    literally the same function, so that is pinned with ``torch.equal`` on the
+#    ids rather than argued in a comment.
+# 9. **The storage counts the indices.**  A9's own accounting counted the
+#    coefficients and not the atom ids they index; that understatement is the
+#    reason its 1.361447x is not a stored ratio.  The kernel reports both, and
+#    the honest one is the one the harness sees.
+# 10. **Exactness where exactness is claimed.**  Head rows are verbatim; a zero
+#    row costs no support at all; and at ``k`` equal to the atom count on an
+#    atom-spanned table the tail reconstructs to solver precision.
+# ---------------------------------------------------------------------------
+
+
+def test_both_tail_modes_select_the_identical_head():
+    """The comparison is between tails, or it is not a comparison."""
+
+    table = _table(seed=19)
+    counts = [0] * VOCAB
+    for index in (5, 40, 77, 3):
+        counts[index] = 50 + index
+    weights = torch.tensor(counts, dtype=torch.float64)
+
+    low_rank = route_token_embedding(
+        embedding=table, head_size=12, tail_rank=4, weights=weights
+    )
+    sparse = sparse_route_token_embedding(
+        embedding=table, head_size=12, sparsity=4, weights=weights
+    )
+    assert torch.equal(low_rank.head_ids, sparse.head_ids)
+    assert low_rank.record["head_selection_rule"] == sparse.record["head_selection_rule"]
+    assert low_rank.record["head_ids_sha256"] == sparse.record["head_ids_sha256"]
+
+
+def test_the_sparse_route_stores_the_head_rows_exactly():
+    table = _table(seed=23)
+    route = sparse_route_token_embedding(embedding=table, head_size=10, sparsity=3)
+    assert torch.equal(route.table[route.head_ids], table[route.head_ids])
+    assert torch.equal(route.head_rows, table[route.head_ids])
+
+
+def test_the_sparse_route_storage_counts_the_indices_and_the_offsets():
+    """The exact arithmetic the A9-era counted-x left out."""
+
+    table = _table(seed=29)
+    route = sparse_route_token_embedding(embedding=table, head_size=10, sparsity=3)
+    tail = VOCAB - 10
+    expected = 10 * (HIDDEN + 1) + 2 * route.nonzero_count + (tail + 1)
+    assert route.stored_parameter_count == expected
+    assert (
+        c01_sparse_route_storage(
+            hidden_size=HIDDEN,
+            head_size=10,
+            tail_size=tail,
+            nonzero_count=route.nonzero_count,
+        )
+        == expected
+    )
+    # The legacy number is the one A9 published: continuous values only.
+    assert (
+        route.record["legacy_continuous_only_parameters"]
+        == 10 * HIDDEN + route.nonzero_count
+    )
+    assert route.record["legacy_continuous_only_parameters"] < expected
+
+
+def test_a_zero_tail_row_selects_no_support_and_is_reconstructed_exactly():
+    """An unused vocabulary slot is free, not a special case."""
+
+    table = _table(seed=31).clone()
+    table[VOCAB - 1] = 0.0
+    route = sparse_route_token_embedding(embedding=table, head_size=8, sparsity=4)
+    assert bool(torch.all(route.table[VOCAB - 1] == 0.0))
+    # Its support is empty, so it contributes nothing to the stored count.
+    assert route.nonzero_count < (VOCAB - 8) * 4
+
+
+def test_a_zero_head_row_is_refused_rather_than_substituted():
+    table = _table(seed=37).clone()
+    table[3] = 0.0
+    with pytest.raises(TokenEmbeddingFoldError, match="exactly zero"):
+        sparse_route_token_embedding(embedding=table, head_size=8, sparsity=4)
+
+
+def test_a_full_support_over_a_spanning_head_reconstructs_the_table():
+    """The identity gate for the sparse arm, and the price of the ridge.
+
+    Unridged, the solve is exact to float64: every tail row here really is a
+    combination of the head's atoms, OMP recovers all 16, and the least squares
+    is the identity.  The kernel's *default* ridge is the body lane's 1e-10,
+    which on this deliberately nasty Gram (condition 2.5e4) biases the
+    reconstruction to 2e-9 relative -- measured, not assumed, and pinned here so
+    that a future ridge change shows up as a failing gate rather than as a
+    quietly worse fold.
+    """
+
+    generator = torch.Generator().manual_seed(11)
+    atoms = torch.randn((HIDDEN, HIDDEN), dtype=torch.float64, generator=generator)
+    mixture = torch.randn(
+        (VOCAB - HIDDEN, HIDDEN), dtype=torch.float64, generator=generator
+    )
+    table = torch.cat((atoms, mixture @ atoms), dim=0)
+
+    exact = sparse_route_token_embedding(
+        embedding=table, head_size=HIDDEN, sparsity=HIDDEN, ridge_relative=0.0
+    )
+    assert torch.allclose(exact.table, table, atol=1e-11, rtol=1e-11)
+    assert exact.solve["reconstruction_relative_frobenius"] < 1e-12
+    assert exact.nonzero_count == (VOCAB - HIDDEN) * HIDDEN
+
+    ridged = sparse_route_token_embedding(
+        embedding=table, head_size=HIDDEN, sparsity=HIDDEN
+    )
+    assert ridged.solve["reconstruction_relative_frobenius"] < 1e-8
+    assert (
+        ridged.solve["reconstruction_relative_frobenius"]
+        > exact.solve["reconstruction_relative_frobenius"]
+    )
+
+
+def test_the_sparsity_planner_never_plans_over_the_budget():
+    """Planned on the worst case, so a realized route can only come in under."""
+
+    ratio = 0.125
+    sparsity = c01_sparse_route_sparsity_for_ratio(
+        vocab_size=PARENT_VOCAB,
+        hidden_size=PARENT_HIDDEN,
+        head_size=4096,
+        ratio=ratio,
+    )
+    assert sparsity is not None
+    tail = PARENT_VOCAB - 4096
+    worst_case = c01_sparse_route_storage(
+        hidden_size=PARENT_HIDDEN,
+        head_size=4096,
+        tail_size=tail,
+        nonzero_count=tail * sparsity,
+    )
+    assert worst_case <= ratio * PARENT_EMBEDDING_PARAMETERS
+    one_deeper = c01_sparse_route_storage(
+        hidden_size=PARENT_HIDDEN,
+        head_size=4096,
+        tail_size=tail,
+        nonzero_count=tail * (sparsity + 1),
+    )
+    assert one_deeper > ratio * PARENT_EMBEDDING_PARAMETERS
+
+
+def test_a_head_too_big_for_the_budget_cannot_express_the_level():
+    """ADDENDUM 6's cannot-express, rather than a shallower fold."""
+
+    assert (
+        c01_sparse_route_sparsity_for_ratio(
+            vocab_size=PARENT_VOCAB,
+            hidden_size=PARENT_HIDDEN,
+            head_size=32768,
+            ratio=0.125,
+        )
+        is None
+    )
+
+
+def test_the_sparse_arm_runs_through_the_registry_and_validates(tmp_path):
+    from neural_forge import matrix_technique_body_routes  # noqa: F401
+
+    state = _state(_table(seed=43))
+    counts = [0] * VOCAB
+    for index in range(6):
+        counts[index] = 100 - index
+    path, digest = _frequency_file(tmp_path, counts)
+    cell = CellId.parse("C01.T5.S4")
+    spec = component_spec(cell, state)
+    request = CellTechniqueRequest(
+        cell=cell,
+        component=spec,
+        level=cell.level,
+        level_width=5,
+        seed=0,
+        parent_weights=state,
+        evidence=_NoEvidence(),
+        knobs={
+            "token_route_tail_mode": "sparse-omp",
+            "token_route_head_size": 12,
+            "token_frequency_path": str(path),
+            "token_frequency_sha256": digest,
+        },
+        workspace=Path("."),
+        log=lambda message: None,
+    )
+    result = t5_token_embedding_route_technique(request)
+    validate_result(request, result)
+    assert result.solve["route"]["tail_mode"] == "sparse-omp"
+    assert result.solve["route"]["sparsity"] == 5
+    assert result.solve["solver_path"] == "c01_token_route_exact_head_sparse_omp_tail"
+    assert result.solve["omp"]["requested_active_k"] == 5
+    assert result.solve["token_frequency"]["token_frequency_sha256"] == digest
+    installed = result.installed_weights["model.embed_tokens.weight"]
+    assert torch.equal(installed[:6], state["model.embed_tokens.weight"][:6])
+    tail = VOCAB - 12
+    nonzero = result.solve["route"]["nonzero_count"]
+    assert result.stored_parameter_count == 12 * (HIDDEN + 1) + 2 * nonzero + (tail + 1)
+
+
+def test_the_default_tail_mode_is_still_wave_nines():
+    """A wave-9 recipe must fold the way wave 9 folded, byte for byte."""
+
+    state = _state(_table(seed=47))
+    cell = CellId.parse("C01.T5.S4")
+    spec = component_spec(cell, state)
+
+    def build(knobs):
+        return CellTechniqueRequest(
+            cell=cell,
+            component=spec,
+            level=cell.level,
+            level_width=4,
+            seed=0,
+            parent_weights=state,
+            evidence=_NoEvidence(),
+            knobs=dict(knobs),
+            workspace=Path("."),
+            log=lambda message: None,
+        )
+
+    default = t5_token_embedding_route_technique(build({"token_route_head_size": 9}))
+    explicit = t5_token_embedding_route_technique(
+        build({"token_route_head_size": 9, "token_route_tail_mode": "low-rank"})
+    )
+    assert torch.equal(
+        default.installed_weights["model.embed_tokens.weight"],
+        explicit.installed_weights["model.embed_tokens.weight"],
+    )
+    assert default.solve["solver_path"] == "c01_token_route_exact_head_low_rank_tail"
+    assert default.stored_parameter_count == c01_token_route_storage(
+        vocab_size=VOCAB, hidden_size=HIDDEN, head_size=9, tail_rank=4
+    )
+
+
+def test_an_unknown_tail_mode_fails_closed():
+    state = _state(_table(seed=53))
+    cell = CellId.parse("C01.T5.S4")
+    request = CellTechniqueRequest(
+        cell=cell,
+        component=component_spec(cell, state),
+        level=cell.level,
+        level_width=4,
+        seed=0,
+        parent_weights=state,
+        evidence=_NoEvidence(),
+        knobs={"token_route_tail_mode": "svd-ish"},
+        workspace=Path("."),
+        log=lambda message: None,
+    )
+    with pytest.raises(CellTechniqueError, match="token_route_tail_mode"):
+        t5_token_embedding_route_technique(request)
+
+
+def test_a_sparsity_past_the_dictionary_is_refused():
+    with pytest.raises(TokenEmbeddingFoldError, match="exceeds the"):
+        sparse_route_token_embedding(embedding=_table(), head_size=8, sparsity=9)
+
+
+def test_the_sparse_route_refuses_autograd_state():
+    table = _table(seed=59).clone().requires_grad_(True)
+    with pytest.raises(TokenEmbeddingFoldError, match="autograd"):
+        sparse_route_token_embedding(embedding=table, head_size=8, sparsity=3)
+
+
+def test_an_explicit_solve_device_is_recorded_and_the_result_comes_home():
+    """The harness hands C01 a CPU table; a cuda solve must still return CPU."""
+
+    table = _table(seed=61)
+    home = sparse_route_token_embedding(
+        embedding=table, head_size=10, sparsity=4, solve_device="cpu"
+    )
+    assert home.solve["route"]["solve_device"] == "cpu"
+    assert home.table.device == table.device
+    assert home.supports.device == table.device
+
+    if torch.cuda.is_available():
+        moved = sparse_route_token_embedding(
+            embedding=table, head_size=10, sparsity=4, solve_device="cuda:0"
+        )
+        assert moved.solve["route"]["solve_device"].startswith("cuda")
+        # Comes home regardless of where it was solved.
+        assert moved.table.device == table.device
+        assert moved.stored_parameter_count == home.stored_parameter_count

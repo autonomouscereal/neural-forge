@@ -781,6 +781,108 @@ def _dense_coefficients(
     return dense
 
 
+@dataclass(frozen=True)
+class SparseRouteCodes:
+    """``targets`` written as k-sparse combinations of ``atoms``, closed form.
+
+    This is A9's mechanism with the vocabulary taken out of it.  The body lane
+    reaches it through `fit_body_component_routes`, where the atoms are kept
+    evidence channels; the token interface reaches it through
+    `matrix_technique_token_embedding`, where the atoms are kept embedding rows.
+    Both get the *same* residual-OMP support selection and the *same* ridge
+    solve on the selected support, because there is one mechanism here and it
+    should have one implementation.
+    """
+
+    supports: Any  # (targets, k) int64, -1 padded, ascending step order
+    lengths: Any  # (targets,) int64 -- realized support width per target
+    coefficients: Any  # (targets, k) aligned with ``supports``
+    dense: Any  # (atoms, targets) scatter of the above
+    nonzero_count: int
+    condition_proxy: float
+    diagnostics: Mapping[str, Any]
+
+
+def sparse_route_codes(
+    *,
+    atoms: Any,
+    targets: Any,
+    sparsity: int,
+    ridge_relative: float = 1e-10,
+    pivot_tolerance: float = 1e-10,
+    residual_floor: float = 1e-12,
+    channels_per_chunk: int = 256,
+) -> SparseRouteCodes:
+    """Residual-OMP support selection plus one ridge solve per target row.
+
+    ``atoms`` is ``(m, d)`` and ``targets`` is ``(n, d)``: both index the same
+    ``d``-dimensional space, and every target row is approximated by at most
+    ``sparsity`` atoms chosen greedily against its own residual.  Rows with zero
+    energy select nothing and reconstruct exactly as zero, which is the honest
+    answer for an unused vocabulary slot rather than a special case.
+
+    Fold-only: selection is OMP, the coefficients are least squares on the
+    selected support, and nothing here touches autograd or runs a model.
+    """
+
+    torch = _torch()
+    _no_autograd(atoms, "atoms")
+    _no_autograd(targets, "targets")
+    if atoms.ndim != 2 or targets.ndim != 2:
+        raise T5BodyRouteGeometryError("atoms and targets must both be 2-D.")
+    if int(atoms.shape[1]) != int(targets.shape[1]):
+        raise T5BodyRouteGeometryError(
+            f"atoms are {int(atoms.shape[1])}-dimensional and targets are "
+            f"{int(targets.shape[1])}-dimensional; they must share the space."
+        )
+    steps = _positive_int(sparsity, "sparsity")
+    ridge_ratio = _nonnegative_float(ridge_relative, "ridge_relative")
+    pivot_floor = _nonnegative_float(pivot_tolerance, "pivot_tolerance")
+    floor = _nonnegative_float(residual_floor, "residual_floor")
+    chunk = _positive_int(channels_per_chunk, "channels_per_chunk")
+
+    with torch.no_grad():
+        kept_gram = atoms @ atoms.transpose(0, 1)
+        cross_gram = atoms @ targets.transpose(0, 1)
+        dropped_energy = (targets * targets).sum(dim=1)
+        gram_scale = float(torch.diagonal(kept_gram).mean().item())
+        if not math.isfinite(gram_scale) or gram_scale <= 0.0:
+            raise T5BodyRouteEvidenceError("The atom Gram has no energy.")
+        supports = _omp_supports(
+            kept_gram=kept_gram,
+            cross_gram=cross_gram,
+            dropped_energy=dropped_energy,
+            active_k=steps,
+            channels_per_chunk=chunk,
+            pivot_tolerance=pivot_floor,
+            residual_floor=floor,
+        )
+        selected = supports.selected.to(device=atoms.device)
+        lengths = supports.lengths.to(device=atoms.device)
+        coefficients, condition_proxy = _grouped_support_solve(
+            kept_gram=kept_gram,
+            right_hand_side=cross_gram,
+            supports=selected,
+            lengths=lengths,
+            ridge=ridge_ratio * gram_scale,
+        )
+        dense = _dense_coefficients(
+            supports=selected,
+            lengths=lengths,
+            coefficients=coefficients,
+            width=int(atoms.shape[0]),
+        )
+    return SparseRouteCodes(
+        supports=selected,
+        lengths=lengths,
+        coefficients=coefficients,
+        dense=dense,
+        nonzero_count=int(lengths.sum().item()),
+        condition_proxy=float(condition_proxy),
+        diagnostics=supports.diagnostics,
+    )
+
+
 def _write_side_solve(
     *,
     kept_gram: Any,
@@ -2831,6 +2933,7 @@ __all__ = [
     "T5_WRITE_SOLVE_ALGORITHM",
     "BodyRouteFold",
     "MatrixTechniqueEntry",
+    "SparseRouteCodes",
     "T5BodyRouteAuthenticationError",
     "T5BodyRouteSourceWitness",
     "T5BodyRouteConditioningError",
@@ -2846,6 +2949,7 @@ __all__ = [
     "resolve_kept_width",
     "select_kept_channels",
     "sparse_feature_fold_map_from_body_route",
+    "sparse_route_codes",
     "t5_tensor_sha256",
     "t5_body_route_technique",
     "verify_sealed_body_route_record",

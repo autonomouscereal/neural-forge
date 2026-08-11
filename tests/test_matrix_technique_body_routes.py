@@ -1194,3 +1194,66 @@ def test_registry_request_validation_closes():
         )
     with pytest.raises(T5BodyRouteError, match="must be a mapping"):
         entry.fit(["not", "a", "mapping"])
+
+
+# ---------------------------------------------------------------------------
+# ``sparse_route_codes`` — the A9 mechanism with the vocabulary taken out.
+#
+# It is exercised end to end by the C01 token-route tests; what is pinned here
+# is the contract those tests rely on, so a change to the shared solver breaks
+# in the module that owns it rather than three files away.
+# ---------------------------------------------------------------------------
+
+
+def test_sparse_route_codes_reconstructs_exactly_when_the_atoms_span():
+    generator = torch.Generator().manual_seed(101)
+    atoms = torch.randn((12, 12), dtype=torch.float64, generator=generator)
+    mixture = torch.randn((40, 12), dtype=torch.float64, generator=generator)
+    targets = mixture @ atoms
+
+    codes = body_routes.sparse_route_codes(atoms=atoms, targets=targets, sparsity=12)
+
+    assert torch.allclose(codes.dense.transpose(0, 1) @ atoms, targets, atol=1e-9)
+    assert int(codes.lengths.max().item()) <= 12
+
+
+def test_sparse_route_codes_honours_the_sparsity_bound_and_counts_nonzeros():
+    generator = torch.Generator().manual_seed(103)
+    atoms = torch.randn((16, 8), dtype=torch.float64, generator=generator)
+    targets = torch.randn((50, 8), dtype=torch.float64, generator=generator)
+
+    codes = body_routes.sparse_route_codes(atoms=atoms, targets=targets, sparsity=3)
+
+    assert int(codes.supports.shape[1]) == 3
+    assert int(codes.lengths.max().item()) <= 3
+    assert codes.nonzero_count == int(codes.lengths.sum().item())
+    assert codes.nonzero_count == int((codes.supports >= 0).sum().item())
+    assert int((codes.dense != 0).sum().item()) <= codes.nonzero_count
+
+
+def test_a_zero_energy_target_selects_nothing():
+    generator = torch.Generator().manual_seed(107)
+    atoms = torch.randn((10, 6), dtype=torch.float64, generator=generator)
+    targets = torch.randn((20, 6), dtype=torch.float64, generator=generator)
+    targets[7] = 0.0
+
+    codes = body_routes.sparse_route_codes(atoms=atoms, targets=targets, sparsity=4)
+
+    assert int(codes.lengths[7].item()) == 0
+    assert bool(torch.all(codes.dense[:, 7] == 0.0))
+
+
+def test_sparse_route_codes_refuses_a_dimension_mismatch_and_autograd():
+    generator = torch.Generator().manual_seed(109)
+    atoms = torch.randn((6, 5), dtype=torch.float64, generator=generator)
+    with pytest.raises(T5BodyRouteGeometryError, match="share the space"):
+        body_routes.sparse_route_codes(
+            atoms=atoms,
+            targets=torch.randn((9, 4), dtype=torch.float64, generator=generator),
+            sparsity=2,
+        )
+    live = torch.randn((9, 5), dtype=torch.float64, generator=generator).requires_grad_(
+        True
+    )
+    with pytest.raises(T5BodyRouteDisciplineError):
+        body_routes.sparse_route_codes(atoms=atoms, targets=live, sparsity=2)

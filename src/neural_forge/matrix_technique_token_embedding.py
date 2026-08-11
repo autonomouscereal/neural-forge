@@ -428,7 +428,12 @@ def factor_token_embedding(
 
 def _tensor_sha256(value: Any) -> str:
     torch = _torch()
-    contiguous = value.detach().to(dtype=torch.float64).contiguous()
+    # ``.to(device="cpu")`` and not ``.numpy()`` on whatever device it arrived
+    # on: a route solved on the GPU must digest to the same string as the same
+    # bytes solved anywhere else, and numpy cannot see device memory at all.
+    contiguous = (
+        value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    )
     digest = hashlib.sha256()
     digest.update(str(tuple(int(v) for v in contiguous.shape)).encode("utf-8"))
     digest.update(contiguous.numpy().tobytes())
@@ -635,6 +640,60 @@ class TokenEmbeddingRoute:
         return str(self.record["record_sha256"])
 
 
+def _select_route_head(
+    *, vocab_size: int, head: int, weights: Any
+) -> tuple[Any, str, Any, Any]:
+    """Pick the verbatim head, identically for every C01 route tail mode.
+
+    Both tails this kernel can fit -- the low-rank one and the sparse-OMP one --
+    call **this** function, so a comparison between them is a comparison between
+    two tails and not between two head-selection rules that happen to differ.
+    That is the whole point of the wave-10 head-to-head: A9's mechanism and
+    wave 9's mechanism are handed the same 4,096 (or 12,288) rows.
+
+    Deterministic total order: corpus count, then token id.
+
+    **The tie-break is the whole head.**  The sealed corpus observes only 2,026
+    of 65,536 token types, so at any head worth having most of the head is
+    decided by the tie-break and not by the counts.  The first version of this
+    kernel broke ties on row L2 norm, which is the intuitive choice and is
+    measurably the *worst available*: over the frozen review surface's own
+    726 prompt tokens, a 4,096-row head chosen by row norm covers **2.34%** of
+    them, and even a 16,000-row head covers 15.01%.  Embedding row norm
+    anti-correlates with token usage in this table.
+
+    Token id ascending covers **62.95%** at the same 4,096 and 83.61% at
+    16,000, because a BPE vocabulary is *built* in descending merge frequency:
+    low ids are bytes and the earliest, commonest merges.  It is the strongest
+    usage prior available here and it needs no evidence at all.  Counts first,
+    then id, is the best of the four rules measured: 66.80% at 4,096.
+    """
+
+    torch = _torch()
+    if weights is None:
+        counts = torch.zeros(vocab_size, dtype=torch.float64)
+        head_rule = "token-id-ascending (BPE merge order)"
+    else:
+        counts = weights.detach().to(dtype=torch.float64).reshape(-1)
+        if int(counts.shape[0]) != vocab_size:
+            raise TokenEmbeddingFoldError(
+                f"The weight vector carries {int(counts.shape[0])} entries for a "
+                f"{vocab_size}-token table."
+            )
+        if bool((counts < 0).any().item()):
+            raise TokenEmbeddingFoldError("Token weights must be nonnegative.")
+        head_rule = "token-count-descending, ties by token-id-ascending (BPE merge order)"
+    order = sorted(
+        range(vocab_size),
+        key=lambda index: (-float(counts[index].item()), index),
+    )
+    head_ids = torch.tensor(sorted(order[:head]), dtype=torch.int64)
+    mask = torch.zeros(vocab_size, dtype=torch.bool)
+    mask[head_ids] = True
+    tail_ids = torch.nonzero(~mask, as_tuple=False).reshape(-1)
+    return counts, head_rule, head_ids, tail_ids
+
+
 def route_token_embedding(
     *,
     embedding: Any,
@@ -675,44 +734,9 @@ def route_token_embedding(
             f"{min(vocab_size - head, hidden_size)}."
         )
 
-    row_norm = torch.linalg.vector_norm(table, dim=1)
-    if weights is None:
-        counts = torch.zeros(vocab_size, dtype=torch.float64)
-        head_rule = "token-id-ascending (BPE merge order)"
-    else:
-        counts = weights.detach().to(dtype=torch.float64).reshape(-1)
-        if int(counts.shape[0]) != vocab_size:
-            raise TokenEmbeddingFoldError(
-                f"The weight vector carries {int(counts.shape[0])} entries for a "
-                f"{vocab_size}-token table."
-            )
-        if bool((counts < 0).any().item()):
-            raise TokenEmbeddingFoldError("Token weights must be nonnegative.")
-        head_rule = "token-count-descending, ties by token-id-ascending (BPE merge order)"
-    # Deterministic total order: corpus count, then token id.
-    #
-    # **The tie-break is the whole head.**  The sealed corpus observes only 2,026
-    # of 65,536 token types, so at any head worth having most of the head is
-    # decided by the tie-break and not by the counts.  The first version of this
-    # kernel broke ties on row L2 norm, which is the intuitive choice and is
-    # measurably the *worst available*: over the frozen review surface's own
-    # 726 prompt tokens, a 4,096-row head chosen by row norm covers **2.34%** of
-    # them, and even a 16,000-row head covers 15.01%.  Embedding row norm
-    # anti-correlates with token usage in this table.
-    #
-    # Token id ascending covers **62.95%** at the same 4,096 and 83.61% at
-    # 16,000, because a BPE vocabulary is *built* in descending merge frequency:
-    # low ids are bytes and the earliest, commonest merges.  It is the strongest
-    # usage prior available here and it needs no evidence at all.  Counts first,
-    # then id, is the best of the four rules measured: 66.80% at 4,096.
-    order = sorted(
-        range(vocab_size),
-        key=lambda index: (-float(counts[index].item()), index),
+    counts, head_rule, head_ids, tail_ids = _select_route_head(
+        vocab_size=vocab_size, head=head, weights=weights
     )
-    head_ids = torch.tensor(sorted(order[:head]), dtype=torch.int64)
-    mask = torch.zeros(vocab_size, dtype=torch.bool)
-    mask[head_ids] = True
-    tail_ids = torch.nonzero(~mask, as_tuple=False).reshape(-1)
 
     tail_table = table[tail_ids].contiguous()
     gram = tail_table.transpose(0, 1) @ tail_table
@@ -841,12 +865,426 @@ def route_token_embedding(
     )
 
 
+SPARSE_ROUTE_RECORD_SCHEMA = "neural-forge-matrix-c01-token-sparse-route-record-v1"
+
+#: The two tails a C01 route can carry.  ``low-rank`` is wave 9's (MXM1-MXM10);
+#: ``sparse-omp`` is the A9/A11 mechanism rebuilt at current standards.
+TOKEN_ROUTE_TAIL_MODES = ("low-rank", "sparse-omp")
+
+
+def c01_sparse_route_storage(
+    *, hidden_size: int, head_size: int, tail_size: int, nonzero_count: int
+) -> int:
+    """``head*(hidden+1) + 2*nnz + (tail+1)`` -- and every term is load-bearing.
+
+    **This is the accounting the A9-era "counted-x" got wrong, and it is worth
+    stating precisely because it is the reason wave 10 exists.**  A9's own
+    review reports "stored continuous semantic coefficients: 1,933,888" and adds
+    exactly that to the child's parameter count.  But the sealed artifact
+    carries three tensors, not one -- ``semantic_code_coefficients``,
+    ``semantic_code_target_ids`` and ``semantic_code_offsets``
+    (`reports/sparse-semantic-a9-k32-residual-omp-20260730/base-codebook-reference.json`)
+    -- and a sparse code whose atom ids you did not store is a code nobody can
+    decode.  Counting only the continuous values understated A9's real storage
+    by one index per coefficient plus the CSR offsets.
+
+    So, term by term:
+
+    * ``head * hidden`` -- the atom rows, verbatim.  They are simultaneously the
+      dictionary the tail is coded against and the exact rows of the head's own
+      tokens.
+    * ``head * 1`` -- the head's token ids, on the same rule
+      `c01_token_route_storage` already applies: one id, one parameter.
+    * ``nnz`` -- the coefficients.
+    * ``nnz`` -- one atom id per coefficient.  The index is counted at parity
+      with the value it indexes, which is the campaign's existing convention and
+      is *conservative*: a 4,096-atom dictionary needs 12 bits, not 32.
+    * ``tail + 1`` -- the CSR row offsets, because residual OMP stops early on a
+      row it has already explained and the supports are therefore ragged.  A9's
+      own artifact stores this array for the same reason.
+
+    ``nonzero_count`` is the **realized** support total, not ``tail * k``.  A
+    route that stopped early stores less, and the receipt should say so.
+    """
+
+    head = _positive_int(head_size, "head_size")
+    hidden = _positive_int(hidden_size, "hidden_size")
+    tail = _positive_int(tail_size, "tail_size")
+    nnz = int(nonzero_count)
+    if nnz < 0:
+        raise TokenEmbeddingFoldError("nonzero_count must be nonnegative.")
+    return head * (hidden + 1) + 2 * nnz + (tail + 1)
+
+
+def c01_sparse_route_sparsity_for_ratio(
+    *, vocab_size: int, hidden_size: int, head_size: int, ratio: float
+) -> int | None:
+    """The deepest ``k`` whose worst-case storage fits ``ratio`` x the table.
+
+    Planned against the **upper bound** ``nnz = tail * k``, so a realized route
+    can only come in under the level it was planned for, never over.  ``None``
+    is ADDENDUM 6's ``cannot-express``: the head alone already exceeds the
+    budget, so there is no admissible ``k`` and no cell is run.
+    """
+
+    head = _positive_int(head_size, "head_size")
+    hidden = _positive_int(hidden_size, "hidden_size")
+    vocab = _positive_int(vocab_size, "vocab_size")
+    if head >= vocab:
+        raise TokenEmbeddingFoldError(
+            f"A head of {head} rows covers the whole {vocab}-token table."
+        )
+    tail = vocab - head
+    budget = float(ratio) * float(vocab * hidden)
+    fixed = head * (hidden + 1) + (tail + 1)
+    if float(fixed) > budget:
+        return None
+    room = int((budget - float(fixed)) // float(2 * tail))
+    if room < 1:
+        return None
+    return min(room, head)
+
+
+@dataclass(frozen=True)
+class TokenEmbeddingSparseRoute:
+    """One tied embedding table as verbatim atoms plus k-sparse codes."""
+
+    head_size: int
+    sparsity: int
+    vocab_size: int
+    hidden_size: int
+    head_ids: Any
+    head_rows: Any
+    supports: Any
+    coefficients: Any
+    nonzero_count: int
+    table: Any
+    record: Mapping[str, Any]
+    solve: Mapping[str, Any]
+
+    @property
+    def stored_parameter_count(self) -> int:
+        return c01_sparse_route_storage(
+            hidden_size=self.hidden_size,
+            head_size=self.head_size,
+            tail_size=self.vocab_size - self.head_size,
+            nonzero_count=self.nonzero_count,
+        )
+
+    @property
+    def dense_equivalent(self) -> Any:
+        return self.table
+
+    @property
+    def record_sha256(self) -> str:
+        return str(self.record["record_sha256"])
+
+
+def sparse_route_token_embedding(
+    *,
+    embedding: Any,
+    head_size: int,
+    sparsity: int,
+    weights: Any = None,
+    ridge_relative: float = 1e-10,
+    pivot_tolerance: float = 1e-10,
+    residual_floor: float = 1e-12,
+    channels_per_chunk: int = 2048,
+    solve_device: Any = None,
+) -> TokenEmbeddingSparseRoute:
+    """A9's k32 residual-OMP token route, rebuilt on the current kernels.
+
+    The head is chosen by `_select_route_head` -- the *same* function the
+    low-rank tail uses -- and then does double duty: its rows are stored
+    verbatim **and** they are the dictionary every tail row is coded against.
+    That is A9's "same body" shape exactly: one 4,096-row target table, and the
+    rest of the vocabulary reaching it through sparse routes.
+
+    What is deliberately **not** carried over from A9: its fp32 OMP candidate
+    search, which is reproducible only on P40 + torch 2.6 and reads no evidence
+    at HEAD.  The support selection here is the sealed float64 residual-OMP of
+    `matrix_technique_body_routes.sparse_route_codes`, run on whatever
+    architecture the campaign is pinned to.  The mechanism is A9's; the
+    numerics are the campaign's.
+
+    ``solve_device`` is explicit and defaults to the table's own device.  The
+    harness hands C01 a CPU float64 table, and this fold is a 65,536-row OMP
+    that runs roughly an order of magnitude faster on the pinned sm86 card.  It
+    is a *stated* device and not an "if cuda is available", because a fold whose
+    numerics depend on what happened to be plugged in is not reproducible.  The
+    installed tensor always returns on the table's original device.
+    """
+
+    from .matrix_technique_body_routes import T5BodyRouteError, sparse_route_codes
+
+    torch = _torch()
+    if not isinstance(embedding, torch.Tensor) or embedding.ndim != 2:
+        raise TokenEmbeddingFoldError("The embedding must be a 2-D tensor.")
+    if embedding.requires_grad or embedding.grad_fn is not None:
+        raise TokenEmbeddingFoldError(
+            "The embedding carries autograd state; this is a fold, not a training step."
+        )
+    home_device = embedding.device
+    table = embedding.detach().to(dtype=torch.float64)
+    if solve_device is not None:
+        table = table.to(device=torch.device(solve_device))
+    vocab_size = int(table.shape[0])
+    hidden_size = int(table.shape[1])
+    head = _positive_int(head_size, "head_size")
+    active_k = _positive_int(sparsity, "sparsity")
+    if head >= vocab_size:
+        raise TokenEmbeddingFoldError(
+            f"A head of {head} rows covers the whole {vocab_size}-token table."
+        )
+    if active_k > head:
+        raise TokenEmbeddingFoldError(
+            f"sparsity {active_k} exceeds the {head}-atom dictionary."
+        )
+
+    counts, head_rule, head_ids, tail_ids = _select_route_head(
+        vocab_size=vocab_size, head=head, weights=weights
+    )
+    head_ids = head_ids.to(device=table.device)
+    tail_ids = tail_ids.to(device=table.device)
+    atoms = table[head_ids].contiguous()
+    tail_table = table[tail_ids].contiguous()
+
+    # An all-zero atom cannot anchor a route and the OMP selector refuses one
+    # rather than dividing by its norm.  Say which rows they are; a silent
+    # substitution would make the head a different head from the low-rank arm's
+    # and quietly void the comparison this wave exists to run.
+    atom_norm = torch.linalg.vector_norm(atoms, dim=1)
+    if not bool((atom_norm > 0).all().item()):
+        dead = torch.nonzero(atom_norm <= 0, as_tuple=False).reshape(-1)
+        raise TokenEmbeddingFoldError(
+            f"{int(dead.numel())} of the {head} head rows are exactly zero "
+            f"(first token ids {head_ids[dead[:8]].tolist()}); they cannot serve "
+            "as dictionary atoms."
+        )
+
+    try:
+        codes = sparse_route_codes(
+            atoms=atoms,
+            targets=tail_table,
+            sparsity=active_k,
+            ridge_relative=ridge_relative,
+            pivot_tolerance=pivot_tolerance,
+            residual_floor=residual_floor,
+            channels_per_chunk=channels_per_chunk,
+        )
+    except T5BodyRouteError as exc:
+        raise TokenEmbeddingFoldError(f"C01 sparse route: {exc}") from exc
+
+    result = table.clone()
+    result[tail_ids] = (codes.dense.transpose(0, 1) @ atoms).contiguous()
+    result = result.contiguous()
+    residual = result - table
+
+    parent_norm = float(torch.linalg.matrix_norm(table).item())
+    residual_norm = float(torch.linalg.matrix_norm(residual).item())
+    cosines = torch.nn.functional.cosine_similarity(result, table, dim=1, eps=1e-30)
+    head_cosine = float(cosines[head_ids].mean().item())
+    tail_cosine = float(cosines[tail_ids].mean().item())
+    observed = counts.to(device=table.device) > 0
+    covered = int(observed[head_ids].sum().item())
+    observed_total = int(observed.sum().item())
+    counted_total = float(counts.sum().item())
+    counted_head = float(counts.to(device=table.device)[head_ids].sum().item())
+
+    tail_size = int(tail_ids.numel())
+    nonzero = int(codes.nonzero_count)
+    stored = c01_sparse_route_storage(
+        hidden_size=hidden_size,
+        head_size=head,
+        tail_size=tail_size,
+        nonzero_count=nonzero,
+    )
+    parent_parameters = vocab_size * hidden_size
+    # The A9-era number, reported beside the honest one so the ceiling report's
+    # 1.361447x stays comparable rather than being quietly restated.
+    legacy_counted = head * hidden_size + nonzero
+    record: dict[str, Any] = {
+        "schema": SPARSE_ROUTE_RECORD_SCHEMA,
+        "component_id": COMPONENT_ID,
+        "technique_id": ROUTE_TECHNIQUE_ID,
+        "tail_mode": "sparse-omp",
+        "head_size": head,
+        "sparsity": active_k,
+        "tail_size": tail_size,
+        "nonzero_count": nonzero,
+        "vocab_size": vocab_size,
+        "hidden_size": hidden_size,
+        "head_selection_rule": head_rule,
+        "parent_parameters": parent_parameters,
+        "child_parameters": stored,
+        "parameter_ratio": stored / float(parent_parameters),
+        "legacy_continuous_only_parameters": legacy_counted,
+        "head_ids_sha256": hashlib.sha256(
+            head_ids.detach().to(device="cpu").numpy().tobytes()
+        ).hexdigest(),
+        "supports_sha256": _tensor_sha256(codes.supports),
+        "coefficients_sha256": _tensor_sha256(codes.coefficients),
+        "dense_equivalent_sha256": _tensor_sha256(result),
+    }
+    record["record_sha256"] = canonical_sha256(record)
+
+    diagnostics = dict(codes.diagnostics)
+    solve: dict[str, Any] = {
+        "solver_path": "c01_token_route_exact_head_sparse_omp_tail",
+        "ridge_relative": float(ridge_relative),
+        "condition_number": float(codes.condition_proxy),
+        "condition_cap_saturated": False,
+        "condition_number_unbounded_reason": None,
+        "prior_norm": parent_norm,
+        "correction_norm": residual_norm,
+        "requested_clamp_ratio": residual_norm / max(parent_norm, 1e-30),
+        "allowed_clamp_ratio": None,
+        "clamp_engaged": False,
+        "omp": {
+            "algorithm": diagnostics.get("algorithm"),
+            "requested_active_k": int(diagnostics.get("requested_active_k", active_k)),
+            "effective_active_k": int(diagnostics.get("effective_active_k", active_k)),
+            "dependent_atom_rejections": int(
+                diagnostics.get("dependent_atom_rejections", 0)
+            ),
+            "residual_floor_exhausted_rows": int(
+                diagnostics.get("residual_floor_exhausted_rows", 0)
+            ),
+            "support_width_histogram": diagnostics.get("support_width_histogram"),
+            "candidate_tie_break": diagnostics.get("candidate_tie_break"),
+            "steps": diagnostics.get("steps"),
+        },
+        "route": {
+            "tail_mode": "sparse-omp",
+            "solve_device": str(table.device),
+            "head_size": head,
+            "tail_size": tail_size,
+            "sparsity": active_k,
+            "nonzero_count": nonzero,
+            "mean_support_width": (nonzero / tail_size if tail_size else None),
+            "head_selection_rule": head_rule,
+            "head_ids_sha256": str(record["head_ids_sha256"]),
+            "head_parameters": head * hidden_size,
+            "head_index_parameters": head,
+            "coefficient_parameters": nonzero,
+            "support_index_parameters": nonzero,
+            "row_offset_parameters": tail_size + 1,
+            "legacy_continuous_only_parameters": legacy_counted,
+            "observed_token_types": observed_total,
+            "observed_token_types_in_head": covered,
+            "observed_token_types_outside_head": observed_total - covered,
+            "corpus_mass_in_head": (
+                None if counted_total <= 0 else counted_head / counted_total
+            ),
+        },
+        "embedding_vocab_size": vocab_size,
+        "embedding_hidden_size": hidden_size,
+        "reconstruction_relative_frobenius": residual_norm / max(parent_norm, 1e-30),
+        "row_cosine_mean": float(cosines.mean().item()),
+        "row_cosine_min": float(cosines.min().item()),
+        "head_row_cosine_mean": head_cosine,
+        "tail_row_cosine_mean": tail_cosine,
+        "technique_record_sha256": str(record["record_sha256"]),
+    }
+    return TokenEmbeddingSparseRoute(
+        head_size=head,
+        sparsity=active_k,
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        head_ids=head_ids.to(device=home_device),
+        head_rows=atoms.to(device=home_device),
+        supports=codes.supports.to(device=home_device),
+        coefficients=codes.coefficients.to(device=home_device),
+        nonzero_count=nonzero,
+        table=result.to(device=home_device),
+        record=record,
+        solve=solve,
+    )
+
+
+def _t5_sparse_route_arm(request: Any, parent: Any, weights: Any, provenance: Any) -> Any:
+    """The sparse-OMP tail arm of T5 at C01."""
+
+    from .matrix_technique_registry import CellTechniqueError, CellTechniqueResult
+
+    vocab_size = int(parent.shape[0])
+    hidden_size = int(parent.shape[1])
+    head_size = int(request.knob("token_route_head_size", C01_TOKEN_ROUTE_HEAD_SIZE))
+    # The level width means ``k`` in this arm, exactly as it means ``tail_rank``
+    # in the low-rank one: one number, resolved by the recipe, checked against
+    # the realized storage after the solve.
+    sparsity = int(request.knob("token_route_sparsity", int(request.level_width)))
+    request.log(
+        f"C01 {request.cell.text}: sparse-omp route head={head_size} k={sparsity}, "
+        f"table {vocab_size}x{hidden_size}, "
+        f"head selected by {'token frequency' if weights is not None else 'token id'}"
+    )
+    try:
+        route = sparse_route_token_embedding(
+            embedding=parent,
+            head_size=head_size,
+            sparsity=sparsity,
+            weights=weights,
+            ridge_relative=float(request.knob("token_route_ridge_relative", 1e-10)),
+            pivot_tolerance=float(request.knob("token_route_pivot_tolerance", 1e-10)),
+            residual_floor=float(request.knob("token_route_residual_floor", 1e-12)),
+            channels_per_chunk=int(request.knob("token_route_chunk", 2048)),
+            solve_device=request.knob("token_route_solve_device"),
+        )
+    except TokenEmbeddingFoldError as exc:
+        raise CellTechniqueError(f"{request.cell.text}: {exc}") from exc
+
+    stored = route.stored_parameter_count
+    if stored >= vocab_size * hidden_size and not bool(
+        request.knob("c01_allow_parameter_increase", False)
+    ):
+        raise CellTechniqueError(
+            f"{request.cell.text}: the route stores {stored} against a table of "
+            f"{vocab_size * hidden_size}; it does not contract."
+        )
+    solve = dict(route.solve)
+    solve["token_frequency"] = provenance
+    request.log(
+        f"C01 {request.cell.text}: stored {stored} "
+        f"({route.record['parameter_ratio']:.6f}x, legacy continuous-only "
+        f"{route.record['legacy_continuous_only_parameters']}), mean support "
+        f"{solve['route']['mean_support_width']:.3f}, head row cosine "
+        f"{solve['head_row_cosine_mean']:.6f}, tail row cosine "
+        f"{solve['tail_row_cosine_mean']:.6f}"
+    )
+    return CellTechniqueResult(
+        installed_weights={
+            request.component.weight_keys[0]: route.dense_equivalent.contiguous()
+        },
+        stored_parameter_count=int(stored),
+        solve=solve,
+        predict=None,
+        artifact_identities={"c01_sparse_route_record_sha256": route.record_sha256},
+        notes=(
+            f"C01 tied token embedding as an A9-style sparse route: "
+            f"{route.head_size} rows stored verbatim with their ids and reused as "
+            f"the dictionary, the remaining {route.record['tail_size']} coded at "
+            f"k<={route.sparsity} ({route.nonzero_count} nonzeros), {stored} stored "
+            f"against {vocab_size * hidden_size}."
+        ),
+    )
+
+
 def t5_token_embedding_route_technique(request: Any) -> Any:
-    """T5's kernel at C01: an exact head of token rows plus a low-rank tail.
+    """T5's kernel at C01: an exact head of token rows plus a fitted tail.
 
     Same install as the T4 arm -- one parent-shaped tensor, both the lookup and
     the tied readout -- and the same declared-in-``stored_parameter_count``
-    contraction.  What differs is where the budget goes.
+    contraction.  What differs is where the budget goes, and now also *how the
+    tail is written*:
+
+    * ``token_route_tail_mode="low-rank"`` (the default, and wave 9's) spends the
+      tail budget on a rank-``r`` subspace shared by every tail row.
+    * ``token_route_tail_mode="sparse-omp"`` spends it on ``k`` atoms per row,
+      drawn from the head.  This is the A9/A11 token-interface route.
+
+    The default is ``low-rank`` because changing it would silently restate every
+    wave-9 receipt.
     """
 
     from .matrix_technique_registry import CellTechniqueError, CellTechniqueResult
@@ -875,6 +1313,15 @@ def t5_token_embedding_route_technique(request: Any) -> Any:
             )
         except TokenEmbeddingFoldError as exc:
             raise CellTechniqueError(f"{request.cell.text}: {exc}") from exc
+
+    tail_mode = str(request.knob("token_route_tail_mode", "low-rank"))
+    if tail_mode not in TOKEN_ROUTE_TAIL_MODES:
+        raise CellTechniqueError(
+            f"{request.cell.text}: token_route_tail_mode={tail_mode!r} is not one "
+            f"of {TOKEN_ROUTE_TAIL_MODES}."
+        )
+    if tail_mode == "sparse-omp":
+        return _t5_sparse_route_arm(request, parent, weights, provenance)
 
     request.log(
         f"C01 {request.cell.text}: route head={head_size} tail_rank={tail_rank}, "
@@ -956,19 +1403,25 @@ __all__ = [
     "C01_TOKEN_ROUTE_HEAD_SIZE",
     "COMPONENT_ID",
     "ROUTE_TECHNIQUE_ID",
+    "SPARSE_ROUTE_RECORD_SCHEMA",
     "TECHNIQUE_ID",
     "TOKEN_EMBEDDING_RECORD_SCHEMA",
     "TOKEN_FREQUENCY_SCHEMA",
     "TOKEN_ROUTE_RECORD_SCHEMA",
+    "TOKEN_ROUTE_TAIL_MODES",
     "WEIGHTINGS",
     "TokenEmbeddingFactorization",
     "TokenEmbeddingFoldError",
     "TokenEmbeddingRoute",
+    "TokenEmbeddingSparseRoute",
+    "c01_sparse_route_sparsity_for_ratio",
+    "c01_sparse_route_storage",
     "c01_token_route_storage",
     "factor_token_embedding",
     "load_token_frequencies",
     "maximum_shrinking_rank",
     "route_token_embedding",
+    "sparse_route_token_embedding",
     "t4_token_embedding_technique",
     "t5_token_embedding_route_technique",
 ]
