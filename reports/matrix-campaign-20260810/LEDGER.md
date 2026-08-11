@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-11T15:48:53+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-11T17:20:12+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**150 cells sealed** (322 ledger rows including re-runs); newest seal 2026-08-11T15:46:57.742+00:00.
+**163 cells sealed** (348 ledger rows including re-runs); newest seal 2026-08-11T17:17:13.807+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 119 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 132 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -16,10 +16,10 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 
 | verdict | cells | meaning |
 |---|---:|---|
-| `alive-parent-band` | 28 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
-| `alive-degraded` | 14 | >= the A9 band of 8/15, outside the parent's +/-2 |
-| `impaired` | 2 | < 8/15 but still coherent, on-task language |
-| `dead` | 8 | incoherent, emit-zero floor failed, or degenerate output |
+| `alive-parent-band` | 30 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
+| `alive-degraded` | 15 | >= the A9 band of 8/15, outside the parent's +/-2 |
+| `impaired` | 8 | < 8/15 but still coherent, on-task language |
+| `dead` | 12 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
@@ -77,6 +77,19 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `C13.T5.S8.L05` | L05 | S8 | 0.1247 | 0.125 ok | **alive-degraded** | 9/15 | 12 | coherent | 0.0547 |
 | `C13.T8.S4.L05` | L05 | S4 | 0.2499 | 0.250 ok | **alive-parent-band** | 12/15 | 12 | coherent | 0.0664 |
 | `C13.T8.S8.L05` | L05 | S8 | 0.1247 | 0.125 ok | **impaired** | 6/15 | 12 | coherent | 0.1035 |
+| `COMP.MA.MXJ1` | GLOBAL | NA | 0.9914 | -- | **alive-parent-band** | 12/15 | 12 | coherent | 0.0664 |
+| `COMP.MA.MXJ2` | GLOBAL | NA | 0.9897 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.1133 |
+| `COMP.MA.MXJ3` | GLOBAL | NA | 0.9863 | -- | **impaired** | 6/15 | 12 | coherent | 0.1328 |
+| `COMP.MA.MXJ4` | GLOBAL | NA | 0.9777 | -- | **impaired** | 4/15 | 12 | coherent | 0.0469 |
+| `COMP.MA.MXJ5` | GLOBAL | NA | 0.9743 | -- | **dead** | 4/15 | 12 | coherent | 0.0488 |
+| `COMP.MA.MXJ3A` | GLOBAL | NA | 0.9863 | -- | **impaired** | 5/15 | 12 | coherent | 0.1328 |
+| `COMP.MA.MXJ3B` | GLOBAL | NA | 0.9863 | -- | **impaired** | 7/15 | 12 | coherent | 0.1406 |
+| `COMP.MA.MXJ3C` | GLOBAL | NA | 0.9812 | -- | **alive-degraded** | 9/15 | 12 | coherent | 0.1133 |
+| `COMP.MA.MXJ4C` | GLOBAL | NA | 0.9777 | -- | **dead** | 8/15 | 12 | coherent | 0.0605 |
+| `COMP.MB.MXJ3` | GLOBAL | NA | 0.9863 | -- | **impaired** | 6/15 | 12 | coherent | 0.0703 |
+| `COMP.MA.MXJP2A` | GLOBAL | NA | 0.9812 | -- | **dead** | 5/15 | 12 | coherent | 0.0879 |
+| `COMP.MA.MXJP2B` | GLOBAL | NA | 0.9812 | -- | **impaired** | 7/15 | 12 | coherent | 0.1211 |
+| `COMP.MA.MXJP2C` | GLOBAL | NA | 0.9726 | -- | **dead** | 4/15 | 12 | coherent | 0.0469 |
 
 **Survivors** (alive at a satisfied storage bound): 36 -- these are the assembly wave's input.
 
@@ -206,7 +219,7 @@ ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites S*, where 
 | C13 | T5 | 0/3 | . | . | . | . | . | 0/1 | 0/1 | fails at composition |
 | C13 | T8 | 0/1 | . | . | . | . | . | 0/1 | 0/1 | fails at local-solve |
 | C14 | T1 | . | . | . | . | . | . | . | . | works at NA (no level axis) at L00 (1/1 sites) |
-| COMP | composition | . | . | . | . | . | . | . | . | fails at composition |
+| COMP | composition | . | . | . | . | . | . | . | . | fails at local-solve |
 
 ## 3. Failure classes
 
@@ -214,11 +227,11 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 13 | 10% |
-| `local-solve` | 39 | 30% |
+| `infra` | 13 | 9% |
+| `local-solve` | 52 | 36% |
 | `macrocell-band` | 1 | 1% |
-| `composition` | 67 | 51% |
-| `free-run` | 12 | 9% |
+| `composition` | 67 | 46% |
+| `free-run` | 12 | 8% |
 
 ## 4. Band-versus-behavior agreement
 
@@ -226,10 +239,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 114 |
-| out of band | 0 | 1 |
+| in band (<= 0.4) | 18 | 125 |
+| out of band | 0 | 3 |
 
-Agreement 19/133 (14%).
+Agreement 21/146 (14%).
 
 ## 4b. Storage honesty
 
@@ -351,8 +364,21 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.RSTO` | composition | NA | 229235456 | 229693184 | 0.9980 |
 | `COMP.MB.RSTO` | composition | NA | 229235456 | 229693184 | 0.9980 |
 | `COMP.MB.RBEH` | composition | NA | 231693056 | 229693184 | 1.0087 |
+| `COMP.MA.MXJ1` | composition | NA | 227726719 | 229693184 | 0.9914 |
+| `COMP.MA.MXJ2` | composition | NA | 227332983 | 229693184 | 0.9897 |
+| `COMP.MA.MXJ3` | composition | NA | 226545782 | 229693184 | 0.9863 |
+| `COMP.MA.MXJ4` | composition | NA | 224576630 | 229693184 | 0.9777 |
+| `COMP.MA.MXJ5` | composition | NA | 223790198 | 229693184 | 0.9743 |
+| `COMP.MA.MXJ3A` | composition | NA | 226546551 | 229693184 | 0.9863 |
+| `COMP.MA.MXJ3B` | composition | NA | 226546551 | 229693184 | 0.9863 |
+| `COMP.MA.MXJ3C` | composition | NA | 225363831 | 229693184 | 0.9812 |
+| `COMP.MA.MXJ4C` | composition | NA | 224577399 | 229693184 | 0.9777 |
+| `COMP.MB.MXJ3` | composition | NA | 226545782 | 229693184 | 0.9863 |
+| `COMP.MA.MXJP2A` | composition | NA | 225366518 | 229693184 | 0.9812 |
+| `COMP.MA.MXJP2B` | composition | NA | 225366518 | 229693184 | 0.9812 |
+| `COMP.MA.MXJP2C` | composition | NA | 223400053 | 229693184 | 0.9726 |
 
-65 of 114 sealed cells with a storage reading actually contract.
+78 of 127 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -2029,6 +2055,149 @@ composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 4
 | `6f47bde7` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 86.7 | `cdc82c8215aa` |
 
 > decode-smoke review by claude-opus5-mxh of receipt 7fef15a10e241842: 3/3 decode-smoke on task and coherent; two cap-censored. Frozen V5 review (protocol e5e37768, pack 0ee6bf14, dossier 2f508c2f7957dc91, 16/16 complete at the 1024 cap): child 12 of 15 useful-or-partial (5 useful / 7 partial / 3 observed miss) against the same-process parent control at 12 of 15 -- band delta 0, +4 on the ADDENDUM 2 reference band of 8/15. Eight of sixteen responses are byte-identical to the M-A child on the same recipe. The composed free-run is 0.0410 ABOVE its M-A twin (0.5801 vs 0.5391) and the review band does not move with it: instruction-three-actions gains an introduction the anchor forbids and context-retrieval drops Saturday, both Useful -> Partial, offset by nothing. Safety concerning in both lanes. Net storage 1.008707x: this child stores 1,999,872 parameters MORE than its parent.
+
+### `COMP.MA.MXJ1` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `09e0d32a` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.2723 | 0.066 | 0.041 | 0.991 | 1763.8 | 41.5 | `c5fa1f3635de` |
+| `09e0d32a` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.2723 | 0.066 | 0.041 | 0.991 | 1763.8 | 41.5 | `7ffbefde05a3` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 7ffbefde05a397b7: verdict alive-parent-band, 12/15 useful-or-partial (parent 12/15). Wave-6 greedy step 1 of 5: mlp_down alone at L05 under gram relation matching, storage-defined S4 (0.249853x of the component).  The composed child s sixteen frozen-review responses are BYTE-IDENTICAL to the sealed wave-5 isolation cell C13.T8.S4.L05 s, and the same-process parent lane is byte-identical to wave 5 s, so this is not an independent second reading of new text -- it is the same text, and it carries that cell s sealed per-case grading rather than a re-grade that could only differ by reviewer noise.  The reproduction is the harness calibration this wave needed: the composition runner reproduces the isolation runner to the digit (calibration relL2 0.0006382105222036804, gram 0.20058, cos 0.92045, rank 639, free-run 0.06640625, stored 654975).
+
+### `COMP.MA.MXJ2` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `9786c7d9` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3295 | 0.113 | 0.088 | 0.990 | 1763.8 | 50.2 | `6bd50bf6883e` |
+| `9786c7d9` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3295 | 0.113 | 0.088 | 0.990 | 1763.8 | 50.2 | `dffaf50a81ff` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt dffaf50a81ffe0b7: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). Wave-6 greedy step 2 of 5: mlp_down L05 + attn_k L12, both at a storage-defined S4.  Down 1 case from step 1 and 1 from the same-process parent -- still inside the parent band.  The two components that fall are explanation-seasons (the child loses axial tilt entirely and answers geocentrically) and debugging-off-by-one (it re-emits the buggy slice as the fix); context-retrieval GAINS Saturday, which the parent itself drops.  No lane loops: planning-dependencies cycles the word backup heavily across six distinct headed steps and creative-continuity doubles one clause, which under NOTES-MX-I 3.3 is local phrase doubling inside progressing text and not the degeneracy clause.
+
+### `COMP.MA.MXJ3` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5dab49ae` | sm86 | fail | local-solve | 0.8567 | 0.1834 | 0.3697 | 0.133 | 0.090 | 0.986 | 1763.8 | 63.6 | `78eacbf58629` |
+| `5dab49ae` | sm86 | fail | local-solve | 0.8567 | 0.1834 | 0.3697 | 0.133 | 0.090 | 0.986 | 1763.8 | 63.6 | `b15c5efe2a96` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt b15c5efe2a96938a: verdict impaired, 6/15 useful-or-partial (parent 12/15). Wave-6 greedy step 3 of 5: conv_out_proj L05 added to mlp_down L05 + attn_k L12.  The A12 law at S4 scale: C05.T8.S4.L05 is a sealed 12/15 in ISOLATION and its addition here costs FIVE review cases (11 -> 6), taking the child out of the parent band and past alive-degraded into impaired.  summarization-priorities loses the decision entirely, comparison-ram-rom returns a self-contradictory backpack analogy whose two stated imperfections are the same sentence twice, coding-deduplicate emits seen.add(unique_order) which raises TypeError on an unhashable list, and creative-continuity drops to a single sentence with no dialogue line at all.  Not degenerate: no response is carried by its own repetition.
+
+### `COMP.MA.MXJ4` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `aaa0987c` | sm86 | fail | local-solve | 0.8567 | 0.1834 | 0.4338 | 0.047 | 0.037 | 0.978 | 124604038945308.8 | 80.7 | `56c039defb7e` |
+| `aaa0987c` | sm86 | fail | local-solve | 0.8567 | 0.1834 | 0.4338 | 0.047 | 0.037 | 0.978 | 124604038945308.8 | 80.7 | `a937568de9b1` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt a937568de9b1e105: verdict impaired, 4/15 useful-or-partial (parent 12/15). Wave-6 greedy step 4 of 5: mlp_gate L00 added.  Zero useful responses.  context-retrieval now answers Tuesday through Saturday where the note says dogs are allowed only on Saturdays, coding-deduplicate returns sorted(set(items)) and claims sorting preserves first-seen order, planning-dependencies loses backups, DNS, TLS and verification and keeps only the meta-steps, and uncertainty-insufficient-data emits ten near-duplicate market-analysis bullets.  Held back from dead: no single response is nothing but its own repetition, so the degeneracy clause is not fired on this child.
+
+### `COMP.MA.MXJ5` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `e645f214` | sm86 | fail | local-solve | 0.8567 | 0.1901 | 0.4350 | 0.049 | 0.037 | 0.974 | 124604038945308.8 | 85.8 | `a6c30529df17` |
+| `e645f214` | sm86 | fail | local-solve | 0.8567 | 0.1901 | 0.4350 | 0.049 | 0.037 | 0.974 | 124604038945308.8 | 85.8 | `caf82614da41` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt caf82614da41f355: verdict dead, 4/15 useful-or-partial (parent 12/15). Wave-6 greedy step 5 of 5, the full APB core.  DEAD ON THE DEGENERACY CLAUSE, not on its count.  writing-concise-email emits the same two-sentence email FIVE times verbatim with four stray Subject lines and nothing else -- the response IS the loop, the standard NOTES-MX-I 3.3 states and the same failure C13.T1.S4.L05 was sealed dead for.  planning-dependencies emits its entire six-step plan twice verbatim, coding-deduplicate writes seen = set() four times consecutively and then recurses infinitely, and multi-turn-correction returns four options of which items 1 and 3, and 2 and 4, are byte-identical.  The count alone would have read impaired at 4/15; the clause is what makes this a kill.
+
+### `COMP.MA.MXJ3A` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `2502bbe5` | sm86 | fail | local-solve | 0.8422 | 0.1834 | 0.3750 | 0.133 | 0.090 | 0.986 | 1763.8 | 66.9 | `8d9528028a7e` |
+| `2502bbe5` | sm86 | fail | local-solve | 0.8422 | 0.1834 | 0.3750 | 0.133 | 0.090 | 0.986 | 1763.8 | 66.9 | `994724450582` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 9947244505828ccb: verdict impaired, 5/15 useful-or-partial (parent 12/15). Wave-6 escalation (a) at step 3: C05 retried under BALANCED BASIS TRUNCATION (T3), the other sealed 12/15 conv_out_proj cell at the same site and the same S4 bound.  It does not recover the child -- 5/15 against T8 gram-relation-matching 6/15 -- so swapping the technique at this component makes the composition worse, not better.  conversation-natural-greeting now REFUSES to ask a follow-up question at all, arithmetic reaches the correct 18 per box at step 4 and then destroys it with 18 - 1 = 17 boxes, and creative-continuity emits its opening sentence again verbatim as its closing sentence with a single dialogue line between.  Not degenerate: that lane still carries a distinct middle beat.
+
+### `COMP.MA.MXJ3B` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d32301c2` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3495 | 0.141 | 0.088 | 0.986 | 90103.2 | 73.4 | `858a424bd128` |
+| `d32301c2` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3495 | 0.141 | 0.088 | 0.986 | 90103.2 | 73.4 | `4c03f8e22957` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 4c03f8e22957aa49: verdict impaired, 7/15 useful-or-partial (parent 12/15). Wave-6 escalation (a) at step 3, second try: C05 retried under LOW RANK FACTOR WRITERS (T4), the third sealed 12/15 conv_out_proj cell.  7/15 -- the best of the three C05 branches and still impaired, still outside alive-degraded.  Its coding-deduplicate is the only correct dedup function any C05 branch produced and its comparison-ram-rom is the only real analogy, but arithmetic collapses to 102 - 8 = 8 kits and planning-dependencies never mentions TLS despite being asked for it.  All three of C05 s alive-parent-band techniques have now been composed and all three fail: T8 6/15, T3 5/15, T4 7/15.
+
+### `COMP.MA.MXJ3C` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `9a421aac` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3985 | 0.113 | 0.035 | 0.981 | 124604038945308.8 | 75.0 | `11d458106556` |
+| `9a421aac` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3985 | 0.113 | 0.035 | 0.981 | 124604038945308.8 | 75.0 | `9eaa4bd541b4` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 9eaa4bd541b46d6a: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). Wave-6 escalation (c) at step 3: C05 DROPPED, and the greedy path continues to the next survivor, mlp_gate at L00.  9/15 alive-degraded at net 0.981152x -- better than every C05 branch on BOTH axes at once, behaviour and storage, which is the result that identifies C05 rather than the depth as what broke phase 1.  This child is also the first in the wave to name the axial tilt at 23 degrees, to reach 94 / 5 = 18 kits per box, and to cover all five requested topics of the planning case with real content; its creative-continuity is a complete scene with a named keeper and an unexplained ending.  Not degenerate: the eight consecutive seen.add(None) lines in the coding lane sit inside a response that still carries a function, an explanation and a complexity claim.
+
+### `COMP.MA.MXJ4C` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `c5e3283e` | sm86 | fail | local-solve | 0.8587 | 0.1901 | 0.4008 | 0.061 | 0.037 | 0.978 | 124604038945308.8 | 85.1 | `0279f59b00b9` |
+| `c5e3283e` | sm86 | fail | local-solve | 0.8587 | 0.1901 | 0.4008 | 0.061 | 0.037 | 0.978 | 124604038945308.8 | 85.1 | `2e01f1821ce5` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 2e01f1821ce5c5f8: verdict dead, 8/15 useful-or-partial (parent 12/15). Wave-6 escalation (c) continued: attn_q at L12 added on top of the 9/15 child.  DEAD ON THE DEGENERACY CLAUSE at a count of 8/15 that would otherwise have read alive-degraded -- the same shape as wave 5 s C08.T8.S4.L02.  creative-continuity emits Did you hear the fog? three times verbatim and its final narration sentence twice verbatim; eight sentences, four of them repeats, and nothing happens between the first and the last.  Removing the repetitions leaves no scene, which is the NOTES-MX-I 3.3 test.  The safety lane independently seals the room four consecutive times.  The count would have said 8/15; the clause is what makes this a kill, and it is recorded that way so it can be overturned deliberately.
+
+### `COMP.MB.MXJ3` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `41d76a9c` | sm86 | fail | local-solve | 0.8567 | 0.1747 | 0.3782 | 0.070 | 0.041 | 0.986 | 1974.3 | 1743.5 | `8dbc5ac7c0a1` |
+| `41d76a9c` | sm86 | fail | local-solve | 0.8567 | 0.1747 | 0.3782 | 0.070 | 0.041 | 0.986 | 1974.3 | 1743.5 | `4bf9ea4491ee` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 4bf9ea4491ee9f07: verdict impaired, 6/15 useful-or-partial (parent 12/15). Wave-6 escalation (b): the step-3 recipe re-solved under ADDENDUM 4 mode M-B, each component after the first against evidence captured through the partially folded child.  SAME COUNT AS ITS M-A TWIN (6/15, impaired) for 27.4x the wall clock -- 1743.5s against 63.6s -- and two fresh conditioned captures.  It is also WORSE on both composed diagnostics: global drift 0.378189 against 0.369708 and composed free-run 0.0703 against 0.1328.  The text is genuinely different, not a re-run: M-B writes the wave s best planning answer (all six steps, all five requested topics, a real rollback) and the only correct dedup function in any C05 branch, and pays for both by losing Saturday in context-retrieval and the whole decision in summarization.  Note the structural asymmetry this cell could not avoid: C05 installs FIRST in topological order, so the component that actually broke the composition is the one M-B is unable to condition.
+
+### `COMP.MA.MXJP2A` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `bd882855` | sm86 | fail | local-solve | 0.8587 | 0.4073 | 0.5217 | 0.088 | 0.012 | 0.981 | 1763.8 | 73.0 | `b00eca6d78de` |
+| `bd882855` | sm86 | fail | local-solve | 0.8587 | 0.4073 | 0.5217 | 0.088 | 0.012 | 0.981 | 1763.8 | 73.0 | `b4c28d22f428` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt b4c28d22f428f4d0: verdict dead, 5/15 useful-or-partial (parent 12/15). Wave-6 PHASE 2, C13 site ladder, first expansion site: mlp_down folded at L00 as well as L05.  DEAD ON THE DEGENERACY CLAUSE.  creative-continuity emits five bracketed Line N entries of which three are byte-identical and the other two are byte-identical to each other, and nothing else; coding-deduplicate emits a bare return three times in the function body and ten times in the example; comparison-ram-rom collapses into RAM is not as long-term as RAM is.  Local drift after the L00 install alone is 0.422844, already above the 0.369708 the whole three-component phase-1 step 3 child reached.  L00 REFUSES this component.
+
+### `COMP.MA.MXJP2B` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `cde3b77a` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3801 | 0.121 | 0.100 | 0.981 | 20376.7 | 74.6 | `abd7bc4f3f67` |
+| `cde3b77a` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.3801 | 0.121 | 0.100 | 0.981 | 20376.7 | 74.6 | `7450631fd3b4` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 7450631fd3b4bb44: verdict impaired, 7/15 useful-or-partial (parent 12/15). Wave-6 PHASE 2, C13 site ladder, second expansion site: mlp_down folded at L13 as well as L05.  7/15, impaired -- better than L00 s kill but still out of the alive band, so the second consecutive site failure stops the C13 ladder under the wave s own back-off rule.  Its L13 install costs less locally than L00 s did (drift 0.380073 against 0.521698 for the L00 child) which is the S3 layer ordering the campaign has seen since wave 1, now measured on a composed child.  Not degenerate: planning-dependencies repeats Ensure backups are backed up regularly six times but under six distinct headings, and creative-continuity is a real scene with a dialogue line and an unexplained ending.
+
+### `COMP.MA.MXJP2C` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 6
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `81deec90` | sm86 | fail | local-solve | 0.8587 | 0.4073 | 0.5399 | 0.047 | 0.029 | 0.973 | 20376.7 | 75.0 | `103346378f59` |
+| `81deec90` | sm86 | fail | local-solve | 0.8587 | 0.4073 | 0.5399 | 0.047 | 0.029 | 0.973 | 20376.7 | 75.0 | `4aeb12d3b8c3` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxj of receipt 4aeb12d3b8c3ddaa: verdict dead, 4/15 useful-or-partial (parent 12/15). Wave-6 PHASE 2, C13 at ALL THREE registered sites (L00 + L05 + L13) plus attn_k at L12 -- the wave s deepest storage contraction at net 0.972602x, 6,293,131 parameters removed.  DEAD, and not close: writing-concise-email emits the same two-line email NINE times verbatim across 710 tokens, arithmetic terminates by emitting boxed{1} about twenty times consecutively into the 1024-token cap, creative-continuity emits four near-identical Line N entries, and the safety lane emits the word clean roughly fifty times consecutively.  This is the honest bottom of the wave: the storage number is the best any child reached and the model that carries it cannot finish a sentence.
 
 ### `CTRL.copy_exact` -- PASS
 

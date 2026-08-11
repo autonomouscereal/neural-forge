@@ -1,0 +1,118 @@
+{
+ "components": [
+  {
+   "cell_id": "C13.T8.S4.L05",
+   "component_id": "C13",
+   "evidence_cache": "L05-C13",
+   "evidence_endpoints": [
+    "mlp.down",
+    "mlp.post_swiglu",
+    "residual.post_layer",
+    "residual.post_operator",
+    "residual.pre"
+   ],
+   "isolation": {
+    "campaign_wave": 5,
+    "measured_at_this_site": true,
+    "parent_parameter_count": 2621440,
+    "receipt_path": "/mnt/ai_data/neural-forge-matrix/cells/C13.T8.S4.L05/cell-receipt.json",
+    "receipt_sha": "fac6f24f9471090af08f4986ddd52c9252df69bfe7da635bcc6b9304e7127daa",
+    "receipt_sha_sealed": "ef77fcdc5d54f28b49537ff3a0ad30e971f03fcc05fddd3abbb590303fd81bac",
+    "review_useful_or_partial": 12,
+    "review_verdict": "alive-parent-band",
+    "storage_realized_ratio": 0.24985313415527344,
+    "stored_parameter_count": 654975
+   },
+   "selection_reason": "wave-6 greedy assembly: C13.T8.S4.L05 is the wave-5 (NOTES-MX-I \u00a75) survivor at mlp_down, sealed 12/15 alive-parent-band at a storage-defined S4, site-scoped under ADDENDUM 5 rule 2-S.",
+   "weight_keys": [
+    "model.layers.5.feed_forward.w2.weight"
+   ],
+   "x4_width": 639
+  }
+ ],
+ "description": "Wave 6 (MX-J) greedy assembly under ADDENDUM 6: the wave-5 S4 survivors installed one at a time in descending review order, with the full frozen 15-prompt review run after every addition.",
+ "install_order": [
+  "C13.T8.S4.L05"
+ ],
+ "passed_through": [
+  {
+   "component": "token_interface_in",
+   "component_id": "C01",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "token_interface_out",
+   "component_id": "C02",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "conv_in_proj",
+   "component_id": "C03",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "conv_kernel",
+   "component_id": "C04",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "conv_out_proj",
+   "component_id": "C05",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_q",
+   "component_id": "C06",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_k",
+   "component_id": "C07",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_v",
+   "component_id": "C08",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_o",
+   "component_id": "C09",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_per_head",
+   "component_id": "C10",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "mlp_gate",
+   "component_id": "C11",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "mlp_up",
+   "component_id": "C12",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "norms",
+   "component_id": "C14",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "lm_head",
+   "component_id": "C15",
+   "reason": "not selected by the wave-6 greedy path at this step; installed as parent weights (copy_exact).  A component is added only after the previous addition has been reviewed."
+  }
+ ],
+ "ranking": "behaviour-first-greedy",
+ "schema": "neural-forge-lfm2-matrix-composition-recipe-v1",
+ "selection_policy": {
+  "admission": "ADDENDUM 6 \u00a76.1: a component is admitted on its sealed frozen-review verdict, not on free-run token match, which the addendum retires to a diagnostic column.",
+  "install_order": "topological, input side -> output side; within a layer conv -> attention -> mlp -> norms (matrix_composition.install_order_key)",
+  "ranking": "descending wave-5 useful-or-partial count",
+  "site_scope": "ADDENDUM 5 rule 2-S: phase-1 winners install at their sealed passing site only.  Phase-2 entries install at additional REGISTERED sites and say so in their own selection reason."
+ },
+ "variant": "MXJ.S1"
+}
