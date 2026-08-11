@@ -1,0 +1,963 @@
+{
+ "authority": "Cyril's artifact-retention policy, carried forward from wave 5: keep the complete paper trail (ledger, receipts, dossiers, diagnostics, NOTES -- all small) and keep only the best ~5 children's tensors; sha256-manifest anything heavy before deleting it.",
+ "deleted": true,
+ "deleted_bytes": 17759992666,
+ "deleted_file_count": 116,
+ "df_at_manifest_time": "Filesystem              1B-blocks          Used     Available Use% Mounted on\n/dev/sda2           1966736678912 1859093004288    7663423488 100% /\n//192.168.50.250/ai 4844514443264 2909239508992 1935274934272  61% /mnt/ai_data\n",
+ "entries": [
+  {
+   "bytes": 16779624,
+   "cell_id": "COMP.MA.MXJ3A",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJ3A/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJ3A against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "9650d8bb01959e093d8687dbcbf29c51a91fdd7c1dd1530c9f02952b23266249"
+  },
+  {
+   "bytes": 16779624,
+   "cell_id": "COMP.MA.MXJ3B",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJ3B/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJ3B against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "bd37d275873062294a5835654d3011f072dba28b5fde3603a3322e9517e24fe4"
+  },
+  {
+   "bytes": 27265715,
+   "cell_id": "COMP.MA.MXJ4",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJ4/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJ4 against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "9e236fe9a2fb6fbb7b2a5906642240693d27f20f6f38e2cb963818d4ebe3497e"
+  },
+  {
+   "bytes": 27265715,
+   "cell_id": "COMP.MA.MXJ4C",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJ4C/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJ4C against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "d306d7405f945b07317db337d3e503314c13174e1c244251e4fb50575a2182b4"
+  },
+  {
+   "bytes": 31460350,
+   "cell_id": "COMP.MA.MXJ5",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJ5/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJ5 against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "e2eec6c521963cdfa93a76393a59f70ba8c0eaa10b83986afd255a28410e5e20"
+  },
+  {
+   "bytes": 23071080,
+   "cell_id": "COMP.MA.MXJP2A",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJP2A/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJP2A against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "90e02e1114b8b404d8cf5cce0481698fd7bc264cd4f3c556c2a4a2878a698f50"
+  },
+  {
+   "bytes": 23071080,
+   "cell_id": "COMP.MA.MXJP2B",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJP2B/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJP2B against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "ba48b6b28e9a5a5bc548858afa8c2bf83faa8ad2e324e944fdd3a231b47d5114"
+  },
+  {
+   "bytes": 33557171,
+   "cell_id": "COMP.MA.MXJP2C",
+   "group": "composed-child-tensors",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/cells/COMP.MA.MXJP2C/composed-child-tensors.pt",
+   "rederivable_by": "re-running experiments/run_lfm2_matrix_composition.py with reports/matrix-campaign-20260810/run/mxj/recipes/ for COMP.MA.MXJP2C against the sealed parent evidence base 2dec87ac...; every folded tensor's digest is sealed in this cell's own composition receipt.",
+   "sha256": "c430b0d0dc01da6a8203418f924a88a2dd697e8fa527452cde71a1e3e9e80116"
+  },
+  {
+   "bytes": 775556,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000000/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "fa67b083d1e5dbede49c4b72fb22a4314b38ff09fb89fb8618f74217115388da"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000000/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "6c47764f476e6e09f786af7daf69d5484a92b89f24527b390f0b57d20c59c530"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000001/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "2e4cf3a84511af9ece0259f61782eb934cd028fdcb1b1e84e4fe58f82d2082f8"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000001/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "1d79d4b2264ae4f2abb17cfbd37cc2a571387c6cb1fb89c2f44f758b7053a9a7"
+  },
+  {
+   "bytes": 775551,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000002/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "ab066121fbad508044684f0bfc086a2afbfa55cc022f71b87a3e351264b68cd7"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000002/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "7f4888fcf2fb0f2c1e144eaf85911978089b22887f9bdd7039976a7f73c5ed7a"
+  },
+  {
+   "bytes": 775566,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000003/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c45a7e0fdaa34131e43b00b9a62fbf8583570cf7f7ded09cc4d19a83843cff8e"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000003/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c021a206b0da23629a3dd6a311b64cba5b05f560625ef0d26bb4f3ac7e5338f6"
+  },
+  {
+   "bytes": 775551,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000004/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "a81f69b486d9c2f0e66984a1c46fa5b2d03d4c26a7905c7077737fa0450a9c98"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000004/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "99301581f308a7b7889cdfee6e0caf41bf0acc4ac382ea90d72c454fb1527542"
+  },
+  {
+   "bytes": 775849,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000005/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "3b6d6a25e6e80b324894325a7a9da25a1a547bd58ae8a6770d3d224d21a4722e"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000005/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "9c87b0330d5ea8c911af0d53bf5a0d1d60307af9988bb00f2bc75018816be960"
+  },
+  {
+   "bytes": 775580,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000006/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "8ce7d57225d5e8c215ba12d920db3e15ba99dc97ea31981aff43d8c61d1c79cc"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000006/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "dedc7407708526cfe4ec610af15502fb0d49cf5973f4ec566330468ac6a7a4f5"
+  },
+  {
+   "bytes": 775556,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000007/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "a383a44f34581d085b5366faac6060225d59fa1b55db362b2e804420a2276a31"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000007/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d2eca035fe48f8b616f2aac5a5f8a8b5d3a366f8ad69c93da4cc8f5a1d132581"
+  },
+  {
+   "bytes": 776118,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000008/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c0b48a8c1cdd11fc1f97370758b6f54e290e179a6c0317eba13047dc8797d643"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000008/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d96f482c04305b40885ac68e60d59d9f65691022f6a62ce2d72f1d9aa8131622"
+  },
+  {
+   "bytes": 775568,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000009/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "ab5ff59a477c7438803f7278c8f0e25913c2393da377afd0e78d35572921586d"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000009/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "5e01fb05f9fb4ca3b03a4ef4bc2712b3d5dfe510f98191fdaa01d8e955615443"
+  },
+  {
+   "bytes": 775559,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000010/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "096719a72533e2b1c95cb46eeaa320cf63440e5f195b2e43c72461bb72fab6dd"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000010/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "0c0b167bd79a6bd1434b62b38ea581590d2119dbe6a1ad84782b01b1fe4849ee"
+  },
+  {
+   "bytes": 775556,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000011/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "669284e5f96b60134c578470079ba232bb429c2ad345deacc93768ed0bf807e9"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000011/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c110914a5d5013d517b979ea85de7c47fd1f99800a1aa64ece98a6a4c61f5a8b"
+  },
+  {
+   "bytes": 775578,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000012/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "af7c0efd52cbb475ed8114612451db232f5c95eb6ac1b307fa71c58acf142b60"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000012/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "cfc5dc39754ff7359d113f65111782838cd1ed4c9837206430b325a27e332627"
+  },
+  {
+   "bytes": 775565,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000013/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "61e2a265fd3c1ed643c3b2741920ca797f1a23d7999e3da91353e0114788d665"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000013/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "34de21fd435843607446a5ff95dcda20a88d4e60aa366b1fab93b80d2f47ff49"
+  },
+  {
+   "bytes": 775567,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000014/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "393b7982daf5dc27c4b01432d1a99de26972b1a10026b137825e728e78061a51"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000014/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "8da4f8e7fd10f8004ea24eb5c388238fabfac846d711450880fd88ed2e29752e"
+  },
+  {
+   "bytes": 775582,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000015/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "df3950a0ac968d6b2799b942440f43b822e545046f65b5f65391f9d8dd5ff775"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000015/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "84e0eed5a25f6018b77855a1ace992da6fad363fbb22fbae5600916721187f22"
+  },
+  {
+   "bytes": 775566,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000016/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "b2f5c44fd4c6354155d2d44ababadfb08ae3650fd162d0dc47ac7e9325bcfeb7"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000016/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "127114ddecb1651d405b1ca9a99e399e96ff613887420e0b2def2763da19bb64"
+  },
+  {
+   "bytes": 775567,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000017/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "5d8b43ea58b36eb782b4176cbb715f323237ba21f0ec030c3051b95355d9e822"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000017/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "bd54da7eaca518c38b897d4d290818c664c94249cb25af46f6a02ef928e4a06f"
+  },
+  {
+   "bytes": 775576,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000018/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "61c3b42c332b7f463257642235fc6be427811e946920a9629b95a12c0ce662c7"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000018/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "0fd23f26c9391e9067757b147dd3fc025501d076b47f055bef0ab8033e446628"
+  },
+  {
+   "bytes": 775567,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000019/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "5669b6375e9d68f217513c0688212925d8cd2a25752e9c0a3440fe426bcce3f1"
+  },
+  {
+   "bytes": 351892988,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000019/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "aad086b321d0dea3a3ac8f356086661e03961dece1a05bfa14e31255c455f95d"
+  },
+  {
+   "bytes": 775560,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000020/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "3aa7f10292838c9ece4a75f7bb0832917b58e9d70c7ea92485ce4eeb55f19ffb"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000020/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "9761981c6a24b7f9dc2546bb1ae15924cdc232186d19d727da2d382cb98c3c8c"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000021/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "50bd04bd659d75461dc4bf8f79e9b84da84a4db5cbcc07e2fc7f6e06a16e2a38"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000021/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "f441eaf2f68b559ab669e2b36016f5a2081f4f3a2f19fe327301e23add149ee0"
+  },
+  {
+   "bytes": 775576,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000022/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "463b546c85e5308dba9df7334b16a91ba55c71a292ddde49cf8929d1e6ecb4ce"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000022/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "9fdee6f9a113a4c8944c91a37ffc4d5301087d23d86b97ca806ca4c197a810ee"
+  },
+  {
+   "bytes": 775563,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000023/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "30f203b449cd5e4f088f85dbc184447c8f9224a1aa5fcc5214d043e6cb2bbcf6"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/batches/batch-000023/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "b093cc6686d206f3b2715e110cd72013b5826e3ff5619530635e3d2697b5b3e3"
+  },
+  {
+   "bytes": 8952,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/complete.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "19d2ac3563815b7e37c9907d0febdb458d543917829333cab4b248b7828f670b"
+  },
+  {
+   "bytes": 17610,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/2b682bfb339ae2b57fe29e3dd1af477452efa2f4d24e8a78a868811aee465904/manifest.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "e416d847b03ccc3cf5555797b507e945ab8a0c6f33e143f5d4589d2a89ddbf28"
+  },
+  {
+   "bytes": 775559,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000000/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "355405d13fbd66c3a10f11f527842b5b14e70625595ed57780c8cbaaab9a5442"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000000/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "b809e65876b2b351662d65f770a8c44b5850600008eca5d0c2daeedb07481b8b"
+  },
+  {
+   "bytes": 775564,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000001/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "101ff301727804dd422434a32f34a840d22d594cc8ff349e209d0a5d773a1661"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000001/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "e80aeb5cb31f7dcfb398f4fbcf3ee35d28bdd57c33b7a94642a3e463fa3bd454"
+  },
+  {
+   "bytes": 775565,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000002/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "667ab8c1bac5abd6d3229464a8d2487585e4a5a52f2c3d83e06bd857fb8b10f8"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000002/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "f4ae1d5ee19dc056b633cbda51194d0e08b7a67f67a6a5208d70d6860573bdb1"
+  },
+  {
+   "bytes": 775554,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000003/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "5f459aa5f98d07b84c678df15106c8a6db5b24d9e826ece036c8a2f13e4fa761"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000003/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "ee9db247b6a27331940d596577049205790ff379a8a3a8c2be77825a2555ed60"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000004/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "576abe9d142b90df4ddc99bf9400472eb304752c0e96d768f8ddbbd08e077144"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000004/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "ca70b6ee88edea0f76b6811d849c828c58ade4383688bb6d2bb8161e0c8456ed"
+  },
+  {
+   "bytes": 775559,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000005/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "98c6dcb9f5d1ac0f0efdcb13ffba8b1ff14283fbfeb1c0bf7c5559fb6a183b36"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000005/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "0b8db779943fc9b85c86ad784c2e49b7e08642841ae67a6db9d4c5f0f068c488"
+  },
+  {
+   "bytes": 775549,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000006/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "f97abdb222efd34b339405a3e459e35c7669b557f9f26af243c72d9e7fe23783"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000006/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "1f4b07a94c9ff29217bc7947384067714909bd1adca75b28d94f23e7b4cd8697"
+  },
+  {
+   "bytes": 775559,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000007/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "16957dd596e08d688d474e1befe4a93c9bbf97932e84fbc09e2bafe2de696bb4"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000007/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c975c2754c23b52e8381e7f83232492b0a7ef9d4d4f415ca6cd39d9a3a52d594"
+  },
+  {
+   "bytes": 775537,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000008/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "5ecfc5d0a36cbcf93c5835ca34625fbfc4ba130843ae38d9c206a142624d05b8"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000008/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "e4f40d184700131270d629f0080195d871f1b1c620c9510ba454369cd4055f94"
+  },
+  {
+   "bytes": 775558,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000009/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d295e401d38304caa25777964cb2ad9c9b5081f3d1989ab803e15e4d4d96c7a6"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000009/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "57010a47b01f255a5f037e452313be249db38f444399423fe076f629f65fbb4e"
+  },
+  {
+   "bytes": 775557,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000010/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "3d6cc34f7f43454dfded58ea7f6be4899b40f77f25ea0ab9fa7b7e6952758aca"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000010/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "9cec19e2a72330a5eb484e9ca0d3a248828a1d073af425ede29ac62696fcfc5a"
+  },
+  {
+   "bytes": 775551,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000011/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "fae2d77b9d178ddd378f4bf528a369671270ba2f9d088397ab96ae941918a35b"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000011/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "a522035fae347f528fd2273b563cb1b22b9af5909b1da053d0bfbfe6434f9261"
+  },
+  {
+   "bytes": 775548,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000012/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d6f2df00dc6ea4b58a0af41b6e5ad2a09bd1286474903cf94def52aad6538d9c"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000012/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "e4ac5d40e3ea33d61a619a2ec9a1b7af132e2e3dd5b1cc063e429ac15b5a5ccd"
+  },
+  {
+   "bytes": 775555,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000013/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c194e9591790dee678c62f077dd3aa3cd0f4ac18feaf8856130cc0f78ed58348"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000013/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "e97c57b513e34dbd0c20c3f3f16e49470131b018813f4f69d704e2eacbcd9cdc"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000014/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "947af88a995dfe96c7ea82231532785d6ff715fbcc30ca4cefd926bc2405ff5e"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000014/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "bafb7fa35f4f19b4616c3c5cae9df410876ee57a3a8395e488ba6291b96cc70d"
+  },
+  {
+   "bytes": 775585,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000015/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "86391172296d6a4be5212d1b5b0d47a6ee86d7274ad51aea3f5f137d7bd8b397"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000015/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "9828d626821c79c032880f36184949136c72b35f39c7025fda4caf1c00047094"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000016/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "be483ea3b04037674651daae532ea48fa1ec020c16d54a8696b1817b23279b29"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000016/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d85ad9e1727e26e824e5fce31a0419bbc6580fea7708400cc20016f2956b017c"
+  },
+  {
+   "bytes": 775572,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000017/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c6f9a895344f44962fd6877546d1a69b41c45d333f0d62b4f161affa5309b037"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000017/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "274568d0bbc67b0e4f94e588cd69f374497a9944c41c2f9a181fd563c1abfe6c"
+  },
+  {
+   "bytes": 775570,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000018/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "f0a9eee9f5200ddd38637d95bfd78f02d8231115dfcc97b9fe87610bddcb756f"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000018/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "af28950e72aaca2dc56f17c2e74b40461d579d1c1a2fe5390fdb6ca65a68064e"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000019/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "1ce87578d7d2436a02b07715835acfe99e653b4542f5edfbefa7813f08c718db"
+  },
+  {
+   "bytes": 351892988,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000019/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "84f57ab08d7453c044e1c612bffd519744a106976040bb676a702789a7e6831e"
+  },
+  {
+   "bytes": 775869,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000020/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "350e82050e17576c6b9ed297d07dd0873266319453e010769fc475726d555c56"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000020/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "3231d15f11da3970c97811fbc2cca129326c8083f8e598540fdfced0351280bf"
+  },
+  {
+   "bytes": 775564,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000021/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "2af6647c57aa7261654bea2d3581c6f3725d66974655299043ce6711eb831bcb"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000021/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "8781d09af7718e4c924bf0c6d751242f9087c10ed19d930caebdf231684f3a80"
+  },
+  {
+   "bytes": 775562,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000022/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "9fde399090485707fbbd507f8417dd603fc162284fcb4b833a81f752f7f780f0"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000022/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "6a6657e7f6e52b237897046157cea090660d65381e299bb1992e714e6137be3a"
+  },
+  {
+   "bytes": 775558,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000023/record.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "69186fd3da844a26fb85620b9f68f94a6127b3449328f35e4cac9eb267608598"
+  },
+  {
+   "bytes": 353234672,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/batches/batch-000023/trace.safetensors",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "0ad05838514668191c92d73b3cabbb4f2e969db94779dfa1e8ddcb1f7d8f911e"
+  },
+  {
+   "bytes": 8952,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/complete.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d88aa0dbfed361bea79eb10bba678d5f28afbb3f880c51732c1bb54ef0574050"
+  },
+  {
+   "bytes": 17610,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/9b9206a572d44d400bc51fee1a4038f97519e1bd6058964ccfc033eb0d9e685b/manifest.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "203fd8fab54dde278694ae8de9f9bc668ad34cbca0f202c8fe50428d2958c5ae"
+  },
+  {
+   "bytes": 669,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/conditioning/2b682bfb339ae2b5-01-C13.T8.S4.L05.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "f54574cf7665c53c3975ec0335c7992e247b7ea71c6fc1324eaecea085975e73"
+  },
+  {
+   "bytes": 692,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/conditioning/9b9206a572d44d40-02-C07.T5.S4.L12.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "15ca7c784f9a2aa48f18b02d3847a95770fb0a6eca5d416b00e0277a7e3c4335"
+  },
+  {
+   "bytes": 1255,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/evidence-cache/2b682bfb339ae2b5-L05-C13/binding.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "0b399af1cceda1b25085a66f3d16221cb01c2be2d9e6b214dbbb6db75ff418ee"
+  },
+  {
+   "bytes": 337329605,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/evidence-cache/2b682bfb339ae2b5-L05-C13/payload.pt",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "c95b996a53339c2f0c9f12cf01542bf90089cab898d07ad34d37551d2bc59d0a"
+  },
+  {
+   "bytes": 1265,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/evidence-cache/9b9206a572d44d40-L12-C07/binding.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "507c57510338e5bb5add61b785590c60e1a1bbc013fa37542f6a79380d929ead"
+  },
+  {
+   "bytes": 233536965,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/evidence-cache/9b9206a572d44d40-L12-C07/payload.pt",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "69fc68705dc07819f31bf5863373562ddbcf6eb31beb37535f0a81d48c2039f2"
+  },
+  {
+   "bytes": 4850,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/split-manifest-2b682bfb339ae2b5.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "2d38e6c3830e27ce8c88e8feb0980c6d67b6a9575c631b2d58140a89369e9683"
+  },
+  {
+   "bytes": 4850,
+   "cell_id": "COMP.MB.MXJ3",
+   "group": "conditioned-evidence",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave6/evidence-conditioned/split-manifest-9b9206a572d44d40.json",
+   "rederivable_by": "ADDENDUM 4 M-B replay: the collector is content-addressed and a conditioned capture's key is a function of the child state, the corpus and the capture selection, so a replay reproduces the same cache key (2b682bfb339ae2b5 before C13, 9b9206a572d44d40 before C07) bit for bit.",
+   "sha256": "d83de17d48d2cb56712f8d896b346f1dc2aa48facf89e3ea0f3539c3fa02eb4a"
+  }
+ ],
+ "entry_count": 116,
+ "kept_cell_reasons": {
+  "COMP.MA.MXJ1": "greedy step 1, alive-parent-band 12/15 at 0.991439x -- the harness calibration anchor: its sixteen review responses are byte-identical to the sealed wave-5 isolation cell C13.T8.S4.L05's.",
+  "COMP.MA.MXJ2": "greedy step 2, alive-parent-band 11/15 at 0.989725x -- the DEEPEST child of the wave still inside the parent's own quality band, and the wave's headline result.",
+  "COMP.MA.MXJ3": "the M-A arm of the wave's ADDENDUM 4 comparison at S4.",
+  "COMP.MA.MXJ3C": "escalation (c), alive-degraded 9/15 at 0.981152x -- the deepest child at or above the A9 floor and the best storage ratio any surviving child reached.",
+  "COMP.MB.MXJ3": "the M-B arm of the wave's ADDENDUM 4 comparison at S4; the pair is the evidence and neither half stands alone."
+ },
+ "kept_cells": [
+  "COMP.MA.MXJ1",
+  "COMP.MA.MXJ2",
+  "COMP.MA.MXJ3",
+  "COMP.MA.MXJ3C",
+  "COMP.MB.MXJ3"
+ ],
+ "not_touched": [
+  "/mnt/ai_data/neural-forge-matrix/cells (waves 1-5, incl. the six wave-5 survivor tensor sets this wave composed FROM)",
+  "/mnt/ai_data/neural-forge-matrix/ledger.jsonl and LEDGER.md",
+  "/mnt/ai_data/neural-forge-matrix/backup (every ledger checkpoint)",
+  "/home/cereal/model-surgery-lab/artifacts/.../evidence/2dec87ac... (the sealed parent evidence base, opened read-only all wave)",
+  "/home/cereal/nf-mxe/evidence-cache (the site evidence caches wave 6 reused through symlinks and never wrote to)",
+  "/home/cereal/model-surgery-lab/deployments/* (unchanged all wave)"
+ ],
+ "schema": "neural-forge-lfm2-matrix-wave6-pruned-tensors-manifest-v2",
+ "total_bytes": 17759992666,
+ "wave": 6
+}
