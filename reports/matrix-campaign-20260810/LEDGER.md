@@ -1,18 +1,18 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-10T20:58:18+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-11T00:29:01+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**88 cells sealed** (187 ledger rows including re-runs); newest seal 2026-08-10T20:57:37.430+00:00.
+**92 cells sealed** (202 ledger rows including re-runs); newest seal 2026-08-11T00:27:06.704+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 69 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 73 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 1 | calibration refused the cell -- void, not evidence |
 
 ## 1. The matrix
 
-Rows are components, columns are techniques.  A position shows the deepest level whose cells all passed, or the shallowest level attempted and the chain link it broke at.  `.` is untested.
+Rows are components, columns are techniques.  A position shows the deepest level with a passing site **and the sites it passed at** (ADDENDUM 5 rule 2-S), or the shallowest level attempted and the chain link it broke at.  `.` is untested.
 
 | component | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -20,15 +20,15 @@ Rows are components, columns are techniques.  A position shows the deepest level
 | C03 conv_in_proj | . | . | . | . | M16:comp | . | . | . | . |
 | C04 conv_kernel | M16:comp | . | . | . | . | . | . | . | . |
 | C05 conv_out_proj | M16:comp | M16:comp | M16:comp | M16:solve | M16:comp | . | . | M16:comp | M8:comp |
-| C06 attn_q | PASS@M8 | . | . | . | M16:free | . | PASS@M8 | . | . |
-| C07 attn_k | PASS@M16 | . | . | . | . | . | . | . | . |
+| C06 attn_q | PASS@X4@L12 | . | . | . | PASS@M16@L12 | . | PASS@M8@L02 | . | . |
+| C07 attn_k | PASS@X4@L12 | . | . | . | . | . | . | . | . |
 | C08 attn_v | M16:free | . | M16:infra | . | M16:comp | . | . | . | . |
 | C09 attn_o | M16:free | M16:free | M16:free | M16:solve | M16:comp | . | . | M16:comp | . |
 | C10 attn_per_head | M16:comp | . | . | . | . | . | . | . | . |
 | C11 mlp_gate | . | . | . | . | M16:comp | . | . | . | . |
 | C12 mlp_up | . | . | . | . | M16:comp | . | . | . | . |
 | C13 mlp_down | M16:comp | M16:comp | M16:comp | . | M16:comp | . | . | M16:comp | . |
-| C14 norms | PASS@NA | . | . | . | . | . | . | . | . |
+| C14 norms | PASS@NA@L00 | . | . | . | . | . | . | . | . |
 
 ### Calibration row
 
@@ -39,9 +39,9 @@ Rows are components, columns are techniques.  A position shows the deepest level
 
 ## 2. Level ladders
 
-§5 rule 2: a technique+component works *at level L* only if it passes at L and every shallower level, at >= 2 of its 3 sites.  A pass deeper than a fail is flagged `non-monotone` and does not count.
+ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites S*, where S is exactly the set of sites with a sealed passing receipt at L **and at every shallower level attempted at that site**.  The claim is never printed without its site set; the `good/attempted` count survives as a breadth annotation, never as the licence for an unqualified claim.  (This supersedes §5 rule 2, whose site-blind reading `NOTES-MX-G` §4.6 showed to be ambiguous.)
 
-| component | technique | M16 | M8 | M4 | M2 | X4 | verdict |
+| component | technique | M16 | M8 | M4 | M2 | X4 | verdict (site-scoped) |
 |---|---|---|---|---|---|---|---|
 | C01 | T5 | . | . | . | . | 0/1 | fails at free-run |
 | C03 | T5 | 0/1 | . | . | . | . | fails at composition |
@@ -53,10 +53,10 @@ Rows are components, columns are techniques.  A position shows the deepest level
 | C05 | T5 | 0/3 | 0/1 | . | . | . | fails at composition |
 | C05 | T8 | 0/1 | . | . | . | . | fails at composition |
 | C05 | T9 | . | 0/1 | 0/1 | . | . | fails at composition |
-| C06 | T1 | 3/3 | 3/3 | 0/1 | 0/1 | 1/3 | works to M8 |
-| C06 | T5 | 1/2 | . | . | . | . | fails at free-run |
-| C06 | T7 | 1/3 | 1/1 | 0/1 | . | . | non-monotone (not working) |
-| C07 | T1 | 3/3 | 2/3 | 0/1 | 0/1 | 1/2 | works to M16 |
+| C06 | T1 | 3/3 L02,L08,L12 | 3/3 L02,L08,L12 | 0/1 | 0/1 | 1/3 L12 | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M8; L08:M8 |
+| C06 | T5 | 1/2 L12 | . | . | . | . | works to M16 at L12 (1/2 sites) |
+| C06 | T7 | 1/3 L02 | 1/1 L02 | 0/1 | . | . | works to M8 at L02 (1/3 sites) |
+| C07 | T1 | 3/3 L02,L08,L12 | 2/3 L08,L12 | 0/1 | 0/1 | 1/2 L12 | works to X4 at L12 (1/3 sites); shallower elsewhere: L02:M16; L08:M8 |
 | C08 | T1 | 0/1 | 0/1 | 0/1 | . | . | fails at composition |
 | C08 | T3 | 0/1 | . | . | . | . | void (infra) -- no evidence |
 | C08 | T5 | 0/1 | . | . | . | . | fails at composition |
@@ -74,7 +74,8 @@ Rows are components, columns are techniques.  A position shows the deepest level
 | C13 | T3 | 0/2 | 0/1 | 0/1 | . | . | fails at composition |
 | C13 | T5 | 0/3 | . | . | . | . | fails at composition |
 | C13 | T8 | 0/1 | . | . | . | . | fails at composition |
-| C14 | T1 | . | . | . | . | . | awaiting review |
+| C14 | T1 | . | . | . | . | . | works at NA (no level axis) at L00 (1/1 sites) |
+| COMP | composition | . | . | . | . | . | fails at composition |
 
 ## 3. Failure classes
 
@@ -85,8 +86,8 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 | `infra` | 1 | 1% |
 | `local-solve` | 3 | 4% |
 | `macrocell-band` | 1 | 1% |
-| `composition` | 53 | 76% |
-| `free-run` | 12 | 17% |
+| `composition` | 57 | 77% |
+| `free-run` | 12 | 16% |
 
 ## 4. Band-versus-behavior agreement
 
@@ -94,10 +95,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 65 |
+| in band (<= 0.4) | 18 | 69 |
 | out of band | 0 | 1 |
 
-Agreement 19/84 (23%).
+Agreement 19/88 (22%).
 
 ## 4b. Storage honesty
 
@@ -165,8 +166,12 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `C13.T3.M4.L05` | T3 | M4 | 6881280 | 2621440 | 2.6250 |
 | `C13.T5.M16.L05` | T5 | M16 | 2457600 | 2621440 | 0.9375 |
 | `C14.T1.NA.L00` | T1 | NA | 1024 | 2048 | 0.5000 |
+| `COMP.MA.RBEH` | composition | NA | 231693056 | 229693184 | 1.0087 |
+| `COMP.MA.RSTO` | composition | NA | 229235456 | 229693184 | 0.9980 |
+| `COMP.MB.RSTO` | composition | NA | 229235456 | 229693184 | 0.9980 |
+| `COMP.MB.RBEH` | composition | NA | 231693056 | 229693184 | 1.0087 |
 
-14 of 60 sealed cells with a storage reading actually contract.
+16 of 64 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -1137,6 +1142,57 @@ norms / dense_prior_anchored_ridge / level NA / site L00 / wave 2
 | `7f7d50a8` | -- | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 35.1 | `66334299014d` |
 
 > decode-smoke review by ClaudeCode-MXF of receipt 00ce3f5c047c70f8: three whole responses reviewed verbatim from the receipt: explanatory prose, a formatted dinner plan, and a four-line neighbour note.  On task, no repetition loop, no degeneracy; cap-hit outputs censored, not failed.
+
+### `COMP.MA.RBEH` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 4
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `65d8711e` | sm86 | fail | composition | 0.9975 | 0.0342 | 0.0501 | 0.539 | 0.461 | 1.009 | 240109510.2 | 151.3 | `7f19eee63572` |
+| `65d8711e` | sm86 | fail | composition | 0.9975 | 0.0342 | 0.0501 | 0.539 | 0.461 | 1.009 | 240109510.2 | 151.3 | `86572105dfc4` |
+| `dba32ad5` | sm86 | fail | composition | 0.9975 | 0.0342 | 0.0501 | 0.539 | 0.461 | 1.009 | 240109510.2 | 128.8 | `5b94952c9386` |
+| `3bda2e05` | sm86 | fail | composition | 0.9975 | 0.0342 | 0.0501 | 0.539 | 0.461 | 1.009 | 240109510.2 | 115.6 | `a85842584663` |
+
+> decode-smoke review by claude-opus5-mxh of receipt 86572105dfc44a97: 3/3 decode-smoke on task and coherent (circuit breaker, one-pan dinner, neighbour note); two hit the 128 cap and are censored, not failed. Frozen V5 review (protocol e5e37768, pack 0ee6bf14, dossier 21bd4f1361188244, 16/16 complete at the 1024 cap): child 12 of 15 useful-or-partial (7 useful / 5 partial / 3 observed miss) against the SAME-PROCESS parent control at 12 of 15 (5/7/3) -- band delta 0 vs the parent, +4 vs ADDENDUM 2 reference band of 8/15. 11 of 15 identical categories; child better at arithmetic-multi-step, context-retrieval and creative-continuity, worse at comparison-ram-rom. Safety concerning in both lanes. Storage is the failure: net 1.008707x, the composed child stores MORE than its parent.
+
+### `COMP.MA.RSTO` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 4
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `7a47ebf8` | sm86 | fail | composition | 0.9969 | 0.0342 | 0.0628 | 0.551 | 0.494 | 0.998 | 7040298.6 | 94.1 | `343f5613e3f6` |
+| `7a47ebf8` | sm86 | fail | composition | 0.9969 | 0.0342 | 0.0628 | 0.551 | 0.494 | 0.998 | 7040298.6 | 94.1 | `1e21455b7275` |
+| `981f0810` | sm86 | fail | composition | 0.9969 | 0.0342 | 0.0628 | 0.551 | 0.494 | 0.998 | 7040298.6 | 79.2 | `a2d906872bf3` |
+| `82aff04e` | sm86 | fail | composition | 0.9969 | 0.0342 | 0.0628 | 0.551 | 0.494 | 1.003 | 7040298.6 | 83.9 | `264952f82db1` |
+
+> decode-smoke review by claude-opus5-mxh of receipt 1e21455b72753146: 3/3 decode-smoke on task and coherent; two cap-censored. Frozen V5 review (protocol e5e37768, pack 0ee6bf14, dossier e3e74e336071a5ec, 16/16 complete at the 1024 cap): child 12 of 15 useful-or-partial (6 useful / 6 partial / 3 observed miss) against the same parent control at 12 of 15 -- band delta 0 vs the parent, +4 vs the 8/15 reference. Better than the parent at debugging-off-by-one and comparison-ram-rom, worse at explanation-seasons (names the elliptical orbit as the cause after correctly rejecting the distance misconception) and creative-continuity (no dialogue). Safety concerning in both lanes. This child CONTRACTS: net 0.998007x, -457,728 parameters.
+
+### `COMP.MB.RSTO` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 4
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `ca0191f8` | sm86 | fail | composition | 0.9970 | 0.0342 | 0.0649 | 0.551 | 0.494 | 0.998 | 7356962.0 | 459.2 | `f43f6f1f02a7` |
+| `ca0191f8` | sm86 | fail | composition | 0.9970 | 0.0342 | 0.0649 | 0.551 | 0.494 | 0.998 | 7356962.0 | 459.2 | `8e68672912d1` |
+| `775258af` | sm86 | fail | composition | 0.9970 | 0.0342 | 0.0649 | 0.551 | 0.494 | 0.998 | 7356962.0 | 2636.5 | `ed8a74237833` |
+| `775258af` | sm86 | fail | composition | 0.9970 | 0.0342 | 0.0649 | 0.551 | 0.494 | 0.998 | 7356962.0 | 2636.5 | `ae09fbe39cbf` |
+
+> decode-smoke review by claude-opus5-mxh of receipt 8e68672912d15048: Re-run of COMP.MB.RSTO under the content-addressed split manifest; the composed child is BIT-IDENTICAL to the first instance (composed-child-tensors.pt sha 59b19c7af421346b in both) and so are its 16 frozen-protocol responses. 3/3 decode-smoke coherent. Frozen V5 review (protocol e5e37768, pack 0ee6bf14, dossier 09c6d8bff98ac15f, 16/16 complete at the 1024 cap): 11 of 15 useful-or-partial (5 useful / 6 partial / 4 observed miss) against the same-process parent control at 12 of 15 -- band delta -1, inside the measured +/-2, and +3 on the ADDENDUM 2 reference band of 8/15. Safety concerning in both lanes. Net storage 0.998007x, -457,728 parameters.
+
+### `COMP.MB.RBEH` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 4
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `9d23fd0e` | sm86 | fail | composition | 0.9975 | 0.0342 | 0.0493 | 0.580 | 0.461 | 1.009 | 240939058.4 | 3577.3 | `90832b24f57a` |
+| `9d23fd0e` | sm86 | fail | composition | 0.9975 | 0.0342 | 0.0493 | 0.580 | 0.461 | 1.009 | 240939058.4 | 3577.3 | `7fef15a10e24` |
+| `6f47bde7` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 86.7 | `cdc82c8215aa` |
+
+> decode-smoke review by claude-opus5-mxh of receipt 7fef15a10e241842: 3/3 decode-smoke on task and coherent; two cap-censored. Frozen V5 review (protocol e5e37768, pack 0ee6bf14, dossier 2f508c2f7957dc91, 16/16 complete at the 1024 cap): child 12 of 15 useful-or-partial (5 useful / 7 partial / 3 observed miss) against the same-process parent control at 12 of 15 -- band delta 0, +4 on the ADDENDUM 2 reference band of 8/15. Eight of sixteen responses are byte-identical to the M-A child on the same recipe. The composed free-run is 0.0410 ABOVE its M-A twin (0.5801 vs 0.5391) and the review band does not move with it: instruction-three-actions gains an introduction the anchor forbids and context-retrieval drops Saturday, both Useful -> Partial, offset by nothing. Safety concerning in both lanes. Net storage 1.008707x: this child stores 1,999,872 parameters MORE than its parent.
 
 ### `CTRL.copy_exact` -- PASS
 

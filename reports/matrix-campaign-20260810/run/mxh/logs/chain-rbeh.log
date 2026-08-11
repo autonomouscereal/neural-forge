@@ -1,0 +1,4 @@
+23:07:33 RSTO finished; starting RBEH
+preflight ok: GPU 4 -> 8.6 NVIDIA GeForce RTX 3090
+=== 23:07:35 start COMP.MB.RBEH mode=M-B recipe=RBEH gpu=4 out=/mnt/ai_data/neural-forge-matrix/cells/COMP.MB.RBEH
+=== 23:09:08 done  COMP.MB.RBEH rc=1 :: [2026-08-10T23:09:07.199+00:00] sealed COMP.MB.RBEH status=infra first_divergent=infra receipt=cdc82c8215aa in 86.7s

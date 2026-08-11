@@ -1,0 +1,105 @@
+[2026-08-10T23:23:18.391+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-10T23:23:18.553+00:00] stage materialize at 0.4s
+[2026-08-10T23:23:28.983+00:00] parent: 229693184 unique parameters ({'distinct_storages': 132, 'tied_names': ['lm_head.weight']})
+[2026-08-10T23:23:29.012+00:00] stage capture-preflight at 10.9s
+[2026-08-10T23:23:32.951+00:00] M-B capture preflight: 24 batches, selection f229e5f399858b7a, capture dtype bfloat16
+[2026-08-10T23:23:32.952+00:00] stage component-0-C03.T5.M16.L00 at 14.8s
+[2026-08-10T23:23:32.962+00:00] stage evidence-0-C03.T5.M16.L00 at 14.9s
+[2026-08-10T23:23:33.631+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L00-C03
+[2026-08-10T23:23:33.631+00:00] stage calibration-0-C03.T5.M16.L00 at 15.5s
+[2026-08-10T23:23:33.631+00:00] C03.T5.M16.L00: calibration relL2=None applicable=False passed=False
+[2026-08-10T23:23:33.631+00:00] stage solve-0-C03.T5.M16.L00 at 15.5s
+[2026-08-10T23:23:37.158+00:00] T5 C03.T5.M16.L00: role=reader kept=960 dropped=64 blocks=3 k=8 rows=14253
+[2026-08-10T23:23:37.202+00:00] stage boundary-0-C03.T5.M16.L00 at 19.1s
+[2026-08-10T23:23:37.301+00:00] stage after-install-0-C03.T5.M16.L00 at 19.2s
+[2026-08-10T23:23:46.878+00:00] C03.T5.M16.L00 installed: terminal drift 0.027581, free-run 0.787109375
+[2026-08-10T23:23:46.878+00:00] stage component-1-C14.T1.NA.L00 at 28.8s
+[2026-08-10T23:23:46.879+00:00] stage capture-1-C14.T1.NA.L00 at 28.8s
+[2026-08-10T23:23:47.733+00:00] conditioned capture: child identity 0d070297f8e45a4b (parent base 96a6779d927a8aca)
+[2026-08-10T23:24:41.226+00:00] conditioned capture sealed ec51d7fc6bb98583 in 54.3s -> /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/ec51d7fc6bb985836b78dd4bffc80065de05050dc2c2fa7a28b23f7b54784bc2
+[2026-08-10T23:24:41.233+00:00] stage evidence-1-C14.T1.NA.L00 at 83.1s
+[2026-08-10T23:24:43.329+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/evidence-cache/ec51d7fc6bb98583-L00-C03
+[2026-08-10T23:24:43.329+00:00] stage calibration-1-C14.T1.NA.L00 at 85.2s
+[2026-08-10T23:24:43.329+00:00] C14.T1.NA.L00: calibration relL2=None applicable=False passed=False
+[2026-08-10T23:24:43.329+00:00] stage solve-1-C14.T1.NA.L00 at 85.2s
+[2026-08-10T23:24:43.569+00:00] stage boundary-1-C14.T1.NA.L00 at 85.5s
+[2026-08-10T23:24:43.614+00:00] stage after-install-1-C14.T1.NA.L00 at 85.5s
+[2026-08-10T23:24:53.243+00:00] C14.T1.NA.L00 installed: terminal drift 0.027566, free-run 0.787109375
+[2026-08-10T23:24:53.244+00:00] stage component-2-C08.T1.M16.L02 at 95.1s
+[2026-08-10T23:24:53.246+00:00] stage capture-2-C08.T1.M16.L02 at 95.1s
+[2026-08-10T23:24:54.040+00:00] conditioned capture: child identity 0d070297f8e45a4b (parent base 96a6779d927a8aca)
+[2026-08-10T23:25:49.225+00:00] conditioned capture sealed ec51d7fc6bb98583 in 56.0s -> /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/ec51d7fc6bb985836b78dd4bffc80065de05050dc2c2fa7a28b23f7b54784bc2
+[2026-08-10T23:25:49.233+00:00] stage evidence-2-C08.T1.M16.L02 at 151.1s
+[2026-08-10T23:25:49.275+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T23:26:13.291+00:00] evidence: split authority split-manifest-ec51d7fc6bb98583.json (18 fit / 6 heldout batches, adca91b82561)
+[2026-08-10T23:26:28.882+00:00] evidence: wrote authenticated cache to /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/evidence-cache/ec51d7fc6bb98583-L02-C08
+[2026-08-10T23:26:28.903+00:00] stage calibration-2-C08.T1.M16.L02 at 190.8s
+[2026-08-10T23:26:28.922+00:00] C08.T1.M16.L02: calibration relL2=0.0022791055907274284 applicable=True passed=True
+[2026-08-10T23:26:28.922+00:00] stage solve-2-C08.T1.M16.L02 at 190.8s
+[2026-08-10T23:26:28.927+00:00] T1 C08.T1.M16.L02: axis=output rank=480 rows=4751 in=1024 out=512
+[2026-08-10T23:26:29.198+00:00] stage boundary-2-C08.T1.M16.L02 at 191.1s
+[2026-08-10T23:26:29.239+00:00] stage after-install-2-C08.T1.M16.L02 at 191.1s
+[2026-08-10T23:26:38.519+00:00] C08.T1.M16.L02 installed: terminal drift 0.033140, free-run 0.630859375
+[2026-08-10T23:26:38.519+00:00] stage component-3-C09.T2.M16.L02 at 200.4s
+[2026-08-10T23:26:38.524+00:00] stage capture-3-C09.T2.M16.L02 at 200.4s
+[2026-08-10T23:26:39.481+00:00] conditioned capture: child identity 714141947b1e84fe (parent base 96a6779d927a8aca)
+[2026-08-10T23:40:26.940+00:00] conditioned capture sealed e7a7d5596fc814bb in 828.4s -> /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/e7a7d5596fc814bbaa398c9c03cd5815cf42fb0c2f281c900f43a510cd046890
+[2026-08-10T23:40:26.949+00:00] stage evidence-3-C09.T2.M16.L02 at 1028.8s
+[2026-08-10T23:40:26.992+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T23:40:50.949+00:00] evidence: split authority split-manifest-e7a7d5596fc814bb.json (18 fit / 6 heldout batches, 4f0ee1f801aa)
+[2026-08-10T23:41:09.709+00:00] evidence: wrote authenticated cache to /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/evidence-cache/e7a7d5596fc814bb-L02-C09
+[2026-08-10T23:41:09.739+00:00] stage calibration-3-C09.T2.M16.L02 at 1071.6s
+[2026-08-10T23:41:09.767+00:00] C09.T2.M16.L02: calibration relL2=0.0016642131333584468 applicable=True passed=True
+[2026-08-10T23:41:09.767+00:00] stage solve-3-C09.T2.M16.L02 at 1071.7s
+[2026-08-10T23:41:09.980+00:00] T2 C09.T2.M16.L02: axis=input rank=960 endpoint=attention.context rows=4751 width=1024
+[2026-08-10T23:41:11.128+00:00] stage boundary-3-C09.T2.M16.L02 at 1073.0s
+[2026-08-10T23:41:11.192+00:00] stage after-install-3-C09.T2.M16.L02 at 1073.1s
+[2026-08-10T23:41:20.413+00:00] C09.T2.M16.L02 installed: terminal drift 0.035932, free-run 0.458984375
+[2026-08-10T23:41:20.414+00:00] stage component-4-C05.T3.M16.L05 at 1082.3s
+[2026-08-10T23:41:20.422+00:00] stage capture-4-C05.T3.M16.L05 at 1082.3s
+[2026-08-10T23:41:21.292+00:00] conditioned capture: child identity 11542f32e3273771 (parent base 96a6779d927a8aca)
+[2026-08-10T23:54:22.164+00:00] conditioned capture sealed 6057c24108e0929e in 781.7s -> /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/6057c24108e0929e593f8e7ef4c485c14390d01990854b273eaa1fa74e8cb498
+[2026-08-10T23:54:22.172+00:00] stage evidence-4-C05.T3.M16.L05 at 1864.1s
+[2026-08-10T23:54:22.207+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-10T23:54:45.741+00:00] evidence: split authority split-manifest-6057c24108e0929e.json (18 fit / 6 heldout batches, 211557006d30)
+[2026-08-10T23:55:04.525+00:00] evidence: wrote authenticated cache to /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/evidence-cache/6057c24108e0929e-L05-C05
+[2026-08-10T23:55:04.545+00:00] stage calibration-4-C05.T3.M16.L05 at 1906.4s
+[2026-08-10T23:55:04.568+00:00] C05.T3.M16.L05: calibration relL2=0.001656519024316837 applicable=True passed=True
+[2026-08-10T23:55:04.568+00:00] stage solve-4-C05.T3.M16.L05 at 1906.5s
+[2026-08-10T23:55:04.587+00:00] T3 C05.T3.M16.L05: rank=960 endpoint=short_conv.context rows=4751 width=1024 observability=(1024, 1024)
+[2026-08-10T23:55:17.895+00:00] stage boundary-4-C05.T3.M16.L05 at 1919.8s
+[2026-08-10T23:55:17.962+00:00] stage after-install-4-C05.T3.M16.L05 at 1919.9s
+[2026-08-10T23:55:27.068+00:00] C05.T3.M16.L05 installed: terminal drift 0.049293, free-run 0.6328125
+[2026-08-10T23:55:27.068+00:00] stage component-5-C06.T5.M16.L12 at 1929.0s
+[2026-08-10T23:55:27.073+00:00] stage capture-5-C06.T5.M16.L12 at 1929.0s
+[2026-08-10T23:55:27.901+00:00] conditioned capture: child identity 781b8f6a98b4adab (parent base 96a6779d927a8aca)
+[2026-08-11T00:08:18.950+00:00] conditioned capture sealed 9e1b94e2aeb40c80 in 771.9s -> /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/9e1b94e2aeb40c80d3c9decab50767af357a25fe9fcc71f99b216941b5d4bac1
+[2026-08-11T00:08:18.958+00:00] stage evidence-5-C06.T5.M16.L12 at 2700.9s
+[2026-08-11T00:08:18.993+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-11T00:08:42.121+00:00] evidence: split authority split-manifest-9e1b94e2aeb40c80.json (18 fit / 6 heldout batches, 90463389e92c)
+[2026-08-11T00:08:58.213+00:00] evidence: wrote authenticated cache to /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/evidence-cache/9e1b94e2aeb40c80-L12-C06
+[2026-08-11T00:08:58.234+00:00] stage calibration-5-C06.T5.M16.L12 at 2740.1s
+[2026-08-11T00:08:58.256+00:00] C06.T5.M16.L12: calibration relL2=0.0016639308492916827 applicable=True passed=True
+[2026-08-11T00:08:58.256+00:00] stage solve-5-C06.T5.M16.L12 at 2740.1s
+[2026-08-11T00:08:59.353+00:00] T5 C06.T5.M16.L12: role=reader kept=960 dropped=64 blocks=1 k=8 rows=4751
+[2026-08-11T00:08:59.362+00:00] stage boundary-5-C06.T5.M16.L12 at 2741.3s
+[2026-08-11T00:08:59.438+00:00] stage after-install-5-C06.T5.M16.L12 at 2741.3s
+[2026-08-11T00:09:08.545+00:00] C06.T5.M16.L12 installed: terminal drift 0.049423, free-run 0.580078125
+[2026-08-11T00:09:08.545+00:00] stage component-6-C07.T1.M16.L12 at 2750.4s
+[2026-08-11T00:09:08.549+00:00] stage capture-6-C07.T1.M16.L12 at 2750.4s
+[2026-08-11T00:09:09.477+00:00] conditioned capture: child identity 8c144e69986cea58 (parent base 96a6779d927a8aca)
+[2026-08-11T00:21:44.111+00:00] conditioned capture sealed 20e8b34380d6748a in 755.6s -> /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/20e8b34380d6748ab52148eb704805ca64088c896961ae887183fe46af8564aa
+[2026-08-11T00:21:44.119+00:00] stage evidence-6-C07.T1.M16.L12 at 3506.0s
+[2026-08-11T00:21:44.154+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-11T00:22:07.323+00:00] evidence: split authority split-manifest-20e8b34380d6748a.json (18 fit / 6 heldout batches, 3a372b81df78)
+[2026-08-11T00:22:22.096+00:00] evidence: wrote authenticated cache to /mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/evidence-cache/20e8b34380d6748a-L12-C07
+[2026-08-11T00:22:22.123+00:00] stage calibration-6-C07.T1.M16.L12 at 3544.0s
+[2026-08-11T00:22:22.139+00:00] C07.T1.M16.L12: calibration relL2=0.002226889237998006 applicable=True passed=True
+[2026-08-11T00:22:22.139+00:00] stage solve-6-C07.T1.M16.L12 at 3544.0s
+[2026-08-11T00:22:22.159+00:00] T1 C07.T1.M16.L12: axis=output rank=480 rows=4751 in=1024 out=512
+[2026-08-11T00:22:22.439+00:00] stage boundary-6-C07.T1.M16.L12 at 3544.3s
+[2026-08-11T00:22:22.480+00:00] stage after-install-6-C07.T1.M16.L12 at 3544.4s
+[2026-08-11T00:22:35.069+00:00] C07.T1.M16.L12 installed: terminal drift 0.049327, free-run 0.580078125
+[2026-08-11T00:22:35.069+00:00] stage behavior at 3557.0s
+[2026-08-11T00:22:55.404+00:00] stage seal at 3577.3s
+[2026-08-11T00:22:55.522+00:00] sealed COMP.MB.RBEH status=fail first_divergent=composition receipt=7fef15a10e24 in 3577.3s

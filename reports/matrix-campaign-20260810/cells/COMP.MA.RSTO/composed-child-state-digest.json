@@ -1,0 +1,30 @@
+{
+  "cell_id": "COMP.MA.RSTO",
+  "install_order": [
+    "C03.T5.M16.L00",
+    "C14.T1.NA.L00",
+    "C10.T1.M16.L02",
+    "C05.T5.M16.L05",
+    "C06.T5.M16.L12"
+  ],
+  "installed_tensor_digests": {
+    "C03.T5.M16.L00": [
+      "model.layers.0.conv.in_proj.weight=96b2b2b4b0dca680609dd48e441e1b19ffd8b5ff43096e0ff9ed54d01cb877e7"
+    ],
+    "C05.T5.M16.L05": [
+      "model.layers.5.conv.out_proj.weight=832ed214648e397da16b6c80189b84d21235c0108ef3ffb607cc91f8f9140a32"
+    ],
+    "C06.T5.M16.L12": [
+      "model.layers.12.self_attn.q_proj.weight=1caf89246ff689c053f77be0c81b1176077cef43ef850adac73487edb8dd6c9a"
+    ],
+    "C10.T1.M16.L02": [
+      "model.layers.2.self_attn.out_proj.weight=05547120be8ee36f62f15245ca2dc2cfa7b48c59827d18881ca167b99da8c0e2",
+      "model.layers.2.self_attn.q_proj.weight=b67a27c38cb6eca114d670cc2be1964ec4a163c907ccad56fc1d66caad07d96b"
+    ],
+    "C14.T1.NA.L00": [
+      "model.layers.0.operator_norm.weight=c80ae8abed60e01ce47fdbe0948cafcf89fe34ec20410e03a44a240673db8a3d"
+    ]
+  },
+  "kind": "composed-child-tensor-digests",
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1"
+}

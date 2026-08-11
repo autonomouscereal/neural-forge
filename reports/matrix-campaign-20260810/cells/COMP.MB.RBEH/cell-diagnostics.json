@@ -1,0 +1,736 @@
+{
+  "cell_id": "COMP.MB.RBEH",
+  "cell_instance_id": "6f47bde75a4a47e1b77a0c0c0a2202f2",
+  "compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+  "conditioned_capture": {
+    "batch_count": 24,
+    "batches": 24,
+    "capture_dtype": "bfloat16",
+    "corpus_path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+    "parent_base_record_ids": [
+      "bf11bae2808b15495e9db80d06b96453fe49a2b2e5351f22de73958da9b22e84",
+      "ee35c3566c856270aecec84f33cac3a622afd41bf016589a4588b7c7c171fb4e",
+      "c897f65b092b0508ae2d7e5b1539663440ed9344aaf0e14b232417e1a9f44d49",
+      "4d8d951ceb2e8b735cdc4bdb3adc44d64558eecb1282e2a40e114fb1e9aea6f8",
+      "1413dbb28d672534b1c9717dd7364a64985b6c2bb9a2b9b4f6c873f8b64ed9a4",
+      "9282a474cb567b2531056bdf664a056d5091522d095814932f3bfa89a242066a",
+      "2b2f9f50fc0def1e9ad3f1228df47f5fc89394e3648809a0e6415b2d178230cd",
+      "d91406425004d937d5d63e4033e55d05543ee6de33ab278646504a69ef6870e4",
+      "3bf7f92ed20c3f0e7212f84e3355e707cba6c3c4818ed62a978012d8d8b4e1bb",
+      "92f8ce61537f9c55d2879e1ae3936aedc24f812b38d2eb78de1bcecdcfc15089",
+      "fdf4d4f67be66581f5abdc5c84cca80a05c3715f3c0530c90b9f8168a54e9b69",
+      "e20bdcaa311c0e11cc2bc48367745e4efee8a71488cb241f56545b931d1fb20f",
+      "a097fcdd61aeed864f8a4578113e0188a40fc558298fbf866d20cd24c2462fca",
+      "cfc287e002379687040107c45ca4a3f4ca42b45396247c238da80b07fb7a0d0b",
+      "1fec9b11dd7633edc56ebb0576036c87857a03eae838cfa95d60bf6b4217c125",
+      "996e3b7a850c04655dc60b6623ba56a829939f7a573298726e05a5434914b245",
+      "ca4636115d6015111974bbcba0b7c0944a6a6870ceee6c553b842144227265ff",
+      "f9168dec7cdcea4875cad595243f7b10876bafddceeaf1692f923bb417c74979",
+      "1d6f02879fb28a73b970f4ff50cf23a5bf9fa40e256be80c99e69ec882916de2",
+      "3e8b440ca82c8df390bed8e56a016563fb9468825fd9f7da3589182e7c17510b",
+      "b980e89000bb7b5621591f4ec7e1f4f810e8e9ff0bed31b6b4ef370fc222ee55",
+      "d94cb529d33f4359a95262182831a98bf21c371cd8bf8c6230996ae27fb25244",
+      "c2056eff73a92d5a8f36305d286e2945655d8e3d57c32d073c7bacfc316002e0",
+      "31f4fa5220dc300c2578983bb3a3ac5ed2172c9a773271aace475a7edd7b0edb"
+    ],
+    "selection_sha256": "f229e5f399858b7a512ec0d7034fe4b3d76cf4dc3bb214ec461a8a6f7c000258"
+  },
+  "device": "cuda:0",
+  "dtype": "float32",
+  "mode": "M-B",
+  "over_target": false,
+  "parent_parameter_audit": {
+    "distinct_storages": 132,
+    "tied_names": [
+      "lm_head.weight"
+    ]
+  },
+  "parent_parameter_count": 229693184,
+  "recipe": {
+    "components": [
+      {
+        "cell_id": "C03.T5.M16.L00",
+        "component_id": "C03",
+        "evidence_cache": "L00-C03",
+        "evidence_endpoints": [
+          "operator.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 2,
+          "first_divergent_metric": "composition",
+          "free_run": 0.787109375,
+          "grade": "promising",
+          "parent_parameter_count": 3145728,
+          "receipt_sha": "afb675cc18094a76ca14d2c927fae4ea975a63a0ec270aa32f57cfcc09ebcebc",
+          "status": "fail",
+          "stored_parameter_count": 2949632,
+          "stored_ratio": 0.9376627604166666,
+          "vs_control_delta": 0.027580553343676303
+        },
+        "selection_reason": "behaviour-first: C03.T5.M16.L00 is the best eligible sealed cell at C03 -- free-run 0.7871 (promising), stores 0.9377x of its parent tensor, at the proven site L00 only (ADDENDUM 5 rule 2-S).",
+        "weight_keys": [
+          "model.layers.0.conv.in_proj.weight"
+        ]
+      },
+      {
+        "cell_id": "C14.T1.NA.L00",
+        "component_id": "C14",
+        "evidence_cache": "L00-C03",
+        "evidence_endpoints": [
+          "operator.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 2,
+          "first_divergent_metric": null,
+          "free_run": 1.0,
+          "grade": "strong",
+          "parent_parameter_count": 2048,
+          "receipt_sha": "b274434ceb89aee33ee954db5312e4085401380563ae42957207693d2c0405ae",
+          "status": "pass",
+          "stored_parameter_count": 1024,
+          "stored_ratio": 0.5,
+          "vs_control_delta": 0.00010291342831049038
+        },
+        "selection_reason": "behaviour-first: C14.T1.NA.L00 is the best eligible sealed cell at C14 -- free-run 1.0000 (strong), stores 0.5000x of its parent tensor, at the proven site L00 only (ADDENDUM 5 rule 2-S).",
+        "weight_keys": [
+          "model.layers.0.operator_norm.weight",
+          "model.layers.0.ffn_norm.weight"
+        ]
+      },
+      {
+        "cell_id": "C08.T1.M16.L02",
+        "component_id": "C08",
+        "evidence_cache": "L02-C08",
+        "evidence_endpoints": [
+          "attention.v",
+          "operator.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 1,
+          "first_divergent_metric": "free-run",
+          "free_run": 0.73828125,
+          "grade": "promising",
+          "parent_parameter_count": 524288,
+          "receipt_sha": "c9c322a49d54f37043dca9a7a9c06ecdd0ca20e377bd33f66a940fa61f646ace",
+          "status": "fail",
+          "stored_parameter_count": 737280,
+          "stored_ratio": 1.40625,
+          "vs_control_delta": 0.015391856973283848
+        },
+        "selection_reason": "behaviour-first: C08.T1.M16.L02 is the best eligible sealed cell at C08 -- free-run 0.7383 (promising), stores 1.4062x of its parent tensor, at the proven site L02 only (ADDENDUM 5 rule 2-S).  Runner-up C08.T1.M8.L02 at 0.6504 / 1.3125x.",
+        "weight_keys": [
+          "model.layers.2.self_attn.v_proj.weight"
+        ]
+      },
+      {
+        "cell_id": "C09.T2.M16.L02",
+        "component_id": "C09",
+        "evidence_cache": "L02-C09",
+        "evidence_endpoints": [
+          "attention.context",
+          "attention.o",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 2,
+          "first_divergent_metric": "free-run",
+          "free_run": 0.8203125,
+          "grade": "promising",
+          "parent_parameter_count": 1048576,
+          "receipt_sha": "746ae111c0c9861317d31c4231ff6ceb5e0d2ee9ed560f97b0684162cc3b5267",
+          "status": "fail",
+          "stored_parameter_count": 1966080,
+          "stored_ratio": 1.875,
+          "vs_control_delta": 0.013080589023655047
+        },
+        "selection_reason": "behaviour-first: C09.T2.M16.L02 is the best eligible sealed cell at C09 -- free-run 0.8203 (promising), stores 1.8750x of its parent tensor, at the proven site L02 only (ADDENDUM 5 rule 2-S).  Runner-up C09.T1.M16.L02 at 0.8203 / 1.8750x.",
+        "weight_keys": [
+          "model.layers.2.self_attn.out_proj.weight"
+        ]
+      },
+      {
+        "cell_id": "C05.T3.M16.L05",
+        "component_id": "C05",
+        "evidence_cache": "L05-C05",
+        "evidence_endpoints": [
+          "operator.output",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre",
+          "short_conv.context"
+        ],
+        "isolation": {
+          "campaign_wave": 2,
+          "first_divergent_metric": "composition",
+          "free_run": 0.9140625,
+          "grade": "strong",
+          "parent_parameter_count": 1048576,
+          "receipt_sha": "6331ec8de0c5a44383f48e04a32cfaaa8ee78f1ffaa905165c16fa30ad6fa8c6",
+          "status": "fail",
+          "stored_parameter_count": 1966080,
+          "stored_ratio": 1.875,
+          "vs_control_delta": 0.02677419092062991
+        },
+        "selection_reason": "behaviour-first: C05.T3.M16.L05 is the best eligible sealed cell at C05 -- free-run 0.9141 (strong), stores 1.8750x of its parent tensor, at the proven site L05 only (ADDENDUM 5 rule 2-S).  Runner-up C05.T5.M16.L05 at 0.7910 / 0.9375x.",
+        "weight_keys": [
+          "model.layers.5.conv.out_proj.weight"
+        ]
+      },
+      {
+        "cell_id": "C06.T5.M16.L12",
+        "component_id": "C06",
+        "evidence_cache": "L12-C06",
+        "evidence_endpoints": [
+          "attention.q_linear",
+          "operator.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 3,
+          "first_divergent_metric": null,
+          "free_run": 0.9765625,
+          "grade": "strong",
+          "parent_parameter_count": 1048576,
+          "receipt_sha": "692fe640ab07612a6403d22f4cf519f0bf8184bed4bd30bae40084eb2bb7890b",
+          "status": "pass",
+          "stored_parameter_count": 983552,
+          "stored_ratio": 0.93798828125,
+          "vs_control_delta": 0.004402412621294724
+        },
+        "selection_reason": "behaviour-first: C06.T5.M16.L12 is the best eligible sealed cell at C06 -- free-run 0.9766 (strong), stores 0.9380x of its parent tensor, at the proven site L12 only (ADDENDUM 5 rule 2-S).  Runner-up C06.T1.M16.L12 at 1.0000 / 1.8750x.  Promoted over the higher-free-run C06.T1.M16.L12 by the storage-honesty clause: it gives up 0.0234 free-run (inside the 0.05 band) and stores 0.9380x against 1.8750x.",
+        "weight_keys": [
+          "model.layers.12.self_attn.q_proj.weight"
+        ]
+      },
+      {
+        "cell_id": "C07.T1.M16.L12",
+        "component_id": "C07",
+        "evidence_cache": "L12-C07",
+        "evidence_endpoints": [
+          "attention.k_linear",
+          "operator.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 2,
+          "first_divergent_metric": null,
+          "free_run": 0.994140625,
+          "grade": "strong",
+          "parent_parameter_count": 524288,
+          "receipt_sha": "46b6134c335f4eb66ce635ab9052414df81b96283091191c6d4b7beed6de9261",
+          "status": "pass",
+          "stored_parameter_count": 737280,
+          "stored_ratio": 1.40625,
+          "vs_control_delta": 0.005414000766390574
+        },
+        "selection_reason": "behaviour-first: C07.T1.M16.L12 is the best eligible sealed cell at C07 -- free-run 0.9941 (strong), stores 1.4062x of its parent tensor, at the proven site L12 only (ADDENDUM 5 rule 2-S).  Runner-up C07.T1.M8.L12 at 0.9941 / 1.3125x.",
+        "weight_keys": [
+          "model.layers.12.self_attn.k_proj.weight"
+        ]
+      }
+    ],
+    "derivation_audit": {
+      "cells_latest": 88,
+      "ledger_rows": 187,
+      "ledger_sha256": "f26fd22bd7d6dfe16629a1c4cfaf68df39831703265bb01e09cdeb5eaa468ca9",
+      "receipts_indexed": 185,
+      "single_component_cells": 86,
+      "unresolved_cell_ids": []
+    },
+    "derived_from_ledger_sha256": "f26fd22bd7d6dfe16629a1c4cfaf68df39831703265bb01e09cdeb5eaa468ca9",
+    "description": "ADDENDUM 1's rule -- highest free-run at the largest passing level, ties on composed-terminal margin -- with the storage-honesty clause applied only where an honest variant is within 0.05 free-run.",
+    "install_order": [
+      "C03.T5.M16.L00",
+      "C14.T1.NA.L00",
+      "C08.T1.M16.L02",
+      "C09.T2.M16.L02",
+      "C05.T3.M16.L05",
+      "C06.T5.M16.L12",
+      "C07.T1.M16.L12"
+    ],
+    "passed_through": [
+      {
+        "best_sealed_cell_id": "C04.T1.M16.L00",
+        "best_sealed_free_run": 0.3984375,
+        "best_sealed_grade": "weak",
+        "component": "conv_kernel",
+        "component_id": "C04",
+        "reason": "no technique reached ADDENDUM 3 `promising` at this component: best sealed cell is C04.T1.M16.L00 at free-run 0.3984 (weak), below the 0.60 admission floor.  Installed as parent weights (copy_exact); no silent inclusion of a weak fold."
+      },
+      {
+        "best_sealed_cell_id": "C10.T1.M16.L02",
+        "best_sealed_free_run": 0.736328125,
+        "best_sealed_grade": "promising",
+        "component": "C10",
+        "component_id": "C10",
+        "conflicts_with": "C08.T1.M16.L02",
+        "reason": "C10.T1.M16.L02 owns ['model.layers.2.self_attn.out_proj.weight', 'model.layers.2.self_attn.v_proj.weight'], already folded by C08.T1.M16.L02; a composed child folds each parent tensor at most once and the conflict was resolved on this recipe's own axis (behaviour-first).  Passed through unfolded in this recipe."
+      },
+      {
+        "best_sealed_cell_id": "C11.T5.M16.L00",
+        "best_sealed_free_run": 0.400390625,
+        "best_sealed_grade": "weak",
+        "component": "mlp_gate",
+        "component_id": "C11",
+        "reason": "no technique reached ADDENDUM 3 `promising` at this component: best sealed cell is C11.T5.M16.L00 at free-run 0.4004 (weak), below the 0.60 admission floor.  Installed as parent weights (copy_exact); no silent inclusion of a weak fold."
+      },
+      {
+        "best_sealed_cell_id": "C12.T5.M16.L00",
+        "best_sealed_free_run": 0.306640625,
+        "best_sealed_grade": "weak",
+        "component": "mlp_up",
+        "component_id": "C12",
+        "reason": "no technique reached ADDENDUM 3 `promising` at this component: best sealed cell is C12.T5.M16.L00 at free-run 0.3066 (weak), below the 0.60 admission floor.  Installed as parent weights (copy_exact); no silent inclusion of a weak fold."
+      },
+      {
+        "best_sealed_cell_id": "C13.T3.M16.L05",
+        "best_sealed_free_run": 0.5859375,
+        "best_sealed_grade": "weak",
+        "component": "mlp_down",
+        "component_id": "C13",
+        "reason": "no technique reached ADDENDUM 3 `promising` at this component: best sealed cell is C13.T3.M16.L05 at free-run 0.5859 (weak), below the 0.60 admission floor.  Installed as parent weights (copy_exact); no silent inclusion of a weak fold."
+      }
+    ],
+    "ranking": "behaviour-first",
+    "schema": "neural-forge-lfm2-matrix-composition-recipe-v1",
+    "selection_policy": {
+      "admission": "ADDENDUM 3 `promising` or better: free-run >= 0.6 and a coherent decode-smoke review",
+      "install_order": "topological, input side -> output side; within a layer conv -> attention -> norms",
+      "ranking": "behaviour-first",
+      "site_scope": "ADDENDUM 5 rule 2-S: a winner installs at its sealed passing site only; every other site of the same component is passed through unfolded",
+      "storage_tiebreak_free_run": 0.05
+    },
+    "variant": "RBEH"
+  },
+  "registry": {
+    "entries": [
+      {
+        "callable": "t1_dense_prior_anchored_ridge",
+        "component": null,
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "T1"
+      },
+      {
+        "callable": "c04_fir_tap_contraction_technique",
+        "component": "C04",
+        "module": "neural_forge.matrix_technique_conv_fir",
+        "technique": "T1"
+      },
+      {
+        "callable": "c10_head_drop_technique",
+        "component": "C10",
+        "module": "neural_forge.matrix_technique_head_drop",
+        "technique": "T1"
+      },
+      {
+        "callable": "t1_standalone_norm_refit",
+        "component": "C14",
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "T1"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "_a9_token_route",
+        "component": "C01",
+        "module": "run_lfm2_matrix_cell",
+        "technique": "T5"
+      },
+      {
+        "callable": "_a9_token_route",
+        "component": "C02",
+        "module": "run_lfm2_matrix_cell",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t7_attention_relation_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T7"
+      },
+      {
+        "callable": "t7_attention_relation_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T7"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "copy_exact_technique",
+        "component": null,
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "copy_exact"
+      }
+    ],
+    "schema": "neural-forge-matrix-technique-registry-v1"
+  },
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1",
+  "steps": [
+    {
+      "boundary_diagnostics": {},
+      "cell_id": "C03.T5.M16.L00",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 0,
+        "reason": "first component in topological order: nothing upstream is folded, so the conditioned evidence IS the parent evidence and no capture was spent",
+        "upstream_installed": []
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "operator.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 0,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "5b5a110b73c40052663e0dfbac5622e8e071c94c7ce159020d93802766bb3f63",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "14facb9c3a387728761eac57ae740bee2e5b95915f0f45b303b45ee785634000",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 0,
+      "solve_wall_time_seconds": 3.77979031810537,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.03111118943187261,
+        "mean_cosine": 0.9995399023353582,
+        "mean_norm_ratio": 1.0000590902210043,
+        "mean_relative_l2": 0.027580553343676303,
+        "median_relative_l2": 0.022486837774054597,
+        "rows": 8
+      },
+      "wall_time_seconds": 17.220081930980086
+    }
+  ],
+  "technique_modules": {
+    "matrix_technique_body_routes": "imported",
+    "matrix_technique_charts": "imported",
+    "matrix_technique_conv_fir": "imported",
+    "matrix_technique_head_drop": "imported",
+    "matrix_technique_lowrank_writers": "imported",
+    "matrix_technique_progressive": "imported",
+    "matrix_technique_relation_matching": "imported"
+  },
+  "traceback": "MatrixCellRunError(\"Cached site evidence was built under a different split manifest: 'bd1ca3948dd76e29342921869e439a9b94d60e536e5252b4cc3a0f7afea3ff2d' != '1e7998f1a7bb28c102c6ba27ac60e15f9c105a7ff5ac24806f68b887c222e5d3'.\")",
+  "wall_time_seconds": 86.70508831110783
+}

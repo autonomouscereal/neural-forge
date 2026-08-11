@@ -17,11 +17,12 @@ deployed. No push, no rebase.
 | ADDENDUM 5, the pre-flight | **registered and rendered** | a level claim is site-scoped; the C07/T1 rule-2 ambiguity dissolves rather than being decided, and the renderer now prints `PASS@<level>@<sites>` |
 | the recipes | **derived from sealed receipts, not from prose** | two variants; the storage clause promotes `C06.T5` over `C06.T1` and the conflict rule sends C09 and C10 to different children |
 | **M-A** | **confirms A12** | RBEH free-run **0.539** against isolation winners of 0.738–0.994; RSTO **0.551** against 0.736–0.977 |
-| **M-B vs M-A** | **conditioning changes the path and not the destination** | RSTO M-B free-run **0.551**, identical to M-A's 0.551 *to the token*, with a slightly worse global drift (0.0649 vs 0.0628) |
+| **M-B vs M-A** | **it depends on how much is folded upstream** | on the 5-component child M-B is M-A **to the token** (0.551 both); on the 7-component child M-B is **+0.0410** (0.580 vs 0.539), all of it earned at one component |
 | storage | **the behaviour-first child is a storage failure and says so** | RBEH net **1.008707×** — it stores 2.0 M parameters MORE than its parent; RSTO net **0.998007×**, −457,728 parameters, the campaign's first composed child that contracts |
-| the frozen review | **both M-A children match the parent's own band** | 12 of 15 useful-or-partial against a same-process parent control at 12 of 15 — band delta **0**, and **+4** on ADDENDUM 2's 8/15 reference |
-| free-run vs quality | **they disagree, again, and hard** | a child at 0.539 token-match grades identically to the parent on 11 of 15 cases and beats it on 3 |
+| the frozen review | **three of four composed children match the parent's own band** | 12 of 15 useful-or-partial against a same-process parent control at 12 of 15 — band delta **0** (M-B RSTO is −1) and **+3 to +4** on ADDENDUM 2's 8/15 reference |
+| free-run vs quality | **they disagree, again, and in both directions** | a child at 0.539 token-match grades identically to the parent on 11 of 15 cases and beats it on 3; the child that gains +0.041 free-run gains **zero** review cases |
 | two defects found | **both by producing numbers that could not be right** | a storage accounting that credited C10 with 917,504 parameters it does not have, and a timestamp inside a digested split manifest |
+| one process error | **caught, reverted against a proved byte prefix, kept** | the finalize script ran twice and the shard merger does not deduplicate; 217 rows → 202, no row rewritten |
 
 ---
 
@@ -302,18 +303,25 @@ from. Every step of both M-B children reports **4,751 fit / 1,584 heldout** rows
 
 ### 5.2 The conditioned captures
 
-| capture | child | cut before | wall | reused by |
+Ten conditioned-evidence requests across the two cells collapsed into **seven
+distinct captures**, 55 GB on the share:
+
+| capture | child state | cut before | first wall | reuse |
 |---|---|---|---:|---|
-| `ec51d7fc6bb98583` | C03 folded | C14, C08, C10 | 788.9 s first time, 53 s thereafter | both cells |
-| `9d559269573a52e4` | C03+C14+C10 | C05 (RSTO) | 776.9 s | RSTO |
-| `2c78167cf12fc003` | +C05 | C06 (RSTO) | 769.8 s | RSTO |
+| `ec51d7fc6bb98583` | C03 folded | C14 (both), C08 (RBEH), C10 (RSTO) | 788.9 s | 3 reuses at 53–56 s |
+| `9d559269573a52e4` | +C14+C10 | C05 (RSTO) | 776.9 s | — |
+| `2c78167cf12fc003` | +C05 | C06 (RSTO) | 769.8 s | — |
+| `e7a7d5596fc814bb` | +C14+C08 | C09 (RBEH) | 828.4 s | — |
+| `6057c24108e0929e` | +C09 | C05 (RBEH) | 781.7 s | — |
+| `9e1b94e2aeb40c80` | +C05 | C06 (RBEH) | 771.9 s | — |
+| `20e8b34380d6748a` | +C06 | C07 (RBEH) | 755.6 s | — |
 
 Each capture is **8.1 GB**; the `/mnt/ai_data` share writes at ~20 MB/s, so a
-capture is ~13 minutes of I/O and 0 % GPU. Content-addressing is what made the
+capture is ~13 minutes of I/O at 0 % GPU. Content-addressing is what made the
 wave affordable: the collector is documented as "build or reuse an immutable
 content-addressed cache", and a conditioned capture's key is a function of the
-child state, the corpus and the capture selection, so a shared root turns the
-second and third requests for the same child into 53-second no-ops.
+child state, the corpus and the capture selection, so a shared root turns a
+repeat request for the same child into a 53-second no-op.
 
 **One finding fell straight out of that.** The capture before C08/C10 requested
 the child with **C03 and C14** folded and got back the cache key of the child
@@ -325,56 +333,82 @@ consequence is real and is recorded rather than worked around: **M-B cannot
 condition anything on C14**, because at the precision the evidence exists in,
 C14 did not happen.
 
-### 5.3 The result
+### 5.3 The result: M-B vs M-A, and it depends on the recipe
 
-*(this section's RBEH row is completed in §5.4)*
+| | M-A RSTO | M-B RSTO | M-A RBEH | M-B RBEH |
+|---|---:|---:|---:|---:|
+| folded components | 5 | 5 | 7 | 7 |
+| conditioned captures | — | 4 | — | 6 |
+| **composed free-run** | 0.550781 | **0.550781** | 0.539062 | **0.580078** |
+| mean lcp | 0.494141 | 0.494141 | 0.460938 | 0.460938 |
+| global drift | 0.062812 | 0.064872 | 0.050121 | **0.049327** |
+| worst write cos | 0.996928 (C05) | 0.996975 (C05) | 0.997471 (C05) | 0.997503 (C05) |
+| worst macro | 0.034208 (C14) | 0.034205 (C14) | 0.034208 (C14) | 0.034205 (C14) |
+| net storage | 0.998007× | 0.998007× | 1.008707× | 1.008707× |
+| first divergent metric | composition | composition | composition | composition |
+| wall clock | 94 s | 2,637 s | 151 s | 3,577 s |
 
-| | M-A RSTO | M-B RSTO |
-|---|---:|---:|
-| composed free-run | 0.550781 | **0.550781** |
-| mean lcp | 0.494141 | **0.494141** |
-| global drift | 0.062812 | 0.064872 |
-| worst write cos | 0.996928 (C05) | 0.996975 (C05) |
-| worst macro | 0.034208 (C14) | 0.034205 (C14) |
-| net storage | 0.998007× | 0.998007× |
-| first divergent metric | composition | composition |
-| wall clock | 94 s | 2,637 s |
+**On the 5-component recipe, M-B is M-A to the token.** Not close — the same
+`0.550781` and the same `0.494141` over 8 prompts × 64 tokens, with a *worse*
+global drift (0.064872 vs 0.062812).
 
-**Identical, to the token.** Not close — the same 0.550781 and the same 0.494141
-over 8 prompts × 64 tokens.
+**On the 7-component recipe, M-B is worth +0.0410 free-run** (0.580078 vs
+0.539062) and a slightly better global drift (0.049327 vs 0.050121). That is the
+first time in this campaign that conditioning has bought anything at the composed
+level.
 
-The path is not identical. Conditioning moves individual steps in both
-directions:
+The obvious reading — and the only one the two cells support — is that
+conditioning pays in proportion to how much is folded upstream of the component
+being solved. RSTO's three conditioned components sit behind one fold (C03) and
+two folds; RBEH's five sit behind up to five, and its two largest gains are at
+the two components deepest in the install order that still have work to do.
 
-| step | M-A free-run / drift | M-B free-run / drift |
-|---|---|---|
-| C03 | 0.7871 / 0.027581 | 0.7871 / 0.027581 (unconditioned by construction) |
-| C14 | 0.7871 / 0.027566 | 0.7871 / 0.027566 |
-| C10 | 0.5176 / 0.043162 | **0.5801** / 0.045333 |
-| C05 | 0.5508 / 0.062642 | **0.5410** / 0.064747 |
-| C06 | 0.5508 / 0.062812 | 0.5508 / 0.064872 |
+### 5.4 Where the conditioning actually landed, step by step
 
-Conditioning is worth **+0.0625 free-run at C10** and **−0.0098 at C05**, and the
-two cancel by the last install. Every conditioned step's local drift is
-*worse* than its unconditioned twin (0.045333 vs 0.043162, 0.064747 vs 0.062642,
-0.064872 vs 0.062812) — the same shape wave 3's T9/T3 arm showed, where the
-schedule "moved every diagnostic in the wrong direction and free-run in the right
-one".
+| recipe | step | M-A free-run / drift | M-B free-run / drift | Δ free-run |
+|---|---|---|---|---:|
+| RSTO | C03 | 0.7871 / 0.027581 | 0.7871 / 0.027581 | — *(unconditioned by construction)* |
+| RSTO | C14 | 0.7871 / 0.027566 | 0.7871 / 0.027566 | 0.0000 |
+| RSTO | C10 | 0.5176 / 0.043162 | **0.5801** / 0.045333 | **+0.0625** |
+| RSTO | C05 | 0.5508 / 0.062642 | 0.5410 / 0.064747 | −0.0098 |
+| RSTO | C06 | 0.5508 / 0.062812 | 0.5508 / 0.064872 | 0.0000 |
+| RBEH | C03 | 0.7871 / 0.027581 | 0.7871 / 0.027581 | — |
+| RBEH | C14 | 0.7871 / 0.027566 | 0.7871 / 0.027566 | 0.0000 |
+| RBEH | C08 | 0.6309 / 0.033507 | 0.6309 / **0.033140** | 0.0000 |
+| RBEH | C09 | 0.4590 / 0.038129 | 0.4590 / **0.035932** | 0.0000 |
+| RBEH | C05 | 0.5391 / 0.050017 | **0.6328** / **0.049293** | **+0.0938** |
+| RBEH | C06 | 0.5391 / 0.050183 | 0.5801 / 0.049423 | +0.0410 |
+| RBEH | C07 | 0.5391 / 0.050121 | 0.5801 / 0.049327 | +0.0410 |
 
-`C14`'s conditioned step is bit-identical to its M-A twin on every sealed field,
-and it has to be: its endpoints at L00 (`residual.pre` → `operator.input`) are
-upstream of C03's write, so the conditioned evidence at those endpoints is the
-parent's evidence. That is a correctness check on the conditioning machinery,
-not a null result.
+Four things, all sealed:
 
-**Determinism.** M-B RSTO was run twice (once under the timestamped manifest,
-once under the fixed one) and produced a **bit-identical composed child** —
-`composed-child-tensors.pt` sha `59b19c7af421346b…` both times — and identical
-sealed behaviour.
+**Conditioning is worth something at exactly two components, and both are conv
+writers or head drops behind other folds.** `C05` gains **+0.0938** in RBEH,
+`C10` gains **+0.0625** in RSTO. Every other conditioned step lands on its M-A
+free-run *to the token*, including C08 and C09 which are re-solved against a
+genuinely different evidence base (`e7a7d5596fc814bb`, a capture of the child
+with C03+C14+C08 folded).
 
-### 5.4 M-B RBEH
+**Where it changes nothing behaviourally it still changes the diagnostics.** C08
+and C09 in RBEH have identical free-run and **lower** local drift under
+conditioning (0.033140 vs 0.033507, 0.035932 vs 0.038129). In RSTO the same
+comparison runs the other way (0.045333 vs 0.043162). The drift and the behaviour
+are not measuring the same thing, which is the campaign's oldest finding and is
+now visible inside one composed child in both directions.
 
-*(filled in below)*
+**C14 is bit-identical to its M-A twin and has to be.** Its endpoints at L00
+(`residual.pre` → `operator.input`) are upstream of C03's write, so the
+conditioned evidence at those endpoints *is* the parent's evidence. That is a
+correctness check on the conditioning machinery, not a null result.
+
+**The last components are free in both modes.** C06 and C07 in RBEH move the
+composed free-run by exactly 0.0000 in M-A and, after C05's gain, hold it at
+0.5801 in M-B. Whatever the composition costs is spent before L12 in both modes.
+
+**Determinism.** M-B RSTO was run twice — once under the timestamped manifest,
+once under the fixed one — and produced a **bit-identical composed child**
+(`composed-child-tensors.pt` sha `59b19c7af421346b…` both times), identical
+sealed behaviour, and identical frozen-review responses.
 
 ---
 
@@ -397,12 +431,13 @@ mean anything.
 Every case in every lane terminated `complete`; **no case was cap-censored**, so
 the censoring rule never had to be applied.
 
-| lane | useful | partial | observed miss | **useful-or-partial** | band Δ vs parent |
-|---|---:|---:|---:|---:|---:|
-| parent control | 5 | 7 | 3 | **12 / 15** | — |
-| `COMP.MA.RBEH` | 7 | 5 | 3 | **12 / 15** | **0** |
-| `COMP.MA.RSTO` | 6 | 6 | 3 | **12 / 15** | **0** |
-| `COMP.MB.RSTO` | 5 | 6 | 4 | **11 / 15** | **−1** |
+| lane | useful | partial | observed miss | **useful-or-partial** | band Δ vs parent | free-run |
+|---|---:|---:|---:|---:|---:|---:|
+| parent control | 5 | 7 | 3 | **12 / 15** | — | 1.000 |
+| `COMP.MA.RBEH` | 7 | 5 | 3 | **12 / 15** | **0** | 0.539 |
+| `COMP.MB.RBEH` | 5 | 7 | 3 | **12 / 15** | **0** | 0.580 |
+| `COMP.MA.RSTO` | 6 | 6 | 3 | **12 / 15** | **0** | 0.551 |
+| `COMP.MB.RSTO` | 5 | 6 | 4 | **11 / 15** | **−1** | 0.551 |
 
 ADDENDUM 2's reference band is the sealed A9 child's **8 of 15** with a measured
 ±2 tolerance. Every composed child in this wave is **+3 or +4 above it** and
@@ -425,26 +460,39 @@ token match against the control is **0.539** grades identically to the parent on
 reads the text and calls it parent-level. Both readings are sealed, and they are
 about the same child.
 
+**And the two metrics do not even move together.** `COMP.MB.RBEH` is **+0.041
+free-run above** its M-A twin and lands on the **same 12/15** — its gain buys two
+category *downgrades* (`instruction-three-actions` acquires an introduction the
+anchor forbids; `context-retrieval` drops *Saturday*, which M-A kept) offset by
+two upgrades elsewhere. Eight of its sixteen responses are byte-identical to
+M-A's. Conditioning bought token agreement with the parent's decode trajectory
+and did not buy answer quality.
+
 ---
 
 ## 7. Grading the composed children (ADDENDUM 3)
 
-| child | free-run | smoke | grade | storage | note |
-|---|---:|---|---|---:|---|
-| `COMP.MA.RBEH` | 0.5391 | coherent 3/3 | **weak** | 1.0087× | parent-level quality, negative compression |
-| `COMP.MA.RSTO` | 0.5508 | coherent 3/3 | **weak** | 0.9980× | parent-level quality, real contraction |
-| `COMP.MB.RSTO` | 0.5508 | coherent 3/3 | **weak** | 0.9980× | −1 case against the parent band |
+| child | free-run | smoke | review | grade | storage | note |
+|---|---:|---|---:|---|---:|---|
+| `COMP.MA.RBEH` | 0.5391 | coherent 3/3 | 12/15 | **weak** | 1.0087× | parent-level quality, negative compression |
+| `COMP.MB.RBEH` | 0.5801 | coherent 3/3 | 12/15 | **weak** | 1.0087× | the best free-run of the wave, still a storage failure |
+| `COMP.MA.RSTO` | 0.5508 | coherent 3/3 | 12/15 | **weak** | 0.9980× | parent-level quality, real contraction |
+| `COMP.MB.RSTO` | 0.5508 | coherent 3/3 | 11/15 | **weak** | 0.9980× | −1 case against the parent band |
 
 Every composed child grades **weak** on free-run and **12/15 or 11/15** under the
 frozen review. Scope discipline (ADDENDUM 3): these are the only whole-model
 claims this campaign has ever been entitled to make, and they are the composed
 children's own receipts.
 
-The best composed child is **`COMP.MA.RSTO`**: free-run 0.5508, review 12/15
+The best composed child is **`COMP.MA.RSTO`**: free-run 0.5508, review **12/15**
 matching the parent's 12/15, **net 0.998007× storage**. It is the first child in
 this campaign that folds five components heterogeneously, keeps the parent's
 whole-response quality band, and weighs less than its parent — and it is still
 `weak` by the free-run criterion and `fail` at chain link 5.
+
+`COMP.MB.RBEH` has the wave's best free-run (0.5801) and the same 12/15, but it
+stores 1,999,872 parameters more than the parent, so on the axis a fold is
+ultimately judged on it is behind a child it beats on tokens.
 
 ---
 
@@ -456,24 +504,33 @@ isolation free-runs are 0.736–0.977 compose to 0.551. Local cached-fit quality
 does not compose; that is now measured on a heterogeneous child rather than
 inferred from three independent proofs.
 
-**M-B's remaining hypothesis is answered, and the answer is no.** Wave 3 proved
-progressive *level* scheduling is the identity over a POD-basis technique and
-worth 7 % of one level step over a parent-dependent one, and said "whatever
-value the progressive idea has is not in level scheduling — its remaining
-hypothesis is that the gain comes from conditioning the *inputs*, which is
-composition mode M-B". M-B has now been run. It conditions the inputs, it costs
-44× the wall clock and 24 GB of conditioned evidence, it moves individual steps
-by up to +0.0625, and it lands on **the same composed free-run to the token**
-with a **worse** global drift.
+**M-B's remaining hypothesis is answered "sometimes, small, and not for free".**
+Wave 3 proved progressive *level* scheduling is the identity over a POD-basis
+technique and worth 7 % of one level step over a parent-dependent one, and said
+"whatever value the progressive idea has is not in level scheduling — its
+remaining hypothesis is that the gain comes from conditioning the *inputs*, which
+is composition mode M-B". M-B has now been run twice.
 
-**M-C is not run, and the reason is that its precondition is not met.**
-ADDENDUM 4 gates M-C on "if A and B disagree per component". They do disagree
-per component — C10 by +0.0625, C05 by −0.0098 — but the disagreement does not
-survive to the composed child, and a hybrid that re-solves the drift-dominant
-components M-B style would be re-solving components whose M-B and M-A results
-already cancel. Running it would be inventing a wave, which is the failure mode
-`NOTES-MX-F` §4 named. It is a designed cell with an id of its own and no
-evidence yet says it is worth a GPU.
+On the 5-component child it lands on **the same composed free-run to the token**
+with a worse global drift. On the 7-component child it is worth **+0.0410**, all
+of it earned at one component (C05, +0.0938 at its own step) and carried
+unchanged through the last two installs. It costs **24–28× the wall clock** — 94 s
+→ 2,637 s and 151 s → 3,577 s — and **seven distinct 8.1 GB captures**, 55 GB,
+after content-addressed reuse collapsed ten requests into seven.
+
+Against the isolation numbers it does not close the gap: the best M-B child is at
+0.580 where its own components read 0.738–0.994 in isolation. **A12 survives M-B
+intact.** Conditioning is a second-order correction to a first-order law.
+
+**M-C is not run, and the reason is now stronger than "the precondition is not
+met".** ADDENDUM 4 gates M-C on "if A and B disagree per component", and they do:
+C05 by +0.0938, C10 by +0.0625, and every other conditioned component by exactly
+zero. So M-C's own prescription — condition only the drift-dominant components —
+resolves on this evidence to *"condition C05 and C10 and nothing else"*, which is
+a recipe, not a mode, and which would reproduce M-B RBEH's 0.580 at a quarter of
+the captures. That is a cheap and well-defined cell, and it is the one this wave
+would run next; it is not run here because inventing a wave mid-wave is the
+failure mode `NOTES-MX-F` §4 named.
 
 ---
 
@@ -482,8 +539,34 @@ evidence yet says it is worth a GPU.
 | what | where |
 |---|---|
 | deployment + ledger before the wave | `/mnt/ai_data/neural-forge-matrix/backup/deployment-before-mxh-20260810T215018Z/` — 9 technique/receipt modules, 3 experiment scripts, `ledger.jsonl.before-mxh` (`f26fd22bd7d6dfe1`), `LEDGER.md.before-mxh` (`4e09062768055f52`) |
+| ledger before each merge | `…/backup/ledger.jsonl.before-mxh-merge-20260811T0027{15,51}Z` |
+| the accidentally double-merged file | `…/backup/ledger.jsonl.double-merged-217rows` — **kept**, see below |
 | stale timestamped split manifests + their derived site payloads | `…/backup/mxh-stale-split-manifests/` — **moved, not deleted** |
 | conditioned captures | `/mnt/ai_data/neural-forge-matrix/evidence-conditioned/shared/` — content-addressed, never overwritten |
+
+**The ledger.** 187 → **202 rows (+15)**: 8 composed-child instances and 7 review
+instances. `sha f0c7497e1f764059…`, 202 distinct `(cell_instance_id,
+receipt_sha)` pairs, 202 distinct receipt digests, 15 wave-4 rows, **15 of 15
+`sm86 NVIDIA GeForce RTX 3090`**.
+
+Eight instances for four children, and every one of them is a real re-run the
+append-only rule requires be kept rather than an overwrite:
+
+| cell | instances | why |
+|---|---:|---|
+| `COMP.MA.RBEH` | 3 | storage accounting defect (§4.1); then composed-tensor persistence for the review |
+| `COMP.MA.RSTO` | 3 | same |
+| `COMP.MB.RSTO` | 2 | the split-manifest defect (§4.2); the re-run is bit-identical |
+| `COMP.MB.RBEH` | 2 | the `infra` seal that *found* §4.2, then the fixed run |
+
+**One process error, caught and reverted.** The finalize script was run twice and
+the shard merger does not deduplicate, so the ledger briefly held 217 rows with
+15 duplicated `(instance, receipt_sha)` pairs. The 202-row state was **proved to
+be a byte prefix of the 217-row file** before anything was replaced — an
+append-only ledger may only ever be truncated back to a prefix of itself — the
+217-row file was kept in `backup/`, and the merge was not re-run. No row was
+rewritten and no receipt was touched. The merger's missing idempotence is a real
+gap in run tooling that has now bitten once and is written down here.
 
 **Deployment discipline.** The deployed technique surface is byte-identical to
 the one that produced the isolation winners, verified digest by digest before
@@ -513,13 +596,19 @@ that way is what keeps this wave comparable with wave 3.
 `code_identity.deployed_module_digests`:
 
 ```
-3c93714210b78394  matrix_cell_receipt.py            (was 9c9d15ada699c4e5)
-6eb42814c1a80f4c  matrix_composition.py             (new)
-new               run_lfm2_matrix_composition.py
-7ef3bcae61007072  derive_matrix_composition_recipe.py (new)
-68b42512f40108b5  render_matrix_ledger.py           (was f903dc53dedd538a)
-new               run_lfm2_composition_frozen_review.py
+3c93714210b78394  matrix_cell_receipt.py                  (was 9c9d15ada699c4e5)
+6eb42814c1a80f4c  matrix_composition.py                   (new)
+c93ea8aa99b9acc0  run_lfm2_matrix_composition.py          (new)
+fc761b4bf6a17c88  run_lfm2_composition_frozen_review.py   (new)
+7ef3bcae61007072  derive_matrix_composition_recipe.py     (new)
+68b42512f40108b5  render_matrix_ledger.py                 (was f903dc53dedd538a)
+08fe52edc834ee0b  seal_matrix_cell_review.py              (unchanged)
 ```
+
+**The sealed evidence base was never written to.** `find … -newermt` over
+`2dec87ac…` returns nothing modified during the wave; every conditioned capture
+went to a fresh content-addressed directory and the parent base was opened
+read-only, exactly as every isolation cell opened it.
 
 **GPU.** Every wave-4 receipt records `sm86 NVIDIA GeForce RTX 3090`. The shell
 preflight and `--require-compute-architecture sm86` both stayed; zero P40 rows.
@@ -542,9 +631,50 @@ python -m ruff check src/neural_forge/matrix_{cell_receipt,composition}.py \
 # -> All checks passed
 ```
 
+Server, after the merge:
+
+```
+bash /home/cereal/nf-mxh/mxh-verify.sh
+# ledger: 202 rows, sha f0c7497e1f764059
+# rendered 202 ledger rows -> /mnt/ai_data/neural-forge-matrix/LEDGER.md
+# receipt SEALS verified: 199 ok, 0 failed
+# receipt SCHEMAS validated: 138 ok, 61 predate a mandatory field (wave 1, documented)
+#     61 x Receipt is missing 'code_identity.compute_architecture'.
+# ledger rows 202, distinct instances 202, duplicated 0
+# wave-4 rows 15
+# wave-4 compute architectures: {'sm86 NVIDIA GeForce RTX 3090': 15}
+# ledger receipt digests distinct: 202 of 202
+```
+
+The seal check and the schema check are reported separately on purpose.
+`verify_seal` asks "are these the bytes that were sealed" and answers **199 of
+199**; `validate_receipt` asks "does this satisfy today's mandatory field set"
+and 61 wave-1 receipts do not, for the reason `matrix_cell_receipt`'s own
+docstring gives — they predate `code_identity.compute_architecture`, are
+preserved byte-for-byte as sealed, and are read through the ledger. Collapsing
+the two would report those as corruption, which they are not.
+
+**Mirror.** `reports/matrix-campaign-20260810/ledger.jsonl` and `LEDGER.md` are
+**byte-identical** to the authority:
+
+```
+f0c7497e1f764059cc807bce252deeedca2e4b7f79db52b05b6c84a96e3bf5e6  ledger.jsonl
+8ac9cc7b1795200fd21e1aa52f0203deb7772258937d650ce253a047d82077c2  LEDGER.md
+```
+
+The mirrored cell directories carry every receipt, review, diagnostic and
+dossier and **not** the 29 MB `composed-child-tensors.pt` files, which stay in
+the campaign store where the authority is (`§11`).
+
 **Not verified.**
 
-* **M-C was not run** (§8).
+* **M-C was not run** (§8), and the cell its own evidence names — condition C05
+  and C10 only — is designed and unrun.
+* **The renderer prints a meaningless `COMP | composition` ladder row.** A
+  composed child has no level axis, so §2 of `LEDGER.md` shows it as
+  `fails at composition` with five empty rungs. Harmless, honest, and not
+  fixed here: the composition surface deserves its own section in the renderer
+  and inventing one at the end of a wave is not that.
 * **C14 cannot be conditioned** at bfloat16 capture precision (§5.2), so M-B's
   claim to "condition on every upstream install" is true for every component
   except that one, and the receipt says which.

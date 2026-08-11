@@ -1,0 +1,4 @@
+{
+  "_purpose": "Wave-4 (MX-H) composition cells at the registered technique defaults.  Identical to the wave-3 knob file so that the ONLY thing that differs between a composed component and the isolation cell that chose it is the composition itself.",
+  "calibration_tolerance": 0.005
+}

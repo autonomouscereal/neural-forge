@@ -1,0 +1,2 @@
+preflight ok: GPU 0 -> 8.6 NVIDIA GeForce RTX 3090
+review COMP.MB.RSTO2 rc=0 :: [2026-08-10T23:27:07.034+00:00] sealed review surface 09c6d8bff98ac15f -> /mnt/ai_data/neural-forge-matrix/cells/COMP.MB.RSTO/rerun-231525/frozen-review-dossier.json in 153.9s

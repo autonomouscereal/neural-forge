@@ -1,0 +1,55 @@
+[2026-08-10T22:17:18.543+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-10T22:17:18.795+00:00] stage materialize at 1.8s
+[2026-08-10T22:17:29.624+00:00] parent: 229693184 unique parameters ({'distinct_storages': 132, 'tied_names': ['lm_head.weight']})
+[2026-08-10T22:17:31.550+00:00] stage component-0-C03.T5.M16.L00 at 14.5s
+[2026-08-10T22:17:31.570+00:00] stage evidence-0-C03.T5.M16.L00 at 14.6s
+[2026-08-10T22:17:32.362+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L00-C03
+[2026-08-10T22:17:32.362+00:00] stage calibration-0-C03.T5.M16.L00 at 15.4s
+[2026-08-10T22:17:32.362+00:00] C03.T5.M16.L00: calibration relL2=None applicable=False passed=False
+[2026-08-10T22:17:32.362+00:00] stage solve-0-C03.T5.M16.L00 at 15.4s
+[2026-08-10T22:17:36.133+00:00] T5 C03.T5.M16.L00: role=reader kept=960 dropped=64 blocks=3 k=8 rows=14253
+[2026-08-10T22:17:36.180+00:00] stage boundary-0-C03.T5.M16.L00 at 19.2s
+[2026-08-10T22:17:36.286+00:00] stage after-install-0-C03.T5.M16.L00 at 19.3s
+[2026-08-10T22:17:46.158+00:00] C03.T5.M16.L00 installed: terminal drift 0.027581, free-run 0.787109375
+[2026-08-10T22:17:46.159+00:00] stage component-1-C14.T1.NA.L00 at 29.2s
+[2026-08-10T22:17:46.160+00:00] stage evidence-1-C14.T1.NA.L00 at 29.2s
+[2026-08-10T22:17:46.816+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L00-C03
+[2026-08-10T22:17:46.816+00:00] stage calibration-1-C14.T1.NA.L00 at 29.8s
+[2026-08-10T22:17:46.816+00:00] C14.T1.NA.L00: calibration relL2=None applicable=False passed=False
+[2026-08-10T22:17:46.816+00:00] stage solve-1-C14.T1.NA.L00 at 29.8s
+[2026-08-10T22:17:47.068+00:00] stage boundary-1-C14.T1.NA.L00 at 30.1s
+[2026-08-10T22:17:47.092+00:00] stage after-install-1-C14.T1.NA.L00 at 30.1s
+[2026-08-10T22:17:56.898+00:00] C14.T1.NA.L00 installed: terminal drift 0.027566, free-run 0.787109375
+[2026-08-10T22:17:56.898+00:00] stage component-2-C10.T1.M16.L02 at 39.9s
+[2026-08-10T22:17:56.909+00:00] stage evidence-2-C10.T1.M16.L02 at 39.9s
+[2026-08-10T22:17:57.741+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L02-C09
+[2026-08-10T22:17:57.742+00:00] stage calibration-2-C10.T1.M16.L02 at 40.7s
+[2026-08-10T22:17:57.742+00:00] C10.T1.M16.L02: calibration relL2=None applicable=False passed=False
+[2026-08-10T22:17:57.742+00:00] stage solve-2-C10.T1.M16.L02 at 40.7s
+[2026-08-10T22:17:57.769+00:00] C10 C10.T1.M16.L02: 16 heads of 64, keep 15 (drop 1); parent write replay relL2 0.00165326
+[2026-08-10T22:17:58.573+00:00] stage boundary-2-C10.T1.M16.L02 at 41.6s
+[2026-08-10T22:17:58.631+00:00] stage after-install-2-C10.T1.M16.L02 at 41.6s
+[2026-08-10T22:18:08.736+00:00] C10.T1.M16.L02 installed: terminal drift 0.043162, free-run 0.517578125
+[2026-08-10T22:18:08.736+00:00] stage component-3-C05.T5.M16.L05 at 51.7s
+[2026-08-10T22:18:08.742+00:00] stage evidence-3-C05.T5.M16.L05 at 51.7s
+[2026-08-10T22:18:09.581+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L05-C05
+[2026-08-10T22:18:09.581+00:00] stage calibration-3-C05.T5.M16.L05 at 52.6s
+[2026-08-10T22:18:09.600+00:00] C05.T5.M16.L05: calibration relL2=0.0016808994349300568 applicable=True passed=True
+[2026-08-10T22:18:09.600+00:00] stage solve-3-C05.T5.M16.L05 at 52.6s
+[2026-08-10T22:18:10.855+00:00] T5 C05.T5.M16.L05: role=writer kept=960 dropped=64 blocks=1 k=8 rows=4751
+[2026-08-10T22:18:10.861+00:00] stage boundary-3-C05.T5.M16.L05 at 53.9s
+[2026-08-10T22:18:10.915+00:00] stage after-install-3-C05.T5.M16.L05 at 53.9s
+[2026-08-10T22:18:20.554+00:00] C05.T5.M16.L05 installed: terminal drift 0.062642, free-run 0.55078125
+[2026-08-10T22:18:20.554+00:00] stage component-4-C06.T5.M16.L12 at 63.5s
+[2026-08-10T22:18:20.560+00:00] stage evidence-4-C06.T5.M16.L12 at 63.6s
+[2026-08-10T22:18:21.382+00:00] evidence: reused authenticated cache /home/cereal/nf-mxe/evidence-cache/L12-C06
+[2026-08-10T22:18:21.383+00:00] stage calibration-4-C06.T5.M16.L12 at 64.4s
+[2026-08-10T22:18:21.407+00:00] C06.T5.M16.L12: calibration relL2=0.0016617325252343928 applicable=True passed=True
+[2026-08-10T22:18:21.407+00:00] stage solve-4-C06.T5.M16.L12 at 64.4s
+[2026-08-10T22:18:22.650+00:00] T5 C06.T5.M16.L12: role=reader kept=960 dropped=64 blocks=1 k=8 rows=4751
+[2026-08-10T22:18:22.663+00:00] stage boundary-4-C06.T5.M16.L12 at 65.7s
+[2026-08-10T22:18:22.721+00:00] stage after-install-4-C06.T5.M16.L12 at 65.7s
+[2026-08-10T22:18:32.296+00:00] C06.T5.M16.L12 installed: terminal drift 0.062812, free-run 0.55078125
+[2026-08-10T22:18:32.297+00:00] stage behavior at 75.3s
+[2026-08-10T22:18:51.091+00:00] stage seal at 94.1s
+[2026-08-10T22:18:51.609+00:00] sealed COMP.MA.RSTO status=fail first_divergent=composition receipt=1e21455b7275 in 94.1s

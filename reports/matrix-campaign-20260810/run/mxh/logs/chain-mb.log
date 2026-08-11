@@ -1,0 +1,8 @@
+preflight ok: GPU 4 -> 8.6 NVIDIA GeForce RTX 3090
+=== 23:15:25 start COMP.MB.RSTO mode=M-B recipe=RSTO gpu=4 out=/mnt/ai_data/neural-forge-matrix/cells/COMP.MB.RSTO/rerun-231525
+=== 23:23:11 done  COMP.MB.RSTO rc=1 :: [2026-08-10T23:23:09.588+00:00] sealed COMP.MB.RSTO status=fail first_divergent=composition receipt=8e68672912d1 in 459.2s
+=== RSTO done, starting RBEH ===
+preflight ok: GPU 4 -> 8.6 NVIDIA GeForce RTX 3090
+=== 23:23:13 start COMP.MB.RBEH mode=M-B recipe=RBEH gpu=4 out=/mnt/ai_data/neural-forge-matrix/cells/COMP.MB.RBEH/rerun-232313
+=== 00:22:57 done  COMP.MB.RBEH rc=1 :: [2026-08-11T00:22:55.522+00:00] sealed COMP.MB.RBEH status=fail first_divergent=composition receipt=7fef15a10e24 in 3577.3s
+=== both done ===

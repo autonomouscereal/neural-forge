@@ -1,0 +1,37 @@
+{
+  "cell_id": "COMP.MA.RBEH",
+  "install_order": [
+    "C03.T5.M16.L00",
+    "C14.T1.NA.L00",
+    "C08.T1.M16.L02",
+    "C09.T2.M16.L02",
+    "C05.T3.M16.L05",
+    "C06.T5.M16.L12",
+    "C07.T1.M16.L12"
+  ],
+  "installed_tensor_digests": {
+    "C03.T5.M16.L00": [
+      "model.layers.0.conv.in_proj.weight=96b2b2b4b0dca680609dd48e441e1b19ffd8b5ff43096e0ff9ed54d01cb877e7"
+    ],
+    "C05.T3.M16.L05": [
+      "model.layers.5.conv.out_proj.weight=e8f8a5e14f873e63348e4f091ded8f42d647ec202649d94eaeaf53e5a3cbd95e"
+    ],
+    "C06.T5.M16.L12": [
+      "model.layers.12.self_attn.q_proj.weight=1caf89246ff689c053f77be0c81b1176077cef43ef850adac73487edb8dd6c9a"
+    ],
+    "C07.T1.M16.L12": [
+      "model.layers.12.self_attn.k_proj.weight=2801f7c3be028eaa33c00a2f001c0949e8c613b94fc48ba9a8e45b6d1c6960f7"
+    ],
+    "C08.T1.M16.L02": [
+      "model.layers.2.self_attn.v_proj.weight=13009ce4f90e1d3ee11c59bb8756a9d3d2fdf762e949d6b1aebf901f9e51d1f5"
+    ],
+    "C09.T2.M16.L02": [
+      "model.layers.2.self_attn.out_proj.weight=4ce31101d3c7d787af8eab207fe36688e72a2efea24733b26bc97071a6ae50e3"
+    ],
+    "C14.T1.NA.L00": [
+      "model.layers.0.operator_norm.weight=c80ae8abed60e01ce47fdbe0948cafcf89fe34ec20410e03a44a240673db8a3d"
+    ]
+  },
+  "kind": "composed-child-tensor-digests",
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1"
+}

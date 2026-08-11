@@ -1,0 +1,4 @@
+preflight ok: GPU 0 -> 8.6 NVIDIA GeForce RTX 3090
+=== 22:11:35 start COMP.MB.RBEH mode=M-B recipe=RBEH gpu=0 out=/mnt/ai_data/neural-forge-matrix/cells/COMP.MB.RBEH
+Terminated
+=== 22:22:59 done  COMP.MB.RBEH rc=143 :: [2026-08-10T22:12:13.614+00:00] conditioned capture: child identity 0d070297f8e45a4b (parent base 96a6779d927a8aca)
