@@ -24,6 +24,10 @@ What is pinned here, and why each one exists:
 6. **The refusals.**  A rank past full rank, a rank that does not contract, a
    frequency file whose digest has moved, and a frequency file whose length is
    not the vocabulary all fail closed.
+7. **The T5 route.**  Its head rows are stored *exactly* -- checked with
+   ``torch.equal``, not ``allclose`` -- its storage counts the token ids it
+   routes by, and the width the registry resolves for it is the tail rank and
+   not the head.
 """
 
 from __future__ import annotations
@@ -54,10 +58,13 @@ from neural_forge.matrix_technique_registry import (  # noqa: E402
 from neural_forge.matrix_technique_token_embedding import (  # noqa: E402
     TOKEN_FREQUENCY_SCHEMA,
     TokenEmbeddingFoldError,
+    c01_token_route_storage,
     factor_token_embedding,
     load_token_frequencies,
     maximum_shrinking_rank,
+    route_token_embedding,
     t4_token_embedding_technique,
+    t5_token_embedding_route_technique,
 )
 
 VOCAB = 96
@@ -421,3 +428,117 @@ def test_an_autograd_tensor_is_refused():
     table = _table().requires_grad_(True)
     with pytest.raises(TokenEmbeddingFoldError, match="autograd"):
         factor_token_embedding(embedding=table, rank=4)
+
+
+# ------------------------------------------------------- T5 at C01: the route
+
+
+def test_the_route_stores_the_head_rows_exactly():
+    table = _table(seed=21)
+    counts = torch.zeros(VOCAB, dtype=torch.float64)
+    counts[:8] = 100.0
+    route = route_token_embedding(
+        embedding=table, head_size=8, tail_rank=4, weights=counts
+    )
+    assert route.head_ids.tolist() == list(range(8))
+    rebuilt = route.dense_equivalent
+    # Exact, not approximately exact: the head is a copy.
+    assert torch.equal(rebuilt[:8], table[:8])
+    assert not torch.equal(rebuilt[8:], table[8:])
+    assert route.solve["head_row_cosine_mean"] == pytest.approx(1.0, abs=1e-12)
+    assert route.solve["route"]["observed_token_types_in_head"] == 8
+    assert route.solve["route"]["observed_token_types_outside_head"] == 0
+    assert route.solve["route"]["corpus_mass_in_head"] == pytest.approx(1.0)
+
+
+def test_the_route_storage_counts_the_ids_it_routes_by():
+    """A route that stores rows and not their ids is a table nobody can index."""
+
+    stored = c01_token_route_storage(
+        vocab_size=65536, hidden_size=1024, head_size=4096, tail_rank=201
+    )
+    values = 4096 * 1024
+    ids = 4096
+    tail = 201 * ((65536 - 4096) + 1024)
+    assert stored == values + ids + tail
+    assert stored == 16_753_664
+    assert stored <= 0.25 * PARENT_EMBEDDING_PARAMETERS
+
+
+def test_the_registry_resolves_the_route_width_from_its_own_storage_model():
+    state = {
+        "model.embed_tokens.weight": torch.zeros(
+            (PARENT_VOCAB, PARENT_HIDDEN), dtype=torch.float64
+        )
+    }
+    spec = component_spec(CellId.parse("C01.T5.S4"), state)
+    model = storage_model("T5", "C01")
+    quarter = storage_width_for_ratio(spec, "T5", 0.25)
+    eighth = storage_width_for_ratio(spec, "T5", 0.125)
+    assert quarter == 201
+    assert eighth == 67
+    assert model(spec, quarter) <= 0.25 * PARENT_EMBEDDING_PARAMETERS
+    assert model(spec, quarter + 1) > 0.25 * PARENT_EMBEDDING_PARAMETERS
+    assert model(spec, eighth) <= 0.125 * PARENT_EMBEDDING_PARAMETERS
+    assert model(spec, eighth + 1) > 0.125 * PARENT_EMBEDDING_PARAMETERS
+    # The route's model is C01's alone; the body keeps T5's own route algebra.
+    assert storage_model("T5", "C13") is not model
+
+
+def test_without_a_frequency_table_the_head_is_the_highest_norm_rows():
+    table = _table(seed=31)
+    table[40] *= 50.0
+    table[7] *= 40.0
+    route = route_token_embedding(embedding=table, head_size=2, tail_rank=3)
+    assert route.head_ids.tolist() == [7, 40]
+    assert route.solve["route"]["head_selection_rule"].startswith("row-l2-norm")
+
+
+def test_the_route_kernel_is_registered_at_c01_under_t5(tmp_path):
+    from neural_forge import matrix_technique_body_routes  # noqa: F401
+
+    assert resolve("T5", "C01") is t5_token_embedding_route_technique
+    assert resolve("T5", "C13") is not t5_token_embedding_route_technique
+
+    state = _state(_table(seed=41))
+    counts = [0] * VOCAB
+    for index in range(10):
+        counts[index] = 100 - index
+    path, digest = _frequency_file(tmp_path, counts)
+    cell = CellId.parse("C01.T5.S4")
+    spec = component_spec(cell, state)
+    request = CellTechniqueRequest(
+        cell=cell,
+        component=spec,
+        level=cell.level,
+        level_width=3,
+        seed=0,
+        parent_weights=state,
+        evidence=_NoEvidence(),
+        knobs={
+            "token_route_head_size": 8,
+            "token_frequency_path": str(path),
+            "token_frequency_sha256": digest,
+        },
+        workspace=Path("."),
+        log=lambda message: None,
+    )
+    result = t5_token_embedding_route_technique(request)
+    validate_result(request, result)
+    assert result.stored_parameter_count == 8 * (HIDDEN + 1) + 3 * (
+        (VOCAB - 8) + HIDDEN
+    )
+    installed = result.installed_weights["model.embed_tokens.weight"]
+    assert torch.equal(installed[:8], state["model.embed_tokens.weight"][:8])
+    assert result.solve["token_frequency"]["token_frequency_sha256"] == digest
+    assert result.solve["route"]["head_size"] == 8
+
+
+def test_a_head_that_covers_the_table_is_refused():
+    with pytest.raises(TokenEmbeddingFoldError, match="covers the whole"):
+        route_token_embedding(embedding=_table(), head_size=VOCAB, tail_rank=2)
+
+
+def test_a_tail_rank_past_the_tails_full_rank_is_refused():
+    with pytest.raises(TokenEmbeddingFoldError, match="exceeds the tail"):
+        route_token_embedding(embedding=_table(), head_size=8, tail_rank=HIDDEN + 1)

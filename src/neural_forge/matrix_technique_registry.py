@@ -474,12 +474,47 @@ _STORAGE_MODELS: Mapping[str, Callable[["ComponentSpec", int], int]] = {
     "T8": _t8_storage,
 }
 
+def _c01_token_route_storage(spec: "ComponentSpec", width: int) -> int:
+    """T5 at C01: a verbatim head of token rows plus a low-rank tail.
+
+    ``_LAYOUT`` has always called C01's level axis a ``route`` and this is what
+    one costs::
+
+        head * (hidden + 1)  +  rank * ((vocab - head) + hidden)
+
+    The ``+ 1`` is the head's token ids.  A route that stored the row values and
+    not the ids it routes them by would be a table nobody can index -- the same
+    omission commit `8d59c4d2` found in the composition accounting and the same
+    one `_t5_route_storage` closes for the body.
+
+    ``head`` is the technique's constant, not the caller's, because a storage
+    model has to be a function of one width or `storage_width_for_ratio` cannot
+    resolve a level.  It is pinned to `_X4_WIDTHS["C01"]` -- 4,096, the campaign's
+    own settled token-interface route budget -- so the width this model takes is
+    unambiguously the **tail rank**.
+    """
+
+    from .matrix_technique_token_embedding import (
+        C01_TOKEN_ROUTE_HEAD_SIZE,
+        c01_token_route_storage,
+    )
+
+    return c01_token_route_storage(
+        vocab_size=int(spec.parent_output_width),
+        hidden_size=int(spec.parent_input_width),
+        head_size=int(C01_TOKEN_ROUTE_HEAD_SIZE),
+        tail_rank=int(width),
+    )
+
+
 #: Per-component overrides: C04's kernel is FIR taps, not a matrix
-#: factorization, so T1 at C04 stores something T1 elsewhere does not.
+#: factorization, so T1 at C04 stores something T1 elsewhere does not; T5 at C01
+#: is a token route and stores a head of verbatim rows beside its tail factors.
 _STORAGE_MODELS_BY_COMPONENT: Mapping[
     tuple[str, str], Callable[["ComponentSpec", int], int]
 ] = {
     ("T1", "C04"): _conv_fir_storage,
+    ("T5", "C01"): _c01_token_route_storage,
 }
 
 

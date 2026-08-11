@@ -541,6 +541,382 @@ def t4_token_embedding_technique(request: Any) -> Any:
     )
 
 
+# --------------------------------------------------------------------------
+# T5 at C01: the token route, which is the shape the campaign always wanted
+# --------------------------------------------------------------------------
+#
+# `matrix_technique_registry._LAYOUT` has said since wave 1 that C01's level
+# axis is a ``route`` -- "token-table routes (C01/C02/C15); the level is a route
+# budget" -- and the registry's own registration example is literally
+# ``register("T5", t5_token_route, component="C01")``.  That slot has been empty
+# for the whole campaign: the A9 route it was written for could not be
+# reproduced on this estate (`NOTES-MX-A` §5.2, `NOTES-MX-C`), calibration cell
+# 0b failed twice, and nothing has folded the token interface since.
+#
+# This fills it, with a mechanism the pure factorization above says is needed.
+# The measured fact that motivates it: at rank 252 -- a true quarter -- the plain
+# truncated SVD of this table retains **43% of its Gram energy** and reconstructs
+# rows at a mean cosine of **0.66**.  The table is not low rank.  Spending the
+# whole budget on rank buys a uniformly mediocre table, and a uniformly mediocre
+# embedding is a uniformly mediocre model.
+#
+# A route spends the budget unevenly instead::
+#
+#     head   the ``head_size`` most important token ids, stored VERBATIM
+#            (the row values, plus the ids themselves -- an index you do not
+#            store is an index you cannot use, which is the same class of
+#            omission commit 8d59c4d2 found in the composition accounting)
+#     tail   every other row, at the deepest rank the remaining budget allows
+#
+# so the tokens that actually occur keep exact embeddings **and exact tied
+# readout rows**, and the rank that is left goes to the tokens that do not.
+#
+# ``head_size`` is a constant of the technique and not a free parameter, because
+# the storage model has to be a function of one width or the planner cannot
+# resolve a level.  4,096 is not chosen here: it is
+# `matrix_technique_registry._X4_WIDTHS["C01"]`, "the proven A9/A11 route budget
+# (S4)", the one token-interface width this campaign has ever settled.
+
+#: The verbatim-row budget of a C01 token route.  Pinned to the campaign's own
+#: settled token-interface width so the storage model is single-parameter.
+C01_TOKEN_ROUTE_HEAD_SIZE = 4096
+
+TOKEN_ROUTE_RECORD_SCHEMA = "neural-forge-matrix-c01-token-route-record-v1"
+ROUTE_TECHNIQUE_ID = "T5"
+
+
+def c01_token_route_storage(
+    *, vocab_size: int, hidden_size: int, head_size: int, tail_rank: int
+) -> int:
+    """``head*(hidden+1) + rank*(tail + hidden)`` -- values, ids, and both factors."""
+
+    head = _positive_int(head_size, "head_size")
+    rank = _positive_int(tail_rank, "tail_rank")
+    vocab = _positive_int(vocab_size, "vocab_size")
+    hidden = _positive_int(hidden_size, "hidden_size")
+    if head >= vocab:
+        raise TokenEmbeddingFoldError(
+            f"A head of {head} rows covers the whole {vocab}-token table."
+        )
+    return head * (hidden + 1) + rank * ((vocab - head) + hidden)
+
+
+@dataclass(frozen=True)
+class TokenEmbeddingRoute:
+    """One tied embedding table split into an exact head and a low-rank tail."""
+
+    head_size: int
+    tail_rank: int
+    vocab_size: int
+    hidden_size: int
+    head_ids: Any
+    head_rows: Any
+    tail_row_factor: Any
+    tail_basis: Any
+    table: Any
+    record: Mapping[str, Any]
+    solve: Mapping[str, Any]
+
+    @property
+    def stored_parameter_count(self) -> int:
+        return c01_token_route_storage(
+            vocab_size=self.vocab_size,
+            hidden_size=self.hidden_size,
+            head_size=self.head_size,
+            tail_rank=self.tail_rank,
+        )
+
+    @property
+    def dense_equivalent(self) -> Any:
+        return self.table
+
+    @property
+    def record_sha256(self) -> str:
+        return str(self.record["record_sha256"])
+
+
+def route_token_embedding(
+    *,
+    embedding: Any,
+    head_size: int,
+    tail_rank: int,
+    weights: Any = None,
+) -> TokenEmbeddingRoute:
+    """Exact head rows plus a truncated-SVD tail, closed form, no gradients.
+
+    ``weights`` selects the head and nothing else.  The tail is fitted
+    **unweighted**, deliberately: once the head has taken every token id the
+    sealed corpus observed, every remaining row carries a count of exactly zero,
+    and a Gram weighted by zeros has no eigenvectors worth the name -- it would
+    be a subspace chosen by floating-point noise.  With no frequency table the
+    head is chosen by row norm, which is the strongest evidence-free proxy the
+    table itself carries.
+    """
+
+    torch = _torch()
+    if not isinstance(embedding, torch.Tensor) or embedding.ndim != 2:
+        raise TokenEmbeddingFoldError("The embedding must be a 2-D tensor.")
+    if embedding.requires_grad or embedding.grad_fn is not None:
+        raise TokenEmbeddingFoldError(
+            "The embedding carries autograd state; this is a fold, not a training step."
+        )
+    table = embedding.detach().to(dtype=torch.float64)
+    vocab_size = int(table.shape[0])
+    hidden_size = int(table.shape[1])
+    head = _positive_int(head_size, "head_size")
+    rank = _positive_int(tail_rank, "tail_rank")
+    if head >= vocab_size:
+        raise TokenEmbeddingFoldError(
+            f"A head of {head} rows covers the whole {vocab_size}-token table."
+        )
+    if rank > min(vocab_size - head, hidden_size):
+        raise TokenEmbeddingFoldError(
+            f"tail rank {rank} exceeds the tail's full rank "
+            f"{min(vocab_size - head, hidden_size)}."
+        )
+
+    row_norm = torch.linalg.vector_norm(table, dim=1)
+    if weights is None:
+        counts = torch.zeros(vocab_size, dtype=torch.float64)
+        head_rule = "row-l2-norm-descending-then-token-id-ascending"
+    else:
+        counts = weights.detach().to(dtype=torch.float64).reshape(-1)
+        if int(counts.shape[0]) != vocab_size:
+            raise TokenEmbeddingFoldError(
+                f"The weight vector carries {int(counts.shape[0])} entries for a "
+                f"{vocab_size}-token table."
+            )
+        if bool((counts < 0).any().item()):
+            raise TokenEmbeddingFoldError("Token weights must be nonnegative.")
+        head_rule = (
+            "token-count-descending, ties by row-l2-norm-descending, "
+            "then token-id-ascending"
+        )
+    # Deterministic total order: count, then norm, then id.  Sorting once on a
+    # composite key rather than three times keeps the tie-break exact instead of
+    # relying on a sort's stability guarantees.
+    order = sorted(
+        range(vocab_size),
+        key=lambda index: (
+            -float(counts[index].item()),
+            -float(row_norm[index].item()),
+            index,
+        ),
+    )
+    head_ids = torch.tensor(sorted(order[:head]), dtype=torch.int64)
+    mask = torch.zeros(vocab_size, dtype=torch.bool)
+    mask[head_ids] = True
+    tail_ids = torch.nonzero(~mask, as_tuple=False).reshape(-1)
+
+    tail_table = table[tail_ids].contiguous()
+    gram = tail_table.transpose(0, 1) @ tail_table
+    gram = ((gram + gram.transpose(0, 1)) * 0.5).contiguous()
+    values, vectors = torch.linalg.eigh(gram)
+    sort = torch.argsort(values, descending=True)
+    values = values[sort]
+    vectors = vectors[:, sort]
+    basis = vectors[:, :rank].contiguous()
+    pivots = basis.abs().argmax(dim=0)
+    signs = torch.sign(basis[pivots, torch.arange(basis.shape[1])])
+    signs = torch.where(signs == 0, torch.ones_like(signs), signs)
+    basis = (basis * signs).contiguous()
+    tail_factor = (tail_table @ basis).contiguous()
+
+    result = table.clone()
+    result[tail_ids] = tail_factor @ basis.transpose(0, 1)
+    result = result.contiguous()
+    residual = result - table
+
+    spectrum = values.clamp_min(0.0)
+    total_energy = float(spectrum.sum().item())
+    retained_energy = float(spectrum[:rank].sum().item())
+    smallest = float(spectrum[rank - 1].item())
+    largest = float(spectrum[0].item())
+    condition = largest / smallest if smallest > 0.0 else float("inf")
+
+    parent_norm = float(torch.linalg.matrix_norm(table).item())
+    residual_norm = float(torch.linalg.matrix_norm(residual).item())
+    cosines = torch.nn.functional.cosine_similarity(result, table, dim=1, eps=1e-30)
+    head_cosine = float(cosines[head_ids].mean().item())
+    tail_cosine = float(cosines[tail_ids].mean().item())
+    observed = counts > 0
+    covered = int(observed[head_ids].sum().item())
+    observed_total = int(observed.sum().item())
+    counted_total = float(counts.sum().item())
+    counted_head = float(counts[head_ids].sum().item())
+
+    stored = c01_token_route_storage(
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        head_size=head,
+        tail_rank=rank,
+    )
+    parent_parameters = vocab_size * hidden_size
+    record: dict[str, Any] = {
+        "schema": TOKEN_ROUTE_RECORD_SCHEMA,
+        "component_id": COMPONENT_ID,
+        "technique_id": ROUTE_TECHNIQUE_ID,
+        "head_size": head,
+        "tail_rank": rank,
+        "tail_size": int(tail_ids.numel()),
+        "vocab_size": vocab_size,
+        "hidden_size": hidden_size,
+        "head_selection_rule": head_rule,
+        "parent_parameters": parent_parameters,
+        "child_parameters": stored,
+        "parameter_ratio": stored / float(parent_parameters),
+        "head_ids_sha256": hashlib.sha256(
+            head_ids.numpy().tobytes()
+        ).hexdigest(),
+        "tail_basis_sha256": _tensor_sha256(basis),
+        "tail_row_factor_sha256": _tensor_sha256(tail_factor),
+        "dense_equivalent_sha256": _tensor_sha256(result),
+    }
+    record["record_sha256"] = canonical_sha256(record)
+
+    solve: dict[str, Any] = {
+        "solver_path": "c01_token_route_exact_head_low_rank_tail",
+        "ridge_relative": 0.0,
+        "condition_number": condition if math.isfinite(condition) else None,
+        "condition_cap_saturated": not math.isfinite(condition),
+        "condition_number_unbounded_reason": (
+            None if math.isfinite(condition) else "singular-retained-tail-spectrum"
+        ),
+        "prior_norm": parent_norm,
+        "correction_norm": residual_norm,
+        "requested_clamp_ratio": residual_norm / max(parent_norm, 1e-30),
+        "allowed_clamp_ratio": None,
+        "clamp_engaged": False,
+        "omp": None,
+        "route": {
+            "head_size": head,
+            "tail_size": int(tail_ids.numel()),
+            "tail_rank": rank,
+            "head_selection_rule": head_rule,
+            "head_ids_sha256": str(record["head_ids_sha256"]),
+            "head_parameters": head * hidden_size,
+            "head_index_parameters": head,
+            "tail_parameters": rank * (int(tail_ids.numel()) + hidden_size),
+            "observed_token_types": observed_total,
+            "observed_token_types_in_head": covered,
+            "observed_token_types_outside_head": observed_total - covered,
+            "corpus_mass_in_head": (
+                None if counted_total <= 0 else counted_head / counted_total
+            ),
+        },
+        "embedding_vocab_size": vocab_size,
+        "embedding_hidden_size": hidden_size,
+        "tail_gram_total_energy": total_energy,
+        "tail_gram_retained_energy": retained_energy,
+        "tail_retained_energy_fraction": (
+            retained_energy / total_energy if total_energy > 0.0 else None
+        ),
+        "smallest_retained_eigenvalue": smallest,
+        "largest_eigenvalue": largest,
+        "reconstruction_relative_frobenius": residual_norm / max(parent_norm, 1e-30),
+        "row_cosine_mean": float(cosines.mean().item()),
+        "row_cosine_min": float(cosines.min().item()),
+        "head_row_cosine_mean": head_cosine,
+        "tail_row_cosine_mean": tail_cosine,
+        "technique_record_sha256": str(record["record_sha256"]),
+    }
+    return TokenEmbeddingRoute(
+        head_size=head,
+        tail_rank=rank,
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        head_ids=head_ids,
+        head_rows=table[head_ids].contiguous(),
+        tail_row_factor=tail_factor,
+        tail_basis=basis,
+        table=result,
+        record=record,
+        solve=solve,
+    )
+
+
+def t5_token_embedding_route_technique(request: Any) -> Any:
+    """T5's kernel at C01: an exact head of token rows plus a low-rank tail.
+
+    Same install as the T4 arm -- one parent-shaped tensor, both the lookup and
+    the tied readout -- and the same declared-in-``stored_parameter_count``
+    contraction.  What differs is where the budget goes.
+    """
+
+    from .matrix_technique_registry import CellTechniqueError, CellTechniqueResult
+
+    spec = request.component
+    if spec.component_id != COMPONENT_ID:
+        raise CellTechniqueError(
+            f"This kernel folds {COMPONENT_ID}; it was handed {spec.component_id}."
+        )
+    key = spec.weight_keys[0]
+    parent = request.parent_weights[key].detach()
+    vocab_size = int(parent.shape[0])
+    hidden_size = int(parent.shape[1])
+    head_size = int(request.knob("token_route_head_size", C01_TOKEN_ROUTE_HEAD_SIZE))
+    tail_rank = int(request.knob("token_route_tail_rank", int(request.level_width)))
+
+    weights = None
+    provenance: dict[str, Any] | None = None
+    path = request.knob("token_frequency_path")
+    if path:
+        try:
+            weights, provenance = load_token_frequencies(
+                path,
+                vocab_size=vocab_size,
+                expected_sha256=request.knob("token_frequency_sha256"),
+            )
+        except TokenEmbeddingFoldError as exc:
+            raise CellTechniqueError(f"{request.cell.text}: {exc}") from exc
+
+    request.log(
+        f"C01 {request.cell.text}: route head={head_size} tail_rank={tail_rank}, "
+        f"table {vocab_size}x{hidden_size}, "
+        f"head selected by {'token frequency' if weights is not None else 'row norm'}"
+    )
+    try:
+        route = route_token_embedding(
+            embedding=parent,
+            head_size=head_size,
+            tail_rank=tail_rank,
+            weights=weights,
+        )
+    except TokenEmbeddingFoldError as exc:
+        raise CellTechniqueError(f"{request.cell.text}: {exc}") from exc
+
+    stored = route.stored_parameter_count
+    if stored >= vocab_size * hidden_size and not bool(
+        request.knob("c01_allow_parameter_increase", False)
+    ):
+        raise CellTechniqueError(
+            f"{request.cell.text}: the route stores {stored} against a table of "
+            f"{vocab_size * hidden_size}; it does not contract."
+        )
+    solve = dict(route.solve)
+    solve["token_frequency"] = provenance
+    request.log(
+        f"C01 {request.cell.text}: stored {stored} "
+        f"({route.record['parameter_ratio']:.6f}x), head row cosine "
+        f"{solve['head_row_cosine_mean']:.6f}, tail row cosine "
+        f"{solve['tail_row_cosine_mean']:.6f}, corpus mass in head "
+        f"{solve['route']['corpus_mass_in_head']}"
+    )
+    return CellTechniqueResult(
+        installed_weights={key: route.dense_equivalent.contiguous()},
+        stored_parameter_count=int(stored),
+        solve=solve,
+        predict=None,
+        artifact_identities={"c01_token_route_record_sha256": route.record_sha256},
+        notes=(
+            f"C01 tied token embedding as a route: {route.head_size} rows stored "
+            f"verbatim with their ids, the remaining {route.record['tail_size']} "
+            f"at rank {route.tail_rank}, {stored} stored against "
+            f"{vocab_size * hidden_size}."
+        ),
+    )
+
+
 def _register_token_embedding_technique() -> None:
     """Wire C01 into the harness dispatch table at import time.
 
@@ -559,21 +935,34 @@ def _register_token_embedding_technique() -> None:
         component=COMPONENT_ID,
         replace=True,
     )
+    register(
+        ROUTE_TECHNIQUE_ID,
+        t5_token_embedding_route_technique,
+        component=COMPONENT_ID,
+        replace=True,
+    )
 
 
 _register_token_embedding_technique()
 
 
 __all__ = [
+    "C01_TOKEN_ROUTE_HEAD_SIZE",
     "COMPONENT_ID",
+    "ROUTE_TECHNIQUE_ID",
     "TECHNIQUE_ID",
     "TOKEN_EMBEDDING_RECORD_SCHEMA",
     "TOKEN_FREQUENCY_SCHEMA",
+    "TOKEN_ROUTE_RECORD_SCHEMA",
     "WEIGHTINGS",
     "TokenEmbeddingFactorization",
     "TokenEmbeddingFoldError",
+    "TokenEmbeddingRoute",
+    "c01_token_route_storage",
     "factor_token_embedding",
     "load_token_frequencies",
     "maximum_shrinking_rank",
+    "route_token_embedding",
     "t4_token_embedding_technique",
+    "t5_token_embedding_route_technique",
 ]
