@@ -1,0 +1,13 @@
+{
+  "cell_id": "COMP.MA.MXM4",
+  "install_order": [
+    "C01.T5.S8"
+  ],
+  "installed_tensor_digests": {
+    "C01.T5.S8": [
+      "model.embed_tokens.weight=e101c6f4b6cb14dd998871e42942d7f6e7b127df8de7d88ed120df3489ad56c1"
+    ]
+  },
+  "kind": "composed-child-tensor-digests",
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1"
+}

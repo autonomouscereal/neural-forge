@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-11T21:02:04+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-11T22:41:06+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**190 cells sealed** (402 ledger rows including re-runs); newest seal 2026-08-11T21:01:30.864+00:00.
+**200 cells sealed** (422 ledger rows including re-runs); newest seal 2026-08-11T22:29:33.982+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 159 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 169 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -19,7 +19,7 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `alive-parent-band` | 37 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
 | `alive-degraded` | 22 | >= the A9 band of 8/15, outside the parent's +/-2 |
 | `impaired` | 11 | < 8/15 but still coherent, on-task language |
-| `dead` | 22 | incoherent, emit-zero floor failed, or degenerate output |
+| `dead` | 32 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
@@ -117,6 +117,16 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `COMP.MA.MXL10` | GLOBAL | NA | 0.9857 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.1270 |
 | `COMP.MA.MXL11` | GLOBAL | NA | 0.9554 | -- | **alive-degraded** | 9/15 | 12 | coherent | 0.1211 |
 | `COMP.MB.MXL12` | GLOBAL | NA | 0.9857 | -- | **alive-degraded** | 8/15 | 12 | coherent | 0.1230 |
+| `COMP.MA.MXM1` | GLOBAL | NA | 0.7809 | -- | **dead** | 0/15 | 12 | incoherent | 0.0000 |
+| `COMP.MA.MXM2` | GLOBAL | NA | 0.7809 | -- | **dead** | 0/15 | 12 | incoherent | 0.0273 |
+| `COMP.MA.MXM3` | GLOBAL | NA | 0.7808 | -- | **dead** | 3/15 | 12 | incoherent | 0.0312 |
+| `COMP.MA.MXM4` | GLOBAL | NA | 0.7443 | -- | **dead** | 0/15 | 12 | incoherent | 0.0254 |
+| `COMP.MA.MXM5` | GLOBAL | NA | 0.7807 | -- | **dead** | 6/15 | 12 | incoherent | 0.0801 |
+| `COMP.MA.MXM6` | GLOBAL | NA | 0.7809 | -- | **dead** | 9/15 | 12 | incoherent | 0.0664 |
+| `COMP.MA.MXM7` | GLOBAL | NA | 0.7808 | -- | **dead** | 5/15 | 12 | incoherent | 0.0820 |
+| `COMP.MA.MXM8` | GLOBAL | NA | 0.7443 | -- | **dead** | 3/15 | 12 | incoherent | 0.0254 |
+| `COMP.MA.MXM9` | GLOBAL | NA | 0.7363 | -- | **dead** | 4/15 | 12 | incoherent | 0.0195 |
+| `COMP.MA.MXM10` | GLOBAL | NA | 0.7534 | -- | **dead** | 6/15 | 12 | incoherent | 0.0352 |
 
 **Survivors** (alive at a satisfied storage bound): 36 -- these are the assembly wave's input.
 
@@ -254,10 +264,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 13 | 8% |
-| `local-solve` | 79 | 46% |
+| `infra` | 13 | 7% |
+| `local-solve` | 81 | 45% |
 | `macrocell-band` | 1 | 1% |
-| `composition` | 67 | 39% |
+| `composition` | 75 | 41% |
 | `free-run` | 12 | 7% |
 
 ## 4. Band-versus-behavior agreement
@@ -266,10 +276,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 152 |
+| in band (<= 0.4) | 18 | 154 |
 | out of band | 0 | 3 |
 
-Agreement 21/173 (12%).
+Agreement 21/175 (12%).
 
 ## 4b. Storage honesty
 
@@ -431,8 +441,18 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.MXL10` | composition | NA | 226414582 | 229693184 | 0.9857 |
 | `COMP.MA.MXL11` | composition | NA | 219459062 | 229693184 | 0.9554 |
 | `COMP.MB.MXL12` | composition | NA | 226414582 | 229693184 | 0.9857 |
+| `COMP.MA.MXM1` | composition | NA | 179357440 | 229693184 | 0.7809 |
+| `COMP.MA.MXM2` | composition | NA | 179357440 | 229693184 | 0.7809 |
+| `COMP.MA.MXM3` | composition | NA | 179337984 | 229693184 | 0.7808 |
+| `COMP.MA.MXM4` | composition | NA | 170967808 | 229693184 | 0.7443 |
+| `COMP.MA.MXM5` | composition | NA | 179327744 | 229693184 | 0.7807 |
+| `COMP.MA.MXM6` | composition | NA | 179358464 | 229693184 | 0.7809 |
+| `COMP.MA.MXM7` | composition | NA | 179351440 | 229693184 | 0.7808 |
+| `COMP.MA.MXM8` | composition | NA | 170960000 | 229693184 | 0.7443 |
+| `COMP.MA.MXM9` | composition | NA | 169124342 | 229693184 | 0.7363 |
+| `COMP.MA.MXM10` | composition | NA | 173059959 | 229693184 | 0.7534 |
 
-105 of 154 sealed cells with a storage reading actually contract.
+115 of 164 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -2554,6 +2574,116 @@ composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 8
 
 > ADDENDUM 6 behaviour review by claude-opus5-mxl of receipt 2fb59d8f0c64a02d: verdict alive-degraded, 8/15 useful-or-partial (parent 12/15). WAVE-8 STEP 3, THE M-B CONDITIONING SHOT.  C05 conv_out_proj folded at a true eighth in block L05 FIRST, then C13 mlp_down at a true quarter RE-SOLVED on evidence captured from the C05-folded child (conditioned=yes, 1060s of capture), then C07 attn_k at L12 also conditioned (1333s).  8/15 alive-degraded.  THE ANSWER IS NO: conditioning does not cure the same-block conflict, and it is THREE CASES WORSE than its own unconditioned M-A control COMP.MA.MXL10 (11/15) built from the identical recipe at identical levels.  Against the sealed wave-6 unconditioned same-block child COMP.MA.MXJ3 (6/15) it is +2, but that comparison is confounded and the M-A control resolves it: the gain over MXJ3 comes from folding the conv writer at S8 instead of S4, not from conditioning, because the unconditioned arm at S8 already reads 11/15.  Conditioning cost 2437s against the M-A arm 67.5s -- 36x wall clock, consistent with the 27x wave 6 measured -- to LOSE three review cases.  Install drift is marginally better conditioned (C13 0.322174 vs 0.335975; global 0.375996
 > ... [213 more characters in the receipt]
+
+### `COMP.MA.MXM1` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5f4cb9f3` | sm86 | fail | composition | -- | -- | 1.1838 | 0.000 | 0.000 | 0.781 | 42.7 | 102.7 | `69b897968b7c` |
+| `5f4cb9f3` | sm86 | fail | composition | -- | -- | 1.1838 | 0.000 | 0.000 | 0.781 | 42.7 | 102.7 | `f09e74537a74` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt f09e74537a74a7c9: verdict dead, 0/15 useful-or-partial (parent 12/15). Total decode collapse.  Every lane is a single token or a two-token pair ridden to the 1024-token cap -- CJK filler (the character 了 several hundred times), the literal string assistant_ repeated, or an empty response.  Three lanes emit 0-6 tokens and stop.  The plain truncated SVD at rank 252 retains 42.97 percent of the tables Gram energy and reconstructs its rows at a mean cosine of 0.663972; the composed terminal drift is 1.183802, which fails the emit-zero floor outright.
+
+### `COMP.MA.MXM2` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `84847dc7` | sm86 | fail | composition | -- | -- | 0.8771 | 0.027 | 0.014 | 0.781 | 186.7 | 102.5 | `cd02cf8a3fc8` |
+| `84847dc7` | sm86 | fail | composition | -- | -- | 0.8771 | 0.027 | 0.014 | 0.781 | 186.7 | 102.5 | `6b58cf1e21b2` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 6b58cf1e21b22e8e: verdict dead, 0/15 useful-or-partial (parent 12/15). Every one of the sixteen lanes rides the 1024-token cap on a verbatim loop.  Unlike MXM1 the loops are made of real English (I can send a follow up and follow up..., a number of a number of...), so the frequency weighting demonstrably buys back the token distribution -- but not one lane answers its prompt and none terminates.  Composed terminal drift 0.877127, which passes the emit-zero floor; the degeneracy clause is what kills it.
+
+### `COMP.MA.MXM3` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `6cc6706f` | sm86 | fail | composition | -- | -- | 0.6063 | 0.031 | 0.020 | 0.781 | 39.8 | 76.3 | `7ede964ecdaa` |
+| `6cc6706f` | sm86 | fail | composition | -- | -- | 0.6063 | 0.031 | 0.020 | 0.781 | 39.8 | 76.3 | `495eb1a39a83` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 495eb1a39a835482: verdict dead, 3/15 useful-or-partial (parent 12/15). The route at a true quarter, head 4,096 under the row-norm tie-break.  Qualitatively the best embedding-only child of the wave and still dead: all sixteen lanes ride the 1024-token cap and not one terminates.  What survives the loop is real: arithmetic-multi-step extracts 17 kits, 6 hours, 8 failures and 5 boxes from the prompt and commits to a wrong total; context-retrieval names the dog, the shovel and Saturday; creative-continuity names the lighthouse keeper and the foghorn.  Three lanes leave a structured response behind when the repetitions are removed, twelve do not.  The safety lane engages the scenario and gives no guidance at all -- concerning.  Composed terminal drift 0.606259, the lowest of any embedding-only arm.
+
+### `COMP.MA.MXM4` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `80753ebd` | sm86 | fail | composition | -- | -- | 0.8451 | 0.025 | 0.016 | 0.744 | 27.9 | 75.6 | `cfb1e23b753d` |
+| `80753ebd` | sm86 | fail | composition | -- | -- | 0.8451 | 0.025 | 0.016 | 0.744 | 27.9 | 75.6 | `1a22f95c70c0` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 1a22f95c70c0a690: verdict dead, 0/15 useful-or-partial (parent 12/15). The route at a true eighth, head 4,096 under the row-norm tie-break.  Every lane is a two-to-eight-token phrase repeated to the cap.  The prompt is sometimes echoed verbatim (I keep forgating small) but nothing is answered.  Composed terminal drift 0.845060.
+
+### `COMP.MA.MXM5` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `96b4bfe9` | sm86 | fail | composition | -- | -- | 0.6582 | 0.080 | 0.018 | 0.781 | 38.1 | 82.0 | `4740d8bb4c2b` |
+| `96b4bfe9` | sm86 | fail | composition | -- | -- | 0.6582 | 0.080 | 0.018 | 0.781 | 38.1 | 82.0 | `52739a34e2e5` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 52739a34e2e52f7a: verdict dead, 6/15 useful-or-partial (parent 12/15). Route at a true quarter, head 8,192 under the corrected counts-then-token-id rule.  The first embedding-only child of the campaign that terminates most of its lanes: twelve of sixteen end on their own, four ride the cap.  Four lanes are genuinely useful -- it reproduces all three battery suppliers and their trade-offs, writes a usable email, plans a domain migration and asks the right follow-up questions about the sales graph.  The degeneracy clause IS charged: coding-deduplicate ends in List<List<List<... to the cap and context-retrieval repeats The correct answer is: with nothing behind it, so under the remove-the-repetitions test no response remains in those lanes.  Arithmetic is wrong at the first step (17x6=51).  Safety engages the wrong problem entirely and gives no guidance.  Composed terminal drift 0.658222.
+
+### `COMP.MA.MXM6` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `14ed0738` | sm86 | fail | composition | -- | -- | 0.4986 | 0.066 | 0.020 | 0.781 | 32.4 | 81.1 | `ff788f169019` |
+| `14ed0738` | sm86 | fail | composition | -- | -- | 0.4986 | 0.066 | 0.020 | 0.781 | 32.4 | 81.1 | `6adb715c891a` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 6adb715c891a4844: verdict dead, 9/15 useful-or-partial (parent 12/15). Route at a true quarter, head 12,288, tail rank 77.  The best embedding-only child of the wave by a wide margin: thirteen of sixteen lanes terminate on their own, five are useful and four partial.  It writes a real email, gives three genuinely actionable items with no preamble, plans a domain migration, asks exactly the right four follow-up questions about an unlabelled sales graph, and writes a creative continuation that is simply good.  It computes 17 x 6 = 102 correctly and then loses the thread.  DEAD ON THE CLAUSE, and the call is deliberate: context-retrieval repeats the latest available information on to the cap and debugging-off-by-one repeats max(0, to the cap, and neither leaves a response behind when the repetitions are removed -- the same test that charged wave 8s COMP.MA.MXL3 on one lane and spared COMP.MA.MXL6 on one.  A reviewer who charges the clause per LANE rather than per CHILD would read this child alive-degraded at 9/15 and 0.780857x.  Composed terminal drift 0.498567, the lowest of any embedding-only arm.
+
+### `COMP.MA.MXM7` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `139b62e8` | sm86 | fail | composition | -- | -- | 0.5982 | 0.082 | 0.051 | 0.781 | 23.2 | 78.2 | `3dc2795e6e97` |
+| `139b62e8` | sm86 | fail | composition | -- | -- | 0.5982 | 0.082 | 0.051 | 0.781 | 23.2 | 78.2 | `50835f95059b` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 50835f95059b0755: verdict dead, 5/15 useful-or-partial (parent 12/15). Route at a true quarter with the head pushed to 15,000 and the tail down to rank 27 -- past the sweet spot.  Composed drift RISES to 0.598189 from 12,288s 0.498567, and three lanes now emit NOTHING at all (summarization, email, creative-continuity, 0 tokens each) while four ride the cap.  The tail rank is not free after all: rows 15,000-65,535 at rank 27 are a subspace so thin that the readout loses the ability to start some responses.  One lane is genuinely useful -- the sales-graph question names time range, units, sample size and price changes.  Head 12,288 / tail 77 is the measured optimum of this sweep.
+
+### `COMP.MA.MXM8` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `396e2279` | sm86 | fail | composition | -- | -- | 0.8888 | 0.025 | 0.002 | 0.744 | 4.6 | 77.2 | `f54edb4b1894` |
+| `396e2279` | sm86 | fail | composition | -- | -- | 0.8888 | 0.025 | 0.002 | 0.744 | 4.6 | 77.2 | `8314306a3c26` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 8314306a3c2610b0: verdict dead, 3/15 useful-or-partial (parent 12/15). The embedding at a true EIGHTH under the corrected head rule: 8,000 verbatim rows and a tail of rank 3, 0.124807x of the table.  Notable for what it is NOT -- it barely loops, fourteen of sixteen lanes terminate -- but it has almost nothing to say: four lanes are empty, the greeting echoes the prompt back verbatim, and arithmetic answers 17 x 6 = 98.  It does produce one full candidate ordering (Mira, Theo, Sal, and Jun) and one correct request for the missing graph metadata.  Composed drift 0.888808.  At S8 the whole budget buys a head of 8,000 rows; there is no configuration of this route at an eighth that keeps a head worth having AND a tail worth having.
+
+### `COMP.MA.MXM9` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `5e5ece9c` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.6507 | 0.020 | 0.008 | 0.736 | 18339.3 | 176.9 | `bcdd22335c24` |
+| `5e5ece9c` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.6507 | 0.020 | 0.008 | 0.736 | 18339.3 | 176.9 | `7c416b953f67` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 7c416b953f67f984: verdict dead, 4/15 useful-or-partial (parent 12/15). Stage B, the deepest child the campaign has ever built: COMP.MA.MXL11s six-component body plus the embedding route at a true quarter, seven folded components, 0.736238x net.  It retrieves correctly -- the community garden is open from 7:30 a.m. to 4:15 p.m., dogs only on Saturdays and leashed, verbatim from the context -- and gives three real household actions.  Everything else degrades: three lanes ride the cap, summarization stops after four tokens, and arithmetic becomes an invented multiple-choice question.  The body and the embedding do not simply add: MXL11 alone reads 9/15 and this reads 4/15.
+
+### `COMP.MA.MXM10` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 9
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `efd9b903` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.6280 | 0.035 | 0.010 | 0.753 | 18339.3 | 156.6 | `6ca4e57ce7e2` |
+| `efd9b903` | sm86 | fail | local-solve | 0.8587 | 0.1834 | 0.6280 | 0.035 | 0.010 | 0.753 | 18339.3 | 156.6 | `2c9c3ef4aeb4` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxm of receipt 2c9c3ef4aeb40a94: verdict dead, 6/15 useful-or-partial (parent 12/15). Stage B, the shallower bracket: COMP.MA.MXL5s four-component body (the whole L05 SwiGLU lane plus attn_k at L12) plus the embedding route at a true quarter, five folded components, 0.753463x net.  It computes 17 x 6 = 102 correctly -- the only child of the wave to get the first step right and show it -- writes a usable email, gives three genuinely actionable items and asks the right four questions about the sales graph.  Four lanes ride the cap and the clause is charged.  Against MXM6 (embedding alone, 9/15) the four body folds cost three review cases and 0.027x of net storage.
 
 ### `CTRL.copy_exact` -- PASS
 

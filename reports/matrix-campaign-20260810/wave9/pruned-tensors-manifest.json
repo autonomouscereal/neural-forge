@@ -1,0 +1,65 @@
+{
+ "conditioned_evidence_tree": {
+  "bytes": 0,
+  "path": null,
+  "reason": "wave 9 ran no M-B arm.  Three waves of evidence say conditioning is dead (NOTES-MX-L 5: 36x the wall clock and three review cases WORSE than its own unconditioned control), so no conditioned capture was spent and there is none to prune."
+ },
+ "deleted": [
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXM1",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave9/cells/COMP.MA.MXM1/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from the deployment named in this cell's own receipt code_identity (neural-forge-matrix-a395e024, -ea4d06e3 or -beb699f2; all three tarballs are retained under /mnt/ai_data/neural-forge-matrix/wave9/) with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxm/recipes/) on a pinned sm86 RTX 3090.  The composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "43ac8426f72dfd3348776c1c6312bc94c36f92f98008fd92deedcffa38c20792",
+   "sha256": "43ac8426f72dfd3348776c1c6312bc94c36f92f98008fd92deedcffa38c20792"
+  },
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXM2",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave9/cells/COMP.MA.MXM2/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from the deployment named in this cell's own receipt code_identity (neural-forge-matrix-a395e024, -ea4d06e3 or -beb699f2; all three tarballs are retained under /mnt/ai_data/neural-forge-matrix/wave9/) with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxm/recipes/) on a pinned sm86 RTX 3090.  The composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "71e0d58680106dce9f4f2879775f0df1f0c0c4d7df8d6f2cb69a0df8c0d45071",
+   "sha256": "71e0d58680106dce9f4f2879775f0df1f0c0c4d7df8d6f2cb69a0df8c0d45071"
+  },
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXM3",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave9/cells/COMP.MA.MXM3/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from the deployment named in this cell's own receipt code_identity (neural-forge-matrix-a395e024, -ea4d06e3 or -beb699f2; all three tarballs are retained under /mnt/ai_data/neural-forge-matrix/wave9/) with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxm/recipes/) on a pinned sm86 RTX 3090.  The composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "e77758758e6f2365a5fa2cdda6a1af63725273977e8b2c5128793694f3eab0a9",
+   "sha256": "e77758758e6f2365a5fa2cdda6a1af63725273977e8b2c5128793694f3eab0a9"
+  },
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXM4",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave9/cells/COMP.MA.MXM4/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from the deployment named in this cell's own receipt code_identity (neural-forge-matrix-a395e024, -ea4d06e3 or -beb699f2; all three tarballs are retained under /mnt/ai_data/neural-forge-matrix/wave9/) with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxm/recipes/) on a pinned sm86 RTX 3090.  The composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "156d6e9eadf12277c22e7928900e7263b874f1ffbb50eb33c3f1a4aebda8b5f4",
+   "sha256": "156d6e9eadf12277c22e7928900e7263b874f1ffbb50eb33c3f1a4aebda8b5f4"
+  },
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXM7",
+   "digest_matches_receipt": true,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave9/cells/COMP.MA.MXM7/composed-child-tensors.pt",
+   "re_derive": "Re-derivable by re-running experiments/run_lfm2_matrix_composition.py from the deployment named in this cell's own receipt code_identity (neural-forge-matrix-a395e024, -ea4d06e3 or -beb699f2; all three tarballs are retained under /mnt/ai_data/neural-forge-matrix/wave9/) with this cell's sealed recipe (reports/matrix-campaign-20260810/run/mxm/recipes/) on a pinned sm86 RTX 3090.  The composition receipt retains every installed tensor's sha256 under composition.components[].installed_tensor_digests and the file digest under composition.composed_child_tensors_sha256, so a re-derivation is checkable against the seal rather than trusted.  The receipt, diagnostics, state digest and full frozen-review dossier of every child below are retained and committed to the repository.",
+   "receipt_declared_sha256": "9029e6dbe0ec2d177aaad640ccf151954b4f6926c95c60639e198440203cf8e5",
+   "sha256": "9029e6dbe0ec2d177aaad640ccf151954b4f6926c95c60639e198440203cf8e5"
+  }
+ ],
+ "deleted_bytes": 1342186330,
+ "deleted_file_count": 5,
+ "kept": {
+  "COMP.MA.MXM10": "the shallower stage-B bracket (0.753440x, four body folds plus the embedding); the body-and-embedding interaction needs both brackets",
+  "COMP.MA.MXM5": "the head-sweep neighbour at 8,192; the claim that 12,288 is the optimum is a comparison and needs the point either side of it",
+  "COMP.MA.MXM6": "the wave's headline -- embedding route at a true quarter, head 12,288 / tail rank 77, 9/15 against a 12/15 parent at 0.780861x, and the measured optimum of the head/tail sweep",
+  "COMP.MA.MXM8": "the only S8 arm under the corrected head rule, and the deepest single-component storage the wave sealed (0.124807 of the table)",
+  "COMP.MA.MXM9": "the deepest child the campaign has ever built: 0.736305x, seven folded components, MXL11's body plus the embedding route"
+ },
+ "schema": "neural-forge-lfm2-matrix-pruned-tensors-manifest-v1",
+ "wave": 9
+}
