@@ -374,6 +374,10 @@ LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS = (
 LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE = 1_933_888
 LFM2_CARRIER_TARGET_ROWS = 4_096
 LFM2_CARRIER_HIDDEN_SIZE = LFM2_CARRIER_EXACT_4X_COUNTED_ABI.hidden_size
+DEFAULT_DENSE_HETEROGENEOUS_ATTENTION_HEAD_OPTIONS = (
+    (12, 6, 64),
+    (16, 8, 64),
+)
 LFM2_CARRIER_SMOKE_MAXIMUM_NEW_TOKENS = 2
 LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS = 1_024
 LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS = 2_048
@@ -1029,6 +1033,39 @@ def _parse_autoregressive_hankel_future_lags(value: str) -> tuple[int, ...]:
     return lags
 
 
+def _parse_dense_attention_head_option(value: str) -> tuple[int, int, int]:
+    """Parse one Q,KV,D attention topology added to the legacy option set."""
+
+    if not isinstance(value, str):
+        raise argparse.ArgumentTypeError(
+            "dense attention head options must use Q,KV,D integers."
+        )
+    parts = tuple(item.strip() for item in value.split(","))
+    try:
+        option = tuple(int(item) for item in parts)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "dense attention head options must use Q,KV,D integers."
+        ) from exc
+    if len(option) != 3:
+        raise argparse.ArgumentTypeError(
+            "dense attention head options must use Q,KV,D integers."
+        )
+    query_heads, key_value_heads, head_dim = option
+    if (
+        query_heads <= 0
+        or key_value_heads <= 0
+        or head_dim <= 0
+        or query_heads % key_value_heads
+        or head_dim % 2
+    ):
+        raise argparse.ArgumentTypeError(
+            "dense attention head options require positive Q,KV,D, divisible "
+            "Q/KV groups, and an even head dimension."
+        )
+    return query_heads, key_value_heads, head_dim
+
+
 def _file_sha256(path: Path, *, chunk_bytes: int = 8 * 1024**2) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1481,6 +1518,9 @@ class ProductionLfm2CatalogConfig:
     dense_heterogeneous_global_functional_rows_per_role: int = 2048
     dense_heterogeneous_hidden_size: int = 784
     dense_heterogeneous_target_parameters: int = 57_420_144
+    dense_heterogeneous_attention_head_options: tuple[
+        tuple[int, int, int], ...
+    ] = DEFAULT_DENSE_HETEROGENEOUS_ATTENTION_HEAD_OPTIONS
     dense_residual_basis_mode: str = "circuit_balanced"
     dense_autoregressive_hankel_future_lags: tuple[int, ...] = ()
     dense_autoregressive_hankel_state_ridge_fraction: float = (
@@ -2123,6 +2163,55 @@ class ProductionLfm2CatalogConfig:
                     "required_target_hidden_size",
                 ),
             )
+        raw_attention_options = self.dense_heterogeneous_attention_head_options
+        if not isinstance(raw_attention_options, (tuple, list)):
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_attention_head_options must be a sequence "
+                "of Q,KV,D integer tuples."
+            )
+        normalized_attention_options: list[tuple[int, int, int]] = []
+        for option in raw_attention_options:
+            if not isinstance(option, (tuple, list)) or len(option) != 3:
+                raise ProductionLfm2CatalogError(
+                    "dense_heterogeneous_attention_head_options must contain "
+                    "only Q,KV,D integer tuples."
+                )
+            if any(type(value) is not int for value in option):
+                raise ProductionLfm2CatalogError(
+                    "dense_heterogeneous_attention_head_options must contain "
+                    "only Q,KV,D integer tuples."
+                )
+            query_heads, key_value_heads, head_dim = option
+            if (
+                query_heads <= 0
+                or key_value_heads <= 0
+                or head_dim <= 0
+                or query_heads % key_value_heads
+                or head_dim % 2
+            ):
+                raise ProductionLfm2CatalogError(
+                    "dense_heterogeneous_attention_head_options require positive "
+                    "Q,KV,D, divisible Q/KV groups, and even head dimensions."
+                )
+            normalized_attention_options.append(
+                (query_heads, key_value_heads, head_dim)
+            )
+        if len(normalized_attention_options) < 2:
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_attention_head_options require at least "
+                "two distinct operator choices."
+            )
+        if len(set(normalized_attention_options)) != len(
+            normalized_attention_options
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_attention_head_options must be distinct."
+            )
+        object.__setattr__(
+            self,
+            "dense_heterogeneous_attention_head_options",
+            tuple(sorted(normalized_attention_options)),
+        )
         if self.dense_minimum_hidden_size % LFM2_DENSE_HIDDEN_SIZE_MULTIPLE:
             raise ProductionLfm2CatalogError(
                 "dense_minimum_hidden_size must be a multiple of eight."
@@ -3834,6 +3923,10 @@ class ProductionLfm2CatalogConfig:
                 "dense_heterogeneous_target_parameters": (
                     self.dense_heterogeneous_target_parameters
                 ),
+                "dense_heterogeneous_attention_head_options": [
+                    list(option)
+                    for option in self.dense_heterogeneous_attention_head_options
+                ],
                 "dense_residual_basis_mode": (
                     self.dense_residual_basis_mode
                 ),
@@ -10321,6 +10414,9 @@ def _build_cached_global_heterogeneous_selection_input(
         "discover_exact_short_conv_writer_ranks": (
             config.dense_heterogeneous_factor_writer_rank_discovery
         ),
+        "attention_head_options": (
+            config.dense_heterogeneous_attention_head_options
+        ),
     }
     if selective_session is not None:
         frontier_kwargs["selective_session"] = selective_session
@@ -15484,6 +15580,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-attention-head-option",
+        action="append",
+        type=_parse_dense_attention_head_option,
+        default=list(DEFAULT_DENSE_HETEROGENEOUS_ATTENTION_HEAD_OPTIONS),
+        metavar="Q,KV,D",
+        help=(
+            "Add one canonical attention topology to the two legacy d64 "
+            "global-frontier choices. May be repeated; Q must be divisible "
+            "by KV and D must be even."
+        ),
+    )
+    parser.add_argument(
         "--dense-residual-basis-mode",
         choices=("weight_complete", "circuit_balanced"),
         default="circuit_balanced",
@@ -16553,6 +16661,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_heterogeneous_target_parameters=(
             args.dense_heterogeneous_target_parameters
+        ),
+        dense_heterogeneous_attention_head_options=tuple(
+            args.dense_attention_head_option
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
         dense_autoregressive_hankel_future_lags=(

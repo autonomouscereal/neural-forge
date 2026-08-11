@@ -391,6 +391,13 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.dense_macro_cell_attractor_maximum_records == 4
     assert config.dense_macro_cell_attractor_maximum_steps == 8
     assert config.dense_attention_consumer_mode == "output-only"
+    assert config.dense_heterogeneous_attention_head_options == (
+        (12, 6, 64),
+        (16, 8, 64),
+    )
+    assert config.identity()["target"][
+        "dense_heterogeneous_attention_head_options"
+    ] == [[12, 6, 64], [16, 8, 64]]
     assert config.dense_attention_geometry_risk_enabled is False
     assert config.identity()["target"][
         "dense_attention_geometry_allocator"
@@ -458,6 +465,7 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "229,349,120" in help_text
     assert "--dense-vocabulary-margin-candidate-gate" in help_text
     assert "--dense-streaming-vocabulary-margin-v2" in help_text
+    assert "--dense-attention-head-option" in help_text
     assert "--dense-macro-cell-attractor-gate" in help_text
     assert "--dense-attention-score-candidate-gate" in help_text
     assert "--dense-closed-loop-performance-metrics-diagnostic-only" in help_text
@@ -466,6 +474,84 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--required-target-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
     assert "--child-replay-phase-cache-root" in help_text
+
+
+def test_dense_attention_head_option_cli_is_canonical_and_identity_bound(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    baseline = MODULE.config_from_args(
+        parser.parse_args(_required_args(tmp_path))
+    )
+    with_d24 = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-attention-head-option",
+                "16,8,24",
+            ]
+        )
+    )
+
+    assert baseline.dense_heterogeneous_attention_head_options == (
+        (12, 6, 64),
+        (16, 8, 64),
+    )
+    assert with_d24.dense_heterogeneous_attention_head_options == (
+        (12, 6, 64),
+        (16, 8, 24),
+        (16, 8, 64),
+    )
+    baseline_identity = baseline.identity()
+    d24_identity = with_d24.identity()
+    assert d24_identity["target"][
+        "dense_heterogeneous_attention_head_options"
+    ] == [[12, 6, 64], [16, 8, 24], [16, 8, 64]]
+    baseline_without_options = json.loads(json.dumps(baseline_identity))
+    d24_without_options = json.loads(json.dumps(d24_identity))
+    del baseline_without_options["target"][
+        "dense_heterogeneous_attention_head_options"
+    ]
+    del d24_without_options["target"][
+        "dense_heterogeneous_attention_head_options"
+    ]
+    assert baseline_without_options == d24_without_options
+    assert MODULE.canonical_sha256(baseline_identity) != (
+        MODULE.canonical_sha256(d24_identity)
+    )
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (((16, 8, 64),), "at least two distinct"),
+        (
+            ((12, 6, 64), (12, 6, 64)),
+            "must be distinct",
+        ),
+        (
+            ((12, 6, 64), (16, 8, 23)),
+            "even head dimensions",
+        ),
+        (
+            ((12, 5, 64), (16, 8, 64)),
+            "divisible Q/KV groups",
+        ),
+    ],
+)
+def test_dense_attention_head_options_refuse_noncanonical_choices(
+    tmp_path,
+    options,
+    message,
+) -> None:
+    base = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_required_args(tmp_path))
+    )
+    with pytest.raises(MODULE.ProductionLfm2CatalogError, match=message):
+        replace(
+            base,
+            dense_heterogeneous_attention_head_options=options,
+        )
 
 
 def test_whole_output_cli_limit_is_optional_assertion_independent_of_manual_review(
@@ -5642,6 +5728,11 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
         dense_heterogeneous_factor_writer_rank_discovery=True,
         dense_heterogeneous_global_functional_rows_per_role=96,
         dense_heterogeneous_target_parameters=123_456,
+        dense_heterogeneous_attention_head_options=(
+            (12, 6, 64),
+            (16, 8, 24),
+            (16, 8, 64),
+        ),
     )
     parent_model = SimpleNamespace(
         config=SimpleNamespace(
@@ -5709,6 +5800,11 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     assert kwargs["minimum_hidden_size"] == 32
     assert kwargs["maximum_functional_rows_per_role"] == 96
     assert kwargs["discover_exact_short_conv_writer_ranks"] is True
+    assert kwargs["attention_head_options"] == (
+        (12, 6, 64),
+        (16, 8, 24),
+        (16, 8, 64),
+    )
     assert kwargs["selective_session"] is selective_session
     assert kwargs["retained_parent_rows"] is retained_rows
     assert kwargs["defer_evidence_cache_miss"] is True
