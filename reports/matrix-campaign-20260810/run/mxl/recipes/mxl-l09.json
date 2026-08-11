@@ -1,0 +1,211 @@
+{
+ "block_assignment": {
+  "allowed_deliberately": false,
+  "blocks": {
+   "L05": {
+    "block_exclusive": true,
+    "folded": [
+     "C05.T8.S8.L05"
+    ],
+    "kinds": [
+     "short_conv"
+    ],
+    "lane_count": 1,
+    "lanes": [
+     "operator (writes operator.output, upstream of the FFN norm)"
+    ]
+   },
+   "L09": {
+    "block_exclusive": true,
+    "folded": [
+     "C05.T8.S8.L09"
+    ],
+    "kinds": [
+     "short_conv"
+    ],
+    "lane_count": 1,
+    "lanes": [
+     "operator (writes operator.output, upstream of the FFN norm)"
+    ]
+   },
+   "L12": {
+    "block_exclusive": true,
+    "folded": [
+     "C07.T5.S4.L12"
+    ],
+    "kinds": [
+     "full_attention"
+    ],
+    "lane_count": 1,
+    "lanes": [
+     "operator (writes operator.output, upstream of the FFN norm)"
+    ]
+   }
+  },
+  "collision_reason": null,
+  "collisions": []
+ },
+ "components": [
+  {
+   "cell_id": "C05.T8.S8.L05",
+   "component_id": "C05",
+   "evidence_cache": "L05-C05",
+   "evidence_endpoints": [
+    "operator.output",
+    "residual.post_layer",
+    "residual.post_operator",
+    "residual.pre",
+    "short_conv.context"
+   ],
+   "isolation": {
+    "campaign_wave": 8,
+    "composed_evidence": "wave-7: 13/15 alive-parent-band in COMP.MA.MXK14, one case ABOVE the same-process parent control, install drift 0.223583, condition 447.8 -- better than its own S4 arm (NOTES-MX-K \u00a74).",
+    "measured_at_this_site": false,
+    "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has.  Composed evidence: wave-7: 13/15 alive-parent-band in COMP.MA.MXK14, one case ABOVE the same-process parent control, install drift 0.223583, condition 447.8 -- better than its own S4 arm (NOTES-MX-K \u00a74)."
+   },
+   "selection_reason": "wave-8 block-exclusive assembly: C05 (conv_out_proj) under T8 at S8, added at site L05 in the operator (writes operator.output, upstream of the FFN norm) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+   "weight_keys": [
+    "model.layers.5.conv.out_proj.weight"
+   ],
+   "x4_width": 127
+  },
+  {
+   "cell_id": "C05.T8.S8.L09",
+   "component_id": "C05",
+   "evidence_cache": "L09-C05",
+   "evidence_endpoints": [
+    "operator.output",
+    "residual.post_layer",
+    "residual.post_operator",
+    "residual.pre",
+    "short_conv.context"
+   ],
+   "isolation": {
+    "campaign_wave": 8,
+    "composed_evidence": null,
+    "measured_at_this_site": false,
+    "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+   },
+   "selection_reason": "wave-8 block-exclusive assembly: C05 (conv_out_proj) under T8 at S8, added at site L09 in the operator (writes operator.output, upstream of the FFN norm) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+   "weight_keys": [
+    "model.layers.9.conv.out_proj.weight"
+   ],
+   "x4_width": 127
+  },
+  {
+   "cell_id": "C07.T5.S4.L12",
+   "component_id": "C07",
+   "evidence_cache": "L12-C07",
+   "evidence_endpoints": [
+    "attention.k_linear",
+    "operator.input",
+    "residual.post_layer",
+    "residual.post_operator",
+    "residual.pre"
+   ],
+   "isolation": {
+    "campaign_wave": 5,
+    "composed_evidence": null,
+    "measured_at_this_site": true,
+    "parent_parameter_count": 524288,
+    "receipt_path": "/mnt/ai_data/neural-forge-matrix/cells/C07.T5.S4.L12/cell-receipt.json",
+    "receipt_schema": "neural-forge-lfm2-matrix-cell-receipt-v1",
+    "receipt_sha": "fe6fdf0442b0dd00bc30cc20ac494fbc66c6c0f4cd87db4533aaa537b6463734",
+    "receipt_sha_sealed": "adbdf39419407001a2792658a6cb8c32320beecb09af4971ab513977bd480df5",
+    "review_useful_or_partial": 12,
+    "review_verdict": "alive-parent-band",
+    "storage_realized_ratio": 0.2490081787109375,
+    "stored_parameter_count": 130552
+   },
+   "selection_reason": "wave-8 assembly base: C07.T5.S4.L12 is the wave-5 (NOTES-MX-I \u00a75) survivor at attn_k, sealed 12/15 alive-parent-band at a storage-defined S4, site-scoped under ADDENDUM 5 rule 2-S.",
+   "weight_keys": [
+    "model.layers.12.self_attn.k_proj.weight"
+   ],
+   "x4_width": 121
+  }
+ ],
+ "description": "Wave-8 C05 S8 ladder rung 2, on the COMP.MA.MXK14 base (13/15).  Rung 1 (L07, COMP.MA.MXL2) read 9/15, four cases down, so the greedy rule backs off L07 and tries the next conv block on the SAME base rather than stacking on a rung that lost four cases.",
+ "install_order": [
+  "C05.T8.S8.L05",
+  "C05.T8.S8.L09",
+  "C07.T5.S4.L12"
+ ],
+ "passed_through": [
+  {
+   "component": "token_interface_in",
+   "component_id": "C01",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "token_interface_out",
+   "component_id": "C02",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "conv_in_proj",
+   "component_id": "C03",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "conv_kernel",
+   "component_id": "C04",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_q",
+   "component_id": "C06",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_v",
+   "component_id": "C08",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_o",
+   "component_id": "C09",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "attn_per_head",
+   "component_id": "C10",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "mlp_gate",
+   "component_id": "C11",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "mlp_up",
+   "component_id": "C12",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "mlp_down",
+   "component_id": "C13",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "norms",
+   "component_id": "C14",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  },
+  {
+   "component": "lm_head",
+   "component_id": "C15",
+   "reason": "not selected by the wave-8 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+  }
+ ],
+ "ranking": "behaviour-first-greedy-block-exclusive",
+ "schema": "neural-forge-lfm2-matrix-composition-recipe-v1",
+ "selection_policy": {
+  "admission": "ADDENDUM 6 \u00a76.1: a component is admitted on its sealed frozen-review verdict, not on free-run token match, which the addendum retires to a diagnostic column.",
+  "block_exclusivity": "NOTES-MX-K \u00a72.1: a block hosts at most one folded LANE.  The operator lane (short_conv / full_attention) writes operator.output upstream of the block's FFN norm; the feed-forward lane reads that norm.  Folding both in one block solves the MLP against a residual the operator fold has already moved -- measured at -3 review cases for mlp_gate and -4 for mlp_down against the same block's conv writer, while the two MLP tensors together in one block cost nothing.  Two components in the SAME lane are therefore allowed; two lanes are refused.",
+  "install_order": "topological, input side -> output side; within a layer conv -> attention -> mlp -> norms (matrix_composition.install_order_key)",
+  "ranking": "greedy, block-exclusive; a rung is kept only if the composed child stays alive-degraded or better (>= 8/15) and is not dead by the degeneracy clause",
+  "site_scope": "ADDENDUM 5 rule 2-S under ADDENDUM 7's widened registry: a site that schema v2 registers has NO evidence attached to it by being registered.  Every rung is measured or it is nothing.",
+  "storage_floor": "Cyril's hard rule: every folded component stores at or below a true quarter (S4) or eighth (S8) of its OWN parent tensor.  No sub-4x level is solved, sealed, or used as a fallback; a cell whose technique cannot express 4x at its site is dropped, never folded shallower."
+ },
+ "variant": "MXL.L09"
+}

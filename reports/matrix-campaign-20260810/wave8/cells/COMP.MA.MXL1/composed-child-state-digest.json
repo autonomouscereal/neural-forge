@@ -1,0 +1,21 @@
+{
+  "cell_id": "COMP.MA.MXL1",
+  "install_order": [
+    "C13.T8.S4.L04",
+    "C05.T8.S8.L05",
+    "C07.T5.S4.L12"
+  ],
+  "installed_tensor_digests": {
+    "C05.T8.S8.L05": [
+      "model.layers.5.conv.out_proj.weight=904193e77afd45d93b3a0f38c6bf24aea0d0a4f6e06b99c1f923797f189362a2"
+    ],
+    "C07.T5.S4.L12": [
+      "model.layers.12.self_attn.k_proj.weight=ce2f8d9a3e8dad6ebf9f2348704d73f3ddde2ca3b86a62cd77deded68071f2ee"
+    ],
+    "C13.T8.S4.L04": [
+      "model.layers.4.feed_forward.w2.weight=699820c557beefdcce28e16251b681abb45eb127e6f9994dde1f19c96cf3babe"
+    ]
+  },
+  "kind": "composed-child-tensor-digests",
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1"
+}
