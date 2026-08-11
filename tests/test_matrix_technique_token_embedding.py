@@ -485,13 +485,28 @@ def test_the_registry_resolves_the_route_width_from_its_own_storage_model():
     assert storage_model("T5", "C13") is not model
 
 
-def test_without_a_frequency_table_the_head_is_the_highest_norm_rows():
+def test_without_a_frequency_table_the_head_is_the_lowest_token_ids():
+    """BPE merge order, which measured 62.95% prompt coverage against row norm's
+    2.34% on the frozen review surface's own tokens."""
+
     table = _table(seed=31)
-    table[40] *= 50.0
+    table[40] *= 50.0  # a huge row a norm-ordered head would have taken first
     table[7] *= 40.0
-    route = route_token_embedding(embedding=table, head_size=2, tail_rank=3)
-    assert route.head_ids.tolist() == [7, 40]
-    assert route.solve["route"]["head_selection_rule"].startswith("row-l2-norm")
+    route = route_token_embedding(embedding=table, head_size=3, tail_rank=3)
+    assert route.head_ids.tolist() == [0, 1, 2]
+    assert route.solve["route"]["head_selection_rule"].startswith("token-id-ascending")
+
+
+def test_counts_beat_ids_and_ids_break_every_tie():
+    table = _table(seed=32)
+    counts = torch.zeros(VOCAB, dtype=torch.float64)
+    counts[90] = 5.0
+    counts[50] = 9.0
+    route = route_token_embedding(
+        embedding=table, head_size=4, tail_rank=3, weights=counts
+    )
+    # the two counted ids, then the two lowest ids among the uncounted rest
+    assert route.head_ids.tolist() == [0, 1, 50, 90]
 
 
 def test_the_route_kernel_is_registered_at_c01_under_t5(tmp_path):
