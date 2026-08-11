@@ -125,6 +125,14 @@ class MatrixCellRunError(RuntimeError):
 #: must still void its cell loudly; only these four pre-registered category
 #: errors are exempt, and the exemption is visible in the sealed receipt.
 NO_PARENT_MATMUL_PREDICTOR: Mapping[str, str] = {
+    "C01": (
+        "the tied token embedding is a table lookup, not a linear map from a "
+        "sealed activation endpoint; C01's layout declares no input, write or "
+        "macrocell endpoint at all, so there is no held_input @ parent_weight.T "
+        "for the generic gate to run and no held-out write to score it against "
+        "(wave 9).  The cell rests on the composed forward, the free-run probe "
+        "and the frozen review, exactly as C03/C04/C10/C14 do."
+    ),
     "C03": (
         "conv_in_proj emits three stacked projection blocks (B/C/x) over one "
         "internal channel axis; the layout has no name for the stacked write "

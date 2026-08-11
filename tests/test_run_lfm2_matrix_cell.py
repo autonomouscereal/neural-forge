@@ -621,14 +621,34 @@ def test_the_void_components_are_a_closed_pre_registered_list_with_reasons():
 
     The exemption is keyed on the component id, not on catching the exception
     the generic gate happens to raise.  A shape mismatch for some *other*
-    reason must still void its cell loudly; only these four pre-registered
-    category errors are exempt, and each one carries the measurement that
-    established it.
+    reason must still void its cell loudly; only these pre-registered category
+    errors are exempt, and each one carries the measurement that established it.
+
+    **C01 joins the list in wave 9**, and it is the only member that was added
+    for a reason NOTES-MX-E did not measure: the other four are components whose
+    parent map exists but is not a single 2-D matmul, while the tied embedding
+    has no sealed activation boundary at all -- its layout declares no input,
+    write or macrocell endpoint, so there is nothing for the gate to be wrong
+    about.  Its reason cites the wave that added it rather than NOTES-MX-E,
+    which is why the citation check below is per-member.
     """
 
-    assert set(runner.NO_PARENT_MATMUL_PREDICTOR) == {"C03", "C04", "C10", "C14"}
+    assert set(runner.NO_PARENT_MATMUL_PREDICTOR) == {
+        "C01",
+        "C03",
+        "C04",
+        "C10",
+        "C14",
+    }
+    citations = {
+        "C01": "wave 9",
+        "C03": "NOTES-MX-E",
+        "C04": "NOTES-MX-E",
+        "C10": "NOTES-MX-E",
+        "C14": "NOTES-MX-E",
+    }
     for component, reason in runner.NO_PARENT_MATMUL_PREDICTOR.items():
-        assert "NOTES-MX-E" in reason
+        assert citations[component] in reason, component
         assert len(reason) > 80, component
     # C05-C09 and C11-C13 *are* single 2-D linear maps and keep the gate.
     for component in ("C05", "C06", "C07", "C08", "C09", "C11", "C12", "C13"):

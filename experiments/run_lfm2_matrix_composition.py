@@ -458,6 +458,54 @@ def _calibration_block(
     }
 
 
+class _GlobalComponentEvidence:
+    """The evidence a component with no site has, which is none.
+
+    C01's layout names no input, write or macrocell endpoint -- a tied embedding
+    table is a lookup, not a linear map from a sealed activation boundary -- so
+    there is no *site* to open an evidence cache for and no layer index to open
+    it at.  Handing the technique a real cache built at some arbitrary layer
+    would be worse than handing it nothing: it would let a kernel silently read
+    rows that have no relationship to what it folds.  So it gets this, which
+    satisfies the `MatrixCellEvidence` protocol and refuses every row access with
+    the reason, and the harness declares the calibration and boundary links
+    inapplicable rather than scoring them against endpoints that do not exist.
+    """
+
+    def __init__(self, component_id: str) -> None:
+        self._component_id = str(component_id)
+
+    @property
+    def endpoints(self) -> tuple[str, ...]:
+        return ()
+
+    @property
+    def selection_sha256(self) -> str:
+        return "0" * 64
+
+    @property
+    def fit_row_count(self) -> int:
+        return 0
+
+    @property
+    def heldout_row_count(self) -> int:
+        return 0
+
+    def _refuse(self, endpoint: str) -> Any:
+        raise MatrixCompositionRunError(
+            f"{self._component_id} is a global component with no sealed site "
+            f"endpoints; a kernel asked for {endpoint!r}.  If a technique at "
+            "this component needs activation evidence it needs a site, and the "
+            "layout has to name one."
+        )
+
+    def fit_rows(self, endpoint: str) -> Any:
+        return self._refuse(endpoint)
+
+    def heldout_rows(self, endpoint: str) -> Any:
+        return self._refuse(endpoint)
+
+
 def _boundary_block(
     *,
     cell: CellId,
@@ -467,6 +515,28 @@ def _boundary_block(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """The isolation runner's boundary stage, applied per component, verbatim."""
 
+    if spec.input_endpoint is None or spec.write_endpoint is None:
+        # A component with no sealed endpoints has no boundary to score.  Said
+        # once, here, rather than by letting `evidence.heldout_rows(None)` raise
+        # somewhere the receipt would read as an infrastructure failure.
+        return (
+            {
+                "applicable": False,
+                "local_solve_applicable": False,
+                "macrocell_endpoint": None,
+                "write_heldout_relL2": None,
+                "write_heldout_cos": None,
+                "post_operator_heldout_relL2": None,
+                "post_operator_heldout_cos": None,
+                "endpoint_band_le_0p4": None,
+                "inapplicable_reason": (
+                    f"{spec.component_id} declares no sealed input/write "
+                    "endpoint pair; there is no activation boundary at which "
+                    "this component's write is a nameable object."
+                ),
+            },
+            {},
+        )
     predict = result.predict or (
         lambda rows: rows @ result.installed_weights[spec.weight_keys[0]].T
     )
@@ -910,21 +980,48 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
                 )
 
             watchdog.stage(f"evidence-{index}-{step_cell.text}")
-            evidence, binding = cell_runner.load_site_evidence(
-                trace_cache_path=trace_cache_path,
-                layer_index=int(step_cell.layer_index),
-                endpoints=_endpoints_for(spec),
-                forced_decode_count=int(args.forced_decode_count),
-                fit_batch_limit=None,
-                heldout_batch_limit=None,
-                cache_directory=evidence_cache,
-                basis_phase_cache_root=None,
-                basis_phase_key_sha256=None,
-                basis_phase_hmac_key_file=None,
-                basis_phase_hmac_key_id=None,
-                evidence_split_manifest=split_manifest,
-                target_hidden_size=int(args.target_hidden_size),
-            )
+            if step_cell.layer_index is None:
+                # A GLOBAL-site component has no layer to open a site evidence
+                # cache at.  Wave 9's C01 is the first one the campaign has
+                # composed, and the honest thing is to hand its kernel an
+                # evidence object that refuses rather than a cache cut at some
+                # layer chosen for the runner's convenience.  The binding still
+                # names the parent base the run is scoped to, so the receipt
+                # says which evidence generation this cell belongs to even
+                # though it read none of its rows.
+                evidence = _GlobalComponentEvidence(step_cell.component)
+                binding = {
+                    "trace_cache_key": str(base_manifest.get("trace_cache_key")),
+                    "split_authority": "no-site-evidence-global-component",
+                    "evidence_split_manifest_sha256": str(
+                        base_manifest.get("manifest_sha256")
+                    ),
+                    "selection_sha256": None,
+                    "implementation_sha256": None,
+                    "evidence_cache_reused": False,
+                    "fit_rows": 0,
+                    "heldout_rows": 0,
+                }
+                _log(
+                    f"{step_cell.text}: GLOBAL site -- no per-site evidence "
+                    "cache is opened and none is read"
+                )
+            else:
+                evidence, binding = cell_runner.load_site_evidence(
+                    trace_cache_path=trace_cache_path,
+                    layer_index=int(step_cell.layer_index),
+                    endpoints=_endpoints_for(spec),
+                    forced_decode_count=int(args.forced_decode_count),
+                    fit_batch_limit=None,
+                    heldout_batch_limit=None,
+                    cache_directory=evidence_cache,
+                    basis_phase_cache_root=None,
+                    basis_phase_key_sha256=None,
+                    basis_phase_hmac_key_file=None,
+                    basis_phase_hmac_key_id=None,
+                    evidence_split_manifest=split_manifest,
+                    target_hidden_size=int(args.target_hidden_size),
+                )
 
             watchdog.stage(f"calibration-{index}-{step_cell.text}")
             calibration = _calibration_block(
