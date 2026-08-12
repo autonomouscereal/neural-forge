@@ -1,0 +1,4 @@
+preflight ok: GPU 0 -> 8.6 NVIDIA GeForce RTX 3090
+=== 13:37:59 start COMP.MC.MXO1 mode=M-C recipe=mxo1-mxn3-verbatim.json gpu=0 -> /mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MC.MXO1
+=== 14:27:32 done  COMP.MC.MXO1 rc=1 :: [2026-08-12T14:27:30.196+00:00] sealed COMP.MC.MXO1 status=fail first_divergent=local-solve receipt=4778a5ebf987 in 2966.1s
+/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MC.MXO1

@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(
-    0, "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-fcd69d17/src"
+    0, "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-10a608d5/src"
 )
 
 import torch  # noqa: E402

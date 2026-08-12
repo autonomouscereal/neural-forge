@@ -14,7 +14,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-_DEPLOY = Path("/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-fcd69d17")
+_DEPLOY = Path("/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-10a608d5")
 if str(_DEPLOY / "src") not in sys.path:
     sys.path.insert(0, str(_DEPLOY / "src"))
 
@@ -29,7 +29,7 @@ ROOT = Path("/mnt/ai_data/neural-forge-matrix")
 LEDGER = ROOT / "ledger.jsonl"
 SEARCH = [ROOT / "cells", ROOT / "wave6" / "cells", ROOT / "wave7" / "cells",
           ROOT / "wave8" / "cells", ROOT / "wave9" / "cells",
-          ROOT / "wave11" / "cells"]
+          ROOT / "wave10" / "cells", ROOT / "wave11" / "cells"]
 
 
 def _index() -> dict[str, Path]:
@@ -54,7 +54,7 @@ def main() -> int:
     resolved = verified = failed = 0
     mandatory_ok = mandatory_bad = 0
     unresolved: list[str] = []
-    wave9 = [r for r in rows if int(r.get("campaign_wave", 0)) == 10]
+    wave9 = [r for r in rows if int(r.get("campaign_wave", 0)) == 11]
     w9_resolved = w9_verified = 0
     for row in rows:
         digest = str(row["receipt_sha"])
@@ -96,7 +96,7 @@ def main() -> int:
     dupes = [i for i, c in Counter(r["cell_instance_id"] for r in rows).items() if c > 1]
     print(f"duplicated cell_instance_ids     {len(dupes)} {dupes}")
     print()
-    print(f"wave-10 rows                      {len(wave9)}")
+    print(f"wave-11 rows                      {len(wave9)}")
     print(f"  resolve / verify               {w9_resolved} / {w9_verified}")
     print("  compute architectures          "
           f"{dict(Counter(r['compute_architecture'] for r in wave9))}")

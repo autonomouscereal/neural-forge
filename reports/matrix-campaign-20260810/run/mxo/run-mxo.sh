@@ -22,7 +22,7 @@
 #   comparison between two different experiments.
 #
 # New in wave 11:
-# * A NEW DEPLOYMENT, neural-forge-matrix-fcd69d17, because wave 11 changes
+# * A NEW DEPLOYMENT, neural-forge-matrix-10a608d5, because wave 11 changes
 #   source: ADDENDUM 9's mode M-C (the alternating joint co-solve), T8's
 #   relation_target_endpoint knob, and the ('T5','C01') double-registration fix.
 #   Cut with `git archive -c core.autocrlf=false`; the review surface was
@@ -37,12 +37,12 @@ set -u
 CELL="${1:?cell id required}"; MODE="${2:?mode required}"
 RECIPE="${3:?recipe file required}"; GPU="${4:?gpu index required}"
 
-D=/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-fcd69d17
+D=/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-10a608d5
 EV=/home/cereal/model-surgery-lab/artifacts/neural_forge_matrix_campaign_20260810/evidence
 M=/mnt/ai_data/neural-forge-matrix
 W=/home/cereal/nf-mxo
 PY=/home/cereal/model-surgery-lab/venv/bin/python
-REPO_HEAD=fcd69d17
+REPO_HEAD=10a608d5
 WAVE=11
 
 CAP=$(CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU $PY -c 'import torch; print("%d.%d" % torch.cuda.get_device_capability(0), torch.cuda.get_device_name(0))' 2>/dev/null)

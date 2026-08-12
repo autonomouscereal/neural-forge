@@ -22,7 +22,7 @@
 # of the review surface stops the wave rather than quietly regrading it.
 set -u
 CELL="${1:?cell id}"; DIR="${2:?cell directory}"; GPU="${3:?gpu}"
-D=/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-fcd69d17
+D=/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-10a608d5
 W=/home/cereal/nf-mxo
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 CAP=$(CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU $PY -c 'import torch; print("%d.%d" % torch.cuda.get_device_capability(0), torch.cuda.get_device_name(0))' 2>/dev/null)

@@ -5,7 +5,7 @@
 set -u
 CELL="${1:?cell}"; U="${2:?useful}"; P="${3:?partial}"; M="${4:?miss}"
 SMOKE="${5:?smoke}"; SAFETY="${6:?safety}"; DEGEN="${7:-no}"; NOTES="${8:-}"
-D=/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-fcd69d17
+D=/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-10a608d5
 W=/home/cereal/nf-mxo
 DIR=/mnt/ai_data/neural-forge-matrix/wave11/cells/$CELL
 FLAG=""

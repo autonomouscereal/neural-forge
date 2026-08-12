@@ -1,0 +1,20 @@
+=========== COMP.MA.MXO3 (wave11) ===========
+COMP.MA.MXO3: 7 folded tensors verified against the seal -> /mnt/ai_data/neural-forge-matrix/wave11/hf-children/COMP.MA.MXO3
+  net 0.729103x  model.safetensors e76ba081d8f5d53b
+bench COMP.MA.MXO3 rc=0
+|--------------|------:|------|-----:|---------------|---|-------:|---|--------|
+|arc_easy      |      1|none  |     0|acc            |↑  |  0.4300|±  |  0.0351|
+|              |       |none  |     0|acc_norm       |↑  |  0.4150|±  |  0.0349|
+|hellaswag     |      1|none  |     0|acc            |↑  |  0.3900|±  |  0.0346|
+|              |       |none  |     0|acc_norm       |↑  |  0.4300|±  |  0.0351|
+|lambada_openai|      1|none  |     0|acc            |↑  |  0.1650|±  |  0.0263|
+|              |       |none  |     0|perplexity     |↓  |527.9131|±  |130.6593|
+|piqa          |      1|none  |     0|acc            |↑  |  0.6050|±  |  0.0347|
+|              |       |none  |     0|acc_norm       |↑  |  0.5900|±  |  0.0349|
+|wikitext      |      2|none  |     0|bits_per_byte  |↓  |  1.4158|±  |   N/A  |
+|              |       |none  |     0|byte_perplexity|↓  |  2.6681|±  |   N/A  |
+|              |       |none  |     0|word_perplexity|↓  |190.1456|±  |   N/A  |
+|winogrande    |      1|none  |     0|acc            |↑  |  0.5450|±  |  0.0353|
+
+removed /mnt/ai_data/neural-forge-matrix/wave11/hf-children/COMP.MA.MXO3/model.safetensors (re-derivable from the sealed receipt)
+BENCH LANE COMPLETE

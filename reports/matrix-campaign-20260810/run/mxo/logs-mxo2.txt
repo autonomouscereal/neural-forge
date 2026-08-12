@@ -1,0 +1,4 @@
+preflight ok: GPU 4 -> 8.6 NVIDIA GeForce RTX 3090
+=== 13:45:26 start COMP.MA.MXO2 mode=M-A recipe=mxo-half.json gpu=4 -> /mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MA.MXO2
+=== 14:28:53 done  COMP.MA.MXO2 rc=1 :: [2026-08-12T14:28:50.447+00:00] sealed COMP.MA.MXO2 status=fail first_divergent=local-solve receipt=8e4b860618a2 in 2599.3s
+/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MA.MXO2

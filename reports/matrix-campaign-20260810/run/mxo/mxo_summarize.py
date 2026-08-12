@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-_DEPLOY = Path("/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-fcd69d17")
+_DEPLOY = Path("/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-10a608d5")
 if str(_DEPLOY / "src") not in sys.path:
     sys.path.insert(0, str(_DEPLOY / "src"))
 
