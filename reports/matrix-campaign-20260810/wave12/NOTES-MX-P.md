@@ -256,6 +256,38 @@ The three charged lanes are the greeting (rides *sleep* to the cap),
 `context-retrieval` (zero tokens) and `multi-turn-correction` (an empty
 `Meal 1A1..1A6` scaffold).
 
+### 3.5 Benchmarks: the same storage, measured continuously
+
+lm-eval from `/home/cereal/ai-benchmark-lab` (`envs/lm-eval`), tasks
+`arc_easy, hellaswag, piqa, winogrande, lambada_openai, wikitext`,
+`--limit 200 --seed 1234 --batch_size 4`, `max_length=2048`, float32, one
+PCI-pinned sm86 RTX 3090. Partial evaluations by construction. Parent baseline
+reused from wave 8; no wave-12 change touches the parent.
+
+| model | n | net stored | review | arc_easy | hellaswag_n | piqa_n | wino | lambada | lambada ppl | wikitext wppl |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **parent** | 0 | 1.000000 | 12/15 | 0.5450 | 0.5050 | 0.6800 | 0.5500 | 0.4600 | 24.39 | 81.80 |
+| `COMP.MA.MXN4` *(w10)* | 4 | 0.754811x | 8/15 | 0.4250 | 0.4500 | 0.6000 | 0.5250 | 0.1700 | 370.09 | 168.70 |
+| `COMP.MA.MXO3` *(w11, frontier)* | 7 | 0.729103x | 8/15 | 0.4300 | 0.4300 | 0.5900 | 0.5450 | 0.1650 | 527.91 | 190.15 |
+| **`COMP.MA.MXP2`** | **10** | **0.703409x** | **6/15** | 0.4250 | 0.4250 | **0.5850** | **0.5400** | **0.1450** | **857.20** | **231.96** |
+| `COMP.MA.MXO4` *(w11)* | 10 | 0.703396x | 5/15 | 0.4200 | 0.4350 | 0.5600 | 0.5250 | 0.1000 | 1477.86 | 257.83 |
+
+**At the same storage and the same component count, the shopped lane wins five
+of seven columns and ties a sixth**: `piqa_n` 0.5850 against 0.5600, `winogrande`
+0.5400 against 0.5250, `lambada` accuracy 0.1450 against 0.1000, lambada
+perplexity **857.20 against 1477.86** (42% lower), `wikitext` word-perplexity
+231.96 against 257.83, `arc_easy` 0.4250 against 0.4200. It loses one:
+`hellaswag_n` 0.4250 against 0.4350.
+
+**The continuous columns say the same thing the review does and say it more
+sharply.** A halved lambada perplexity at identical storage is the whole M6
+result in one number, and it came from a recipe decision rather than a
+mechanism. MXP2 also sits within noise of the *frontier* child `COMP.MA.MXO3` on
+`arc_easy` (0.4250 / 0.4300), `hellaswag_n` (0.4250 / 0.4300) and `winogrande`
+(0.5400 / 0.5450) while storing **0.0257x less** — and still scores 6/15 against
+its 8/15, which is exactly the campaign's oldest lesson: benchmark accuracy is
+the tie-break, coherence is the gate.
+
 ## 4. M2 — repair
 
 *(filled in below)*
