@@ -107,7 +107,20 @@ SCHEMA = "neural-forge-matrix-wave15-standard-shape-child-v1"
 RIDGE_REL = 1e-6
 LAMBDA_LADDER = (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0)
 ATTENTION_LAYERS = (2, 4, 6, 8, 10, 12)
-IDENTITY_TOLERANCE = 5e-3
+#: Wave 14's identity precondition, re-floored for this harness and measured
+#: before it was moved.  The guard catches ONE thing -- selecting on an endpoint
+#: that is not the gated intermediate ``w2`` reads -- and that error is O(1).
+#: Wave 14 compared an fp64 recomputation against the **sealed fp64 evidence**
+#: and could use 5e-3; here the reference is the live module's own **bf16**
+#: output, so the residual carries a bf16 floor.  Measured on the parent's own
+#: stream, that floor is 3.2e-3 to 3.8e-3 at thirteen sites and 1.0e-3 at L05
+#: (where one unit carries 97% of the energy, so the norm is dominated by a
+#: quantity bf16 represents well).  It grows with input drift: the
+#: conditioned-trajectory arm reached 6.5e-3 at L05 with the stream 0.88 away
+#: from the parent's.  The tolerance is set an order of magnitude above the
+#: measured floor and two orders below an axis error, and every site's value is
+#: sealed in the build receipt so the guard's headroom is visible.
+IDENTITY_TOLERANCE = 5e-2
 
 
 def log(message: str) -> None:
@@ -208,8 +221,13 @@ def write_scores(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
 def pivoted_columns(F: torch.Tensor, k: int) -> torch.Tensor:
     """Wave 14's deterministic column-pivoted selection, unchanged (mx14_measure2)."""
 
+    n = int(F.shape[1])
+    if k >= n:
+        # Keeping every channel is not a selection, and running the greedy loop
+        # to discover that costs n*k Python iterations.  The identity is the
+        # answer and the width-unchanged control arm needs it.
+        return torch.arange(n, dtype=torch.long)
     G = (F.T @ F).clone()
-    n = G.shape[0]
     diag = torch.diagonal(G).clone()
     chosen: list[int] = []
     L = torch.zeros(n, k, dtype=G.dtype)

@@ -237,7 +237,23 @@ def run(args: argparse.Namespace) -> int:
 
     match, lcp = cell_runner._token_match(child_ids, parent_ids)
     terminal = cell_runner._row_metrics(child_terminal, parent_terminal)
-    ratios = (child_norms / parent_norms.clamp_min(1e-30)).reshape(-1)
+    # The per-layer norm ratio needs a layer correspondence, and a child that
+    # excised blocks does not have the parent's depth.  The build receipt knows
+    # exactly which parent blocks survived, so the ratio is taken against those
+    # and the receipt says which ones; a child of a different depth compared
+    # position-by-position would be comparing two different layers and calling
+    # the difference drift.
+    excised = [int(x) for x in build.get("excised", [])]
+    surviving = [l for l in range(parent_norms.shape[1] - 1) if l not in excised]
+    if child_norms.shape[1] != len(surviving) + 1:
+        raise ArchitectureSealError(
+            f"the child has {child_norms.shape[1] - 1} blocks and the build "
+            f"receipt says {len(surviving)} survived."
+        )
+    parent_columns = [0] + [l + 1 for l in surviving]
+    ratios = (
+        child_norms / parent_norms[:, parent_columns].clamp_min(1e-30)
+    ).reshape(-1)
     _log(
         f"free-run token match {match:.4f} (diagnostic), terminal relL2 "
         f"{terminal['mean_relative_l2']:.4f} cos {terminal['mean_cosine']:.4f}"
@@ -328,6 +344,7 @@ def run(args: argparse.Namespace) -> int:
             float(ratios.min().item()),
             float(ratios.max().item()),
         ],
+        "norm_ratio_parent_blocks": surviving,
     }
     receipt["behavior"] = {
         "free_run": {
