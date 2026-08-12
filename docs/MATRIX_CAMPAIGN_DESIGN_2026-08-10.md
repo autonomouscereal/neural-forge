@@ -1321,3 +1321,174 @@ folded components**, ADDENDUM 5's site scoping, ADDENDUM 7's registry, receipt
 schema v2, the exactly-once ledger merge, and the rule that a level claim is a
 claim about stored parameters. ADDENDUM 10 adds one disjoint table, one optional
 receipt block and one storage term. It moves nothing else.
+
+## ADDENDUM 11 — 2026-08-12 (wave 14, before any cell): the fold-class slate, the four rulings, and how a rung is bought
+
+Wave 14 opens with two documents that are not addenda and are committed as-is
+so that what was proposed can be read against what was built:
+
+* `docs/FOLD_CLASS_CANDIDATES_2026-08-12.md` — the merged-lens slate. Thirteen
+  Track-A fold classes (VC-FOLD, F-EXCISE, F-C, S+L, F-B, CBT, F-DECAY,
+  F-LANDMARK, HODLR-V, and the gated arms F-D, Regime-4b, Gate-Jacobian, FSS),
+  five Track-B zero-storage composition classes (XGRAM, Ω-RIDGE, ANTIFOLD,
+  W-ABSORB-SB, residual gauge), each with a solve procedure, a storage table
+  with every auxiliary tensor counted, and a pre-registered kill gate. §4.3 is
+  the free measurement battery; §6 is the kill list; §7 is the execution order.
+  sha256 `3ff8391286221de31efbb0d1c057137bd9009914deea754bdd2257334ad390d0`.
+* `docs/FOLD_CLASS_CRITIQUE_2026-08-12.md` — the adversarial read of that
+  slate, five gaps. sha256
+  `4cdd72f560ecd4610193d77cbedd7637f22d74970e69ec9af4c40228fb5b82d2`.
+
+This addendum registers what of that is binding, and it is registered **before
+wave 14 runs a cell**.
+
+### 11.1 The four rulings (Cyril, 2026-08-12)
+
+**R1 — storage: "[Cyril quote withheld]"**
+A stored value counts in FULL, at every level, whatever it is: a coefficient, an
+index, a CSR offset, a class map, a permutation, a β scalar, a decay rate. A
+transform that is **fixed, data-independent and computed at runtime** — the
+RoPE/SiLU precedent — prices at **zero parameters**, because nothing about it
+is stored. This resolves §4.5's first open ruling in FSS's favour on the
+transform question alone; FSS's second precondition (the Lorenz pre-check) is
+untouched and still binds.
+
+**R2 — interference accounting: one physical tensor is one fold.** A refit that
+touches one parent tensor is one folded component for interference pricing,
+however many logical slices the solve decomposed it into. Per-slice detail
+belongs in the receipt, not in the count. This resolves §4.5's second open
+ruling (F-LANDMARK's per-head `o`-slice refits are **one** C09 component).
+
+**R3 — the standard-export requirement.** The fold math may be arbitrary. A
+**frontier claim** may not be. Every child a frontier claim rests on must have a
+stated **standard-architecture export path**: a config-consistent smaller model
+that stock `transformers` loads without `trust_remote_code`, and that is
+convertible toward GGUF/llama.cpp. This re-ranks the slate:
+
+| rank | class | why |
+|---|---|---|
+| **UP** | VC-FOLD, F-EXCISE, F-C | architecturally standard reductions — a smaller `intermediate_size`, fewer decoder layers, fewer conv channels. The child *is* a stock model. |
+| **research probe only** | CBT (block-Toeplitz expansion), HODLR-V, FSS, F-B's asymmetric-`v` module, F-DECAY's decay bank, F-LANDMARK's landmark head, S+L's CSR add, and every route hook | needs a custom runtime. Buildable, gradable, publishable as physics — **not** frontier-claimable until a standard export exists. |
+
+Every frontier child's receipt states its export path in one sentence. A class
+whose export path is "materialize the factored form back to parent shapes"
+**has no reduction to claim** — it has a storage format, and the receipt says
+so instead of quoting a ratio. **This is the standing caveat on T7/C10**: the
+head merge stores `g` shared bases plus per-head alignments and reconstructs
+every projection **parent-shaped**, so its stock-HF export is a *same-size*
+checkpoint. Its 0.2396x is a storage-format claim, and a frontier claim resting
+on it must say which of the two numbers it is quoting.
+
+### 11.2 Two mid-wave directives, and what they revoke
+
+Both arrived after this addendum was opened and before the first cell. Both are
+recorded here rather than folded silently into the method, because each revokes
+something a previous wave wrote down.
+
+**D1 — stop gating on efficiency. "[Cyril quote withheld]"**
+
+Wave 13 retired the M5 head merge on a price: 8–13× the cheapest SwiGLU lane
+per parameter removed. Read against ADDENDUM 8/9 that was an **efficiency
+verdict wearing a behavioural coat**. The mechanism's solo children —
+`COMP.MA.MXQ1` 6/15 and `COMP.MA.MXQ2` 6/15 — are *per-lane impaired*, which is
+the coherent band; the only behavioural death was one **configuration**
+(`COMP.MA.MXQ4`, two S4 merges added simultaneously on top of MXP2, 0/15).
+Untested and now in scope: merges added **one at a time** in succession, merges
+at **S8** (`g_q=1, g_kv=1` = 0.114583x, a rung head *drop* could never express),
+merges from a different base or earlier in the install order, and merge + route
+repair.
+
+**T7/C10 is therefore a working lane class in the wave-14 deck.** The deck is
+every mechanism with at least one per-lane-coherent child: SwiGLU lanes in all
+shopped variants, conv coresets, the C01 token interface, X01 corrective routes,
+head merges, plus whatever wave-14 classes grade alive. **Assembly ranks
+nothing out.** Price data — drift, drift per million, benchmark deltas — orders
+which rung is *attempted* first and is recorded as a diagnostic. It never prunes
+a class from the deck. A rung that costs a great deal of drift and stays
+per-lane coherent is a **kept rung**.
+
+A class leaves the deck only by failing **behaviourally, at that depth**, and
+even then only for that depth: every other deck class is tried at the same rung
+before the rung is abandoned.
+
+**D2 — "[Cyril quote withheld]"**
+
+The wave-13 ladder bought one lane per round. That is replaced by **big bites
+with bisection**:
+
+1. **A rung is large by default.** A whole block's worth in one install (the
+   full SwiGLU trio plus that block's conv or attention writer), a whole-block
+   **excision**, a multi-site batch of one proven class (VC-FOLD at three or
+   four census-best sites in a single rung), and **deeper levels where a class
+   already tolerates its current one** — S8 where S4 lives, S16 probed where S8
+   lives.
+2. **On death, bisect; do not abandon.** A dead four-site batch becomes two
+   two-site attempts. On life, take the next big bite. The search is
+   exponential with backoff, not linear creep.
+3. **The gate does not move.** Frozen 15-prompt review after **every** rung
+   whatever its size; per-lane coherence keeps the rung; both readings sealed.
+   Bite size changes how much is proposed, never how it is graded.
+
+The objective restated: **0.5x, standard-exportable, in as few reviewed rungs as
+possible.**
+
+**R4 — two things are not folding.** Quantization is forbidden (wave 13's
+ruling, restated: storage is counted in *parameters*, never bytes). And
+**dense → MoE is forbidden**: "[Cyril quote withheld]"
+This **kills critique gap 5** (input-conditional piecewise experts) at zero
+cost, before any census. Gaps 1–4 enter the slate; see 11.3.
+
+### 11.3 The critique's four surviving gaps, as registered items
+
+1. **Vocabulary-axis row tying** (67.1M, 29.2% of the model, untouched by the
+   slate). Top-*h* frequent rows verbatim; the Zipf tail tied into *c* clusters
+   whose shared row is the closed-form frequency/D²-weighted solve. Full rank in
+   feature space; every child logit row is a genuine row shape; the input/output
+   tie survives exactly for members. All aux counted including the
+   `(65,536 − h)` int map. Free census: frequency-mass Lorenz plus intra-cluster
+   coherence.
+2. **Score-bilinear joint q/k** (C06 has zero coverage in the whole slate).
+   Attention logits see `Wq` and `Wk` only through `Wq_h^T R_Δ Wk_h` — the one
+   place in this model where two consecutive linear maps are observable **only**
+   through their product, so the sealed ALS locality failure provably does not
+   apply. One exact evidence-weighted two-sided LRA of the invariant per RoPE
+   frequency block. Free census: spectral decay of the evidence-weighted score
+   operator, six attention layers.
+3. **Exact simultaneous terminal re-solve, plus a portfolio-amortized
+   corrector.** (a) One-shot joint block ridge over **all** installed folded
+   writers simultaneously against the composed terminal objective in the
+   G-metric: every writer is linear in its own parameters, so the concatenated
+   problem is a single convex KKT solve with per-lane trust regions. This is a
+   **global** objective and is therefore not the sealed-dead ALS, which
+   alternated **local** ones. (b) One small additive corrector solved
+   closed-form against the frontier child's composed terminal residual, charged
+   against the **whole portfolio** rather than one lane. Both consume the §4.1 G
+   artifact and die with it. Kill: the joint solve's heldout terminal residual is
+   not materially below sequential ANTIFOLD's.
+4. **Per-case behavioural attribution.** The sealed children carry full per-case
+   grade *vectors* and the program has been using counts. Free retrospective
+   ridge of case-level pass/fail on terminal error signatures, yielding per-case
+   sensitivity directions. Three consumers, **all prioritizers, none gates**: a
+   selection-prior arm, steering targets for Ω/ANTIFOLD, and a case-level XGRAM.
+   Kill (and it is a result): case failures are not predictable from error
+   geometry.
+
+The cross-cutting sub-gap is registered with them: every Track-A selector is a
+**local reconstruction-mass** statistic, and sealed physics says reconstruction
+fidelity does not predict behaviour. Once G publishes, a **G-weighted mass**
+column is added to every census at the cost of one matmul.
+
+### 11.4 What does not change
+
+ADDENDUM 8 and 9 in full: coherence-first grading, the per-lane reading governs,
+both readings sealed, the degeneracy clause, and **token match, drift and
+efficiency are diagnostics and never gates**. The frozen 15-prompt surface
+(`e5e37768…`, seal `7b859172…`, pack `0ee6bf14…`), parent calibration first, and
+machine verdicts from `experiments/seal_matrix_behavior_review.py`. The 4x floor
+on folded components with all auxiliaries counted under R1. ADDENDUM 5's site
+scoping, ADDENDUM 7's registry, ADDENDUM 10's disjoint corrective table, receipt
+schema v2, the exactly-once ledger merge behind `.MERGED_ONCE`, and the rule
+that a level claim is a claim about **stored parameters**.
+
+Children are built and read. Nothing in this addendum licenses predicting a
+review.
