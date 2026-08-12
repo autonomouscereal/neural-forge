@@ -497,22 +497,31 @@ behaviourally-tested children are:
 ### 4.2 The measured reason — stated as measurement, not as closure
 
 From 0.703409x, reaching 0.5x needs 46.7M more parameters removed ≈ **7.9 more
-SwiGLU lanes**. The measured marginal price of the *fourth* lane is 0.008555
-drift per million removed, 48% above the third's 0.005783, and the campaign has
-no measurement of lanes 5–14 on a healthy base (wave 13's ladder is measuring
-them as this report is written; see `NOTES-MX-Q`). Head merging, the one
-remaining unplayed fold class in the matrix, prices 8–13× worse per parameter
-and cannot supply the missing storage anyway: **all six attention blocks merged
-at once remove only 6.25% of the parent** (6 × 2,392,064 = 14.35M), which moves
-0.703409x to 0.640920x at best.
+SwiGLU lanes**. Wave 13 bought them and read the result: `COMP.MA.MXQ6` at
+0.497777x, **0/15**. And the ladder that ordered the purchase (§2.2) says the
+reason is **not** a runaway lane price — the per-parameter price at lane 7 is
+the cheapest the campaign has ever measured — but a budget: drift accumulates
+about 0.042 per lane, so nine lanes already sit at 0.706, which is 1.5× the
+deepest coherent drift ever recorded, while removing only 23% of the parent.
 
-**What that arithmetic licenses, and what it does not.** It licenses an ordering:
-SwiGLU lanes first, then everything else. It does **not** license the sentence
-"0.5x is arithmetically closed", which waves 11 and 12 wrote and which this
-report withdraws — because the arithmetic extrapolates a drift heuristic with
-R² = 0.62 past the region where it was fit, into a region where its own
-saturation result says it stops discriminating, and because three whole classes
-of structural fold have never been priced at all (§4.4).
+Head merging, the last unplayed fold class *in the matrix*, prices 8–13× worse
+per parameter and could not have supplied the missing storage anyway: **all six
+attention blocks merged at once remove only 6.25% of the parent** (6 ×
+2,392,064 = 14.35M), which moves 0.703409x to 0.640920x at best — and the
+two-block version of exactly that, `COMP.MA.MXQ4` at 0.682581x, reads 0/15.
+
+**What that licenses, and what it does not.** It licenses an ordering: SwiGLU
+lanes first, then everything else. It does **not** license the sentence "0.5x is
+arithmetically closed", which waves 11 and 12 wrote and which this report
+withdraws. Two of that sentence's three premises are now measured false — the
+lane price does not run away (§2.2), and its saturation story was inferred from
+a trace rather than measured — and the third, that no other mechanism could
+supply the storage, is a statement about the mechanisms that have been *tried*.
+**What is true is narrower and better supported: at 0.5x, on this model, by
+every fold class the matrix has priced, the child is a wreck — and that has now
+been read on two independent 0.5x children built in two different lane orders,
+with and without repair.** Four whole classes of structural fold have never been
+priced at all (§4.4).
 
 ### 4.3 The designed next stage: fold-init → distillation
 
