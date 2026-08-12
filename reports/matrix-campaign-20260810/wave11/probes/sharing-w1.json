@@ -1,0 +1,93 @@
+{
+ "schema": "neural-forge-matrix-wave11-sharing-probe-v1",
+ "component": "feed_forward.w1.weight",
+ "layers": 14,
+ "shape": [
+  2560,
+  1024
+ ],
+ "level_ratio": 0.25,
+ "storage_budget_per_layer": 655360,
+ "independent_rank": 182,
+ "shared_rank": 248,
+ "rank_uplift": 1.3626373626373627,
+ "asymptotic_uplift_infinite_layers": 1.4,
+ "alternations": 6,
+ "metric": "weight-space relative Frobenius (NO activation weighting)",
+ "caveat": "A win here licenses nothing -- reconstruction does not predict behavior (FOLDING_SCALING_THEORY 3.5).  A loss here closes the mechanism, because this is the metric most favourable to sharing.",
+ "per_layer": [
+  {
+   "layer": 0,
+   "independent_relative_frobenius": 0.7532847208239566,
+   "shared_relative_frobenius": 0.8267733644396379
+  },
+  {
+   "layer": 1,
+   "independent_relative_frobenius": 0.761205044833239,
+   "shared_relative_frobenius": 0.8268843740428125
+  },
+  {
+   "layer": 2,
+   "independent_relative_frobenius": 0.72009445239695,
+   "shared_relative_frobenius": 0.7898758537391888
+  },
+  {
+   "layer": 3,
+   "independent_relative_frobenius": 0.7235971553226671,
+   "shared_relative_frobenius": 0.788397441601838
+  },
+  {
+   "layer": 4,
+   "independent_relative_frobenius": 0.7239626237285856,
+   "shared_relative_frobenius": 0.7912206088946924
+  },
+  {
+   "layer": 5,
+   "independent_relative_frobenius": 0.7217096250288849,
+   "shared_relative_frobenius": 0.7884861487666421
+  },
+  {
+   "layer": 6,
+   "independent_relative_frobenius": 0.7076969139361072,
+   "shared_relative_frobenius": 0.7748972313092741
+  },
+  {
+   "layer": 7,
+   "independent_relative_frobenius": 0.7008657471400375,
+   "shared_relative_frobenius": 0.7757024491412053
+  },
+  {
+   "layer": 8,
+   "independent_relative_frobenius": 0.7094879913281382,
+   "shared_relative_frobenius": 0.7712370256730323
+  },
+  {
+   "layer": 9,
+   "independent_relative_frobenius": 0.7188148477874345,
+   "shared_relative_frobenius": 0.7797770564644674
+  },
+  {
+   "layer": 10,
+   "independent_relative_frobenius": 0.7001926801043404,
+   "shared_relative_frobenius": 0.7598624854831701
+  },
+  {
+   "layer": 11,
+   "independent_relative_frobenius": 0.7335212819793752,
+   "shared_relative_frobenius": 0.791954642917802
+  },
+  {
+   "layer": 12,
+   "independent_relative_frobenius": 0.7085984505510026,
+   "shared_relative_frobenius": 0.7752988637966768
+  },
+  {
+   "layer": 13,
+   "independent_relative_frobenius": 0.7231825134855936,
+   "shared_relative_frobenius": 0.7851911838671959
+  }
+ ],
+ "mean_independent": 0.7218724320318796,
+ "mean_shared": 0.7875399092955454,
+ "shared_wins_layers": 0
+}

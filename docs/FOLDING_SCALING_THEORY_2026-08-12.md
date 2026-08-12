@@ -28,14 +28,16 @@ SwiGLU intermediate 2,560, tied 65,536-row token table.
    additive interference:** each independently-solved body component costs the
    composed child roughly 3 review cases, and interface damage × body damage
    *multiplies* (9/15 body + 10/15 route = 6/15 together, `NOTES-MX-N` §5).
-4. **Reconstruction quality does not predict behavior and solve conditioning
-   anti-predicts it.** Local fit improvements have twice been measured
-   composing *worse* (`NOTES-MX-J` §4, `NOTES-MX-N` §6, and July's shared-basis
-   run at mean held-out layer cosine 0.9625 with a collapsed trajectory).
-5. **Nothing about the token interface transfers to a large model except the
-   rule that some verbatim interface must exist.** Everything that transfers
-   quantitatively is in §3 and §4: the composition laws and the per-class
-   safety table.
+4. **Local fit quality does not predict composed behavior, and no per-component
+   closed form can repair composition damage** — wave 11 aimed every component
+   directly at the parent's own activations, improved five of six local
+   objectives, and made the composed child measurably worse (§5).
+5. **Coherence is a drift budget, and that is the transferable tool.**
+   `review = 12.96 − 13.16 × drift` over 55 sealed children; spend the budget on
+   the components with the lowest measured marginal drift and the frontier
+   moves, which is how 0.754811x became 0.729103x. Nothing about the token
+   interface transfers to a large model except the rule that some verbatim
+   interface must exist.
 
 ---
 
@@ -245,48 +247,112 @@ component and never assumed monotone.
 
 ---
 
-## 5. What wave 11's mechanisms add
+## 5. What wave 11's mechanisms added
 
-*(This section is written as wave 11's mechanisms report. It is committed here
-early, per Cyril's instruction to document what exists, and updated at wave end
-with the sealed rungs.)*
+The wall this wave attacked is §3.1: **every body fold in the campaign was
+solved against activations the rest of the composition then invalidated.** Four
+mechanisms were registered in ADDENDUM 9 and three of them now have answers.
 
-The wall this wave attacks is §3.1: **every body fold in the campaign was solved
-against activations the rest of the composition then invalidated.** Four
-mechanisms were registered in ADDENDUM 9:
+### 5.0 The results, first
+
+| mechanism | result | the number |
+|---|---|---|
+| **M1** ALS joint co-solve | **negative** | five of six components improved on their own held-out objective; composed drift went 0.487722 → 0.505337, **3.6% worse** |
+| **M3** cross-layer shared basis | **closed by falsification** | shared loses to independent in 55 of 56 layer-comparisons at equal storage, even at 2.98x rank uplift |
+| **M4** drift-budget allocation | **the one that paid** | `review = 12.9554 − 13.1626 × drift`, R² 0.624, n = 55; frontier moved 0.754811x → **0.729103x** |
+| **M2** body corrective routes | not expressible without a schema change | a corrective tensor the parent does not have needs a new component id in a frozen table |
+| **M5** head merge | not reached | — |
+
+**The transferable statement from M1 is the sharpest thing wave 11 produced.**
+A per-component closed form aimed *directly at the parent's own activations*,
+solved against the inputs the composed child actually delivers, is still a
+**local** objective: it minimizes one write's distance to the parent's write,
+and the composed model is sensitive to the *direction* that residual points in
+as it traverses the remaining depth. Two components whose residuals partially
+cancelled can each be improved into residuals that no longer cancel. Seeing that
+requires the downstream Jacobian, which is a gradient. **So: no gradient-free,
+per-component objective can repair composition damage, and the campaign's whole
+family of closed-form folds is bounded by that.** A12's law is not about stale
+evidence; it is about locality.
+
+There is also a structural result about the *schedule*: in a feed-forward
+composition, a **depth-ordered ALS pass converges in one sweep, exactly**,
+because nothing downstream of a component can move that component's input rows
+and its own re-solve cannot either. Alternation buys nothing here. What could
+make it pay is an objective that couples downstream state back into an upstream
+solve — which is end-to-end, which is gradients.
+
+### 5.1 The mechanisms as registered
 
 * **M1 — ALS joint co-solve (mode M-C).** Install M-A, then repeatedly re-solve
   each component's own closed form against a capture taken through the current
   composed child, with the **parent's own write rows** as the target so the step
-  cancels drift rather than re-fitting to it. Zero gradients.
+  cancels drift rather than re-fitting to it. Zero gradients. **Measured; see
+  above.**
 * **M2 — body corrective routes.** Sparse routes at block outputs to cancel
   composed residual drift; storage counted in full including atom ids and CSR
-  offsets.
-* **M3 — cross-layer shared basis.** One basis over the corresponding weights of
-  many layers plus per-layer coefficients. The July estate closed the *naive*
-  form of this (whole-FFN sharing removed 11.13–12.50% at whole-output retention
-  0.125–0.333; coupled-neuron banking rejected at 15% and 20%; a single shared
-  residual output basis at 15% rejected with per-layer cosine 0.9625) — see
-  `docs/DYNAMIC_LFM2_RESULTS_2026-07-16.md`. What was *not* tried is sharing
-  under a joint re-solve, which is why it is registered here rather than closed.
+  offsets. **Not expressible under receipt schema v2** — every folded component
+  binds to parent `state_dict` keys, and an additive corrective tensor has none.
+* **M3 — cross-layer shared basis. Closed by falsification, in weight space.**
+  The July estate had already rejected three behavioral forms of it (whole-FFN
+  sharing removed 11.13–12.50% at whole-output retention 0.125–0.333;
+  coupled-neuron banking rejected at 15% and 20% with mean coupled-weight cosine
+  **0.014** between activation-correlated pairs; a single shared residual output
+  basis at 15% rejected at per-layer cosine 0.9625 —
+  `docs/DYNAMIC_LFM2_RESULTS_2026-07-16.md`). Wave 11 measured the *ceiling*
+  instead of another instance, at the S4 budget, with the shared basis solved by
+  alternating closed form on the real parent tensors
+  (`reports/matrix-campaign-20260810/run/mxo/mxo_sharing_probe.py`):
+
+  | component | rank at equal storage | independent | shared | layers sharing wins |
+  |---|---|---:|---:|---:|
+  | `w1` 2560x1024 x14 | 182 → 248 (1.363x) | **0.7219** | 0.7875 | 0 / 14 |
+  | `w3` 2560x1024 x14 | 182 → 248 (1.363x) | **0.7650** | 0.8090 | 0 / 14 |
+  | `w2` 1024x2560 x14 | 182 → **543 (2.984x)** | **0.7615** | 0.7946 | 1 / 14 |
+  | `q_proj` 1024x1024 x6 | 128 → 219 (1.711x) | **0.5709** | 0.6619 | 0 / 6 |
+
+  **Even a 2.984x rank uplift at equal storage loses to independent
+  truncation, in every layer, in the metric most favourable to sharing.**
+  Corresponding layers do not live in a shared subspace. The transferable part
+  is the ceiling: sharing buys at most `1 + n/m` in rank (1.4x for a SwiGLU
+  writer, 2x for a square attention projection), and on this model that was not
+  enough to pay for the per-layer subspace freedom it costs.
 * **M4 — drift-budget allocation.** Fit drift → review-damage per component
   class from the sealed children and water-fill a global budget instead of
-  guessing fold-sets.
+  guessing fold-sets. **This is the mechanism that moved the frontier**, and it
+  is the most transferable thing in this document because it is a *method*, not
+  a result:
+
+  ```
+  review(useful-or-partial, out of 15)  =  12.9554  -  13.1626 x global drift
+                                           R2 = 0.6243,  n = 55 sealed children
+  ```
+
+  Two consequences that should re-derive on any model: **coherence is a drift
+  budget** (here 0.3765 of terminal relative-L2 against a copy_exact control, at
+  the alive band), and **a fold-set should be chosen by spending that budget on
+  the components with the lowest measured marginal drift**, not by depth order
+  or by reconstruction error. On LFM2 that meant adding the L06 SwiGLU lane
+  rather than the next one down, and it bought 0.0257x of the parent at no
+  review cost (`COMP.MA.MXN4` 8/15 at 0.754811x → `COMP.MA.MXO3` 8/15 at
+  **0.729103x**). One lane further, and the same budget model correctly predicted
+  the collapse (`COMP.MA.MXO4`, 5/15 at 0.703396x).
 
 **The storage arithmetic of sharing, stated scale-invariantly**, because it
-bounds what M3 can ever buy. For a component of shape `(m, n)` replicated across
-`L` layers, independent rank-`r` factors store `r(m+n)` each; a shared `m`-basis
-with per-layer coefficients stores `r_s(n + m/L)` each. At equal storage:
+bounds what M3 could ever buy. For a component of shape `(m, n)` replicated
+across `L` layers, independent rank-`r` factors store `r(m+n)` each; a shared
+`n`-side basis with per-layer coefficients stores `r_s(m + n/L)` each. At equal
+storage:
 
 ```
-r_s / r_ind  =  (m + n) / (n + m/L)   ->   1 + m/n   as L -> infinity
+r_s / r_ind  =  (m + n) / (m + n/L)   ->   1 + n/m   as L -> infinity
 ```
 
-For LFM2's `w2` (`m=1024`, `n=2560`, `L=14`) that is **1.36x the rank at the
-same storage**, capped at 1.40x. Sharing is a bounded win, not an unbounded one,
-and the bound is set by the aspect ratio of the weight, not by the number of
-layers. **It is worth more on square weights (attention: `m=n`, bound 2x) than
-on MLP writers.**
+Sharing is a bounded win, not an unbounded one, and the bound is set by the
+aspect ratio of the weight, not by the number of layers: 1.4x for a SwiGLU gate
+or up projection, 2x for a square attention projection, 3.5x for a SwiGLU down
+projection shared on its wide side. Wave 11 measured all four and **none of them
+paid** — see the table above.
 
 ---
 
@@ -295,9 +361,13 @@ on MLP writers.**
 * **Whether any of this holds on a different architecture.** Everything is one
   model. The claims are *shaped* to transfer; none has been re-measured on a
   second model.
-* **Whether coherence at 0.5x is reachable by folding alone.** As of this
-  document the deepest coherent child is 0.754811x with four folded components,
-  and 0.5x needs ~30.
+* **Whether coherence at 0.5x is reachable by folding alone. Measured, and on
+  this model it is not.** The 0.5x set exists and meets the storage target
+  exactly — eleven whole SwiGLU lanes plus the token route, thirty-four
+  components, every one at 4x, **0.497739x** — and it scores **0/15** with
+  fourteen of sixteen lanes riding a single phrase to the token cap. The deepest
+  coherent child is **0.729103x**. The gap between those two numbers is the
+  campaign's real open problem.
 * **What the review surface measures beyond coherence.** A 15-prompt band with a
   ±2 reviewer-sensitivity interval (ADDENDUM 2) is a coarse instrument; the
   benchmark columns (arc_easy / hellaswag / piqa / winogrande / lambada /

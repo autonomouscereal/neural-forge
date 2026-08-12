@@ -1,0 +1,53 @@
+{
+ "schema": "neural-forge-matrix-wave11-sharing-probe-v1",
+ "component": "self_attn.q_proj.weight",
+ "layers": 6,
+ "shape": [
+  1024,
+  1024
+ ],
+ "level_ratio": 0.25,
+ "storage_budget_per_layer": 262144,
+ "independent_rank": 128,
+ "shared_rank": 219,
+ "rank_uplift": 1.7109375,
+ "asymptotic_uplift_infinite_layers": 2.0,
+ "alternations": 6,
+ "metric": "weight-space relative Frobenius (NO activation weighting)",
+ "caveat": "A win here licenses nothing -- reconstruction does not predict behavior (FOLDING_SCALING_THEORY 3.5).  A loss here closes the mechanism, because this is the metric most favourable to sharing.",
+ "per_layer": [
+  {
+   "layer": 0,
+   "independent_relative_frobenius": 0.6210767098819228,
+   "shared_relative_frobenius": 0.710387974947039
+  },
+  {
+   "layer": 1,
+   "independent_relative_frobenius": 0.6216639296577403,
+   "shared_relative_frobenius": 0.7146277173720584
+  },
+  {
+   "layer": 2,
+   "independent_relative_frobenius": 0.5640437404922475,
+   "shared_relative_frobenius": 0.66169017916866
+  },
+  {
+   "layer": 3,
+   "independent_relative_frobenius": 0.5610578964685262,
+   "shared_relative_frobenius": 0.6567736714400201
+  },
+  {
+   "layer": 4,
+   "independent_relative_frobenius": 0.5472107603258838,
+   "shared_relative_frobenius": 0.6121380747510508
+  },
+  {
+   "layer": 5,
+   "independent_relative_frobenius": 0.5100535329478224,
+   "shared_relative_frobenius": 0.6160740338509707
+  }
+ ],
+ "mean_independent": 0.5708510949623572,
+ "mean_shared": 0.6619486085882998,
+ "shared_wins_layers": 0
+}

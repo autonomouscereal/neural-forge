@@ -1,0 +1,58 @@
+{
+ "schema": "neural-forge-matrix-wave11-pruned-tensors-v1",
+ "policy": "ADDENDUM 6 retention: the best five composed tensor sets are kept and every other one is deleted after its digest, its size and the receipt that re-derives it are recorded.  A deleted tensor set is re-derivable from its sealed receipt: same deployment, same recipe, same knobs, same evidence, same GPU architecture.",
+ "kept": [
+  {
+   "cell": "COMP.MA.MXO2",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MA.MXO2/composed-child-tensors.pt",
+   "bytes": 614477589,
+   "composed_child_tensors_sha256": "b5883fec3ae29f8fa4b661075db0da69b1c5f99098f4cb019b1a09736496a7b3",
+   "receipt_sha": "8e4b860618a2576665e5f629b1f15ca93d36aab4582f3f8e8b4869f564e57d84",
+   "net_ratio": 0.4977385746021963
+  },
+  {
+   "cell": "COMP.MA.MXO3",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MA.MXO3/composed-child-tensors.pt",
+   "bytes": 331353684,
+   "composed_child_tensors_sha256": "92534adb11adb0be7c97940e2cd244f9ef84217121c9d949ff1587eb47b78431",
+   "receipt_sha": "a85172d592b8532f3992b62bafa3839b20f7507ba37be2516ef68ebd6d5231bd",
+   "net_ratio": 0.7291033895024068
+  },
+  {
+   "cell": "COMP.MA.MXO4",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MA.MXO4/composed-child-tensors.pt",
+   "bytes": 362811829,
+   "composed_child_tensors_sha256": "4abfabfe6d0855c2bedf4a2abe79f5aaa026c4463de4f48e76fafd9b4b259774",
+   "receipt_sha": "8322c4699eebde4ed79d8f84253f95b96ed771814559517878a6a99e50589796",
+   "net_ratio": 0.7033961878468279
+  },
+  {
+   "cell": "COMP.MC.MXO1/rerun-143642",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MC.MXO1/rerun-143642/composed-child-tensors.pt",
+   "bytes": 322965076,
+   "composed_child_tensors_sha256": "1a57bf60acfd58ea5eeab8a27431035f7f0e28716be33c70f31dae30c6fa52c7",
+   "receipt_sha": "76cc5eb5bfe452ca30248caca06a176a38fc7e6a02d100115b2c3d91cf0a3b77",
+   "net_ratio": 0.7359621737839639
+  }
+ ],
+ "deleted": [
+  {
+   "cell": "COMP.MC.MXO0",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MC.MXO0/composed-child-tensors.pt",
+   "bytes": 10487570,
+   "composed_child_tensors_sha256": "5c7dac4fa44f37955ac31eae68ecec146e1489a103b091ca2345946b55a7f364",
+   "receipt_sha": "4cafd1c332559a30060ed8ee266cc7b7c013e0fdf1f7e8c008f4a2edaf02288f",
+   "net_ratio": 0.9914270333768371,
+   "reason": "the ALS negative control (one component, no upstream fold) and the superseded first MXO1 receipt; both children are reproducible and the MXO1 child is byte-identical to COMP.MA.MXN3, whose tensors wave 10 keeps"
+  },
+  {
+   "cell": "COMP.MC.MXO1",
+   "path": "/mnt/ai_data/neural-forge-matrix/wave11/cells/COMP.MC.MXO1/composed-child-tensors.pt",
+   "bytes": 322965076,
+   "composed_child_tensors_sha256": "1a57bf60acfd58ea5eeab8a27431035f7f0e28716be33c70f31dae30c6fa52c7",
+   "receipt_sha": "4778a5ebf98775f845d5bc27209d568eed3a883dfd24b0efab16445f1e4f8696",
+   "net_ratio": 0.7359621737839639,
+   "reason": "the ALS negative control (one component, no upstream fold) and the superseded first MXO1 receipt; both children are reproducible and the MXO1 child is byte-identical to COMP.MA.MXN3, whose tensors wave 10 keeps"
+  }
+ ]
+}
