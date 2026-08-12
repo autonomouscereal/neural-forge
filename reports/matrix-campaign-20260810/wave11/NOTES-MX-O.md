@@ -417,6 +417,38 @@ solved into an existing weight — is what M1 already does, at zero extra storag
 and it made the child worse. **The honest statement is that M2 needs a schema
 change registered in its own addendum, not that it failed.**
 
+## 7a. One gap between ADDENDUM 9 and the tooling, left open deliberately
+
+`mxo_addendum8.py` computes the ADDENDUM 8 success flag from
+`addendum6.verdict`, which is the **per-child** machine verdict, and it refuses
+a hand-supplied one — for the same reason `behavior_verdict_for` does, and that
+refusal is correct. So it reports:
+
+```
+child                   n   net ratio     removed  worst s/o  review   verdict    A8
+COMP.MA.MXO2           34    0.497739 115,366,026   0.249853    0/15      dead  fail
+COMP.MA.MXO4           10    0.703396  68,127,874   0.249853    5/15      dead  fail
+COMP.MA.MXO3            7    0.729103  62,223,105   0.249853    8/15      dead  fail
+ADDENDUM 8 successes: 0 of 3
+every component of every row above stores at or below its declared S bound
+```
+
+**Under ADDENDUM 9 §9.1 that last line for `COMP.MA.MXO3` should read
+`alive-degraded` / `pass`**, because the per-lane reading is now the frontier
+reading. The tool has not been changed to follow the addendum, and it should not
+be changed by the wave that wants the answer: teaching a success calculator to
+prefer the reading that produces a success, in the same wave that produces it,
+is exactly the move the campaign's rules exist to prevent. **Recorded as an open
+item for wave 12**: the per-lane verdict needs to be a *sealed field* computed
+from per-lane readings the reviewer supplies case by case, not a re-labelling of
+the per-child one. Until it is, the frontier table in this note carries both
+readings explicitly and the calculator's `0 of 3` is a statement about the
+per-child clause only.
+
+The one thing the calculator settles unambiguously is the 4x floor: **every
+component of every wave-11 child stores at or below its declared S bound**,
+including all thirty-four of the 0.5x child's.
+
 ## 8. Estate
 
 * **Ledger.** 432 rows sha `bf532a4fd98d55b93308dd11f396c78c1ee45d1b5d0089b5b30bec5d19a5aa18`
