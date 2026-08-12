@@ -698,3 +698,46 @@ built.
 
 Full results: `reports/matrix-campaign-20260810/wave14/NOTES-MX-R.md`, sixteen
 censuses under `wave14/probes/`.
+
+---
+
+## Wave 15 — the frontier is 0.552023x, standard-shape, and it is dead
+
+**The frontier claim moved and shrank at the same time.** Ten children this wave
+are `ARCH.<TAG>` cells under ADDENDUM 12: each loads as a stock
+`Lfm2ForCausalLM` with no `trust_remote_code`, each carries a sealed machine
+verdict, and each one's `stored_parameter_ratio` is the size of the model that
+runs rather than a storage format. The smallest is
+`ARCH.A552` — `intermediate_size` 640 + `head_dim` 16 + one block excised —
+at **126,795,968 parameters = 0.552023x**, and it is **dead, 0/15**, with 12 of
+16 lanes at the cap and tokenizer debris on most of them.
+
+**The best standard-shape child that answers anything is 0.947479x** (`ARCH.X05A`,
+one conv block deleted, 6/15) and the best 4x-class child is **0/15**. There is no
+alive frontier below 0.94x in the standard-export lane.
+
+**The 0.4666x arithmetic is withdrawn.** Two errors: the three bites are not
+additive (the excised block's FFN is priced at parent width in the excision term
+and at 640 in the narrowing term, so the third bite is worth −6.2M in the presence
+of the first, not −12.1M), and the **tied embedding is 67,108,864 parameters =
+0.2922x of the parent by itself** and is untouched by every axis in the R3
+standard set. Body parameters are 162.58M; 0.5x net requires the body to fall to
+47.7M, a **3.4x fold of the entire body** with the embedding fixed.
+
+**`head_dim` 16 is not available.** RoPE's rotation is block diagonal over
+frequency planes, so `q^T R_Δ k` is exactly a sum of per-plane terms and a smaller
+`head_dim` can keep whole planes on a uniform stride and nothing else. The three
+expressible ladders retain **0.2394 / 0.2379 / 0.2018** of the evidence-weighted
+score energy — against the 0.99 that wave 14's `Δ=0` census promised for the same
+operator without the constraint. Built with both scale corrections the change
+forces, it is dead alone at 0.938368x. The **−14.2M** bite is off the table for a
+frontier claim.
+
+**Conditioning does not move the cliff.** Re-solving every site against a capture
+taken through the partially built child gives better late-layer solves and a
+better terminal drift than wave 14's stale objective and the same 0/15. The cliff
+now brackets between a per-site write cosine of **0.891 (4/15) and 0.856 (0/15)**
+under simultaneous installation at all fourteen sites, and the collapse across
+that gap is a step, not a slope.
+
+Full results: `reports/matrix-campaign-20260810/wave15/NOTES-MX-S.md`.

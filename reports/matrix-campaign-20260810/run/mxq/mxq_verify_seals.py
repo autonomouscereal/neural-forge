@@ -32,10 +32,16 @@ from neural_forge.matrix_cell_receipt import (  # noqa: E402
 
 ROOT = Path("/mnt/ai_data/neural-forge-matrix")
 LEDGER = ROOT / "ledger.jsonl"
+# ADDENDUM 12 / wave 15: ``wave12/cells`` is restored here.  NOTES-MX-Q 8 says
+# wave 13 caught its own derivation dropping that root and fixed it ON THE HOST;
+# the fix never reached the repository, so this committed file has been the
+# broken one for two waves and is what a later wave would have derived from
+# again.  The authoritative check is `run/mx15/mx15_verify_seals.py`, which reads
+# the roots off disk and REFUSES on an undeclared one instead of trusting a list.
 SEARCH = [ROOT / "cells", ROOT / "wave6" / "cells", ROOT / "wave7" / "cells",
           ROOT / "wave8" / "cells", ROOT / "wave9" / "cells",
           ROOT / "wave10" / "cells", ROOT / "wave11" / "cells",
-          ROOT / "wave13" / "cells"]
+          ROOT / "wave12" / "cells", ROOT / "wave13" / "cells"]
 
 
 def _index() -> dict[str, Path]:

@@ -597,3 +597,35 @@ other's one) say a drift ranking with R² = 0.62 is not a verdict.
   Held-out R² of `post_layer[l] -> post_layer[13]` climbs smoothly 0.046 (L00) to
   0.874 (L12); only L10-L12 clear 0.5.  Terminal-metric methods are a late-depth
   tool on this model, and the 2,560-dim endpoint transfers are negative.
+
+### Wave 15 additions
+
+* **Conditioned evidence is not the fix for compositional death.** Re-solving
+  every site against activations captured *through the partially built child* —
+  the exact distribution the fold meets — improves the late-layer solves and the
+  terminal drift and changes the behavioural verdict by nothing. Expect this to
+  transfer: if a fold at a given width is dead composed, the reason is the width,
+  not the evidence, and sequential conditioning is a refinement rather than a
+  rescue.
+* **One narrowed FFN moves the next layer's input by ~0.57 relative, and the
+  drift then plateaus.** The residual stream's normalization bounds the
+  accumulation. Damage from a per-site fold is immediate and local, not
+  cumulative — which is why per-site fidelity measured on the parent's stream
+  stays *approximately* right and still predicts nothing.
+* **Trajectory targets are harmful even at zero cost.** Solving a writer against
+  where the parent's stream should have been, rather than against the parent's map
+  on the child's own input, damages the model at 4x width *and* at unchanged width
+  with full capacity. Any method whose objective is a composed terminal residual
+  (amortized correctors, terminal KKT re-solves, Ω-style steering) inherits this
+  and should be priced against it first.
+* **RoPE is a hard constraint on head-width folds, and it is expensive.** The
+  rotation is block diagonal over frequency planes, so `q^T R_Δ k` decomposes
+  exactly into per-plane terms and a smaller `head_dim` can only keep whole planes
+  on a uniform stride (`theta' = theta^(s·d'/d)`). Score energy on this model is
+  flat across the ladder: keeping 8 of 32 planes keeps 24% of it. A rank census
+  taken at `Δ=0` overstates what a head-width fold can keep by **4x** here, and
+  the same gap should be expected on any RoPE model.
+* **A tied embedding is a floor, and it should be stated before a target is set.**
+  65,536 × 1024 tied = 0.2922x of a 229.7M-parameter model. Any "standard-export"
+  compression target below ~0.35x on such a checkpoint is a claim about the body
+  alone and should be written that way.

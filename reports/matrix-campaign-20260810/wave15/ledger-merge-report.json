@@ -1,0 +1,72 @@
+{
+ "schema": "neural-forge-matrix-wave15-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-A552.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-CL640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-CL896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-CT640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-HD16.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-S640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-W14FF1280.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-W14FF320.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-W14FF640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-X05A.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/arch-X05T.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-A552.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-CL640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-CL896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-CT640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-HD16.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-S640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-W14FF1280.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-W14FF320.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-W14FF640.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-X05A.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave15/shards/verdict-X05T.jsonl"
+ ],
+ "rows_before": 461,
+ "rows_appended": 22,
+ "rows_after": 483,
+ "superseded_rows_dropped": [
+  {
+   "cell_instance_id": "mx15-a552-0001",
+   "receipt_sha": "0be54df529be1a29b99733c7af8f41c9b9e1598d22f3167ecc560e8a1c87c686"
+  },
+  {
+   "cell_instance_id": "mx15-cl896-0001",
+   "receipt_sha": "0b817f2e05100c7c5ee79869b2c806ab2722a98330c1c1a2195c7ab46a5f1cf4"
+  },
+  {
+   "cell_instance_id": "mx15-hd16-0001",
+   "receipt_sha": "ce9f74dade2cc0fc4b0257ee501fbbc55520957e2c158d234711aebe792fe6e4"
+  },
+  {
+   "cell_instance_id": "mx15-w14ff1280-0001",
+   "receipt_sha": "fa9ddc052be675445a648b36986e39ac3535b34442e3b13fcc823741d2522229"
+  },
+  {
+   "cell_instance_id": "mx15-x05a-0001",
+   "receipt_sha": "be7b79d9e3ae9c0e3f7e3e06082ca180b2e018e7a6c0f7ebeafadd795a850792"
+  },
+  {
+   "cell_instance_id": "mx15-x05a-0001",
+   "receipt_sha": "dc11ae9547996751d3b3a856828eaa642396b8864f0e45bb1554c354e1a22bfc"
+  }
+ ],
+ "appended_cells": [
+  "ARCH.A552",
+  "ARCH.CL640",
+  "ARCH.CL896",
+  "ARCH.CT640",
+  "ARCH.HD16",
+  "ARCH.S640",
+  "ARCH.W14FF1280",
+  "ARCH.W14FF320",
+  "ARCH.W14FF640",
+  "ARCH.X05A",
+  "ARCH.X05T"
+ ],
+ "applied": true,
+ "rows_after_verified": 483
+}

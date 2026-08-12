@@ -445,12 +445,55 @@ def plane_energy(q_rows: torch.Tensor, k_rows: torch.Tensor, head_dim: int) -> t
     return energy
 
 
+class ParentRope:
+    """Serve the parent's 64-wide RoPE to attention blocks that are not folded yet.
+
+    ``position_embeddings`` are computed once per forward by `Lfm2Model` from
+    ``config.head_dim``, so the moment the child's ladder is installed globally --
+    and it must be installed globally, because ``rope_theta`` and ``head_dim`` are
+    one config field each -- every **unfolded** block would be handed cos/sin of
+    the wrong width.  A sequentially conditioned build needs the mixed state to be
+    valid for exactly as long as it takes to walk the blocks, so each unfolded
+    block keeps the parent's rotary until its own fold removes the shim.  This is
+    build-time scaffolding: no shim survives into the exported child, which is why
+    the child loads with no custom module at all.
+    """
+
+    def __init__(self, rotary) -> None:
+        self.rotary = rotary
+        self.handles: dict[int, Any] = {}
+
+    def attach(self, module) -> None:
+        def hook(mod, args, kwargs):
+            hidden = args[0] if args else kwargs["hidden_states"]
+            position_ids = kwargs.get("position_ids")
+            if position_ids is None:
+                position_ids = torch.arange(
+                    hidden.shape[1], device=hidden.device
+                ).unsqueeze(0)
+            kwargs["position_embeddings"] = self.rotary(hidden, position_ids)
+            return args, kwargs
+
+        self.handles[id(module)] = module.register_forward_pre_hook(
+            hook, with_kwargs=True
+        )
+
+    def detach(self, module) -> None:
+        handle = self.handles.pop(id(module), None)
+        if handle is not None:
+            handle.remove()
+
+
 def head_dim_axis(
     harness: Harness,
     position: int,
     parent_layer: int,
     keep_dim: int,
     *,
+    stride: int,
+    dims: torch.Tensor,
+    stride_census: dict[str, Any],
+    shim: "ParentRope | None",
     trajectory_target: tuple[torch.Tensor, torch.Tensor] | None,
 ) -> dict[str, Any]:
     """Fold one attention block to ``head_dim = keep_dim``, config-standard.
@@ -487,30 +530,11 @@ def head_dim_axis(
     wv = attn.v_proj.weight.data.to(torch.float64).cpu()
     wo = attn.out_proj.weight.data.to(torch.float64).cpu()
 
-    # ---- q/k: the stride whose planes carry the most score energy.
+    # ---- q/k: whole RoPE planes on the globally chosen stride (rope_theta is
+    # one config field, so the ladder is a model-level decision, not a per-site one).
     q_all = X @ wq.T
     k_all = X @ wk.T
-    pooled = torch.zeros(parent_head_dim // 2, dtype=torch.float64)
-    for h in range(heads):
-        g = h // group_size
-        pooled += plane_energy(
-            q_all[:, h * parent_head_dim : (h + 1) * parent_head_dim],
-            k_all[:, g * parent_head_dim : (g + 1) * parent_head_dim],
-            parent_head_dim,
-        )
-    total = float(pooled.sum())
-    options = rope_plane_sets(parent_head_dim, keep_dim)
-    scored = {s: float(pooled[p].sum()) / total for s, p in options.items()}
-    stride = max(scored, key=lambda s: scored[s])
-    planes = options[stride]
-    half = parent_head_dim // 2
-    dims = torch.tensor(planes + [p + half for p in planes], dtype=torch.long)
-    census: dict[str, Any] = {
-        "plane_energy_share_by_stride": scored,
-        "chosen_stride": stride,
-        "retained_plane_energy": scored[stride],
-        "plane_energy_share": [float(x / total) for x in pooled],
-    }
+    census: dict[str, Any] = dict(stride_census)
 
     # ---- v: per-KV-group evidence-weighted low-rank contraction.
     v_all = X @ wv.T
@@ -593,6 +617,9 @@ def head_dim_axis(
     new_o = nn.Linear(heads * keep_dim, wo.shape[0], bias=False, dtype=dtype, device=device)
     new_o.weight.data.copy_(prior.to(device=device, dtype=dtype))
     attn.out_proj = new_o
+    # The block is now the child's width, so it takes the child's ladder.
+    if shim is not None:
+        shim.detach(attn)
     context = harness.capture({"o": attn.out_proj})
     C = context["o"]["fit"]
     C_h = context["o"]["hld"]
@@ -648,6 +675,11 @@ def export(
     save_file(state, str(outdir / "model.safetensors"), metadata={"format": "pt"})
     for side in SIDECARS:
         if (PARENT / side).is_file():
+            # The parent's sidecars are read-only and `copy2` preserves the mode,
+            # so a rebuild into an existing child directory fails on the second
+            # copy with EPERM -- after the tensors have already been written.
+            # Remove first: the child directory is this script's to own.
+            (outdir / side).unlink(missing_ok=True)
             shutil.copy2(PARENT / side, outdir / side)
     return sum(int(v.numel()) for v in state.values())
 
@@ -679,6 +711,63 @@ def build(args: argparse.Namespace) -> int:
     log("capturing the parent's own stream (one pass over 24 batches)")
     parent_rows = harness.capture({**mlp_modules, **attn_modules}, pristine=pristine)
 
+    # The RoPE ladder is decided ONCE, before any attention block is folded, and
+    # from every attention site pooled: `head_dim` and `rope_theta` are one config
+    # field each, so a per-site choice is not expressible in a stock child.
+    shim: ParentRope | None = None
+    stride = None
+    stride_census: dict[str, Any] = {}
+    dims: torch.Tensor | None = None
+    if keep_head_dim is not None:
+        from transformers.models.lfm2.modeling_lfm2 import Lfm2RotaryEmbedding
+
+        parent_head_dim = int(harness.layers()[ATTENTION_LAYERS[0]].self_attn.head_dim)
+        pooled = torch.zeros(parent_head_dim // 2, dtype=torch.float64)
+        heads = int(harness.model.config.num_attention_heads)
+        kv_heads = int(harness.model.config.num_key_value_heads)
+        group_size = heads // kv_heads
+        for parent_layer in ATTENTION_LAYERS:
+            attn = harness.layers()[parent_layer].self_attn
+            X = parent_rows[f"A{parent_layer:02d}"]["fit"]
+            q_all = X @ attn.q_proj.weight.data.to(torch.float64).cpu().T
+            k_all = X @ attn.k_proj.weight.data.to(torch.float64).cpu().T
+            for h in range(heads):
+                g = h // group_size
+                pooled += plane_energy(
+                    q_all[:, h * parent_head_dim : (h + 1) * parent_head_dim],
+                    k_all[:, g * parent_head_dim : (g + 1) * parent_head_dim],
+                    parent_head_dim,
+                )
+        total = float(pooled.sum())
+        options = rope_plane_sets(parent_head_dim, keep_head_dim)
+        scored = {s: float(pooled[p].sum()) / total for s, p in options.items()}
+        stride = max(scored, key=lambda s: scored[s])
+        half = parent_head_dim // 2
+        dims = torch.tensor(
+            options[stride] + [p + half for p in options[stride]], dtype=torch.long
+        )
+        stride_census = {
+            "plane_energy_share_by_stride": scored,
+            "chosen_stride": stride,
+            "retained_plane_energy": scored[stride],
+            "plane_energy_share": [float(x / total) for x in pooled],
+        }
+        rope_theta = rope_theta ** (stride * keep_head_dim / parent_head_dim)
+        shim = ParentRope(harness.model.model.rotary_emb)
+        for parent_layer in ATTENTION_LAYERS:
+            shim.attach(harness.layers()[parent_layer].self_attn)
+        harness.model.config.head_dim = keep_head_dim
+        harness.model.config.rope_parameters = dict(harness.model.config.rope_parameters)
+        harness.model.config.rope_parameters["rope_theta"] = rope_theta
+        harness.model.model.rotary_emb = Lfm2RotaryEmbedding(
+            harness.model.config, device=torch.device(args.device)
+        )
+        log(
+            f"RoPE ladder: stride {stride} keeps {scored[stride]:.4f} of the score "
+            f"energy (shares {', '.join(f'{s}:{v:.4f}' for s, v in sorted(scored.items()))}); "
+            f"rope_theta {rope_theta:g}"
+        )
+
     if excised:
         for index in sorted(excised, reverse=True):
             del harness.model.model.layers[index]
@@ -704,6 +793,10 @@ def build(args: argparse.Namespace) -> int:
                 position,
                 parent_layer,
                 keep_head_dim,
+                stride=int(stride),
+                dims=dims,
+                stride_census=stride_census,
+                shim=shim,
                 trajectory_target=(
                     (parent_rows[key]["local_fit"], parent_rows[key]["local_hld"])
                     if arm != "conditioned-local"
@@ -813,13 +906,6 @@ def build(args: argparse.Namespace) -> int:
             }
         )
     if keep_head_dim is not None:
-        strides = {r["census"]["chosen_stride"] for r in attention_records}
-        if len(strides) != 1:
-            raise SystemExit(
-                f"the RoPE stride must agree across layers ({strides}); rope_theta is global"
-            )
-        stride = strides.pop()
-        rope_theta = rope_theta ** (stride * keep_head_dim / 64)
         heads, kv = 16, 8
         per_layer_removed = (
             (1024 * 1024 - heads * keep_head_dim * 1024)
