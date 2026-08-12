@@ -1,0 +1,30 @@
+{
+ "task": "hodlr",
+ "floor": 0.81,
+ "components": [
+  {
+   "component": "C13",
+   "layer": 5,
+   "n": 2560,
+   "diag_coverage_g4": 0.9286852317347265,
+   "diag_coverage_g8": 0.9138311926360141
+  },
+  {
+   "component": "C13",
+   "layer": 13,
+   "n": 2560,
+   "diag_coverage_g4": 0.52274885358055,
+   "diag_coverage_g8": 0.3892343245715058
+  },
+  {
+   "component": "C09",
+   "layer": 12,
+   "n": 1024,
+   "diag_coverage_g4": 0.5379790100005197,
+   "diag_coverage_g8": 0.3676095002614224
+  }
+ ],
+ "note": "diagonal coverage below the 0.81 floor means off-diagonal truncation carries the class",
+ "schema": "neural-forge-matrix-wave14-measurement-battery-v1",
+ "seconds": 3.3
+}

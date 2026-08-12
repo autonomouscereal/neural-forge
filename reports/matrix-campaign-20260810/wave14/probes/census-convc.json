@@ -1,0 +1,414 @@
+{
+ "task": "convc",
+ "sites": [
+  {
+   "layer": 0,
+   "status": "measured",
+   "lorenz_mass": {
+    "n": 1024,
+    "total": 5.12161508261933,
+    "mass_top_0.05": 0.26977962827851426,
+    "mass_top_0.1": 0.37123821571464866,
+    "mass_top_0.125": 0.4110108747863847,
+    "mass_top_0.25": 0.5539850552704171,
+    "mass_top_0.5": 0.743386906924384,
+    "participation_ratio": 0.3495228915101282
+   },
+   "role_rank_correlation": {
+    "B_vs_C": 0.47111043559115934,
+    "B_vs_x": 0.6763868710213861,
+    "C_vs_x": 0.4813107297403618
+   },
+   "S4": {
+    "keep": 256,
+    "mass_share": 0.5539850552704172,
+    "coverage_norm_ratio_quantiles": [
+     0.7257949272151826,
+     0.8972752446235119,
+     0.9521299828136893,
+     0.9808837273824987,
+     1.0059825971685419
+    ],
+    "coverage_norm_ratio_median": 0.9521299828136893,
+    "coverage_projection_median": 0.9374588978591362,
+    "rows_covered_ge_0.8": 0.9118080404125447,
+    "relative_residual": 0.2945857734296697,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.6839671452808515,
+      0.8863013026375794,
+      0.9522269377717562,
+      0.9833172416864508,
+      1.0108294047020345
+     ],
+     "coverage_norm_ratio_median": 0.9522269377717562,
+     "coverage_projection_median": 0.9334991028141624,
+     "rows_covered_ge_0.8": 0.8806818181818182,
+     "relative_residual": 0.3207021018000259
+    },
+    "interpolative_residual": 0.2862466440216752,
+    "alive": false
+   },
+   "S8": {
+    "keep": 128,
+    "mass_share": 0.41101087478638465,
+    "coverage_norm_ratio_quantiles": [
+     0.5351788002201732,
+     0.805237656703774,
+     0.9188946351189903,
+     0.9579334077615276,
+     0.9984915926561663
+    ],
+    "coverage_norm_ratio_median": 0.9188946351189903,
+    "coverage_projection_median": 0.888921680334066,
+    "rows_covered_ge_0.8": 0.7589981056619659,
+    "relative_residual": 0.38398236505594585,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.4868937598277855,
+      0.7861563156148889,
+      0.9149346222150945,
+      0.9599135787094415,
+      0.999531730843313
+     ],
+     "coverage_norm_ratio_median": 0.9149346222150945,
+     "coverage_projection_median": 0.880472005721884,
+     "rows_covered_ge_0.8": 0.7323232323232324,
+     "relative_residual": 0.4134323292204295
+    },
+    "interpolative_residual": 0.4045376904000557,
+    "alive": false
+   }
+  },
+  {
+   "layer": 1,
+   "status": "no-cache"
+  },
+  {
+   "layer": 3,
+   "status": "no-cache"
+  },
+  {
+   "layer": 5,
+   "status": "measured",
+   "lorenz_mass": {
+    "n": 1024,
+    "total": 3.345065371807815,
+    "mass_top_0.05": 0.1756528147712267,
+    "mass_top_0.1": 0.28432376026862105,
+    "mass_top_0.125": 0.33163745258746796,
+    "mass_top_0.25": 0.5051592202328216,
+    "mass_top_0.5": 0.7330516843020192,
+    "participation_ratio": 0.5824997569268232
+   },
+   "role_rank_correlation": {
+    "B_vs_C": 0.4955829116300693,
+    "B_vs_x": 0.37084044864458904,
+    "C_vs_x": 0.4496224563693583
+   },
+   "S4": {
+    "keep": 256,
+    "mass_share": 0.5051592202328216,
+    "coverage_norm_ratio_quantiles": [
+     0.6598597299000932,
+     0.7634708679152813,
+     0.8337943068123043,
+     0.8937820477589837,
+     0.9531731707931203
+    ],
+    "coverage_norm_ratio_median": 0.8337943068123043,
+    "coverage_projection_median": 0.7161518026347353,
+    "rows_covered_ge_0.8": 0.6289202273205641,
+    "relative_residual": 0.5236335694751807,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.6422694061870147,
+      0.7457092907445744,
+      0.8149371278709818,
+      0.8831713789559505,
+      0.9471416833675445
+     ],
+     "coverage_norm_ratio_median": 0.8149371278709818,
+     "coverage_projection_median": 0.6878506728339593,
+     "rows_covered_ge_0.8": 0.5555555555555556,
+     "relative_residual": 0.5451053224593079
+    },
+    "interpolative_residual": 0.42940368004403656,
+    "alive": false
+   },
+   "S8": {
+    "keep": 128,
+    "mass_share": 0.331637452587468,
+    "coverage_norm_ratio_quantiles": [
+     0.5843933735325246,
+     0.6878353944868201,
+     0.7601417182713526,
+     0.8261250578447553,
+     0.8956688636141716
+    ],
+    "coverage_norm_ratio_median": 0.7601417182713526,
+    "coverage_projection_median": 0.5955798331757346,
+    "rows_covered_ge_0.8": 0.3483477162702589,
+    "relative_residual": 0.6248200769149191,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.5653379410550287,
+      0.6709564145581367,
+      0.7477421091606633,
+      0.8165346489107919,
+      0.9023127915475893
+     ],
+     "coverage_norm_ratio_median": 0.7477421091606633,
+     "coverage_projection_median": 0.5764417780823762,
+     "rows_covered_ge_0.8": 0.317550505050505,
+     "relative_residual": 0.638663671093103
+    },
+    "interpolative_residual": 0.5464470860684426,
+    "alive": false
+   }
+  },
+  {
+   "layer": 7,
+   "status": "measured",
+   "lorenz_mass": {
+    "n": 1024,
+    "total": 3.3257338630255937,
+    "mass_top_0.05": 0.16183430911200183,
+    "mass_top_0.1": 0.25586474484212657,
+    "mass_top_0.125": 0.2979762056242559,
+    "mass_top_0.25": 0.46842721947083193,
+    "mass_top_0.5": 0.7086068385494926,
+    "participation_ratio": 0.5511950229557175
+   },
+   "role_rank_correlation": {
+    "B_vs_C": 0.2318412935412345,
+    "B_vs_x": -0.027253560635862952,
+    "C_vs_x": 0.23290248819826903
+   },
+   "S4": {
+    "keep": 256,
+    "mass_share": 0.468427219470832,
+    "coverage_norm_ratio_quantiles": [
+     0.6185014383881672,
+     0.727176568792601,
+     0.8104787510165966,
+     0.8886006057364999,
+     0.9410221233616638
+    ],
+    "coverage_norm_ratio_median": 0.8104787510165966,
+    "coverage_projection_median": 0.6670056405047008,
+    "rows_covered_ge_0.8": 0.5325194695853505,
+    "relative_residual": 0.5660830888439441,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.6005664554153407,
+      0.7054211839663256,
+      0.796055515409018,
+      0.8804820999290852,
+      0.9432823234835214
+     ],
+     "coverage_norm_ratio_median": 0.796055515409018,
+     "coverage_projection_median": 0.6441856318218868,
+     "rows_covered_ge_0.8": 0.4898989898989899,
+     "relative_residual": 0.5835905422145184
+    },
+    "interpolative_residual": 0.45634275478732605,
+    "alive": false
+   },
+   "S8": {
+    "keep": 128,
+    "mass_share": 0.297976205624256,
+    "coverage_norm_ratio_quantiles": [
+     0.4821176150663795,
+     0.5956033892917432,
+     0.7026513561893418,
+     0.7952038394882381,
+     0.8757858901825557
+    ],
+    "coverage_norm_ratio_median": 0.7026513561893418,
+    "coverage_projection_median": 0.514764676500814,
+    "rows_covered_ge_0.8": 0.23384550620921912,
+    "relative_residual": 0.6788449969918589,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.46029649601045713,
+      0.5726617581577839,
+      0.6894334442404719,
+      0.7917323501341784,
+      0.8735700923079303
+     ],
+     "coverage_norm_ratio_median": 0.6894334442404719,
+     "coverage_projection_median": 0.4922194709040802,
+     "rows_covered_ge_0.8": 0.22095959595959597,
+     "relative_residual": 0.6910911336038429
+    },
+    "interpolative_residual": 0.5750003337391927,
+    "alive": false
+   }
+  },
+  {
+   "layer": 9,
+   "status": "measured",
+   "lorenz_mass": {
+    "n": 1024,
+    "total": 5.95849756064459,
+    "mass_top_0.05": 0.20263808587591225,
+    "mass_top_0.1": 0.31595938758691916,
+    "mass_top_0.125": 0.3610082239963655,
+    "mass_top_0.25": 0.5272180466629518,
+    "mass_top_0.5": 0.744715417819083,
+    "participation_ratio": 0.531403491706735
+   },
+   "role_rank_correlation": {
+    "B_vs_C": 0.2621055025570417,
+    "B_vs_x": -0.006394738841999856,
+    "C_vs_x": 0.31683982950075096
+   },
+   "S4": {
+    "keep": 256,
+    "mass_share": 0.5272180466629518,
+    "coverage_norm_ratio_quantiles": [
+     0.6746963556872245,
+     0.7914949648633149,
+     0.856492226400355,
+     0.8974128732727993,
+     0.9343221828977042
+    ],
+    "coverage_norm_ratio_median": 0.856492226400355,
+    "coverage_projection_median": 0.752145983442325,
+    "rows_covered_ge_0.8": 0.7240580930330457,
+    "relative_residual": 0.5098276844188778,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.6434992143953174,
+      0.7634280564492137,
+      0.8316585901091917,
+      0.8835048821370359,
+      0.9219060232391731
+     ],
+     "coverage_norm_ratio_median": 0.8316585901091917,
+     "coverage_projection_median": 0.7120827967447592,
+     "rows_covered_ge_0.8": 0.6319444444444444,
+     "relative_residual": 0.5470792708450222
+    },
+    "interpolative_residual": 0.3786947225745655,
+    "alive": false
+   },
+   "S8": {
+    "keep": 128,
+    "mass_share": 0.3610082239963655,
+    "coverage_norm_ratio_quantiles": [
+     0.5688663576885367,
+     0.6962207320509968,
+     0.770137553564266,
+     0.8239065584381811,
+     0.8744925696428982
+    ],
+    "coverage_norm_ratio_median": 0.770137553564266,
+    "coverage_projection_median": 0.6123335058649707,
+    "rows_covered_ge_0.8": 0.3721321826983793,
+    "relative_residual": 0.6229254483609589,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.5319648745639808,
+      0.674905742491948,
+      0.7517641540403445,
+      0.8116976442774436,
+      0.8634353751275848
+     ],
+     "coverage_norm_ratio_median": 0.7517641540403445,
+     "coverage_projection_median": 0.5815855049540504,
+     "rows_covered_ge_0.8": 0.2986111111111111,
+     "relative_residual": 0.6481527562156397
+    },
+    "interpolative_residual": 0.49487530102455735,
+    "alive": false
+   }
+  },
+  {
+   "layer": 11,
+   "status": "no-cache"
+  },
+  {
+   "layer": 13,
+   "status": "measured",
+   "lorenz_mass": {
+    "n": 1024,
+    "total": 16.881959009179084,
+    "mass_top_0.05": 0.1516247126175309,
+    "mass_top_0.1": 0.23768964443667395,
+    "mass_top_0.125": 0.27649977858445535,
+    "mass_top_0.25": 0.43783072497121567,
+    "mass_top_0.5": 0.6794274163308713,
+    "participation_ratio": 0.5747049058359709
+   },
+   "role_rank_correlation": {
+    "B_vs_C": -0.08388707218725412,
+    "B_vs_x": -0.3975415183999713,
+    "C_vs_x": -0.04114467849223946
+   },
+   "S4": {
+    "keep": 256,
+    "mass_share": 0.43783072497121556,
+    "coverage_norm_ratio_quantiles": [
+     0.6408338126110096,
+     0.8115439275205132,
+     0.8808601466246854,
+     0.9112153515752974,
+     0.9394638674892122
+    ],
+    "coverage_norm_ratio_median": 0.8808601466246854,
+    "coverage_projection_median": 0.7942524516410158,
+    "rows_covered_ge_0.8": 0.7735213639233846,
+    "relative_residual": 0.3987300765743391,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.6273544732998653,
+      0.7906708526936617,
+      0.8673619068563512,
+      0.9054742999143672,
+      0.9354694918352388
+     ],
+     "coverage_norm_ratio_median": 0.8673619068563512,
+     "coverage_projection_median": 0.7665733643585927,
+     "rows_covered_ge_0.8": 0.7342171717171717,
+     "relative_residual": 0.41758057537385845
+    },
+    "interpolative_residual": 0.3309137145523853,
+    "alive": false
+   },
+   "S8": {
+    "keep": 128,
+    "mass_share": 0.2764997785844553,
+    "coverage_norm_ratio_quantiles": [
+     0.5222229342949011,
+     0.7293571642795202,
+     0.8099213007621022,
+     0.851941126261799,
+     0.8929841025635981
+    ],
+    "coverage_norm_ratio_median": 0.8099213007621022,
+    "coverage_projection_median": 0.6825919555438968,
+    "rows_covered_ge_0.8": 0.545148389812671,
+    "relative_residual": 0.4653707475431407,
+    "heldout": {
+     "coverage_norm_ratio_quantiles": [
+      0.5095713761691887,
+      0.7050693242978425,
+      0.7948948636479809,
+      0.8454392679196607,
+      0.8889305542652667
+     ],
+     "coverage_norm_ratio_median": 0.7948948636479809,
+     "coverage_projection_median": 0.6574892781311322,
+     "rows_covered_ge_0.8": 0.4772727272727273,
+     "relative_residual": 0.4794030735353283
+    },
+    "interpolative_residual": 0.42069718042981286,
+    "alive": false
+   }
+  }
+ ],
+ "schema": "neural-forge-matrix-wave14-measurement-battery-v1",
+ "seconds": 24.7
+}

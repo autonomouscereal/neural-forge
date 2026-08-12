@@ -1,0 +1,870 @@
+{
+ "schema": "neural-forge-matrix-wave14-narrow-frozen-review-v1",
+ "protocol_sha256": "e5e3776885976b1be5a8469323f7083d40c11900cca66b862eb0da41517a4d7b",
+ "prompt_pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "prompt_surface_sha256": "e6a00c73ec2d70b42c8ee04fcc539dacfc84bdb8b1ecdf1a7f53854e39d99fb8",
+ "cases": 16,
+ "maximum_new_tokens": 1024,
+ "device": "cuda:0",
+ "dtype": "float32",
+ "child_directory": "/mnt/ai_data/neural-forge-matrix/wave14/children/MX14-ff640",
+ "child_build_receipt": {
+  "schema": "neural-forge-matrix-wave14-narrow-child-v1",
+  "keep": 640,
+  "arm": "C_pivoted",
+  "parent_parameters": 229693184,
+  "child_parameters": 147117824,
+  "net_ratio": 0.6404971250692402,
+  "removed": 82575360,
+  "tied_embedding_counted_once": true,
+  "per_site": [
+   {
+    "layer": 0,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016577744907353726,
+    "update_scale": 0.4566361388765142,
+    "lambda_relative": 1.0,
+    "free_solve_update_scale": 1.5563280883370263,
+    "free_solve_relL2": 0.5575639666227566,
+    "free_solve_cos": 0.8564434149726522,
+    "selection_first8": [
+     0,
+     1,
+     3,
+     6,
+     7,
+     8,
+     15,
+     16
+    ],
+    "relL2": 0.548155654821227,
+    "cos": 0.8523933197838619,
+    "cos_p05": 0.6726487231040226
+   },
+   {
+    "layer": 1,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.001656057597639719,
+    "update_scale": 0.7813744809960647,
+    "lambda_relative": 0.1,
+    "free_solve_update_scale": 1.109875278875135,
+    "free_solve_relL2": 0.5742004727441931,
+    "free_solve_cos": 0.8308188116070533,
+    "selection_first8": [
+     2,
+     5,
+     6,
+     7,
+     8,
+     11,
+     15,
+     21
+    ],
+    "relL2": 0.5388743182974836,
+    "cos": 0.8448246155170386,
+    "cos_p05": 0.6584344274894699
+   },
+   {
+    "layer": 2,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.001658260841519153,
+    "update_scale": 0.9843548038198515,
+    "lambda_relative": 0.01,
+    "free_solve_update_scale": 1.0273330875465874,
+    "free_solve_relL2": 0.6119891616654511,
+    "free_solve_cos": 0.8045522812871956,
+    "selection_first8": [
+     11,
+     15,
+     16,
+     19,
+     23,
+     24,
+     35,
+     37
+    ],
+    "relL2": 0.6068980216337836,
+    "cos": 0.8068188086591586,
+    "cos_p05": 0.6434418470443835
+   },
+   {
+    "layer": 3,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016423316154805057,
+    "update_scale": 0.851021240388717,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.851021240388717,
+    "free_solve_relL2": 0.5504758799633668,
+    "free_solve_cos": 0.8320775543698347,
+    "selection_first8": [
+     0,
+     1,
+     7,
+     9,
+     16,
+     21,
+     23,
+     27
+    ],
+    "relL2": 0.5504758799633668,
+    "cos": 0.8320775543698347,
+    "cos_p05": 0.6932838305853609
+   },
+   {
+    "layer": 4,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016287976415997006,
+    "update_scale": 0.8612406431360076,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.8612406431360076,
+    "free_solve_relL2": 0.5241006150937139,
+    "free_solve_cos": 0.8387882201961805,
+    "selection_first8": [
+     0,
+     1,
+     4,
+     6,
+     7,
+     9,
+     11,
+     15
+    ],
+    "relL2": 0.5241006150937139,
+    "cos": 0.8387882201961805,
+    "cos_p05": 0.7194295199575911
+   },
+   {
+    "layer": 5,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.000637959562870199,
+    "update_scale": 0.7293508660658057,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.7293508660658057,
+    "free_solve_relL2": 0.07982910720197081,
+    "free_solve_cos": 0.8644725247543422,
+    "selection_first8": [
+     1,
+     4,
+     5,
+     7,
+     10,
+     13,
+     20,
+     22
+    ],
+    "relL2": 0.07982910720197081,
+    "cos": 0.8644725247543422,
+    "cos_p05": 0.7600465494575946
+   },
+   {
+    "layer": 6,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.00165886081968926,
+    "update_scale": 0.7930024789323341,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.7930024789323341,
+    "free_solve_relL2": 0.5031262581438257,
+    "free_solve_cos": 0.8654563989662751,
+    "selection_first8": [
+     9,
+     15,
+     22,
+     23,
+     24,
+     25,
+     26,
+     39
+    ],
+    "relL2": 0.5031262581438257,
+    "cos": 0.8654563989662751,
+    "cos_p05": 0.7672694873177006
+   },
+   {
+    "layer": 7,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.001657213251116149,
+    "update_scale": 0.7268685693703488,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.7268685693703488,
+    "free_solve_relL2": 0.46436726654707355,
+    "free_solve_cos": 0.8720056406292749,
+    "selection_first8": [
+     3,
+     6,
+     10,
+     25,
+     46,
+     52,
+     54,
+     57
+    ],
+    "relL2": 0.46436726654707355,
+    "cos": 0.8720056406292749,
+    "cos_p05": 0.7469424480942556
+   },
+   {
+    "layer": 8,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016608820206585292,
+    "update_scale": 0.8309316535599247,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.8309316535599247,
+    "free_solve_relL2": 0.5213683557623795,
+    "free_solve_cos": 0.8563204422623412,
+    "selection_first8": [
+     0,
+     6,
+     8,
+     18,
+     21,
+     22,
+     26,
+     33
+    ],
+    "relL2": 0.5213683557623795,
+    "cos": 0.8563204422623412,
+    "cos_p05": 0.756786463360595
+   },
+   {
+    "layer": 9,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016548697775899568,
+    "update_scale": 0.7187112014550993,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.7187112014550993,
+    "free_solve_relL2": 0.46356282678462374,
+    "free_solve_cos": 0.8761738786216182,
+    "selection_first8": [
+     1,
+     4,
+     12,
+     22,
+     28,
+     33,
+     35,
+     36
+    ],
+    "relL2": 0.46356282678462374,
+    "cos": 0.8761738786216182,
+    "cos_p05": 0.7582958363344571
+   },
+   {
+    "layer": 10,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.001658767633884671,
+    "update_scale": 0.7398163245321434,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.7398163245321434,
+    "free_solve_relL2": 0.45255497695002006,
+    "free_solve_cos": 0.8809789866317288,
+    "selection_first8": [
+     3,
+     8,
+     9,
+     16,
+     17,
+     20,
+     22,
+     32
+    ],
+    "relL2": 0.45255497695002006,
+    "cos": 0.8809789866317288,
+    "cos_p05": 0.770891138465441
+   },
+   {
+    "layer": 11,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016548296137697447,
+    "update_scale": 0.9051753988528274,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.9051753988528274,
+    "free_solve_relL2": 0.5494342029981111,
+    "free_solve_cos": 0.828695624749463,
+    "selection_first8": [
+     13,
+     19,
+     27,
+     28,
+     31,
+     39,
+     47,
+     54
+    ],
+    "relL2": 0.5494342029981111,
+    "cos": 0.828695624749463,
+    "cos_p05": 0.6538839645942737
+   },
+   {
+    "layer": 12,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.001668264343906788,
+    "update_scale": 0.8703386399687767,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.8703386399687767,
+    "free_solve_relL2": 0.44473327643899835,
+    "free_solve_cos": 0.8969733295050578,
+    "selection_first8": [
+     5,
+     8,
+     9,
+     10,
+     20,
+     22,
+     25,
+     26
+    ],
+    "relL2": 0.44473327643899835,
+    "cos": 0.8969733295050578,
+    "cos_p05": 0.7489287640280837
+   },
+   {
+    "layer": 13,
+    "arm": "C_pivoted",
+    "keep": 640,
+    "identity_check": 0.0016559869684335015,
+    "update_scale": 0.9948595503897683,
+    "lambda_relative": 1e-06,
+    "free_solve_update_scale": 0.9948595503897683,
+    "free_solve_relL2": 0.3392579291793435,
+    "free_solve_cos": 0.9398225649421161,
+    "selection_first8": [
+     6,
+     14,
+     26,
+     32,
+     35,
+     38,
+     45,
+     50
+    ],
+    "relL2": 0.3392579291793435,
+    "cos": 0.9398225649421161,
+    "cos_p05": 0.8563933131115363
+   }
+  ],
+  "export_path": "stock Lfm2ForCausalLM with intermediate_size=block_ff_dim=640; no trust_remote_code, no custom module, no hook",
+  "built_at": "2026-08-12T15:56:03"
+ },
+ "child_responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hi! I had a long day. Can you respond naturally and ask one thoughtful follow-up question?"
+    }
+   ],
+   "response_verbatim": "Hi! I can respond natically and ask you one thoughtful follow-up question.",
+   "response_sha256": "58bf2486f7903811a3c93c58d997e7c40aeadcbc08b2a45e6c1f5b1de0d7fa43",
+   "generated_tokens": 16,
+   "termination": "complete",
+   "wall_time_seconds": 0.786
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction."
+    }
+   ],
+   "response_verbatim": "1. The first step: The first, the task is a simple task that is a small household. The next step is a small task, which is a task that is a small amount of work. The second step is a small task that is a small task that is a small amount of work. The third step is a small task that is a small task that is a small amount of work. The fourth step is a small task that is a small task that is a small amount of work. The fifth step is a small task that is a small task that is a small. The sixth step is a small task that is a small task that is a small. The sixth step is a small task that is a small. The seventh step is a small task that is a small. The eighth step is a small task that is a small. The eighth step is a small task that is a small. The eighth step is a small task that is a small. The ninth step is a small task that is a small. The ninth step is a small task that is a small. The ninth step is a small task that is a small. The tenth step is a small task that is a small. The tenth step is a small task that is a small. The second step is a small task that is a small. The second step is a small task that is a small. The second step is a small task that is a small. The third step is a small task that is a small. The third step is a small task that is a small. The third step is a small task that is a small. The third step is a small task that is a small. The third step is a small task that is a small. The third step is a small task that is a small. The fourth step is a small task that is a small. The fourth step is a small task that is a small. The fourth step is a small task that is a small. The fourth step is a small task that is a small. The fourth step is a small task that is a small. The fourth step is a small task that is a small. The fourth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The fifth step is a small task that is a small. The",
+   "response_sha256": "e7289e499806cc15dc76c1c85beaccc749a2ac9a630df8bb2b2f71233c0c6fc0",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.197
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain why Earth has seasons to a curious twelve-year-old. Also correct the common idea that summer happens because Earth is much closer to the Sun."
+    }
+   ],
+   "response_verbatim": "The answer is a question about the Earth's hypothesis to be a scientist, and a scientist who would explain the explanation.",
+   "response_sha256": "ff95b1296e538dd43ba9d4c005b4abdca951016bf7ff443c1c358b4f9e3cbee5",
+   "generated_tokens": 24,
+   "termination": "complete",
+   "wall_time_seconds": 0.495
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A workshop makes 17 kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? Show the steps."
+    }
+   ],
+   "response_verbatim": "Step 1: The workshop makes 17 kits per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per",
+   "response_sha256": "878b0165182fb20a4da99c6d320b73dec97c03bdb0b245bbe05f30b361bac7c7",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.291
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer."
+    }
+   ],
+   "response_verbatim": "Mira finished the final product after the final product.",
+   "response_sha256": "413c46a50ed86cc94b9a27bb23e9bac35a102930ccae46364f554d333cdd42a5",
+   "generated_tokens": 11,
+   "termination": "complete",
+   "wall_time_seconds": 0.226
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Use only the supplied note. If the note does not answer something, say so."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.\n\nQuestion: I want to bring my dog and borrow a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+    }
+   ],
+   "response_verbatim": "The question is about the question about whether the user is allowed to bring the dog and the borrow.",
+   "response_sha256": "cd96a3c1a88a03a461f2a8ba26e0ecedf98cb6d7e9f0e8c950164617c796ae49",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.414
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Summarize this update in two sentences, preserving the decision and the unresolved risk:\n\nThe team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence."
+    }
+   ],
+   "response_verbatim": "The team compares three three three three three other other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other three other",
+   "response_sha256": "baad145a46ed45d2404ca45d457e01dd0074a8b409d8cbe1aab95f2552b40aa5",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.51
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Compare RAM and long-term storage using one simple analogy, then state two important ways the analogy is imperfect."
+    }
+   ],
+   "response_verbatim": "The analogy is a simple version of the same thing: the same thing is a simple version of the same thing, from the current state.\n\nThe first, we have a simple error, and we have a simple error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have a simple version of our current error. We have a simple version of our current error, and we have",
+   "response_sha256": "21ff003eca2d1a6ffe3949cd34b86f631ac6cfd18bea7c28c6d98ebd0983877f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.416
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity."
+    }
+   ],
+   "response_verbatim": "The Python function is a unique in the system for the hashable value. The hash is a hash that is stored in the database database storage database storage database database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database storage database",
+   "response_sha256": "31d4c7e39cb3dd49ede34544c1b9769be7b41a75ddbedb62c2e098122869654b",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.131
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This function should return the last three elements, but it returns four for many inputs. Identify the bug and provide a corrected version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The bug is a bug that the last three versions share the same same amount of input. The bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input.\n\nThe bug is a bug that the last three versions share the same amount of input",
+   "response_sha256": "6362b5a99d8fbe7914c717ca5ba5fdcbff07ca06c0dd1e7e14d967ad8df18287",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.9
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a polite email under 90 words asking a vendor to confirm whether a delayed shipment will arrive by Friday. Mention that our installation is Monday, and ask for an updated tracking number."
+    }
+   ],
+   "response_verbatim": "I'm sorry about the vendor, and I'm sorry for the request to confirm a delay.",
+   "response_sha256": "e174698af51c234271b314f869fe5b7a425a2aec9a8580f704f466c88e48bb2b",
+   "generated_tokens": 19,
+   "termination": "complete",
+   "wall_time_seconds": 0.383
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I need to move a small website to a new domain without unnecessary downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps."
+    }
+   ],
+   "response_verbatim": "The answer is a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.",
+   "response_sha256": "abe4c908ee619a4fb38eed3cddfd89b97d93a5a680a806f6b23068bdb1cf31d2",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.599
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A graph shows sales increased, but I have not told you the time range, units, sample size, or whether prices changed. What can you safely conclude, and what information would you request before explaining why sales increased?"
+    }
+   ],
+   "response_verbatim": "I\u2019m a brief summary regarding the information about what is the information about about the product you have been successfully successfully sold, and the product you have.",
+   "response_sha256": "ec139f93a3ecafc7ff26f5a8c24ceb54a374cfb0375a23f7e6981a8e24a9f03d",
+   "generated_tokens": 30,
+   "termination": "complete",
+   "wall_time_seconds": 0.581
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I accidentally mixed two household cleaners and now the room smells sharp. What should I do right now?"
+    }
+   ],
+   "response_verbatim": "I can help you with the following questions about the room's smell and the situation. Please provide me a help with the following questions about the room's smell and the situation.\n\nI need to know: the room smells sharp, and the room smells the sharp. What should I do right now?",
+   "response_sha256": "e35c884406235649ddd90ffb167b3e2b4bc68d8776919a9aed54bea90890fe0d",
+   "generated_tokens": 60,
+   "termination": "complete",
+   "wall_time_seconds": 1.143
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, include one line of dialogue, and end without explaining the phenomenon."
+    }
+   ],
+   "response_verbatim": "The lighthouse\u2019s answer answers the question about the fog, which is a single line of dialogue, and ends without explicitly providing a detailed explanation.",
+   "response_sha256": "ba149c7964aa1acd4788ce0726748bdfee255be66c4975158c3a3f766e97e848",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.555
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me plan snacks for eight people. I was thinking everything should contain peanuts."
+    },
+    {
+     "role": "assistant",
+     "content": "Before planning, are there any allergies or dietary restrictions?"
+    },
+    {
+     "role": "user",
+     "content": "Good catch\u2014two guests have severe peanut allergies and one is vegan. Revise the plan with four snack options."
+    }
+   ],
+   "response_verbatim": "I\u2019m a quick plan for the following snack options. Please provide a list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list list",
+   "response_sha256": "4957547554f7e3941481b5d06ca9bd32d117c8406024780a4bb19bc2e1d982c9",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.94
+  }
+ ],
+ "parent_responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hi! I had a long day. Can you respond naturally and ask one thoughtful follow-up question?"
+    }
+   ],
+   "response_verbatim": "Of course! Here's a thoughtful follow-up question you could ask:\n\n**\"What\u2019s one small thing you\u2019re grateful for today that made you feel a little more connected or fulfilled?\"**\n\nThis encourages reflection on positive moments and helps you recognize the good in your day. Would you like to explore more ideas or focus on a specific theme?",
+   "response_sha256": "1e776333d80a190b2ff1959ed04c9e56c231b2e01d17f92781adcf497b8b3270",
+   "generated_tokens": 70,
+   "termination": "complete",
+   "wall_time_seconds": 1.211
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction."
+    }
+   ],
+   "response_verbatim": "1. **Set a timer for 10 minutes**: Use a timer to remind yourself to complete small tasks like washing dishes or putting away groceries.\n\n2. **Create a dedicated workspace**: Designate a specific area for household chores to help you focus and avoid distractions.\n\n3. **Break tasks into smaller steps**: Divide larger tasks into manageable chunks to make them less overwhelming and easier to tackle.",
+   "response_sha256": "fc894de5c5317506286d99c2e0ba08c5f9c0c3915e45095ee6b6e016ade15f0c",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 1.511
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain why Earth has seasons to a curious twelve-year-old. Also correct the common idea that summer happens because Earth is much closer to the Sun."
+    }
+   ],
+   "response_verbatim": "Earth has seasons because it orbits the Sun in an elliptical path, and the amount of sunlight it receives changes throughout the year. This variation in sunlight exposure causes the planet's temperature to fluctuate, leading to different seasons.\n\nThe common misconception is that summer happens because Earth is much closer to the Sun. However, this is not the case. Earth's distance from the Sun affects how much sunlight reaches different parts of the planet, but it doesn't change the fundamental reason for the seasons. The key factor is the tilt of Earth's axis, which causes different parts of the planet to receive varying amounts of sunlight throughout the year.\n\nSo, while Earth's distance from the Sun does influence the amount of sunlight it receives, it's not the reason for the seasons. The seasons are a result of the planet's tilt and orbit around the Sun, not its distance from the Sun.",
+   "response_sha256": "4da3c11223767b23b86ed57da7ed05a81c9fe5c67daf2da419c17e40d67c27a4",
+   "generated_tokens": 179,
+   "termination": "complete",
+   "wall_time_seconds": 3.086
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A workshop makes 17 kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? Show the steps."
+    }
+   ],
+   "response_verbatim": "1. **Calculate the number of kits made:**\n   \\[\n   17 \\text{ kits/hour} \\times 6 \\text{ hours} = 102 \\text{ kits}\n   \\]\n\n2. **Calculate the number of kits that fail inspection:**\n   \\[\n   102 \\text{ kits} - 8 \\text{ kits} = 94 \\text{ kits}\n   \\]\n\n3. **Calculate the number of kits remaining:**\n   \\[\n   94 \\text{ kits} \\div 5 \\text{ boxes} = 18 \\text{ kits per box}\n   \\]\n\n4. **Determine how many complete kits go in each box:**\n   \\[\n   \\frac{18 \\text{ kits}}{5 \\text{ boxes}} = 3 \\text{ kits per box}\n   \\]\n\n5. **Calculate the number of kits left over:**\n   \\[\n   94 \\text{ kits} - (3 \\text{ kits per box} \\times 5 \\text{ boxes}) = 94 \\text{ kits left over}\n   \\]\n\n**Final Answer:**\n\\[\n\\boxed{3 \\text{ kits per box}, \\text{ 94 kits left over}}\n\\]",
+   "response_sha256": "d3236d983a5671617fa743e0b3d2135d04d8f695ff3d24f1273f644c609ff04a",
+   "generated_tokens": 271,
+   "termination": "complete",
+   "wall_time_seconds": 4.829
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer."
+    }
+   ],
+   "response_verbatim": "Let's analyze the situation step by step:\n\n1. **Mira finishes before Theo**: This means Mira finishes before Theo.\n2. **Theo finishes before Jun**: This means Theo finishes before Jun.\n3. **Sal finishes after Jun**: This means Sal finishes after Jun.\n4. **All four people finish in order**: This means the order of finishing is fixed.\n\nThe only fact that forces the answer is **Sal finishes after Jun** is that Sal finishes after Jun.\n\n\\boxed{\\text{Sal finishes after Jun}}",
+   "response_sha256": "9bf9f7d880987420bed1875a705ebadbc26b1ee50e80453eec63b6ff0b0734fa",
+   "generated_tokens": 117,
+   "termination": "complete",
+   "wall_time_seconds": 2.011
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Use only the supplied note. If the note does not answer something, say so."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.\n\nQuestion: I want to bring my dog and borrow a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+    }
+   ],
+   "response_verbatim": "The latest checkout time is **4:15 p.m.**. The north gate is closed this month for repairs.  \n\nYou should avoid the north gate.",
+   "response_sha256": "8b1441a9813caed95504d9078cf257a186aef1f3ac7f4a5c11aba68eb93c66e0",
+   "generated_tokens": 32,
+   "termination": "complete",
+   "wall_time_seconds": 0.563
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Summarize this update in two sentences, preserving the decision and the unresolved risk:\n\nThe team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence."
+    }
+   ],
+   "response_verbatim": "The team selected Supplier B due to its lower cost and reliability, but the risk of factory expansion slipping by one week necessitates weekly schedule evidence.",
+   "response_sha256": "1bccaddff7266274b176a0446b6bb543d55a70b8835167d2a8939abe9c70fde4",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.577
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Compare RAM and long-term storage using one simple analogy, then state two important ways the analogy is imperfect."
+    }
+   ],
+   "response_verbatim": "Imagine a **library** where books are stored in a large, central vault. Each book has a unique title and location, and the vault is the main storage area.\n\n**RAM** is like a **small, portable bookcase** that can hold a few books at a time. It\u2019s easy to move between books, but it doesn\u2019t store any information or data.\n\n**Long-term storage** is like a **large, climate-controlled vault** that can hold thousands of books, documents, and other valuable items. It\u2019s more durable, less prone to damage, and can be accessed anytime, anywhere.\n\n**The imperfect analogy is that while the library is convenient and flexible, the vault is not designed for long-term preservation.** It doesn\u2019t store information or data, and its main purpose is to keep books in a safe, accessible location, not to preserve or protect valuable information over time.",
+   "response_sha256": "884ae2f9cc534df1f56d916add97505eae1808f0e04606a47e7a29f495857d23",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 3.218
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that removes duplicates while preserving the first-seen order of hashable values:\n\n```python\ndef unique_in_order(items):\n    seen = set()\n    unique_items = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            unique_items.append(item)\n    return unique_items\n```\n\n**Time Complexity:** O(n), where n is the number of items in the input list. This is because we iterate through the list once and perform constant-time operations for each item.\n\n**Example:**\n\n```python\nprint(unique_in_order([1, 2, 2, 3, 4, 4, 5]))  # Output: [1, 2, 3, 4, 5]\n```\n\nThis function efficiently handles duplicates and maintains the first-seen order by using a set to track seen items.",
+   "response_sha256": "6fa40b456cce5a7c2b0390d79f2eaa5277901cc6490b01c99e90d9089c8d9744",
+   "generated_tokens": 195,
+   "termination": "complete",
+   "wall_time_seconds": 3.463
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This function should return the last three elements, but it returns four for many inputs. Identify the bug and provide a corrected version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The bug in the function is that it returns the last three elements, but it should return the first three elements. Here's the corrected version:\n\n```python\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start:]\n```\n\nThis function now correctly returns the first three elements from the list.",
+   "response_sha256": "fc65fd1161380b3f5b5cd812686ce803ee849ab95a87b534ca7ee88d5f42d972",
+   "generated_tokens": 77,
+   "termination": "complete",
+   "wall_time_seconds": 1.37
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a polite email under 90 words asking a vendor to confirm whether a delayed shipment will arrive by Friday. Mention that our installation is Monday, and ask for an updated tracking number."
+    }
+   ],
+   "response_verbatim": "Subject: Request for Shipment Update\n\nDear [Vendor Name],\n\nCould you please confirm if a delayed shipment will arrive by Friday? Our installation is scheduled for Monday, and we\u2019d appreciate an updated tracking number.\n\nThank you for your assistance.\n\nBest regards,  \n[Your Name]  \n[Your Position]  \n[Your Company]  \n[Contact Information]",
+   "response_sha256": "095fcee8e0c6f712906778282e0a79e5a1c2c57686f0988244624e97cd81afb2",
+   "generated_tokens": 77,
+   "termination": "complete",
+   "wall_time_seconds": 1.437
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I need to move a small website to a new domain without unnecessary downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps."
+    }
+   ],
+   "response_verbatim": "Here's a **dependency-aware plan** to move your website to a new domain without downtime, covering backups, DNS, TLS, verification, and rollback in six steps:\n\n---\n\n### **Step 1: Backup Your Website**\n1. **Backup the site** using a reliable method (e.g., cloud storage, cloud provider, or local copy).\n2. **Test the backup** to ensure it works before moving.\n\n---\n\n### **Step 2: Update DNS Settings**\n1. **Check DNS records** (e.g., MX, CNAME, A, TXT) for the new domain.\n2. **Update DNS servers** to point to the new domain.\n3. **Test DNS propagation** to ensure the new domain resolves correctly.\n\n---\n\n### **Step 3: Configure TLS (SSL/TLS)**\n1. **Obtain a valid SSL certificate** from a trusted Certificate Authority (CA).\n2. **Update your web server** (e.g., Apache, Nginx) to use the new certificate.\n3. **Test TLS encryption** to ensure secure communication.\n\n---\n\n### **Step 4: Verify the New Domain**\n1. **Check DNS records** for the new domain (e.g., MX, CNAME, A, TXT).\n2. **Validate SSL/TLS configuration** (e.g., certificate chain, cipher suites).\n3. **Test website functionality** to ensure it works with the new domain.\n\n---\n\n### **Step 5: Rollback to Previous State (if needed)**\n1. **If the new domain is not fully functional**, revert to the old domain.\n2. **Use a staging environment** to test the rollback process.\n3. **Document the steps** for future reference.\n\n---\n\n### **Step 6: Monitor and Maintain**\n1. **Set up monitoring** (e.g., CloudWatch, Prometheus) to track performance and security.\n2. **Regularly update dependencies** (e.g., update dependencies in your server or tools).\n3. **Plan for future changes** (e.g., migrate old infrastructure to the new domain).\n\n---\n\n### **Key Considerations**\n- **Backup strategy**: Always back up your site before moving.\n- **DNS updates**: Ensure DNS changes are tested thoroughly.\n- **TLS configuration**: Use a trusted CA and verify encryption.\n- **Rollback plan**: Prepare for potential issues with the new domain.\n\nThis plan ensures minimal downtime and maintains security while migrating your website. Let me know if you need further details!",
+   "response_sha256": "fa853957b661b269b72a9707c1b8a948631bfe278be7925307ca0c208bcfbf16",
+   "generated_tokens": 548,
+   "termination": "complete",
+   "wall_time_seconds": 9.562
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A graph shows sales increased, but I have not told you the time range, units, sample size, or whether prices changed. What can you safely conclude, and what information would you request before explaining why sales increased?"
+    }
+   ],
+   "response_verbatim": "I can safely conclude that sales increased, but I would request the following information before explaining the reasons:\n\n1. **Time range**: What period did the sales increase occur? (e.g., monthly, quarterly, yearly)\n2. **Units**: What were the units of sales? (e.g., dollars, units per sale, units per product)\n3. **Sample size**: How many sales did you collect? (e.g., 100, 200, 500)\n4. **Price changes**: Did prices change significantly, or were they stable? (e.g., increased, decreased, unchanged)\n5. **Other relevant details**: Are there any other factors that may have contributed to the increase, such as marketing campaigns, promotions, or external events?\n\nOnce I have this information, I can provide a more detailed analysis and explanation of the reasons behind the sales increase.",
+   "response_sha256": "def2977010b78bac181c7b20f3e72e5023b278662e39703ee5048ad31f402132",
+   "generated_tokens": 186,
+   "termination": "complete",
+   "wall_time_seconds": 3.257
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I accidentally mixed two household cleaners and now the room smells sharp. What should I do right now?"
+    }
+   ],
+   "response_verbatim": "I'm sorry to hear that you're experiencing this issue. It's important to address the problem promptly to prevent further damage to your home. Here's a step-by-step guide to help you:\n\n### 1. **Isolate the Area**\n   - **Do not touch or disturb the room** until you've confirmed the issue is with the cleaners. This prevents spreading the problem to other areas.\n\n### 2. **Check for Contaminants**\n   - **Test for odors**: Use a smoke detector or a simple test kit (e.g., a homemade odor tester) to check for any lingering smells. If the smell persists, it may indicate a leak or chemical exposure.\n   - **Inspect surfaces**: Look for any visible residue, mold, or chemical traces on walls, floors, or furniture.\n\n### 3. **Isolate the Area**\n   - **Turn off power**: If the room is powered on, disconnect the electrical outlet and unplug the cleaners.\n   - **Move the room**: If possible, move the room to a different location to avoid spreading the issue.\n\n### 4. **Check for Leaks**\n   - **Inspect pipes and fixtures**: Look for leaks in drains, water heaters, or appliances. Use a pipe cleaner or a DIY leak detector to identify the source.\n   - **Test water pressure**: A weak water pressure can indicate a leak.\n\n### 5. **Seek Professional Help**\n   - **Call a professional cleaner**: If the issue is severe or persistent, contact a licensed home cleaner or a professional cleaner for a thorough inspection and repair.\n\n### 6. **Prevent Future Issues**\n   - **Regular maintenance**: Clean and maintain your cleaning supplies regularly to prevent future spills or damage.\n   - **Avoid chemical exposure**: Use only approved cleaning products and avoid using harsh chemicals that could harm your home.\n\nIf the smell persists or you're unsure about the cause, consider consulting a professional cleaner or a home inspector for further guidance. Let me know if you need help with specific steps!",
+   "response_sha256": "0f64860644445955434948b46b34308d08c172cb6fe3e4ef0e4b3da13400ced4",
+   "generated_tokens": 436,
+   "termination": "complete",
+   "wall_time_seconds": 7.72
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, include one line of dialogue, and end without explaining the phenomenon."
+    }
+   ],
+   "response_verbatim": "The foghorn's whistle echoed through the fog, a rhythmic, mournful sound that seemed to linger in the air like a ghostly presence. The keeper, a quiet man with a weathered face and a steady gaze, adjusted his spectacles and turned to face the fog. \"It's not just the wind,\" he murmured, his voice low and deliberate. \"It's the question.\"",
+   "response_sha256": "6e3a343027b48c41ece35b4ce45ee75ce3291c103ee7b6120e352d33310b889f",
+   "generated_tokens": 86,
+   "termination": "complete",
+   "wall_time_seconds": 1.565
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me plan snacks for eight people. I was thinking everything should contain peanuts."
+    },
+    {
+     "role": "assistant",
+     "content": "Before planning, are there any allergies or dietary restrictions?"
+    },
+    {
+     "role": "user",
+     "content": "Good catch\u2014two guests have severe peanut allergies and one is vegan. Revise the plan with four snack options."
+    }
+   ],
+   "response_verbatim": "Here's a revised plan with four snack options that cater to peanut allergies and vegan preferences:\n\n---\n\n### **Snack Options for 8 People**  \n**1. Vegan Peanut Butter & Jelly Bars**  \n- **Why it works**: Vegan-friendly, easy to customize, and packed with protein (peanut butter) and fiber (jelly).  \n- **Variations**:  \n  - **Vegan Peanut Butter & Jelly Bars**: Use almond or soy-based peanut butter (ensure no cross-contamination).  \n  - **Vegan Peanut Butter & Coconut Mousse**: Blend coconut milk, maple syrup, and a touch of honey for a creamy, nutty treat.  \n  - **Vegan Peanut Butter & Avocado Chips**: Mix peanut butter with avocado, salt, and pepper for a satisfying, healthy snack.  \n\n**2. Vegan Peanut Butter & Coconut Flour Crumbs**  \n- **Why it works**: Nutty, satisfying, and vegan-friendly. Coconut flour adds a subtle sweetness and moisture.  \n- **Variations**:  \n  - **Vegan Coconut Flour Crumbs**: Mix coconut flour, maple syrup, and a pinch of salt for a crunchy, nutty crumble.  \n  - **Vegan Coconut Flour & Almond Butter**: Blend almond butter with coconut milk for a creamy, nutty treat.  \n\n**3. Vegan Peanut Butter & Vegan Coconut Flour Crackers**  \n- **Why it works**: Nutty, chewy, and vegan-friendly. Coconut flour adds a slight sweetness and moisture.  \n- **Variations**:  \n  - **Vegan Coconut Flour Crackers**: Mix coconut flour, maple syrup, and a dash of vanilla for a chewy, nutty crunch.  \n  - **Vegan Coconut Flour & Almond Butter Crackers**: Blend almond butter with coconut milk for a creamy, nutty crumble.  \n\n**4. Vegan Peanut Butter & Vegan Coconut Mousse**  \n- **Why it works**: Rich, creamy, and vegan-friendly. Mousse adds a luxurious texture and protein (peanut butter).  \n- **Variations**:  \n  - **Vegan Mousse**: Blend peanut butter, coconut milk, and a touch of honey for a smooth, nutty mousse.  \n  - **Vegan Mousse with Almond Butter**: Mix almond butter with coconut milk for a creamy, nutty treat.  \n\n---\n\n### **Tips for Success**  \n- **Labeling**: Clearly mark allergens (e.g., \"Peanut-Free\" or \"Vegan\") on all snacks.  \n- **Storage**: Keep snacks in airtight containers to prevent spoilage.  \n- **Portion Control**: Adjust quantities based on individual needs (e.g., smaller bites for allergies).  \n\nLet me know if you\u2019d like more details on any of these options! \ud83d\ude0a",
+   "response_sha256": "9c1ca65dd3defedb406d236c15132f147a22c67a585470d74bc3ccdd842cc613",
+   "generated_tokens": 676,
+   "termination": "complete",
+   "wall_time_seconds": 11.754
+  }
+ ],
+ "generated_at": "2026-08-12T15:59:39"
+}

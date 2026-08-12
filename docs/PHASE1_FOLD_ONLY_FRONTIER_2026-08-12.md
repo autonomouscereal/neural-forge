@@ -637,3 +637,64 @@ withdrew in a receipt rather than in a summary.
 | benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{11,12,13}/bench/` |
 | stage-2 estate | `/mnt/ai_data/neural-forge-stage2/` (trainer, 26 corpus shards, admission gates) |
 | M5 kernel | `src/neural_forge/matrix_technique_head_merge.py`, tests in `tests/test_matrix_technique_head_merge.py` |
+
+
+---
+
+## 7. Wave 14 — the export requirement, and the first architecturally smaller children
+
+ADDENDUM 11's R3 asks a frontier claim to have a standard-architecture export
+path.  Applying it to this document's own table changes what the table says.
+
+**Every child above is parent-shaped.**  `mxq_materialize_child.py:120` refuses a
+folded tensor whose shape differs from the parent's, so `T1`/`T4`/`T5`/`T8`/`T7`
+all store a factored, sparse, tied or merged form and reconstruct the parent's
+shapes to run.  `0.703409x`, `0.729103x` and `0.710270x` are **storage-format
+ratios**; the model on disk is 229,693,184 parameters.  This is not an error in
+any of those counts -- each is an honest count of stored parameters under a
+registered, tested storage model -- but it is a different quantity from the one
+R3 names, and the two had not been distinguished.
+
+Three axes on this checkpoint are config-standard, verified against the installed
+`transformers` 5.12.1: `intermediate_size` / `block_ff_dim`
+(`modeling_lfm2.py:138-149`), `head_dim` (`:233` and `:109`), and
+`num_hidden_layers` + `layer_types`.  Conv channel count is **not**:
+`Lfm2ShortConv.__init__` hardwires `config.hidden_size` (`:312-321`) and never
+reads `conv_dim`, so **F-C is a research probe under R3** as a fact about the
+modeling file.
+
+Wave 14 built the first genuinely narrower children in the campaign -- stock
+`Lfm2ForCausalLM`, no `trust_remote_code`, loaded back and counted before review:
+
+| child | `intermediate_size` | net | per-site write cos | cap-hits | reading |
+|---|---:|---:|---:|---:|---|
+| `MX14-ff1280` | 1280 | 0.760331x | 0.925 | 3 / 16 | ~5/15, degraded not degenerate (**sub-4x diagnostic**) |
+| `MX14-ff640` | 640 | 0.640497x | 0.856 | 7 / 16 | **0/15**, fluent and empty |
+| `MX14-ff320` | 320 | 0.580580x | 0.781 | 16 / 16 | **0/15**, total collapse |
+
+**The measured reason 0.5x is hard, restated.**  Wave 13 said the per-lane price
+does not run away and the coherence budget is small.  Wave 14 puts a number on
+the second half: the cliff sits between a per-site held-out write cosine of
+**0.93 and 0.86 when the fold is installed at all fourteen MLP sites at once**.
+The sealed alive lanes sit at 0.86 -- the bottom of the dead band -- and survive
+because they are installed three at a time.  Per-component fidelity inside the
+sealed alive band, at every site, still composed to 0/15, so no census could have
+predicted it.
+
+**One new positive law.**  A matched-storage control (coreset vs evidence-weighted
+low-rank, identical stored-parameter count, same rows, same target, same harness)
+gives the coreset **40 of 42** site-levels on the SwiGLU write and the low-rank
+basis **12 of 15** on the conv write.  Verbatim coverage beats reconstruction in
+gated feature space and stops at the conv context.
+
+**Distance to 0.5x, in the standard-export lane.**  `intermediate_size` alone
+reaches 0.5507x at keep=160 and is dead well before that.  The arithmetic that
+still closes: `intermediate_size` 640 (-82.6M) + `head_dim` 16 (-14.2M) + one
+block excised (-12.1M) = 0.4666x, all three config-standard.  Wave 14 measured
+the second (q/k score operators are **0.993-0.999** rank-16 per head; v/o
+contracts to cosine 0.84-0.94) and the third (only L05 of thirteen blocks clears
+the absorption floor, and L05 is the massive-activation block).  Neither was
+built.
+
+Full results: `reports/matrix-campaign-20260810/wave14/NOTES-MX-R.md`, sixteen
+censuses under `wave14/probes/`.

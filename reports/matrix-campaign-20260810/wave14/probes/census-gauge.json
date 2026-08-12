@@ -1,0 +1,12 @@
+{
+ "task": "gauge",
+ "dim": 1024,
+ "top_1_share": 0.40530519813750815,
+ "top_16_share": 0.7371453138703464,
+ "top_64_share": 0.8127953365835082,
+ "rank_for_90pct": 224,
+ "rank_for_99pct": 828,
+ "participation_ratio": 0.004590761903097767,
+ "schema": "neural-forge-matrix-wave14-measurement-battery-v1",
+ "seconds": 3.5
+}

@@ -1,0 +1,56 @@
+{
+ "task": "l05_anomaly",
+ "sites": [
+  {
+   "layer": 4,
+   "energy_top1_share": 0.04748658463005941,
+   "energy_top4_share": 0.07603739721521388,
+   "energy_ratio_max_to_median": 196.35189940933756,
+   "units_activation_below_1e-6_of_median": 0,
+   "units_activation_below_1e-3_of_median": 0,
+   "w1_rows_below_1e-3_of_median": 0,
+   "w3_rows_below_1e-3_of_median": 0,
+   "phi_max_abs": 1.03125,
+   "phi_median_abs": 0.0030059814453125
+  },
+  {
+   "layer": 5,
+   "energy_top1_share": 0.9715351624628805,
+   "energy_top4_share": 0.976605471426648,
+   "energy_ratio_max_to_median": 214234.02084109737,
+   "units_activation_below_1e-6_of_median": 0,
+   "units_activation_below_1e-3_of_median": 0,
+   "w1_rows_below_1e-3_of_median": 0,
+   "w3_rows_below_1e-3_of_median": 0,
+   "phi_max_abs": 22.125,
+   "phi_median_abs": 0.0023651123046875
+  },
+  {
+   "layer": 6,
+   "energy_top1_share": 0.019200837343843164,
+   "energy_top4_share": 0.033269397517774156,
+   "energy_ratio_max_to_median": 88.51336917641083,
+   "units_activation_below_1e-6_of_median": 0,
+   "units_activation_below_1e-3_of_median": 0,
+   "w1_rows_below_1e-3_of_median": 0,
+   "w3_rows_below_1e-3_of_median": 0,
+   "phi_max_abs": 0.302734375,
+   "phi_median_abs": 0.00311279296875
+  },
+  {
+   "layer": 13,
+   "energy_top1_share": 0.2516743307337986,
+   "energy_top4_share": 0.34949271668619397,
+   "energy_ratio_max_to_median": 1842.1507928117833,
+   "units_activation_below_1e-6_of_median": 0,
+   "units_activation_below_1e-3_of_median": 0,
+   "w1_rows_below_1e-3_of_median": 0,
+   "w3_rows_below_1e-3_of_median": 0,
+   "phi_max_abs": 5.53125,
+   "phi_median_abs": 0.01043701171875
+  }
+ ],
+ "note": "OFF_EPSILON is a share-of-total test and is not scale-robust; a single enormous unit pushes every other unit below any share threshold",
+ "schema": "neural-forge-matrix-wave14-matched-control-v1",
+ "seconds": 2.0
+}

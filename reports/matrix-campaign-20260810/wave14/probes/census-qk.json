@@ -1,0 +1,335 @@
+{
+ "task": "qk",
+ "sites": [
+  {
+   "layer": 2,
+   "status": "measured",
+   "heads": [
+    {
+     "head": 0,
+     "energy_top_16": 0.9948083557168816,
+     "energy_top_32": 0.9980962806665076,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 1,
+     "energy_top_16": 0.9959815937730384,
+     "energy_top_32": 0.9985724516107619,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 2,
+     "energy_top_16": 0.9907787671266217,
+     "energy_top_32": 0.9977546013049082,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 3,
+     "energy_top_16": 0.9900544328257183,
+     "energy_top_32": 0.9983465892585994,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 4,
+     "energy_top_16": 0.9941518256756772,
+     "energy_top_32": 0.9990375712364885,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 5,
+     "energy_top_16": 0.9984818206990989,
+     "energy_top_32": 0.9994920326445422,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 6,
+     "energy_top_16": 0.9998044575476294,
+     "energy_top_32": 0.9999400622355523,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 7,
+     "energy_top_16": 0.9998274950668318,
+     "energy_top_32": 0.9999515987886951,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 8,
+     "energy_top_16": 0.9877931977666498,
+     "energy_top_32": 0.9979979516308153,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 9,
+     "energy_top_16": 0.956957370651732,
+     "energy_top_32": 0.9938683563487585,
+     "effective_rank_90": 6
+    },
+    {
+     "head": 10,
+     "energy_top_16": 0.9968563612325223,
+     "energy_top_32": 0.9990196271818965,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 11,
+     "energy_top_16": 0.9971228272799444,
+     "energy_top_32": 0.9992222780215958,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 12,
+     "energy_top_16": 0.9980213461997038,
+     "energy_top_32": 0.9995995262561904,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 13,
+     "energy_top_16": 0.9845351524455503,
+     "energy_top_32": 0.998540743267453,
+     "effective_rank_90": 4
+    },
+    {
+     "head": 14,
+     "energy_top_16": 0.9413912415942659,
+     "energy_top_32": 0.9994091992567334,
+     "effective_rank_90": 13
+    },
+    {
+     "head": 15,
+     "energy_top_16": 0.997055148335823,
+     "energy_top_32": 0.9996103202480657,
+     "effective_rank_90": 1
+    }
+   ],
+   "energy_top16_median": 0.9948083557168816,
+   "energy_top16_min": 0.9413912415942659,
+   "alive": true
+  },
+  {
+   "layer": 4,
+   "status": "no-cache"
+  },
+  {
+   "layer": 6,
+   "status": "no-cache"
+  },
+  {
+   "layer": 8,
+   "status": "measured",
+   "heads": [
+    {
+     "head": 0,
+     "energy_top_16": 0.9987824681060515,
+     "energy_top_32": 0.9998209510551688,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 1,
+     "energy_top_16": 0.998510144176056,
+     "energy_top_32": 0.9997644526930926,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 2,
+     "energy_top_16": 0.9891525526097872,
+     "energy_top_32": 0.9994338113446407,
+     "effective_rank_90": 3
+    },
+    {
+     "head": 3,
+     "energy_top_16": 0.9965685703863023,
+     "energy_top_32": 0.9994575896805358,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 4,
+     "energy_top_16": 0.99852396961872,
+     "energy_top_32": 0.9997790978755493,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 5,
+     "energy_top_16": 0.9986783703706114,
+     "energy_top_32": 0.999699454905453,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 6,
+     "energy_top_16": 0.9979327320153673,
+     "energy_top_32": 0.9995632900316789,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 7,
+     "energy_top_16": 0.9984490229616236,
+     "energy_top_32": 0.9996136346990003,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 8,
+     "energy_top_16": 0.9985368306749058,
+     "energy_top_32": 0.9998790314753184,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 9,
+     "energy_top_16": 0.9970013082748344,
+     "energy_top_32": 0.9995050997142039,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 10,
+     "energy_top_16": 0.9996334264871098,
+     "energy_top_32": 0.9998972764524996,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 11,
+     "energy_top_16": 0.9996066871236671,
+     "energy_top_32": 0.9999091510522334,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 12,
+     "energy_top_16": 0.99938640231863,
+     "energy_top_32": 0.9998175784206101,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 13,
+     "energy_top_16": 0.9991202972020025,
+     "energy_top_32": 0.9997484241397029,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 14,
+     "energy_top_16": 0.9986529497041003,
+     "energy_top_32": 0.9997195497642193,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 15,
+     "energy_top_16": 0.9989450435536489,
+     "energy_top_32": 0.9997560374413283,
+     "effective_rank_90": 1
+    }
+   ],
+   "energy_top16_median": 0.9985368306749058,
+   "energy_top16_min": 0.9891525526097872,
+   "alive": true
+  },
+  {
+   "layer": 10,
+   "status": "no-cache"
+  },
+  {
+   "layer": 12,
+   "status": "measured",
+   "heads": [
+    {
+     "head": 0,
+     "energy_top_16": 0.9965080267238958,
+     "energy_top_32": 0.9994983936613887,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 1,
+     "energy_top_16": 0.9962683213458233,
+     "energy_top_32": 0.9991811961795457,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 2,
+     "energy_top_16": 0.9925963407149253,
+     "energy_top_32": 0.9987257544799523,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 3,
+     "energy_top_16": 0.9909744728833434,
+     "energy_top_32": 0.9990437204923913,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 4,
+     "energy_top_16": 0.9755099509105631,
+     "energy_top_32": 0.9985983403682113,
+     "effective_rank_90": 6
+    },
+    {
+     "head": 5,
+     "energy_top_16": 0.9901543181762372,
+     "energy_top_32": 0.9993604513892177,
+     "effective_rank_90": 2
+    },
+    {
+     "head": 6,
+     "energy_top_16": 0.9921527751521907,
+     "energy_top_32": 0.9995321755577135,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 7,
+     "energy_top_16": 0.9752434725572264,
+     "energy_top_32": 0.9985860723700238,
+     "effective_rank_90": 6
+    },
+    {
+     "head": 8,
+     "energy_top_16": 0.9990683926029067,
+     "energy_top_32": 0.9997113332818299,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 9,
+     "energy_top_16": 0.9991969692549191,
+     "energy_top_32": 0.9997292601149924,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 10,
+     "energy_top_16": 0.9956564188624414,
+     "energy_top_32": 0.9990671602007861,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 11,
+     "energy_top_16": 0.9935272362047463,
+     "energy_top_32": 0.9988716758896632,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 12,
+     "energy_top_16": 0.9868812898716184,
+     "energy_top_32": 0.9993857053574837,
+     "effective_rank_90": 3
+    },
+    {
+     "head": 13,
+     "energy_top_16": 0.9886499604215392,
+     "energy_top_32": 0.999463248401314,
+     "effective_rank_90": 2
+    },
+    {
+     "head": 14,
+     "energy_top_16": 0.998185579330317,
+     "energy_top_32": 0.9995460489746681,
+     "effective_rank_90": 1
+    },
+    {
+     "head": 15,
+     "energy_top_16": 0.9971584909510983,
+     "energy_top_32": 0.9994734843097309,
+     "effective_rank_90": 1
+    }
+   ],
+   "energy_top16_median": 0.9925963407149253,
+   "energy_top16_min": 0.9752434725572264,
+   "alive": true
+  }
+ ],
+ "floor": 0.81,
+ "schema": "neural-forge-matrix-wave14-measurement-battery-v1",
+ "seconds": 2.3
+}

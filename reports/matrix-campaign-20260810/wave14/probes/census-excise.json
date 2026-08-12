@@ -1,0 +1,271 @@
+{
+ "task": "excise",
+ "floor_absorbed": 0.5,
+ "blocks": [
+  {
+   "layer": 1,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 22.395761585311718,
+   "heldout_target_norm": 36.897160705209686,
+   "heldout_residual_parent_w2": 22.395746892797728,
+   "heldout_residual_refit": 49.50041997920839,
+   "absorbed_fraction_of_delta": -1.2102583915553597,
+   "unexplained_relative": 1.3415780247887525,
+   "delta_share_of_stream": 0.7599761023217282,
+   "update_scale": 4.5796218905634545,
+   "seconds": 1.1,
+   "alive": false
+  },
+  {
+   "layer": 2,
+   "kind": "attention",
+   "status": "measured",
+   "heldout_delta_norm": 18.73971538977274,
+   "heldout_target_norm": 29.704402842294215,
+   "heldout_residual_parent_w2": 18.73967839711034,
+   "heldout_residual_refit": 30.6030001908846,
+   "absorbed_fraction_of_delta": -0.6330557617532593,
+   "unexplained_relative": 1.0302513184109843,
+   "delta_share_of_stream": 0.770205973973154,
+   "update_scale": 3.3774540783442206,
+   "seconds": 0.8,
+   "alive": false
+  },
+  {
+   "layer": 3,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 13.967582237380087,
+   "heldout_target_norm": 18.239789256338398,
+   "heldout_residual_parent_w2": 13.96753049065807,
+   "heldout_residual_refit": 15.237878807168212,
+   "absorbed_fraction_of_delta": -0.09094605982619908,
+   "unexplained_relative": 0.8354196747022715,
+   "delta_share_of_stream": 0.5664255473805265,
+   "update_scale": 2.115862366279597,
+   "seconds": 0.8,
+   "alive": false
+  },
+  {
+   "layer": 4,
+   "kind": "attention",
+   "status": "measured",
+   "heldout_delta_norm": 13.642227695632657,
+   "heldout_target_norm": 17.22986285021427,
+   "heldout_residual_parent_w2": 13.641790276858737,
+   "heldout_residual_refit": 13.171090996986411,
+   "absorbed_fraction_of_delta": 0.03453517337180001,
+   "unexplained_relative": 0.7644338850220515,
+   "delta_share_of_stream": 0.544259881503542,
+   "update_scale": 2.0258880823202703,
+   "seconds": 0.8,
+   "alive": false
+  },
+  {
+   "layer": 5,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 61.937651653318554,
+   "heldout_target_norm": 61.58150104633181,
+   "heldout_residual_parent_w2": 61.93835362416918,
+   "heldout_residual_refit": 20.731734173345696,
+   "absorbed_fraction_of_delta": 0.6652805907239314,
+   "unexplained_relative": 0.33665522634383094,
+   "delta_share_of_stream": 0.9204859543747694,
+   "update_scale": 4.034970302244204,
+   "seconds": 0.7,
+   "alive": true
+  },
+  {
+   "layer": 6,
+   "kind": "attention",
+   "status": "measured",
+   "heldout_delta_norm": 14.105197036112632,
+   "heldout_target_norm": 62.82788731128908,
+   "heldout_residual_parent_w2": 14.105163976288752,
+   "heldout_residual_refit": 13.623449607409297,
+   "absorbed_fraction_of_delta": 0.03415389572155192,
+   "unexplained_relative": 0.2168376208467764,
+   "delta_share_of_stream": 0.20542173210495132,
+   "update_scale": 2.656662030152782,
+   "seconds": 3.1,
+   "alive": false
+  },
+  {
+   "layer": 7,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 16.869462155102465,
+   "heldout_target_norm": 19.24910078627245,
+   "heldout_residual_parent_w2": 16.869477693633932,
+   "heldout_residual_refit": 16.89517828776174,
+   "absorbed_fraction_of_delta": -0.0015244192389085587,
+   "unexplained_relative": 0.877712599427532,
+   "delta_share_of_stream": 0.23357200595433858,
+   "update_scale": 2.9173610960441363,
+   "seconds": 0.8,
+   "alive": false
+  },
+  {
+   "layer": 8,
+   "kind": "attention",
+   "status": "measured",
+   "heldout_delta_norm": 22.255112018555323,
+   "heldout_target_norm": 25.88977364187156,
+   "heldout_residual_parent_w2": 22.255100885253597,
+   "heldout_residual_refit": 19.22741799499523,
+   "absorbed_fraction_of_delta": 0.13604487908376905,
+   "unexplained_relative": 0.7426645849038519,
+   "delta_share_of_stream": 0.2875083251391707,
+   "update_scale": 2.6033007710499523,
+   "seconds": 0.7,
+   "alive": false
+  },
+  {
+   "layer": 9,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 26.78852328182025,
+   "heldout_target_norm": 30.706132315080936,
+   "heldout_residual_parent_w2": 26.788557000528595,
+   "heldout_residual_refit": 26.067248202922887,
+   "absorbed_fraction_of_delta": 0.02692477936575355,
+   "unexplained_relative": 0.8489264598824217,
+   "delta_share_of_stream": 0.32293666661509196,
+   "update_scale": 2.971315031869908,
+   "seconds": 3.3,
+   "alive": false
+  },
+  {
+   "layer": 10,
+   "kind": "attention",
+   "status": "measured",
+   "heldout_delta_norm": 47.45319449095449,
+   "heldout_target_norm": 50.90734628223183,
+   "heldout_residual_parent_w2": 47.45318951886115,
+   "heldout_residual_refit": 43.71385072913208,
+   "absorbed_fraction_of_delta": 0.07880067510597621,
+   "unexplained_relative": 0.8586943520249751,
+   "delta_share_of_stream": 0.47028238266965705,
+   "update_scale": 4.009278786341468,
+   "seconds": 10.8,
+   "alive": false
+  },
+  {
+   "layer": 11,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 50.89983392203525,
+   "heldout_target_norm": 65.84504078841685,
+   "heldout_residual_parent_w2": 50.89979725236348,
+   "heldout_residual_refit": 46.01738516632503,
+   "absorbed_fraction_of_delta": 0.09592268539007043,
+   "unexplained_relative": 0.6988739716054696,
+   "delta_share_of_stream": 0.42947654305112054,
+   "update_scale": 2.7028224071935663,
+   "seconds": 0.7,
+   "alive": false
+  },
+  {
+   "layer": 12,
+   "kind": "attention",
+   "status": "measured",
+   "heldout_delta_norm": 119.0402568138351,
+   "heldout_target_norm": 126.15873259321046,
+   "heldout_residual_parent_w2": 119.04008640401824,
+   "heldout_residual_refit": 80.96107964832142,
+   "absorbed_fraction_of_delta": 0.31988487075481553,
+   "unexplained_relative": 0.6417397986184156,
+   "delta_share_of_stream": 0.648238576823896,
+   "update_scale": 3.3176590962439843,
+   "seconds": 0.7,
+   "alive": false
+  },
+  {
+   "layer": 13,
+   "kind": "conv",
+   "status": "measured",
+   "heldout_delta_norm": 130.98469987446433,
+   "heldout_target_norm": 164.9726342323746,
+   "heldout_residual_parent_w2": 130.98408571590804,
+   "heldout_residual_refit": 69.82464421319267,
+   "absorbed_fraction_of_delta": 0.46692518836083474,
+   "unexplained_relative": 0.4232498592150754,
+   "delta_share_of_stream": 0.5272409591971886,
+   "update_scale": 2.2255851604788823,
+   "seconds": 0.7,
+   "alive": false
+  }
+ ],
+ "ranking": [
+  [
+   5,
+   "conv",
+   0.6652805907239314
+  ],
+  [
+   13,
+   "conv",
+   0.46692518836083474
+  ],
+  [
+   12,
+   "attention",
+   0.31988487075481553
+  ],
+  [
+   8,
+   "attention",
+   0.13604487908376905
+  ],
+  [
+   11,
+   "conv",
+   0.09592268539007043
+  ],
+  [
+   10,
+   "attention",
+   0.07880067510597621
+  ],
+  [
+   4,
+   "attention",
+   0.03453517337180001
+  ],
+  [
+   6,
+   "attention",
+   0.03415389572155192
+  ],
+  [
+   9,
+   "conv",
+   0.02692477936575355
+  ],
+  [
+   7,
+   "conv",
+   -0.0015244192389085587
+  ],
+  [
+   3,
+   "conv",
+   -0.09094605982619908
+  ],
+  [
+   2,
+   "attention",
+   -0.6330557617532593
+  ],
+  [
+   1,
+   "conv",
+   -1.2102583915553597
+  ]
+ ],
+ "verdict": "alive",
+ "schema": "neural-forge-matrix-wave14-measurement-battery-v1",
+ "seconds": 25.4
+}

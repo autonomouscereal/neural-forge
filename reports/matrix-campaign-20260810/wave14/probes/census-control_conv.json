@@ -1,0 +1,348 @@
+{
+ "task": "control_conv",
+ "component": "C05",
+ "sites": [
+  {
+   "layer": 0,
+   "levels": {
+    "S4": {
+     "keep": 256,
+     "coreset_stored": 262144,
+     "lra_rank": 128,
+     "lra_stored": 262144,
+     "coreset": {
+      "relL2": 0.2773462518411095,
+      "cos": 0.9543040881989077,
+      "cos_p05": 0.8155746278725139,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.2617332023571844,
+      "cos": 0.958804581073263,
+      "cos_p05": 0.8447024486789771
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": true,
+     "lra_in_band": true
+    },
+    "S8": {
+     "keep": 128,
+     "coreset_stored": 131072,
+     "lra_rank": 64,
+     "lra_stored": 131072,
+     "coreset": {
+      "relL2": 0.34686019453830025,
+      "cos": 0.9270450169226282,
+      "cos_p05": 0.7255668617956212,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.3401488033679062,
+      "cos": 0.9280719252966672,
+      "cos_p05": 0.7353788222988445
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": true,
+     "lra_in_band": true
+    },
+    "S16": {
+     "keep": 64,
+     "coreset_stored": 65536,
+     "lra_rank": 32,
+     "lra_stored": 65536,
+     "coreset": {
+      "relL2": 0.4170563422263833,
+      "cos": 0.8909887154660519,
+      "cos_p05": 0.602810952331672,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.4106048069356741,
+      "cos": 0.8916681661824937,
+      "cos_p05": 0.6159849730066953
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    }
+   }
+  },
+  {
+   "layer": 5,
+   "levels": {
+    "S4": {
+     "keep": 256,
+     "coreset_stored": 262144,
+     "lra_rank": 128,
+     "lra_stored": 262144,
+     "coreset": {
+      "relL2": 0.4826528371841674,
+      "cos": 0.8700933159337066,
+      "cos_p05": 0.7616907797395598,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.46003064103769525,
+      "cos": 0.8817621423992161,
+      "cos_p05": 0.7916447830881925
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S8": {
+     "keep": 128,
+     "coreset_stored": 131072,
+     "lra_rank": 64,
+     "lra_stored": 131072,
+     "coreset": {
+      "relL2": 0.5761964517447883,
+      "cos": 0.8096354381955803,
+      "cos_p05": 0.671965211468485,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.5629527632453779,
+      "cos": 0.8162572277276436,
+      "cos_p05": 0.6947044320453564
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S16": {
+     "keep": 64,
+     "coreset_stored": 65536,
+     "lra_rank": 32,
+     "lra_stored": 65536,
+     "coreset": {
+      "relL2": 0.6561029064510776,
+      "cos": 0.7448044169313924,
+      "cos_p05": 0.5798728453745712,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.6399298357230705,
+      "cos": 0.7546488366353336,
+      "cos_p05": 0.6023408209927618
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    }
+   }
+  },
+  {
+   "layer": 7,
+   "levels": {
+    "S4": {
+     "keep": 256,
+     "coreset_stored": 262144,
+     "lra_rank": 128,
+     "lra_stored": 262144,
+     "coreset": {
+      "relL2": 0.5164320400914605,
+      "cos": 0.8428860724416992,
+      "cos_p05": 0.6796104079851357,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.47197483820441694,
+      "cos": 0.8718395668503222,
+      "cos_p05": 0.762692333148793
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S8": {
+     "keep": 128,
+     "coreset_stored": 131072,
+     "lra_rank": 64,
+     "lra_stored": 131072,
+     "coreset": {
+      "relL2": 0.6117676148421876,
+      "cos": 0.7714300587405089,
+      "cos_p05": 0.5666025296724715,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.5757331452099572,
+      "cos": 0.8014767316408064,
+      "cos_p05": 0.6384427316219804
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S16": {
+     "keep": 64,
+     "coreset_stored": 65536,
+     "lra_rank": 32,
+     "lra_stored": 65536,
+     "coreset": {
+      "relL2": 0.6820966581941411,
+      "cos": 0.7055958085185416,
+      "cos_p05": 0.4666460322197452,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.6517197120758884,
+      "cos": 0.7358613681377111,
+      "cos_p05": 0.5322828033394192
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    }
+   }
+  },
+  {
+   "layer": 9,
+   "levels": {
+    "S4": {
+     "keep": 256,
+     "coreset_stored": 262144,
+     "lra_rank": 128,
+     "lra_stored": 262144,
+     "coreset": {
+      "relL2": 0.45688520679035893,
+      "cos": 0.8806971876019621,
+      "cos_p05": 0.7445941536971742,
+      "arm": "B_leverage"
+     },
+     "lra": {
+      "relL2": 0.4676183553238377,
+      "cos": 0.8775751186388404,
+      "cos_p05": 0.7584671696445097
+     },
+     "coreset_wins_relL2": true,
+     "coreset_wins_cos": true,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S8": {
+     "keep": 128,
+     "coreset_stored": 131072,
+     "lra_rank": 64,
+     "lra_stored": 131072,
+     "coreset": {
+      "relL2": 0.56107749371924,
+      "cos": 0.8163110978199564,
+      "cos_p05": 0.6328359957519283,
+      "arm": "B_leverage"
+     },
+     "lra": {
+      "relL2": 0.5817600596227158,
+      "cos": 0.8041153478196106,
+      "cos_p05": 0.6491902357075304
+     },
+     "coreset_wins_relL2": true,
+     "coreset_wins_cos": true,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S16": {
+     "keep": 64,
+     "coreset_stored": 65536,
+     "lra_rank": 32,
+     "lra_stored": 65536,
+     "coreset": {
+      "relL2": 0.660771829140127,
+      "cos": 0.7382420298398844,
+      "cos_p05": 0.5386017150878585,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.67399835101249,
+      "cos": 0.7263966931239221,
+      "cos_p05": 0.5464170143636864
+     },
+     "coreset_wins_relL2": true,
+     "coreset_wins_cos": true,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    }
+   }
+  },
+  {
+   "layer": 13,
+   "levels": {
+    "S4": {
+     "keep": 256,
+     "coreset_stored": 262144,
+     "lra_rank": 128,
+     "lra_stored": 262144,
+     "coreset": {
+      "relL2": 0.34894398657587644,
+      "cos": 0.8892949024806872,
+      "cos_p05": 0.7289700619486607,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.33817909505216376,
+      "cos": 0.8944382657441361,
+      "cos_p05": 0.7689295065928187
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": true,
+     "lra_in_band": true
+    },
+    "S8": {
+     "keep": 128,
+     "coreset_stored": 131072,
+     "lra_rank": 64,
+     "lra_stored": 131072,
+     "coreset": {
+      "relL2": 0.4121451834710985,
+      "cos": 0.8401568748587626,
+      "cos_p05": 0.6338509132047625,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.40104143152913324,
+      "cos": 0.8469086041210865,
+      "cos_p05": 0.6730485577042064
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    },
+    "S16": {
+     "keep": 64,
+     "coreset_stored": 65536,
+     "lra_rank": 32,
+     "lra_stored": 65536,
+     "coreset": {
+      "relL2": 0.4574974897329662,
+      "cos": 0.7973112267040828,
+      "cos_p05": 0.5513181296552424,
+      "arm": "C_pivoted"
+     },
+     "lra": {
+      "relL2": 0.44780523180455206,
+      "cos": 0.8047732622372225,
+      "cos_p05": 0.5920333503188572
+     },
+     "coreset_wins_relL2": false,
+     "coreset_wins_cos": false,
+     "coreset_in_band": false,
+     "lra_in_band": false
+    }
+   }
+  }
+ ],
+ "schema": "neural-forge-matrix-wave14-matched-control-v1",
+ "seconds": 36.1
+}

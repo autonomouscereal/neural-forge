@@ -1,0 +1,120 @@
+{
+ "task": "vo_lra",
+ "sealed_reference": {
+  "relL2": 0.1527,
+  "cos": 0.9605,
+  "tech": "T4",
+  "site": "L02"
+ },
+ "band": 0.4,
+ "export": "head_dim is a live config field in transformers 5.12.1 Lfm2 (modeling_lfm2.py:233); v+o at r=16 is config-consistent on the v/o half only",
+ "sites": [
+  {
+   "layer": 2,
+   "levels": {
+    "S4": {
+     "relL2": 0.3454031261752294,
+     "cos": 0.9383659940968557,
+     "cos_p05": 0.8750266337257356,
+     "in_band": true,
+     "retained_energy_min": 0.6624536949889365,
+     "retained_energy_median": 0.8380140542085911
+    },
+    "S8": {
+     "relL2": 0.42435070658124374,
+     "cos": 0.905239427424945,
+     "cos_p05": 0.8205183891532007,
+     "in_band": false,
+     "retained_energy_min": 0.48359025854743404,
+     "retained_energy_median": 0.69966668291651
+    }
+   }
+  },
+  {
+   "layer": 4,
+   "levels": {
+    "S4": {
+     "relL2": 0.5292885802259968,
+     "cos": 0.8488920352154138,
+     "cos_p05": 0.7687690212044935,
+     "in_band": false,
+     "retained_energy_min": 0.6585694029376484,
+     "retained_energy_median": 0.8337839931198838
+    },
+    "S8": {
+     "relL2": 0.646907641845,
+     "cos": 0.7630639966893338,
+     "cos_p05": 0.6513899677218724,
+     "in_band": false,
+     "retained_energy_min": 0.49464883297420303,
+     "retained_energy_median": 0.7229854398352701
+    }
+   }
+  },
+  {
+   "layer": 8,
+   "levels": {
+    "S4": {
+     "relL2": 0.5473769667505552,
+     "cos": 0.8396649691831313,
+     "cos_p05": 0.7582631199989788,
+     "in_band": false,
+     "retained_energy_min": 0.6519609354785056,
+     "retained_energy_median": 0.7775856506891533
+    },
+    "S8": {
+     "relL2": 0.6435939385893978,
+     "cos": 0.7686089403607674,
+     "cos_p05": 0.6609669034609733,
+     "in_band": false,
+     "retained_energy_min": 0.46941127375182334,
+     "retained_energy_median": 0.6262652723901327
+    }
+   }
+  },
+  {
+   "layer": 10,
+   "levels": {
+    "S4": {
+     "relL2": 0.5390893629216706,
+     "cos": 0.854438594076392,
+     "cos_p05": 0.7439760383872968,
+     "in_band": false,
+     "retained_energy_min": 0.5268297007127722,
+     "retained_energy_median": 0.692061736925525
+    },
+    "S8": {
+     "relL2": 0.6324226604003308,
+     "cos": 0.7904467116896167,
+     "cos_p05": 0.636913679862134,
+     "in_band": false,
+     "retained_energy_min": 0.34228152750174035,
+     "retained_energy_median": 0.5276345201005496
+    }
+   }
+  },
+  {
+   "layer": 12,
+   "levels": {
+    "S4": {
+     "relL2": 0.3909191002520387,
+     "cos": 0.928703236622112,
+     "cos_p05": 0.8526810133951785,
+     "in_band": true,
+     "retained_energy_min": 0.5840288975551768,
+     "retained_energy_median": 0.677740763671462
+    },
+    "S8": {
+     "relL2": 0.4600181381649188,
+     "cos": 0.8977912788336146,
+     "cos_p05": 0.7905822697951467,
+     "in_band": false,
+     "retained_energy_min": 0.3807828111998761,
+     "retained_energy_median": 0.498971573724092
+    }
+   }
+  }
+ ],
+ "schema": "neural-forge-matrix-wave14-refit-battery-v1",
+ "seconds": 10.4
+}

@@ -1,0 +1,641 @@
+{
+ "generated": "2026-08-12",
+ "root": "/home/cereal/model-surgery-lab/deployments",
+ "note": "wave14 prune to current+1; launcher/status shell scripts and logs kept (tiny); postpub run outputs salvaged to wave14/salvage/postpub-e893767a-runoutputs.tar.gz before deletion",
+ "entries": [
+  {
+   "name": ".incoming-neural-forge-runtime-88ba553b.tar.gz",
+   "kind": "file",
+   "bytes": 10794248,
+   "files": 1,
+   "mtime": "2026-08-08T22:49:10",
+   "action": "DELETE"
+  },
+  {
+   "name": ".nf-r12-c13-terminal-upload-b3039894",
+   "kind": "dir",
+   "bytes": 24853,
+   "files": 4,
+   "mtime": "2026-08-05T08:57:26",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-01c3db36",
+   "kind": "dir",
+   "bytes": 50833981,
+   "files": 524,
+   "mtime": "2026-08-04T20:55:11",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-1a441515",
+   "kind": "dir",
+   "bytes": 50721181,
+   "files": 524,
+   "mtime": "2026-08-04T20:38:34",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-23a07277",
+   "kind": "dir",
+   "bytes": 50602994,
+   "files": 523,
+   "mtime": "2026-08-04T19:59:01",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-34dd7f0b",
+   "kind": "dir",
+   "bytes": 74905609,
+   "files": 1518,
+   "mtime": "2026-08-09T00:06:55",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-468ce5e1",
+   "kind": "dir",
+   "bytes": 1217874123,
+   "files": 1883,
+   "mtime": "2026-08-05T14:26:07",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-53d31156",
+   "kind": "dir",
+   "bytes": 82670731,
+   "files": 1490,
+   "mtime": "2026-08-09T00:42:24",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-6f178f14",
+   "kind": "dir",
+   "bytes": 1233881418,
+   "files": 2038,
+   "mtime": "2026-08-05T14:56:40",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-88ba553b",
+   "kind": "dir",
+   "bytes": 74886022,
+   "files": 1517,
+   "mtime": "2026-08-08T22:54:08",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-945fe0d9",
+   "kind": "dir",
+   "bytes": 50616957,
+   "files": 524,
+   "mtime": "2026-08-04T20:25:08",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-9b03caf7",
+   "kind": "dir",
+   "bytes": 71813755,
+   "files": 1492,
+   "mtime": "2026-08-09T08:23:46",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-a884b2d1",
+   "kind": "dir",
+   "bytes": 63830483,
+   "files": 904,
+   "mtime": "2026-08-05T00:16:31",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-a884b2d1.staging.628242",
+   "kind": "dir",
+   "bytes": 50471910,
+   "files": 766,
+   "mtime": "2026-08-05T00:09:07",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-a884b2d1.staging.642303",
+   "kind": "dir",
+   "bytes": 50706765,
+   "files": 770,
+   "mtime": "2026-08-05T00:14:07",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-b65c81f5",
+   "kind": "dir",
+   "bytes": 1234637000,
+   "files": 2043,
+   "mtime": "2026-08-05T16:31:45",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-bccb5b78",
+   "kind": "dir",
+   "bytes": 72194036,
+   "files": 1497,
+   "mtime": "2026-08-09T09:27:14",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-c546030f",
+   "kind": "dir",
+   "bytes": 50603558,
+   "files": 524,
+   "mtime": "2026-08-04T20:01:27",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-c8cfa511",
+   "kind": "dir",
+   "bytes": 51185841,
+   "files": 528,
+   "mtime": "2026-08-04T22:25:51",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-d296b602",
+   "kind": "dir",
+   "bytes": 1235210820,
+   "files": 2046,
+   "mtime": "2026-08-05T19:05:16",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-da5b9da6",
+   "kind": "dir",
+   "bytes": 83939412,
+   "files": 1509,
+   "mtime": "2026-08-09T00:53:32",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-054761df.bundle",
+   "kind": "file",
+   "bytes": 16570697,
+   "files": 1,
+   "mtime": "2026-07-30T14:04:25",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-39972c5a",
+   "kind": "dir",
+   "bytes": 110035607,
+   "files": 1431,
+   "mtime": "2026-07-30T20:23:08",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-39972c5a.bundle",
+   "kind": "file",
+   "bytes": 16805894,
+   "files": 1,
+   "mtime": "2026-07-30T20:22:57",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-4923251b",
+   "kind": "dir",
+   "bytes": 109195116,
+   "files": 1423,
+   "mtime": "2026-07-30T14:37:44",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-4923251b.bundle",
+   "kind": "file",
+   "bytes": 16605414,
+   "files": 1,
+   "mtime": "2026-07-30T14:36:54",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-5da55127.bundle",
+   "kind": "file",
+   "bytes": 16545714,
+   "files": 1,
+   "mtime": "2026-07-30T13:07:44",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-60eb928b",
+   "kind": "dir",
+   "bytes": 125243372,
+   "files": 1615,
+   "mtime": "2026-07-31T16:03:22",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-6c8447f9",
+   "kind": "dir",
+   "bytes": 155628721,
+   "files": 1574,
+   "mtime": "2026-07-30T12:58:42",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-6c8447f9.bundle",
+   "kind": "file",
+   "bytes": 16581123,
+   "files": 1,
+   "mtime": "2026-07-30T12:56:29",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-7b48e205",
+   "kind": "dir",
+   "bytes": 125188689,
+   "files": 1615,
+   "mtime": "2026-07-31T16:03:22",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-9bc0d735",
+   "kind": "dir",
+   "bytes": 126002150,
+   "files": 1625,
+   "mtime": "2026-07-31T16:03:22",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-a70c9b66",
+   "kind": "dir",
+   "bytes": 109370464,
+   "files": 1424,
+   "mtime": "2026-07-30T16:12:16",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-a70c9b66.bundle",
+   "kind": "file",
+   "bytes": 16586175,
+   "files": 1,
+   "mtime": "2026-07-30T16:12:05",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-b6eb343a.bundle",
+   "kind": "file",
+   "bytes": 16621168,
+   "files": 1,
+   "mtime": "2026-07-30T13:20:10",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-c13-terminal-b3039894.tar.gz",
+   "kind": "file",
+   "bytes": 15332327,
+   "files": 1,
+   "mtime": "2026-08-05T02:44:01",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-eadd4130",
+   "kind": "dir",
+   "bytes": 193460293,
+   "files": 1603,
+   "mtime": "2026-07-30T23:43:16",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-exact4x-eadd4130.bundle",
+   "kind": "file",
+   "bytes": 16728307,
+   "files": 1,
+   "mtime": "2026-07-30T21:34:31",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-layer0-3953ede4",
+   "kind": "dir",
+   "bytes": 127390658,
+   "files": 1628,
+   "mtime": "2026-08-04T22:27:40",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-10a608d5",
+   "kind": "dir",
+   "bytes": 88652178,
+   "files": 1563,
+   "mtime": "2026-08-12T08:35:29",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-17377c16",
+   "kind": "dir",
+   "bytes": 72165445,
+   "files": 960,
+   "mtime": "2026-08-11T11:55:32",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-3fcc6cca",
+   "kind": "dir",
+   "bytes": 88648265,
+   "files": 1563,
+   "mtime": "2026-08-12T07:37:34",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-4d8774f6",
+   "kind": "dir",
+   "bytes": 90116202,
+   "files": 1641,
+   "mtime": "2026-08-12T10:04:13",
+   "action": "KEEP"
+  },
+  {
+   "name": "neural-forge-matrix-63e95cd8",
+   "kind": "dir",
+   "bytes": 90289723,
+   "files": 1645,
+   "mtime": "2026-08-12T12:51:12",
+   "action": "KEEP"
+  },
+  {
+   "name": "neural-forge-matrix-9acaf38f",
+   "kind": "dir",
+   "bytes": 103086544,
+   "files": 1381,
+   "mtime": "2026-08-11T17:35:13",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-beb699f2",
+   "kind": "dir",
+   "bytes": 103036570,
+   "files": 1381,
+   "mtime": "2026-08-11T16:06:57",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-dcfe22ff",
+   "kind": "dir",
+   "bytes": 75999315,
+   "files": 1495,
+   "mtime": "2026-08-12T10:42:04",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-dee1c952",
+   "kind": "dir",
+   "bytes": 57698436,
+   "files": 762,
+   "mtime": "2026-08-10T16:10:04",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-eb32153e",
+   "kind": "dir",
+   "bytes": 72367944,
+   "files": 968,
+   "mtime": "2026-08-11T11:25:33",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-f753b9e7",
+   "kind": "dir",
+   "bytes": 90176426,
+   "files": 1643,
+   "mtime": "2026-08-12T11:02:02",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-matrix-fcd69d17",
+   "kind": "dir",
+   "bytes": 88443867,
+   "files": 1557,
+   "mtime": "2026-08-12T07:22:54",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-postpub-e893767a",
+   "kind": "dir",
+   "bytes": 2110684927,
+   "files": 2220,
+   "mtime": "2026-08-08T04:43:15",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-postpub-e893767a.bundle",
+   "kind": "file",
+   "bytes": 17577964,
+   "files": 1,
+   "mtime": "2026-08-01T02:08:19",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-r11-7b48e205.bundle",
+   "kind": "file",
+   "bytes": 17149960,
+   "files": 1,
+   "mtime": "2026-07-31T15:57:40",
+   "action": "DELETE"
+  },
+  {
+   "name": "neural-forge-stage2-ab3ec99a",
+   "kind": "dir",
+   "bytes": 125749226,
+   "files": 1618,
+   "mtime": "2026-07-31T20:23:23",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r1.sh",
+   "kind": "file",
+   "bytes": 6270,
+   "files": 1,
+   "mtime": "2026-07-30T13:05:06",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r10.sh",
+   "kind": "file",
+   "bytes": 7462,
+   "files": 1,
+   "mtime": "2026-07-31T02:50:10",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r11.sh",
+   "kind": "file",
+   "bytes": 10335,
+   "files": 1,
+   "mtime": "2026-07-31T16:17:04",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r12.sh",
+   "kind": "file",
+   "bytes": 10223,
+   "files": 1,
+   "mtime": "2026-07-31T18:06:47",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r2.sh",
+   "kind": "file",
+   "bytes": 6270,
+   "files": 1,
+   "mtime": "2026-07-30T13:20:10",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r3.sh",
+   "kind": "file",
+   "bytes": 6270,
+   "files": 1,
+   "mtime": "2026-07-30T14:38:42",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r4.sh",
+   "kind": "file",
+   "bytes": 6466,
+   "files": 1,
+   "mtime": "2026-07-30T16:13:34",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r5.sh",
+   "kind": "file",
+   "bytes": 7358,
+   "files": 1,
+   "mtime": "2026-07-30T20:23:18",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r6.sh",
+   "kind": "file",
+   "bytes": 7358,
+   "files": 1,
+   "mtime": "2026-07-30T21:34:33",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r7.sh",
+   "kind": "file",
+   "bytes": 7458,
+   "files": 1,
+   "mtime": "2026-07-30T23:46:25",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r8.sh",
+   "kind": "file",
+   "bytes": 7458,
+   "files": 1,
+   "mtime": "2026-07-31T00:49:57",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-integrated-carrier-exact4x-r9.sh",
+   "kind": "file",
+   "bytes": 7458,
+   "files": 1,
+   "mtime": "2026-07-31T01:29:55",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh",
+   "kind": "file",
+   "bytes": 25289,
+   "files": 1,
+   "mtime": "2026-08-08T02:22:47",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh.bak-20260805T042559Z",
+   "kind": "file",
+   "bytes": 16792,
+   "files": 1,
+   "mtime": "2026-08-04T18:15:39",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh.bak-20260805T083111Z",
+   "kind": "file",
+   "bytes": 19762,
+   "files": 1,
+   "mtime": "2026-08-04T23:45:50",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh.bak-20260805T104136Z",
+   "kind": "file",
+   "bytes": 25122,
+   "files": 1,
+   "mtime": "2026-08-05T02:31:11",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh.bak-v2off-20260805T123653Z",
+   "kind": "file",
+   "bytes": 28002,
+   "files": 1,
+   "mtime": "2026-08-05T04:51:50",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh.bak-w13o-20260807T130654Z",
+   "kind": "file",
+   "bytes": 25122,
+   "files": 1,
+   "mtime": "2026-08-05T02:31:11",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-r12-round-refold.sh.bak-w13s-20260808T082203Z",
+   "kind": "file",
+   "bytes": 25179,
+   "files": 1,
+   "mtime": "2026-08-07T07:06:54",
+   "action": "DELETE"
+  },
+  {
+   "name": "nf-launch-r13-ceiling-2x.sh",
+   "kind": "file",
+   "bytes": 20335,
+   "files": 1,
+   "mtime": "2026-08-08T04:49:24",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-smoke-postpub-e893767a.log",
+   "kind": "file",
+   "bytes": 203,
+   "files": 1,
+   "mtime": "2026-08-01T02:15:24",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-smoke-postpub-e893767a.sh",
+   "kind": "file",
+   "bytes": 899,
+   "files": 1,
+   "mtime": "2026-08-01T01:52:32",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-status-integrated-carrier-exact4x.sh",
+   "kind": "file",
+   "bytes": 1005,
+   "files": 1,
+   "mtime": "2026-07-30T13:06:33",
+   "action": "KEEP"
+  },
+  {
+   "name": "nf-status-r11.sh",
+   "kind": "file",
+   "bytes": 2061,
+   "files": 1,
+   "mtime": "2026-07-31T16:17:40",
+   "action": "KEEP"
+  }
+ ],
+ "total_delete_bytes": 10303874632,
+ "total_keep_bytes": 180546103
+}

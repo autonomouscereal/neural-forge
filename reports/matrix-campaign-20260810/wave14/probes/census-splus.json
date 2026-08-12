@@ -1,0 +1,120 @@
+{
+ "task": "splus",
+ "note": "kurtosis <= 6 means S buys ~nothing over T4",
+ "components": [
+  {
+   "component": "C13",
+   "layer": 5,
+   "status": "measured",
+   "shape": [
+    1024,
+    2560
+   ],
+   "kurtosis": 2464395.8927441915,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.011209692340685624,
+   "energy_top_1pct_entries": 0.982576281791956,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C13",
+   "layer": 9,
+   "status": "measured",
+   "shape": [
+    1024,
+    2560
+   ],
+   "kurtosis": 459.24713255644883,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.4393717933745861,
+   "energy_top_1pct_entries": 0.2842368992677545,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C13",
+   "layer": 13,
+   "status": "measured",
+   "shape": [
+    1024,
+    2560
+   ],
+   "kurtosis": 62140.140597060934,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.30238249474214396,
+   "energy_top_1pct_entries": 0.5660812547649965,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C05",
+   "layer": 5,
+   "status": "measured",
+   "shape": [
+    1024,
+    1024
+   ],
+   "kurtosis": 1092.3252515191537,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.4125926836091672,
+   "energy_top_1pct_entries": 0.31935744049765313,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C05",
+   "layer": 13,
+   "status": "measured",
+   "shape": [
+    1024,
+    1024
+   ],
+   "kurtosis": 38479.749226673106,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.24780069390623635,
+   "energy_top_1pct_entries": 0.6398084387682611,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C09",
+   "layer": 12,
+   "status": "measured",
+   "shape": [
+    1024,
+    1024
+   ],
+   "kurtosis": 44.6082936993846,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.5334972239386554,
+   "energy_top_1pct_entries": 0.20082237072357287,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C09",
+   "layer": 8,
+   "status": "measured",
+   "shape": [
+    1024,
+    1024
+   ],
+   "kurtosis": 17.673319365481593,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.4899746839245511,
+   "energy_top_1pct_entries": 0.21796226203038901,
+   "heavy_tailed": true
+  },
+  {
+   "component": "C08",
+   "layer": 2,
+   "status": "measured",
+   "shape": [
+    512,
+    1024
+   ],
+   "kurtosis": 5.936036621580873,
+   "gaussian_kurtosis": 3.0,
+   "participation_ratio": 0.5769055265745378,
+   "energy_top_1pct_entries": 0.1517133160056138,
+   "heavy_tailed": false
+  }
+ ],
+ "schema": "neural-forge-matrix-wave14-measurement-battery-v1",
+ "seconds": 2.5
+}

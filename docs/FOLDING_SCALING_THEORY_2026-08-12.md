@@ -566,3 +566,34 @@ other's one) say a drift ranking with R² = 0.62 is not a verdict.
 * **Whether ALS's fixed point is unique or ordering-dependent.** Coordinate
   descent on a non-convex composition has no such guarantee; the sweep order is
   pre-registered (depth-ascending) and the receipts record it.
+
+
+---
+
+## Wave-14 additions to the sealed physics
+
+* **A storage-format ratio is not a smaller model.**  Every child through wave 13
+  is parent-shaped by a refusal in the materializer.  Scaling claims must say
+  which quantity they quote, because only three axes on this architecture are
+  config-standard (`intermediate_size`, `head_dim`, depth) and conv width is not.
+* **The simultaneous-installation fidelity floor.**  Measured on LFM2 at
+  fourteen MLP sites at once, the boundary between a structured child and a
+  degenerate one sits between per-site held-out write cosine **0.93** and
+  **0.86**.  Single-lane fidelity in the sealed alive band does not survive being
+  applied everywhere at once, and this is the first number the campaign has for
+  how much tighter the simultaneous requirement is.  **The transferable
+  prediction:** a width fold applied uniformly across depth needs materially
+  higher per-site fidelity than the same fold applied at a few sites, and the
+  gap is a few hundredths of cosine, not a factor.
+* **Verbatim beats basis in gated feature space, and not in the conv context.**
+  Matched-storage control, 40/42 vs 12/15.  Expected to transfer to any gated FFN
+  and expected **not** to transfer to channel-mixing context streams.
+* **Massive activations break share-of-total censuses.**  One unit at L05 carries
+  97.15% of the layer's gated-output energy, which manufactured a false
+  1,915-unit OFF certificate, a false six-fold Frobenius advantage, a kurtosis of
+  2.5e6 and a passing HODLR-V coverage number.  Any scale-free screen must be
+  scale-free; rank on cosine, not Frobenius, at such a site.
+* **Terminal transfer is not linearly predictable from shallow residual.**
+  Held-out R² of `post_layer[l] -> post_layer[13]` climbs smoothly 0.046 (L00) to
+  0.874 (L12); only L10-L12 clear 0.5.  Terminal-metric methods are a late-depth
+  tool on this model, and the 2,560-dim endpoint transfers are negative.
