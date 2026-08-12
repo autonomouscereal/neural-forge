@@ -291,11 +291,37 @@ thirty-five-thousandths-of-cosine step from "answers one question in four" to
 
 ## 7. Estate
 
-* **Disk.** Server `/` began the wave at 14 GB free and ended at 13 GB. One
-  deployment was cut (`neural-forge-matrix-1c197ed4`, 76 MB) and the wave's own
-  earlier deployment (`08999e84`) was deleted when it was superseded, so
-  `deployments/` holds **current+1** (`63e95cd8` from wave 13/14 and this wave's).
-  Every heavy artifact is under `/mnt/ai_data/neural-forge-matrix/wave15/`.
+* **Disk.** Server `/` began and ended the wave at **14 GB** free. Two
+  deployments were cut from this wave's own commits and the first was deleted
+  when the second superseded it; `neural-forge-matrix-4d8774f6` (1,641 files,
+  90,116,202 bytes) was then pruned under the current+1 policy and manifested at
+  `wave15/deployments-prune-manifest-wave15.json`, leaving `63e95cd8` (waves
+  13-14) and `1c197ed4` (this wave). The wave's `/` footprint is the `nf-mx15`
+  workspace at 144 KB. Every heavy artifact is under
+  `/mnt/ai_data/neural-forge-matrix/wave15/` (2.6 GB: eight children, ten
+  dossiers, the human-review package and the logs).
+* **Ledger.** **461 -> 483**, sha
+  `4fc6ba58e1f943828128dca1a93fd2035d4b5ef094712133df0fad0f1f06a6d1`. Backed up
+  first (`backup/ledger.jsonl.pre-wave15-20260812T235118`, verified by sha **and**
+  `cmp`), merged exactly once behind `wave15/.MERGED_ONCE`, byte-prefix verified
+  against the backup afterwards, and the committed object verified byte-identical
+  with `git cat-file -p HEAD:reports/matrix-campaign-20260810/ledger.jsonl |
+  sha256sum`. Twenty-two rows: eleven ARCH run rows and eleven ADDENDUM 6 verdict
+  rows. **Six superseded rows were dropped** by the merge and named by digest in
+  `wave15/ledger-merge-report.json` -- children that were sealed twice when a
+  sealer was fixed mid-wave; the merge **refuses** rather than guesses when a
+  duplicated instance has no verdict pointing at one of its receipts, and it did
+  refuse until the verdicts were supplied.
+* **Seals.** `run/mx15/mx15_verify_seals.py` (wave 14's, with `wave15/cells`
+  added and the roots still audited against disk): **11 roots present, 0
+  undeclared; 483 rows, 479 resolve, 479 verify, 0 fail, 4 do not resolve** --
+  the same four pre-existing non-resolvers wave 14 named. The committed wave-13
+  verifier's missing `wave12/cells` root is **restored in this commit**;
+  `NOTES-MX-Q` §8 says wave 13 fixed it on the host and the fix never reached git,
+  so the committed file had been the broken one for two waves.
+* **Human-review package.** `wave15/human-review/` -- 74 files: every dossier and
+  its child and parent responses rendered verbatim, every run receipt, every
+  verdict receipt, every per-case reading and every build receipt.
 * **Commits.** `08999e84`, `1c197ed4`, and the sealing commit for this note.
   Nothing pushed, nothing rebased, staged by explicit path only; the Codex lane's
   ~331 uncommitted paths, including the frozen

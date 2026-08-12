@@ -1,0 +1,12 @@
+{
+ "schema": "neural-forge-matrix-wave15-deployment-prune-v1",
+ "pruned": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-4d8774f6",
+ "files": 1641,
+ "bytes": 90116202,
+ "kept": [
+  "neural-forge-matrix-63e95cd8 (waves 13-14)",
+  "neural-forge-matrix-1c197ed4 (wave 15, this wave)"
+ ],
+ "policy": "current+1",
+ "pruned_at": "2026-08-12T23:56:07Z"
+}
