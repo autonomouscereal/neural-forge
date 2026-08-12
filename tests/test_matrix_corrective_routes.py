@@ -235,12 +235,29 @@ def test_a_route_refuses_misaligned_rows_and_autograd():
 # --------------------------------------------------------------------------
 
 
-class _Block(torch.nn.Module):
-    """A stand-in for one decoder layer: ``feed_forward`` is a plain Linear."""
+class _FeedForward(torch.nn.Module):
+    """A stand-in for the SwiGLU block: a nonlinearity, then ``w2``.
+
+    ``w2`` is a named submodule because that is where the route attaches -- the
+    endpoint the frozen collector captures as ``mlp.down`` and writes its
+    residual identity over.
+    """
 
     def __init__(self, width: int) -> None:
         super().__init__()
-        self.feed_forward = torch.nn.Linear(width, width, bias=False)
+        self.w1 = torch.nn.Linear(width, width, bias=False)
+        self.w2 = torch.nn.Linear(width, width, bias=False)
+
+    def forward(self, rows: torch.Tensor) -> torch.Tensor:
+        return self.w2(torch.nn.functional.silu(self.w1(rows)))
+
+
+class _Block(torch.nn.Module):
+    """A stand-in for one decoder layer."""
+
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.feed_forward = _FeedForward(width)
 
 
 class _Stack(torch.nn.Module):
@@ -277,37 +294,97 @@ def _route(width: int, layer: int) -> object:
     )
 
 
-def test_attaching_a_bank_adds_exactly_source_at_R_to_the_module_output():
+def test_attaching_a_bank_adds_exactly_source_at_R_to_w2s_output():
+    """The write lands in ``mlp.down``, and it is exactly ``mlp.input @ R``.
+
+    This is the property the frozen collector's residual identity rests on: if
+    the correction were anywhere else in the block, ``layer_output ==
+    post_operator + mlp.down`` would stop holding and the collector would refuse
+    the next capture -- which is exactly what it did when wave 12 first attached
+    the write to the ``feed_forward`` module.
+    """
+
     width = 6
     model = _Model(width, layers=3).to(torch.float64)
     rows = _rows(5, width, seed=99)
+    forward = model.get_submodule("model.layers.1.feed_forward")
+
+    def _probe(store):
+        return [
+            forward.register_forward_pre_hook(
+                lambda _m, args: store.__setitem__("mlp_input", args[0].clone())
+            ),
+            forward.w2.register_forward_hook(
+                lambda _m, _a, out: store.__setitem__("mlp_down", out.clone())
+            ),
+        ]
+
+    plain: dict[str, torch.Tensor] = {}
+    probes = _probe(plain)
     with torch.no_grad():
         before = model(rows).clone()
+    for handle in probes:
+        handle.remove()
+
     route = _route(width, 1)
     bank = CorrectiveRouteBank()
     bank.add(route)
     bank.attach(model)
+    # Registered AFTER the bank, which is the frozen collector's own situation:
+    # its hooks go on when a capture session opens, and a capture only ever opens
+    # on a child whose routes are already installed.  Torch runs forward hooks in
+    # registration order, so an observer registered later sees the corrected
+    # ``mlp.down`` -- which is exactly what the collector's residual identity
+    # needs in order to keep holding.
+    corrected: dict[str, torch.Tensor] = {}
+    probes = _probe(corrected)
     with torch.no_grad():
         after = model(rows).clone()
-    # Layer 1's correction is added to layer 1's output and then carried by the
-    # residual through layer 2, so the observable delta is not the route alone --
-    # what is checked is that the block's own output moved by exactly source @ R.
-    module = model.get_submodule("model.layers.1.feed_forward")
-    captured: dict[str, torch.Tensor] = {}
-    handle = module.register_forward_pre_hook(
-        lambda _m, args: captured.__setitem__("input", args[0].clone())
-    )
     with torch.no_grad():
-        model(rows)
-    handle.remove()
-    with torch.no_grad():
-        expected = captured["input"] @ route.dense
+        expected = plain["mlp_down"] + (plain["mlp_input"] @ route.dense)
+    assert torch.allclose(corrected["mlp_down"], expected)
+    # And the identity the collector verifies still holds through the block.
     assert not torch.allclose(before, after)
+
     bank.detach_all()
+    for handle in probes:
+        handle.remove()
     with torch.no_grad():
         restored = model(rows).clone()
     assert torch.allclose(before, restored)
-    assert expected.shape == (5, width)
+
+
+def test_an_observer_registered_before_the_bank_does_not_see_the_correction():
+    """Hook order is load-bearing, so it is pinned rather than assumed.
+
+    Wave 12 lost a run to the frozen collector's residual check and the fix was
+    to move the write into ``mlp.down``.  That fix only works because the
+    collector observes ``mlp.down`` *after* the route has added to it.  This test
+    states the failure mode explicitly: an observer registered first sees the
+    uncorrected value, and would compute an identity that does not hold.
+    """
+
+    width = 6
+    model = _Model(width, layers=1).to(torch.float64)
+    rows = _rows(4, width, seed=77)
+    forward = model.get_submodule("model.layers.0.feed_forward")
+    early: dict[str, torch.Tensor] = {}
+    handle = forward.w2.register_forward_hook(
+        lambda _m, _a, out: early.__setitem__("mlp_down", out.clone())
+    )
+    bank = CorrectiveRouteBank()
+    bank.add(_route(width, 0))
+    bank.attach(model)
+    late: dict[str, torch.Tensor] = {}
+    late_handle = forward.w2.register_forward_hook(
+        lambda _m, _a, out: late.__setitem__("mlp_down", out.clone())
+    )
+    with torch.no_grad():
+        model(rows)
+    assert not torch.allclose(early["mlp_down"], late["mlp_down"])
+    handle.remove()
+    late_handle.remove()
+    bank.detach_all()
 
 
 def test_a_detached_bank_leaves_no_hook_behind():
@@ -317,10 +394,12 @@ def test_a_detached_bank_leaves_no_hook_behind():
     bank.add(_route(width, 0))
     bank.attach(model)
     bank.attach(model)  # idempotent per (model, route)
-    module = model.get_submodule("model.layers.0.feed_forward")
-    assert len(module._forward_hooks) == 1
+    forward = model.get_submodule("model.layers.0.feed_forward")
+    assert len(forward._forward_pre_hooks) == 1
+    assert len(forward.w2._forward_hooks) == 1
     bank.detach_all()
-    assert len(module._forward_hooks) == 0
+    assert len(forward._forward_pre_hooks) == 0
+    assert len(forward.w2._forward_hooks) == 0
 
 
 def test_two_routes_at_one_site_are_refused():
@@ -477,7 +556,13 @@ def test_the_runner_declares_the_corrective_registry_it_ran_under():
     described = json.loads(describe_corrective_registry())
     assert described["schema"] == CORRECTIVE_ROUTE_SCHEMA
     assert described["components"]["X01"]["reads"] == "mlp.input"
-    assert described["components"]["X01"]["writes"] == "residual.post_layer"
+    assert described["components"]["X01"]["writes"] == "mlp.down"
+    assert (
+        described["components"]["X01"]["writes_residual_endpoint"]
+        == "residual.post_layer"
+    )
+    assert described["components"]["X01"]["module"] == "feed_forward.w2"
+    assert described["components"]["X01"]["source_module"] == "feed_forward"
     assert described["components"]["X01"]["replaces_parent_tensor"] is False
 
 

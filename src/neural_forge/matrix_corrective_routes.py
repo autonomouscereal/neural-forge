@@ -29,16 +29,27 @@ module is its implementation.  Three properties are the whole design:
 
 **What X01 is, concretely.**  The collector proves ``residual.post_layer =
 residual.post_operator + mlp.down`` for every block
-(`hf_lfm2_circuit_trace_cache`, layer residual check), so a tensor added to the
-``feed_forward`` module's output is added to the block's output residual exactly.
-X01 reads the block's own FFN-norm output (``mlp.input``, the endpoint the folded
-SwiGLU lane reads) and writes into the block output:
+(`hf_lfm2_circuit_trace_cache`, layer residual check), and it captures
+``mlp.down`` on ``feed_forward.w2``.  X01 reads the block's own FFN-norm output
+(``mlp.input``, the endpoint the folded SwiGLU lane reads) and adds into
+``mlp.down`` -- which, by that identity, is an addition to the block's output
+residual, exactly:
 
 ```
-child block output  :=  child block output  +  mlp.input @ R
+child mlp.down      :=  child mlp.down  +  mlp.input @ R
+=> child block out  :=  child block out +  mlp.input @ R
 R solved from       :   min || X_child R  -  (Y_parent - Y_child) ||
                         X = child mlp.input rows, Y = residual.post_layer rows
 ```
+
+**Why ``w2`` and not ``feed_forward``.**  Wave 12 attached the write at the
+``feed_forward`` module first and the frozen collector refused the next capture
+with `Layer 5 residual endpoints do not reproduce its output`: a tensor added to
+the feed_forward module's output lands in ``layer_output`` and *not* in
+``mlp.down``, so the identity the collector verifies breaks.  The collector is
+right and it is frozen, so the write moved one module deeper.  The operator is
+unchanged -- still a linear map from ``mlp.input`` into the residual -- and it is
+now inside the endpoint the identity is written over.
 
 `R` is a genuinely new operator: no parent tensor maps ``mlp.input`` linearly
 into the residual, so this cannot be folded back into ``w1``/``w3``/``w2`` and it
@@ -107,9 +118,30 @@ CORRECTIVE_COMPONENTS: Mapping[str, Mapping[str, Any]] = {
     "X01": {
         "name": "ffn_output_corrective_route",
         "kind": "corrective",
-        "module": "feed_forward",
+        # The route reads the FFN's own input and adds into the FFN's own
+        # output.  It is attached at ``w2`` and NOT at ``feed_forward``, and the
+        # reason is the frozen collector, which is the one thing in this campaign
+        # that may not be changed to accommodate a mechanism.
+        #
+        # `hf_lfm2_circuit_trace_cache` verifies, per layer, that
+        # ``layer_output == residual.post_operator + mlp.down`` where ``mlp.down``
+        # is captured on ``feed_forward.w2``.  A tensor added to the
+        # *feed_forward module's* output lands in ``layer_output`` and NOT in
+        # ``mlp.down``, so the identity breaks and the collector refuses the
+        # capture -- correctly.  Wave 12 measured that refusal on a live run
+        # (`Layer 5 residual endpoints do not reproduce its output`) before
+        # moving the write one module deeper.
+        #
+        # Attached at ``w2``, the correction is inside ``mlp.down``, the identity
+        # holds exactly, and -- because the identity holds -- the addition is
+        # still an addition to the block's output residual.  Nothing about the
+        # operator changes: it is still a linear map from ``mlp.input`` into the
+        # residual, which no parent tensor expresses.
+        "source_module": "feed_forward",
+        "module": "feed_forward.w2",
         "reads": "mlp.input",
-        "writes": "residual.post_layer",
+        "writes": "mlp.down",
+        "writes_residual_endpoint": "residual.post_layer",
         "sites": MLP_LAYERS,
         "replaces_parent_tensor": False,
     },
@@ -257,6 +289,7 @@ class CorrectiveRoute:
     reads: str
     writes: str
     module_path: str
+    source_module_path: str
     dense: Any
     supports: Any
     lengths: Any
@@ -287,8 +320,14 @@ class CorrectiveRoute:
             "site": self.route_id.site,
             "layer_index": int(self.route_id.layer_index),
             "module_path": self.module_path,
+            "source_module_path": self.source_module_path,
             "reads_endpoint": self.reads,
             "writes_endpoint": self.writes,
+            "writes_residual_endpoint": str(
+                CORRECTIVE_COMPONENTS[self.route_id.component][
+                    "writes_residual_endpoint"
+                ]
+            ),
             "replaces_parent_tensor": False,
             "sparsity": int(self.route_id.sparsity),
             "nonzero_count": int(self.nonzero_count),
@@ -419,6 +458,10 @@ def solve_corrective_route(
             f"model.layers.{int(identifier.layer_index)}."
             f"{registration['module']}"
         ),
+        source_module_path=(
+            f"model.layers.{int(identifier.layer_index)}."
+            f"{registration['source_module']}"
+        ),
         dense=dense,
         supports=codes.supports.detach().to("cpu"),
         lengths=lengths,
@@ -483,13 +526,27 @@ class CorrectiveRouteBank:
         self._routes[route.text] = route
 
     def attach(self, model: Any) -> None:
-        """Register one forward hook per route on ``model``.
+        """Register one route on ``model`` as a **pre-hook / post-hook pair**.
 
-        The hook adds ``module input @ R`` to the module's own output, which the
-        collector's own residual identity makes an addition to
-        ``residual.post_layer`` exactly.  It runs in the module's runtime dtype
-        and casts the float64 route once, per model, so the arithmetic the review
-        sees is the arithmetic the generating run measured.
+        The pair exists because the read and the write are at two different
+        module boundaries and only one of them may move:
+
+        * a ``forward_pre_hook`` on ``feed_forward`` caches that call's input,
+          which *is* ``mlp.input`` -- the block's FFN-norm output;
+        * a ``forward_hook`` on ``feed_forward.w2`` adds ``cached @ R`` to
+          ``w2``'s output, which is the endpoint the frozen collector captures as
+          ``mlp.down`` and the one its residual identity is written over.
+
+        ``w2`` runs inside ``feed_forward``'s forward, so the pre-hook has always
+        fired by the time the post-hook does, and the collector -- whose own
+        hooks are registered later, when a capture session opens, and therefore
+        run after these -- sees a ``mlp.down`` that already carries the
+        correction.  That is what keeps ``layer_output == post_operator +
+        mlp.down`` exact through a corrected child.
+
+        The float64 route is cast once, per model, to the module's runtime dtype
+        and device, so the arithmetic the review sees is the arithmetic the
+        generating run measured.
         """
 
         torch = _torch()
@@ -498,6 +555,7 @@ class CorrectiveRouteBank:
             if key in self._attached:
                 continue
             module = model.get_submodule(route.module_path)
+            source_module = model.get_submodule(route.source_module_path)
             parameter = next(iter(module.parameters()), None)
             if parameter is None:
                 raise CorrectiveRouteError(
@@ -507,14 +565,30 @@ class CorrectiveRouteBank:
             weight = route.dense.detach().to(
                 device=parameter.device, dtype=parameter.dtype
             )
+            cache: dict[str, Any] = {}
 
-            def _hook(_module: Any, args: Any, output: Any, _weight: Any = weight) -> Any:
+            def _pre(_module: Any, args: Any, _cache: Any = cache) -> None:
                 if not args:
                     raise CorrectiveRouteError(
-                        "A corrective route needs its module's input; the hook "
-                        "was called with no positional arguments."
+                        "A corrective route needs the FFN's own input; the "
+                        "pre-hook was called with no positional arguments."
                     )
-                source = args[0]
+                _cache["rows"] = args[0]
+
+            def _post(
+                _module: Any,
+                _args: Any,
+                output: Any,
+                _weight: Any = weight,
+                _cache: Any = cache,
+                _text: str = route.text,
+            ) -> Any:
+                source = _cache.get("rows")
+                if source is None:
+                    raise CorrectiveRouteError(
+                        f"{_text} fired without its source rows; the "
+                        "pre-hook did not run before the write hook."
+                    )
                 if isinstance(output, tuple):
                     raise CorrectiveRouteError(
                         "A corrective route may only be attached to a module "
@@ -523,7 +597,8 @@ class CorrectiveRouteBank:
                 with torch.no_grad():
                     return output + (source @ _weight)
 
-            self._handles.append(module.register_forward_hook(_hook))
+            self._handles.append(source_module.register_forward_pre_hook(_pre))
+            self._handles.append(module.register_forward_hook(_post))
             self._attached.add(key)
 
     def detach_all(self) -> None:
@@ -731,6 +806,11 @@ def load_bank_from_receipt(
                 reads=str(registration["reads"]),
                 writes=str(registration["writes"]),
                 module_path=str(entry["module_path"]),
+                source_module_path=str(
+                    entry.get("source_module_path")
+                    or f"model.layers.{identifier.layer_index}."
+                    f"{registration['source_module']}"
+                ),
                 dense=dense.detach().to(torch.float64),
                 supports=None,
                 lengths=None,
