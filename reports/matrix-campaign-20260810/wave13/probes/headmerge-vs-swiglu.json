@@ -1,0 +1,688 @@
+{
+ "base": {
+  "components": [
+   {
+    "cannot_express": false,
+    "cell_id": "C11.T8.S4.L05",
+    "declared_ratio": 0.248828125,
+    "evidence_selection_sha256": "1a8f7fe7d2d135e5d50204d027c20ad6045014e88e6a33d839e2c6dff8eb43aa",
+    "installed_weight_keys": [
+     "model.layers.5.feed_forward.w1.weight"
+    ],
+    "level_width": 182,
+    "parent_parameter_count": 2621440,
+    "solve_wall_time_seconds": 4.752,
+    "storage_bound": 655360.0,
+    "storage_bound_satisfied": true,
+    "stored_parameter_count": 652288
+   },
+   {
+    "cannot_express": false,
+    "cell_id": "C12.T8.S4.L05",
+    "declared_ratio": 0.248828125,
+    "evidence_selection_sha256": "2f3080d267ba8e1fbd5222e84854a8128c4f2f26586d17e301b849172cb56fcd",
+    "installed_weight_keys": [
+     "model.layers.5.feed_forward.w3.weight"
+    ],
+    "level_width": 182,
+    "parent_parameter_count": 2621440,
+    "solve_wall_time_seconds": 4.809,
+    "storage_bound": 655360.0,
+    "storage_bound_satisfied": true,
+    "stored_parameter_count": 652288
+   },
+   {
+    "cannot_express": false,
+    "cell_id": "C13.T8.S4.L05",
+    "declared_ratio": 0.24985313415527344,
+    "evidence_selection_sha256": "64e5e8a0bec3fcc0808b33dc592c65668cadd419513e7b58d389483e42559bd6",
+    "installed_weight_keys": [
+     "model.layers.5.feed_forward.w2.weight"
+    ],
+    "level_width": 639,
+    "parent_parameter_count": 2621440,
+    "solve_wall_time_seconds": 1.427,
+    "storage_bound": 655360.0,
+    "storage_bound_satisfied": true,
+    "stored_parameter_count": 654975
+   },
+   {
+    "cannot_express": false,
+    "cell_id": "C11.T8.S4.L06",
+    "declared_ratio": 0.248828125,
+    "evidence_selection_sha256": "436953e4e3566b7ae0689ecb3a24ab4fb704b462dc7c9218da03412ce453a5b6",
+    "installed_weight_keys": [
+     "model.layers.6.feed_forward.w1.weight"
+    ],
+    "level_width": 182,
+    "parent_parameter_count": 2621440,
+    "solve_wall_time_seconds": 4.651,
+    "storage_bound": 655360.0,
+    "storage_bound_satisfied": true,
+    "stored_parameter_count": 652288
+   },
+   {
+    "cannot_express": false,
+    "cell_id": "C12.T8.S4.L06",
+    "declared_ratio": 0.248828125,
+    "evidence_selection_sha256": "9328dd37d7ba18f18b65a7352f66ee8e80b442501e4b73c5799ad700f257c926",
+    "installed_weight_keys": [
+     "model.layers.6.feed_forward.w3.weight"
+    ],
+    "level_width": 182,
+    "parent_parameter_count": 2621440,
+    "solve_wall_time_seconds": 4.908,
+    "storage_bound": 655360.0,
+    "storage_bound_satisfied": true,
+    "stored_parameter_count": 652288
+   },
+   {
+    "cannot_express": false,
+    "cell_id": "C13.T8.S4.L06",
+    "declared_ratio": 0.24985313415527344,
+    "evidence_selection_sha256": "b3d9196d915778ea5705efff813f7b084bc66c6bc1d5080cf42ee9ed0dbd30ae",
+    "installed_weight_keys": [
+     "model.layers.6.feed_forward.w2.weight"
+    ],
+    "level_width": 639,
+    "parent_parameter_count": 2621440,
+    "solve_wall_time_seconds": 1.391,
+    "storage_bound": 655360.0,
+    "storage_bound_satisfied": true,
+    "stored_parameter_count": 654975
+   }
+  ],
+  "free_run_mean_lcp": 0.046875,
+  "free_run_token_match_vs_control": 0.072265625,
+  "global_drift": 0.42132547163418477,
+  "lanes": [
+   "L05.T8.S4.mlp",
+   "L06.T8.S4.mlp"
+  ],
+  "norm_ratio_per_layer_minmax": [
+   0.8427817976476998,
+   1.1398173448821556
+  ],
+  "removed_parameter_count": 11809538,
+  "stored_parameter_count": 3919102
+ },
+ "compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "deployment": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-63e95cd8",
+ "exactness_argument": "M-A solves every component against the PARENT's sealed evidence, so a solved tensor does not depend on what else is installed and the composed child is a function of the SET.  A candidate installed after the base therefore equals the child a full run on the union recipe would build, and the base is restored exactly by writing the parent's own tensors back.",
+ "final_base": {
+  "global_drift": 0.42132547163418477,
+  "lanes": [
+   "L05.T8.S4.mlp",
+   "L06.T8.S4.mlp"
+  ],
+  "removed_parameter_count": 11809538,
+  "stored_parameter_count": 3919102
+ },
+ "not_a_gate": "Drift chooses the ORDER of the search and never the verdict.  Every lane this probe prices is still built and still read by the frozen 15-prompt review; MXO3 is alive at drift 0.4618 against a nominal 0.3765 budget, so the law's residuals are not a licence to refuse a child a reading.",
+ "purpose": "Wave 13 lane shopping: the marginal composed drift of one candidate lane -- SwiGLU triple or M5 attention head merge -- installed on a fixed base, every candidate against the same base in one process, optionally repeated as a greedy ladder.",
+ "rank_by": "marginal_drift",
+ "rounds": [
+  {
+   "base_global_drift": 0.42132547163418477,
+   "base_lanes": [
+    "L05.T8.S4.mlp",
+    "L06.T8.S4.mlp"
+   ],
+   "candidates": [
+    {
+     "base_drift_after_restore": 0.42132547163418477,
+     "base_restored_exactly": true,
+     "candidate": "L02.T7.S4.attn",
+     "cannot_express": false,
+     "components": [
+      {
+       "cannot_express": false,
+       "cell_id": "C10.T7.S4.L02",
+       "declared_ratio": 0.23958333333333334,
+       "evidence_selection_sha256": "9c3e49b7aae510d262b9f5c160a1ff7c30786f448732e62e2e96d58701c9004d",
+       "identity_gate_max_abs_deviation": 8.708311849403572e-15,
+       "installed_weight_keys": [
+        "model.layers.2.self_attn.k_proj.weight",
+        "model.layers.2.self_attn.out_proj.weight",
+        "model.layers.2.self_attn.q_proj.weight",
+        "model.layers.2.self_attn.v_proj.weight"
+       ],
+       "kv_partition": [
+        [
+         0,
+         1,
+         2,
+         3,
+         4,
+         6,
+         7
+        ],
+        [
+         5
+        ]
+       ],
+       "level_width": 192,
+       "o_refit_adopted": true,
+       "parent_parameter_count": 3145728,
+       "query_partition": [
+        [
+         0,
+         1,
+         2,
+         3,
+         6,
+         7,
+         10,
+         15
+        ],
+        [
+         4,
+         5,
+         11,
+         12,
+         13
+        ],
+        [
+         8,
+         9,
+         14
+        ]
+       ],
+       "solve_wall_time_seconds": 11.565,
+       "storage_bound": 786432.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 753664,
+       "write_heldout_relative_l2": 0.3523513429767525,
+       "write_heldout_relative_l2_procrustes_only": 0.5825987457372043
+      }
+     ],
+     "drift_per_million_removed": 0.0463786217798693,
+     "free_run_mean_lcp": 0.009765625,
+     "free_run_token_match_vs_control": 0.08984375,
+     "global_drift": 0.532266103163426,
+     "kind": "attn",
+     "lane_covered_parameter_count": 3145728,
+     "lane_removed_parameter_count": 2392064,
+     "lane_stored_parameter_count": 753664,
+     "layer": 2,
+     "level": "S4",
+     "marginal_drift": 0.11094063152924127,
+     "norm_ratio_per_layer_minmax": [
+      0.6550417227172372,
+      1.1204147928016523
+     ],
+     "storage_bound_satisfied": true,
+     "technique": "T7",
+     "wall_time_seconds": 25.315
+    },
+    {
+     "base_drift_after_restore": 0.42132547163418477,
+     "base_restored_exactly": true,
+     "candidate": "L04.T7.S4.attn",
+     "cannot_express": false,
+     "components": [
+      {
+       "cannot_express": false,
+       "cell_id": "C10.T7.S4.L04",
+       "declared_ratio": 0.23958333333333334,
+       "evidence_selection_sha256": "df9567d22dcb12d0f648cb5aae0d6794c2973cdaf67d889aa02fd367edb41e4b",
+       "identity_gate_max_abs_deviation": 8.881784197001252e-16,
+       "installed_weight_keys": [
+        "model.layers.4.self_attn.k_proj.weight",
+        "model.layers.4.self_attn.out_proj.weight",
+        "model.layers.4.self_attn.q_proj.weight",
+        "model.layers.4.self_attn.v_proj.weight"
+       ],
+       "kv_partition": [
+        [
+         0,
+         2,
+         3,
+         4,
+         5,
+         6,
+         7
+        ],
+        [
+         1
+        ]
+       ],
+       "level_width": 192,
+       "o_refit_adopted": true,
+       "parent_parameter_count": 3145728,
+       "query_partition": [
+        [
+         0,
+         1,
+         2,
+         4,
+         5,
+         6,
+         9,
+         12,
+         13,
+         14,
+         15
+        ],
+        [
+         3
+        ],
+        [
+         7,
+         8,
+         10,
+         11
+        ]
+       ],
+       "solve_wall_time_seconds": 11.19,
+       "storage_bound": 786432.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 753664,
+       "write_heldout_relative_l2": 0.5052149680286753,
+       "write_heldout_relative_l2_procrustes_only": 0.8085140785924406
+      }
+     ],
+     "drift_per_million_removed": 0.07685153245592864,
+     "free_run_mean_lcp": 0.009765625,
+     "free_run_token_match_vs_control": 0.01953125,
+     "global_drift": 0.6051592557668433,
+     "kind": "attn",
+     "lane_covered_parameter_count": 3145728,
+     "lane_removed_parameter_count": 2392064,
+     "lane_stored_parameter_count": 753664,
+     "layer": 4,
+     "level": "S4",
+     "marginal_drift": 0.1838337841326585,
+     "norm_ratio_per_layer_minmax": [
+      0.7630045916327248,
+      1.1273280238276815
+     ],
+     "storage_bound_satisfied": true,
+     "technique": "T7",
+     "wall_time_seconds": 65.757
+    },
+    {
+     "base_drift_after_restore": 0.42132547163418477,
+     "base_restored_exactly": true,
+     "candidate": "L08.T7.S4.attn",
+     "cannot_express": false,
+     "components": [
+      {
+       "cannot_express": false,
+       "cell_id": "C10.T7.S4.L08",
+       "declared_ratio": 0.23958333333333334,
+       "evidence_selection_sha256": "4dbb3d077f9676495750c68941d7246cd657084d296529376866e0f210ac130e",
+       "identity_gate_max_abs_deviation": 6.661338147750939e-16,
+       "installed_weight_keys": [
+        "model.layers.8.self_attn.k_proj.weight",
+        "model.layers.8.self_attn.out_proj.weight",
+        "model.layers.8.self_attn.q_proj.weight",
+        "model.layers.8.self_attn.v_proj.weight"
+       ],
+       "kv_partition": [
+        [
+         0,
+         1,
+         2,
+         3,
+         5,
+         6,
+         7
+        ],
+        [
+         4
+        ]
+       ],
+       "level_width": 192,
+       "o_refit_adopted": true,
+       "parent_parameter_count": 3145728,
+       "query_partition": [
+        [
+         0,
+         1,
+         2,
+         3,
+         4,
+         5,
+         6,
+         7,
+         14,
+         15
+        ],
+        [
+         8
+        ],
+        [
+         9,
+         10,
+         11,
+         12,
+         13
+        ]
+       ],
+       "solve_wall_time_seconds": 10.879,
+       "storage_bound": 786432.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 753664,
+       "write_heldout_relative_l2": 0.5644550033977765,
+       "write_heldout_relative_l2_procrustes_only": 0.9137867694818737
+      }
+     ],
+     "drift_per_million_removed": 0.06570127415041033,
+     "free_run_mean_lcp": 0.037109375,
+     "free_run_token_match_vs_control": 0.05859375,
+     "global_drift": 0.5784871242835119,
+     "kind": "attn",
+     "lane_covered_parameter_count": 3145728,
+     "lane_removed_parameter_count": 2392064,
+     "lane_stored_parameter_count": 753664,
+     "layer": 8,
+     "level": "S4",
+     "marginal_drift": 0.15716165264932713,
+     "norm_ratio_per_layer_minmax": [
+      0.7486984809134755,
+      1.1398173448821556
+     ],
+     "storage_bound_satisfied": true,
+     "technique": "T7",
+     "wall_time_seconds": 21.713
+    },
+    {
+     "base_drift_after_restore": 0.42132547163418477,
+     "base_restored_exactly": true,
+     "candidate": "L10.T7.S4.attn",
+     "cannot_express": false,
+     "components": [
+      {
+       "cannot_express": false,
+       "cell_id": "C10.T7.S4.L10",
+       "declared_ratio": 0.23958333333333334,
+       "evidence_selection_sha256": "00b2cee7601442083da86143ba519d802abe563fee45e9bb467fd9c339868b3b",
+       "identity_gate_max_abs_deviation": 1.0547118733938987e-15,
+       "installed_weight_keys": [
+        "model.layers.10.self_attn.k_proj.weight",
+        "model.layers.10.self_attn.out_proj.weight",
+        "model.layers.10.self_attn.q_proj.weight",
+        "model.layers.10.self_attn.v_proj.weight"
+       ],
+       "kv_partition": [
+        [
+         0,
+         1,
+         3,
+         4,
+         5,
+         6,
+         7
+        ],
+        [
+         2
+        ]
+       ],
+       "level_width": 192,
+       "o_refit_adopted": true,
+       "parent_parameter_count": 3145728,
+       "query_partition": [
+        [
+         0,
+         1,
+         6,
+         7,
+         10,
+         11,
+         12,
+         13,
+         14,
+         15
+        ],
+        [
+         2,
+         3,
+         8,
+         9
+        ],
+        [
+         4,
+         5
+        ]
+       ],
+       "solve_wall_time_seconds": 11.447,
+       "storage_bound": 786432.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 753664,
+       "write_heldout_relative_l2": 0.5446717255138546,
+       "write_heldout_relative_l2_procrustes_only": 0.7429890791022935
+      }
+     ],
+     "drift_per_million_removed": 0.07394607333528234,
+     "free_run_mean_lcp": 0.044921875,
+     "free_run_token_match_vs_control": 0.05859375,
+     "global_drift": 0.5982092116008736,
+     "kind": "attn",
+     "lane_covered_parameter_count": 3145728,
+     "lane_removed_parameter_count": 2392064,
+     "lane_stored_parameter_count": 753664,
+     "layer": 10,
+     "level": "S4",
+     "marginal_drift": 0.17688373996668882,
+     "norm_ratio_per_layer_minmax": [
+      0.7864607076678113,
+      1.1398173448821556
+     ],
+     "storage_bound_satisfied": true,
+     "technique": "T7",
+     "wall_time_seconds": 61.972
+    },
+    {
+     "base_drift_after_restore": 0.42132547163418477,
+     "base_restored_exactly": true,
+     "candidate": "L12.T7.S4.attn",
+     "cannot_express": false,
+     "components": [
+      {
+       "cannot_express": false,
+       "cell_id": "C10.T7.S4.L12",
+       "declared_ratio": 0.23958333333333334,
+       "evidence_selection_sha256": "ab278a32e109395a2720a0ae3aed7517cd27b927d37d267f1b55e2a74d171b8d",
+       "identity_gate_max_abs_deviation": 1.0547118733938987e-15,
+       "installed_weight_keys": [
+        "model.layers.12.self_attn.k_proj.weight",
+        "model.layers.12.self_attn.out_proj.weight",
+        "model.layers.12.self_attn.q_proj.weight",
+        "model.layers.12.self_attn.v_proj.weight"
+       ],
+       "kv_partition": [
+        [
+         0,
+         1,
+         2,
+         3,
+         4,
+         5,
+         6
+        ],
+        [
+         7
+        ]
+       ],
+       "level_width": 192,
+       "o_refit_adopted": true,
+       "parent_parameter_count": 3145728,
+       "query_partition": [
+        [
+         0,
+         8,
+         9,
+         15
+        ],
+        [
+         1,
+         2,
+         3,
+         4,
+         5,
+         6,
+         7,
+         10,
+         11,
+         12,
+         13
+        ],
+        [
+         14
+        ]
+       ],
+       "solve_wall_time_seconds": 12.047,
+       "storage_bound": 786432.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 753664,
+       "write_heldout_relative_l2": 0.4181872422890021,
+       "write_heldout_relative_l2_procrustes_only": 0.522640095746737
+      }
+     ],
+     "drift_per_million_removed": 0.0660446933751022,
+     "free_run_mean_lcp": 0.01953125,
+     "free_run_token_match_vs_control": 0.0703125,
+     "global_drift": 0.5793086050478052,
+     "kind": "attn",
+     "lane_covered_parameter_count": 3145728,
+     "lane_removed_parameter_count": 2392064,
+     "lane_stored_parameter_count": 753664,
+     "layer": 12,
+     "level": "S4",
+     "marginal_drift": 0.15798313341362047,
+     "norm_ratio_per_layer_minmax": [
+      0.8427817976476998,
+      1.1398173448821556
+     ],
+     "storage_bound_satisfied": true,
+     "technique": "T7",
+     "wall_time_seconds": 60.867
+    },
+    {
+     "base_drift_after_restore": 0.42132547163418477,
+     "base_restored_exactly": true,
+     "candidate": "L13.T5.S4.mlp",
+     "cannot_express": false,
+     "components": [
+      {
+       "cannot_express": false,
+       "cell_id": "C11.T5.S4.L13",
+       "declared_ratio": 0.2493907928466797,
+       "evidence_selection_sha256": "8c87a64cecfceb3c49b2aab868e79ec65428babafb1ed091900d29b96bd3c7b8",
+       "installed_weight_keys": [
+        "model.layers.13.feed_forward.w1.weight"
+       ],
+       "level_width": 606,
+       "parent_parameter_count": 2621440,
+       "solve_wall_time_seconds": 3.293,
+       "storage_bound": 655360.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 653763
+      },
+      {
+       "cannot_express": false,
+       "cell_id": "C12.T5.S4.L13",
+       "declared_ratio": 0.2493907928466797,
+       "evidence_selection_sha256": "601f57f143a7dd08ebf3782e2c0f17a2fd0bddb524e4e654355b8d66add461dd",
+       "installed_weight_keys": [
+        "model.layers.13.feed_forward.w3.weight"
+       ],
+       "level_width": 606,
+       "parent_parameter_count": 2621440,
+       "solve_wall_time_seconds": 3.207,
+       "storage_bound": 655360.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 653763
+      },
+      {
+       "cannot_express": false,
+       "cell_id": "C13.T5.S4.L13",
+       "declared_ratio": 0.24985313415527344,
+       "evidence_selection_sha256": "607cf7e6e3e339497ea39500889615a8d887ffd9ec0bf5d7b8d1af29734801d8",
+       "installed_weight_keys": [
+        "model.layers.13.feed_forward.w2.weight"
+       ],
+       "level_width": 639,
+       "parent_parameter_count": 2621440,
+       "solve_wall_time_seconds": 3.612,
+       "storage_bound": 655360.0,
+       "storage_bound_satisfied": true,
+       "stored_parameter_count": 654975
+      }
+     ],
+     "drift_per_million_removed": 0.005782860379374423,
+     "free_run_mean_lcp": 0.087890625,
+     "free_run_token_match_vs_control": 0.126953125,
+     "global_drift": 0.45545486689552395,
+     "kind": "mlp",
+     "lane_covered_parameter_count": 7864320,
+     "lane_removed_parameter_count": 5901819,
+     "lane_stored_parameter_count": 1962501,
+     "layer": 13,
+     "level": "S4",
+     "marginal_drift": 0.03412939526133918,
+     "norm_ratio_per_layer_minmax": [
+      0.8427817976476998,
+      1.1398173448821556
+     ],
+     "storage_bound_satisfied": true,
+     "technique": "T5",
+     "wall_time_seconds": 26.301
+    }
+   ],
+   "ranked": [
+    {
+     "candidate": "L13.T5.S4.mlp",
+     "drift_per_million_removed": 0.005782860379374423,
+     "marginal_drift": 0.03412939526133918,
+     "removed": 5901819
+    },
+    {
+     "candidate": "L02.T7.S4.attn",
+     "drift_per_million_removed": 0.0463786217798693,
+     "marginal_drift": 0.11094063152924127,
+     "removed": 2392064
+    },
+    {
+     "candidate": "L08.T7.S4.attn",
+     "drift_per_million_removed": 0.06570127415041033,
+     "marginal_drift": 0.15716165264932713,
+     "removed": 2392064
+    },
+    {
+     "candidate": "L12.T7.S4.attn",
+     "drift_per_million_removed": 0.0660446933751022,
+     "marginal_drift": 0.15798313341362047,
+     "removed": 2392064
+    },
+    {
+     "candidate": "L10.T7.S4.attn",
+     "drift_per_million_removed": 0.07394607333528234,
+     "marginal_drift": 0.17688373996668882,
+     "removed": 2392064
+    },
+    {
+     "candidate": "L04.T7.S4.attn",
+     "drift_per_million_removed": 0.07685153245592864,
+     "marginal_drift": 0.1838337841326585,
+     "removed": 2392064
+    }
+   ],
+   "round": 0
+  }
+ ],
+ "schema": "neural-forge-matrix-wave13-lane-shopping-probe-v2",
+ "technique_modules": {
+  "matrix_technique_body_routes": "imported",
+  "matrix_technique_charts": "imported",
+  "matrix_technique_conv_fir": "imported",
+  "matrix_technique_head_drop": "imported",
+  "matrix_technique_head_merge": "imported",
+  "matrix_technique_lowrank_writers": "imported",
+  "matrix_technique_progressive": "imported",
+  "matrix_technique_relation_matching": "imported",
+  "matrix_technique_token_embedding": "imported"
+ },
+ "wall_time_seconds": 312.502
+}

@@ -1,0 +1,145 @@
+{
+  "cell_id": "COMP.MA.MXQ6",
+  "install_order": [
+    "C11.T8.S4.L02",
+    "C12.T8.S4.L02",
+    "C13.T8.S4.L02",
+    "C11.T5.S4.L04",
+    "C12.T5.S4.L04",
+    "C13.T5.S4.L04",
+    "C11.T8.S4.L05",
+    "C12.T8.S4.L05",
+    "C13.T8.S4.L05",
+    "C11.T8.S4.L06",
+    "C12.T8.S4.L06",
+    "C13.T8.S4.L06",
+    "C11.T8.S4.L07",
+    "C12.T8.S4.L07",
+    "C13.T8.S4.L07",
+    "C11.T8.S4.L08",
+    "C12.T8.S4.L08",
+    "C13.T8.S4.L08",
+    "C11.T8.S4.L09",
+    "C12.T8.S4.L09",
+    "C13.T8.S4.L09",
+    "C11.T8.S4.L10",
+    "C12.T8.S4.L10",
+    "C13.T8.S4.L10",
+    "C11.T5.S4.L11",
+    "C12.T5.S4.L11",
+    "C13.T5.S4.L11",
+    "C11.T8.S4.L12",
+    "C12.T8.S4.L12",
+    "C13.T8.S4.L12",
+    "C11.T5.S4.L13",
+    "C12.T5.S4.L13",
+    "C13.T5.S4.L13",
+    "C01.T5.S4"
+  ],
+  "installed_tensor_digests": {
+    "C01.T5.S4": [
+      "model.embed_tokens.weight=7f2dd8444314a664a703f92f311a7f72d694cfa1dda1d966f779e53bfe591352"
+    ],
+    "C11.T5.S4.L04": [
+      "model.layers.4.feed_forward.w1.weight=9d27d4a287c8921a79a96b9fbd68afbe87a17ea2259ec85e046c9e067ad03f1c"
+    ],
+    "C11.T5.S4.L11": [
+      "model.layers.11.feed_forward.w1.weight=b6a41fe2815c9e39aa701f340622fa13443321e3311468972e23d53bebbd1678"
+    ],
+    "C11.T5.S4.L13": [
+      "model.layers.13.feed_forward.w1.weight=c7f36becf091203e925593ac481d64f84b8b740cbc80d98ab2448ca10663c711"
+    ],
+    "C11.T8.S4.L02": [
+      "model.layers.2.feed_forward.w1.weight=815059fa05353ddcd1966026a95d51376b6bb2afa83e7cc1a2894893570ca805"
+    ],
+    "C11.T8.S4.L05": [
+      "model.layers.5.feed_forward.w1.weight=0fdf4488b95513e77e32cb5e265b97a7594219d9f471a0ba8fa705f57e96511f"
+    ],
+    "C11.T8.S4.L06": [
+      "model.layers.6.feed_forward.w1.weight=1da2cc5546d1d9a8252e97c9afa92c686c9b777a7eacdcb1af4475a98fd9e774"
+    ],
+    "C11.T8.S4.L07": [
+      "model.layers.7.feed_forward.w1.weight=0af7de21666f8a66c3f3efa21bd546b3453e5781fb6f9ef7ebf340f575dd80c3"
+    ],
+    "C11.T8.S4.L08": [
+      "model.layers.8.feed_forward.w1.weight=6026245821f3e759a3446ad6bb24d2c487977a8e4bcdc9cb1af9b33c8431d9b7"
+    ],
+    "C11.T8.S4.L09": [
+      "model.layers.9.feed_forward.w1.weight=d8efba59ab652767afb66620562cdd29e3329748cd95eb45b9438b4925952f6f"
+    ],
+    "C11.T8.S4.L10": [
+      "model.layers.10.feed_forward.w1.weight=18fcac9fb5d57375d9e3e9d0b306256a3782bea758f59e95aab788b22580b7ea"
+    ],
+    "C11.T8.S4.L12": [
+      "model.layers.12.feed_forward.w1.weight=f6e165a951dfffc8afc6318ea2c8dc175d7cf610609a3ae50ccaa885c0e6bd8d"
+    ],
+    "C12.T5.S4.L04": [
+      "model.layers.4.feed_forward.w3.weight=3ea220293f44c20e99939b4d0dc6f17a3bc7b7764f38ff78161c2be05f9b1f9a"
+    ],
+    "C12.T5.S4.L11": [
+      "model.layers.11.feed_forward.w3.weight=95c0d3d6662086fcecb64c2eb554f304079017eb66c47236648864d96004cb8e"
+    ],
+    "C12.T5.S4.L13": [
+      "model.layers.13.feed_forward.w3.weight=07eeca688372e637c7a0b6ce1de4a0bb700c1e581ada4d3b99f6b4dd1b7280b7"
+    ],
+    "C12.T8.S4.L02": [
+      "model.layers.2.feed_forward.w3.weight=97ae1ac64d9cb240d6e64c84a4fe1658607806ead8c0a7e21e29604c3ebc60ec"
+    ],
+    "C12.T8.S4.L05": [
+      "model.layers.5.feed_forward.w3.weight=33809e1686f423f9f2b7f0bfcc741db378336a8a0164047a9481e7b00be3ceb6"
+    ],
+    "C12.T8.S4.L06": [
+      "model.layers.6.feed_forward.w3.weight=c016d2a01cedf7fda84606c9044fa3e87924bb49bc52ee3e3c262cecbc3b77fa"
+    ],
+    "C12.T8.S4.L07": [
+      "model.layers.7.feed_forward.w3.weight=c416c6837919ce722959075f68c6a546aa38b5c05db6ed40e078e0903142c5a1"
+    ],
+    "C12.T8.S4.L08": [
+      "model.layers.8.feed_forward.w3.weight=909daed63f5e44430a5723d8a24f0fcc3917d1392e786cb6e16fef01a610b2da"
+    ],
+    "C12.T8.S4.L09": [
+      "model.layers.9.feed_forward.w3.weight=58917fa208261bcc6fb86ba36106319653f76be459acc58f473a4bc79caf7dcc"
+    ],
+    "C12.T8.S4.L10": [
+      "model.layers.10.feed_forward.w3.weight=0ce2e0c291a962696f47e1edfb5a2a0540e1f494adbd9a5574032c7d948ae472"
+    ],
+    "C12.T8.S4.L12": [
+      "model.layers.12.feed_forward.w3.weight=a673cc1ebf0db0d5b9e0896de80d85cba4f27b519f7cde6d443cebdcb3a8d99f"
+    ],
+    "C13.T5.S4.L04": [
+      "model.layers.4.feed_forward.w2.weight=c94387dff3b4a50c19301df45e30dc2215bcdf1261c258d4accb2ed14d1290e5"
+    ],
+    "C13.T5.S4.L11": [
+      "model.layers.11.feed_forward.w2.weight=74d4fcb6ae866d883bbd6127039b006557acfbbb26495fee43c8a3ac26ce699f"
+    ],
+    "C13.T5.S4.L13": [
+      "model.layers.13.feed_forward.w2.weight=08ff5f04a2bfe22d89fb86bec021292ec095220eca2be4f72b319bf67ed76aa6"
+    ],
+    "C13.T8.S4.L02": [
+      "model.layers.2.feed_forward.w2.weight=bba0c0145d852674304109ad96230470eda7ccc235a672815daa07d2ee2686c9"
+    ],
+    "C13.T8.S4.L05": [
+      "model.layers.5.feed_forward.w2.weight=349aa1715cbc39442206b4370a7a8bf5b90a33d49672590b44296e3798e659d8"
+    ],
+    "C13.T8.S4.L06": [
+      "model.layers.6.feed_forward.w2.weight=3bf9308b65e7ced4546aad724e0937f8cce7d3711bcf821e9dc8e31fc9cb2661"
+    ],
+    "C13.T8.S4.L07": [
+      "model.layers.7.feed_forward.w2.weight=ca0dc35ac0a81236e69933db67bdb63c5eff4dd3a767e2c5ee9e2eb26325003e"
+    ],
+    "C13.T8.S4.L08": [
+      "model.layers.8.feed_forward.w2.weight=719550f75278ddca23d43c1b950f20d759c8c7598293729c938cbff1b37c4e64"
+    ],
+    "C13.T8.S4.L09": [
+      "model.layers.9.feed_forward.w2.weight=b8c50b68611ca7ff49c978a267d095597b679a3fb5bd35eb6d86c19486390fed"
+    ],
+    "C13.T8.S4.L10": [
+      "model.layers.10.feed_forward.w2.weight=4ba46d11bd1e1f0f55d0bceaca5a60f5b643a2b0b0822abed5f527c902c0c968"
+    ],
+    "C13.T8.S4.L12": [
+      "model.layers.12.feed_forward.w2.weight=a9e6600b36e7efe9f6b607c4de7c4a36b51dc432cf392e3db9c2f848316d83bc"
+    ]
+  },
+  "kind": "composed-child-tensor-digests",
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1"
+}

@@ -1,0 +1,63 @@
+{
+  "cell_id": "COMP.MA.MXQ4",
+  "install_order": [
+    "C10.T7.S4.L02",
+    "C11.T8.S4.L05",
+    "C12.T8.S4.L05",
+    "C13.T8.S4.L05",
+    "C11.T8.S4.L06",
+    "C12.T8.S4.L06",
+    "C13.T8.S4.L06",
+    "C10.T7.S4.L12",
+    "C11.T5.S4.L13",
+    "C12.T5.S4.L13",
+    "C13.T5.S4.L13",
+    "C01.T5.S4"
+  ],
+  "installed_tensor_digests": {
+    "C01.T5.S4": [
+      "model.embed_tokens.weight=7f2dd8444314a664a703f92f311a7f72d694cfa1dda1d966f779e53bfe591352"
+    ],
+    "C10.T7.S4.L02": [
+      "model.layers.2.self_attn.k_proj.weight=3986eeeaaec0e3a2981b1f4e3471937d2d6ac62adc208984282043832398d0f0",
+      "model.layers.2.self_attn.out_proj.weight=47afb653cd629d77ad2f973c2b5f70b424d76ead752484a92eb84e0e595052aa",
+      "model.layers.2.self_attn.q_proj.weight=996dac317c5c803221611090b7e99466e9ebb79fac61d46d147a2aec0f2b6557",
+      "model.layers.2.self_attn.v_proj.weight=012cbc548636ce588060ded304a781f5b51dc08384029d5b09917a78df23c1b0"
+    ],
+    "C10.T7.S4.L12": [
+      "model.layers.12.self_attn.k_proj.weight=dc13b286efea5111beb3a878a5fd69e96e1009974fcd9dbfbdc3ee85e3c9fd36",
+      "model.layers.12.self_attn.out_proj.weight=dbd1c68b7ef6080d94fe03fb97ef412cbaeba96e1faa4b296a9ae2d150a7686f",
+      "model.layers.12.self_attn.q_proj.weight=2d7010df50f0a5f1e1ed991b2f9ef88e4478f255c8c9041d74ca37ba3d8c4b1d",
+      "model.layers.12.self_attn.v_proj.weight=23c1d1a1e97563981183ec086991f7afb444e536396d4d509a4901a935a7b376"
+    ],
+    "C11.T5.S4.L13": [
+      "model.layers.13.feed_forward.w1.weight=c7f36becf091203e925593ac481d64f84b8b740cbc80d98ab2448ca10663c711"
+    ],
+    "C11.T8.S4.L05": [
+      "model.layers.5.feed_forward.w1.weight=0fdf4488b95513e77e32cb5e265b97a7594219d9f471a0ba8fa705f57e96511f"
+    ],
+    "C11.T8.S4.L06": [
+      "model.layers.6.feed_forward.w1.weight=1da2cc5546d1d9a8252e97c9afa92c686c9b777a7eacdcb1af4475a98fd9e774"
+    ],
+    "C12.T5.S4.L13": [
+      "model.layers.13.feed_forward.w3.weight=07eeca688372e637c7a0b6ce1de4a0bb700c1e581ada4d3b99f6b4dd1b7280b7"
+    ],
+    "C12.T8.S4.L05": [
+      "model.layers.5.feed_forward.w3.weight=33809e1686f423f9f2b7f0bfcc741db378336a8a0164047a9481e7b00be3ceb6"
+    ],
+    "C12.T8.S4.L06": [
+      "model.layers.6.feed_forward.w3.weight=c016d2a01cedf7fda84606c9044fa3e87924bb49bc52ee3e3c262cecbc3b77fa"
+    ],
+    "C13.T5.S4.L13": [
+      "model.layers.13.feed_forward.w2.weight=08ff5f04a2bfe22d89fb86bec021292ec095220eca2be4f72b319bf67ed76aa6"
+    ],
+    "C13.T8.S4.L05": [
+      "model.layers.5.feed_forward.w2.weight=349aa1715cbc39442206b4370a7a8bf5b90a33d49672590b44296e3798e659d8"
+    ],
+    "C13.T8.S4.L06": [
+      "model.layers.6.feed_forward.w2.weight=3bf9308b65e7ced4546aad724e0937f8cce7d3711bcf821e9dc8e31fc9cb2661"
+    ]
+  },
+  "kind": "composed-child-tensor-digests",
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1"
+}

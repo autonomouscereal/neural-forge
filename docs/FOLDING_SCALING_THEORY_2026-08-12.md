@@ -288,7 +288,7 @@ own parent tensor), "8x" is `S8`.
 | attn k (`C07`) | C07 | 11–12/15 at L12 | **yes at L12**; 8/15 as a second fold at L08; **4/15 as a third at L10 — five lanes become single-token loops** | untested alone | three stacked attention folds collapse the decoder |
 | attn v (`C08`) | C08 | 8/15 | degrades at S4 | — | |
 | attn out (`C09`) | C09 | 9/15 | degrades at S4 | — | |
-| heads (`C10`) | C10 | **cannot-express-4x** | — | — | for head *drop*, where k/v are stored whole; head *merge* is untried |
+| heads (`C10`) | C10 | **drop: cannot-express-4x. merge (wave 13): expressible at 0.239583x** — 6/15 solo at L12 and L02, 4/15 at L08 | **8–13x the per-parameter drift of a SwiGLU lane** | merge expresses 0.114583x; unmeasured | head *drop* stores k/v whole and bottoms out near 0.5x; the *merge* is exact at its identity gate (≤8.7e-15) and behaviourally expensive because the heads are not rotations of a few shared bases (§5b) |
 | norms (`C14`) | C14 | n/a (diagonal) | — | — | no level axis |
 | token table (`C01`) | C01 | see §1 | 10/15 alive at 0.780518x | 7/15 dead at S8 | the only 4x fold that pays 29% of this model |
 
@@ -478,6 +478,67 @@ module boundary broke the trace collector's own residual identity
 impossible. **If your evidence collector verifies structural identities — and it
 should — then every new additive mechanism has to be attached inside an endpoint
 those identities are written over, not beside it.**
+
+---
+
+## 5b. What wave 13's mechanism added — M5, the head merge
+
+The last unplayed fold class in the matrix, and the one with the strongest
+*a priori* scaling argument: attention is **11.61%** of this body and roughly a
+third of a standard dense transformer's, so a mechanism worth 1% here could be
+worth 8% at 70B. Wave 13 built it and measured it.
+
+### 5b.1 The mechanism, and why it can express 4x when head drop cannot
+
+`C10` owns all four attention projections. Head **drop** stores `k_proj` and
+`v_proj` whole, so its storage bottoms out near 0.5x and ADDENDUM 6 calls every
+level of it `cannot-express-4x`. A **merge** stores `g` shared head bases plus
+one orthogonal `D×D` alignment per head, and reconstructs every head
+parent-shaped as `q_h = R_h Q_g`, `o_h = O_g R_hᵀ`:
+
+```
+stored = g_q*(D*hidden + hidden*D) + g_kv*2*(D*hidden) + (H + H_kv)*D*D
+g_q=3, g_kv=2  ->  753,664 = 0.239583x     (S4, the qualifying config)
+g_q=1, g_kv=1  ->  360,448 = 0.114583x     (S8 is expressible too)
+```
+
+The transferable part of the storage model is the **alignment tax**: the
+per-head rotations are `(H + H_kv)·D²` and do not shrink with `g`. At `g_q=3`
+they are 13% of what is stored; at `g_q=1` they are 27%. **A head merge on an
+architecture with many small heads pays a larger fixed tax than one with few
+wide heads**, because the tax scales with `H·D² = (H·D)·D = hidden·D`. Wide
+heads are cheaper to align.
+
+### 5b.2 The result: expressible, exact where checkable, and expensive
+
+* **Identity gate** (one basis per head must reproduce the parent over all four
+  projections): **6.7e-16 – 8.7e-15** across five sites. The mechanism is what
+  it claims to be.
+* **The evidence-anchored refit earns its place.** Re-solving the O group bases
+  against the sealed attention write cuts held-out write error from 0.52–0.91
+  (Procrustes bases alone) to **0.35–0.56**. Anyone implementing this should do
+  the same: solve the alignment in weight space, then re-solve the one basis
+  whose input and output are both observable against the observation.
+* **Price:** 0.046–0.077 drift per million parameters removed, against a SwiGLU
+  lane's 0.0058–0.0086 on the same base. **8–13× worse per parameter.**
+* **Behaviour:** one merged attention block alone reads 6/15 (L12), 6/15 (L02),
+  4/15 (L08) against a 12/15 parent, while removing 1.04% of the model.
+
+### 5b.3 The diagnostic to run first on a larger model
+
+Do not start by building a merged child. Start by running the kernel's
+**clustering objective** on the target model's attention blocks and reading
+`solve.query_family.objective_relative` and the partition it produces. On
+LFM2.5-230M the partitions are degenerate — one large cluster plus singletons,
+and a 7+1 kv split at *every* site — which says the heads are not rotations of a
+few shared bases. That single number decides whether M5 is the largest fold-only
+prize available at scale or a mechanism that is merely expressible.
+
+**And note what it does not decide.** M5's price is a search-ordering fact. Wave
+13 built the stacked children anyway, because the campaign's own outliers
+(`COMP.MA.MXO3` alive at drift 0.4618 against a 0.3765 budget; wave 13's
+`MXQ2`/`MXQ1` pair, where the lower-drift child has four looping lanes to the
+other's one) say a drift ranking with R² = 0.62 is not a verdict.
 
 ---
 

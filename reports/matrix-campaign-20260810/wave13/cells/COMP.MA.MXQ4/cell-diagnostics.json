@@ -1,0 +1,1733 @@
+{
+  "cell_id": "COMP.MA.MXQ4",
+  "cell_instance_id": "bcdcd3f7ca744ce4be0d7e953edb2727",
+  "compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+  "corrective_registry": "{\"components\": {\"X01\": {\"kind\": \"corrective\", \"module\": \"feed_forward.w2\", \"name\": \"ffn_output_corrective_route\", \"reads\": \"mlp.input\", \"replaces_parent_tensor\": false, \"sites\": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], \"source_module\": \"feed_forward\", \"writes\": \"mlp.down\", \"writes_residual_endpoint\": \"residual.post_layer\"}}, \"schema\": \"neural-forge-lfm2-matrix-corrective-route-v1\", \"techniques\": {\"T5\": \"sparse_omp_routes\"}}",
+  "device": "cuda:0",
+  "dtype": "float32",
+  "mode": "M-A",
+  "over_target": false,
+  "parent_parameter_audit": {
+    "distinct_storages": 132,
+    "tied_names": [
+      "lm_head.weight"
+    ]
+  },
+  "parent_parameter_count": 229693184,
+  "recipe": {
+    "block_assignment": {
+      "allowed_deliberately": false,
+      "blocks": {
+        "L02": {
+          "block_exclusive": true,
+          "folded": [
+            "C10.T7.S4.L02"
+          ],
+          "kinds": [
+            "full_attention"
+          ],
+          "lane_count": 1,
+          "lanes": [
+            "operator (writes operator.output, upstream of the FFN norm)"
+          ]
+        },
+        "L05": {
+          "block_exclusive": true,
+          "folded": [
+            "C11.T8.S4.L05",
+            "C12.T8.S4.L05",
+            "C13.T8.S4.L05"
+          ],
+          "kinds": [
+            "mlp"
+          ],
+          "lane_count": 1,
+          "lanes": [
+            "feed-forward (reads the FFN norm, downstream of the operator)"
+          ]
+        },
+        "L06": {
+          "block_exclusive": true,
+          "folded": [
+            "C11.T8.S4.L06",
+            "C12.T8.S4.L06",
+            "C13.T8.S4.L06"
+          ],
+          "kinds": [
+            "mlp"
+          ],
+          "lane_count": 1,
+          "lanes": [
+            "feed-forward (reads the FFN norm, downstream of the operator)"
+          ]
+        },
+        "L12": {
+          "block_exclusive": true,
+          "folded": [
+            "C10.T7.S4.L12"
+          ],
+          "kinds": [
+            "full_attention"
+          ],
+          "lane_count": 1,
+          "lanes": [
+            "operator (writes operator.output, upstream of the FFN norm)"
+          ]
+        },
+        "L13": {
+          "block_exclusive": true,
+          "folded": [
+            "C11.T5.S4.L13",
+            "C12.T5.S4.L13",
+            "C13.T5.S4.L13"
+          ],
+          "kinds": [
+            "mlp"
+          ],
+          "lane_count": 1,
+          "lanes": [
+            "feed-forward (reads the FFN norm, downstream of the operator)"
+          ]
+        }
+      },
+      "collision_reason": null,
+      "collisions": []
+    },
+    "components": [
+      {
+        "cell_id": "C10.T7.S4.L02",
+        "component_id": "C10",
+        "evidence_cache": "L02-C09",
+        "evidence_endpoints": [
+          "attention.context",
+          "attention.o",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C10 (attn_per_head) under T7 at S4, added at site L02 in the operator (writes operator.output, upstream of the FFN norm) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.2.self_attn.q_proj.weight",
+          "model.layers.2.self_attn.k_proj.weight",
+          "model.layers.2.self_attn.v_proj.weight",
+          "model.layers.2.self_attn.out_proj.weight"
+        ],
+        "x4_width": 192
+      },
+      {
+        "cell_id": "C11.T8.S4.L05",
+        "component_id": "C11",
+        "evidence_cache": "L05-C11",
+        "evidence_endpoints": [
+          "mlp.gate",
+          "mlp.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": "wave-7: the wave's one real win -- 10/15 alive-parent-band in COMP.MA.MXK5, install drift 0.168344, the smallest single install the campaign has measured (NOTES-MX-K \u00a73.3).",
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has.  Composed evidence: wave-7: the wave's one real win -- 10/15 alive-parent-band in COMP.MA.MXK5, install drift 0.168344, the smallest single install the campaign has measured (NOTES-MX-K \u00a73.3)."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C11 (mlp_gate) under T8 at S4, added at site L05 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.5.feed_forward.w1.weight"
+        ],
+        "x4_width": 182
+      },
+      {
+        "cell_id": "C12.T8.S4.L05",
+        "component_id": "C12",
+        "evidence_cache": "L05-C12",
+        "evidence_endpoints": [
+          "mlp.input",
+          "mlp.up",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C12 (mlp_up) under T8 at S4, added at site L05 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.5.feed_forward.w3.weight"
+        ],
+        "x4_width": 182
+      },
+      {
+        "cell_id": "C13.T8.S4.L05",
+        "component_id": "C13",
+        "evidence_cache": "L05-C13",
+        "evidence_endpoints": [
+          "mlp.down",
+          "mlp.post_swiglu",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 5,
+          "composed_evidence": null,
+          "measured_at_this_site": true,
+          "parent_parameter_count": 2621440,
+          "receipt_path": "/mnt/ai_data/neural-forge-matrix/cells/C13.T8.S4.L05/cell-receipt.json",
+          "receipt_schema": "neural-forge-lfm2-matrix-cell-receipt-v1",
+          "receipt_sha": "fac6f24f9471090af08f4986ddd52c9252df69bfe7da635bcc6b9304e7127daa",
+          "receipt_sha_sealed": "ef77fcdc5d54f28b49537ff3a0ad30e971f03fcc05fddd3abbb590303fd81bac",
+          "review_useful_or_partial": 12,
+          "review_verdict": "alive-parent-band",
+          "storage_realized_ratio": 0.24985313415527344,
+          "stored_parameter_count": 654975
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly base: C13.T8.S4.L05 is the wave-5 (NOTES-MX-I \u00a75) survivor at mlp_down, sealed 12/15 alive-parent-band at a storage-defined S4, site-scoped under ADDENDUM 5 rule 2-S.",
+        "weight_keys": [
+          "model.layers.5.feed_forward.w2.weight"
+        ],
+        "x4_width": 639
+      },
+      {
+        "cell_id": "C11.T8.S4.L06",
+        "component_id": "C11",
+        "evidence_cache": "L06-C11",
+        "evidence_endpoints": [
+          "mlp.gate",
+          "mlp.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C11 (mlp_gate) under T8 at S4, added at site L06 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.6.feed_forward.w1.weight"
+        ],
+        "x4_width": 182
+      },
+      {
+        "cell_id": "C12.T8.S4.L06",
+        "component_id": "C12",
+        "evidence_cache": "L06-C12",
+        "evidence_endpoints": [
+          "mlp.input",
+          "mlp.up",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C12 (mlp_up) under T8 at S4, added at site L06 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.6.feed_forward.w3.weight"
+        ],
+        "x4_width": 182
+      },
+      {
+        "cell_id": "C13.T8.S4.L06",
+        "component_id": "C13",
+        "evidence_cache": "L06-C13",
+        "evidence_endpoints": [
+          "mlp.down",
+          "mlp.post_swiglu",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": "wave-7 rung on top of COMP.MA.MXJ2: 7/15, dead by degeneracy, install drift 0.355062 (NOTES-MX-K \u00a73.1).",
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has.  Composed evidence: wave-7 rung on top of COMP.MA.MXJ2: 7/15, dead by degeneracy, install drift 0.355062 (NOTES-MX-K \u00a73.1)."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C13 (mlp_down) under T8 at S4, added at site L06 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.6.feed_forward.w2.weight"
+        ],
+        "x4_width": 639
+      },
+      {
+        "cell_id": "C10.T7.S4.L12",
+        "component_id": "C10",
+        "evidence_cache": "L12-C09",
+        "evidence_endpoints": [
+          "attention.context",
+          "attention.o",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C10 (attn_per_head) under T7 at S4, added at site L12 in the operator (writes operator.output, upstream of the FFN norm) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.12.self_attn.q_proj.weight",
+          "model.layers.12.self_attn.k_proj.weight",
+          "model.layers.12.self_attn.v_proj.weight",
+          "model.layers.12.self_attn.out_proj.weight"
+        ],
+        "x4_width": 192
+      },
+      {
+        "cell_id": "C11.T5.S4.L13",
+        "component_id": "C11",
+        "evidence_cache": "L13-C11",
+        "evidence_endpoints": [
+          "mlp.gate",
+          "mlp.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C11 (mlp_gate) under T5 at S4, added at site L13 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.13.feed_forward.w1.weight"
+        ],
+        "x4_width": 606
+      },
+      {
+        "cell_id": "C12.T5.S4.L13",
+        "component_id": "C12",
+        "evidence_cache": "L13-C12",
+        "evidence_endpoints": [
+          "mlp.input",
+          "mlp.up",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C12 (mlp_up) under T5 at S4, added at site L13 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.13.feed_forward.w3.weight"
+        ],
+        "x4_width": 606
+      },
+      {
+        "cell_id": "C13.T5.S4.L13",
+        "component_id": "C13",
+        "evidence_cache": "L13-C13",
+        "evidence_endpoints": [
+          "mlp.down",
+          "mlp.post_swiglu",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {},
+        "selection_reason": "wave-10 assembly: C13 (mlp_down) under T5 at S4, added at site L13 in the feed-forward (reads the FFN norm, downstream of the operator) lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.layers.13.feed_forward.w2.weight"
+        ],
+        "x4_width": 639
+      },
+      {
+        "cell_id": "C01.T5.S4",
+        "component_id": "C01",
+        "evidence_cache": "GLOBAL-C01",
+        "evidence_endpoints": [
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "isolation": {
+          "campaign_wave": 10,
+          "composed_evidence": null,
+          "measured_at_this_site": false,
+          "note": "No sealed isolation cell exists at this component/technique/site.  Under ADDENDUM 7 the site is REGISTERED, which is a statement about the receipt schema and not evidence about the layer (rule 2-S); the composed frozen review that follows this install is the only reading this rung has."
+        },
+        "knobs": {
+          "token_frequency_path": "/mnt/ai_data/neural-forge-matrix/wave9/token-frequency-v1.json",
+          "token_frequency_sha256": "9581ef469c45cba04abdb42a30f15ce9c7f52ddac9a7c8ffd7ef29b8269f00f3",
+          "token_route_head_size": 12288,
+          "token_route_solve_device": "cuda:0",
+          "token_route_tail_mode": "sparse-omp"
+        },
+        "selection_reason": "wave-10 assembly: C01 (token_interface_in) under T5 at S4, added at site GLOBAL in the token lane.  No wave measured this cell in isolation; its only grade is the composed frozen review that follows this install.",
+        "weight_keys": [
+          "model.embed_tokens.weight"
+        ],
+        "x4_width": 38
+      }
+    ],
+    "description": "Wave 13: the M5 head merge stacked onto the deepest coherent child.  COMP.MA.MXP2s exact fold set plus the two cheapest head-merge sites the wave-13 probe priced (L02 +0.110941, L12 +0.157983 on the MXO3 base).  Built because a lane is priced by a REVIEW and not by a drift estimate.",
+    "install_order": [
+      "C10.T7.S4.L02",
+      "C11.T8.S4.L05",
+      "C12.T8.S4.L05",
+      "C13.T8.S4.L05",
+      "C11.T8.S4.L06",
+      "C12.T8.S4.L06",
+      "C13.T8.S4.L06",
+      "C10.T7.S4.L12",
+      "C11.T5.S4.L13",
+      "C12.T5.S4.L13",
+      "C13.T5.S4.L13",
+      "C01.T5.S4"
+    ],
+    "passed_through": [
+      {
+        "component": "token_interface_out",
+        "component_id": "C02",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "conv_in_proj",
+        "component_id": "C03",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "conv_kernel",
+        "component_id": "C04",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "conv_out_proj",
+        "component_id": "C05",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "attn_q",
+        "component_id": "C06",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "attn_k",
+        "component_id": "C07",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "attn_v",
+        "component_id": "C08",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "attn_o",
+        "component_id": "C09",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "norms",
+        "component_id": "C14",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      },
+      {
+        "component": "lm_head",
+        "component_id": "C15",
+        "reason": "not selected by the wave-10 assembly at this rung; installed as parent weights (copy_exact).  A site is added only after the previous addition has been reviewed."
+      }
+    ],
+    "ranking": "behaviour-first-greedy-block-exclusive",
+    "schema": "neural-forge-lfm2-matrix-composition-recipe-v1",
+    "selection_policy": {
+      "admission": "ADDENDUM 6 \u00a76.1: a component is admitted on its sealed frozen-review verdict, not on free-run token match, which the addendum retires to a diagnostic column.",
+      "block_exclusivity": "NOTES-MX-K \u00a72.1: a block hosts at most one folded LANE.  The operator lane (short_conv / full_attention) writes operator.output upstream of the block's FFN norm; the feed-forward lane reads that norm.  Folding both in one block solves the MLP against a residual the operator fold has already moved -- measured at -3 review cases for mlp_gate and -4 for mlp_down against the same block's conv writer, while the two MLP tensors together in one block cost nothing.  Two components in the SAME lane are therefore allowed; two lanes are refused.",
+      "install_order": "topological, input side -> output side; within a layer conv -> attention -> mlp -> norms (matrix_composition.install_order_key)",
+      "ranking": "greedy, block-exclusive; a rung is kept only if the composed child stays alive-degraded or better (>= 8/15) and is not dead by the degeneracy clause",
+      "site_scope": "ADDENDUM 5 rule 2-S under ADDENDUM 7's widened registry: a site that schema v2 registers has NO evidence attached to it by being registered.  Every rung is measured or it is nothing.",
+      "storage_floor": "Cyril's hard rule: every folded component stores at or below a true quarter (S4) or eighth (S8) of its OWN parent tensor.  No sub-4x level is solved, sealed, or used as a fallback; a cell whose technique cannot express 4x at its site is dropped, never folded shallower."
+    },
+    "variant": "MXQ.HEADSTACK"
+  },
+  "registry": {
+    "entries": [
+      {
+        "callable": "t1_dense_prior_anchored_ridge",
+        "component": null,
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "T1"
+      },
+      {
+        "callable": "c04_fir_tap_contraction_technique",
+        "component": "C04",
+        "module": "neural_forge.matrix_technique_conv_fir",
+        "technique": "T1"
+      },
+      {
+        "callable": "c10_head_drop_technique",
+        "component": "C10",
+        "module": "neural_forge.matrix_technique_head_drop",
+        "technique": "T1"
+      },
+      {
+        "callable": "t1_standalone_norm_refit",
+        "component": "C14",
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "T1"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t2_cross_width_chart_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T2"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t3_balanced_basis_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_charts",
+        "technique": "T3"
+      },
+      {
+        "callable": "t4_token_embedding_technique",
+        "component": "C01",
+        "module": "neural_forge.matrix_technique_token_embedding",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t4_lowrank_writer_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_lowrank_writers",
+        "technique": "T4"
+      },
+      {
+        "callable": "t5_token_embedding_route_technique",
+        "component": "C01",
+        "module": "neural_forge.matrix_technique_token_embedding",
+        "technique": "T5"
+      },
+      {
+        "callable": "_a9_token_route",
+        "component": "C02",
+        "module": "run_lfm2_matrix_cell",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t5_body_route_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_body_routes",
+        "technique": "T5"
+      },
+      {
+        "callable": "t7_attention_relation_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T7"
+      },
+      {
+        "callable": "t7_attention_relation_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T7"
+      },
+      {
+        "callable": "c10_head_merge_technique",
+        "component": "C10",
+        "module": "neural_forge.matrix_technique_head_merge",
+        "technique": "T7"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t8_gram_relation_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_relation_matching",
+        "technique": "T8"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C03",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C05",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C06",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C07",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C08",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C09",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C11",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C12",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "t9_progressive_multipass_technique",
+        "component": "C13",
+        "module": "neural_forge.matrix_technique_progressive",
+        "technique": "T9"
+      },
+      {
+        "callable": "copy_exact_technique",
+        "component": null,
+        "module": "neural_forge.matrix_technique_registry",
+        "technique": "copy_exact"
+      }
+    ],
+    "schema": "neural-forge-matrix-technique-registry-v1"
+  },
+  "schema": "neural-forge-lfm2-matrix-composition-runner-v1",
+  "steps": [
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": {
+          "aggregate_relative_l2": 0.19696113736785145,
+          "mean_cosine": 0.9796313580172684,
+          "mean_norm_ratio": 1.0031577354288277,
+          "mean_relative_l2": 0.19483828156726485,
+          "median_relative_l2": 0.18679219017339982,
+          "rows": 1584
+        },
+        "write_metrics": {
+          "aggregate_relative_l2": 0.3523513429767525,
+          "mean_cosine": 0.9370176398913153,
+          "mean_norm_ratio": 0.9681426384991102,
+          "mean_relative_l2": 0.34191667907739853,
+          "median_relative_l2": 0.3420340150405339,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C10.T7.S4.L02",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 0,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": []
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "attention.context",
+          "attention.o",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 2,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "82e58254ded17d25dfc680b939cfe5e2198cc973f55163a31713b02683e041e8",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "9c3e49b7aae510d262b9f5c160a1ff7c30786f448732e62e2e96d58701c9004d",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 0,
+      "solve_wall_time_seconds": 12.04879204579629,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.40893617776161356,
+        "mean_cosine": 0.9170430977681457,
+        "mean_norm_ratio": 0.9552809052674134,
+        "mean_relative_l2": 0.39936943411677633,
+        "median_relative_l2": 0.38835292277188993,
+        "rows": 8
+      },
+      "wall_time_seconds": 27.965248638065532
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": null,
+        "write_metrics": {
+          "aggregate_relative_l2": 0.25927949446948256,
+          "mean_cosine": 0.9655285383829219,
+          "mean_norm_ratio": 0.965530254211229,
+          "mean_relative_l2": 0.2554280198132285,
+          "median_relative_l2": 0.25345793369729563,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C11.T8.S4.L05",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 1,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.gate",
+          "mlp.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 5,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "70b926c8103de3749993e731e1bc8e850b0be40f97c89e85df992b11064e41e5",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "1a8f7fe7d2d135e5d50204d027c20ad6045014e88e6a33d839e2c6dff8eb43aa",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 1,
+      "solve_wall_time_seconds": 4.518477434990928,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.4306513923728208,
+        "mean_cosine": 0.908426754958261,
+        "mean_norm_ratio": 0.9288618960049191,
+        "mean_relative_l2": 0.40840106343134486,
+        "median_relative_l2": 0.3583534132715848,
+        "rows": 8
+      },
+      "wall_time_seconds": 17.749032856198028
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": null,
+        "write_metrics": {
+          "aggregate_relative_l2": 0.40662233150729804,
+          "mean_cosine": 0.9131182235068138,
+          "mean_norm_ratio": 0.9131173114084105,
+          "mean_relative_l2": 0.39997631643161907,
+          "median_relative_l2": 0.4040604813575743,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C12.T8.S4.L05",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 2,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.input",
+          "mlp.up",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 5,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "1a808d7611055087032c9e7f580c732ce18167f48ef803d60241ee4c86385d47",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "2f3080d267ba8e1fbd5222e84854a8128c4f2f26586d17e301b849172cb56fcd",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 2,
+      "solve_wall_time_seconds": 5.23625971400179,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.47649639188047826,
+        "mean_cosine": 0.8875441392984129,
+        "mean_norm_ratio": 0.9196512262773444,
+        "mean_relative_l2": 0.45533172305419145,
+        "median_relative_l2": 0.3987712067397268,
+        "rows": 8
+      },
+      "wall_time_seconds": 17.050425650086254
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": {
+          "aggregate_relative_l2": 0.08629176538678113,
+          "mean_cosine": 0.9821811681745737,
+          "mean_norm_ratio": 0.9985176517570574,
+          "mean_relative_l2": 0.18336024127120462,
+          "median_relative_l2": 0.18377505801107857,
+          "rows": 1584
+        },
+        "write_metrics": {
+          "aggregate_relative_l2": 0.09417219412595473,
+          "mean_cosine": 0.8587139168482195,
+          "mean_norm_ratio": 0.9124976765895477,
+          "mean_relative_l2": 0.5028850882616674,
+          "median_relative_l2": 0.5013049159144598,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C13.T8.S4.L05",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 3,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.down",
+          "mlp.post_swiglu",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 5,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "cee1ab87a9506c949ea629baafd3b98a304fef72340509f28cbccd3c7699e93d",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "64e5e8a0bec3fcc0808b33dc592c65668cadd419513e7b58d389483e42559bd6",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 3,
+      "solve_wall_time_seconds": 3.0351125260349363,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.48664489283753043,
+        "mean_cosine": 0.8815825454116024,
+        "mean_norm_ratio": 0.9240231888906765,
+        "mean_relative_l2": 0.4701784423512375,
+        "median_relative_l2": 0.4430382114847362,
+        "rows": 8
+      },
+      "wall_time_seconds": 15.609049337916076
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": null,
+        "write_metrics": {
+          "aggregate_relative_l2": 0.22786971846314777,
+          "mean_cosine": 0.9736036010158532,
+          "mean_norm_ratio": 0.9736081449065603,
+          "mean_relative_l2": 0.22511801445407564,
+          "median_relative_l2": 0.2241859115749399,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C11.T8.S4.L06",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 4,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.gate",
+          "mlp.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 6,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "7bf6d95ea007fd10e7cc30415c84e9c1be171a655ad5f50cb41dacc30ba8e082",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "436953e4e3566b7ae0689ecb3a24ab4fb704b462dc7c9218da03412ce453a5b6",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 4,
+      "solve_wall_time_seconds": 4.59812484588474,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.5007308199589009,
+        "mean_cosine": 0.8730196480033825,
+        "mean_norm_ratio": 0.9219377885458214,
+        "mean_relative_l2": 0.48473129123049025,
+        "median_relative_l2": 0.46532544589655417,
+        "rows": 8
+      },
+      "wall_time_seconds": 16.53574775182642
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": null,
+        "write_metrics": {
+          "aggregate_relative_l2": 0.39073286370856397,
+          "mean_cosine": 0.9201521975246911,
+          "mean_norm_ratio": 0.9201544690542457,
+          "mean_relative_l2": 0.3862764213132957,
+          "median_relative_l2": 0.3885959406852793,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C12.T8.S4.L06",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 5,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.input",
+          "mlp.up",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 6,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "623750484b27e4f99d55065ed4e8965474dc7c3df83994826c6e71d6f3d3c69f",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "9328dd37d7ba18f18b65a7352f66ee8e80b442501e4b73c5799ad700f257c926",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 5,
+      "solve_wall_time_seconds": 5.636992912041023,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.5329967043287669,
+        "mean_cosine": 0.8546387747554123,
+        "mean_norm_ratio": 0.9205776713529032,
+        "mean_relative_l2": 0.5150538084385187,
+        "median_relative_l2": 0.4932206978396448,
+        "rows": 8
+      },
+      "wall_time_seconds": 16.059516680194065
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": {
+          "aggregate_relative_l2": 0.08552037931911956,
+          "mean_cosine": 0.9808471192910934,
+          "mean_norm_ratio": 0.9994351122606113,
+          "mean_relative_l2": 0.19193873522661448,
+          "median_relative_l2": 0.19147366672415067,
+          "rows": 1584
+        },
+        "write_metrics": {
+          "aggregate_relative_l2": 0.5107005553539113,
+          "mean_cosine": 0.8614971068444186,
+          "mean_norm_ratio": 0.9232472947109444,
+          "mean_relative_l2": 0.5016972422332592,
+          "median_relative_l2": 0.5033558276833858,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C13.T8.S4.L06",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 6,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06",
+          "C12.T8.S4.L06"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.down",
+          "mlp.post_swiglu",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 6,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "9a29b6c5cd4f667f0e618e470086d0c69f6512cef7dc20794eef2fe6ddded643",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "b3d9196d915778ea5705efff813f7b084bc66c6bc1d5080cf42ee9ed0dbd30ae",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 6,
+      "solve_wall_time_seconds": 1.2936617601662874,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.5503277968037701,
+        "mean_cosine": 0.8449272346772949,
+        "mean_norm_ratio": 0.9249731238121905,
+        "mean_relative_l2": 0.532266103163426,
+        "median_relative_l2": 0.5301038355940197,
+        "rows": 8
+      },
+      "wall_time_seconds": 13.06057405588217
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": {
+          "aggregate_relative_l2": 0.1664795372691242,
+          "mean_cosine": 0.9859561885607717,
+          "mean_norm_ratio": 0.9820480482385847,
+          "mean_relative_l2": 0.1551536148077053,
+          "median_relative_l2": 0.14757869389738643,
+          "rows": 1584
+        },
+        "write_metrics": {
+          "aggregate_relative_l2": 0.418187242289002,
+          "mean_cosine": 0.9189896511682134,
+          "mean_norm_ratio": 0.9246407225039636,
+          "mean_relative_l2": 0.3811244507392806,
+          "median_relative_l2": 0.36664253872049435,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C10.T7.S4.L12",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 7,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06",
+          "C12.T8.S4.L06",
+          "C13.T8.S4.L06"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "attention.context",
+          "attention.o",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 12,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "5de3d18d44e19474d1594f88dbdfd5b03f4e3dba605d5656cd60bfa85adaf202",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "ab278a32e109395a2720a0ae3aed7517cd27b927d37d267f1b55e2a74d171b8d",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 7,
+      "solve_wall_time_seconds": 14.37721299706027,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.6561435517010706,
+        "mean_cosine": 0.7761456352947447,
+        "mean_norm_ratio": 0.9379855708011966,
+        "mean_relative_l2": 0.643898250122346,
+        "median_relative_l2": 0.6103359997236337,
+        "rows": 8
+      },
+      "wall_time_seconds": 26.25003529479727
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": null,
+        "write_metrics": {
+          "aggregate_relative_l2": 0.4348190683845368,
+          "mean_cosine": 0.9023444968342039,
+          "mean_norm_ratio": 0.9098428061310718,
+          "mean_relative_l2": 0.4201454794433677,
+          "median_relative_l2": 0.40944802730981095,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C11.T5.S4.L13",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 8,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06",
+          "C12.T8.S4.L06",
+          "C13.T8.S4.L06",
+          "C10.T7.S4.L12"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.gate",
+          "mlp.input",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 13,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "57913ea199d796bf5c0d059b002a0e39836e27ae175f4bf8d5a8b1f7d1aebe51",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "8c87a64cecfceb3c49b2aab868e79ec65428babafb1ed091900d29b96bd3c7b8",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 8,
+      "solve_wall_time_seconds": 3.486239790217951,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.6588319658047913,
+        "mean_cosine": 0.7722004876057229,
+        "mean_norm_ratio": 0.9252093381556709,
+        "mean_relative_l2": 0.6468170120800697,
+        "median_relative_l2": 0.6212629694594457,
+        "rows": 8
+      },
+      "wall_time_seconds": 15.774902391945943
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": null,
+        "write_metrics": {
+          "aggregate_relative_l2": 0.5697346849945962,
+          "mean_cosine": 0.8274838844451254,
+          "mean_norm_ratio": 0.8445855970398679,
+          "mean_relative_l2": 0.5513209468514368,
+          "median_relative_l2": 0.5412544309657531,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C12.T5.S4.L13",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 9,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06",
+          "C12.T8.S4.L06",
+          "C13.T8.S4.L06",
+          "C10.T7.S4.L12",
+          "C11.T5.S4.L13"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.input",
+          "mlp.up",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 13,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "dc4fe0cea25b854cee3a1f71008182e278ab4b40230f228ece7359cc12fb3707",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "601f57f143a7dd08ebf3782e2c0f17a2fd0bddb524e4e654355b8d66add461dd",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 9,
+      "solve_wall_time_seconds": 3.889058670029044,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.6594926225377767,
+        "mean_cosine": 0.7694475196175248,
+        "mean_norm_ratio": 0.9120425406508655,
+        "mean_relative_l2": 0.647551938730969,
+        "median_relative_l2": 0.6254383699117791,
+        "rows": 8
+      },
+      "wall_time_seconds": 18.019713814137504
+    },
+    {
+      "boundary_diagnostics": {
+        "macrocell_metrics": {
+          "aggregate_relative_l2": 0.14827366667867062,
+          "mean_cosine": 0.98705654776804,
+          "mean_norm_ratio": 0.9950483915045133,
+          "mean_relative_l2": 0.1416884809334784,
+          "median_relative_l2": 0.11792506401893355,
+          "rows": 1584
+        },
+        "write_metrics": {
+          "aggregate_relative_l2": 0.3682963472546617,
+          "mean_cosine": 0.9302699273915399,
+          "mean_norm_ratio": 0.9372898980908605,
+          "mean_relative_l2": 0.3467235474332844,
+          "median_relative_l2": 0.3373402171140721,
+          "rows": 1584
+        }
+      },
+      "cell_id": "C13.T5.S4.L13",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 10,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06",
+          "C12.T8.S4.L06",
+          "C13.T8.S4.L06",
+          "C10.T7.S4.L12",
+          "C11.T5.S4.L13",
+          "C12.T5.S4.L13"
+        ]
+      },
+      "evidence_binding": {
+        "basis_map_sha256": null,
+        "endpoints": [
+          "mlp.down",
+          "mlp.post_swiglu",
+          "residual.post_layer",
+          "residual.post_operator",
+          "residual.pre"
+        ],
+        "evidence_cache_reused": true,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 4751,
+        "heldout_rows": 1584,
+        "implementation_sha256": "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41",
+        "kind": "site-evidence-binding",
+        "layer_index": 13,
+        "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+        "payload_sha256": "f9b2aea53d7b1ce6c5e4403f267bc661321b8c7efd3550479b7393cd21d83f4f",
+        "phases": [
+          "prefill",
+          "decode.000",
+          "decode.001",
+          "decode.002",
+          "decode.003",
+          "decode.004",
+          "decode.005",
+          "decode.006",
+          "decode.007"
+        ],
+        "schema": "neural-forge-lfm2-matrix-cell-runner-v1",
+        "selection_sha256": "607cf7e6e3e339497ea39500889615a8d887ffd9ec0bf5d7b8d1af29734801d8",
+        "split_authority": "matrix-campaign-capture-manifest",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+        "trace_selective_session_sha256": "d49e5436166d08c0cd612cac00e7b7839a55763434368fa73c2b11d7de58b8eb"
+      },
+      "index": 10,
+      "solve_wall_time_seconds": 3.737981954123825,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.6610077034035837,
+        "mean_cosine": 0.7684286393851862,
+        "mean_norm_ratio": 0.9114775914576367,
+        "mean_relative_l2": 0.6484030792454957,
+        "median_relative_l2": 0.6276989398080023,
+        "rows": 8
+      },
+      "wall_time_seconds": 15.229477508924901
+    },
+    {
+      "boundary_diagnostics": {},
+      "cell_id": "C01.T5.S4",
+      "conditioning": {
+        "conditioned": false,
+        "install_index": 11,
+        "reason": "M-A installs every winner solved against parent evidence (ADDENDUM 4's null hypothesis)",
+        "upstream_installed": [
+          "C10.T7.S4.L02",
+          "C11.T8.S4.L05",
+          "C12.T8.S4.L05",
+          "C13.T8.S4.L05",
+          "C11.T8.S4.L06",
+          "C12.T8.S4.L06",
+          "C13.T8.S4.L06",
+          "C10.T7.S4.L12",
+          "C11.T5.S4.L13",
+          "C12.T5.S4.L13",
+          "C13.T5.S4.L13"
+        ]
+      },
+      "evidence_binding": {
+        "evidence_cache_reused": false,
+        "evidence_split_manifest_sha256": "219a63c43df129d2f39dbee3f461a1bb5cf2eca744ee99b2bdfd94ae602045d1",
+        "fit_rows": 0,
+        "heldout_rows": 0,
+        "implementation_sha256": null,
+        "selection_sha256": null,
+        "split_authority": "no-site-evidence-global-component",
+        "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff"
+      },
+      "index": 11,
+      "solve_wall_time_seconds": 1151.9180587220471,
+      "terminal_metrics": {
+        "aggregate_relative_l2": 0.6928125575410907,
+        "mean_cosine": 0.7401090221409778,
+        "mean_norm_ratio": 0.8778460130130713,
+        "mean_relative_l2": 0.6793936548329031,
+        "median_relative_l2": 0.6595242911158066,
+        "rows": 8
+      },
+      "wall_time_seconds": 1163.8412191928364
+    }
+  ],
+  "technique_modules": {
+    "matrix_technique_body_routes": "imported",
+    "matrix_technique_charts": "imported",
+    "matrix_technique_conv_fir": "imported",
+    "matrix_technique_head_drop": "imported",
+    "matrix_technique_head_merge": "imported",
+    "matrix_technique_lowrank_writers": "imported",
+    "matrix_technique_progressive": "imported",
+    "matrix_technique_relation_matching": "imported",
+    "matrix_technique_token_embedding": "imported"
+  },
+  "terminal_metrics": {
+    "aggregate_relative_l2": 0.6928125575410907,
+    "mean_cosine": 0.7401090221409778,
+    "mean_norm_ratio": 0.8778460130130713,
+    "mean_relative_l2": 0.6793936548329031,
+    "median_relative_l2": 0.6595242911158066,
+    "rows": 8
+  },
+  "wall_time_seconds": 1424.7408425020985
+}

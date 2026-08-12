@@ -3,6 +3,22 @@
 Updated: 2026-08-06 (staged-escalation policy added per Cyril's direct
 instruction; objective and fold-only rules below unchanged)
 
+> **2026-08-12 pointer — the matrix campaign's closing report.**
+> `docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` is where the fold-only
+> frontier now stands, receipt-cited: the frontier children and their
+> benchmarks, the drift law and lane prices *as search heuristics rather than
+> gates*, the per-class safety table with wave 13's M5 head-merge result, the
+> scaling projections, and the corrections of record. Two entries below are
+> superseded by it and are left in place as history: the claim that 0.5x is
+> arithmetically out of reach (withdrawn — it extrapolated an R² = 0.62
+> heuristic past its fitted range) and the retirement of corrective routes on a
+> parameter-efficiency comparison (reframed as a diagnostic). The report does
+> **not** declare fold-only closed: four structural mechanism classes —
+> CUR/interpolative decomposition, nearest-Kronecker-product, Monarch /
+> block-diagonal+low-rank, and tensor-train — are queued for wave 14 and
+> unpriced. Precision reduction remains out of scope for phase 1 per Cyril;
+> storage is counted in parameters, never bytes. Nothing below is rewritten.
+
 ## Staged escalation policy (Cyril, 2026-08-06)
 
 The program maximizes compute savings by exhausting each cheaper technique
