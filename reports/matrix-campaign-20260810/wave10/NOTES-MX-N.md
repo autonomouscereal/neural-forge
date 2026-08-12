@@ -395,9 +395,55 @@ seven columns and above it on `piqa`**, while storing 0.175x less of the parent.
 
 ---
 
-## 9. The test result, stated honestly
+## 9. The test result
 
-`pytest tests/` **fails at collection** on this deployment with:
+### 9.1 The campaign's subset — the number that is comparable
+
+Run server-side on a `git archive` of **this wave's own commit** (`9acaf38f`,
+`src` + `experiments` + `tests`) unpacked to
+`/mnt/ai_data/neural-forge-matrix/wave10/fulltest` — no worktree, and therefore
+none of the Codex lane's uncommitted files. The invocation is wave 9's, verbatim
+(`NOTES-MX-M` §"The matrix test subset"), in the same file order:
+
+```
+python -m pytest tests/test_matrix_composition.py tests/test_matrix_cell_receipt.py \
+                 tests/test_run_lfm2_matrix_cell.py tests/test_matrix_technique_registry.py \
+                 tests/test_run_lfm2_matrix_cell_fresh_evidence.py \
+                 tests/test_matrix_technique_charts.py tests/test_matrix_technique_new_axes.py \
+                 tests/test_matrix_addendum6.py tests/test_matrix_addendum7.py \
+                 tests/test_matrix_technique_token_embedding.py -q
+# -> 10 failed, 219 passed, 1 skipped
+```
+
+**The same ten failures as waves 7, 8 and 9, by name, and fourteen more passes.**
+Wave 9 reported `10 failed, 205 passed, 1 skipped`; the +14 is wave 10's new
+cases in `tests/test_matrix_technique_token_embedding.py`, all of which pass.
+The ten, unchanged and still not fixed by this wave:
+
+* the `blank_receipt` `compute_architecture` `TypeError` family — four in
+  `test_matrix_technique_registry`
+  (`test_t1_seals_an_unbounded_condition_number_and_keeps_the_cap_flag`,
+  `test_t1_treats_an_unreported_condition_number_as_unbounded`,
+  `test_t1_unclamped_solve_seals_null_clamp_ratios`,
+  `test_c14_norm_refit_solve_block_is_sealable`) and one in
+  `test_run_lfm2_matrix_cell_fresh_evidence`
+  (`test_a_completed_route_solve_block_is_sealable`) — whose fix is
+  **uncommitted in the Codex lane** and which a `git archive` cannot see;
+* `test_most_specific_registration_wins`, which monkeypatches the global
+  dispatch table and never restores it, plus its three collateral victims
+  (`test_unregistered_technique_names_the_registration_point`,
+  `test_t1_refuses_components_it_does_not_model`,
+  `test_both_techniques_are_wired_into_the_dispatch_table`);
+* `test_factor_pair_storage_model_reproduces_a_sealed_wave2_receipt`,
+  pre-existing at wave-6, wave-7 and wave-8 HEAD as well.
+
+Wave 10's own two files: `tests/test_matrix_technique_token_embedding.py` and
+`tests/test_matrix_technique_body_routes.py`, **100 passed** together.
+
+### 9.2 A separate, pre-existing, order-dependent collection error
+
+Running the **whole** `tests/` tree in one process — which the campaign's subset
+does not do — fails at collection:
 
 ```
 experiments/run_lfm2_matrix_cell.py:1233: in <module>
@@ -405,30 +451,30 @@ experiments/run_lfm2_matrix_cell.py:1233: in <module>
 E   CellTechniqueError: ('T5', 'C01') is already registered; pass replace=True to override.
 ```
 
-**This is pre-existing at wave-9 HEAD and wave 10 did not cause it.** Two
-independent checks:
+**Pre-existing at wave-9 HEAD; wave 10 did not cause it.** Three checks:
 
 1. `git diff 92d46a40 9acaf38f --stat -- experiments/` is empty — commit
    `9acaf38f` touches no file in `experiments/`, and both the bare `register`
-   at `run_lfm2_matrix_cell.py:1233` and the `replace=True` registration in
+   at `:1233` and the `replace=True` registration in
    `matrix_technique_token_embedding` exist at `92d46a40`.
-2. A **control run**: wave-9's tests (`92d46a40`) against wave-9's src
-   (deployment `beb699f2`) produces the **identical** error and the identical
-   `Interrupted: 1 error during collection`.
+2. A **control run** — wave-9's tests (`92d46a40`) against wave-9's src
+   (deployment `beb699f2`) — produces the identical error in the identical two
+   files.
+3. With those two files excluded, the wave-10 and wave-9 progress streams are
+   **character-for-character identical** over the first 5,287 tests (84 `F`,
+   9 `E`, 4 `s` in both), so the commit changes no test outcome anywhere the
+   comparison reached.
 
-The trigger is collection order, not content: `test_matrix_technique_token_embedding`
+The trigger is alphabetical collection order: `test_matrix_technique_token_embedding`
 sorts before `test_run_lfm2_matrix_cell`, imports the C01 kernel, and the kernel
-registers `('T5','C01')` at import time; `run_lfm2_matrix_cell.py` then registers
-the same pair without `replace=True`. Run alone, that file passes (24 passed, 1
-skipped) at both waves.
+registers `('T5','C01')` at import; `run_lfm2_matrix_cell.py` then registers the
+same pair without `replace=True`. In the campaign's own subset the order is
+explicit and `test_run_lfm2_matrix_cell.py` passes.
 
-**It was left unfixed deliberately.** The fix is one `replace=True` in
-`experiments/run_lfm2_matrix_cell.py` — a file in the runner lane that this
-wave's charter does not cover, and one that a wave measuring behavior should not
-edit mid-wave. It is recorded here as an open defect with its exact cause.
-
-Counts with that one file ignored are in §9.1; wave 10's own two test files are
-**100 passed** (§2).
+**Left unfixed deliberately.** The fix is one `replace=True` in
+`experiments/run_lfm2_matrix_cell.py`, a runner-lane file this wave's charter
+does not cover and one a wave measuring behavior should not edit mid-wave.
+Recorded here as an open defect with its exact cause.
 
 ---
 

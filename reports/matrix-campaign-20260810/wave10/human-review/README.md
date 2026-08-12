@@ -241,12 +241,20 @@ Each per-child file carries the net stored ratio, both storage accountings, the
 per-component storage, the install drift, the benchmark row, the machine-computed
 verdict, and all sixteen responses verbatim beside the parent's.
 
-## 9. One open defect, stated
+## 9. Tests, and one open defect
 
-`pytest tests/` fails at collection on this deployment — and on wave 9's, which
-was run as a control and produces the identical error. Two files
-(`test_run_lfm2_matrix_cell.py`, `test_run_lfm2_matrix_cell_fresh_evidence.py`)
-import `experiments/run_lfm2_matrix_cell.py`, which registers `('T5','C01')`
-without `replace=True` after the C01 kernel has already registered it at import.
-Pre-existing at wave-9 HEAD; commit `9acaf38f` touches no file in `experiments/`.
-Left unfixed deliberately — see `NOTES-MX-N.md` §9.
+The campaign's own test subset, run on a `git archive` of this wave's commit with
+wave 9's invocation verbatim: **`10 failed, 219 passed, 1 skipped`** — the same
+ten failures as waves 7, 8 and 9 **by name**, and +14 passes, which are wave 10's
+new cases. Wave 9 reported `10 failed, 205 passed, 1 skipped`. Wave 10's own two
+test files are **100 passed**.
+
+Separately, running the *whole* `tests/` tree in one process fails at collection
+on this deployment — and on wave 9's, which was run as a control and produces the
+identical error in the identical two files. It is an alphabetical-collection-order
+artifact: the C01 kernel registers `('T5','C01')` at import, and
+`experiments/run_lfm2_matrix_cell.py` then registers the same pair without
+`replace=True`. Pre-existing at wave-9 HEAD; commit `9acaf38f` touches no file in
+`experiments/`. With those two files excluded the wave-10 and wave-9 progress
+streams are character-for-character identical over 5,287 tests. Left unfixed
+deliberately — see `NOTES-MX-N.md` §9.2.
