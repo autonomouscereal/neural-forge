@@ -192,6 +192,52 @@ class. On LFM2, MLP folds live at mid-depth (L04/L05) and die at the ends
 7/15 — `NOTES-MX-K` §3.1). `attn_k` lives at L12, the *last* attention block
 (`NOTES-MX-K` §3.2).
 
+### 3.4a Marginal drift is a property of (site, technique, **and position**)
+
+**Wave 12, and this one invalidates a whole class of allocator.** A lane's
+marginal drift measured deep in an already-damaged stack does **not** transfer to
+a healthy one. `COMP.MA.MXO2`'s eleven lanes, in install order, cost
+
+```
+0.3659  0.1139  0.0421  0.0687  0.0685  0.0530  0.0518  0.0297  0.0054  0.0105  -0.0061
+```
+
+— the last lane *reduced* drift — and the same lanes priced against the **frontier
+child's** base cost 0.0729 (L11) and 0.0440 (L13), an order of magnitude more.
+Drift saturates: there is only so much of a model left to break, so a late lane
+in a dying child looks free and is not.
+
+**Consequence for anyone building a fold allocator at scale: price every
+candidate against the base you will actually install it on, and re-price after
+every acceptance.** A per-site marginal pooled over positions — which is what a
+ledger of past runs gives you — is biased toward whatever positions those runs
+happened to use. The measurement is cheap and does not need a sealed cell: in an
+independently-solved composition (parent-evidence M-A), a component's solved
+tensor does not depend on what else is installed, so the composed child is a
+function of the **set**; one process can install a base once and then price
+candidate after candidate by installing, measuring, and writing the parent's own
+tensors back (verified: sixteen of sixteen restorations reproduced the base drift
+exactly).
+
+### 3.4b The min-drift variant is per site, and the storage level does not
+generalize across component classes
+
+Wave 12 priced sixteen `(lane, technique, level)` variants against one base:
+
+* **The better kernel is per site, not global.** Sparse-OMP routes (T5) beat
+  Gram relation matching (T8) by 22% of drift at one site, tie at a second, and
+  **lose by 33% at a third**, all at the same 4x storage bound.
+* **The deeper storage level reverses between component classes.** Wave 8
+  measured that short-conv at S8 (1/8) drifts *less* than the same conv at S4
+  (1/4). On the SwiGLU lane this reverses at **every** site measured: S8 removes
+  ~17% more and costs 15-21% *more* drift. **"Fold it harder and it hurts less"
+  is a short-conv property, not a law.**
+
+The transferable procedure is therefore: for each candidate site, solve every
+admissible (technique, level) whose stored form meets the bound, install it on
+the real base, measure composed drift, and take the minimum. Nothing about which
+kernel wins transfers; the *procedure* does.
+
 ### 3.5 Reconstruction does not predict behavior; conditioning anti-predicts
 
 Three independent measurements:
