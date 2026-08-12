@@ -99,8 +99,14 @@ from neural_forge.matrix_composition import (  # noqa: E402
     aggregate_calibration,
     aggregate_solve,
     evidence_cache_name,
+    evidence_endpoints,
     net_storage,
     validate_recipe,
+)
+from neural_forge.matrix_corrective_routes import (  # noqa: E402
+    CorrectiveRouteError,
+    corrections_manifest,
+    describe_corrective_registry,
 )
 from neural_forge.matrix_technique_registry import (  # noqa: E402
     CellTechniqueError,
@@ -1536,6 +1542,286 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
     return block
 
 
+# --------------------------------------------------------------------------
+# ADDENDUM 10 M2: additive corrective routes at folded block outputs
+# --------------------------------------------------------------------------
+
+
+def _corrective_pass(  # noqa: PLR0915 - one linear loop, reported route by route
+    *,
+    args: argparse.Namespace,
+    model: Any,
+    tokenizer: Any,
+    recipe: Mapping[str, Any],
+    parent_weights: Mapping[str, Any],
+    capture_state: Mapping[str, Any],
+    base_manifest: Mapping[str, Any],
+    control_terminal: Any,
+    control_norms: Any,
+    control_ids: Sequence[Sequence[int]],
+    probe_prompts: Sequence[Any],
+    device: str,
+    watchdog: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Solve and install the recipe's corrective routes, depth ascending.
+
+    One capture per route, and the order is not a convenience: installing a
+    route at layer L moves every row every deeper block reads, so a route at
+    L' > L solved against a capture taken before L's route was installed would be
+    aimed at a gap that no longer exists.  The capture-reuse licence
+    (`_capture_is_stale`) says the same thing and says it in one direction only,
+    so this loop simply re-captures per route rather than arguing the exception.
+
+    The bank is attached to **both** model objects.  A corrective route is a
+    forward hook and not a ``state_dict`` entry, so
+    `capture_conditioned_evidence`'s ``load_state_dict`` copy would carry the
+    folds and silently drop the corrections -- and the next route would then be
+    solved against a child that does not exist.
+    """
+
+    from neural_forge.matrix_corrective_routes import (
+        CorrectiveRouteBank,
+        CorrectiveRouteId,
+        solve_corrective_route,
+    )
+
+    specifications = list(recipe.get("corrections") or [])
+    parsed = [
+        (CorrectiveRouteId.parse(str(item["route_id"])), dict(item))
+        for item in specifications
+    ]
+    parsed.sort(key=lambda pair: (pair[0].layer_index, pair[0].text))
+    bank = CorrectiveRouteBank()
+    capture_model = capture_state["model"]
+    capture_root = Path(args.conditioned_capture_root)
+    prune = bool(args.correction_prune_captures)
+
+    def _global_drift() -> dict[str, Any]:
+        terminal, layer_norms = cell_runner._terminal_states(
+            model, tokenizer, probe_prompts, device=device
+        )
+        metrics = _row_metrics(terminal, control_terminal)
+        ratios = (layer_norms / control_norms.clamp_min(1e-30)).reshape(-1)
+        return {
+            "terminal_relL2_vs_control": metrics["mean_relative_l2"],
+            "terminal_cos_vs_control": metrics["mean_cosine"],
+            "norm_ratio_per_layer_minmax": [
+                float(ratios.min().item()),
+                float(ratios.max().item()),
+            ],
+        }
+
+    before_any = _global_drift()
+    _log(
+        f"corrections: folded child global drift "
+        f"{before_any['terminal_relL2_vs_control']:.6f} before any route"
+    )
+
+    steps: list[dict[str, Any]] = []
+    captures: list[dict[str, Any]] = []
+    previous_drift = float(before_any["terminal_relL2_vs_control"])
+    for index, (identifier, item) in enumerate(parsed):
+        watchdog.stage(f"correction-{index}-{identifier.text}")
+        step_started = time.monotonic()
+        # The route reads and writes two of C11's own sealed endpoints at this
+        # layer, so it opens C11's evidence cache rather than a private one: the
+        # parent side is then the SAME authenticated cache every MLP fold at this
+        # site has read since wave 5.
+        anchor = CellId(
+            component="C11",
+            technique="T8",
+            level="S4",
+            site=identifier.site,
+        )
+        endpoints = evidence_endpoints(anchor)
+        watchdog.stage(f"correction-{index}-capture-{identifier.text}")
+        captured = capture_conditioned_evidence(
+            capture_model=capture_model,
+            child_model=model,
+            output_root=capture_root,
+            batches=capture_state["batches"],
+            capture_config=capture_state["config"],
+            base_manifest=base_manifest,
+            device=device,
+            conditioning={
+                "upstream_installed": [
+                    str(entry["cell_id"]) for entry in recipe["components"]
+                ],
+                "install_index": index,
+                "next_component": f"correction-{identifier.text}",
+                "corrective_routes_already_installed": [
+                    route.text for route in bank.routes
+                ],
+            },
+        )
+        alignment = _als_verify_row_alignment(
+            split_manifest_path=captured["split_manifest_path"],
+            base_manifest=base_manifest,
+        )
+        captures.append(
+            {
+                "route_id": identifier.text,
+                "trace_cache_key": str(captured["trace_cache_key"]),
+                "split_manifest_sha256": str(captured["split_manifest_sha256"]),
+                "child_state_dict_sha256": str(captured["child_state_dict_sha256"]),
+                "collector_implementation_sha256": str(
+                    captured["collector_implementation_sha256"]
+                ),
+                "corrective_routes_in_capture": [
+                    route.text for route in bank.routes
+                ],
+                "row_alignment": alignment,
+                "wall_time_seconds": float(captured["capture_wall_time_seconds"]),
+            }
+        )
+        child_evidence, child_binding = cell_runner.load_site_evidence(
+            trace_cache_path=Path(captured["cache_directory"]),
+            layer_index=int(identifier.layer_index),
+            endpoints=endpoints,
+            forced_decode_count=int(args.forced_decode_count),
+            fit_batch_limit=None,
+            heldout_batch_limit=None,
+            cache_directory=capture_root
+            / "evidence-cache"
+            / f"{captured['trace_cache_key'][:16]}-{evidence_cache_name(anchor)}",
+            basis_phase_cache_root=None,
+            basis_phase_key_sha256=None,
+            basis_phase_hmac_key_file=None,
+            basis_phase_hmac_key_id=None,
+            evidence_split_manifest=Path(captured["split_manifest_path"]),
+            target_hidden_size=int(args.target_hidden_size),
+        )
+        parent_evidence, parent_binding = cell_runner.load_site_evidence(
+            trace_cache_path=Path(args.parent_trace_cache),
+            layer_index=int(identifier.layer_index),
+            endpoints=endpoints,
+            forced_decode_count=int(args.forced_decode_count),
+            fit_batch_limit=None,
+            heldout_batch_limit=None,
+            cache_directory=Path(args.evidence_cache_root)
+            / evidence_cache_name(anchor),
+            basis_phase_cache_root=None,
+            basis_phase_key_sha256=None,
+            basis_phase_hmac_key_file=None,
+            basis_phase_hmac_key_id=None,
+            evidence_split_manifest=Path(args.evidence_split_manifest),
+            target_hidden_size=int(args.target_hidden_size),
+        )
+        if int(child_evidence.fit_row_count) != int(
+            parent_evidence.fit_row_count
+        ) or int(child_evidence.heldout_row_count) != int(
+            parent_evidence.heldout_row_count
+        ):
+            raise MatrixCompositionRunError(
+                f"{identifier.text}: child rows "
+                f"{child_evidence.fit_row_count}/"
+                f"{child_evidence.heldout_row_count} against parent rows "
+                f"{parent_evidence.fit_row_count}/"
+                f"{parent_evidence.heldout_row_count}; row i of one would not "
+                "be row i of the other."
+            )
+
+        reads = "mlp.input"
+        writes = "residual.post_layer"
+        source_fit = child_evidence.fit_rows(reads).to(torch.float64)
+        source_heldout = child_evidence.heldout_rows(reads).to(torch.float64)
+        gap_fit = parent_evidence.fit_rows(writes).to(torch.float64) - child_evidence.fit_rows(
+            writes
+        ).to(torch.float64)
+        gap_heldout = parent_evidence.heldout_rows(writes).to(
+            torch.float64
+        ) - child_evidence.heldout_rows(writes).to(torch.float64)
+
+        watchdog.stage(f"correction-{index}-solve-{identifier.text}")
+        solve_started = time.monotonic()
+        route = solve_corrective_route(
+            route_id=identifier,
+            source_fit=source_fit,
+            source_heldout=source_heldout,
+            gap_fit=gap_fit,
+            gap_heldout=gap_heldout,
+            ridge_relative=float(args.correction_ridge_relative),
+        )
+        solve_seconds = time.monotonic() - solve_started
+        bank.add(route)
+        bank.attach(model)
+        bank.attach(capture_model)
+        after = _global_drift()
+        drift_now = float(after["terminal_relL2_vs_control"])
+        probe_ids = cell_runner._greedy_fixed(
+            model,
+            tokenizer,
+            probe_prompts,
+            tokens=int(args.probe_tokens),
+            device=device,
+        )
+        match, lcp = cell_runner._token_match(probe_ids, control_ids)
+        entry = route.receipt_entry()
+        entry.update(
+            {
+                "selection_reason": str(item.get("selection_reason", "")),
+                "install_index": index,
+                "global_drift_before": previous_drift,
+                "global_drift_after": drift_now,
+                "global_drift_bought_back": previous_drift - drift_now,
+                "drift_bought_back_per_stored_parameter": (
+                    (previous_drift - drift_now)
+                    / float(route.stored_parameter_count)
+                    if route.stored_parameter_count
+                    else None
+                ),
+                "free_run_token_match_vs_control": match,
+                "free_run_mean_lcp": lcp,
+                "norm_ratio_per_layer_minmax": after["norm_ratio_per_layer_minmax"],
+                "evidence": {
+                    "child_trace_cache_key": str(captured["trace_cache_key"]),
+                    "child_split_manifest_sha256": str(
+                        captured["split_manifest_sha256"]
+                    ),
+                    "child_selection_sha256": child_binding.get("selection_sha256"),
+                    "parent_trace_cache_key": parent_binding.get("trace_cache_key"),
+                    "parent_selection_sha256": parent_binding.get("selection_sha256"),
+                    "row_alignment": alignment,
+                    "fit_rows": int(child_evidence.fit_row_count),
+                    "heldout_rows": int(child_evidence.heldout_row_count),
+                },
+                "solve_wall_time_seconds": float(solve_seconds),
+                "wall_time_seconds": float(time.monotonic() - step_started),
+            }
+        )
+        steps.append(entry)
+        _log(
+            f"{identifier.text}: heldout gap "
+            f"{route.diagnostics['heldout_gap_relative_after']:.6f} of its own "
+            f"norm after the route, global drift {previous_drift:.6f} -> "
+            f"{drift_now:.6f} for {route.stored_parameter_count} stored "
+            f"parameters"
+        )
+        previous_drift = drift_now
+        del child_evidence
+        del parent_evidence
+        if prune:
+            _prune_capture(captured["cache_directory"])
+
+    block = bank.receipt_block()
+    block["routes"] = steps
+    block["route_count"] = len(steps)
+    block["global_drift_before_any_route"] = before_any
+    block["global_drift_after_all_routes"] = _global_drift()
+    block["global_drift_bought_back"] = float(
+        before_any["terminal_relL2_vs_control"]
+    ) - float(block["global_drift_after_all_routes"]["terminal_relL2_vs_control"])
+    block["exchange_rate_drift_per_million_stored"] = (
+        block["global_drift_bought_back"]
+        * 1_000_000.0
+        / float(bank.stored_parameter_count())
+        if bank.stored_parameter_count()
+        else None
+    )
+    block["captures"] = captures
+    return bank, block
+
+
 def _prune_capture(directory: str | Path) -> None:
     """Drop one conditioned capture's bytes; its digests are already sealed.
 
@@ -1639,6 +1925,26 @@ def _parser() -> argparse.ArgumentParser:
             "serves bit-identical input rows to a fresh one."
         ),
     )
+    # ADDENDUM 10 M2: additive corrective routes at folded block outputs
+    parser.add_argument(
+        "--correction-ridge-relative",
+        type=float,
+        default=1e-10,
+        help=(
+            "Ridge on the selected OMP support, relative to the atom Gram's "
+            "mean diagonal.  The route solver's only free numeric knob."
+        ),
+    )
+    parser.add_argument(
+        "--correction-keep-captures",
+        dest="correction_prune_captures",
+        action="store_false",
+        default=True,
+        help=(
+            "Keep each corrective capture instead of deleting it once its rows "
+            "have been read (default: delete; one capture is ~8 GB)."
+        ),
+    )
     parser.add_argument(
         "--per-step-free-run",
         action="store_true",
@@ -1685,6 +1991,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
 
     recipe = json.loads(Path(args.recipe).read_text(encoding="utf-8"))
     validate_recipe(recipe)
+    corrections_requested = bool(recipe.get("corrections"))
     knobs: dict[str, Any] = {}
     if args.knobs is not None:
         knobs.update(json.loads(Path(args.knobs).read_text(encoding="utf-8")))
@@ -1757,6 +2064,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
         "recipe": recipe,
         "technique_modules": technique_modules,
         "registry": describe_registry(),
+        "corrective_registry": describe_corrective_registry(),
         "device": device,
         "compute_architecture": architecture,
         "dtype": str(args.dtype),
@@ -1802,7 +2110,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
         # first solve so an M-B run cannot get four components deep and then
         # discover it cannot capture.
         capture_state: dict[str, Any] = {}
-        if mode in ("M-B", "M-C"):
+        if mode in ("M-B", "M-C") or corrections_requested:
             watchdog.stage("capture-preflight")
             capture_state = _prepare_conditioned_capture(
                 args=args,
@@ -2158,6 +2466,29 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
             receipt["composition"]["components"] = entries
 
         # ------------------------------------------------------------------
+        # ADDENDUM 10: the corrective routes, on top of the folded child
+        # ------------------------------------------------------------------
+        corrections_block: dict[str, Any] | None = None
+        if corrections_requested:
+            watchdog.stage("corrections")
+            bank, corrections_block = _corrective_pass(
+                args=args,
+                model=model,
+                tokenizer=tokenizer,
+                recipe=recipe,
+                parent_weights=parent_weights,
+                capture_state=capture_state,
+                base_manifest=base_manifest,
+                control_terminal=control_terminal,
+                control_norms=control_norms,
+                control_ids=control_ids,
+                probe_prompts=probe_prompts,
+                device=device,
+                watchdog=watchdog,
+            )
+            receipt["composition"]["corrections"] = corrections_block
+
+        # ------------------------------------------------------------------
         # the composed child
         # ------------------------------------------------------------------
         watchdog.stage("behavior")
@@ -2180,7 +2511,14 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
         terminal_metrics = _row_metrics(terminal, control_terminal)
         ratios = (layer_norms / control_norms.clamp_min(1e-30)).reshape(-1)
 
-        storage = net_storage(parent_total, entries)
+        storage = net_storage(
+            parent_total,
+            entries,
+            corrective_stored_parameter_count=(
+                0 if corrections_block is None
+                else int(corrections_block["stored_parameter_count"])
+            ),
+        )
         composition = dict(receipt["composition"])
         composition.pop("incomplete_reason", None)
         composition["install_order"] = [e["isolation_cell_id"] for e in entries]
@@ -2188,6 +2526,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
         composition["storage"] = storage
         if als_block is not None:
             composition["als"] = als_block
+        if corrections_block is not None:
+            composition["corrections"] = corrections_block
         composition["global_drift"] = {
             "terminal_relL2_vs_control": terminal_metrics["mean_relative_l2"],
             "terminal_cos_vs_control": terminal_metrics["mean_cosine"],
@@ -2303,6 +2643,29 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
             tensor_path
         )
         composition["composed_child_tensors_path"] = str(tensor_path)
+        if corrections_block is not None:
+            # A corrective route is a hook and not a state_dict entry, so it
+            # cannot ride in `composed-child-tensors.pt` without pretending to be
+            # a parent tensor.  It gets its own file, its own manifest and its
+            # own per-route digests, and the frozen review refuses to reconstitute
+            # a corrected child without them.
+            corrections_path = output / "composed-child-corrections.pt"
+            torch.save(
+                {
+                    "dense": bank.dense_tensors(),
+                    "sparse": bank.sparse_tensors(),
+                },
+                corrections_path,
+            )
+            corrections_block["corrections_tensors_sha256"] = (
+                cell_runner._file_sha256(corrections_path)
+            )
+            corrections_block["corrections_tensors_path"] = str(corrections_path)
+            _atomic_write_json(
+                output / "composed-child-corrections-manifest.json",
+                corrections_manifest(bank, cell_id=cell.text),
+            )
+            composition["corrections"] = corrections_block
         receipt["composition"] = composition
         _atomic_write_json(
             output / "composed-child-state-digest.json",
@@ -2320,6 +2683,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
 
     except (
         CellTechniqueError,
+        CorrectiveRouteError,
         MatrixCompositionError,
         MatrixCompositionRunError,
         cell_runner.MatrixCellRunError,

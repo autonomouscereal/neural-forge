@@ -873,6 +873,18 @@ def _validate_composition(body: Mapping[str, Any], cell: "CellId") -> None:
             "composition.passed_through is mandatory (it may be empty): a "
             "component left unfolded is a recorded decision, never a silence."
         )
+    # ADDENDUM 10.  The parent-key binding above is the whole reason wave 11
+    # could not run M2: every folded component must own parent tensors, and an
+    # additive corrective route owns none.  The extension is deliberately the
+    # narrowest one that expresses it -- a SEPARATE, OPTIONAL block, validated by
+    # the corrective class's own module, keyed by a disjoint ``X..`` id space
+    # that `CellId` refuses and `COMPONENTS` does not contain.  A receipt sealed
+    # before this addendum carries no ``corrections`` key and is not read against
+    # a single line of the new validator.
+    if "corrections" in block:
+        from .matrix_corrective_routes import validate_corrections_block
+
+        validate_corrections_block(block["corrections"])
 
 
 def _validate_declared_inapplicability(body: Mapping[str, Any]) -> None:

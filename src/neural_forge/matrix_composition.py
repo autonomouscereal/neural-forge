@@ -681,6 +681,35 @@ def validate_recipe(recipe: Mapping[str, Any]) -> None:
         previous = key_now
     if not isinstance(recipe.get("passed_through"), list):
         raise MatrixCompositionError("recipe.passed_through is mandatory.")
+    # ADDENDUM 10.  A recipe may ask for additive corrective routes; the ids are
+    # parsed here, on a workstation with no model, so a route at an illegal site
+    # or under an unregistered technique is refused before a GPU is booked.
+    corrections = recipe.get("corrections")
+    if corrections is not None:
+        from .matrix_corrective_routes import CorrectiveRouteId
+
+        if not isinstance(corrections, list) or not corrections:
+            raise MatrixCompositionError(
+                "recipe.corrections, when present, must be a non-empty list of "
+                "corrective route requests."
+            )
+        seen: set[str] = set()
+        for entry in corrections:
+            if not isinstance(entry, Mapping):
+                raise MatrixCompositionError(
+                    "Every recipe.corrections entry must be a mapping."
+                )
+            identifier = CorrectiveRouteId.parse(str(entry.get("route_id")))
+            if identifier.text in seen:
+                raise MatrixCompositionError(
+                    f"recipe.corrections lists {identifier.text} twice."
+                )
+            seen.add(identifier.text)
+            if not str(entry.get("selection_reason", "")).strip():
+                raise MatrixCompositionError(
+                    f"{identifier.text} carries no selection_reason; an additive "
+                    "tensor the parent does not have is never a default."
+                )
 
 
 # --------------------------------------------------------------------------
@@ -887,6 +916,8 @@ def aggregate_boundary(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 def net_storage(
     parent_parameter_count: int,
     entries: Sequence[Mapping[str, Any]],
+    *,
+    corrective_stored_parameter_count: int = 0,
 ) -> dict[str, Any]:
     """Exact stored-parameter accounting for the composed child.
 
@@ -915,6 +946,14 @@ def net_storage(
     read as covering the owned set; otherwise it covers the installed set.  When
     a kernel installs everything it owns -- every single-tensor component --
     both readings coincide and the rule is inert.
+
+    **ADDENDUM 10's corrective routes are a third term and the simplest one.**
+    They replace nothing, so they enter neither ``replaced`` nor ``stored``: they
+    are ADDED to the child outright.  ``corrective_stored_parameter_count`` is
+    charged in full at the top of the formula, which is what makes a repaired
+    rung directly comparable to an unrepaired one at the same net ratio instead
+    of comparable at a discount.  A caller that passes nothing gets wave-1..11's
+    arithmetic to the bit.
     """
 
     covered_total = 0
@@ -946,8 +985,13 @@ def net_storage(
                 "effective_delta": component_stored - covered,
             }
         )
+    corrective = int(corrective_stored_parameter_count)
+    if corrective < 0:
+        raise MatrixCompositionError(
+            "A corrective route cannot store a negative number of parameters."
+        )
     replaced = covered_total
-    child = int(parent_parameter_count) - replaced + stored
+    child = int(parent_parameter_count) - replaced + stored + corrective
     if int(parent_parameter_count) <= 0:
         raise MatrixCompositionError("The parent parameter count must be positive.")
     return {
@@ -958,6 +1002,10 @@ def net_storage(
         "folded_tensors_stored_parameter_count": stored,
         "folded_tensors_ratio": (
             None if replaced <= 0 else float(stored) / float(replaced)
+        ),
+        "corrective_stored_parameter_count": corrective,
+        "corrective_ratio_of_parent": (
+            float(corrective) / float(parent_parameter_count)
         ),
         "net_delta": child - int(parent_parameter_count),
         "contracts": bool(child < int(parent_parameter_count)),

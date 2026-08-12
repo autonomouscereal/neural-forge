@@ -1174,3 +1174,134 @@ pruning rule, the 4x floor, ADDENDUM 5's site scoping, ADDENDUM 7's registry,
 receipt schema v2, the exactly-once ledger merge, and the rule that a level
 claim is a claim about **stored** parameters. ADDENDUM 9 adds a solver and names
 which degeneracy reading builds the frontier table. It moves nothing else.
+
+## ADDENDUM 10 — 2026-08-12 (wave 12, before any cell): the corrective-component class
+
+`NOTES-MX-O` §7 closed wave 11 with M2 unrun and stated the reason as a
+constraint rather than an omission:
+
+> A corrective route "at a block output" is a tensor the parent does not have.
+> The receipt schema binds every folded component to the parent `state_dict`
+> keys it replaces (`_validate_composition`,
+> `composition.components[].weight_keys`), and `matrix_cell_receipt.COMPONENTS`
+> is one of the two frozen objects the campaign's two lanes share (§4.3).
+> Expressing an additive corrective tensor needs a new component id in that
+> frozen table, which is exactly the mid-wave schema edit the standing rules
+> forbid. **The honest statement is that M2 needs a schema change registered in
+> its own addendum, not that it failed.**
+
+This is that addendum. It is registered **before wave 12 runs a cell**, and it
+is deliberately the narrowest change that makes the mechanism expressible.
+
+### 10.1 A second, disjoint table — `COMPONENTS` is not touched
+
+A **corrective component** is registered in
+`matrix_corrective_routes.CORRECTIVE_COMPONENTS`, a table that is disjoint from
+`matrix_cell_receipt.COMPONENTS` in its id space (`X..` against `C..`), in its
+file, and in what it means. `COMPONENTS`, `TECHNIQUES`, `CellId`,
+`known_cell_ids` and `component_sites` are **byte-identical to wave 11's**, so
+every one of the 442 sealed rows re-verifies against exactly the objects it was
+sealed against, and a `X..` id can never be parsed as a folded component.
+
+One corrective component is registered:
+
+| id | reads | writes | module | replaces |
+|---|---|---|---|---|
+| `X01` `ffn_output_corrective_route` | `mlp.input` | `residual.post_layer` | `model.layers.{L}.feed_forward` | **nothing** |
+
+The frozen collector proves `residual.post_layer = residual.post_operator +
+mlp.down` for every block, so a tensor added to the `feed_forward` module's
+output is added to the block's output residual **exactly**. `X01` is therefore a
+linear route from the block's own FFN-norm output into the block's output
+residual — an operator no parent tensor expresses, which is what makes it a new
+degree of freedom and not M1's re-solve wearing a different name.
+
+Route ids carry their sparsity: `X01.T5.K64.L07`. A level claim is a claim about
+stored parameters (ADDENDUM 6 §6.2), so two routes at one site with different
+`k` are two different rungs and must be two different ids. One technique is
+registered for the class, `T5` (`sparse_omp_routes`); a second would be a second
+mechanism and would need its own addendum.
+
+### 10.2 A corrective route replaces nothing, and is charged in full
+
+Three consequences, and all three are the accounting:
+
+1. **It owns no parent tensor.** It is never checked against `weight_keys`, can
+   never collide with a fold, and is never subject to the 4x floor — because
+   there is nothing it is a quarter *of*. **No corrective route may be described
+   as a 4x fold, at any storage.**
+2. **Its storage is ADDED to the child**, not swapped into it.
+   `matrix_composition.net_storage` takes `corrective_stored_parameter_count`
+   and charges it at the top of the formula, so a repaired rung and an
+   unrepaired rung are compared at full price. A caller that passes nothing
+   reproduces waves 1-11's arithmetic to the bit.
+3. **The count is the wave-10 sparse-route convention**, minus the head a
+   corrective route does not have:
+
+   ```
+   stored = 2 * nnz + (targets + 1)
+   ```
+
+   one coefficient and one atom id per realized nonzero, plus the CSR row
+   offsets, because residual OMP stops early and the supports are ragged.
+   `nnz` is **realized**, never `targets * k`.
+
+### 10.3 Versioned on its own axis; old receipts are not re-read
+
+The receipt schema stays **v2**. The corrective block is a new, **optional** key
+`composition.corrections`, carrying its own schema string
+(`neural-forge-lfm2-matrix-corrective-route-v1`), and
+`_validate_composition` calls the corrective validator **only when the key is
+present**. Every receipt sealed before this addendum has no such key and is not
+read against one line of the new validator. That is what "old receipts
+untouched" has to mean if it is to mean anything, and it is pinned by a test.
+
+### 10.4 It is not a new composition mode
+
+`COMPOSITION_MODES` is unchanged. Corrective routes are a **post-pass** that any
+mode may run: the folds install exactly as that mode installs them, and the
+routes are solved afterwards, in depth-ascending order, one conditioned capture
+each. A rung that spends routes is named by its cell-id variant and identified by
+carrying a `corrections` block — not by a mode letter, because the mode letter
+names how the *folds* were solved and that has not changed.
+
+Installing a route at layer `L` moves every row every deeper block reads, so the
+pass re-captures per route rather than arguing an exception to the capture-reuse
+licence. The bank is attached to **both** model objects (the generating child and
+the capture model), because a route is a forward hook and
+`capture_conditioned_evidence`'s `load_state_dict` copy would otherwise carry the
+folds and silently drop the corrections.
+
+### 10.5 The review must reconstitute the whole child
+
+A corrective route is not a `state_dict` entry, so a frozen review that loaded
+only `composed-child-tensors.pt` would grade a **different model** than the one
+the receipt seals — and would grade it as if it were the sealed one. The rule is
+therefore symmetric with the folded half and just as hard: if the receipt seals a
+`corrections` block, the corrections file is **mandatory**, the file digest must
+match, every route tensor's digest must match, and the bank is attached before a
+single token is generated. `run_lfm2_composition_frozen_review.py` refuses
+otherwise, and the dossier records the route ids and their digests.
+
+### 10.6 What is being measured, so a null result is a result
+
+The registered question is an **exchange rate**, not a hope:
+
+> How much composed global drift does one corrective parameter buy back?
+
+Every route seals `global_drift_before`, `global_drift_after`, the difference,
+the difference per stored parameter, and — the number that decides whether the
+mechanism has anything in it at all — `heldout_gap_relative_after`: the fraction
+of the block's own residual gap that survives the route **on rows the solve never
+saw**. A route that explains a gap in fit and not out of sample has bought
+nothing, and the receipt says so before any review is run.
+
+### 10.7 What does not change
+
+The review surface (`e5e37768…`, `0ee6bf14…`, sixteen prompts, same-process
+parent control, machine-computed verdicts), ADDENDUM 8's success criterion and
+pruning rule, ADDENDUM 9 §9.1's per-lane frontier reading, the 4x floor **on
+folded components**, ADDENDUM 5's site scoping, ADDENDUM 7's registry, receipt
+schema v2, the exactly-once ledger merge, and the rule that a level claim is a
+claim about stored parameters. ADDENDUM 10 adds one disjoint table, one optional
+receipt block and one storage term. It moves nothing else.

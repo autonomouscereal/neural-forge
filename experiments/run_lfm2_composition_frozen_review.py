@@ -237,8 +237,19 @@ def _reconstitute(
     tensors_path: Path,
     device: str,
     dtype: torch.dtype,
-) -> Any:
-    """Parent + the sealed folded tensors, proven equal to the sealed child."""
+    corrections_path: Path | None = None,
+) -> tuple[Any, dict[str, Any] | None]:
+    """Parent + the sealed folded tensors, proven equal to the sealed child.
+
+    **ADDENDUM 10.**  A child that carries corrective routes is not its folded
+    tensors: the routes are additive hooks the ``state_dict`` cannot express, so
+    a review that loaded only `composed-child-tensors.pt` would grade a
+    *different model* than the one the receipt seals, and would grade it as if it
+    were the sealed one.  So the rule is symmetric with the folded half and just
+    as hard: if the receipt seals a corrections block, the corrections file is
+    mandatory, the file's own digest must match, every route tensor's digest must
+    match, and the bank is attached before a single token is generated.
+    """
 
     expected, declared = _expected_digests(receipt)
     observed_file = cell_runner._file_sha256(tensors_path)
@@ -263,8 +274,47 @@ def _reconstitute(
                 f"Reconstituted {key} digests {observed}; the receipt sealed "
                 f"{digest}.  This dossier would not be about the sealed child."
             )
+    composition = receipt.get("composition")
+    sealed_corrections = (
+        composition.get("corrections") if isinstance(composition, Mapping) else None
+    )
+    corrections_summary: dict[str, Any] | None = None
+    if sealed_corrections is not None:
+        from neural_forge.matrix_corrective_routes import load_bank_from_receipt
+
+        if corrections_path is None or not Path(corrections_path).is_file():
+            raise FrozenReviewError(
+                f"{receipt['cell_id']} seals "
+                f"{sealed_corrections['route_count']} corrective route(s) but no "
+                "--composed-corrections file was supplied; the child cannot be "
+                "reconstituted and no dossier may be written."
+            )
+        declared_file = sealed_corrections.get("corrections_tensors_sha256")
+        observed_corrections = cell_runner._file_sha256(Path(corrections_path))
+        if declared_file is not None and str(declared_file) != observed_corrections:
+            raise FrozenReviewError(
+                f"{corrections_path} digests {observed_corrections}, the receipt "
+                f"sealed {declared_file}."
+            )
+        payload = torch.load(Path(corrections_path), weights_only=True)
+        bank = load_bank_from_receipt(
+            receipt=receipt, tensors=payload["dense"]
+        )
+        bank.attach(model)
+        corrections_summary = {
+            "route_count": len(bank),
+            "route_ids": [route.text for route in bank.routes],
+            "route_tensor_digests": bank.digests(),
+            "stored_parameter_count": bank.stored_parameter_count(),
+            "corrections_tensors_sha256": observed_corrections,
+            "corrections_tensors_path": str(corrections_path),
+        }
+        _log(
+            f"child reconstituted: {len(bank)} corrective route(s) attached, "
+            "digests match"
+        )
     _log(f"child reconstituted: {len(expected)} folded tensors, digests match")
-    return model
+    return model, corrections_summary
 
 
 def run(args: argparse.Namespace) -> int:
@@ -302,12 +352,17 @@ def run(args: argparse.Namespace) -> int:
     tokenizer = cell_runner._load_tokenizer(Path(args.parent_model))
     eos_id = getattr(tokenizer, "eos_token_id", None)
 
-    child = _reconstitute(
+    child, corrections_summary = _reconstitute(
         parent_model=Path(args.parent_model),
         receipt=receipt,
         tensors_path=Path(args.composed_tensors),
         device=str(args.device),
         dtype=dtype,
+        corrections_path=(
+            Path(args.composed_corrections)
+            if args.composed_corrections is not None
+            else None
+        ),
     )
     child_records = _generate(
         child,
@@ -378,6 +433,10 @@ def run(args: argparse.Namespace) -> int:
         "composed_child_tensors_sha256": cell_runner._file_sha256(
             Path(args.composed_tensors)
         ),
+        # Present and non-null exactly when the child carries ADDENDUM 10 routes,
+        # so a reader can tell a repaired child from an unrepaired one without
+        # opening the receipt.
+        "corrective_routes": corrections_summary,
         "protocol": {
             "seal_path": str(args.protocol_seal),
             "protocol_sha256": str(seal["protocol_sha256"]),
@@ -426,6 +485,15 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--composed-tensors", type=Path, required=True)
+    parser.add_argument(
+        "--composed-corrections",
+        type=Path,
+        help=(
+            "ADDENDUM 10: the sealed corrective-route tensors, mandatory for a "
+            "child whose receipt carries a composition.corrections block and "
+            "meaningless for one that does not."
+        ),
+    )
     parser.add_argument("--parent-model", type=Path, required=True)
     parser.add_argument(
         "--protocol-seal",
