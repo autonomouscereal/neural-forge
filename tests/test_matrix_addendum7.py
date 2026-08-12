@@ -48,6 +48,7 @@ from neural_forge.matrix_cell_receipt import (  # noqa: E402
     SCHEMA,
     SCHEMA_V1,
     SCHEMA_V2,
+    SCHEMA_V3,
     CellId,
     MatrixCellReceiptError,
     blank_receipt,
@@ -158,21 +159,38 @@ def _receipt(cell_id: str, schema_version: int = LATEST_SCHEMA_VERSION):
 
 
 def test_both_schema_versions_are_live_and_new_work_is_v2():
-    assert RECEIPT_SCHEMA_VERSIONS == {SCHEMA_V1: 1, SCHEMA_V2: 2}
-    assert SCHEMA == SCHEMA_V2
-    assert LATEST_SCHEMA_VERSION == 2
+    """ADDENDUM 12 re-pins this: v3 is live and is what new work seals under.
+
+    The clause ADDENDUM 7 wrote here is unchanged in substance -- both of its
+    versions are still live and still map to the same integers -- and the only
+    edit is that a third version now exists.  v2's *content* is asserted below by
+    `test_v3_reads_v2s_site_registry_unchanged`, which is the thing this test was
+    really protecting.
+    """
+
+    assert RECEIPT_SCHEMA_VERSIONS == {SCHEMA_V1: 1, SCHEMA_V2: 2, SCHEMA_V3: 3}
+    assert SCHEMA == SCHEMA_V3
+    assert LATEST_SCHEMA_VERSION == 3
     assert schema_version_of({"schema": SCHEMA_V1}) == 1
     assert schema_version_of({"schema": SCHEMA_V2}) == 2
+    assert schema_version_of({"schema": SCHEMA_V3}) == 3
+
+
+def test_v3_reads_v2s_site_registry_unchanged():
+    """ADDENDUM 12 bumped the version and touched no site policy."""
+
+    for component in sorted(_V1_SITES):
+        assert component_sites(component, 2) == component_sites(component, 3)
 
 
 def test_an_unknown_schema_string_fails_closed():
-    for declared in (None, "", "neural-forge-lfm2-matrix-cell-receipt-v3", 2):
+    for declared in (None, "", "neural-forge-lfm2-matrix-cell-receipt-v4", 2):
         with pytest.raises(MatrixCellReceiptError):
             schema_version_of({"schema": declared})
 
 
 def test_an_unknown_schema_version_cannot_name_sites():
-    for version in (0, 3, -1):
+    for version in (0, 4, -1):
         with pytest.raises(MatrixCellReceiptError):
             component_sites("C13", version)
 

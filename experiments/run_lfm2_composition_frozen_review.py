@@ -33,6 +33,18 @@ Three things are pinned before a token is generated, in this order:
    cannot prove it graded the sealed child is worthless, so this is a refusal,
    not a warning.
 
+**ADDENDUM 12.**  A standard-shape child (`ARCH.<TAG>`) is not reconstituted at
+all -- it is a directory that stock `transformers` loads, which is the whole
+content of the claim -- so ``--child-model`` replaces ``--composed-tensors`` for
+those receipts and the binding check moves with it: the directory's
+``model.safetensors`` must digest to the ``architecture.child_tensors_sha256``
+the receipt sealed, the loader must return the class the receipt sealed, and the
+live parameter count must equal the sealed one.  Everything downstream -- the
+protocol, the prompt surface, the 1,024-token cap, the same-process parent
+control, the dossier schema and its ``receipt_sha256`` binding -- is byte-for-byte
+the same, which is the point: a narrowed child and a parent-shaped one are graded
+on one surface or their scores are not comparable.
+
 The parent is decoded on the same prompts, in the same process, with the same
 settings, because the protocol's parent-comparison section needs a control that
 differs from the child in exactly one thing.
@@ -58,7 +70,11 @@ import torch  # noqa: E402
 
 import run_lfm2_matrix_cell as cell_runner  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256  # noqa: E402
-from neural_forge.matrix_cell_receipt import CellId, verify_seal  # noqa: E402
+from neural_forge.matrix_cell_receipt import (  # noqa: E402
+    CellId,
+    schema_version_of,
+    verify_seal,
+)
 
 DOSSIER_SCHEMA = "neural-forge-lfm2-matrix-composition-frozen-review-dossier-v1"
 
@@ -317,6 +333,60 @@ def _reconstitute(
     return model, corrections_summary
 
 
+def _load_standard_shape_child(
+    *,
+    receipt: Mapping[str, Any],
+    child_model: Path,
+    device: str,
+    dtype: torch.dtype,
+) -> Any:
+    """ADDENDUM 12: load the sealed child directory the way R3 says it loads.
+
+    Three refusals, in the order that makes each one cheap: the bytes, then the
+    loader, then the count.  There is no tensor-by-tensor digest check here
+    because there is no per-tensor claim to check -- the receipt seals the file,
+    and the file is the child.
+    """
+
+    block = receipt.get("architecture")
+    if not isinstance(block, Mapping):
+        raise FrozenReviewError(
+            f"{receipt['cell_id']} carries no architecture block, so there is no "
+            "standard-shape child to load."
+        )
+    tensors = Path(child_model) / "model.safetensors"
+    if not tensors.is_file():
+        raise FrozenReviewError(f"No model.safetensors under {child_model}.")
+    observed = cell_runner._file_sha256(tensors)
+    declared = block.get("child_tensors_sha256")
+    if declared is not None and str(declared) != observed:
+        raise FrozenReviewError(
+            f"{tensors} digests {observed}, the receipt sealed {declared}.  This "
+            "dossier would not be about the sealed child."
+        )
+    from transformers import Lfm2ForCausalLM
+
+    model = Lfm2ForCausalLM.from_pretrained(str(child_model), dtype=dtype)
+    sealed_class = str(block.get("export", {}).get("loaded_class"))
+    if type(model).__name__ != sealed_class:
+        raise FrozenReviewError(
+            f"{child_model} loaded as {type(model).__name__}; the receipt sealed "
+            f"{sealed_class}."
+        )
+    live = int(sum(p.numel() for p in model.parameters()))
+    sealed_count = int(block["export"]["parameters_counted_live"])
+    if live != sealed_count:
+        raise FrozenReviewError(
+            f"{child_model} loaded {live} parameters; the receipt sealed "
+            f"{sealed_count}."
+        )
+    _log(
+        f"standard-shape child loaded: {type(model).__name__}, {live:,} "
+        f"parameters, no trust_remote_code, digest matches"
+    )
+    return model.to(device).eval()
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -342,28 +412,56 @@ def run(args: argparse.Namespace) -> int:
 
     receipt = json.loads(Path(args.receipt).read_text(encoding="utf-8"))
     verify_seal(receipt)
-    cell = CellId.parse(str(receipt["cell_id"]))
-    if cell.kind not in ("composition", "cell"):
+    # The version is read off the body, never assumed: ADDENDUM 12's id form is
+    # illegal under v1 and v2 and `CellId.parse` says so.
+    cell = CellId.parse(
+        str(receipt["cell_id"]), schema_version=schema_version_of(receipt)
+    )
+    if cell.kind not in ("composition", "cell", "architecture"):
         raise FrozenReviewError(
-            f"{cell.text} is neither a composed child nor a component cell."
+            f"{cell.text} is not a composed child, a component cell, or a "
+            "standard-shape child."
         )
 
     dtype = cell_runner._dtype(str(args.dtype))
     tokenizer = cell_runner._load_tokenizer(Path(args.parent_model))
     eos_id = getattr(tokenizer, "eos_token_id", None)
 
-    child, corrections_summary = _reconstitute(
-        parent_model=Path(args.parent_model),
-        receipt=receipt,
-        tensors_path=Path(args.composed_tensors),
-        device=str(args.device),
-        dtype=dtype,
-        corrections_path=(
-            Path(args.composed_corrections)
-            if args.composed_corrections is not None
-            else None
-        ),
-    )
+    corrections_summary: dict[str, Any] | None = None
+    if cell.kind == "architecture":
+        if args.child_model is None:
+            raise FrozenReviewError(
+                f"{cell.text} is a standard-shape child and needs --child-model; "
+                "it has no folded-tensor file to reconstitute from."
+            )
+        if args.composed_tensors is not None:
+            raise FrozenReviewError(
+                "--composed-tensors is meaningless for a standard-shape child: "
+                "there are no parent-shaped folded tensors to install."
+            )
+        child = _load_standard_shape_child(
+            receipt=receipt,
+            child_model=Path(args.child_model),
+            device=str(args.device),
+            dtype=dtype,
+        )
+    else:
+        if args.composed_tensors is None:
+            raise FrozenReviewError(
+                f"{cell.text} is a {cell.kind} cell and needs --composed-tensors."
+            )
+        child, corrections_summary = _reconstitute(
+            parent_model=Path(args.parent_model),
+            receipt=receipt,
+            tensors_path=Path(args.composed_tensors),
+            device=str(args.device),
+            dtype=dtype,
+            corrections_path=(
+                Path(args.composed_corrections)
+                if args.composed_corrections is not None
+                else None
+            ),
+        )
     child_records = _generate(
         child,
         tokenizer,
@@ -429,9 +527,26 @@ def run(args: argparse.Namespace) -> int:
         ],
         "receipt_sha256": str(receipt["receipt_sha"]),
         "receipt_path": str(args.receipt),
-        "folded_tensors_path": str(args.composed_tensors),
+        # ADDENDUM 12: a standard-shape child's "folded tensors" are its own
+        # checkpoint, so the same two fields carry the directory and its digest
+        # and the dossier schema does not move.
+        "folded_tensors_path": str(
+            args.composed_tensors if cell.kind != "architecture" else args.child_model
+        ),
         "composed_child_tensors_sha256": cell_runner._file_sha256(
             Path(args.composed_tensors)
+            if cell.kind != "architecture"
+            else Path(args.child_model) / "model.safetensors"
+        ),
+        "standard_shape_child": (
+            None
+            if cell.kind != "architecture"
+            else {
+                "child_model": str(args.child_model),
+                "net_ratio": receipt["architecture"]["storage"]["net_ratio"],
+                "config_diff": receipt["architecture"]["config_diff"],
+                "export": receipt["architecture"]["export"],
+            }
         ),
         # Present and non-null exactly when the child carries ADDENDUM 10 routes,
         # so a reader can tell a repaired child from an unrepaired one without
@@ -484,7 +599,24 @@ def run(args: argparse.Namespace) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--receipt", type=Path, required=True)
-    parser.add_argument("--composed-tensors", type=Path, required=True)
+    parser.add_argument(
+        "--composed-tensors",
+        type=Path,
+        help=(
+            "The sealed folded tensors of a parent-shaped child.  Mandatory for "
+            "a composition or cell receipt; refused for an ADDENDUM 12 "
+            "standard-shape child, which has none."
+        ),
+    )
+    parser.add_argument(
+        "--child-model",
+        type=Path,
+        help=(
+            "ADDENDUM 12: the standard-shape child's own checkpoint directory, "
+            "loaded by stock transformers with no trust_remote_code.  Mandatory "
+            "for an ARCH.<TAG> receipt and meaningless for any other."
+        ),
+    )
     parser.add_argument(
         "--composed-corrections",
         type=Path,

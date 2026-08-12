@@ -1492,3 +1492,107 @@ that a level claim is a claim about **stored parameters**.
 
 Children are built and read. Nothing in this addendum licenses predicting a
 review.
+
+---
+
+## ADDENDUM 12 — 2026-08-12 (wave 15, before any child): a shape-changing child can be sealed
+
+ADDENDUM 11 R3 asked for a config-consistent smaller model that stock
+`transformers` loads. Wave 14 built three of them and could seal **none**:
+`NOTES-MX-R` §6 records that a narrowed child replaces no parent tensor
+shape-for-shape, carries no `weight_keys`, and is therefore not a `CellId` under
+receipt schema v1 or v2. The wave graded `MX14-ff1280`, `MX14-ff640` and
+`MX14-ff320` by hand, appended no ledger row, and said so. That refusal was
+correct and it is a dead end: every other child in this campaign carries a
+machine verdict, and a frontier claim that cannot be sealed cannot be compared
+with the rows it claims to beat.
+
+This addendum closes it, in the shape ADDENDUM 4 used for the same problem one
+level down.
+
+### 12.1 The extension
+
+**Receipt schema v3.** `neural-forge-lfm2-matrix-cell-receipt-v3`. The site
+registry, the mandatory field set, the seven-link failure chain, `campaign_pass`,
+the canonical JSON and the seal are byte-for-byte v2's. `component_sites` names
+v2 and v3 explicitly rather than testing against the latest version, so the next
+bump cannot silently make v2 unreadable. A v1 or v2 receipt is never read against
+a line of the new validator, and — the other direction, which matters as much —
+`CellId.parse` **refuses** the new id form under v1 and v2, so no sealed row can
+acquire an identity that did not exist when it was sealed.
+
+**One new id form.** `ARCH.<TAG>[.<RUNG>]`, e.g. `ARCH.FF640C`,
+`ARCH.FF640C.HD16`. Like `COMP.<mode>`, it holds `component`/`technique`/`level`/
+`site` at sentinels, because a child whose *shape* changed has no single one of
+them. `COMPONENTS`, `TECHNIQUES` and `LEVELS` are untouched, so `known_cell_ids`,
+the renderer's columns and the axis tests still enumerate exactly the design's
+axes.
+
+**One new mandatory block, `architecture`.** It carries what a shape change is:
+
+* `standard_shape: true`, literally — an ARCH cell *is* R3's claim, and a child
+  that needs a custom module is a research probe and takes no ARCH id;
+* `config_diff` — every field that differs, both sides, recomputed from the two
+  `config.json` files rather than trusted from the builder, because under R3 the
+  config diff **is** the child;
+* `export` — the loader that ran, the class it returned, the live parameter count
+  it counted, `trust_remote_code: false` literally, and the `transformers`
+  version. A receipt may not say "stock transformers loads this" without having
+  watched it load;
+* `storage` — parent count, child count, `net_ratio`, checked to be each other's
+  arithmetic **and** checked to equal `solve.stored_parameter_count` /
+  `solve.parent_parameter_count`, which is what the ledger's
+  `stored_parameter_ratio` column is computed from. A standard-shape child stores
+  exactly itself, so for an ARCH row that column is the **net** ratio and not a
+  storage-format ratio. This is the single defect `NOTES-MX-R` §1 measured, fixed
+  where it was measured;
+* `axes[]` — one entry per axis moved, with `sites`, `config_fields`,
+  `selection`, `solve`, `evidence`, `parameters_removed` and `heldout`. It is
+  `composition.components[]`'s job at the shape level: an unattributable shape
+  change is exactly the unlocalizable result ADDENDUM 4 wrote that array to
+  prevent;
+* `passed_through[]` — mandatory, may be empty. An axis left at the parent's
+  value is a recorded decision, never a silence.
+
+**One new ledger column, `standard_shape`.** `None` on every row sealed before
+this addendum, which is the honest encoding: those children were never asked the
+question. `True` only on an ARCH row. `False` is never written, because the
+campaign will not assert an answer for 461 rows it did not measure.
+
+### 12.2 What seals a verdict, and what does not move
+
+`experiments/seal_matrix_architecture_child.py` seals the run instance: it loads
+the child with `Lfm2ForCausalLM.from_pretrained` **and** through
+`AutoModelForCausalLM`, refuses on a digest, class or count mismatch, and then
+measures the same things every other cell measures — the free-run diagnostic
+against the parent on the sealed probe set (ADDENDUM 8: a diagnostic, and it
+gates nothing), the decode smoke verbatim, and the terminal-state comparison.
+
+For that last one a standard-shape child has **no copy-exact control**, because
+a copy-exact narrowing does not exist. The parent is the control, the receipt
+says so in its own notes rather than leaving the field null, and
+`composed.vs_copy_exact_control_delta` is that number.
+
+`experiments/run_lfm2_composition_frozen_review.py` gains `--child-model` and
+nothing else: for an ARCH receipt the child is a directory rather than a
+reconstitution, the binding check moves to the directory's `model.safetensors`
+digest, the class and the live count — and the protocol digest, the prompt
+surface, the 1,024-token cap, the same-process parent control, the dossier schema
+and its `receipt_sha256` binding are unchanged. That is the point: a narrowed
+child and a parent-shaped one are graded on **one** surface or their scores are
+not comparable.
+
+`experiments/seal_matrix_behavior_review.py` is **not modified**. ADDENDUM 6's
+verdict, ADDENDUM 9's per-lane reading and the degeneracy clause seal on an ARCH
+receipt exactly as they seal on every other kind, and that is the whole purpose
+of this addendum.
+
+### 12.3 What this does not license
+
+It does not make a shape change a pass. `first_divergent_metric` walks the same
+seven links on an ARCH receipt as on any other, `campaign_pass` reads the same
+two fields, and the grade is still the frozen 15-prompt review read from verbatim
+text. It does not retire any ADDENDUM 11 ruling: R3 still says a class whose only
+export is "materialize the factored form back to parent shapes" has a storage
+format and not a reduction. What changes is that the campaign can now **write
+down** which of the two a given row is.

@@ -111,6 +111,24 @@ deviations are written down rather than silently absorbed:
    receipt.  `NOTES-MX-J` §5 is why: the wave-6 site ladder hit the registry
    wall after three rungs, and §5.1 measured the ceiling that policy implies at
    ~0.923x net with eleven of the fourteen layers unreachable.
+10. **ADDENDUM 12 (wave 15) is the second bump**, and it exists because wave 14
+    built a child the schema could not describe.  Every cell id in v1 and v2
+    names a *parent tensor* -- ``component.technique.level.site`` -- and
+    `mxq_materialize_child.py` refuses to install a tensor whose shape differs
+    from the parent's, so every sealed child is parent-shaped and every sealed
+    ratio is a **storage-format** ratio.  ADDENDUM 11 R3 asks for the other
+    thing: a config-consistent child that stock `transformers` loads, which
+    replaces no parent tensor shape-for-shape and therefore has no ``weight_keys``
+    and cannot be a `CellId`.  `NOTES-MX-R` §6 recorded that gap and appended no
+    row rather than violate the schema.  v3 closes it the same way ADDENDUM 4
+    closed the composition gap: one new literal id form, ``ARCH.<TAG>``, one new
+    ``cell_kind``, and one new mandatory block -- ``architecture`` -- carrying
+    the config diff, the parameter arithmetic, the export statement and the
+    per-axis provenance.  `COMPONENTS`, `TECHNIQUES`, `LEVELS`, the mandatory
+    field set, the failure chain, `campaign_pass` and the seal are untouched, a
+    v1 or v2 receipt is never read against a line of the new validator, and the
+    ledger gains exactly one column (``standard_shape``) whose absence means
+    "sealed before ADDENDUM 12" for every row that already exists.
 """
 
 from __future__ import annotations
@@ -134,12 +152,16 @@ from .dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
 #: the seal are byte-for-byte identical between the two versions.
 SCHEMA_V1 = "neural-forge-lfm2-matrix-cell-receipt-v1"
 SCHEMA_V2 = "neural-forge-lfm2-matrix-cell-receipt-v2"
+#: ADDENDUM 12.  v3 keeps v2's site registry verbatim and adds exactly one thing
+#: v2 cannot express: a child whose *shape* changed.  A receipt is still read
+#: against the version it declares, so nothing sealed under v1 or v2 moves.
+SCHEMA_V3 = "neural-forge-lfm2-matrix-cell-receipt-v3"
 #: The version new receipts are sealed under.
-SCHEMA = SCHEMA_V2
+SCHEMA = SCHEMA_V3
 #: schema string -> integer version, the only mapping that decides which site
 #: policy a body is read against.
-RECEIPT_SCHEMA_VERSIONS: Mapping[str, int] = {SCHEMA_V1: 1, SCHEMA_V2: 2}
-LATEST_SCHEMA_VERSION = 2
+RECEIPT_SCHEMA_VERSIONS: Mapping[str, int] = {SCHEMA_V1: 1, SCHEMA_V2: 2, SCHEMA_V3: 3}
+LATEST_SCHEMA_VERSION = 3
 LEDGER_SCHEMA = "neural-forge-lfm2-matrix-cell-ledger-v1"
 
 
@@ -231,7 +253,12 @@ def component_sites(component: str, schema_version: int = LATEST_SCHEMA_VERSION)
     version = int(schema_version)
     if version == 1:
         return _COMPONENTS_V1_SITES[component]
-    if version == LATEST_SCHEMA_VERSION:
+    # ADDENDUM 12 bumped the schema without touching the registry: v3 reads the
+    # same wide site map v2 does, because the thing v3 adds is a cell that has no
+    # site at all.  Naming both versions here rather than testing against
+    # `LATEST_SCHEMA_VERSION` is what stops the next bump from silently making v2
+    # unreadable.
+    if version in (2, 3):
         return COMPONENTS[component]["sites"]
     raise MatrixCellReceiptError(
         f"Unknown receipt schema version {schema_version!r}; "
@@ -310,7 +337,7 @@ STORAGE_LEVEL_RATIOS: Mapping[str, float] = {
     "S8": 0.125,
 }
 
-CELL_KINDS = ("control", "calibration", "cell", "composition")
+CELL_KINDS = ("control", "calibration", "cell", "composition", "architecture")
 STATUSES = ("pass", "fail", "timeout", "infra", "pending-review")
 REVIEW_VERDICTS = ("pending", "coherent", "incoherent")
 TERMINATIONS = ("eos", "cap", "loop", "error")
@@ -351,6 +378,16 @@ COMPOSITION_COMPONENT = "COMP"
 COMPOSITION_TECHNIQUE = "composition"
 COMPOSITION_TECHNIQUE_NAME = "heterogeneous_composition"
 
+#: ADDENDUM 12's sentinels, held at exactly the same values the composition
+#: sentinels are held at and for the same reason: a standard-shape child has no
+#: single component, technique, level or site, and every real axis rides in the
+#: mandatory ``architecture`` block instead.
+ARCHITECTURE_COMPONENT = "ARCH"
+ARCHITECTURE_TECHNIQUE = "architecture"
+ARCHITECTURE_TECHNIQUE_NAME = "config_standard_shape_change"
+#: The receipt schema version ADDENDUM 12's cell id form first became legal in.
+ARCHITECTURE_MIN_SCHEMA_VERSION = 3
+
 _SITE = re.compile(r"\A(?:L(?P<layer>\d{2})|GLOBAL|FINAL)\Z")
 _SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
 #: ``COMP.MA`` or ``COMP.MA.RSTO`` -- the optional trailing token names a
@@ -360,6 +397,13 @@ _SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
 #: what the difference costs.
 _COMPOSITION_ID = re.compile(
     r"\ACOMP\.(?P<mode>M[ABC])(?:\.(?P<variant>[A-Z0-9]{1,12}))?\Z"
+)
+#: ``ARCH.FF640`` or ``ARCH.FF640.HD16`` -- ADDENDUM 12.  The first token names
+#: the child's headline axis and the optional second names the rung it was
+#: assembled into, which is the only thing about a standard-shape child that
+#: belongs in its id; everything else is measured and rides in the block.
+_ARCHITECTURE_ID = re.compile(
+    r"\AARCH\.(?P<tag>[A-Z0-9]{1,16})(?:\.(?P<rung>[A-Z0-9]{1,16}))?\Z"
 )
 
 
@@ -407,6 +451,8 @@ class CellId:
     """
 
     __slots__ = (
+        "architecture_rung",
+        "architecture_tag",
         "calibration",
         "component",
         "composition_mode",
@@ -426,6 +472,8 @@ class CellId:
         calibration: bool = False,
         composition_mode: str | None = None,
         composition_variant: str | None = None,
+        architecture_tag: str | None = None,
+        architecture_rung: str | None = None,
     ) -> None:
         self.component = component
         self.technique = technique
@@ -434,9 +482,13 @@ class CellId:
         self.calibration = calibration
         self.composition_mode = composition_mode
         self.composition_variant = composition_variant
+        self.architecture_tag = architecture_tag
+        self.architecture_rung = architecture_rung
 
     @property
     def kind(self) -> str:
+        if self.architecture_tag is not None:
+            return "architecture"
         if self.composition_mode is not None:
             return "composition"
         if self.technique == "copy_exact":
@@ -452,6 +504,11 @@ class CellId:
 
     @property
     def text(self) -> str:
+        if self.architecture_tag is not None:
+            body = f"{ARCHITECTURE_COMPONENT}.{self.architecture_tag}"
+            if self.architecture_rung:
+                body = f"{body}.{self.architecture_rung}"
+            return body
         if self.composition_mode is not None:
             body = f"{COMPOSITION_COMPONENT}.{self.composition_mode}"
             if self.composition_variant:
@@ -496,6 +553,26 @@ class CellId:
                 technique="copy_exact",
                 level="NA",
                 site="GLOBAL",
+            )
+        arch = _ARCHITECTURE_ID.match(text)
+        if arch is not None:
+            # ADDENDUM 12.  Gated on the version the caller is reading under, so
+            # that a v1 or v2 receipt cannot acquire a cell id that did not exist
+            # when it was sealed -- the same rule ADDENDUM 7's widening obeys in
+            # the other direction.
+            if int(schema_version) < ARCHITECTURE_MIN_SCHEMA_VERSION:
+                raise MatrixCellReceiptError(
+                    f"{text!r} is an ADDENDUM 12 standard-shape child id and is "
+                    f"legal from receipt schema v{ARCHITECTURE_MIN_SCHEMA_VERSION}; "
+                    f"this body declares v{int(schema_version)}."
+                )
+            return cls(
+                component=ARCHITECTURE_COMPONENT,
+                technique=ARCHITECTURE_TECHNIQUE,
+                level="NA",
+                site="GLOBAL",
+                architecture_tag=arch.group("tag"),
+                architecture_rung=arch.group("rung"),
             )
         composed = _COMPOSITION_ID.match(text)
         if composed is not None:
@@ -735,6 +812,7 @@ def validate_receipt(body: Mapping[str, Any]) -> None:
         )
     _validate_declared_inapplicability(body)
     _validate_composition(body, cell)
+    _validate_architecture(body, cell)
 
 
 #: Every per-component entry in ``composition.components[]`` carries these.
@@ -885,6 +963,166 @@ def _validate_composition(body: Mapping[str, Any], cell: "CellId") -> None:
         from .matrix_corrective_routes import validate_corrections_block
 
         validate_corrections_block(block["corrections"])
+
+
+#: Every per-axis entry in ``architecture.axes[]`` carries these.  The list is
+#: the composition array's, minus the two fields that only mean something for a
+#: parent-shaped install (``weight_keys``, ``isolation_cell_id``) and plus the
+#: two that only mean something for a shape change (``config_fields``,
+#: ``parameters_removed``).  A standard-shape child that cannot say which axis
+#: moved, how it was selected, what it was solved against and what it cost is
+#: exactly the unlocalizable result ADDENDUM 4 wrote the composition array to
+#: prevent, one level up.
+_ARCHITECTURE_AXIS_FIELDS = (
+    "axis",
+    "kind",
+    "sites",
+    "config_fields",
+    "selection",
+    "solve",
+    "evidence",
+    "parameters_removed",
+    "heldout",
+)
+
+
+def _validate_architecture(body: Mapping[str, Any], cell: "CellId") -> None:
+    """ADDENDUM 12: a standard-shape child carries a complete architecture block.
+
+    The three things this refuses are the three ways a shape-changing child
+    could otherwise claim more than it measured:
+
+    * **A shape change nobody can reproduce.**  ``config_diff`` must name at
+      least one field and give both sides, because the child *is* its config
+      diff -- there is no folded tensor list to fall back on.
+    * **An export claim nobody checked.**  R3 is a statement about a loader, so
+      the block records the loader that ran, the class it returned, the live
+      parameter count it counted and the digest of the file it read.  A receipt
+      may not say "stock `transformers` loads this" without having watched it.
+    * **A ratio that does not match its own arithmetic.**  ``storage`` and the
+      ``solve`` counts the ledger's `stored_parameter_ratio` column is computed
+      from must agree exactly; a child whose headline ratio disagrees with the
+      counts underneath it is the storage-format confusion `NOTES-MX-R` §1 was
+      written about, in a new place.
+    """
+
+    block = body.get("architecture")
+    if cell.kind != "architecture":
+        if block is not None:
+            raise MatrixCellReceiptError(
+                "Only an ARCH.<TAG> cell may carry an 'architecture' block; "
+                f"{cell.text} is a {cell.kind} cell."
+            )
+        return
+    if not isinstance(block, Mapping):
+        raise MatrixCellReceiptError(
+            "A standard-shape child must carry an 'architecture' block."
+        )
+    if block.get("standard_shape") is not True:
+        raise MatrixCellReceiptError(
+            "architecture.standard_shape must be literally true: an ARCH cell "
+            "is ADDENDUM 11 R3's claim that stock transformers loads this child "
+            "from its own config, and a child that needs a custom module is a "
+            "research probe, not a frontier claim."
+        )
+    diff = block.get("config_diff")
+    if not isinstance(diff, list) or not diff:
+        raise MatrixCellReceiptError(
+            "architecture.config_diff must name at least one changed config "
+            "field; a child whose config equals the parent's changed no shape."
+        )
+    for index, entry in enumerate(diff):
+        if not isinstance(entry, Mapping):
+            raise MatrixCellReceiptError(
+                f"architecture.config_diff[{index}] must be a mapping."
+            )
+        for field in ("field", "parent", "child"):
+            if field not in entry:
+                raise MatrixCellReceiptError(
+                    f"architecture.config_diff[{index}] is missing {field!r}."
+                )
+        if entry["parent"] == entry["child"]:
+            raise MatrixCellReceiptError(
+                f"architecture.config_diff[{index}] ({entry['field']!r}) lists "
+                "the same value on both sides and is not a diff."
+            )
+    export = block.get("export")
+    if not isinstance(export, Mapping):
+        raise MatrixCellReceiptError("architecture.export is mandatory.")
+    for field in ("loader", "loaded_class", "parameters_counted_live"):
+        if field not in export:
+            raise MatrixCellReceiptError(f"architecture.export is missing {field!r}.")
+    if export.get("trust_remote_code") is not False:
+        raise MatrixCellReceiptError(
+            "architecture.export.trust_remote_code must be literally false; "
+            "R3's whole content is that no custom module is needed."
+        )
+    live = export.get("parameters_counted_live")
+    if isinstance(live, bool) or not isinstance(live, int) or live <= 0:
+        raise MatrixCellReceiptError(
+            "architecture.export.parameters_counted_live must be the positive "
+            "integer the loader itself counted."
+        )
+    storage = block.get("storage")
+    if not isinstance(storage, Mapping):
+        raise MatrixCellReceiptError("architecture.storage is mandatory.")
+    numbers: dict[str, float] = {}
+    for field in ("parent_parameter_count", "child_parameter_count", "net_ratio"):
+        value = storage.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise MatrixCellReceiptError(
+                f"architecture.storage.{field} must be a number."
+            )
+        numbers[field] = float(value)
+    if numbers["parent_parameter_count"] <= 0:
+        raise MatrixCellReceiptError(
+            "architecture.storage.parent_parameter_count must be positive."
+        )
+    implied = numbers["child_parameter_count"] / numbers["parent_parameter_count"]
+    if abs(implied - numbers["net_ratio"]) > 1e-9:
+        raise MatrixCellReceiptError(
+            f"architecture.storage.net_ratio {numbers['net_ratio']!r} is not "
+            f"child/parent ({implied!r})."
+        )
+    if int(numbers["child_parameter_count"]) != int(live):
+        raise MatrixCellReceiptError(
+            f"architecture.storage.child_parameter_count "
+            f"{int(numbers['child_parameter_count'])} disagrees with the "
+            f"{int(live)} parameters the loader counted; the sealed ratio must "
+            "be a count of the model that actually loaded."
+        )
+    solve = body["solve"]
+    for field, expected in (
+        ("stored_parameter_count", int(numbers["child_parameter_count"])),
+        ("parent_parameter_count", int(numbers["parent_parameter_count"])),
+    ):
+        if solve.get(field) != expected:
+            raise MatrixCellReceiptError(
+                f"solve.{field} must equal architecture.storage.{field} "
+                f"({solve.get(field)!r} != {expected!r}); the ledger's storage "
+                "columns are computed from solve.* and a standard-shape child "
+                "stores exactly itself."
+            )
+    axes = block.get("axes")
+    if not isinstance(axes, list) or not axes:
+        raise MatrixCellReceiptError(
+            "architecture.axes must be a non-empty list: one entry per axis the "
+            "child moved."
+        )
+    for index, entry in enumerate(axes):
+        if not isinstance(entry, Mapping):
+            raise MatrixCellReceiptError(f"architecture.axes[{index}] must be a mapping.")
+        missing = [f for f in _ARCHITECTURE_AXIS_FIELDS if f not in entry]
+        if missing:
+            raise MatrixCellReceiptError(
+                f"architecture.axes[{index}] is missing {missing}."
+            )
+    if not isinstance(block.get("passed_through"), list):
+        raise MatrixCellReceiptError(
+            "architecture.passed_through is mandatory (it may be empty): an "
+            "axis left at the parent's value is a recorded decision, never a "
+            "silence."
+        )
 
 
 def _validate_declared_inapplicability(body: Mapping[str, Any]) -> None:
@@ -1086,9 +1324,7 @@ def blank_receipt(
     replay of a wave-1..6 cell can be sealed under the version that wave used.
     """
 
-    schema = {1: SCHEMA_V1, LATEST_SCHEMA_VERSION: SCHEMA_V2}.get(
-        int(schema_version)
-    )
+    schema = {1: SCHEMA_V1, 2: SCHEMA_V2, 3: SCHEMA_V3}.get(int(schema_version))
     if schema is None:
         raise MatrixCellReceiptError(
             f"Unknown receipt schema version {schema_version!r}."
@@ -1100,6 +1336,9 @@ def blank_receipt(
     elif cell.kind == "composition":
         component = "composed_child"
         technique = COMPOSITION_TECHNIQUE_NAME
+    elif cell.kind == "architecture":
+        component = "standard_shape_child"
+        technique = ARCHITECTURE_TECHNIQUE_NAME
     else:
         component = str(COMPONENTS[cell.component]["name"])
         technique = TECHNIQUES[cell.technique]
@@ -1706,6 +1945,17 @@ def ledger_line(body: Mapping[str, Any]) -> dict[str, Any]:
         "stored_parameter_count": body["solve"].get("stored_parameter_count"),
         "parent_parameter_count": body["solve"].get("parent_parameter_count"),
         "stored_parameter_ratio": _stored_parameter_ratio(body),
+        # ADDENDUM 12.  One column, and it is the one thing about a row that
+        # cannot be derived from the others: whether the ratio beside it is a
+        # storage format or a smaller model.  ``None`` on every row sealed before
+        # the addendum, which is the honest encoding -- those children were never
+        # asked the question, and `NOTES-MX-R` §1 is what answering it costs.
+        "standard_shape": (
+            True
+            if isinstance(body.get("architecture"), Mapping)
+            and body["architecture"].get("standard_shape") is True
+            else None
+        ),
         # ADDENDUM 6.  Four columns, all ``None`` on every row sealed before the
         # addendum, which is the honest encoding: those cells were never graded
         # on this axis and were never bound to a storage claim.  The renderer
