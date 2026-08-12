@@ -13,11 +13,16 @@ the kind of change that a receipt would not show if it were wrong:
    capture to check the same claim against real rows; this is the algebra.)
 
 2. **The hybrid evidence object.**  A coordinate step splices the child's
-   inputs onto the parent's targets.  If the two halves were ever taken under
-   different selections or different row counts the fit would be against two
-   different corpora and every number downstream of it would be fiction, so the
-   splice refuses rather than warns, and the routing (which endpoint comes from
-   which capture) is asserted rather than assumed.
+   inputs onto the parent's targets.  If the two halves were ever taken at
+   different sites, over different phase lists, over different row counts, or
+   over a corpus the conditioned capture reordered, the fit would be against two
+   different things and every number downstream of it would be fiction -- so
+   each of those refuses rather than warns, and the routing (which endpoint
+   comes from which capture) is asserted rather than assumed.  What is *not*
+   compared is the two selection digests: they are taken over the captured
+   activations themselves, so a capture through a folded child cannot reproduce
+   the parent's, and wave 11's first plumbing run died on exactly that
+   over-strict guard.
 
 3. **T8's new target knob.**  With the knob absent the kernel must be the
    function every wave 1-10 receipt was sealed under -- byte-identical
@@ -33,6 +38,7 @@ the kind of change that a receipt would not show if it were wrong:
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 
@@ -70,10 +76,14 @@ INTERMEDIATE = 80
 class _Evidence:
     """The minimal `MatrixCellEvidence` the kernels and the splice need."""
 
-    def __init__(self, fit, heldout, *, selection="0" * 64):
+    def __init__(
+        self, fit, heldout, *, selection="0" * 64, layer_index=5, phases=("p0",)
+    ):
         self._fit = dict(fit)
         self._heldout = dict(heldout)
         self._selection = selection
+        self.layer_index = layer_index
+        self.phases = tuple(phases)
 
     @property
     def endpoints(self):
@@ -238,19 +248,158 @@ def test_the_splice_routes_inputs_to_the_child_and_targets_to_the_parent():
     assert hybrid.heldout_row_count == 64
 
 
-def test_the_splice_refuses_two_captures_taken_under_different_selections():
+def test_the_splice_does_not_compare_selection_digests():
+    # The digest is taken over the captured activations themselves, so a
+    # capture through a folded child cannot reproduce the parent's.  Requiring
+    # it to would be requiring the child to be the parent, which is the one
+    # thing an ALS step knows is false.  Wave 11's first plumbing run died on
+    # exactly this over-strict guard; it is now a recorded field, not a gate.
     generator = torch.Generator().manual_seed(12)
     child, parent = _hybrid_pair(generator)
     other = _Evidence(
-        {"mlp.gate": parent.fit_rows("mlp.gate")},
-        {"mlp.gate": parent.heldout_rows("mlp.gate")},
+        {
+            "mlp.input": parent.fit_rows("mlp.input"),
+            "mlp.gate": parent.fit_rows("mlp.gate"),
+        },
+        {
+            "mlp.input": parent.heldout_rows("mlp.input"),
+            "mlp.gate": parent.heldout_rows("mlp.gate"),
+        },
         selection="a" * 64,
+    )
+    hybrid = composition._AlsHybridEvidence(
+        child=child, parent=other, parent_served=["mlp.gate"]
+    )
+    assert hybrid.selection_sha256 == child.selection_sha256
+
+
+def test_the_splice_refuses_two_different_sites():
+    generator = torch.Generator().manual_seed(31)
+    child, parent = _hybrid_pair(generator)
+    elsewhere = _Evidence(
+        {
+            "mlp.input": parent.fit_rows("mlp.input"),
+            "mlp.gate": parent.fit_rows("mlp.gate"),
+        },
+        {
+            "mlp.input": parent.heldout_rows("mlp.input"),
+            "mlp.gate": parent.heldout_rows("mlp.gate"),
+        },
+        layer_index=4,
     )
     with pytest.raises(composition.MatrixCompositionRunError) as caught:
         composition._AlsHybridEvidence(
-            child=child, parent=other, parent_served=["mlp.gate"]
+            child=child, parent=elsewhere, parent_served=["mlp.gate"]
         )
-    assert "different selections" in str(caught.value)
+    assert "two sites" in str(caught.value)
+
+
+def test_the_splice_refuses_two_different_phase_lists():
+    generator = torch.Generator().manual_seed(37)
+    child, parent = _hybrid_pair(generator)
+    other_phases = _Evidence(
+        {
+            "mlp.input": parent.fit_rows("mlp.input"),
+            "mlp.gate": parent.fit_rows("mlp.gate"),
+        },
+        {
+            "mlp.input": parent.heldout_rows("mlp.input"),
+            "mlp.gate": parent.heldout_rows("mlp.gate"),
+        },
+        phases=("p0", "p1"),
+    )
+    with pytest.raises(composition.MatrixCompositionRunError) as caught:
+        composition._AlsHybridEvidence(
+            child=child, parent=other_phases, parent_served=["mlp.gate"]
+        )
+    assert "phase lists" in str(caught.value)
+
+
+def test_row_alignment_refuses_a_split_that_was_not_inherited(tmp_path):
+    base = {
+        "manifest_sha256": "b" * 64,
+        "corpus": {"ordered_batch_input_sha256": ["r0", "r1"]},
+    }
+    path = tmp_path / "split.json"
+    path.write_text(
+        json.dumps(
+            {
+                "manifest_sha256": "c" * 64,
+                "split": {
+                    "method": "whole-record-seeded-sha256-ranking",
+                    "inherited_from_manifest_sha256": None,
+                    "rows": [
+                        {"batch_index": 0, "record_id": "r0", "split": "fit"},
+                        {"batch_index": 1, "record_id": "r1", "split": "heldout"},
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(composition.MatrixCompositionRunError) as caught:
+        composition._als_verify_row_alignment(
+            split_manifest_path=path, base_manifest=base
+        )
+    assert "not inherited" in str(caught.value)
+
+
+def test_row_alignment_refuses_a_reordered_corpus(tmp_path):
+    base = {
+        "manifest_sha256": "b" * 64,
+        "corpus": {"ordered_batch_input_sha256": ["r0", "r1"]},
+    }
+    path = tmp_path / "split.json"
+    path.write_text(
+        json.dumps(
+            {
+                "manifest_sha256": "c" * 64,
+                "split": {
+                    "method": "inherit",
+                    "inherited_from_manifest_sha256": "b" * 64,
+                    "rows": [
+                        {"batch_index": 0, "record_id": "r1", "split": "fit"},
+                        {"batch_index": 1, "record_id": "r0", "split": "heldout"},
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(composition.MatrixCompositionRunError) as caught:
+        composition._als_verify_row_alignment(
+            split_manifest_path=path, base_manifest=base
+        )
+    assert "different batches" in str(caught.value)
+
+
+def test_row_alignment_accepts_the_inherited_split_in_corpus_order(tmp_path):
+    base = {
+        "manifest_sha256": "b" * 64,
+        "corpus": {"ordered_batch_input_sha256": ["r0", "r1"]},
+    }
+    path = tmp_path / "split.json"
+    path.write_text(
+        json.dumps(
+            {
+                "manifest_sha256": "c" * 64,
+                "split": {
+                    "method": "inherit",
+                    "inherited_from_manifest_sha256": "b" * 64,
+                    "rows": [
+                        {"batch_index": 0, "record_id": "r0", "split": "fit"},
+                        {"batch_index": 1, "record_id": "r1", "split": "heldout"},
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    verified = composition._als_verify_row_alignment(
+        split_manifest_path=path, base_manifest=base
+    )
+    assert verified["batches"] == 2
+    assert verified["ordered_record_ids_match_parent_base"] is True
 
 
 def test_the_splice_refuses_two_captures_with_different_row_counts():

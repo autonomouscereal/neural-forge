@@ -762,12 +762,20 @@ class _AlsHybridEvidence:
     design rows are what the composed child actually delivers at the
     component's input endpoint, and the target rows are what the *parent*
     emitted at the component's write endpoint over the same corpus positions.
-    Both captures run the frozen collector over the same batches with the same
-    sealed selection, and the collector's decode is teacher-forced from
-    caller-supplied ids, so row *i* of either capture is the same (batch, phase,
-    token) position.  That is what makes the two halves splice-able at all, and
-    it is checked here rather than assumed: same selection digest, same fit and
-    held-out row counts, endpoint by endpoint.
+    Both captures run the frozen collector over the same batches in the same
+    order with the same sealed capture selection, and the collector's decode is
+    teacher-forced from caller-supplied ids, so row *i* of either capture is the
+    same (batch, phase, token) position.  The batch-order half of that argument
+    is checked by `_als_verify_row_alignment` against the two split manifests
+    before any splice is built; what is checked *here* is the geometry: same
+    layer, same phase list, same fit and held-out row counts.
+
+    **The two ``selection_sha256`` values legitimately differ and are not
+    compared.**  That digest is taken over the per-batch payload selection
+    digests, which are functions of the captured activations themselves -- a
+    capture through a folded child cannot reproduce the parent's, and requiring
+    it to would be requiring the child to be the parent.  Both are recorded on
+    the step so the receipt says which two objects were spliced.
     """
 
     def __init__(
@@ -780,11 +788,20 @@ class _AlsHybridEvidence:
         self._child = child
         self._parent = parent
         self._parent_served = tuple(sorted(set(str(v) for v in parent_served)))
-        if str(child.selection_sha256) != str(parent.selection_sha256):
+        child_layer = getattr(child, "layer_index", None)
+        parent_layer = getattr(parent, "layer_index", None)
+        if child_layer != parent_layer:
             raise MatrixCompositionRunError(
-                "ALS hybrid evidence refuses to splice two captures taken "
-                f"under different selections: {child.selection_sha256[:16]} "
-                f"against {parent.selection_sha256[:16]}."
+                "ALS hybrid evidence refuses to splice two sites: child layer "
+                f"{child_layer} against parent layer {parent_layer}."
+            )
+        child_phases = tuple(getattr(child, "phases", ()) or ())
+        parent_phases = tuple(getattr(parent, "phases", ()) or ())
+        if child_phases != parent_phases:
+            raise MatrixCompositionRunError(
+                "ALS hybrid evidence refuses to splice two captures with "
+                f"different phase lists: {child_phases} against "
+                f"{parent_phases}."
             )
         if int(child.fit_row_count) != int(parent.fit_row_count) or int(
             child.heldout_row_count
@@ -828,6 +845,61 @@ def _relative_residual(predicted: Any, reference: Any) -> float:
     """Aggregate relative L2 of one row block against another."""
 
     return float(_row_metrics(predicted, reference)["aggregate_relative_l2"])
+
+
+def _als_verify_row_alignment(
+    *, split_manifest_path: str | Path, base_manifest: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Prove that row *i* of a child capture is row *i* of the parent base.
+
+    The whole parent-target objective rests on it, so it is established from
+    the two manifests rather than assumed from the fact that both runs used the
+    same corpus file:
+
+    * the conditioned split is **inherited** from the parent base's, by
+      ``record_id``, and names the manifest it inherited from;
+    * the conditioned capture saw **exactly** the parent base's batches, in
+      **exactly** the parent base's order -- the record id is the batch's own
+      input digest, so equality of the ordered list is equality of the inputs
+      and of their order;
+    * therefore, because the capture selection (``sample_last_tokens``,
+      ``max_decode_steps``, the phase list) is reconstructed from the base's own
+      sealed manifest and refused unless it reproduces its ``selection_sha256``,
+      the per-batch row blocks are the same size in the same order.
+    """
+
+    manifest = json.loads(Path(split_manifest_path).read_text(encoding="utf-8"))
+    split = manifest.get("split") or {}
+    if str(split.get("method")) != "inherit" or str(
+        split.get("inherited_from_manifest_sha256")
+    ) != str(base_manifest.get("manifest_sha256")):
+        raise MatrixCompositionRunError(
+            "The conditioned split was not inherited from the parent evidence "
+            f"base ({split.get('inherited_from_manifest_sha256')!r} against "
+            f"{base_manifest.get('manifest_sha256')!r}); the child's rows and "
+            "the parent's rows would not be the same positions."
+        )
+    observed = [
+        str(row["record_id"])
+        for row in sorted(split["rows"], key=lambda r: int(r["batch_index"]))
+    ]
+    declared = [
+        str(value) for value in base_manifest["corpus"]["ordered_batch_input_sha256"]
+    ]
+    if observed != declared:
+        raise MatrixCompositionRunError(
+            "The conditioned capture saw different batches, or the same "
+            "batches in a different order, than the parent evidence base; row "
+            "i of one is not row i of the other."
+        )
+    return {
+        "batches": len(observed),
+        "inherited_from_manifest_sha256": str(
+            split.get("inherited_from_manifest_sha256")
+        ),
+        "ordered_record_ids_match_parent_base": True,
+        "conditioned_split_manifest_sha256": str(manifest.get("manifest_sha256")),
+    }
 
 
 def _als_capture_selfcheck(
@@ -958,6 +1030,7 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
             "endpoint (_capture_is_stale); reuse is otherwise exact"
         ),
         "capture_licence_verification": None,
+        "row_alignment": None,
         "m_a_baseline": {
             "global_drift": started_drift,
             **started_metrics,
@@ -1005,10 +1078,16 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
                         "next_component": f"sweep{sweep}-{cell.text}",
                     },
                 )
+                alignment = _als_verify_row_alignment(
+                    split_manifest_path=capture["split_manifest_path"],
+                    base_manifest=base_manifest,
+                )
+                block["row_alignment"] = alignment
                 block["captures"].append(
                     {
                         "sweep": sweep,
                         "cut_for": cell.text,
+                        "row_alignment_verified": True,
                         "trace_cache_key": str(capture["trace_cache_key"]),
                         "split_manifest_sha256": str(
                             capture["split_manifest_sha256"]
@@ -1327,6 +1406,8 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
                         "and says so"
                     ),
                     "capture_selfcheck_relL2": selfcheck,
+                    "child_selection_sha256": str(child_evidence.selection_sha256),
+                    "parent_selection_sha256": str(parent_evidence.selection_sha256),
                     "parent_target_heldout_relL2_before": before,
                     "parent_target_heldout_relL2_after": after,
                     "improved": bool(after < before),
