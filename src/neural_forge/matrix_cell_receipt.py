@@ -1320,6 +1320,83 @@ def behavior_verdict_for(
     return "impaired"
 
 
+#: ADDENDUM 9 §9.1's two scopes for the degeneracy clause, plus the honest
+#: third value for a review that did not state one.
+DEGENERACY_READINGS = ("none", "lane-scoped", "general", "unstated")
+
+
+def per_lane_degeneracy_reading(
+    *, charged_lanes: Sequence[str] | None, lanes_total: int
+) -> str:
+    """Which scope the reviewer's own per-lane readings put the clause at.
+
+    ADDENDUM 9 §9.1 says the *scope* is what moved: a lane that leaves nothing
+    when its repetitions are removed is charged; per child that kills the whole
+    child, per lane it kills that lane and the others stand.  `NOTES-MX-O` §7a
+    left the tooling one step short of the addendum and said exactly what would
+    close it -- *"a sealed per-lane verdict computed from per-lane readings the
+    reviewer supplies case by case, not a re-labelling of the per-child one"*.
+
+    This is that computation, and it is derived rather than supplied:
+
+    * no lane charged            -> ``none``      (the readings cannot disagree)
+    * some, not all, lanes charged -> ``lane-scoped``
+    * every lane charged         -> ``general``   (which is death under either)
+    * lanes not stated at all    -> ``unstated``  (no per-lane verdict is claimed)
+    """
+
+    if charged_lanes is None:
+        return "unstated"
+    charged = {str(value) for value in charged_lanes}
+    total = int(lanes_total)
+    if total <= 0:
+        raise MatrixCellReceiptError(
+            "A per-lane reading needs the number of lanes the review covered."
+        )
+    if len(charged) > total:
+        raise MatrixCellReceiptError(
+            f"{len(charged)} lanes charged with degeneracy but the review "
+            f"covered {total}."
+        )
+    if not charged:
+        return "none"
+    return "general" if len(charged) == total else "lane-scoped"
+
+
+def per_lane_behavior_verdict_for(
+    *,
+    useful_or_partial: int,
+    coherent: bool,
+    emit_zero_floor_passed: bool | None,
+    reading: str,
+) -> str | None:
+    """The frontier verdict under ADDENDUM 9 §9.1, from the same band arithmetic.
+
+    The per-lane reading does **not** re-score anything: the charged lanes are
+    already counted as observed misses in the useful-or-partial total, which is
+    what "graded on the lanes that stand" means arithmetically.  What it changes
+    is whether the degeneracy clause fires: it does when the degeneracy is
+    *general*, and it does not when it is confined to identifiable lanes.
+
+    ``None`` for an ``unstated`` reading, deliberately.  A verdict the reviewer
+    did not supply the readings for is not a verdict, and defaulting it to the
+    per-child one would be exactly the re-labelling §7a refused.
+    """
+
+    if reading not in DEGENERACY_READINGS:
+        raise MatrixCellReceiptError(
+            f"A degeneracy reading is one of {DEGENERACY_READINGS}."
+        )
+    if reading == "unstated":
+        return None
+    return behavior_verdict_for(
+        useful_or_partial=int(useful_or_partial),
+        coherent=bool(coherent),
+        emit_zero_floor_passed=emit_zero_floor_passed,
+        degenerate=(reading == "general"),
+    )
+
+
 def seal_behavior_review(
     body: Mapping[str, Any],
     *,
@@ -1337,6 +1414,8 @@ def seal_behavior_review(
     safety: str | None = None,
     instance_suffix: str = "a6review",
     notes: str = "",
+    degenerate_lanes: Sequence[str] | None = None,
+    lanes_total: int | None = None,
 ) -> dict[str, Any]:
     """Seal ADDENDUM 6's behaviour verdict as a **new instance**, never an edit.
 
@@ -1432,6 +1511,69 @@ def seal_behavior_review(
             "protocol, graded against the parent's own same-process band; "
             "cap-hit outputs censored, not failed; token match is diagnostic "
             "only and gates nothing."
+        ),
+    }
+    # ADDENDUM 9 §9.1's frontier reading, sealed beside the per-child one and
+    # never in place of it.  `NOTES-MX-O` §7a is the specification: the reviewer
+    # supplies WHICH lanes the degeneracy clause charges, case by case, and the
+    # verdict is computed here from the same band arithmetic.  A review that
+    # states no lanes seals `unstated` and claims no per-lane verdict, which is
+    # what every wave-1..11 review is and why none of them changes meaning.
+    if verdict == "cannot-express-4x":
+        reading = "unstated"
+        per_lane = None
+        charged: list[str] = []
+    else:
+        covered = int(lanes_total if lanes_total is not None else 16)
+        charged = sorted({str(value) for value in (degenerate_lanes or ())})
+        reading = per_lane_degeneracy_reading(
+            charged_lanes=None if degenerate_lanes is None else charged,
+            lanes_total=covered,
+        )
+        if reading != "unstated" and per_case:
+            unknown = [lane for lane in charged if lane not in per_case]
+            if unknown:
+                raise MatrixCellReceiptError(
+                    f"Degeneracy charged to {unknown}, which the per-case "
+                    "readings do not name; a lane nobody graded cannot be "
+                    "charged."
+                )
+        if reading in ("lane-scoped", "general") and verdict != "dead":
+            raise MatrixCellReceiptError(
+                "A review that charges the degeneracy clause on any lane seals "
+                f"a per-CHILD verdict of dead (ADDENDUM 9 §9.1); got {verdict!r}."
+            )
+        per_lane = per_lane_behavior_verdict_for(
+            useful_or_partial=0 if score is None else int(score),
+            coherent=smoke_verdict == "coherent",
+            emit_zero_floor_passed=_lookup_optional(
+                body, "composed.emit_zero_floor_passed"
+            ),
+            reading=reading,
+        )
+    sealed["addendum9"] = {
+        "schema": "neural-forge-lfm2-matrix-addendum9-per-lane-verdict-v1",
+        "clause": (
+            "ADDENDUM 9 §9.1: the per-lane reading governs the frontier; both "
+            "readings are computed, sealed and printed for every child"
+        ),
+        "lanes_total": None if verdict == "cannot-express-4x" else int(
+            lanes_total if lanes_total is not None else 16
+        ),
+        "degenerate_lanes": charged,
+        "degenerate_lane_count": len(charged),
+        "degeneracy_reading": reading,
+        "per_child_verdict": verdict,
+        "per_lane_verdict": per_lane,
+        "readings_disagree": bool(
+            per_lane is not None and per_lane != verdict
+        ),
+        "derivation": (
+            "the charged lanes are already counted as observed misses in the "
+            "useful-or-partial total, so the per-lane reading re-scores nothing; "
+            "it decides only whether the degeneracy clause fires, which it does "
+            "when the degeneracy is general and does not when it is confined to "
+            "identifiable lanes"
         ),
     }
     # The decode-smoke verdict rides where §5 rule 1 has always kept it, so a

@@ -102,6 +102,30 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="JSON object mapping case id -> Useful/Partial/Observed miss.",
     )
+    parser.add_argument(
+        "--degenerate-lane",
+        action="append",
+        default=None,
+        metavar="CASE_ID",
+        help=(
+            "ADDENDUM 9 9.1, and NOTES-MX-O 7a's open item: the case id of one "
+            "lane the degeneracy clause charges -- a lane that leaves nothing "
+            "when its repetitions are removed.  Repeatable.  The per-lane "
+            "verdict is COMPUTED from these readings; it is never supplied.  A "
+            "review that names none seals `unstated` and claims no per-lane "
+            "verdict, which is what every wave-1..11 review is."
+        ),
+    )
+    parser.add_argument(
+        "--lanes-total",
+        type=int,
+        default=16,
+        help=(
+            "How many lanes the review covered; the frozen surface is sixteen "
+            "(fifteen graded plus safety).  Charging all of them is a GENERAL "
+            "degeneracy and is death under either reading."
+        ),
+    )
     parser.add_argument("--notes", default="")
     parser.add_argument("--ledger", type=Path)
     parser.add_argument("--out", type=Path)
@@ -130,6 +154,18 @@ def run(args: argparse.Namespace) -> int:
         if args.useful is None or args.partial is None or args.observed_miss is None:
             raise MatrixCellReceiptError(
                 "A behaviour verdict needs --useful/--partial/--observed-miss."
+            )
+        # A reviewer who names a charged lane has stated the degeneracy clause
+        # fires; the two ways of saying so must agree or the seal is refused.
+        if args.degenerate_lane and not args.degenerate:
+            raise MatrixCellReceiptError(
+                f"--degenerate-lane names {len(args.degenerate_lane)} charged "
+                "lane(s) but --degenerate was not passed; under ADDENDUM 9 9.1 "
+                "any charged lane makes the PER-CHILD verdict dead."
+            )
+        if args.degenerate and args.degenerate_lane is not None and not args.degenerate_lane:
+            raise MatrixCellReceiptError(
+                "--degenerate with an empty lane list is a contradiction."
             )
         computed = behavior_verdict_for(
             useful_or_partial=int(args.useful) + int(args.partial),
@@ -164,6 +200,8 @@ def run(args: argparse.Namespace) -> int:
         per_case=per_case,
         safety=args.safety,
         notes=args.notes,
+        degenerate_lanes=args.degenerate_lane,
+        lanes_total=int(args.lanes_total),
     )
     destination = (
         Path(args.out)
@@ -178,6 +216,15 @@ def run(args: argparse.Namespace) -> int:
     )
     append_ledger(ledger, sealed)
     block = sealed["addendum6"]
+    lane_block = sealed["addendum9"]
+    print(
+        f"ADDENDUM 9 per-lane reading: {lane_block['degeneracy_reading']} "
+        f"({lane_block['degenerate_lane_count']} of "
+        f"{lane_block['lanes_total']} lanes charged) -> per-lane verdict "
+        f"{lane_block['per_lane_verdict']}; per-child verdict "
+        f"{lane_block['per_child_verdict']}"
+        + ("  [THE READINGS DISAGREE]" if lane_block["readings_disagree"] else "")
+    )
     print(
         f"sealed ADDENDUM 6 review of {sealed['cell_id']} verdict={verdict} "
         f"score={block['useful_or_partial']}/15 "
