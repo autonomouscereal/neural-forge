@@ -1,0 +1,112 @@
+{
+ "deleted_count": 5,
+ "deleted_materializations": [
+  {
+   "cell_id": "COMP.MA.MXN1",
+   "deleted": "/mnt/ai_data/neural-forge-matrix/wave10/hf-children/COMP.MA.MXN1/model.safetensors",
+   "manifest_kept": [
+    "chat_template.jinja",
+    "config.json",
+    "generation_config.json",
+    "materialization.json",
+    "tokenizer.json",
+    "tokenizer_config.json"
+   ],
+   "reason": "920 MB float32 materialization, re-derivable from the parent plus this cell's sealed composed tensors; the manifest beside it carries the digest it was verified against"
+  },
+  {
+   "cell_id": "COMP.MA.MXN2",
+   "deleted": "/mnt/ai_data/neural-forge-matrix/wave10/hf-children/COMP.MA.MXN2/model.safetensors",
+   "manifest_kept": [
+    "chat_template.jinja",
+    "config.json",
+    "generation_config.json",
+    "materialization.json",
+    "tokenizer.json",
+    "tokenizer_config.json"
+   ],
+   "reason": "920 MB float32 materialization, re-derivable from the parent plus this cell's sealed composed tensors; the manifest beside it carries the digest it was verified against"
+  },
+  {
+   "cell_id": "COMP.MA.MXN3",
+   "deleted": "/mnt/ai_data/neural-forge-matrix/wave10/hf-children/COMP.MA.MXN3/model.safetensors",
+   "manifest_kept": [
+    "chat_template.jinja",
+    "config.json",
+    "generation_config.json",
+    "materialization.json",
+    "tokenizer.json",
+    "tokenizer_config.json"
+   ],
+   "reason": "920 MB float32 materialization, re-derivable from the parent plus this cell's sealed composed tensors; the manifest beside it carries the digest it was verified against"
+  },
+  {
+   "cell_id": "COMP.MA.MXN4",
+   "deleted": "/mnt/ai_data/neural-forge-matrix/wave10/hf-children/COMP.MA.MXN4/model.safetensors",
+   "manifest_kept": [
+    "chat_template.jinja",
+    "config.json",
+    "generation_config.json",
+    "materialization.json",
+    "tokenizer.json",
+    "tokenizer_config.json"
+   ],
+   "reason": "920 MB float32 materialization, re-derivable from the parent plus this cell's sealed composed tensors; the manifest beside it carries the digest it was verified against"
+  },
+  {
+   "cell_id": "COMP.MA.MXN5",
+   "deleted": "/mnt/ai_data/neural-forge-matrix/wave10/hf-children/COMP.MA.MXN5/model.safetensors",
+   "manifest_kept": [
+    "chat_template.jinja",
+    "config.json",
+    "generation_config.json",
+    "materialization.json",
+    "tokenizer.json",
+    "tokenizer_config.json"
+   ],
+   "reason": "920 MB float32 materialization, re-derivable from the parent plus this cell's sealed composed tensors; the manifest beside it carries the digest it was verified against"
+  }
+ ],
+ "policy": "best-5 composed tensors retained; every other heavy artifact manifested and deleted",
+ "retained_composed_tensors": [
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXN1",
+   "composed_child_tensors": "/mnt/ai_data/neural-forge-matrix/wave10/cells/COMP.MA.MXN1/composed-child-tensors.pt",
+   "receipt_sha": "da761298074abcd511ad4269afd59ae607d40396bc6cfd3ca483b0d906af5fe7",
+   "sha256": "d42a74b2d49e3ef1f75857ec53737e1576dedf371e0d6fec2dd0cad0cbffca88"
+  },
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXN2",
+   "composed_child_tensors": "/mnt/ai_data/neural-forge-matrix/wave10/cells/COMP.MA.MXN2/composed-child-tensors.pt",
+   "receipt_sha": "120cdace1faeab67aabe88fa081039a636c533e4fd0418f99f4c710f58d4b6ed",
+   "sha256": "434fc4b5080f0641e8a667524dea1663dd0684baac4612632ec96f3543d1a3fb"
+  },
+  {
+   "bytes": 322965076,
+   "cell_id": "COMP.MA.MXN3",
+   "composed_child_tensors": "/mnt/ai_data/neural-forge-matrix/wave10/cells/COMP.MA.MXN3/composed-child-tensors.pt",
+   "receipt_sha": "a82784a2a89a3badac6739d25b6d2e066f3d527caec8f089a1cb7a9b144497f6",
+   "sha256": "1a57bf60acfd58ea5eeab8a27431035f7f0e28716be33c70f31dae30c6fa52c7"
+  },
+  {
+   "bytes": 299895475,
+   "cell_id": "COMP.MA.MXN4",
+   "composed_child_tensors": "/mnt/ai_data/neural-forge-matrix/wave10/cells/COMP.MA.MXN4/composed-child-tensors.pt",
+   "receipt_sha": "b81a4eed9a5ceb8438bb4823f174d0ce6ce8b054a188819e9d2d2513220c8dff",
+   "sha256": "eeebc493ab943b536f4231692d88881aeece54ce8e821a811bae5836ecdc1062"
+  },
+  {
+   "bytes": 268437266,
+   "cell_id": "COMP.MA.MXN5",
+   "composed_child_tensors": "/mnt/ai_data/neural-forge-matrix/wave10/cells/COMP.MA.MXN5/composed-child-tensors.pt",
+   "receipt_sha": "2e69fd1828cf6e662b53e3842ad49cacf29bd0db707b1dcf3482466aca7c4aea",
+   "sha256": "7b30f30ce66f2c000c71a0e0db108f84f4c47dc2b3a2365655ed3a3313529e54"
+  }
+ ],
+ "retained_count": 5,
+ "schema": "neural-forge-matrix-wave10-retention-manifest-v1",
+ "source_commit": "9acaf38f",
+ "wave": 10
+}

@@ -1,0 +1,161 @@
+{
+ "arms": [
+  {
+   "head": 4096,
+   "level": "S8",
+   "low_rank": {
+    "net_stored": 0.7443312205555042,
+    "relative_frobenius": 0.8618718821304181,
+    "row_cosine_mean": 0.49981334603149474,
+    "seconds": 3.184382441919297,
+    "stored": 8383488,
+    "stored_over_owned": 0.1249237060546875,
+    "tail_row_cosine_mean": 0.46646756910026105
+   },
+   "low_rank_tail_rank": 67,
+   "ratio": 0.125,
+   "sparse": {
+    "legacy_counted_total": 168806144,
+    "legacy_counted_x": 1.3606920847620334,
+    "legacy_net_stored": 0.7349201271901913,
+    "mean_support": 33.0,
+    "net_stored": 0.7440325308042227,
+    "nonzero_count": 2027520,
+    "relative_frobenius": 0.739744156261093,
+    "row_cosine_mean": 0.671383808265299,
+    "seconds": 133.65218151011504,
+    "stored": 8314881,
+    "stored_over_owned": 0.1239013820886612,
+    "support_width_histogram": {
+     "33": 61440
+    },
+    "tail_row_cosine_mean": 0.6494760621496524
+   },
+   "sparse_k": 33,
+   "tail": 61440
+  },
+  {
+   "head": 4096,
+   "level": "S4",
+   "low_rank": {
+    "net_stored": 0.7807719013551573,
+    "relative_frobenius": 0.7644089771130188,
+    "row_cosine_mean": 0.6462953054864613,
+    "seconds": 3.260563383810222,
+    "stored": 16753664,
+    "stored_over_owned": 0.2496490478515625,
+    "tail_row_cosine_mean": 0.6227149925188921
+   },
+   "low_rank_tail_rank": 201,
+   "ratio": 0.25,
+   "sparse": {
+    "legacy_counted_total": 172984064,
+    "legacy_counted_x": 1.327828579631474,
+    "legacy_net_stored": 0.7531092607432356,
+    "mean_support": 101.0,
+    "net_stored": 0.7804107979103115,
+    "nonzero_count": 6205440,
+    "relative_frobenius": 0.5761392058167727,
+    "row_cosine_mean": 0.8198475344464414,
+    "seconds": 408.2241520709358,
+    "stored": 16670721,
+    "stored_over_owned": 0.2484131008386612,
+    "support_width_histogram": {
+     "101": 61440
+    },
+    "tail_row_cosine_mean": 0.807837370076204
+   },
+   "sparse_k": 101,
+   "tail": 61440
+  },
+  {
+   "head": 12288,
+   "level": "S4",
+   "low_rank": {
+    "net_stored": 0.780861063774535,
+    "relative_frobenius": 0.7896842509648503,
+    "row_cosine_mean": 0.5845511707495203,
+    "seconds": 2.8724333189893514,
+    "stored": 16774144,
+    "stored_over_owned": 0.2499542236328125,
+    "tail_row_cosine_mean": 0.4886783639994096
+   },
+   "low_rank_tail_rank": 77,
+   "ratio": 0.25,
+   "sparse": {
+    "legacy_counted_total": 177190656,
+    "legacy_counted_x": 1.2963052859852835,
+    "legacy_net_stored": 0.7714232216834088,
+    "mean_support": 38.0,
+    "net_stored": 0.7805177928135647,
+    "nonzero_count": 2023424,
+    "relative_frobenius": 0.600456679050607,
+    "row_cosine_mean": 0.7949544130971016,
+    "seconds": 1155.2800149861723,
+    "stored": 16695297,
+    "stored_over_owned": 0.2487793117761612,
+    "support_width_histogram": {
+     "38": 53248
+    },
+    "tail_row_cosine_mean": 0.7476362007348943
+   },
+   "sparse_k": 38,
+   "tail": 53248
+  },
+  {
+   "head": 8000,
+   "level": "S8",
+   "low_rank": {
+    "net_stored": 0.7442972273831164,
+    "relative_frobenius": 0.905109498826235,
+    "row_cosine_mean": 0.3532877582435905,
+    "seconds": 2.6909062720369548,
+    "stored": 8375680,
+    "stored_over_owned": 0.12480735778808594,
+    "tail_row_cosine_mean": 0.2633667012696737
+   },
+   "low_rank_tail_rank": 3,
+   "ratio": 0.125,
+   "sparse": {
+    "legacy_counted_total": 170833856,
+    "legacy_counted_x": 1.3445413536764048,
+    "legacy_net_stored": 0.7437480426062621,
+    "mean_support": 1.0,
+    "net_stored": 0.7442838573738435,
+    "nonzero_count": 57536,
+    "relative_frobenius": 0.8522933530722968,
+    "row_cosine_mean": 0.47364950022556196,
+    "seconds": 20.10939837503247,
+    "stored": 8372609,
+    "stored_over_owned": 0.12476159632205963,
+    "support_width_histogram": {
+     "1": 57536
+    },
+    "tail_row_cosine_mean": 0.40046394686426634
+   },
+   "sparse_k": 1,
+   "tail": 57536
+  }
+ ],
+ "parent_body_parameters": 162584320,
+ "parent_unique_parameters": 229693184,
+ "table": {
+  "hidden": 1024,
+  "parameters": 67108864,
+  "vocab": 65536
+ },
+ "token_frequency": {
+  "corpus_record_count": 256,
+  "corpus_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+  "corpus_token_count": 65535.0,
+  "observed_token_type_fraction": 0.030914306640625,
+  "observed_token_types": 2026,
+  "token_frequency_path": "/mnt/ai_data/neural-forge-matrix/wave9/token-frequency-v1.json",
+  "token_frequency_schema": "neural-forge-matrix-token-frequency-v1",
+  "token_frequency_sha256": "9581ef469c45cba04abdb42a30f15ce9c7f52ddac9a7c8ffd7ef29b8269f00f3",
+  "unobserved_token_types": 63510,
+  "vocabulary_size": 65536
+ },
+ "zero_norm_row_count": 0,
+ "zero_norm_row_ids": []
+}
