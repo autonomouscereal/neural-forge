@@ -1,0 +1,53 @@
+[2026-08-12T17:52:16.853+00:00] protocol authenticated: e5e3776885976b1b (V5_FROZEN_MANUAL_REVIEW_PROTOCOL.md)
+[2026-08-12T17:52:16.872+00:00] prompt surface: 16 cases, surface digest e6a00c73ec2d70b4
+[2026-08-12T17:52:30.451+00:00] child reconstituted: 4 corrective route(s) attached, digests match
+[2026-08-12T17:52:30.451+00:00] child reconstituted: 10 folded tensors, digests match
+[2026-08-12T17:52:30.776+00:00] child conversation-natural-greeting: RuntimeError: mat1 and mat2 shapes cannot be multiplied (30x2560 and 1024x1024)
+[2026-08-12T17:52:30.776+00:00] child 1/16 conversation-natural-greeting: 0 tokens (runtime-error) in 0.3s
+[2026-08-12T17:52:30.786+00:00] child instruction-three-actions: RuntimeError: mat1 and mat2 shapes cannot be multiplied (37x2560 and 1024x1024)
+[2026-08-12T17:52:30.786+00:00] child 2/16 instruction-three-actions: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.794+00:00] child explanation-seasons: RuntimeError: mat1 and mat2 shapes cannot be multiplied (40x2560 and 1024x1024)
+[2026-08-12T17:52:30.794+00:00] child 3/16 explanation-seasons: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.803+00:00] child arithmetic-multi-step: RuntimeError: mat1 and mat2 shapes cannot be multiplied (60x2560 and 1024x1024)
+[2026-08-12T17:52:30.803+00:00] child 4/16 arithmetic-multi-step: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.812+00:00] child logic-ordering: RuntimeError: mat1 and mat2 shapes cannot be multiplied (43x2560 and 1024x1024)
+[2026-08-12T17:52:30.812+00:00] child 5/16 logic-ordering: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.822+00:00] child context-retrieval: RuntimeError: mat1 and mat2 shapes cannot be multiplied (123x2560 and 1024x1024)
+[2026-08-12T17:52:30.822+00:00] child 6/16 context-retrieval: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.831+00:00] child summarization-priorities: RuntimeError: mat1 and mat2 shapes cannot be multiplied (106x2560 and 1024x1024)
+[2026-08-12T17:52:30.831+00:00] child 7/16 summarization-priorities: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.840+00:00] child comparison-ram-rom: RuntimeError: mat1 and mat2 shapes cannot be multiplied (31x2560 and 1024x1024)
+[2026-08-12T17:52:30.840+00:00] child 8/16 comparison-ram-rom: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.849+00:00] child coding-deduplicate: RuntimeError: mat1 and mat2 shapes cannot be multiplied (51x2560 and 1024x1024)
+[2026-08-12T17:52:30.849+00:00] child 9/16 coding-deduplicate: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.857+00:00] child debugging-off-by-one: RuntimeError: mat1 and mat2 shapes cannot be multiplied (69x2560 and 1024x1024)
+[2026-08-12T17:52:30.857+00:00] child 10/16 debugging-off-by-one: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.866+00:00] child writing-concise-email: RuntimeError: mat1 and mat2 shapes cannot be multiplied (50x2560 and 1024x1024)
+[2026-08-12T17:52:30.866+00:00] child 11/16 writing-concise-email: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.874+00:00] child planning-dependencies: RuntimeError: mat1 and mat2 shapes cannot be multiplied (54x2560 and 1024x1024)
+[2026-08-12T17:52:30.874+00:00] child 12/16 planning-dependencies: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.882+00:00] child uncertainty-insufficient-data: RuntimeError: mat1 and mat2 shapes cannot be multiplied (54x2560 and 1024x1024)
+[2026-08-12T17:52:30.883+00:00] child 13/16 uncertainty-insufficient-data: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.891+00:00] child safety-household-chemical: RuntimeError: mat1 and mat2 shapes cannot be multiplied (31x2560 and 1024x1024)
+[2026-08-12T17:52:30.892+00:00] child 14/16 safety-household-chemical: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.900+00:00] child creative-continuity: RuntimeError: mat1 and mat2 shapes cannot be multiplied (51x2560 and 1024x1024)
+[2026-08-12T17:52:30.900+00:00] child 15/16 creative-continuity: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:30.909+00:00] child multi-turn-correction: RuntimeError: mat1 and mat2 shapes cannot be multiplied (71x2560 and 1024x1024)
+[2026-08-12T17:52:30.909+00:00] child 16/16 multi-turn-correction: 0 tokens (runtime-error) in 0.0s
+[2026-08-12T17:52:36.294+00:00] parent 1/16 conversation-natural-greeting: 70 tokens (complete) in 1.3s
+[2026-08-12T17:52:37.897+00:00] parent 2/16 instruction-three-actions: 89 tokens (complete) in 1.6s
+[2026-08-12T17:52:41.025+00:00] parent 3/16 explanation-seasons: 179 tokens (complete) in 3.1s
+[2026-08-12T17:52:45.799+00:00] parent 4/16 arithmetic-multi-step: 271 tokens (complete) in 4.8s
+[2026-08-12T17:52:47.897+00:00] parent 5/16 logic-ordering: 117 tokens (complete) in 2.1s
+[2026-08-12T17:52:48.478+00:00] parent 6/16 context-retrieval: 32 tokens (complete) in 0.6s
+[2026-08-12T17:52:49.043+00:00] parent 7/16 summarization-priorities: 31 tokens (complete) in 0.6s
+[2026-08-12T17:52:52.226+00:00] parent 8/16 comparison-ram-rom: 183 tokens (complete) in 3.2s
+[2026-08-12T17:52:55.625+00:00] parent 9/16 coding-deduplicate: 195 tokens (complete) in 3.4s
+[2026-08-12T17:52:56.990+00:00] parent 10/16 debugging-off-by-one: 77 tokens (complete) in 1.4s
+[2026-08-12T17:52:58.380+00:00] parent 11/16 writing-concise-email: 77 tokens (complete) in 1.4s
+[2026-08-12T17:53:08.853+00:00] parent 12/16 planning-dependencies: 548 tokens (complete) in 10.5s
+[2026-08-12T17:53:12.097+00:00] parent 13/16 uncertainty-insufficient-data: 186 tokens (complete) in 3.2s
+[2026-08-12T17:53:19.698+00:00] parent 14/16 safety-household-chemical: 436 tokens (complete) in 7.6s
+[2026-08-12T17:53:21.197+00:00] parent 15/16 creative-continuity: 86 tokens (complete) in 1.5s
+[2026-08-12T17:53:33.189+00:00] parent 16/16 multi-turn-correction: 676 tokens (complete) in 12.0s
+[2026-08-12T17:53:34.204+00:00] sealed review surface 933f1591ec6de624 -> /mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP1/rerun-170355/frozen-review-dossier.json in 77.6s

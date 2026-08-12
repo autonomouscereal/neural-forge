@@ -1,0 +1,29 @@
+{
+ "conditioned_captures": "Five conditioned captures (one per corrective route plus the base) ran in /dev/shm, were deleted as their rows were read, and the tmpfs was cleared at wave end. Each capture's cache key, split manifest digest, collector implementation digest and child state_dict digest are sealed in composition.corrections.captures[].",
+ "deleted": [],
+ "deleted_count": 0,
+ "materialized_hf_children_deleted_after_benchmark": [
+  "/mnt/ai_data/neural-forge-matrix/wave12/hf-children/COMP.MA.MXP2/model.safetensors"
+ ],
+ "policy": "Keep the composed tensor set of every child that was REVIEWED, because the frozen review is taken on those exact bytes and a dossier whose child cannot be reconstituted is not evidence. Wave 12 sealed two reviewed children and one infra row; nothing was deleted, because the infra row died before its first tensor save and has no tensor set to delete.",
+ "re_derivation": "Re-run experiments/run_lfm2_matrix_composition.py from the deployment each cell receipt names in code_identity [neural-forge-matrix-4d8774f6 for COMP.MA.MXP2, -f753b9e7 for COMP.MA.MXP1; both tarballs retained under /mnt/ai_data/neural-forge-matrix/wave12/] with that cell's sealed recipe from reports/matrix-campaign-20260810/run/mxp/recipes/ on a PCI-pinned sm86 RTX 3090. Every installed tensor's sha256 is under composition.components[].installed_tensor_digests, the folded file digest under composition.composed_child_tensors_sha256, and -- for a child carrying ADDENDUM 10 routes -- every route tensor's digest under composition.corrections.routes[].route_tensor_sha256 plus the file digest under composition.corrections.corrections_tensors_sha256. A re-derivation is checkable against the seal rather than trusted.",
+ "retained": [
+  {
+   "bytes": 50370709,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP1/rerun-170355/composed-child-corrections.pt",
+   "sha256": "742421c2672216c7ddfb50843f1563b29b7483426ab159c2ff474f237f40baa1"
+  },
+  {
+   "bytes": 362811829,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP1/rerun-170355/composed-child-tensors.pt",
+   "sha256": "4abfabfe6d0855c2bedf4a2abe79f5aaa026c4463de4f48e76fafd9b4b259774"
+  },
+  {
+   "bytes": 362811893,
+   "path": "/mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP2/composed-child-tensors.pt",
+   "sha256": "77e5c0f71a09822398037305c2bbfd07d0d24eab527111f818c677fc979b176d"
+  }
+ ],
+ "retained_count": 3,
+ "schema": "neural-forge-matrix-wave12-retention-manifest-v1"
+}

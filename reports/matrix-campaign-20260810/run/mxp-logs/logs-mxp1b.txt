@@ -1,0 +1,5 @@
+preflight ok: GPU 0 -> 8.6 NVIDIA GeForce RTX 3090
+=== 17:03:55 start COMP.MA.MXP1 mode=M-A recipe=mxp1-repair-mxo4.json gpu=0 -> /mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP1/rerun-170355
+=== 17:45:22 done  COMP.MA.MXP1 rc=1 :: [2026-08-12T17:45:20.096+00:00] sealed COMP.MA.MXP1 status=fail first_divergent=local-solve receipt=df1ae6a54193 in 2477.7s
+/mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP1/rerun-170355
+NO REVIEW for COMP.MA.MXP1 :: no composed tensors were persisted

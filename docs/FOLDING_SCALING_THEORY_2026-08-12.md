@@ -1,6 +1,6 @@
 # Folding scaling theory — what transfers off LFM2.5-230M
 
-**2026-08-12, wave 11 of the matrix campaign.** Cyril's instruction: *"[Cyril quote withheld]"*
+**2026-08-12, waves 11-12 of the matrix campaign.** Cyril's instruction: *"[Cyril quote withheld]"*
 
 Everything below is stated **scale-invariantly**: as a fraction, a ratio, a rule
 about a component *class*, or a formula in `(V, L, d)` — never as a row count, a
@@ -28,16 +28,24 @@ SwiGLU intermediate 2,560, tied 65,536-row token table.
    additive interference:** each independently-solved body component costs the
    composed child roughly 3 review cases, and interface damage × body damage
    *multiplies* (9/15 body + 10/15 route = 6/15 together, `NOTES-MX-N` §5).
-4. **Local fit quality does not predict composed behavior, and no per-component
-   closed form can repair composition damage** — wave 11 aimed every component
-   directly at the parent's own activations, improved five of six local
-   objectives, and made the composed child measurably worse (§5).
-5. **Coherence is a drift budget, and that is the transferable tool.**
-   `review = 12.96 − 13.16 × drift` over 55 sealed children; spend the budget on
-   the components with the lowest measured marginal drift and the frontier
-   moves, which is how 0.754811x became 0.729103x. Nothing about the token
-   interface transfers to a large model except the rule that some verbatim
-   interface must exist.
+4. **Local fit quality does not predict composed behavior. Re-solving an
+   existing component cannot repair composition damage; an ADDITIVE tensor the
+   parent lacks can, but only where the damage is still linear in that block's
+   own input.** Wave 11 aimed every component directly at the parent's own
+   activations, improved five of six local objectives, and made the composed
+   child worse (§5). Wave 12's corrective routes explained **28%** of a folded
+   block's residual gap out of sample at the shallowest fold, **10%** two blocks
+   deeper, and **0%** — with a held-out gap above 1.0 and drift that rose — at a
+   block that was never folded (§5a).
+5. **Coherence is a drift budget, and the way to spend it is to price every
+   candidate against the base you will actually install it on.** `review =
+   12.96 − 13.16 × drift` over 55 sealed children; a *pooled* per-site marginal
+   ranks nothing, because drift saturates and a lane measured deep in a dying
+   stack looks free. Priced against the real base, the lane the campaign was
+   about to buy cost **2.2x** the cheapest one, and swapping them — for 12,950
+   parameters — halved lambada perplexity at identical storage (§3.4a, §5a).
+   Nothing about the token interface transfers to a large model except the rule
+   that some verbatim interface must exist.
 
 ---
 
@@ -402,6 +410,77 @@ paid** — see the table above.
 
 ---
 
+## 5a. What wave 12's mechanisms added
+
+| mechanism | result | the number |
+|---|---|---|
+| **M2** additive corrective routes | **positive, and closed on economics** | +2 review cases and −0.023419 drift on an identical fold set, at **0.011146 drift per million stored parameters** |
+| **M6** min-drift lane shopping | **the one that paid** | −0.051296 drift at the same storage, for **12,950** parameters: **3.961 drift per million**, ~355x M2's rate |
+
+### 5a.1 Closed-form repair is real, local, and priced out
+
+An **additive** route — a tensor the parent does not have, solved in closed form
+from the composed child's own rows against the parent's rows at the same corpus
+positions — **can** cancel composed drift. That is the first positive result the
+campaign has for repairing composition damage, and it matters because wave 11's
+M1 established that *re-solving an existing component* cannot (§5).
+
+The transferable statement is about **where** it works, and it is a decay law:
+
+```
+fraction of a block's residual gap a linear route explains, OUT OF SAMPLE
+  at the shallowest folded block          28.0%
+  one block deeper                        10.4%
+  two blocks deeper                       10.0%
+  at a block that was never folded         0.0%   (held-out gap 1.0149: WORSE)
+```
+
+**A corrective route has purchase only where a fold's own approximation error is
+still linear in that block's input.** Accumulated upstream drift is not: by the
+time it has passed through another block's nonlinearity it has no linear
+structure left for the route to find, and the solve overfits — measurably, out of
+sample, in the direction that makes the model worse.
+
+Two consequences for anyone scaling this:
+
+* **Measure a repair out of sample or do not measure it.** The in-sample fit at
+  the unfolded block was fine; the held-out gap was 1.0149 and the composed drift
+  went up. A repair pass graded on its own objective would have shipped it.
+* **Price repair against the recipe.** Storage spent on corrective tensors buys
+  drift at a rate; storage *not* spent on a better fold choice buys it at a much
+  better one. On this model the ratio was 355x in favour of the recipe. Repair is
+  the right instrument only when the fold set is already the best available.
+
+### 5a.2 Marginal drift is a property of (site, technique, **and position**)
+
+See §3.4a. The short form: a lane's cost depends on the base it is installed on,
+drift saturates, and a per-site marginal pooled over the positions past runs
+happened to use ranks nothing. Price every candidate against the base you will
+actually install it on, and re-price after every acceptance. In an
+independently-solved composition this costs one install and one drift measurement
+per candidate — no sealed cell, no capture, ~40 s each on a 230M model — because
+the composed child is a function of the **set** and the base restores exactly.
+
+### 5a.3 A registry note that is really a scaling note
+
+Expressing an additive corrective tensor required a **second component table**
+disjoint from the frozen one, because every folded component in this campaign is
+bound to the parent `state_dict` keys it replaces and a corrective route replaces
+nothing. Anyone building a fold compiler will hit the same wall the moment they
+try to add a tensor the parent lacks, and the cheap fix is the one taken here:
+a disjoint id space, an optional receipt block, storage **added** rather than
+swapped, and no 4x claim — because there is nothing a corrective route is a
+quarter *of*.
+
+The second wall is the observability contract. A route attached at the wrong
+module boundary broke the trace collector's own residual identity
+(`layer_output == post_operator + mlp.down`) and made every subsequent capture
+impossible. **If your evidence collector verifies structural identities — and it
+should — then every new additive mechanism has to be attached inside an endpoint
+those identities are written over, not beside it.**
+
+---
+
 ## 6. What is not known, stated so nobody assumes it
 
 * **Whether any of this holds on a different architecture.** Everything is one
@@ -412,8 +491,12 @@ paid** — see the table above.
   exactly — eleven whole SwiGLU lanes plus the token route, thirty-four
   components, every one at 4x, **0.497739x** — and it scores **0/15** with
   fourteen of sixteen lanes riding a single phrase to the token cap. The deepest
-  coherent child is **0.729103x**. The gap between those two numbers is the
-  campaign's real open problem.
+  coherent child is **0.703409x** (wave 12, `impaired`, 6/15) and the deepest
+  `alive-degraded` one is **0.729103x**. The gap between those and 0.5x is the
+  campaign's real open problem, and wave 12 measured that neither of the two
+  remaining closed-form mechanisms closes it: repair buys drift at 1/355th of the
+  rate a better recipe does, and a better recipe still leaves **7.91 lanes** to
+  find at a per-lane allowance that saturation makes harder, not easier.
 * **What the review surface measures beyond coherence.** A 15-prompt band with a
   ±2 reviewer-sensitivity interval (ADDENDUM 2) is a coarse instrument; the
   benchmark columns (arc_easy / hellaswag / piqa / winogrande / lambada /

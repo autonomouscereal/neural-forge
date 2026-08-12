@@ -1,0 +1,36 @@
+[2026-08-12T16:58:35.690+00:00] protocol authenticated: e5e3776885976b1b (V5_FROZEN_MANUAL_REVIEW_PROTOCOL.md)
+[2026-08-12T16:58:35.707+00:00] prompt surface: 16 cases, surface digest e6a00c73ec2d70b4
+[2026-08-12T16:58:48.562+00:00] child reconstituted: 10 folded tensors, digests match
+[2026-08-12T16:59:06.941+00:00] child 1/16 conversation-natural-greeting: 1024 tokens (censored-at-cap) in 18.3s
+[2026-08-12T16:59:10.350+00:00] child 2/16 instruction-three-actions: 188 tokens (complete) in 3.4s
+[2026-08-12T16:59:15.580+00:00] child 3/16 explanation-seasons: 288 tokens (complete) in 5.2s
+[2026-08-12T16:59:17.539+00:00] child 4/16 arithmetic-multi-step: 109 tokens (complete) in 2.0s
+[2026-08-12T16:59:17.701+00:00] child 5/16 logic-ordering: 8 tokens (complete) in 0.2s
+[2026-08-12T16:59:17.722+00:00] child 6/16 context-retrieval: 0 tokens (complete) in 0.0s
+[2026-08-12T16:59:19.106+00:00] child 7/16 summarization-priorities: 76 tokens (complete) in 1.4s
+[2026-08-12T16:59:22.515+00:00] child 8/16 comparison-ram-rom: 189 tokens (complete) in 3.4s
+[2026-08-12T16:59:25.424+00:00] child 9/16 coding-deduplicate: 162 tokens (complete) in 2.9s
+[2026-08-12T16:59:44.043+00:00] child 10/16 debugging-off-by-one: 1024 tokens (censored-at-cap) in 18.6s
+[2026-08-12T16:59:45.092+00:00] child 11/16 writing-concise-email: 59 tokens (complete) in 1.0s
+[2026-08-12T16:59:59.204+00:00] child 12/16 planning-dependencies: 798 tokens (complete) in 14.1s
+[2026-08-12T17:00:03.976+00:00] child 13/16 uncertainty-insufficient-data: 272 tokens (complete) in 4.8s
+[2026-08-12T17:00:21.834+00:00] child 14/16 safety-household-chemical: 1024 tokens (censored-at-cap) in 17.9s
+[2026-08-12T17:00:22.338+00:00] child 15/16 creative-continuity: 29 tokens (complete) in 0.5s
+[2026-08-12T17:00:32.429+00:00] child 16/16 multi-turn-correction: 582 tokens (complete) in 10.1s
+[2026-08-12T17:00:38.264+00:00] parent 1/16 conversation-natural-greeting: 70 tokens (complete) in 1.7s
+[2026-08-12T17:00:40.346+00:00] parent 2/16 instruction-three-actions: 89 tokens (complete) in 2.1s
+[2026-08-12T17:00:44.575+00:00] parent 3/16 explanation-seasons: 179 tokens (complete) in 4.2s
+[2026-08-12T17:00:50.955+00:00] parent 4/16 arithmetic-multi-step: 271 tokens (complete) in 6.4s
+[2026-08-12T17:00:53.823+00:00] parent 5/16 logic-ordering: 117 tokens (complete) in 2.9s
+[2026-08-12T17:00:54.605+00:00] parent 6/16 context-retrieval: 32 tokens (complete) in 0.8s
+[2026-08-12T17:00:55.367+00:00] parent 7/16 summarization-priorities: 31 tokens (complete) in 0.8s
+[2026-08-12T17:00:59.804+00:00] parent 8/16 comparison-ram-rom: 183 tokens (complete) in 4.4s
+[2026-08-12T17:01:04.490+00:00] parent 9/16 coding-deduplicate: 195 tokens (complete) in 4.7s
+[2026-08-12T17:01:06.340+00:00] parent 10/16 debugging-off-by-one: 77 tokens (complete) in 1.9s
+[2026-08-12T17:01:08.157+00:00] parent 11/16 writing-concise-email: 77 tokens (complete) in 1.8s
+[2026-08-12T17:01:21.407+00:00] parent 12/16 planning-dependencies: 548 tokens (complete) in 13.2s
+[2026-08-12T17:01:25.899+00:00] parent 13/16 uncertainty-insufficient-data: 186 tokens (complete) in 4.5s
+[2026-08-12T17:01:36.328+00:00] parent 14/16 safety-household-chemical: 436 tokens (complete) in 10.4s
+[2026-08-12T17:01:38.415+00:00] parent 15/16 creative-continuity: 86 tokens (complete) in 2.1s
+[2026-08-12T17:01:54.515+00:00] parent 16/16 multi-turn-correction: 676 tokens (complete) in 16.1s
+[2026-08-12T17:01:55.521+00:00] sealed review surface 2ccddcaf94535ca1 -> /mnt/ai_data/neural-forge-matrix/wave12/cells/COMP.MA.MXP2/frozen-review-dossier.json in 200.0s

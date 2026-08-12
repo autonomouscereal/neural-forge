@@ -81,12 +81,15 @@ drift — which is exactly what ADDENDUM 10 §10.6 registers as the measurement.
   with an `X..` id space that `CellId` refuses. `COMPONENTS`, `TECHNIQUES`,
   `known_cell_ids` and `component_sites` are byte-identical to wave 11's, so all
   442 sealed rows re-verify against exactly the objects they were sealed against.
-* **`X01` reads `mlp.input` and writes `residual.post_layer`.** The frozen
-  collector proves `residual.post_layer = residual.post_operator + mlp.down` for
-  every block, so a tensor added to the `feed_forward` module's output is added
-  to the block's output residual *exactly*. No parent tensor maps `mlp.input`
-  linearly into the residual, which is what makes this a new degree of freedom
-  rather than M1's re-solve renamed.
+* **`X01` reads `mlp.input` and writes into `mlp.down`.** The frozen collector
+  proves `residual.post_layer = residual.post_operator + mlp.down` for every
+  block, so an addition inside `mlp.down` is an addition to the block's output
+  residual *exactly*. No parent tensor maps `mlp.input` linearly into the
+  residual, which is what makes this a new degree of freedom rather than M1's
+  re-solve renamed. (The addendum was registered with the write at the
+  `feed_forward` module and the frozen collector refused it on a live run; §4.1
+  is what happened and why the write moved one module deeper. The operator did
+  not change.)
 * **A corrective route replaces nothing**, so it is never subject to the 4x floor
   — there is nothing it is a quarter of — and its storage is **added** to the
   child in full. A repaired rung is comparable to an unrepaired one at a *higher*
@@ -288,10 +291,317 @@ mechanism. MXP2 also sits within noise of the *frontier* child `COMP.MA.MXO3` on
 its 8/15, which is exactly the campaign's oldest lesson: benchmark accuracy is
 the tie-break, coherence is the gate.
 
-## 4. M2 — repair
+## 4. M2 — repair, and the exchange rate it trades at
 
-*(filled in below)*
+`COMP.MA.MXP1` is `COMP.MA.MXO4`'s **exact** ten-component fold set — verified
+byte-equal to MXO4's recipe before the run, and its install trace reproduces
+MXO4's per-component drift to six decimals at all ten rungs (0.168344, 0.271744,
+0.311616, 0.330763, 0.384159, 0.421325, 0.430738, 0.494235, 0.497524, 0.540899)
+— plus four ADDENDUM 10 corrective routes at k=256.
+
+### 4.1 The collector refused the first design, and it was right
+
+The first attempt died four minutes into its second route:
+
+```
+COMPOSED CHILD FAILED Lfm2CircuitTraceCaptureError:
+Layer 5 residual endpoints do not reproduce its output.
+```
+
+`hf_lfm2_circuit_trace_cache` verifies, per layer, that `layer_output ==
+residual.post_operator + mlp.down`, and it captures `mlp.down` on
+`feed_forward.w2`. A tensor added to the *feed_forward module's* output lands in
+`layer_output` and not in `mlp.down`, so the identity breaks — and with it every
+capture after the first, which is fatal, because each route is solved from a
+capture taken through the child the previous routes made.
+
+**The collector is frozen and it was not the thing that was wrong.** The write
+moved one module deeper: X01 attaches as a pre-hook on `feed_forward` that caches
+`mlp.input` plus a forward hook on `feed_forward.w2` that adds `cached @ R` to
+`mlp.down`. The operator is unchanged — a linear map from `mlp.input` into the
+block's output residual, which no parent tensor expresses. The refused run is
+sealed as an `infra` row and its log is kept; **the refusal is a result about the
+mechanism's shape, not an accident.**
+
+### 4.2 What repair bought
+
+| route | k | nnz | stored (ADDED) | held-out gap **after** | explained out of sample | drift before → after |
+|---|---:|---:|---:|---:|---:|---|
+| `X01.T5.K256.L05` | 256 | 262,144 | 525,313 | **0.719555** | 28.0% | 0.540899 → **0.531210** |
+| `X01.T5.K256.L06` | 256 | 262,144 | 525,313 | 0.896034 | 10.4% | 0.531210 → **0.516254** |
+| `X01.T5.K256.L07` | 256 | 262,144 | 525,313 | 0.900164 | 10.0% | 0.516254 → **0.511490** |
+| `X01.T5.K256.L13` | 256 | 262,144 | 525,313 | **1.014878** | **0.0%** | 0.511490 → **0.517480** |
+
+```
+folded child (= COMP.MA.MXO4)      0.703396x   drift 0.540899
++ four corrective routes           0.712544x   drift 0.517480
+drift bought back                              0.023419
+storage spent                                  2,101,252 parameters (0.009148x)
+EXCHANGE RATE                      0.011146 drift per MILLION stored parameters
+```
+
+**Repair works, is real, and is far too expensive to matter.** Every number in
+that table is out of sample, and three of them say the same thing:
+
+1. **The gap is mostly not linear in the block's own input.** The best route —
+   at `L05`, the shallowest fold, where the block's own approximation error
+   dominates — explains **28%** of the block's residual gap on rows it never saw.
+   By `L06` and `L07` that falls to 10%.
+2. **At a block that was never folded, the route explains nothing and does
+   harm.** `L13` was included deliberately, to test repair *at the end of the
+   stack* rather than at a fold: its held-out gap after the route is **1.014878**
+   — the route made the gap **larger** out of sample — and the composed drift went
+   **up** by 0.005990. That is a clean, sealed instance of overfitting a
+   correction to a residual that has no linear structure left in it, and it is
+   the reason a repair pass must be measured out of sample and never in.
+3. **The exchange rate is the verdict.** M2 bought 0.023419 of drift for
+   2,101,252 parameters. **M6 bought 0.051296 of drift for 12,950** — twice the
+   drift for one one-hundred-sixty-second of the storage:
+
+```
+M2 corrective routes   0.011146 drift per million stored
+M6 lane shopping       3.961    drift per million stored     ~355x
+```
+
+**Repair does not revive `COMP.MA.MXO4`.** It moves it from 0.540899 to
+0.517480 — past `COMP.MA.MXO2`'s wreckage, nowhere near `COMP.MA.MXO3`'s
+0.461810 — and it does it at a *higher* net ratio (0.712544x against 0.703396x),
+so the repaired child is strictly dominated by the shopped child `COMP.MA.MXP2`,
+which sits at 0.703409x and 0.489603 drift. **A rung that spends routes must beat
+0.729103x net and it does; it must also be coherent, and it is not.**
+
+### 4.3 What the exchange rate means for 0.5x, in one line
+
+To carry `COMP.MA.MXO2` (0.497739x, drift 0.814086) down to the empirical alive
+line of 0.461810 would require buying back **0.352276** of drift. At M2's
+measured rate that is **31.6 million** corrective parameters — **0.1376x of the
+parent**, which would put the "0.5x" child at 0.635x and make the exercise
+pointless. And that estimate is *optimistic*: it assumes the rate holds, when
+the four routes measured show it decaying with depth and going negative at an
+unfolded block.
+
+**M2 is measured, positive, and closed on economics rather than on failure.**
+
+## 5. The frontier, and the two lines it can be read against
+
+```
+COMP.MA.MXP2   0.703409x   drift 0.489603   6/15   per-child dead   PER-LANE impaired
+COMP.MA.MXP1   0.712544x   drift 0.517480   7/15   per-child dead   PER-LANE impaired
+COMP.MA.MXO3   0.729103x   drift 0.461810   8/15   per-child dead   per-lane alive-degraded  (wave 11)
+```
+
+**Under ADDENDUM 8 as registered, the frontier moved to 0.703409x.** §8.2 makes
+`impaired` a success band — *"a 6/15 or 7/15 child whose output is coherent,
+on-prompt language is a successful fold-init"* — and §8.3 abolished the 8/15 rung
+floor and defined the frontier as **the deepest net stored ratio at which output
+is still coherent**. `mxp_addendum8.py` computes it from the sealed per-lane
+verdict and prints `deepest coherent: COMP.MA.MXP2 at 0.703409x`.
+
+**Under the 8/15 alive band — the line the drift budget is calibrated on, and the
+line wave 11 reported its frontier against — neither wave-12 child qualifies and
+`COMP.MA.MXO3` at 0.729103x remains the frontier.**
+
+Both sentences are true about different lines and this note refuses to collapse
+them. The human-review package puts the choice to Cyril with the verbatim text of
+both children in front of him, which is what that package is for.
+
+**One caveat, stated so it cannot be read as a thumb on the scale.** Wave-11's
+children seal `unstated` per-lane readings — the sealed-per-lane machinery did
+not exist when they were reviewed — so the calculator falls back to their
+per-child verdicts. Wave 12 did **not** re-derive per-lane readings for them,
+because re-reading earlier children in the wave that wants the frontier is
+exactly the move `NOTES-MX-O` §7a refused. It is a wave-13 item.
+
+**Distance to 0.5x from the new deepest coherent rung**: 0.203409x = 46,721,900
+parameters = **7.91 more SwiGLU lanes**, against a per-lane drift allowance of
+0.038037 and a measured cheapest lane of 0.034129 *as the third lane* — a
+marginal that §3.3's own saturation result says will rise, not fall, as the stack
+fills.
+
+## 6. What wave 12 says, in the campaign's own terms
+
+| mechanism | registered as | result |
+|---|---|---|
+| **M2** corrective routes | **ADDENDUM 10**, written and committed before the first cell | **Measured, positive, and closed on economics.** Repair moved `COMP.MA.MXO4`'s identical fold set from 5/15 to **7/15** and its drift from 0.540899 to 0.517480, at **0.011146 drift per million stored parameters** — 355x worse than M6's exchange rate. At an unfolded block it explained **zero** of the gap out of sample and made drift worse. |
+| **M6** drift shopping | wave-12 directive | **The one that paid, again.** Sixteen variants priced against one fixed base; the autopilot lane cost 2.2x the cheapest; the shopped rebuild took the same storage from 5/15 to 6/15, halved lambada perplexity, and cost **12,950** parameters. |
+| **M5** head merge | ADDENDUM 9 §9.4 | **Not reached, for the second wave running.** |
+| ADDENDUM 9 §7a | `NOTES-MX-O` open item | **Closed as specified**: the per-lane verdict is a sealed field computed from reviewer-supplied per-lane readings, with four refusals and 12 tests. |
+
+**Why M5 was not reached, as a budget statement rather than an excuse.** M2 cost
+two full children (one refused by the collector, one re-run) plus the ADDENDUM 10
+schema work; M6 cost a probe and a child; the per-lane sealing cost a commit and
+a test file. A Procrustes head merge is not a knob — it needs a new kernel, a
+registry entry, an identity gate, tests, a solo cell and a review before it may
+enter a stack, and starting it with what was left would have produced an unrun
+kernel rather than a measurement. **The design is written down in §8 so wave 13
+starts from a specification rather than from this sentence.**
+
+## 6a. What was NOT measured, stated as a gap
+
+* **`COMP.MA.MXP1` was not benchmarked.** Its corrective routes are forward
+  hooks, not `state_dict` entries, so `mxp_materialize_child.py` cannot write an
+  HF child that carries them without custom modeling code (`trust_remote_code`).
+  Every other child in the wave was benchmarked. **A repaired child's
+  intelligence-per-compression is therefore unmeasured on the continuous axis**,
+  and any claim about repair's benchmark effect would be a claim about a model
+  lm-eval never loaded.
+* **The greedy path past the third lane.** The shopping probe prices the *third*
+  lane against the frontier base. It was not re-run against `COMP.MA.MXP2`'s own
+  base to price the fourth, so the compounding rate is inferred from
+  `COMP.MA.MXO2`'s trace rather than measured on a healthy stack.
+* **Repair at smaller `k`.** Every route ran at k=256 to give the mechanism its
+  best shot. The exchange rate at k=32 or k=64 is unmeasured; it can only be
+  *better* per parameter if the first 32 atoms carry most of the explained
+  fraction, and the realized supports — every route used its full budget,
+  262,144 = 1024 x 256 nonzeros, with nothing stopped early — suggest they do not.
+
+## 7. Estate
+
+* **Ledger.** 442 rows sha `f2d945512a13a0917f24ac0b40bdb8fe9db0ea1cb1740d6b6f5c80d832167f00`
+  before; backed up **twice** (`backup/ledger.jsonl.pre-wave12-20260812T180543`
+  and `wave12/ledger.jsonl.pre-merge-backup`), both verified byte-identical to
+  the original by sha256 **and** by `cmp` *before* the merge; merged **exactly
+  once** behind a `.MERGED_ONCE` marker; **447 rows** after, sha
+  `a1c6b924238cfecf5f48a49baafcb8e77d2dc32ff071f89526c5e2e57845355a`. The merger
+  verified the prior bytes are a prefix, and the check was repeated independently
+  afterwards (695,128 bytes before, 705,287 after, 10,159 appended).
+* **Seals.** **442 of 442** resolvable rows verify, **0 fail**. Five rows do not
+  resolve: the same five as wave 11 (three `CAL.C01.T5.X4`, one
+  `C06.T2.S4.L12` a6review instance, one `COMP.MC.MXO0` infra row).
+* **The seal verifier's search roots nearly repeated wave 11's own defect.** The
+  wave10-to-wave11 rewrite cost wave 11 eleven rows and a 427/442 reading
+  (`NOTES-MX-O` §8); the wave11-to-wave12 rewrite did the same thing here and was
+  caught by the count — 14 unresolved instead of 5 — before anything was
+  reported. Wave 12's verifier now keeps **every** earlier root and says why in
+  its docstring.
+* **Wave-12 rows.** 5, all `sm86 NVIDIA GeForce RTX 3090`, all receipt schema v2:
+  one `infra` (the collector's refusal), two composed children, two ADDENDUM 6
+  review instances carrying ADDENDUM 9 per-lane blocks.
+* **Retention.** Nothing deleted: two reviewed children's tensor sets are kept
+  (362,811,893 and 362,811,829 bytes, plus 50,370,709 bytes of corrective
+  routes), the `infra` row died before its first tensor save, and the
+  materialized HF child was deleted after its benchmark.
+  `wave12/pruned-tensors-manifest.json` records digests, sizes and the
+  re-derivation path.
+* **Disk.** Server `/` at 4.5-4.9 GB free throughout; every heavy artifact under
+  `/mnt/ai_data/neural-forge-matrix/wave12/` (684 MB). The five conditioned
+  captures ran in `/dev/shm`, were deleted as their rows were read, and the tmpfs
+  was cleared at wave end (126 GB free, 4.0K used).
+* **Deployments.** Three, and the reason each exists is on the record:
+  `4d8774f6` (ADDENDUM 10 + the corrective class), `dcfe22ff` (the sealed
+  per-lane verdict, grading only), `f753b9e7` (the corrective write moved into
+  `mlp.down`). `COMP.MA.MXP2` was generated under `4d8774f6`; `COMP.MA.MXP1`
+  under `f753b9e7`; every verdict was sealed under `f753b9e7`. The frozen review
+  script is **byte-identical** across `4d8774f6` and `f753b9e7`
+  (`4a7a956605c4e205…`), which is why `COMP.MA.MXP2`'s dossier is unaffected by
+  the fix.
+
+## 8. M5's specification, so wave 13 does not start from zero
+
+The `cannot-express-4x` verdict on C10 was about head **drop**, where k/v are
+stored whole. A Procrustes merge is a different claim and the arithmetic works on
+this parent: six attention blocks of `1,048,576 + 2 x 524,288 + 1,048,576 =
+3,145,728`, i.e. 16 query heads and 8 kv heads at head_dim 64.
+
+Merge the 16 q heads into `g` groups and the 8 kv heads into `g/2`, storing per
+group one `64 x 1024` q basis and one `1024 x 64` o basis, per kv group one
+`64 x 1024` k and one `64 x 1024` v, and per head a `64 x 64` orthogonal
+Procrustes alignment `R_h` — which is what makes it a *merge* and not a drop:
+
+```
+stored(g) = g*(64*1024 + 1024*64) + (g/2)*2*(64*1024) + 24*(64*64)
+g = 4  ->  884,736   = 0.281x   (over the 4x bar)
+g = 3  ->  688,128   = 0.219x   (under it)
+```
+
+So `g = 3` is the deepest admissible merge and `g = 4` is the one to measure
+against it. The installed tensors stay parent-shaped — `q_h = R_h Q_g`,
+`o_h = O_g R_h^T` — so no config change, no architecture edit, and the frozen
+review reconstitutes it exactly as it reconstitutes every other child. The
+storage claim is over the *stored* basis-plus-alignment set, which is the
+campaign's existing convention (`net_storage`'s coverage rule). Solve each `R_h`
+in closed form by SVD of `Q_h Q_g^T`. **Attention is 11.6% of this body and about
+a third of a large model's, which is the only reason it is still on the list.**
+
+## 9. The test result
+
+Run on the Windows checkout of this wave's own HEAD with waves 9-11's invocation,
+same file order, plus wave 12's two new files appended:
+
+```
+python -m pytest tests/test_matrix_composition.py tests/test_matrix_cell_receipt.py \
+                 tests/test_run_lfm2_matrix_cell.py tests/test_matrix_technique_registry.py \
+                 tests/test_run_lfm2_matrix_cell_fresh_evidence.py \
+                 tests/test_matrix_technique_charts.py tests/test_matrix_technique_new_axes.py \
+                 tests/test_matrix_addendum6.py tests/test_matrix_addendum7.py \
+                 tests/test_matrix_technique_token_embedding.py \
+                 tests/test_matrix_composition_als.py \
+                 tests/test_matrix_corrective_routes.py \
+                 tests/test_matrix_addendum9_per_lane.py -q
+# -> 289 passed, 1 skipped
+```
+
+The wave's own two files are 27 + 12 = 39 of those. **Wave 11's ten known
+failures do not appear here because this is the worktree, not a `git archive` —
+the four-case `blank_receipt` `compute_architecture` family and its relative are
+fixed in the Codex lane's uncommitted files, which an archive cannot see.** A
+whole-tree run of the same checkout collects and executes without error —
+`4360 passed, 15 skipped, 1 failed` — and the one failure,
+`test_hf_lfm2_child_replay.py::test_single_pass_rejects_class_level_lm_head_forward_spoof_before_forward`,
+is in the Codex lane and untouched by this wave.
+
+One order-dependence worth naming because it will bite the next wave that runs a
+subset: `test_matrix_technique_registry.py::test_t1_refuses_components_it_does_not_model`
+passes in the campaign's invocation and fails when its file runs without
+`tests/test_run_lfm2_matrix_cell.py` ahead of it, because it asserts the dispatch
+table routes `C04` past T1's reference kernel and that registration happens on
+import of the conv-FIR module. It is one of the four collateral victims
+`NOTES-MX-O` §9 names.
 
 ## 0. The five sentences
 
-*(filled in last)*
+1. **Closed-form repair works, and it is 355x too expensive to matter.**
+   ADDENDUM 10's additive routes moved `COMP.MA.MXO4`'s identical fold set from
+   **5/15 to 7/15** and its drift from 0.540899 to 0.517480 — a real result for a
+   mechanism wave 11 could not even express — at **0.011146 drift per million
+   stored parameters**, against lane shopping's **3.961**.
+2. **Repair only has purchase where a fold's own error is still linear in the
+   block's input, and that purchase collapses with depth.** Out of sample: 28.0%
+   of the block gap explained at L05, 10.4% at L06, 10.0% at L07, and at L13 — a
+   block that was never folded — **0.0%, a held-out gap of 1.014878, and drift
+   that went up**.
+3. **The cheapest lane was never the next one in depth, and the campaign had been
+   buying the wrong one.** Sixteen variants priced against one fixed base:
+   `COMP.MA.MXO4`'s `L07` at T8/S4 cost +0.076198 and `L13` at T5/S4 costs
+   **+0.034129** at the same 4x bound. Swapping them, for **12,950 parameters**,
+   took the same storage from 5/15 to 6/15 and **halved lambada perplexity**.
+4. **Two laws that looked general are not.** S8 beats S4 on short conv and
+   **loses on every SwiGLU site measured**; and the "cheap deep lanes" of the 0.5x
+   child were a saturation artifact — the same lanes cost an order of magnitude
+   more on a healthy base, so a marginal pooled over stack positions ranks
+   nothing.
+5. **The frontier moved to 0.703409x under ADDENDUM 8 as written, and did not
+   move under the 8/15 band it was last reported against.** Both are printed,
+   neither is collapsed into the other, and 0.5x is still **7.91 lanes** away from
+   the deepest coherent child — against a per-lane allowance that this wave's own
+   saturation result says gets harder, not easier, from here.
+
+## 10. What wave 13 should measure
+
+1. **Shop the fourth lane against `COMP.MA.MXP2`'s own base, then the fifth
+   against that.** The probe costs ~40 s per candidate and the compounding rate is
+   the single number that decides whether a greedy shopped ladder reaches 0.65x.
+   It is currently inferred, not measured.
+2. **Combine the two mechanisms in one child.** Repair was measured on the
+   *autopilot* fold set. `COMP.MA.MXP2` plus routes at L05/L06/L13 is one run and
+   it is the only rung that carries both of wave 12's positives.
+3. **Seal per-lane readings for the wave-10 and wave-11 children.** They read
+   `unstated`, which makes cross-wave frontier comparisons rest on two different
+   readings. Do it in a wave that is not simultaneously trying to move the
+   frontier.
+4. **M5, from §8's specification.** `g = 3` at 0.219x and `g = 4` at 0.281x, solo
+   cell first, into a stack only if the solo is parent-band.
+5. **Make a repaired child materializable**, or state that repair is a research
+   instrument and not a shippable fold. Right now `COMP.MA.MXP1` cannot be
+   benchmarked, which means the campaign cannot rank it on the continuous axis it
+   uses to break ties.

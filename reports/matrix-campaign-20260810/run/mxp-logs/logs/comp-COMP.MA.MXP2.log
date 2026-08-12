@@ -1,0 +1,107 @@
+[2026-08-12T16:30:27.849+00:00] compute architecture: sm86 NVIDIA GeForce RTX 3090
+[2026-08-12T16:30:28.160+00:00] stage materialize at 0.6s
+[2026-08-12T16:30:38.751+00:00] parent: 229693184 unique parameters ({'distinct_storages': 132, 'tied_names': ['lm_head.weight']})
+[2026-08-12T16:30:38.782+00:00] stage component-0-C11.T8.S4.L05 at 11.2s
+[2026-08-12T16:30:38.792+00:00] stage evidence-0-C11.T8.S4.L05 at 11.2s
+[2026-08-12T16:30:39.973+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L05-C11
+[2026-08-12T16:30:39.973+00:00] stage calibration-0-C11.T8.S4.L05 at 12.4s
+[2026-08-12T16:30:40.046+00:00] C11.T8.S4.L05: calibration relL2=0.0016468450046536567 applicable=True passed=True
+[2026-08-12T16:30:40.046+00:00] stage solve-0-C11.T8.S4.L05 at 12.5s
+[2026-08-12T16:30:44.975+00:00] T8 C11.T8.S4.L05: axis=output rank=182 gram=0.05271 cos=0.97531 truncation=True target=parent-operator-on-design
+[2026-08-12T16:30:44.991+00:00] stage boundary-0-C11.T8.S4.L05 at 17.4s
+[2026-08-12T16:30:45.094+00:00] stage after-install-0-C11.T8.S4.L05 at 17.5s
+[2026-08-12T16:30:58.206+00:00] C11.T8.S4.L05 installed: terminal drift 0.168344, free-run 0.154296875
+[2026-08-12T16:30:58.206+00:00] stage component-1-C12.T8.S4.L05 at 30.6s
+[2026-08-12T16:30:58.223+00:00] stage evidence-1-C12.T8.S4.L05 at 30.6s
+[2026-08-12T16:30:59.357+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L05-C12
+[2026-08-12T16:30:59.357+00:00] stage calibration-1-C12.T8.S4.L05 at 31.8s
+[2026-08-12T16:30:59.422+00:00] C12.T8.S4.L05: calibration relL2=0.001644737798745172 applicable=True passed=True
+[2026-08-12T16:30:59.422+00:00] stage solve-1-C12.T8.S4.L05 at 31.8s
+[2026-08-12T16:31:04.559+00:00] T8 C12.T8.S4.L05: axis=output rank=182 gram=0.13942 cos=0.93873 truncation=True target=parent-operator-on-design
+[2026-08-12T16:31:04.573+00:00] stage boundary-1-C12.T8.S4.L05 at 37.0s
+[2026-08-12T16:31:04.670+00:00] stage after-install-1-C12.T8.S4.L05 at 37.1s
+[2026-08-12T16:31:13.993+00:00] C12.T8.S4.L05 installed: terminal drift 0.271744, free-run 0.072265625
+[2026-08-12T16:31:13.994+00:00] stage component-2-C13.T8.S4.L05 at 46.4s
+[2026-08-12T16:31:14.004+00:00] stage evidence-2-C13.T8.S4.L05 at 46.4s
+[2026-08-12T16:31:15.136+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L05-C13
+[2026-08-12T16:31:15.136+00:00] stage calibration-2-C13.T8.S4.L05 at 47.6s
+[2026-08-12T16:31:15.166+00:00] C13.T8.S4.L05: calibration relL2=0.0006382105222036804 applicable=True passed=True
+[2026-08-12T16:31:15.166+00:00] stage solve-2-C13.T8.S4.L05 at 47.6s
+[2026-08-12T16:31:16.555+00:00] T8 C13.T8.S4.L05: axis=input rank=639 gram=0.20058 cos=0.92045 truncation=True target=parent-operator-on-design
+[2026-08-12T16:31:16.561+00:00] stage boundary-2-C13.T8.S4.L05 at 49.0s
+[2026-08-12T16:31:16.636+00:00] stage after-install-2-C13.T8.S4.L05 at 49.1s
+[2026-08-12T16:31:26.085+00:00] C13.T8.S4.L05 installed: terminal drift 0.311616, free-run 0.109375
+[2026-08-12T16:31:26.085+00:00] stage component-3-C11.T8.S4.L06 at 58.5s
+[2026-08-12T16:31:26.095+00:00] stage evidence-3-C11.T8.S4.L06 at 58.5s
+[2026-08-12T16:31:27.227+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L06-C11
+[2026-08-12T16:31:27.227+00:00] stage calibration-3-C11.T8.S4.L06 at 59.6s
+[2026-08-12T16:31:27.289+00:00] C11.T8.S4.L06: calibration relL2=0.0016583925563911962 applicable=True passed=True
+[2026-08-12T16:31:27.289+00:00] stage solve-3-C11.T8.S4.L06 at 59.7s
+[2026-08-12T16:31:32.070+00:00] T8 C11.T8.S4.L06: axis=output rank=182 gram=0.03965 cos=0.98114 truncation=True target=parent-operator-on-design
+[2026-08-12T16:31:32.086+00:00] stage boundary-3-C11.T8.S4.L06 at 64.5s
+[2026-08-12T16:31:32.193+00:00] stage after-install-3-C11.T8.S4.L06 at 64.6s
+[2026-08-12T16:31:41.611+00:00] C11.T8.S4.L06 installed: terminal drift 0.330763, free-run 0.0625
+[2026-08-12T16:31:41.611+00:00] stage component-4-C12.T8.S4.L06 at 74.0s
+[2026-08-12T16:31:41.624+00:00] stage evidence-4-C12.T8.S4.L06 at 74.0s
+[2026-08-12T16:31:42.701+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L06-C12
+[2026-08-12T16:31:42.701+00:00] stage calibration-4-C12.T8.S4.L06 at 75.1s
+[2026-08-12T16:31:42.765+00:00] C12.T8.S4.L06: calibration relL2=0.001654207408096964 applicable=True passed=True
+[2026-08-12T16:31:42.765+00:00] stage solve-4-C12.T8.S4.L06 at 75.2s
+[2026-08-12T16:31:47.651+00:00] T8 C12.T8.S4.L06: axis=output rank=182 gram=0.12054 cos=0.94559 truncation=True target=parent-operator-on-design
+[2026-08-12T16:31:47.665+00:00] stage boundary-4-C12.T8.S4.L06 at 80.1s
+[2026-08-12T16:31:47.760+00:00] stage after-install-4-C12.T8.S4.L06 at 80.2s
+[2026-08-12T16:31:57.789+00:00] C12.T8.S4.L06 installed: terminal drift 0.384159, free-run 0.091796875
+[2026-08-12T16:31:57.789+00:00] stage component-5-C13.T8.S4.L06 at 90.2s
+[2026-08-12T16:31:57.799+00:00] stage evidence-5-C13.T8.S4.L06 at 90.2s
+[2026-08-12T16:31:58.927+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L06-C13
+[2026-08-12T16:31:58.927+00:00] stage calibration-5-C13.T8.S4.L06 at 91.3s
+[2026-08-12T16:31:58.955+00:00] C13.T8.S4.L06: calibration relL2=0.0016574401243095746 applicable=True passed=True
+[2026-08-12T16:31:58.955+00:00] stage solve-5-C13.T8.S4.L06 at 91.4s
+[2026-08-12T16:32:00.371+00:00] T8 C13.T8.S4.L06: axis=input rank=639 gram=0.20404 cos=0.92418 truncation=True target=parent-operator-on-design
+[2026-08-12T16:32:00.377+00:00] stage boundary-5-C13.T8.S4.L06 at 92.8s
+[2026-08-12T16:32:00.458+00:00] stage after-install-5-C13.T8.S4.L06 at 92.9s
+[2026-08-12T16:32:10.209+00:00] C13.T8.S4.L06 installed: terminal drift 0.421325, free-run 0.072265625
+[2026-08-12T16:32:10.209+00:00] stage component-6-C11.T5.S4.L13 at 102.6s
+[2026-08-12T16:32:10.219+00:00] stage evidence-6-C11.T5.S4.L13 at 102.6s
+[2026-08-12T16:32:11.322+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L13-C11
+[2026-08-12T16:32:11.322+00:00] stage calibration-6-C11.T5.S4.L13 at 103.7s
+[2026-08-12T16:32:11.384+00:00] C11.T5.S4.L13: calibration relL2=0.0016661220298264858 applicable=True passed=True
+[2026-08-12T16:32:11.384+00:00] stage solve-6-C11.T5.S4.L13 at 103.8s
+[2026-08-12T16:32:14.949+00:00] T5 C11.T5.S4.L13: role=reader kept=606 dropped=1954 blocks=1 k=8 rows=4751
+[2026-08-12T16:32:14.982+00:00] stage boundary-6-C11.T5.S4.L13 at 107.4s
+[2026-08-12T16:32:15.090+00:00] stage after-install-6-C11.T5.S4.L13 at 107.5s
+[2026-08-12T16:32:24.600+00:00] C11.T5.S4.L13 installed: terminal drift 0.443039, free-run 0.076171875
+[2026-08-12T16:32:24.600+00:00] stage component-7-C12.T5.S4.L13 at 117.0s
+[2026-08-12T16:32:24.610+00:00] stage evidence-7-C12.T5.S4.L13 at 117.0s
+[2026-08-12T16:32:25.729+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L13-C12
+[2026-08-12T16:32:25.729+00:00] stage calibration-7-C12.T5.S4.L13 at 118.1s
+[2026-08-12T16:32:25.791+00:00] C12.T5.S4.L13: calibration relL2=0.0016594737230021907 applicable=True passed=True
+[2026-08-12T16:32:25.791+00:00] stage solve-7-C12.T5.S4.L13 at 118.2s
+[2026-08-12T16:32:29.347+00:00] T5 C12.T5.S4.L13: role=reader kept=606 dropped=1954 blocks=1 k=8 rows=4751
+[2026-08-12T16:32:29.378+00:00] stage boundary-7-C12.T5.S4.L13 at 121.8s
+[2026-08-12T16:32:29.481+00:00] stage after-install-7-C12.T5.S4.L13 at 121.9s
+[2026-08-12T16:32:39.648+00:00] C12.T5.S4.L13 installed: terminal drift 0.451302, free-run 0.130859375
+[2026-08-12T16:32:39.649+00:00] stage component-8-C13.T5.S4.L13 at 132.1s
+[2026-08-12T16:32:39.659+00:00] stage evidence-8-C13.T5.S4.L13 at 132.1s
+[2026-08-12T16:32:40.755+00:00] evidence: reused authenticated cache /mnt/ai_data/neural-forge-matrix/wave12/evidence-cache/L13-C13
+[2026-08-12T16:32:40.755+00:00] stage calibration-8-C13.T5.S4.L13 at 133.2s
+[2026-08-12T16:32:40.817+00:00] C13.T5.S4.L13: calibration relL2=0.001651891879512348 applicable=True passed=True
+[2026-08-12T16:32:40.818+00:00] stage solve-8-C13.T5.S4.L13 at 133.2s
+[2026-08-12T16:32:44.844+00:00] T5 C13.T5.S4.L13: role=writer kept=639 dropped=1921 blocks=1 k=8 rows=4751
+[2026-08-12T16:32:44.855+00:00] stage boundary-8-C13.T5.S4.L13 at 137.3s
+[2026-08-12T16:32:44.933+00:00] stage after-install-8-C13.T5.S4.L13 at 137.3s
+[2026-08-12T16:32:54.665+00:00] C13.T5.S4.L13 installed: terminal drift 0.455455, free-run 0.126953125
+[2026-08-12T16:32:54.665+00:00] stage component-9-C01.T5.S4 at 147.1s
+[2026-08-12T16:32:55.121+00:00] stage evidence-9-C01.T5.S4 at 147.5s
+[2026-08-12T16:32:55.121+00:00] C01.T5.S4: GLOBAL site -- no per-site evidence cache is opened and none is read
+[2026-08-12T16:32:55.121+00:00] stage calibration-9-C01.T5.S4 at 147.5s
+[2026-08-12T16:32:55.121+00:00] C01.T5.S4: calibration relL2=None applicable=False passed=False
+[2026-08-12T16:32:55.121+00:00] stage solve-9-C01.T5.S4 at 147.5s
+[2026-08-12T16:32:55.167+00:00] C01 C01.T5.S4: sparse-omp route head=12288 k=38, table 65536x1024, head selected by token frequency
+[2026-08-12T16:51:59.812+00:00] C01 C01.T5.S4: stored 16695297 (0.248779x, legacy continuous-only 14606336), mean support 38.000, head row cosine 1.000000, tail row cosine 0.747636
+[2026-08-12T16:52:00.072+00:00] stage boundary-9-C01.T5.S4 at 1292.5s
+[2026-08-12T16:52:01.273+00:00] stage after-install-9-C01.T5.S4 at 1293.7s
+[2026-08-12T16:52:10.319+00:00] C01.T5.S4 installed: terminal drift 0.489603, free-run 0.060546875
+[2026-08-12T16:52:10.319+00:00] stage behavior at 1302.7s
+[2026-08-12T16:52:48.783+00:00] stage seal at 1341.2s
+[2026-08-12T16:52:48.929+00:00] sealed COMP.MA.MXP2 status=fail first_divergent=local-solve receipt=103b4fa0061f in 1341.2s

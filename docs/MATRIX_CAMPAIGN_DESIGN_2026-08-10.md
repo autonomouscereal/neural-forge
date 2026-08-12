@@ -1205,16 +1205,32 @@ sealed against, and a `X..` id can never be parsed as a folded component.
 
 One corrective component is registered:
 
-| id | reads | writes | module | replaces |
-|---|---|---|---|---|
-| `X01` `ffn_output_corrective_route` | `mlp.input` | `residual.post_layer` | `model.layers.{L}.feed_forward` | **nothing** |
+| id | reads | writes | source module | write module | replaces |
+|---|---|---|---|---|---|
+| `X01` `ffn_output_corrective_route` | `mlp.input` | `mlp.down` | `model.layers.{L}.feed_forward` | `model.layers.{L}.feed_forward.w2` | **nothing** |
 
 The frozen collector proves `residual.post_layer = residual.post_operator +
-mlp.down` for every block, so a tensor added to the `feed_forward` module's
-output is added to the block's output residual **exactly**. `X01` is therefore a
-linear route from the block's own FFN-norm output into the block's output
-residual — an operator no parent tensor expresses, which is what makes it a new
-degree of freedom and not M1's re-solve wearing a different name.
+mlp.down` for every block, and it captures `mlp.down` on `feed_forward.w2`, so an
+addition made **inside** `mlp.down` is an addition to the block's output residual
+**exactly**. `X01` is therefore a linear route from the block's own FFN-norm
+output into the block's output residual — an operator no parent tensor expresses,
+which is what makes it a new degree of freedom and not M1's re-solve wearing a
+different name.
+
+**Amended 2026-08-12, after the mechanism's first live run, and recorded rather
+than rewritten.** This addendum originally put the write at the `feed_forward`
+module itself. The frozen collector refused the next capture — `Layer 5 residual
+endpoints do not reproduce its output` — because a tensor added to the
+feed_forward module's output lands in `layer_output` and **not** in `mlp.down`,
+which breaks the identity the collector verifies and therefore breaks every
+capture after the first. The collector is frozen and was not the thing that was
+wrong, so the write moved one module deeper: a pre-hook on `feed_forward` caches
+`mlp.input`, and a forward hook on `feed_forward.w2` adds `cached @ R` to
+`mlp.down`. `w2` runs inside `feed_forward`'s forward, so the cache is always
+warm, and the collector's hooks are registered when a capture session opens —
+after the routes — so it observes a `mlp.down` that already carries the
+correction. **The operator is unchanged; only the module boundary it attaches at
+moved.** `NOTES-MX-P` §4.1 carries the refusal with its numbers.
 
 Route ids carry their sparsity: `X01.T5.K64.L07`. A level claim is a claim about
 stored parameters (ADDENDUM 6 §6.2), so two routes at one site with different

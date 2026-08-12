@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Verify every wave-9 seal, and re-verify the whole ledger against its receipts.
+"""Verify every wave-12 seal, and re-verify the whole ledger against its receipts.
 
-Wave 8's mxl_verify_seals.py with the wave-8 cell root kept, the wave-9 root added
-and the wave filter moved to 9.  The counts are computed rather than asserted, and the four rows that
-have never resolved are expected to still not resolve -- they are named in
-NOTES-MX-K 9 and this wave did not touch them.
+Wave 11's mxo_verify_seals.py with the wave-12 root ADDED and every earlier root
+KEPT.  The "kept" is the whole point: wave 11 lost eleven wave-10 rows to a
+wave10 -> wave11 search-root rewrite and the seal count read 427/442 until the
+root was put back (NOTES-MX-O 8).  Wave 12 does not repeat it, and this comment
+is here so the next wave does not either.
+
+The counts are computed rather than asserted, and the five rows that have never
+resolved are expected to still not resolve -- they are named in NOTES-MX-O 8 and
+this wave did not touch them.
 """
 
 from __future__ import annotations
@@ -29,7 +34,8 @@ ROOT = Path("/mnt/ai_data/neural-forge-matrix")
 LEDGER = ROOT / "ledger.jsonl"
 SEARCH = [ROOT / "cells", ROOT / "wave6" / "cells", ROOT / "wave7" / "cells",
           ROOT / "wave8" / "cells", ROOT / "wave9" / "cells",
-          ROOT / "wave10" / "cells", ROOT / "wave12" / "cells"]
+          ROOT / "wave10" / "cells", ROOT / "wave11" / "cells",
+          ROOT / "wave12" / "cells"]
 
 
 def _index() -> dict[str, Path]:
@@ -54,7 +60,7 @@ def main() -> int:
     resolved = verified = failed = 0
     mandatory_ok = mandatory_bad = 0
     unresolved: list[str] = []
-    wave9 = [r for r in rows if int(r.get("campaign_wave", 0)) == 11]
+    this_wave = [r for r in rows if int(r.get("campaign_wave", 0)) == 12]
     w9_resolved = w9_verified = 0
     for row in rows:
         digest = str(row["receipt_sha"])
@@ -96,20 +102,20 @@ def main() -> int:
     dupes = [i for i, c in Counter(r["cell_instance_id"] for r in rows).items() if c > 1]
     print(f"duplicated cell_instance_ids     {len(dupes)} {dupes}")
     print()
-    print(f"wave-11 rows                      {len(wave9)}")
+    print(f"wave-12 rows                      {len(this_wave)}")
     print(f"  resolve / verify               {w9_resolved} / {w9_verified}")
     print("  compute architectures          "
-          f"{dict(Counter(r['compute_architecture'] for r in wave9))}")
+          f"{dict(Counter(r['compute_architecture'] for r in this_wave))}")
     print("  receipt_schema_version         "
-          f"{dict(Counter(r.get('receipt_schema_version') for r in wave9))}")
+          f"{dict(Counter(r.get('receipt_schema_version') for r in this_wave))}")
     print("  verdicts                       "
-          f"{dict(Counter(r.get('behavior_verdict') for r in wave9 if r.get('behavior_verdict')))}")
+          f"{dict(Counter(r.get('behavior_verdict') for r in this_wave if r.get('behavior_verdict')))}")
     print("  modes                          "
-          f"{dict(Counter(r.get('composition_mode') for r in wave9 if r.get('composition_mode')))}")
-    ratios = [float(r['stored_parameter_ratio']) for r in wave9
+          f"{dict(Counter(r.get('composition_mode') for r in this_wave if r.get('composition_mode')))}")
+    ratios = [float(r['stored_parameter_ratio']) for r in this_wave
               if r.get('stored_parameter_ratio') is not None]
     if ratios:
-        print(f"  deepest wave-9 net ratio       {min(ratios)}")
+        print(f"  deepest wave-12 net ratio       {min(ratios)}")
     print("  all-rows schema version        "
           f"{dict(Counter(r.get('receipt_schema_version') for r in rows))}")
     return 0

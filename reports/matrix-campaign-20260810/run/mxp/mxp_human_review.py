@@ -31,8 +31,8 @@ from pathlib import Path
 ROOT = Path("/mnt/ai_data/neural-forge-matrix")
 #: Wave 10 writes its own benches; waves 8 and 9 are the comparison rows,
 #: so a label is looked up in this order and the first hit wins.
-BENCH_ROOTS = [ROOT / "wave12" / "bench", ROOT / "wave9" / "bench",
-               ROOT / "wave8" / "bench"]
+BENCH_ROOTS = [ROOT / "wave12" / "bench", ROOT / "wave11" / "bench",
+               ROOT / "wave9" / "bench", ROOT / "wave8" / "bench"]
 
 #: The metric of record for each benchmark task, in the order the table prints.
 METRICS = [

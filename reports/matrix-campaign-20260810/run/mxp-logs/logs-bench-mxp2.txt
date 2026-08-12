@@ -1,0 +1,20 @@
+=========== COMP.MA.MXP2 (wave12) ===========
+COMP.MA.MXP2: 10 folded tensors verified against the seal -> /mnt/ai_data/neural-forge-matrix/wave12/hf-children/COMP.MA.MXP2
+  net 0.703409x  model.safetensors d9d7e2e1c88c0b2c
+bench COMP.MA.MXP2 rc=0
+|--------------|------:|------|-----:|---------------|---|-------:|---|--------|
+|arc_easy      |      1|none  |     0|acc            |↑  |  0.4250|±  |  0.0350|
+|              |       |none  |     0|acc_norm       |↑  |  0.4450|±  |  0.0352|
+|hellaswag     |      1|none  |     0|acc            |↑  |  0.3750|±  |  0.0343|
+|              |       |none  |     0|acc_norm       |↑  |  0.4250|±  |  0.0350|
+|lambada_openai|      1|none  |     0|acc            |↑  |  0.1450|±  |  0.0250|
+|              |       |none  |     0|perplexity     |↓  |857.1973|±  |236.1031|
+|piqa          |      1|none  |     0|acc            |↑  |  0.5750|±  |  0.0350|
+|              |       |none  |     0|acc_norm       |↑  |  0.5850|±  |  0.0349|
+|wikitext      |      2|none  |     0|bits_per_byte  |↓  |  1.4694|±  |   N/A  |
+|              |       |none  |     0|byte_perplexity|↓  |  2.7691|±  |   N/A  |
+|              |       |none  |     0|word_perplexity|↓  |231.9580|±  |   N/A  |
+|winogrande    |      1|none  |     0|acc            |↑  |  0.5400|±  |  0.0353|
+
+removed /mnt/ai_data/neural-forge-matrix/wave12/hf-children/COMP.MA.MXP2/model.safetensors (re-derivable from the sealed receipt)
+BENCH LANE COMPLETE
