@@ -507,14 +507,38 @@ def _c01_token_route_storage(spec: "ComponentSpec", width: int) -> int:
     )
 
 
+def _c10_head_merge_storage(spec: "ComponentSpec", width: int) -> int:
+    """T7 at C10: shared head bases plus one orthogonal alignment per head.
+
+    `NOTES-MX-P` §8's ``stored(g)``.  C10 is the campaign's only component that
+    owns four tensors, and a merge replaces all four, so the model has to price
+    a *group* rather than a factor pair::
+
+        g_q*(D*hidden + hidden*D) + g_kv*2*(D*hidden) + (H + H_kv)*D*D
+
+    The width this model takes is the stored **query-basis height**, ``g_q*D``,
+    which is the same reading `matrix_technique_head_drop` gives C10's level
+    axis.  ``g_kv`` is derived from it by the parent's own GQA ratio, rounded
+    up -- §8 evaluated that term at ``g/2 = 1.5`` and priced ``g_q = 3`` at
+    0.21875x; the implementable config is 0.239583x, and the kernel's own
+    docstring records the correction.
+    """
+
+    from .matrix_technique_head_merge import c10_head_merge_storage
+
+    return c10_head_merge_storage(spec, width)
+
+
 #: Per-component overrides: C04's kernel is FIR taps, not a matrix
 #: factorization, so T1 at C04 stores something T1 elsewhere does not; T5 at C01
-#: is a token route and stores a head of verbatim rows beside its tail factors.
+#: is a token route and stores a head of verbatim rows beside its tail factors;
+#: T7 at C10 is wave 13's head merge and prices four tensors at once.
 _STORAGE_MODELS_BY_COMPONENT: Mapping[
     tuple[str, str], Callable[["ComponentSpec", int], int]
 ] = {
     ("T1", "C04"): _conv_fir_storage,
     ("T5", "C01"): _c01_token_route_storage,
+    ("T7", "C10"): _c10_head_merge_storage,
 }
 
 
