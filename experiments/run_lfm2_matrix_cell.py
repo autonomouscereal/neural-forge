@@ -1230,8 +1230,22 @@ def _a9_token_route(request: CellTechniqueRequest) -> CellTechniqueResult:
     )
 
 
-register("T5", _a9_token_route, component="C01")
-register("T5", _a9_token_route, component="C02")
+# ``replace=True`` because this runner is not the only registrant of (T5, C01).
+# `neural_forge.matrix_technique_token_embedding` registers the same pair at
+# import time with ``replace=True``, and whichever module imported second used
+# to raise ``('T5','C01') is already registered`` -- which, in a process that
+# imports the kernel first (alphabetical collection of the whole `tests/` tree
+# does exactly that), made importing this runner a hard error.  NOTES-MX-N §9.2
+# recorded it as an open defect with this exact fix.
+#
+# **It does not change which kernel any cell resolves to.**  Both runners call
+# `discover_technique_modules()` at run time, which imports every
+# ``matrix_technique_*`` module *after* this module-level registration, and the
+# token-embedding kernel re-registers the pair with ``replace=True``; so the
+# resolved (T5, C01) kernel is the technique lane's, before and after this
+# change, and a test pins that rather than leaving it to import order.
+register("T5", _a9_token_route, component="C01", replace=True)
+register("T5", _a9_token_route, component="C02", replace=True)
 
 
 #: The two pre-registered readings of cell 0b's calibration gate.

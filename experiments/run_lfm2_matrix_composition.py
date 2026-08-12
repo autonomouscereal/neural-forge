@@ -22,6 +22,28 @@ be assembled by, as an experiment rather than an assumption:
     components were installed, in what order, and the cache key and split
     manifest digest of the evidence each solve actually saw.
 
+``--mode M-C`` **alternating joint co-solve (ALS).**  ADDENDUM 9.  M-A first --
+    every component solved against parent evidence and installed, so an M-C run
+    starts from the byte-identical M-A child and the comparison is controlled --
+    and then *sweeps*: for each folded component in turn, a fresh capture
+    through the CURRENT composed child, a re-solve of that component's own
+    closed form against the child's activations, install, next component;
+    repeat until the sweep stops paying.  Still zero gradients: every step is
+    the same ridge/Gram/OMP solve the isolation cell ran.
+
+    Two things separate it from M-B, and both are the point.  M-B conditions
+    each component **once**, in install order, and can never revisit a
+    component whose inputs a later install moved; ALS revisits every component
+    against the full joint state, repeatedly, which is what makes it a
+    coordinate descent with a fixed point rather than a single pass.  And M-B's
+    solve target is the parent operator applied to the child's drifted rows --
+    "be this map where the data now lives" -- which re-fits the operator to the
+    drift instead of cancelling it.  M-C's default target is the parent's own
+    sealed **write rows** at the same endpoint over the same corpus positions,
+    so each coordinate step asks the only question that can undo composition
+    damage: *given the inputs this child actually delivers, what must this
+    component emit for the parent's activation to come out?*
+
 Everything the isolation runner does per cell, this runner does per component
 and then once more for the whole child, by **importing the isolation runner's
 own functions** rather than restating them.  That is not tidiness: a composed
@@ -665,6 +687,741 @@ def _component_chain(entry: Mapping[str, Any]) -> tuple[str | None, str]:
 
 
 # --------------------------------------------------------------------------
+# ADDENDUM 9 mode M-C: the alternating joint co-solve
+# --------------------------------------------------------------------------
+
+#: Where a component's write lands inside its own block, as an ordinal.
+#:
+#: This is the whole capture-reuse licence, so it is conservative by
+#: construction: a component is given the ordinal of the *earliest* tensor it
+#: writes, so "does installing Y move X's input rows?" can only ever err toward
+#: *yes*.  The order is LFM2's block, read off the parent module and not
+#: invented here: norms feed the operator, the operator writes into the
+#: residual before the FFN norm reads it, ``w1``/``w3`` both read ``mlp.input``
+#: and neither reads the other, and ``w2`` reads what they produce.
+_BLOCK_ORDER: Mapping[str, int] = {
+    "C14": 0,  # operator_norm / ffn_norm -- upstream of everything in the block
+    "C03": 1,  # conv in_proj
+    "C04": 2,  # conv FIR taps
+    "C05": 3,  # conv out_proj  -> operator.output
+    "C06": 4,  # q_proj  \
+    "C07": 4,  # k_proj   |  all three read operator.input and none reads another
+    "C08": 4,  # v_proj  /
+    "C10": 4,  # head merge/drop edits q/k/v/o; the earliest is q at 4
+    "C09": 5,  # out_proj reads attention.context
+    "C11": 6,  # w1 \  both read mlp.input
+    "C12": 6,  # w3 /
+    "C13": 7,  # w2 reads mlp.post_swiglu
+}
+
+#: A component with no layer (C01/C02/C15, the token interface) sits upstream of
+#: every block, so it is given a layer index below the first one.
+_GLOBAL_LAYER = -1
+
+
+def _als_position(cell: CellId) -> tuple[int, int]:
+    """(layer, intra-block ordinal) for the capture-reuse licence."""
+
+    layer = (
+        _GLOBAL_LAYER if cell.layer_index is None else int(cell.layer_index)
+    )
+    return layer, int(_BLOCK_ORDER.get(cell.component, 0))
+
+
+def _capture_is_stale(
+    position: tuple[int, int], pending: Sequence[tuple[int, int]]
+) -> bool:
+    """Has anything installed since the last capture moved *these* input rows?
+
+    A weight installed at (layer L', ordinal o') can only change the rows a
+    component at (L, o) reads when it writes strictly upstream of them:
+    ``L' < L``, or the same block and ``o' < o``.  Nothing downstream of a
+    component can move that component's input, and a component's own re-solve
+    cannot move its own input, so a sweep that walks depth-ascending re-uses one
+    capture for every component that shares a rung -- and the first component of
+    sweep *n+1* re-uses the last capture of sweep *n* whenever the only
+    installs since then were deeper than it.
+
+    The licence is a claim about the model's dataflow, so wave 11 does not take
+    it on trust: ``--als-verify-capture-licence`` spends one extra capture the
+    first time this returns False and asserts the reused input rows are
+    bit-identical to the fresh ones.
+    """
+
+    layer, order = position
+    return any(
+        (other_layer < layer) or (other_layer == layer and other_order < order)
+        for other_layer, other_order in pending
+    )
+
+
+class _AlsHybridEvidence:
+    """Child inputs, parent targets, one row index.
+
+    The ALS coordinate step solves ``min ||X_child W'^T - Y_parent||`` -- the
+    design rows are what the composed child actually delivers at the
+    component's input endpoint, and the target rows are what the *parent*
+    emitted at the component's write endpoint over the same corpus positions.
+    Both captures run the frozen collector over the same batches with the same
+    sealed selection, and the collector's decode is teacher-forced from
+    caller-supplied ids, so row *i* of either capture is the same (batch, phase,
+    token) position.  That is what makes the two halves splice-able at all, and
+    it is checked here rather than assumed: same selection digest, same fit and
+    held-out row counts, endpoint by endpoint.
+    """
+
+    def __init__(
+        self,
+        *,
+        child: Any,
+        parent: Any,
+        parent_served: Sequence[str],
+    ) -> None:
+        self._child = child
+        self._parent = parent
+        self._parent_served = tuple(sorted(set(str(v) for v in parent_served)))
+        if str(child.selection_sha256) != str(parent.selection_sha256):
+            raise MatrixCompositionRunError(
+                "ALS hybrid evidence refuses to splice two captures taken "
+                f"under different selections: {child.selection_sha256[:16]} "
+                f"against {parent.selection_sha256[:16]}."
+            )
+        if int(child.fit_row_count) != int(parent.fit_row_count) or int(
+            child.heldout_row_count
+        ) != int(parent.heldout_row_count):
+            raise MatrixCompositionRunError(
+                "ALS hybrid evidence refuses to splice two captures with "
+                f"different row counts: child {child.fit_row_count}/"
+                f"{child.heldout_row_count}, parent {parent.fit_row_count}/"
+                f"{parent.heldout_row_count}."
+            )
+
+    @property
+    def endpoints(self) -> tuple[str, ...]:
+        return tuple(sorted(set(self._child.endpoints) | set(self._parent.endpoints)))
+
+    @property
+    def selection_sha256(self) -> str:
+        return str(self._child.selection_sha256)
+
+    @property
+    def fit_row_count(self) -> int:
+        return int(self._child.fit_row_count)
+
+    @property
+    def heldout_row_count(self) -> int:
+        return int(self._child.heldout_row_count)
+
+    def served_by(self, endpoint: str) -> str:
+        return "parent" if str(endpoint) in self._parent_served else "child"
+
+    def fit_rows(self, endpoint: str) -> Any:
+        source = self._parent if self.served_by(endpoint) == "parent" else self._child
+        return source.fit_rows(endpoint)
+
+    def heldout_rows(self, endpoint: str) -> Any:
+        source = self._parent if self.served_by(endpoint) == "parent" else self._child
+        return source.heldout_rows(endpoint)
+
+
+def _relative_residual(predicted: Any, reference: Any) -> float:
+    """Aggregate relative L2 of one row block against another."""
+
+    return float(_row_metrics(predicted, reference)["aggregate_relative_l2"])
+
+
+def _als_capture_selfcheck(
+    *,
+    spec: Any,
+    child_evidence: Any,
+    installed: Mapping[str, Any],
+) -> float | None:
+    """The calibration gate, restated for a capture through a folded child.
+
+    A conditioned capture cannot run the copy_exact arm: the tensor installed at
+    this component is no longer the parent's, so ``input @ parent^T`` is not
+    what the capture wrote and the number the gate would compute is the fold's
+    own error, not the capture's fidelity.  The identity that *is* still exact
+    is the one with the installed weight in it, and checking it is what proves
+    the capture's two endpoints are the map the runner thinks they are.
+    """
+
+    if spec.input_endpoint is None or spec.write_endpoint is None:
+        return None
+    weight = installed.get(spec.weight_keys[0])
+    if weight is None:
+        return None
+    held_input = child_evidence.heldout_rows(spec.input_endpoint)
+    held_write = child_evidence.heldout_rows(spec.write_endpoint)
+    if int(held_write.shape[-1]) != int(weight.shape[0]):
+        return None
+    return _relative_residual(held_input @ weight.to(held_input.dtype).T, held_write)
+
+
+def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by step
+    *,
+    args: argparse.Namespace,
+    model: Any,
+    tokenizer: Any,
+    entries: list[dict[str, Any]],
+    recipe: Mapping[str, Any],
+    parent_weights: Mapping[str, Any],
+    knobs: Mapping[str, Any],
+    capture_state: Mapping[str, Any],
+    base_manifest: Mapping[str, Any],
+    control_terminal: Any,
+    control_norms: Any,
+    control_ids: Sequence[Sequence[int]],
+    probe_prompts: Sequence[Any],
+    device: str,
+    output: Path,
+    watchdog: Any,
+    calibration_tolerance: float,
+) -> dict[str, Any]:
+    """Sweep the installed components until the joint re-solve stops paying."""
+
+    capture_root = Path(args.conditioned_capture_root)
+    max_sweeps = int(args.als_max_sweeps)
+    floor = float(args.als_improvement_floor)
+    objective = str(args.als_objective)
+    prune = bool(args.als_prune_captures)
+    verify_licence = bool(args.als_verify_capture_licence)
+
+    order = [
+        (index, CellId.parse(str(entry["isolation_cell_id"])))
+        for index, entry in enumerate(entries)
+    ]
+    # Depth ascending, then intra-block order: the sweep walks the dataflow, so
+    # every component is re-solved against a child whose upstream is already at
+    # this sweep's answer.
+    order.sort(key=lambda item: (_als_position(item[1]), item[0]))
+    eligible: list[tuple[int, CellId]] = []
+    skipped: list[dict[str, Any]] = []
+    for index, cell in order:
+        has_site = cell.layer_index is not None and (
+            component_spec(cell, parent_weights).input_endpoint is not None
+        )
+        if has_site:
+            eligible.append((index, cell))
+        else:
+            skipped.append(
+                {
+                    "cell_id": cell.text,
+                    "reason": (
+                        "a component with no sealed site evidence has no "
+                        "activation boundary to re-solve against; its fold is a "
+                        "weight-space fold and the ALS sweep leaves it exactly "
+                        "as the M-A pass solved it"
+                    ),
+                }
+            )
+
+    def _global_drift() -> tuple[float, dict[str, Any]]:
+        terminal, layer_norms = cell_runner._terminal_states(
+            model, tokenizer, probe_prompts, device=device
+        )
+        metrics = _row_metrics(terminal, control_terminal)
+        ratios = (layer_norms / control_norms.clamp_min(1e-30)).reshape(-1)
+        return float(metrics["mean_relative_l2"]), {
+            "terminal_relL2_vs_control": metrics["mean_relative_l2"],
+            "terminal_cos_vs_control": metrics["mean_cosine"],
+            "norm_ratio_per_layer_minmax": [
+                float(ratios.min().item()),
+                float(ratios.max().item()),
+            ],
+        }
+
+    def _snapshot() -> dict[str, Any]:
+        state = model.state_dict()
+        return {
+            key: state[key].detach().to("cpu").clone()
+            for entry in entries
+            for key in entry["installed_weight_keys"]
+        }
+
+    def _restore(snapshot: Mapping[str, Any]) -> None:
+        cell_runner._install_component(
+            model, {key: value.clone() for key, value in snapshot.items()}
+        )
+
+    started_drift, started_metrics = _global_drift()
+    _log(f"ALS: M-A child global drift {started_drift:.6f} before any sweep")
+
+    block: dict[str, Any] = {
+        "mechanism": "alternating-closed-form-joint-resolve",
+        "objective": objective,
+        "max_sweeps": max_sweeps,
+        "improvement_floor_relative": floor,
+        "capture_reuse_licence": (
+            "a fresh capture is taken whenever anything installed since the "
+            "last one writes strictly upstream of the component's input "
+            "endpoint (_capture_is_stale); reuse is otherwise exact"
+        ),
+        "capture_licence_verification": None,
+        "m_a_baseline": {
+            "global_drift": started_drift,
+            **started_metrics,
+        },
+        "skipped_components": skipped,
+        "sweeps": [],
+        "captures": [],
+        "stopped_because": "max sweeps reached",
+        "selected_sweep": 0,
+    }
+
+    best_drift = started_drift
+    best_sweep = 0
+    best_snapshot = _snapshot()
+    previous_drift = started_drift
+    pending: list[tuple[int, int]] = [_als_position(cell) for _index, cell in order]
+    capture: dict[str, Any] | None = None
+    child_cache: dict[str, Any] = {}
+
+    for sweep in range(1, max_sweeps + 1):
+        sweep_started = time.monotonic()
+        steps: list[dict[str, Any]] = []
+        for index, cell in eligible:
+            entry = entries[index]
+            spec = component_spec(cell, parent_weights)
+            position = _als_position(cell)
+            watchdog.stage(f"als-{sweep}-{cell.text}")
+            stale = capture is None or _capture_is_stale(position, pending)
+            licence_check: dict[str, Any] | None = None
+            if stale:
+                watchdog.stage(f"als-{sweep}-capture-{cell.text}")
+                if capture is not None and prune:
+                    _prune_capture(capture["cache_directory"])
+                capture = capture_conditioned_evidence(
+                    capture_model=capture_state["model"],
+                    child_model=model,
+                    output_root=capture_root,
+                    batches=capture_state["batches"],
+                    capture_config=capture_state["config"],
+                    base_manifest=base_manifest,
+                    device=device,
+                    conditioning={
+                        "upstream_installed": [c.text for _i, c in order],
+                        "install_index": index,
+                        "next_component": f"sweep{sweep}-{cell.text}",
+                    },
+                )
+                block["captures"].append(
+                    {
+                        "sweep": sweep,
+                        "cut_for": cell.text,
+                        "trace_cache_key": str(capture["trace_cache_key"]),
+                        "split_manifest_sha256": str(
+                            capture["split_manifest_sha256"]
+                        ),
+                        "child_state_dict_sha256": str(
+                            capture["child_state_dict_sha256"]
+                        ),
+                        "collector_implementation_sha256": str(
+                            capture["collector_implementation_sha256"]
+                        ),
+                        "wall_time_seconds": float(
+                            capture["capture_wall_time_seconds"]
+                        ),
+                    }
+                )
+                pending = []
+                child_cache = {}
+            key = (str(capture["trace_cache_key"]), cell.text)
+            if child_cache.get("key") != key:
+                child_evidence, child_binding = cell_runner.load_site_evidence(
+                    trace_cache_path=Path(capture["cache_directory"]),
+                    layer_index=int(cell.layer_index),
+                    endpoints=_endpoints_for(spec),
+                    forced_decode_count=int(args.forced_decode_count),
+                    fit_batch_limit=None,
+                    heldout_batch_limit=None,
+                    cache_directory=capture_root
+                    / "evidence-cache"
+                    / f"{capture['trace_cache_key'][:16]}-"
+                    f"{evidence_cache_name(cell)}",
+                    basis_phase_cache_root=None,
+                    basis_phase_key_sha256=None,
+                    basis_phase_hmac_key_file=None,
+                    basis_phase_hmac_key_id=None,
+                    evidence_split_manifest=Path(capture["split_manifest_path"]),
+                    target_hidden_size=int(args.target_hidden_size),
+                )
+                child_cache = {
+                    "key": key,
+                    "evidence": child_evidence,
+                    "binding": child_binding,
+                }
+            child_evidence = child_cache["evidence"]
+            child_binding = child_cache["binding"]
+
+            if (
+                not stale
+                and verify_licence
+                and block["capture_licence_verification"] is None
+            ):
+                # Spend one capture, once, on the first reuse the run reaches,
+                # and prove the dataflow claim the licence rests on rather than
+                # asserting it: the rows a reused capture serves at this
+                # component's input endpoint must be BIT-IDENTICAL to the rows a
+                # capture taken right now would serve.
+                watchdog.stage(f"als-{sweep}-licence-{cell.text}")
+                fresh = capture_conditioned_evidence(
+                    capture_model=capture_state["model"],
+                    child_model=model,
+                    output_root=capture_root,
+                    batches=capture_state["batches"],
+                    capture_config=capture_state["config"],
+                    base_manifest=base_manifest,
+                    device=device,
+                    conditioning={
+                        "upstream_installed": [c.text for _i, c in order],
+                        "install_index": index,
+                        "next_component": f"sweep{sweep}-{cell.text}-licence",
+                    },
+                )
+                probe_evidence, _probe_binding = cell_runner.load_site_evidence(
+                    trace_cache_path=Path(fresh["cache_directory"]),
+                    layer_index=int(cell.layer_index),
+                    endpoints=_endpoints_for(spec),
+                    forced_decode_count=int(args.forced_decode_count),
+                    fit_batch_limit=None,
+                    heldout_batch_limit=None,
+                    cache_directory=capture_root
+                    / "evidence-cache"
+                    / f"{fresh['trace_cache_key'][:16]}-licence-"
+                    f"{evidence_cache_name(cell)}",
+                    basis_phase_cache_root=None,
+                    basis_phase_key_sha256=None,
+                    basis_phase_hmac_key_file=None,
+                    basis_phase_hmac_key_id=None,
+                    evidence_split_manifest=Path(fresh["split_manifest_path"]),
+                    target_hidden_size=int(args.target_hidden_size),
+                )
+                reused_rows = child_evidence.fit_rows(spec.input_endpoint)
+                fresh_rows = probe_evidence.fit_rows(spec.input_endpoint)
+                identical = bool(torch.equal(reused_rows, fresh_rows))
+                licence_check = {
+                    "component": cell.text,
+                    "sweep": sweep,
+                    "reused_trace_cache_key": str(capture["trace_cache_key"]),
+                    "fresh_trace_cache_key": str(fresh["trace_cache_key"]),
+                    "input_endpoint": str(spec.input_endpoint),
+                    "rows": int(fresh_rows.shape[0]),
+                    "bit_identical": identical,
+                    "max_abs_difference": (
+                        0.0
+                        if identical
+                        else float((reused_rows - fresh_rows).abs().max().item())
+                    ),
+                }
+                block["capture_licence_verification"] = licence_check
+                del probe_evidence
+                if prune:
+                    _prune_capture(fresh["cache_directory"])
+                if not identical:
+                    raise MatrixCompositionRunError(
+                        "The capture-reuse licence is wrong: reusing the "
+                        f"previous capture for {cell.text} serves input rows "
+                        "that a fresh capture through the same child does not "
+                        "reproduce."
+                    )
+
+            parent_evidence, parent_binding = cell_runner.load_site_evidence(
+                trace_cache_path=Path(args.parent_trace_cache),
+                layer_index=int(cell.layer_index),
+                endpoints=_endpoints_for(spec),
+                forced_decode_count=int(args.forced_decode_count),
+                fit_batch_limit=None,
+                heldout_batch_limit=None,
+                cache_directory=Path(args.evidence_cache_root)
+                / evidence_cache_name(cell),
+                basis_phase_cache_root=None,
+                basis_phase_key_sha256=None,
+                basis_phase_hmac_key_file=None,
+                basis_phase_hmac_key_id=None,
+                evidence_split_manifest=Path(args.evidence_split_manifest),
+                target_hidden_size=int(args.target_hidden_size),
+            )
+
+            live = model.state_dict()
+            installed_now = {
+                weight_key: live[weight_key].detach().to("cpu", torch.float64)
+                for weight_key in spec.weight_keys
+            }
+            selfcheck = _als_capture_selfcheck(
+                spec=spec, child_evidence=child_evidence, installed=installed_now
+            )
+            if selfcheck is not None and selfcheck > calibration_tolerance:
+                raise MatrixCompositionRunError(
+                    f"{cell.text}: the conditioned capture does not reproduce "
+                    f"its own installed weight ({selfcheck} against a "
+                    f"{calibration_tolerance} tolerance); no ALS solve below "
+                    "that may be believed."
+                )
+
+            served = [
+                name
+                for name in (
+                    spec.write_endpoint,
+                    spec.macrocell_endpoint,
+                    "residual.pre",
+                    "residual.post_operator",
+                )
+                if name
+            ]
+            evidence = (
+                _AlsHybridEvidence(
+                    child=child_evidence,
+                    parent=parent_evidence,
+                    parent_served=served,
+                )
+                if objective == "parent-target"
+                else child_evidence
+            )
+            # What the coordinate step is trying to reduce, measured before it
+            # runs and again after: the held-out residual of this component's
+            # write against the PARENT's write, given the child's own inputs.
+            held_input = child_evidence.heldout_rows(spec.input_endpoint)
+            held_parent_write = parent_evidence.heldout_rows(spec.write_endpoint)
+            before = _relative_residual(
+                held_input @ installed_now[spec.weight_keys[0]].to(held_input.dtype).T,
+                held_parent_write,
+            )
+
+            technique = resolve(cell.technique, cell.component)
+            item = recipe["components"][index]
+            step_knobs = {**knobs, **(item.get("knobs") or {})}
+            supports_target = str(cell.technique) == "T8"
+            if objective == "parent-target" and supports_target:
+                step_knobs["relation_target_endpoint"] = spec.write_endpoint
+            request = CellTechniqueRequest(
+                cell=cell,
+                component=spec,
+                level=cell.level,
+                level_width=int(entry["level_width"]),
+                seed=int(args.seed),
+                parent_weights=parent_weights,
+                evidence=evidence,
+                knobs=step_knobs,
+                workspace=output / f"als-{sweep:02d}-{cell.text}",
+                log=_log,
+            )
+            solve_started = time.monotonic()
+            result = technique(request)
+            validate_result(request, result)
+            solve_seconds = time.monotonic() - solve_started
+            if int(result.stored_parameter_count) != int(
+                entry["storage"]["stored_parameter_count"]
+            ):
+                raise MatrixCompositionRunError(
+                    f"{cell.text}: the ALS re-solve stores "
+                    f"{result.stored_parameter_count} against the M-A pass's "
+                    f"{entry['storage']['stored_parameter_count']}; an ALS "
+                    "sweep re-solves a component, it does not re-budget it."
+                )
+            after = _relative_residual(
+                held_input
+                @ result.installed_weights[spec.weight_keys[0]]
+                .to(held_input.dtype)
+                .T,
+                held_parent_write,
+            )
+            boundary, _boundary_diagnostics = _boundary_block(
+                cell=cell, spec=spec, evidence=evidence, result=result
+            )
+            installed_digests = cell_runner._install_component(
+                model, result.installed_weights
+            )
+            pending.append(position)
+            solve_block = dict(result.solve)
+            solve_block["stored_parameter_count"] = int(result.stored_parameter_count)
+            solve_block["parent_parameter_count"] = int(spec.parent_parameter_count)
+            solve_block["solve_wall_time_seconds"] = float(solve_seconds)
+            entry["solve"] = solve_block
+            entry["boundary"] = boundary
+            entry["installed_tensor_digests"] = installed_digests
+            entry["installed_weight_keys"] = sorted(result.installed_weights)
+            entry["notes"] = str(result.notes or "")
+            entry["evidence"] = {
+                **entry["evidence"],
+                "conditioned": True,
+                "trace_cache_key": child_binding.get("trace_cache_key"),
+                "split_authority": child_binding.get("split_authority"),
+                "evidence_split_manifest_sha256": child_binding.get(
+                    "evidence_split_manifest_sha256"
+                ),
+                "selection_sha256": child_binding.get("selection_sha256"),
+                "trace_cache_implementation_sha256": child_binding.get(
+                    "implementation_sha256"
+                ),
+                "evidence_cache_reused": bool(
+                    child_binding.get("evidence_cache_reused")
+                ),
+                "fit_rows": int(child_binding.get("fit_rows", 0) or 0),
+                "heldout_rows": int(child_binding.get("heldout_rows", 0) or 0),
+                "als_parent_target_binding": {
+                    "trace_cache_key": parent_binding.get("trace_cache_key"),
+                    "evidence_split_manifest_sha256": parent_binding.get(
+                        "evidence_split_manifest_sha256"
+                    ),
+                    "served_endpoints": served if objective == "parent-target" else [],
+                },
+                "reason": (
+                    f"ADDENDUM 9 M-C sweep {sweep}: re-solved against a capture "
+                    "through the composed child"
+                ),
+            }
+            # The calibration block is NOT overwritten.  It is a true statement
+            # about the parent evidence at this site -- measured at the M-A
+            # install, passed, and unchanged by anything a re-solve does -- and
+            # replacing it would delete a gate that really ran.  What the
+            # coordinate step needs instead is the gate that IS defined on a
+            # capture through a folded child: the capture reproducing its own
+            # INSTALLED weight, checked above at the same tolerance and
+            # reported per step as `capture_selfcheck_relL2`.
+            entry["calibration"] = {
+                **entry["calibration"],
+                "als_gate": {
+                    "kind": "installed-weight-reproduction",
+                    "capture_selfcheck_relL2": selfcheck,
+                    "tolerance": calibration_tolerance,
+                    "reason": (
+                        "the copy_exact arm is undefined on a conditioned "
+                        "capture -- the component's own tensor is no longer "
+                        "the parent's -- so the exact identity checked here is "
+                        "the one with the installed weight in it"
+                    ),
+                },
+            }
+            entry["after_install"] = {
+                **entry["after_install"],
+                "als_note": (
+                    "these are the M-A install-trace numbers, kept as the "
+                    "record of the sequential install; after an ALS sweep a "
+                    "per-component 'after install' drift is not a defined "
+                    "quantity, and the composed child's drift after every "
+                    "sweep is in composition.als.sweeps"
+                ),
+            }
+            entry["first_divergent_metric"], entry["chain_walked_to"] = (
+                _component_chain(entry)
+            )
+            steps.append(
+                {
+                    "sweep": sweep,
+                    "cell_id": cell.text,
+                    "position": list(position),
+                    "capture_refreshed": bool(stale),
+                    "trace_cache_key": str(capture["trace_cache_key"]),
+                    "objective": (
+                        "parent-target"
+                        if objective == "parent-target" and supports_target
+                        else "mimic-parent-operator-on-child-rows"
+                    ),
+                    "objective_reason": (
+                        None
+                        if supports_target or objective != "parent-target"
+                        else f"technique {cell.technique} synthesizes its own "
+                        "target from the parent weight and takes no target "
+                        "endpoint; this component is re-solved in mimic form "
+                        "and says so"
+                    ),
+                    "capture_selfcheck_relL2": selfcheck,
+                    "parent_target_heldout_relL2_before": before,
+                    "parent_target_heldout_relL2_after": after,
+                    "improved": bool(after < before),
+                    "write_heldout_relL2": boundary.get("write_heldout_relL2"),
+                    "write_heldout_cos": boundary.get("write_heldout_cos"),
+                    "solve_wall_time_seconds": float(solve_seconds),
+                    "licence_check": licence_check,
+                }
+            )
+            _log(
+                f"ALS sweep {sweep} {cell.text}: parent-target heldout "
+                f"{before:.6f} -> {after:.6f} "
+                f"({'better' if after < before else 'WORSE'}), capture "
+                f"selfcheck {selfcheck}"
+            )
+            del parent_evidence
+            del held_input, held_parent_write
+
+        watchdog.stage(f"als-{sweep}-drift")
+        drift, drift_metrics = _global_drift()
+        probe_ids = cell_runner._greedy_fixed(
+            model,
+            tokenizer,
+            probe_prompts,
+            tokens=int(args.probe_tokens),
+            device=device,
+        )
+        match, lcp = cell_runner._token_match(probe_ids, control_ids)
+        improvement = (
+            (previous_drift - drift) / previous_drift if previous_drift else 0.0
+        )
+        block["sweeps"].append(
+            {
+                "sweep": sweep,
+                "steps": steps,
+                "global_drift": drift,
+                **drift_metrics,
+                "free_run_token_match_vs_control": match,
+                "free_run_mean_lcp": lcp,
+                "drift_improvement_vs_previous_sweep": improvement,
+                "wall_time_seconds": float(time.monotonic() - sweep_started),
+            }
+        )
+        _log(
+            f"ALS sweep {sweep} complete: global drift {previous_drift:.6f} -> "
+            f"{drift:.6f} ({improvement * 100:.2f}% relative), free-run {match}"
+        )
+        if drift < best_drift:
+            best_drift = drift
+            best_sweep = sweep
+            best_snapshot = _snapshot()
+        previous_drift = drift
+        if improvement < floor:
+            block["stopped_because"] = (
+                f"sweep {sweep} improved the global drift by "
+                f"{improvement * 100:.2f}%, below the pre-registered "
+                f"{floor * 100:.2f}% floor"
+            )
+            break
+
+    if best_sweep != len(block["sweeps"]):
+        # The child that gets sealed is the best sweep, not the last one.  The
+        # rule is pre-registered (ADDENDUM 9) and it is a solver stopping rule
+        # on a solver diagnostic; it never reads the review surface.
+        _restore(best_snapshot)
+        _log(
+            f"ALS: restored sweep {best_sweep} (drift {best_drift:.6f}); the "
+            f"last sweep was worse"
+        )
+    block["selected_sweep"] = best_sweep
+    block["selected_global_drift"] = best_drift
+    block["global_drift_delta_vs_m_a"] = best_drift - started_drift
+    if capture is not None and prune:
+        _prune_capture(capture["cache_directory"])
+    return block
+
+
+def _prune_capture(directory: str | Path) -> None:
+    """Drop one conditioned capture's bytes; its digests are already sealed.
+
+    A capture is 8 GB and an ALS run takes one per rung per sweep.  They are
+    re-derivable from the sealed child state and the frozen collector, and the
+    receipt carries the cache key, the split manifest digest, the collector
+    implementation digest and the child state digest of every one, so the bytes
+    are evidence nobody has to keep.
+    """
+
+    import shutil
+
+    path = Path(directory)
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # entry point
 # --------------------------------------------------------------------------
 
@@ -714,6 +1471,42 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--donor-calibration", type=Path)
     parser.add_argument("--capture-batch-count", type=int)
     parser.add_argument("--capture-dtype", default="bfloat16")
+    # ADDENDUM 9 mode M-C: the alternating joint co-solve
+    parser.add_argument("--als-max-sweeps", type=int, default=4)
+    parser.add_argument(
+        "--als-improvement-floor",
+        type=float,
+        default=0.05,
+        help=(
+            "Stop when a whole sweep improves the composed child's global "
+            "drift by less than this RELATIVE fraction (0.05 = 5%%)."
+        ),
+    )
+    parser.add_argument(
+        "--als-objective",
+        choices=("parent-target", "mimic"),
+        default="parent-target",
+        help=(
+            "parent-target: each coordinate step re-solves against the "
+            "PARENT's sealed write rows given the child's inputs (the only "
+            "objective that can cancel composed drift).  mimic: M-B's target, "
+            "the parent operator applied to the child's rows, revisited."
+        ),
+    )
+    parser.add_argument(
+        "--als-prune-captures", action="store_true", default=True,
+        help="Delete each 8 GB conditioned capture once its rows are read.",
+    )
+    parser.add_argument(
+        "--no-als-prune-captures", dest="als_prune_captures", action="store_false"
+    )
+    parser.add_argument(
+        "--als-verify-capture-licence", action="store_true", default=False,
+        help=(
+            "Spend one extra capture, once, to prove that a reused capture "
+            "serves bit-identical input rows to a fresh one."
+        ),
+    )
     parser.add_argument(
         "--per-step-free-run",
         action="store_true",
@@ -877,7 +1670,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
         # first solve so an M-B run cannot get four components deep and then
         # discover it cannot capture.
         capture_state: dict[str, Any] = {}
-        if mode == "M-B":
+        if mode in ("M-B", "M-C"):
             watchdog.stage("capture-preflight")
             capture_state = _prepare_conditioned_capture(
                 args=args,
@@ -971,8 +1764,14 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
                     or evidence_cache_name(step_cell)
                 )
                 conditioning["reason"] = (
-                    "M-A installs every winner solved against parent evidence "
-                    "(ADDENDUM 4's null hypothesis)"
+                    (
+                        "M-C's first pass IS M-A -- every winner solved against "
+                        "parent evidence -- so that the ALS sweeps start from "
+                        "the byte-identical M-A child (ADDENDUM 9)"
+                        if mode == "M-C"
+                        else "M-A installs every winner solved against parent "
+                        "evidence (ADDENDUM 4's null hypothesis)"
+                    )
                     if mode != "M-B"
                     else "first component in topological order: nothing "
                     "upstream is folded, so the conditioned evidence IS the "
@@ -1199,6 +1998,34 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
             del evidence
 
         # ------------------------------------------------------------------
+        # ADDENDUM 9: the alternating joint co-solve, on top of the M-A child
+        # ------------------------------------------------------------------
+        als_block: dict[str, Any] | None = None
+        if mode == "M-C":
+            watchdog.stage("als")
+            als_block = _als_sweeps(
+                args=args,
+                model=model,
+                tokenizer=tokenizer,
+                entries=entries,
+                recipe=recipe,
+                parent_weights=parent_weights,
+                knobs=knobs,
+                capture_state=capture_state,
+                base_manifest=base_manifest,
+                control_terminal=control_terminal,
+                control_norms=control_norms,
+                control_ids=control_ids,
+                probe_prompts=probe_prompts,
+                device=device,
+                output=output,
+                watchdog=watchdog,
+                calibration_tolerance=calibration_tolerance,
+            )
+            receipt["composition"]["als"] = als_block
+            receipt["composition"]["components"] = entries
+
+        # ------------------------------------------------------------------
         # the composed child
         # ------------------------------------------------------------------
         watchdog.stage("behavior")
@@ -1227,6 +2054,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915 - one linear
         composition["install_order"] = [e["isolation_cell_id"] for e in entries]
         composition["components"] = entries
         composition["storage"] = storage
+        if als_block is not None:
+            composition["als"] = als_block
         composition["global_drift"] = {
             "terminal_relL2_vs_control": terminal_metrics["mean_relative_l2"],
             "terminal_cos_vs_control": terminal_metrics["mean_cosine"],
@@ -1436,7 +2265,7 @@ def _prepare_conditioned_capture(
     for name in ("conditioned_capture_root", "donor_calibration"):
         if getattr(args, name) is None:
             raise MatrixCompositionRunError(
-                f"--{name.replace('_', '-')} is required in mode M-B."
+                f"--{name.replace('_', '-')} is required in modes M-B and M-C."
             )
     manifest = json.loads(
         (Path(parent_trace_cache) / "manifest.json").read_text(encoding="utf-8")

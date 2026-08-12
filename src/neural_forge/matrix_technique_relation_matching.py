@@ -1931,6 +1931,17 @@ def t8_gram_relation_technique(request: Any) -> Any:
     and the level caps the *relation rank* the child may carry.  Either way the
     materialized tensor is parent-shaped and ``stored_parameter_count`` carries
     the contraction.
+
+    **The target.**  By default the kernel synthesizes its own target by
+    applying the parent operator to the design rows, which is the right target
+    when the rows *are* the parent's: "be this map where the parent's data
+    lives".  Wave 11's ALS re-solve needs the other target -- the parent's own
+    sealed write rows, against design rows captured through a partially folded
+    child -- because that is the only objective that can *cancel* upstream
+    drift rather than re-fit the operator to it (ADDENDUM 9 §2).  The knob
+    ``relation_target_endpoint`` names the evidence endpoint the target rows
+    come from; with the knob absent, this function is byte-for-byte the
+    function every wave 1-10 receipt was sealed under, which a test pins.
     """
 
     from .matrix_technique_registry import CellTechniqueError, CellTechniqueResult
@@ -1949,7 +1960,24 @@ def t8_gram_relation_technique(request: Any) -> Any:
     key = spec.weight_keys[0]
     parent = request.parent_weights[key].detach().to(dtype=torch.float64)
     rows = request.evidence.fit_rows(spec.input_endpoint).to(dtype=torch.float64)
-    output = rows @ parent.transpose(0, 1)
+    target_endpoint = request.knob("relation_target_endpoint", None)
+    if target_endpoint is None:
+        output = rows @ parent.transpose(0, 1)
+    else:
+        output = request.evidence.fit_rows(str(target_endpoint)).to(
+            dtype=torch.float64
+        )
+        if int(output.shape[0]) != int(rows.shape[0]) or int(
+            output.shape[1]
+        ) != int(parent.shape[0]):
+            raise CellTechniqueError(
+                f"{request.cell.text}: target endpoint {target_endpoint!r} "
+                f"supplies {tuple(int(v) for v in output.shape)} rows, which "
+                f"does not match the design rows ({int(rows.shape[0])}) and "
+                f"the component's write width ({int(parent.shape[0])}).  A "
+                "target that is not row-aligned with the design is a fit "
+                "against two different corpora."
+            )
     level_width = int(request.level_width)
     normalization = str(request.knob("normalization", "row_unit"))
     ridge = float(request.knob("ridge_relative", 0.0))
@@ -1959,7 +1987,13 @@ def t8_gram_relation_technique(request: Any) -> Any:
         heldout_design = request.evidence.heldout_rows(spec.input_endpoint).to(
             dtype=torch.float64
         )
-        heldout_output = heldout_design @ parent.transpose(0, 1)
+        heldout_output = (
+            heldout_design @ parent.transpose(0, 1)
+            if target_endpoint is None
+            else request.evidence.heldout_rows(str(target_endpoint)).to(
+                dtype=torch.float64
+            )
+        )
 
     try:
         if spec.contraction_axis == "input":
@@ -2010,13 +2044,17 @@ def t8_gram_relation_technique(request: Any) -> Any:
         f"T8 {request.cell.text}: axis={spec.contraction_axis} "
         f"rank={fit.gram_rank} gram={fit.calibration['gram_relative_error']:.5f} "
         f"cos={fit.calibration['direction_cosine_mean']:.5f} "
-        f"truncation={fit.solve['gram_truncation_active']}"
+        f"truncation={fit.solve['gram_truncation_active']} "
+        f"target={'parent-operator-on-design' if target_endpoint is None else target_endpoint}"
     )
 
     solve = dict(fit.solve)
     solve["technique_record_sha256"] = str(fit.record["record_sha256"])
     solve["calibration"] = dict(fit.calibration)
     solve["omp"] = None
+    solve["relation_target_endpoint"] = (
+        None if target_endpoint is None else str(target_endpoint)
+    )
 
     def predict(values: Any) -> Any:
         return values.to(dtype=torch.float64) @ installed.transpose(0, 1)

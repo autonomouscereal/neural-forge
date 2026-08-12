@@ -1010,3 +1010,167 @@ ADDENDUM 7's registry, receipt schema v2, the exactly-once ledger merge, and the
 requirement that every verdict be machine-computed from readings rather than
 asserted. ADDENDUM 8 moves the success line and the pruning line. It moves
 nothing else.
+
+---
+
+## ADDENDUM 9 — 2026-08-12 (Cyril, after wave 10): the per-lane reading governs, and the composition is re-solved jointly
+
+Cyril adjudicated wave 10's two disagreeing degeneracy readings and redirected
+the campaign in the same breath:
+
+> [Cyril quote withheld]
+
+Two rulings and one target. This addendum registers all three **before** wave
+11 runs a cell, and adds the one mechanism the target requires.
+
+### 9.1 The degeneracy clause: the per-lane reading governs the frontier
+
+Wave 10 produced two children where the two readings of `NOTES-MX-I` §3.3
+disagree (`NOTES-MX-N` §4). The clause says *remove the repetitions and ask
+whether a response remains*; what moved was the **scope** at which "a response"
+is counted:
+
+* **per-child** — one lane that leaves nothing when its repetitions are removed
+  charges the clause, and the whole child is `dead`;
+* **per-lane** — that lane is charged, the other lanes stand on their own, and
+  the child is graded on what remains.
+
+`COMP.MA.MXN4` is 8/15 at 0.754811x, with fifteen of sixteen lanes terminating
+on their own and one (`multi-turn-correction`) riding the cap. Per child it is
+dead; per lane it is `alive-degraded`. Cyril's ruling is that it **retains
+intelligence** — the ADDENDUM 8 criterion — and `COMP.MA.MXN3` at 6/15, whose
+collapse is *not* confined to one lane, does not.
+
+**Registered, effective wave 11:** the **per-lane reading governs the frontier**.
+A child whose degeneracy is confined to identifiable lanes is graded on the
+lanes that stand; a child whose degeneracy is general is dead. **Both readings
+continue to be computed, sealed and printed for every child**, because the
+disagreement is the interesting measurement and because Cyril scores the human
+packages case by case regardless. No sealed receipt is re-graded: the readings
+were always both recorded, and this addendum says which one the *frontier table*
+is built from.
+
+The frontier this addendum inherits from wave 10 is therefore
+**`COMP.MA.MXN4`, 0.754811x, 8/15, alive-degraded per lane**, and the target is
+0.5x.
+
+### 9.2 The target, in parameters
+
+The arithmetic is fixed by the parent's own layout and is stated once so every
+wave-11 rung can be read against it:
+
+```
+parent unique                                        229,693,184
+tied token table            65,536 x 1,024        =   67,108,864   (29.22%)
+physical body               229,693,184 - 67,108,864 = 162,584,320
+   14 x SwiGLU (w1,w3,w2)   14 x 3 x 2,621,440    =  110,100,480   (67.72% of body)
+    8 x short conv          25,165,824 + 24,576 + 8,388,608 = 33,579,008  (20.65%)
+    6 x attention           6 x (1,048,576 + 2 x 524,288 + 1,048,576) = 18,874,368  (11.61%)
+   28 x block norm + final                             30,464   (0.02%)
+
+COMP.MA.MXN4 child                                   173,374,848  (0.754811x)
+0.5x of the parent                                   114,846,592
+still to remove                                       58,528,256
+mass that must be COVERED at 4x to remove it          78,037,675   (48.0% of the body)
+```
+
+At S4 a SwiGLU lane (w1+w3+w2 at one layer) covers 7,864,320 parameters and
+removes 5,904,769 of them. **0.5x is ten SwiGLU lanes** — thirty components —
+against a coherent body limit that stood at three to six components across one
+or two lanes when this addendum was written. That gap is why wave 11 is a
+*mechanism* wave and not another greedy stacking wave.
+
+### 9.3 Mode M-C is the alternating joint co-solve (ALS)
+
+ADDENDUM 4 pre-registered `M-C` as "the per-component hybrid, run only if A and
+B disagree". **It was never run** — zero `COMP.MC.*` rows exist in the 432-row
+ledger — and wave 6 settled the question it was reserved for by killing M-B
+outright (`NOTES-MX-J` §4: same band, same count, worse on both composed
+diagnostics, 27x the wall clock). The mode id is therefore re-registered, with
+the placeholder's disposition recorded rather than deleted:
+
+> **`M-C` — alternating joint co-solve.** Install every component exactly as
+> `M-A` does (parent evidence, topological order), then *sweep*: for each folded
+> component in turn, re-solve its own closed form against a fresh capture taken
+> **through the current composed child**, install, next component; repeat sweeps
+> to a fixed point. Zero gradients, zero backward calls, zero parent forwards
+> beyond the sealed evidence base — every step is the ridge/Gram/OMP solve the
+> isolation cell already ran.
+
+**Why this is not M-B.** Two differences, and both are the mechanism:
+
+1. **It revisits.** M-B conditions each component once, in install order, and
+   can never re-solve a component whose inputs a later install moved. Every
+   body fold this campaign has sealed was solved against activations that the
+   rest of the composition then invalidated; that is the mechanical source of
+   the additive interference law (`NOTES-MX-K` §2, `NOTES-MX-N` §5). ALS is
+   coordinate descent over the same coordinates, with a fixed point.
+2. **It aims at the parent, not at the drift.** M-B's target is the parent
+   *operator* applied to the child's drifted rows — "be this map where the data
+   now lives" — which re-fits the operator to the damage. M-C's default target
+   is the parent's own sealed **write rows** at the same endpoint, over the same
+   corpus positions: *given the inputs this child actually delivers, what must
+   this component emit for the parent's activation to come out?* That objective
+   can cancel upstream drift; the mimic objective structurally cannot.
+
+The two halves are splice-able because the frozen collector's decode is
+teacher-forced from caller-supplied ids, so row *i* of a child capture and row
+*i* of the parent base are the same (batch, phase, token) position. The splice
+refuses unless the two captures carry the same selection digest and the same
+fit/held-out row counts.
+
+**Registered rules, so a sweep cannot quietly become a search.**
+
+* **Storage is frozen by the sweep.** A re-solve that stores a different number
+  of parameters than the M-A pass is refused; ALS re-solves a component, it does
+  not re-budget it. Every M-C rung is therefore directly comparable to its M-A
+  row at the identical net ratio.
+* **The stopping rule is pre-registered.** Sweep until a whole sweep improves
+  the composed child's global drift by less than **5% relative**, or until
+  `--als-max-sweeps`. The child that is sealed is the **best sweep by global
+  drift**, not the last one; drift is a solver diagnostic and this is a solver
+  stopping rule. It never reads the review surface, which is sealed afterwards
+  by a separate process, as always.
+* **The capture-reuse licence is a dataflow claim and is verified, not
+  asserted.** A fresh capture is taken whenever anything installed since the
+  last one writes strictly upstream of the component's input endpoint; `w1` and
+  `w3` share a rung, `w2` does not, and the first component of sweep *n+1*
+  re-uses the last capture of sweep *n* whenever the only installs since then
+  were deeper. `--als-verify-capture-licence` spends one extra capture to assert
+  that the reused rows are **bit-identical** to fresh ones, and the result is
+  sealed in the receipt.
+* **The calibration gate is replaced, not dropped.** The copy_exact arm is
+  undefined on a capture through a folded child — the component's own tensor is
+  no longer the parent's — so each coordinate step checks the identity that *is*
+  exact, `child input @ INSTALLED weight == child write`, at the same 5e-3
+  tolerance, and refuses the same way. The M-A calibration reading stays in the
+  receipt, because it was measured and it passed.
+* **A technique that cannot take a target says so.** T8 takes
+  `relation_target_endpoint`; T5's body route synthesizes its target from the
+  parent weight and takes none, so a T5 component in an M-C sweep is re-solved
+  in **mimic** form and the receipt records `objective: mimic` on that step
+  rather than claiming the parent-target objective for it.
+
+### 9.4 What else wave 11 may run under this addendum
+
+Three further mechanisms, all closed-form, all counted in full:
+
+* **Body corrective routes.** The A9/A11 sparse-route mechanic aimed at block
+  outputs to cancel composed residual drift. Storage counts the coefficients,
+  the atom ids **and** the CSR offsets, per `NOTES-MX-N` §1.2.
+* **Cross-layer shared-basis folds.** One basis over the corresponding weights
+  of many layers plus small per-layer coefficients. The per-component effective
+  ratio must still be <=0.25x after the shared basis is amortized, and the basis
+  is counted once, in full.
+* **Head merge (C10).** `cannot-express-4x` was a verdict about head *drop*,
+  where k/v are stored whole. A Procrustes-aligned merge of similar heads
+  contracts q, k, v and o together and is a different claim; it is untried.
+
+### 9.5 What does not change
+
+The review surface (`e5e37768...`, `0ee6bf14...`, sixteen prompts, same-process
+parent control, machine-computed verdicts), ADDENDUM 8's success criterion and
+pruning rule, the 4x floor, ADDENDUM 5's site scoping, ADDENDUM 7's registry,
+receipt schema v2, the exactly-once ledger merge, and the rule that a level
+claim is a claim about **stored** parameters. ADDENDUM 9 adds a solver and names
+which degeneracy reading builds the frontier table. It moves nothing else.
