@@ -554,6 +554,45 @@ def test_the_capture_selfcheck_is_exact_for_the_installed_weight():
     assert wrong > 0.1
 
 
+# ------------------------------------------------ the best-sweep restore
+
+
+def test_adopting_a_sweeps_entries_replaces_them_in_place():
+    # The receipt already holds references to these dicts, so a rebind would
+    # seal the sweep that was discarded.  This is the wave-11 defect: MXO1
+    # restored sweep 0's WEIGHTS and sealed sweep 1's DIGESTS, which describes
+    # a child that does not exist.
+    entries = [
+        {
+            "isolation_cell_id": "C11.T8.S4.L05",
+            "installed_tensor_digests": ["w=sweep1"],
+            "solve": {"rank": 182},
+        }
+    ]
+    held = entries[0]
+    composition._als_adopt_entries(
+        entries,
+        [
+            {
+                "isolation_cell_id": "C11.T8.S4.L05",
+                "installed_tensor_digests": ["w=sweep0"],
+                "solve": {"rank": 182},
+            }
+        ],
+    )
+    assert entries[0] is held
+    assert held["installed_tensor_digests"] == ["w=sweep0"]
+
+
+def test_adopting_refuses_a_reordered_or_resized_component_list():
+    entries = [{"isolation_cell_id": "C11.T8.S4.L05"}]
+    with pytest.raises(composition.MatrixCompositionRunError):
+        composition._als_adopt_entries(entries, [])
+    with pytest.raises(composition.MatrixCompositionRunError) as caught:
+        composition._als_adopt_entries(entries, [{"isolation_cell_id": "C13.T8.S4.L05"}])
+    assert "order moved" in str(caught.value)
+
+
 # ------------------------------------------ the ('T5','C01') double registration
 
 

@@ -930,6 +930,35 @@ def _als_capture_selfcheck(
     return _relative_residual(held_input @ weight.to(held_input.dtype).T, held_write)
 
 
+def _als_adopt_entries(
+    entries: list[dict[str, Any]], provenance: Sequence[Mapping[str, Any]]
+) -> None:
+    """Make the receipt's component entries describe a different sweep's solve.
+
+    The entries are the objects the receipt already holds a reference to, so
+    they are updated **in place**; rebinding the list would leave the receipt
+    pointing at the old dicts.  Wave 11's first ALS child found that out the
+    expensive way: the run restored the best sweep's *weights* and sealed the
+    last sweep's *digests*, which describes a child that does not exist and
+    which the frozen review would refuse to reconstitute.
+    """
+
+    if len(entries) != len(provenance):
+        raise MatrixCompositionRunError(
+            f"Cannot adopt {len(provenance)} component entries into a child "
+            f"with {len(entries)}."
+        )
+    for entry, kept in zip(entries, provenance):
+        if str(entry.get("isolation_cell_id")) != str(kept.get("isolation_cell_id")):
+            raise MatrixCompositionRunError(
+                "Component entry order moved between sweeps: "
+                f"{entry.get('isolation_cell_id')!r} against "
+                f"{kept.get('isolation_cell_id')!r}."
+            )
+        entry.clear()
+        entry.update(json.loads(json.dumps(kept)))
+
+
 def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by step
     *,
     args: argparse.Namespace,
@@ -1011,10 +1040,20 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
             for key in entry["installed_weight_keys"]
         }
 
-    def _restore(snapshot: Mapping[str, Any]) -> None:
+    def _restore(snapshot: Mapping[str, Any], provenance: Sequence[Mapping[str, Any]]) -> None:
+        """Put back a sweep's weights AND the receipt entries that describe them.
+
+        Restoring the tensors alone would seal a child whose
+        ``installed_tensor_digests`` name a solve that is not in the file --
+        which the frozen review refuses to reconstitute, correctly, because the
+        receipt would not be about the sealed child.  The entry state and the
+        weights are one object and they move together.
+        """
+
         cell_runner._install_component(
             model, {key: value.clone() for key, value in snapshot.items()}
         )
+        _als_adopt_entries(entries, provenance)
 
     started_drift, started_metrics = _global_drift()
     _log(f"ALS: M-A child global drift {started_drift:.6f} before any sweep")
@@ -1045,6 +1084,7 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
     best_drift = started_drift
     best_sweep = 0
     best_snapshot = _snapshot()
+    best_entries = json.loads(json.dumps(entries))
     previous_drift = started_drift
     pending: list[tuple[int, int]] = [_als_position(cell) for _index, cell in order]
     capture: dict[str, Any] | None = None
@@ -1459,6 +1499,7 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
             best_drift = drift
             best_sweep = sweep
             best_snapshot = _snapshot()
+            best_entries = json.loads(json.dumps(entries))
         previous_drift = drift
         if improvement < floor:
             block["stopped_because"] = (
@@ -1472,14 +1513,24 @@ def _als_sweeps(  # noqa: PLR0912, PLR0915 - one linear loop, reported step by s
         # The child that gets sealed is the best sweep, not the last one.  The
         # rule is pre-registered (ADDENDUM 9) and it is a solver stopping rule
         # on a solver diagnostic; it never reads the review surface.
-        _restore(best_snapshot)
+        _restore(best_snapshot, best_entries)
         _log(
             f"ALS: restored sweep {best_sweep} (drift {best_drift:.6f}); the "
-            f"last sweep was worse"
+            f"last sweep was worse -- weights and receipt entries together"
         )
     block["selected_sweep"] = best_sweep
     block["selected_global_drift"] = best_drift
     block["global_drift_delta_vs_m_a"] = best_drift - started_drift
+    block["sealed_component_state_is_from_sweep"] = best_sweep
+    # The digests that ride in composition.components are the ones the frozen
+    # review reconstitutes against, so this is where the run says, in the
+    # receipt, that they describe the tensors in the file.
+    live = model.state_dict()
+    block["sealed_installed_tensor_digests"] = {
+        key: cell_runner._tensor_sha256(live[key].detach().to("cpu"))
+        for entry in entries
+        for key in entry["installed_weight_keys"]
+    }
     if capture is not None and prune:
         _prune_capture(capture["cache_directory"])
     return block
