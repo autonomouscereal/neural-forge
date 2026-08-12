@@ -53,6 +53,7 @@ from neural_forge.matrix_technique_head_drop import (  # noqa: E402
 # pinning T7 to C10 does not disturb T7 where it already lives.
 from neural_forge import matrix_technique_relation_matching  # noqa: E402,F401
 from neural_forge.matrix_technique_head_merge import (  # noqa: E402
+    c10_head_merge_admissible_width,
     HEAD_MERGE_HEAD_DIM,
     c10_head_merge_storage,
     c10_head_merge_technique,
@@ -336,6 +337,20 @@ def test_registry_plans_s4_at_three_query_groups_on_the_real_parent():
     assert c10_head_merge_storage(spec, s8_width) / LFM2_OWNED == pytest.approx(
         0.1145833333, abs=1e-9
     )
+
+
+def test_the_planner_returns_a_width_the_kernel_will_accept():
+    # storage_width_for_ratio answers 255 for S4 -- the widest integer that
+    # fits, and a width the kernel refuses because it does not name whole
+    # groups.  A planner that passed it through would book a GPU to receive a
+    # refusal.
+    spec = _Spec(LFM2_HIDDEN, LFM2_HIDDEN, LFM2_OWNED)
+    assert storage_width_for_ratio(spec, "T7", 0.25) == 255
+    assert c10_head_merge_admissible_width(spec, 0.25) == 192
+    assert c10_head_merge_admissible_width(spec, 0.25) % LFM2_HEAD_DIM == 0
+    assert c10_head_merge_admissible_width(spec, 0.5) == 448
+    assert c10_head_merge_admissible_width(spec, 0.125) == 64
+    assert c10_head_merge_admissible_width(spec, 0.05) is None
 
 
 def test_storage_model_refuses_a_shape_that_is_not_qkvo():

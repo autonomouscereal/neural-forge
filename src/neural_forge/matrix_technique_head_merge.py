@@ -225,6 +225,32 @@ def head_merge_stored_parameters(
     )
 
 
+def c10_head_merge_admissible_width(
+    spec: Any, ratio: float, *, head_dim: int | None = None
+) -> int | None:
+    """The widest **head-aligned** width whose stored form fits ``ratio``.
+
+    `storage_width_for_ratio` searches every integer and returns the widest one
+    that fits, which for this technique is a width in the middle of a group --
+    255 buys the same three query groups 192 does.  The kernel refuses a level
+    that does not name whole groups (a caller who asks for 255 has almost
+    certainly mis-derived something), so a planner needs the aligned answer and
+    this is it.  Returns ``None`` when no width fits, which is ADDENDUM 6's
+    ``cannot-express``.
+    """
+
+    from .matrix_technique_registry import storage_width_for_ratio
+
+    width = storage_width_for_ratio(spec, HEAD_MERGE_TECHNIQUE_ID, ratio)
+    if width is None:
+        return None
+    resolved = HEAD_MERGE_HEAD_DIM if head_dim is None else int(head_dim)
+    aligned = int(width) - int(width) % resolved
+    if aligned < resolved:
+        return None
+    return aligned
+
+
 def _c10_geometry(spec: Any, head_dim: int) -> tuple[int, int, int, int]:
     """``(hidden, head_dim, query_heads, kv_heads)`` from C10's own numbers.
 
