@@ -866,3 +866,17 @@ with it the standard-axis inventory for this architecture is **closed**:
   against 0.35), and the residual axis keeps summarisation (0.50, and 1.00 in
   both of its compositions) while taking context-retrieval to zero. **When
   reporting a fold class, report which cases it keeps, not only how many.**
+* **A record-keeping law, found by sorting the ledger instead of reading the
+  notes.** Three consecutive waves quoted "the frontier" as the deepest child
+  with a non-zero behavioural score and named a child that was not it: sorted by
+  net ratio, a wave-15 child (`intermediate_size` 896, conditioned-local) sits at
+  **0.688431x with 4/15** and the child three waves promoted sits at 0.769439x
+  with the same 4/15. The wave that built the deeper one declined to call it a
+  frontier claim under an explicit eligibility rule — it is 2.86x per site and
+  that wave's rule was the 4x class — and the next wave then promoted a child
+  that is 1.67x per site, i.e. *less* eligible under the same rule. **A frontier
+  is a query over a ledger, not a sentence in a note.** State the eligibility
+  predicate with the number, and recompute it from the sealed rows every wave;
+  a frontier that is inherited by quotation drifts silently, and this one drifted
+  for three waves in the conservative direction, which is the direction nobody
+  checks.

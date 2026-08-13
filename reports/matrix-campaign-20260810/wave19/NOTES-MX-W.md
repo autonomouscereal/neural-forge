@@ -266,21 +266,52 @@ has the best `arc_easy` of any child in the wave (0.3750, above the 896 child it
 is built from) and the **worst** review score but one. A single held case is not
 a distribution.
 
-## 9. The frontier, and the distance to 0.5x
+## 9. The frontier — and the record it has been measured against is wrong
 
-**Both readings, because they differ this wave.**
+The width ladder was read against "wave 16's frontier, `ARCH.W1536X13`,
+0.769439x at 4/15", which `NOTES-MX-T` §6, `NOTES-MX-U` and `NOTES-MX-V` §5 all
+state. **Sorting every sealed ARCH row in the ledger by net ratio says that is
+not the deepest child with a non-zero score and never was.**
 
-* **Strict (deepest child at ≥ 4/15).** Wave 16's `ARCH.W1536X13` **stands** at
-  0.769439x, 4/15. `ARCH.W896` matches its score at a shallower 0.859023x.
-* **Deepest alive (deepest child with a non-zero score).** It **moves** to
-  `ARCH.W768`, **0.722610x at 3/15** — 12.0M parameters below wave 18's deepest
-  non-zero child (`T010713`, 0.842437x, 3/15) and 10.8M below wave 16's frontier.
+| child | wave | what moved | net | score |
+|---|---:|---|---:|---:|
+| `ARCH.CL896` | 15 | `intermediate_size` 896, conditioned-local | **0.688431x** | **4/15** |
+| `ARCH.W768` | **19** | `hidden_size` 768 | 0.722610x | 3/15 |
+| `ARCH.BX13` | 16 | — | 0.724929x | 1/15 |
+| `ARCH.W14FF1280` | 14/15 | `intermediate_size` 1280, stale | 0.760331x | 5/15 |
+| `ARCH.W1536X13` | 16 | `intermediate_size` 1536 + block 13 | 0.769439x | 4/15 |
 
-**Distance to 0.5x is now 51.1M parameters** (0.5x = 114,846,592; `W768` =
-165,978,624), and for the first time the campaign has crossed the line at all:
-`ARCH.W512` is **106,458,368 parameters, 0.463481x** — 8.4M *below* half the
-parent — and it is 0/15. The wall `NOTES-MX-V` §5 described is gone as an
-arithmetic obstacle and remains entirely as a behavioural one.
+`ARCH.CL896` is sealed (wave 15, verdict `dead`, per-lane impaired, 3 of 16
+lanes at the cap, `behavior_useful_or_partial` 4, parent 12) and it is **8.1
+points of net ratio deeper than the child three waves have called the frontier,
+at the same score.** Wave 15 declined to call it a frontier claim, and said why:
+it is **2.86x per site** and that wave's frontier-eligibility rule was the 4x
+class — "the frontier-eligible children, every 4x-class rung, are 0/15."
+That rule is defensible. What is not defensible is that wave 16 then awarded the
+frontier to `W1536X13`, which is **1.67x per site** — *less* eligible under the
+same rule — and shallower. **Both cannot be right, and the campaign has been
+quoting the shallower one for three waves.**
+
+So, stated three ways, with the eligibility rule attached to each:
+
+* **Deepest sealed child with a non-zero score, no eligibility rule:**
+  `ARCH.CL896`, **0.688431x at 4/15**, since wave 15. Wave 19's `W768` is the
+  **second** deepest and the deepest since — 0.722610x at 3/15 — and it does not
+  take this reading.
+* **Deepest 4x-class rung with a non-zero score:** there has never been one.
+  Every 4x-class rung in the campaign is 0/15, wave 19's included.
+* **Deepest child of any score, which wave 19 does move, and by a lot:**
+  `ARCH.W512`, **106,458,368 parameters = 0.463481x**. The previous deepest was
+  wave 15's `ARCH.A552` at 0.552023x. This is the first child in the campaign
+  under half the parent.
+
+**Distance to 0.5x** is therefore **31.9M parameters** from the honest frontier
+(0.5x = 114,846,592; `CL896` = 158,141,952 by its sealed ratio) or 51.1M from
+wave 19's own deepest scoring child. The wall `NOTES-MX-V` §5 described — "the
+tied embedding is 0.2922x and no axis in the R3-standard set touches it" — is
+**gone as an arithmetic obstacle**: one axis touches it, the child loads, the
+loader counts 106,458,368 parameters, and the whole remaining problem is
+behavioural.
 
 **The measured reason it stops** is one notch more specific than any wave before
 it could state. It is not per-site install damage: every write at 512 is cos
@@ -398,6 +429,14 @@ end of the sequence.
    0.8963 of 63 children × 15 cases; the tenth that it misses is per-axis and
    legible — the merge keeps debugging, excision keeps instruction-following,
    width keeps summarisation and takes context-retrieval to zero.
-10. **The frontier moves on one reading and not the other, and both are stated.**
-    Deepest child with a non-zero score: `ARCH.W768`, **0.722610x at 3/15**.
-    Deepest child at ≥4/15: still wave 16's `ARCH.W1536X13`, 0.769439x.
+10. **The frontier three waves have quoted is not the deepest scoring child in
+    the ledger, and this wave does not take that title either.** Sorted by net
+    ratio, wave 15's `ARCH.CL896` is **0.688431x at 4/15** — 8.1 points deeper
+    than `ARCH.W1536X13` at the same score, sealed since wave 15, and passed
+    over because wave 15 held it to a 4x-class eligibility rule that wave 16 then
+    did not apply to the child it promoted. Wave 19's `ARCH.W768` (0.722610x,
+    3/15) is the **second** deepest scoring child in the campaign.
+11. **The campaign is under half the parent for the first time, by 8.4M
+    parameters, and it is 0/15.** `ARCH.W512` is 106,458,368 parameters at
+    0.463481x, against a previous deepest of 0.552023x. The embedding wall is
+    gone as arithmetic and is entirely behavioural.
