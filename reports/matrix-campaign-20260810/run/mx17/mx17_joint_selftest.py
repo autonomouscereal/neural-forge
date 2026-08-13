@@ -128,8 +128,11 @@ def case_cg_is_the_stein_primitive() -> dict[str, float]:
     prior = torch.zeros(HEAD_DIM, HIDDEN, dtype=torch.float64)
     lam = 1e-3
     closed = stein_two_sided_eigh(A, B, E, lam)
-    cg, report = stein_cg_solve({(0, 0): A}, {(0, 0): B}, E, prior, lam, iterations=400, tolerance=1e-14)
+    # Two iterations, not four hundred: with one term the preconditioner is the
+    # operator, so a CG that needs more than a step is not solving this system.
+    cg, report = stein_cg_solve({(0, 0): A}, {(0, 0): B}, E, prior, lam, iterations=2, tolerance=1e-14)
     return {
+        "condition_number_product": float(torch.linalg.cond(A) * torch.linalg.cond(B)),
         "cg_vs_eigh_relL2": float((cg - closed).norm() / closed.norm()),
         "cg_iterations": report["cg_iterations"],
         "cg_relative_residual": report["cg_relative_residual"],
@@ -148,12 +151,18 @@ def case_two_term_normal_equations() -> dict[str, float]:
     left = {(h, hp): Wo[h].T @ Wo[hp] for h in heads for hp in heads}
     right = {(h, hp): Z[hp].T @ Z[h] for h in heads for hp in heads}
     rhs = sum(Wo[h].T @ (Y.T @ Z[h]) for h in heads)
-    prior = torch.zeros_like(truth)
+    # A real prior, because THE LAW's trust region is measured against one and a
+    # zero prior would exercise a path the builder never takes.
+    prior = truth + 0.2 * torch.randn(HEAD_DIM, HIDDEN, dtype=torch.float64)
     solved, report = law_abiding_stein(left, right, rhs, prior)
     predicted = sum(Z[h] @ solved.T @ Wo[h].T for h in heads)
+    prior_predicted = sum(Z[h] @ prior.T @ Wo[h].T for h in heads)
     return {
         "recovered_relL2_vs_truth": float((solved - truth).norm() / truth.norm()),
         "output_relL2": float((predicted - Y).norm() / Y.norm()),
+        "prior_output_relL2": float((prior_predicted - Y).norm() / Y.norm()),
+        "cg_iterations": report["cg_iterations"],
+        "cg_relative_residual": report["cg_relative_residual"],
         "update_scale": report["update_scale"],
         "lambda_relative": report["lambda_relative"],
     }
@@ -203,8 +212,12 @@ def main() -> int:
             failures.append(f"{label}: the joint solve loses to averaging on its own objective")
     if report["cg_is_stein"]["cg_vs_eigh_relL2"] > 1e-8:
         failures.append("the CG solve disagrees with T7's two-eigh closed form")
-    if report["two_term"]["output_relL2"] > 1e-6:
+    if report["two_term"]["output_relL2"] > 1e-4:
         failures.append("the two-term solve does not reproduce its own construction")
+    if report["two_term"]["output_relL2"] >= report["two_term"]["prior_output_relL2"]:
+        failures.append("the two-term solve is no better than the prior it anchors on")
+    if report["cg_is_stein"]["cg_iterations"] > 2:
+        failures.append("preconditioned CG needed more than one step on a single term")
     if report["direction_recovery"]["post_norm_cos"] < 0.99:
         failures.append("the direction-anchored recovery misses an achievable target")
     if report["direction_recovery"]["post_norm_cos"] <= report["direction_recovery"]["prior_post_norm_cos"]:

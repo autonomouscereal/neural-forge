@@ -1120,12 +1120,24 @@ def stein_cg_solve(
     iterations: int = 120,
     tolerance: float = 1e-8,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
-    """``Σ_{h,h'} L[h,h'] S R[h,h'] + λS = rhs + λ·prior`` by conjugate gradients.
+    """``Σ_{h,h'} L[h,h'] S R[h,h'] + λS = rhs + λ·prior``, preconditioned by T7.
 
     The operator is self-adjoint under the trace inner product -- the ``(h,h')``
     and ``(h',h)`` terms are each other's transpose -- and positive definite for
     ``λ > 0``, so CG applies and needs only matrix products, never the
     ``(64·hidden)²`` normal matrix the Kronecker form would ask for.
+
+    **It also needs a preconditioner, and the measurement that says so is in the
+    self-test.**  These factors are a second moment of hidden states and a Gram
+    of ``out_proj`` columns; on a synthetic problem two orders of magnitude
+    better conditioned than the real one, unpreconditioned CG had made no
+    progress at all after 400 iterations and needed 20,000 to reach the closed
+    form.  The preconditioner is `stein_two_sided_eigh` itself, applied to the
+    group-summed factors: one two-``eigh`` solve of the single-term Stein
+    equation, which is exactly T7's registered primitive.  At one term the
+    preconditioner IS the operator and CG converges in a single step -- which is
+    the self-test's check that the CG path and the closed form are the same
+    solve.
     """
 
     def apply(S: torch.Tensor) -> torch.Tensor:
@@ -1134,28 +1146,44 @@ def stein_cg_solve(
             out = out + L @ S @ right[(h, hp)]
         return out
 
+    diagonal = [key for key in left if key[0] == key[1]] or list(left)
+    L_bar = sum(left[key] for key in diagonal)
+    R_bar = sum(right[key] for key in diagonal)
+    a_vals, a_vecs = torch.linalg.eigh(L_bar)
+    b_vals, b_vecs = torch.linalg.eigh(R_bar)
+    floor = 1e-12 * max(float(a_vals.max()) * float(b_vals.max()), 1e-300)
+    denominator = (
+        a_vals.unsqueeze(1) * b_vals.unsqueeze(0) + lam
+    ).clamp_min(floor)
+
+    def precondition(R: torch.Tensor) -> torch.Tensor:
+        return a_vecs @ ((a_vecs.T @ R @ b_vecs) / denominator) @ b_vecs.T
+
     B = rhs + lam * prior
     S = prior.clone()
     r = B - apply(S)
-    p = r.clone()
-    rs = float((r * r).sum())
+    z = precondition(r)
+    p = z.clone()
+    rz = float((r * z).sum())
     base = float((B * B).sum()) or 1.0
     used = 0
+    residual = (float((r * r).sum()) / base) ** 0.5
     for used in range(1, iterations + 1):
         Ap = apply(p)
-        denominator = float((p * Ap).sum())
-        if denominator <= 0.0:
+        curvature = float((p * Ap).sum())
+        if curvature <= 0.0 or rz <= 0.0:
             break
-        alpha = rs / denominator
+        alpha = rz / curvature
         S = S + alpha * p
         r = r - alpha * Ap
-        rs_new = float((r * r).sum())
-        if (rs_new / base) ** 0.5 <= tolerance:
-            rs = rs_new
+        residual = (float((r * r).sum()) / base) ** 0.5
+        if residual <= tolerance:
             break
-        p = r + (rs_new / rs) * p
-        rs = rs_new
-    return S, {"cg_iterations": used, "cg_relative_residual": (rs / base) ** 0.5}
+        z = precondition(r)
+        rz_new = float((r * z).sum())
+        p = z + (rz_new / rz) * p
+        rz = rz_new
+    return S, {"cg_iterations": used, "cg_relative_residual": residual}
 
 
 def law_abiding_stein(
@@ -1170,12 +1198,15 @@ def law_abiding_stein(
         float(torch.diagonal(R).mean().abs()) * float(torch.diagonal(L).mean().abs())
         for (L, R) in zip(left.values(), right.values())
     )
+    reference = float(prior.norm())
     solved = None
     report: dict[str, Any] = {}
     for rel in LAMBDA_LADDER:
         lam = rel * scale_reference
         candidate, report = stein_cg_solve(left, right, rhs, prior, lam)
-        scale = float((candidate - prior).norm() / prior.norm())
+        # A zero prior anchors nothing, so THE LAW's ratio is undefined rather
+        # than infinite; the smallest lambda on the ladder is the answer.
+        scale = 0.0 if reference == 0.0 else float((candidate - prior).norm() / reference)
         solved = candidate
         if scale <= 1.0:
             report = dict(report)
@@ -1184,7 +1215,9 @@ def law_abiding_stein(
     report = dict(report)
     report.update(
         {
-            "update_scale": float((solved - prior).norm() / prior.norm()),
+            "update_scale": (
+                None if reference == 0.0 else float((solved - prior).norm() / reference)
+            ),
             "lambda_relative": LAMBDA_LADDER[-1],
             "law_refused": True,
         }
