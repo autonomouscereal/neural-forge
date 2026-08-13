@@ -1,0 +1,16 @@
+sealed  (wave 17) 90a9e5187feef6780a0503dc0757b97b6b18db0bc441fd5a51f2d8811f170228
+rebuilt (wave 27) ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09
+
+wave 17: 90a9e5187feef6780a0503dc0757b97b6b18db0bc441fd5a51f2d8811f170228  params 200847104  live-mask-repair=0  == wave 17 sealed
+wave 18: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 19: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 20: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 21: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 22: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 23: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 24: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 25: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 26: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 27: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+wave 28: ad406f480a181901db35b7c1af6ede976475ce9eece7b3ec36f0878fbbb76f09  params 200847104  live-mask-repair=1  == wave 27 rebuild
+DRIFTQ 0 DONE

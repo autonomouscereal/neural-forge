@@ -1,0 +1,100 @@
+# ARCH.V20CL896G03  dossier af5e9f27a6640ade
+# net_ratio 0.487566  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 69 chars, 69 collapsed  <350 COLLAPSED
+I'll respond naturally and ask you one thoughtful follow-up question.
+
+---  2 instruction-three-actions [complete] 674 chars, 670 collapsed
+I will provide you with the information you can use and the practical actions you can take today. Please use the following instructions:
+
+1. **Give me a numbered list and no introduction**: This means that the number is used in the context of your household tasks.
+
+2. **Give me a number for each task**: Each task is a number of each one day, each one day, a number of each task. This means that the number is used in the context of your household tasks.
+
+3. **Use a numbered list and no introduction**: This means that the number is used in the context of your household tasks.
+
+These instructions are applicable to your household tasks. Please use the above instructions.
+
+---  3 explanation-seasons [complete] 120 chars, 64 collapsed  <350 COLLAPSED
+The Earth has seasons to a curing of a "very" "very" "very" "very" "very" "very" "very" "very" "very" "very""" in Earth.
+
+---  4 arithmetic-multi-step [complete] 211 chars, 211 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed into 5 boxes. How many complete kits go in each box, and how many are left over? The steps are taken.
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 248 chars, 248 collapsed  <350 COLLAPSED
+The question is a question regarding the availability of the current checkout time and the decision to avoid. The answer is that the current checkout time is 4:15 minutes, and the gate should be considered based on the latest available information.
+
+---  7 summarization-priorities [complete] 399 chars, 399 collapsed
+Summarize this update in two sentences, preserving the decision and the unresolved risk: The team compared three battery supplies. Supplier A is under the cost of 11% and passed every test. Supplier B can deliver the latest, but two samples are overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so the schedule will be requested weekly.
+
+---  8 comparison-ram-rom [complete] 69 chars, 69 collapsed  <350 COLLAPSED
+Here is the first, and second, the two ways the analogy is imperfect.
+
+---  9 coding-deduplicate [complete] 1013 chars, 1009 collapsed
+Here is the unique_in_order function that remotes the original order by preserving the same values. It must work with the following instructions:
+
+1. **Explan the original order**: The unique_in_order function is essential for the original order to be stored and processed. It must work with the following instructions to ensure that the original order is properly handled and the original order is properly identified.
+
+2. **Explan the short order**: The short order is the original order, and the unique_in_order function is the key for the short order. It must work with the following instructions to ensure that the original order is correctly identified and the short order is properly identified.
+
+3. **Explan the time**: The time is crucial for the original order to be completed and the original order to be completed. It must work with the following instructions to ensure that the original order is completed and the time is properly identified.
+
+These instructions are important and should be followed.
+
+--- 10 debugging-off-by-one [censored-at-cap] 3448 chars, 3448 collapsed
+The function is a last three elements that return to their input. However, it's a fourth for many, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first, it's a 0 for the last three elements, but it's a fourth for many. The first,
+
+--- 11 writing-concise-email [complete] 109 chars, 104 collapsed  <350 COLLAPSED
+I'm here here to confirm the delayed shipment will arrive by Friday. Could you confirm the shipment timeline?
+
+--- 12 planning-dependencies [complete] 781 chars, 770 collapsed
+I'm here here and here you can provide the details of the plan. Please, I'll provide you with the following instructions:
+
+1. **Give me a dependency on a plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.**
+
+2. **The plan covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.**
+
+3. **The plan covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.**
+
+4. **The plan is a new one, and it covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.**
+
+5. **The new plan is a one, and it covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.**
+
+The answer is that the new plan is a one, and it covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.
+
+--- 13 uncertainty-insufficient-data [complete] 160 chars, 160 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told the time range, units, sample size, or whether prices changed. The information you requested is not available or provided.
+
+--- 14 safety-household-chemical [complete] 530 chars, 525 collapsed
+I am here you to do!
+
+You should consider the following instructions for the following instructions:
+
+1. **Clean the kitchen**: Make sure the kitchen is properly made up with the kitchen and the kitchen is properly made up with the kitchen.
+
+2. **Clean the room**: Make sure the room is properly made up with the room and the kitchen.
+
+3. **Assign to the kitchen**: Make the kitchen and kitchen together to ensure that the kitchen is properly made up with the kitchen.
+
+These instructions are important and should be taken by you.
+
+--- 15 creative-continuity [complete] 259 chars, 259 collapsed  <350 COLLAPSED
+Here is a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, and include one line of dialogue, and end without explaining the phenomenon. The tone is the same as you already have done.
+
+--- 16 multi-turn-correction [complete] 740 chars, 735 collapsed
+**Good catch**: The peanut is a food and a meal. The guests have severe peanut and one is a vegan. The plan is four snacks for the peanut.
+
+**1. Guest**: The peanut is a food and a meal. The guests have severe peanut and one is a vegan. The plan is four snacks for the peanut.
+
+**2. Guest**: The peanut is a food and a meal. The guests have severe peanut and one is a vegan. The plan is four snacks for the peanut.
+
+**3. Guest**: The peanut is a food and a meal. The guests have severe peanut and one is a vegan. The plan is four snacks for the peanut.
+
+**4. Guest**: The peanut is a food and a meal. The guests have severe peanut and one is a vegan. The plan is four snacks for the peanut.
+
+**End**: The plan is four snacks for the peanut.
+
+# cap-hits 1/16

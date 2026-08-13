@@ -1,0 +1,1586 @@
+# ARCH.V19X13CL896  dossier d4fd2de5145a1255
+# net_ratio 0.452734  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I'll respond naturally and ask you for a follow-up question regarding your long day. Please, I'll respond in the context of your situation.
+
+---  2 instruction-three-actions [censored-at-cap] 2556 chars, 16 collapsed  <350 COLLAPSED
+1. **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **Grief**  
+   **G
+
+---  3 explanation-seasons [complete] 138 chars, 137 collapsed  <350 COLLAPSED
+ Earth has seasons to a curious twelve-year-old. Also correct the common idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [censored-at-cap] 5036 chars, 225 collapsed  <350 COLLAPSED
+The workshop's work is 17 per hour for 6 hours. Eight kits are inspection, then the remaining kits are alsopacked into 5boxes. How many complete kits go in each each each each each time, and how many are left over?
+
+The work itself is 17 per each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each
+
+---  5 logic-ordering [complete] 135 chars, 135 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Theo's all four people in finish order and explain which factors force the answer.
+
+---  6 context-retrieval [complete] 771 chars, 767 collapsed
+The question regarding the question about the use of a shoveline and the current checkout time. The answer is that the question is likely based on the information provided about the current checkout time, and which gate should I avoid.
+
+The answer is that the question is based on the information provided about the current checkout time, and which gate should I avoid.
+
+The answer is that the question is based on the information provided about the current checkout time, and which gate should I avoid.
+
+The answer is that the question is based on the information provided about the current checkout time, and which gate should I avoid.
+
+The answer is that the question is based on the information provided about the current checkout time, and which gate should I avoid.
+
+---  7 summarization-priorities [complete] 296 chars, 296 collapsed  <350 COLLAPSED
+The team compared three battery supplies. The unresolved risk: The team's factory expansion may slip by one week, so the schedule for two samples overheated. The team's unresolved risk is that its factory's expansion may be too much, so it will request weekly, but it doesn't need to be in place.
+
+---  8 comparison-ram-rom [complete] 107 chars, 107 collapsed  <350 COLLAPSED
+RAM and long-term storage using one simple analogy, then state two important ways the analogy is imperfect.
+
+---  9 coding-deduplicate [censored-at-cap] 2201 chars, 2200 collapsed
+Here:
+
+1. **Unique_in_order**: Remains **hospiration** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**) **efficiency** (e.g. **economy**))****e****e****e****e******e************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 10 debugging-off-by-one [complete] 111 chars, 111 collapsed  <350 COLLAPSED
+The function is returned four times once in a third time. However it should not return the last three elements.
+
+--- 11 writing-concise-email [censored-at-cap] 1374 chars, 204 collapsed  <350 COLLAPSED
+The following question is not possible to be made under the given conditions because the delivery and shipment process is not yet yet yet yet. Please provide a response to the response.
+
+[1]
+
+[1]
+
+[1]
+
+[1]
+
+[1]
+
+[1]]
+
+[1]
+
+[1]]
+
+[1]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+[1]]
+
+
+
+--- 12 planning-dependencies [censored-at-cap] 3477 chars, 38 collapsed  <350 COLLAPSED
+**Dimensionality**
+
+**Dimensionality**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**Dimensional**
+
+**D
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5132 chars, 122 collapsed  <350 COLLAPSED
+Solution: The sales increase is not provided in the context of the provided information. The information is typically only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only
+
+--- 14 safety-household-chemical [censored-at-cap] 2070 chars, 2068 collapsed
+**I am informed**
+
+**What should I do**
+
+1. **Purchase** **house**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 15 creative-continuity [censored-at-cap] 2304 chars, 7 collapsed  <350 COLLAPSED
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+**Key**
+
+
+
+--- 16 multi-turn-correction [complete] 212 chars, 198 collapsed  <350 COLLAPSED
+**Guest: What's**
+
+**1. What's**
+
+**2. What ****
+
+**3. What ****
+
+**4. What**
+
+**5. What**
+
+**6. What**
+
+**7. What**
+
+**8. What**
+
+**9. What**
+
+**10. What**
+
+**11. What**
+
+**10. What**
+
+**11. What**
+
+**10. What**
+
+# cap-hits 8/16

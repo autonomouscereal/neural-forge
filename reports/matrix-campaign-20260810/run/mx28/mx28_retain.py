@@ -53,12 +53,77 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave28")
 #: best-five, and the deviation is named rather than assumed: this wave built
 #: twenty-three children instead of nine and the extra four keeps are the
 #: identity matrix's own axes, which is the result the wave was sent to get.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX28-V19X13G03": (
+        "11/15 at 0.742049x -- THE DEEPEST ELEVEN IN THE CAMPAIGN, eleven points "
+        "of ratio below the previous holder, and the first lambda arm to GAIN a "
+        "case since wave 27 demoted lambda 0.3 on six arms that all lost or tied"
+    ),
+    "MX28-V19X13G01": (
+        "11/15 at 0.742049x -- ties the deepest eleven at a different lambda and "
+        "completes the first MONOTONE ladder any base has produced (10/10/11/11)"
+    ),
+    "MX28-V19X13": (
+        "10/15 at 0.742049x -- the zero-solve control both elevens are "
+        "differenced against at an identical 170,443,520 parameters, and the row "
+        "that shows the summit lands at ten where the shoulders land at ten"
+    ),
+    "MX28-V19X09": (
+        "10/15 at the identical parameter count and ratio as V19X13 and by a "
+        "COMPLETELY DIFFERENT lane profile -- four Useful against three, winning "
+        "and losing opposite lanes.  This is the row that makes the ten a "
+        "property of the composition and not of the block"
+    ),
+    "MX28-V19X13X09": (
+        "5/15 at 0.689528x -- the pair-distance-law INVERSION.  Four apart reads "
+        "five where twelve apart reads three, at one parameter count on one "
+        "vocabulary base, against wave 17's monotone farther-is-better"
+    ),
+    "MX28-V18CL896": (
+        "2/15 at 0.478436x -- THE DEEPEST CHILD IN THE CAMPAIGN TO HOLD ANY "
+        "CASE, nine points of ratio below wave 27's holder"
+    ),
+    "MX28-V19X13CL896": (
+        "0/15 at 0.452734x -- the deepest child ever built, the second zero in "
+        "28 waves, and the discriminating case that KILLS wave 27's "
+        "summarisation-is-the-last-lane claim: it paraphrases instead of copying "
+        "the prompt tail, and the paraphrase drops the decision"
+    ),
+    "MX28-V18X13X01G03": (
+        "4/15 at 0.684962x -- one lambda arm off the deepest ladder in the "
+        "atlas, kept because a terminal-gain solve is a GPU pass that nothing "
+        "re-derives from a citation, and because the 3/4/4/3 ladder it sits in "
+        "is single-peaked in the middle while its own held-out objective is not"
+    ),
+    "MX28-CL896X13": (
+        "not a reviewed child: the block-13 excision composed with wave 15's "
+        "CL896 MLP fold, 0.658165x, built in this wave and sealed by no wave.  "
+        "There is no citation to recover it from, so the bytes are the record"
+    ),
+    "MX28-P1309": (
+        "not a reviewed child: blocks 9 and 13 excised, 0.894958x, the body the "
+        "distance-law inversion is measured on and a cell no wave has sealed"
+    ),
+}
 
 #: Tag -> why this checkpoint is NOT worth its bytes.  Every built child
 #: must appear in exactly one of the two mappings or the script refuses.
 #: Written by hand from THIS wave's sealed verdicts, after package.sh.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX28-V18X13X01": (
+        "3/15.  Its whole claim IS a digest: the tensors are bit-identical to "
+        "wave 27's sealed V18X13X01 (fe649aae5fa48fa2...), which is recorded in "
+        "the build receipt and reproduced by one CPU pass off retained MX17-P1301"
+    ),
+    "MX28-V18X13X01G10": "4/15.  Same +1 and the same four lanes as the retained lambda 0.3 arm; storing a second solve that buys the same two lanes records nothing the two verdicts do not",
+    "MX28-V18X13X01G01": "3/15.  The no-gain rung.  Its contribution is the SHAPE of the ladder, which is arithmetic over three sealed reviews",
+    "MX28-V19X13G10": "10/15.  The lambda arm with no delta; its finding is that six lanes trade at a constant count, and the lane trades are in the packaged READ- text",
+    "MX28-V19X13X01": "3/15.  One CPU pass off retained MX17-P1301; the prompt-echo evidence is TEXT and lives in the packaged dossier",
+    "MX28-V19X13X01G03": "4/15.  The +1 transfers across K from the retained V18X13X01G03 arm, which is a statement about two sealed reviews at one lambda",
+    "MX28-V19CL896": "2/15 at 0.483001x.  One CPU pass off retained MX15-CL896, and V18CL896 is both deeper and retained",
+    "MX28-V19CL896G03": "3/15.  The gate-pass is recorded in the build receipt (identity_gate max_abs_error 8.0e-14), which is packaged; V20CL896G03 is the same measurement on a second base",
+    "MX28-V20CL896G03": "3/15.  Same: the +1 at the bottom of the spectrum is a delta between two sealed reviews, and the gate evidence is the packaged build receipt",
+}
 
 
 def main() -> int:

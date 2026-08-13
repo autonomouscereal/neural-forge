@@ -45,6 +45,38 @@ python experiments/render_matrix_ledger.py \
 | `../../docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` | the consolidating report for waves 1–22: **all 110** whole-model children that hold at least one review case, sorted by net ratio with both readings and every benchmark column; every law with its evidence; seventeen corrections of record; the scale-transfer statements with their confidence; and what remains unbuilt and why. It does **not** declare the campaign closed |
 | `wave22/campaign-frontier-table.json` | the artifact both of the above are generated from — a function of the ledger, the per-wave child indexes and the sealed `lm-eval` output, built by `run/mx22/mx22_campaign_table.py` and rendered by `run/mx22/mx22_report_tables.py` |
 
+## wave28/ — the block sets the landing, the drift has a name, and the last lane was a copy
+
+`NOTES-MX-AD.md` at the repo root is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave28/human-review/tier-D-joint-solve-drift-bisect.log` | **the answer wave 27 could not give.** Wave 27's rebuild of wave 17's sealed `ARCH.F1301KV6Q` refused on the digest and could not say why. A `git bisect` is the wrong instrument: this campaign COPIES its builder to a new path every wave, so `run/mx17/mx17_build.py` is still in the tree at HEAD byte-for-byte and no commit has changed it. The bisect variable is the WAVE. Twelve rungs, one deployment, no checkout: wave 17 reproduces the sealed digest, wave 18 produces wave 27's, and every wave since is identical to wave 18. The change is `mx18_build.py`'s live-mask repair, which is a REPAIR — the sealed body is the defective one |
+| `wave28/human-review/build-receipt-MX28-V18X13X01.json` | the control for the above: the vocabulary path rebuilt one wave later is BIT-IDENTICAL to wave 27's sealed digest (`fe649aae5fa48fa2…`), and an independently generated dossier read independently returns the same 3/15 on the same three lanes |
+| `wave28/human-review/` | 130 files: every dossier, every child and parent response verbatim, every receipt, verdict, per-case reading and build receipt, the bits/byte column, the benchmark table, the frontier table and the scorecard |
+| `wave28/human-review/bits-per-byte-wave28.txt` | the ADDENDUM 8 bits/byte column for eighteen rows including the parent |
+| `wave28/scorecard-characters.json` | the prose column of the scorecard, wave 24's file with this wave's seventeen children added |
+| `wave28/human-review/ledger-merge-report.json` | the exactly-once merge of 34 shard rows into the campaign ledger (770 → 804): 17 ARCH run rows and 17 ADDENDUM 6 verdict rows, no superseded rows |
+| `wave28/human-review/children-retention-manifest-wave28.json` | ten of nineteen checkpoints kept (3.0 GiB), nine dropped with reasons (2.5 GiB freed), dry run read first |
+| `run/mx28/driftq.sh` | the drift bisect driver, and the argument for why it is a driver and not a `git bisect run` |
+| `run/mx28/bodyq.sh` | wave 27's body queue with a KNOWN_DRIFT registry (so the next wave gets the attribution with the refusal) and a `NEW` mode for a body no wave has sealed |
+
+Wave 28's one-line result: **the block sets the LANDING and not the cost.** Block
+13 costs the 14/15 summit FOUR cases where it costs the two 13/15 shoulders three,
+and all six compositions land at exactly **ten of fifteen**. Three more things sit
+under it. The **joint-solve drift is attributed** to a single step at wave 18 —
+`mx18_build.py`'s live-mask repair, which changed the evidence every conditioned
+solve reads on a body whose excision shifts an attention block into a conv slot —
+and it is a repair, so the sealed body is the defective one and this is a WONTFIX.
+**Lambda 0.3 is not dead:** the summit ladder reads **10 / 10 / 11 / 11** and
+`ARCH.V19X13G03` and `ARCH.V19X13G01` are the **deepest eleven in the campaign** at
+0.742049x, eleven points below the previous holder. And **wave 27's "summarisation
+is the last lane to go" is withdrawn**: the summarisation prompt's own last two
+sentences ARE the answer, every collapsed child that "held" that lane was copying
+them, and `ARCH.V19X13CL896` — **0/15 at 0.452734x, the deepest child ever built** —
+is the discriminating case, because it paraphrases instead of copying and the
+paraphrase drops the decision.
+
 ## wave24/ — a seven-case child below the line, and the lambda that found it was not the one the solver picked
 
 `NOTES-MX-AB.md` at the repo root is the narrative. The rest is raw:

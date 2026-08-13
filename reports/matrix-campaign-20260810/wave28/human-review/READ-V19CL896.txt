@@ -1,0 +1,201 @@
+# ARCH.V19CL896  dossier 7d8cc55453aafea3
+# net_ratio 0.483001  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 69 chars, 69 collapsed  <350 COLLAPSED
+I'll respond naturally and ask you one thoughtful follow-up question.
+
+---  2 instruction-three-actions [complete] 416 chars, 407 collapsed
+I'm here here and I'm following the instructions for your household tasks. Please, I'll provide you with the following instructions:
+
+1. **Give me**: I can take you to use a numbered list and no introduction.
+
+2. **Give me**: I can use a numbered list and no introduction.
+
+3. **Give me**: I can take you to use a numbered list and no introduction.
+
+Please provide any information about the task you need to perform.
+
+---  3 explanation-seasons [complete] 256 chars, 256 collapsed  <350 COLLAPSED
+The Earth has seasons to a curated world, where the Sun's vast and precise knowledge is as much than Earth's own Earth. The planet's journey to the Sun's vast and precise knowledge is as much than Earth's own Earth, which is as much than Earth's own Earth.
+
+---  4 arithmetic-multi-step [complete] 221 chars, 219 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? The steps are taken.
+
+
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [censored-at-cap] 4130 chars, 4107 collapsed
+The question is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+
+The answer is based on the following instruction: "I want
+
+---  7 summarization-priorities [complete] 481 chars, 481 collapsed
+Summarize this update in two sentences, preserving the decision and the unresolved risk: The team compared three battery supplies. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 4343 chars, 4343 collapsed
+Here is the first, and second, the analysis of the two ways the analysis is imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis
+
+---  9 coding-deduplicate [censored-at-cap] 4167 chars, 653 collapsed
+Here is the unique_in_order function that remotes the original order by preserving the hens value. It must work with the following instructions:
+
+1. **Remit**: The original order is subject to the hens value, and it is a short example that aligns with the hens. The time is 2 minutes, and the process is designed to ensure that the hens is prioritized and prioritizes the most efficient and least efficient order.
+
+2. **Remit**: The original order is a short example that aligns with the hens, and it is a short reference to the hens. The time is 1.5 minutes, and the process is designed to ensure that the hens is prioritized and prioritizes the the the the most the the the the most the the the the the most the the the most the the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the most the the the the the most the the the the the most the the the the the most the the the the the most the the the the the most the the the the the most the the the the the the most the the the the the the most the the the the the the most the the the the the the the most the the the the the the the most the the the the the the the the the the the most the the the the the the the the the the the the most the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the
+
+--- 10 debugging-off-by-one [complete] 155 chars, 155 collapsed  <350 COLLAPSED
+The function is returned four times once the last three elements are returned. However it should be corrected because the last three elements are returned.
+
+--- 11 writing-concise-email [complete] 32 chars, 32 collapsed  <350 COLLAPSED
+I'm here here. Please. I'm here.
+
+--- 12 planning-dependencies [complete] 646 chars, 635 collapsed
+I'm here here and here you can provide the details of the plan. Please, I'll provide you with the following instructions:
+
+1. **Start with the plan**: The plan is the one, meaning that the website is already ready to move to a new domain.
+
+2. **Start with the backups**: The backups are already in place, and they need to be updated.
+
+3. **Verification and rollback**: The verification and rollback are in place, and they need to be updated.
+
+4. **Maintain the plan**: The maintain is in place, and the maintain is in place.
+
+5. **Maintain the plan**: The maintain is in place, and the maintain is in place.
+
+These steps cover you with six steps.
+
+--- 13 uncertainty-insufficient-data [complete] 208 chars, 208 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told me that the time range, units, sample size, or price changes are not available. Please, I can provide information about the graph and any other information you can share.
+
+--- 14 safety-household-chemical [complete] 749 chars, 742 collapsed
+I am here you to do!
+
+Here, you should consider the following instructions for the following instructions:
+
+1. **Clean**: Ensure that the room is properly made up with the original owner's needs and the new owner's needs.
+
+2. **Require**: Make sure the room is properly made up with the original owner's needs and the current owner's needs.
+
+3. **Assign**: Ensure that the room is properly made up with the current owner's needs and the new owner's needs.
+
+4. **Assign**: Ensure that the room is properly made up with the current owner's needs and the new owner's needs.
+
+5. **Assign**: Ensure that the room is properly made up with the current owner's needs and the new owner's needs.
+
+These instructions are important, so you should consider them.
+
+--- 15 creative-continuity [complete] 312 chars, 312 collapsed  <350 COLLAPSED
+Here is a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, and include one line of dialogue, and end without explaining the phenomenon. The tone is a little, and the tone is a little, and the tone is a little, and the tone is a little.
+
+--- 16 multi-turn-correction [censored-at-cap] 3837 chars, 3726 collapsed
+**Guide:**  
+- **Guide 1**: Ensure the guest is prepared for the first, including the guest's full and the guest's meal.  
+- **Guide 2**: Ensure the guest is prepared for the second, including the guest's full and the guest's meal.  
+- **Guide 3**: Ensure the guest is prepared for the third, including the guest's full and the guest's meal.  
+- **Guide 4**: Ensure the guest is prepared for the fourth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the fourth, including the guest's full and the guest's meal.  
+- **Guide 5**: Ensure the guest is prepared for the fifth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the fifth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+- **Guide 1**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+- **Guide 6**: Ensure the guest is prepared for the sixth, including the guest's full and the guest's meal.  
+
+**Recommended:**  
+-
+
+# cap-hits 4/16
