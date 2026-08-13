@@ -156,7 +156,7 @@ IDENTITY_TOLERANCE = 5e-2
 
 
 def log(message: str) -> None:
-    print(f"[mx15] {message}", flush=True)
+    print(f"[mx16] {message}", flush=True)
 
 
 # --------------------------------------------------------------------- corpus
@@ -1494,7 +1494,7 @@ def build(args: argparse.Namespace) -> int:
         "wall_time_seconds": round(time.time() - started, 1),
         "child_tensors_sha256": file_sha256(outdir / "model.safetensors"),
     }
-    (outdir / "mx15-build-receipt.json").write_text(json.dumps(receipt, indent=1))
+    (outdir / "mx16-build-receipt.json").write_text(json.dumps(receipt, indent=1))
     log(
         f"child {child_parameters:,} parameters = {receipt['net_ratio']:.6f}x "
         f"-> {outdir}  ({receipt['wall_time_seconds']:.0f}s)"
