@@ -1,0 +1,46 @@
+#!/bin/bash
+# Wave 24: the terminal-read re-solve, and the lambda portfolio over it.
+#
+# Every child here has the SAME parameter count, the same tensor shapes and the
+# same config as the sealed child it is built from -- 1,024 values (plus 30,464
+# on the 29-diagonal arm) are overwritten in place and nothing is added.  So the
+# comparison against its source is controlled to the byte on everything except
+# the diagonal, which is the only way a case delta can be attributed to a solve.
+#
+# The lambda rungs are S5's atlas: the profile selects WHICH capabilities
+# survive at fixed storage, and no wave has mapped the portfolio.  Here the
+# storage is already paid for, so a case swap is the entire product.
+#
+#   gainq.sh <gpu> <TAG>:<source child dir>[:<lambda>][:29] ...
+set -u
+. /home/cereal/nf-mx24/env.sh
+GPU="${1:?gpu}"; shift
+mkdir -p $W/children $W/logs
+export PYTHONPATH="$MX24:$NF_DEPLOY/src:$NF_DEPLOY/experiments"
+
+CAP=$(CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU $PY -c 'import torch; print("%d.%d" % torch.cuda.get_device_capability(0), torch.cuda.get_device_name(0))' 2>/dev/null)
+if [ "$CAP" != "8.6 NVIDIA GeForce RTX 3090" ]; then
+  echo "PREFLIGHT REFUSED: GPU $GPU resolves to '$CAP'" >&2; exit 3
+fi
+
+for spec in "$@"; do
+  TAG=$(echo "$spec" | cut -d: -f1)
+  SRC=$(echo "$spec" | cut -d: -f2)
+  LAM=$(echo "$spec" | cut -d: -f3)
+  ARM=$(echo "$spec" | cut -d: -f4)
+  EXTRA=""
+  [ -n "${LAM:-}" ] && EXTRA="$EXTRA --lambda-relative $LAM"
+  [ "${ARM:-}" = "29" ] && EXTRA="$EXTRA --block-gains"
+  CELL=""
+  case "$SRC" in
+    */children/MX*) CELL=$(dirname $(dirname $SRC))/cells/ARCH.$(basename $SRC | sed 's/^MX[0-9]*-//')/cell-receipt.json ;;
+  esac
+  rm -rf $W/children/MX24-$TAG
+  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU $PY $MX24/mx24_termgain.py \
+    --source "$SRC" --source-cell-receipt "$CELL" \
+    --child $W/children/MX24-$TAG --tag $TAG --device cuda:0 $EXTRA \
+    > $W/logs/gainbuild-$TAG.log 2>&1
+  echo "$TAG rc=$? :: $(grep -h 'final gain:' $W/logs/gainbuild-$TAG.log | tail -1)"
+  [ -f $W/children/MX24-$TAG/mx24-build-receipt.json ] || tail -12 $W/logs/gainbuild-$TAG.log
+done
+echo "GAINQ $GPU DONE"
