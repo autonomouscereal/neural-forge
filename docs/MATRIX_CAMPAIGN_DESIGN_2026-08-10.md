@@ -1596,3 +1596,91 @@ text. It does not retire any ADDENDUM 11 ruling: R3 still says a class whose onl
 export is "materialize the factored form back to parent shapes" has a storage
 format and not a reduction. What changes is that the campaign can now **write
 down** which of the two a given row is.
+
+---
+
+## ADDENDUM 13 — 2026-08-12 (wave 16, before any child): succession from the living base
+
+Wave 15 sealed ten standard-shape children and left exactly **two** with a
+non-zero behaviour score: `ARCH.W14FF1280` (global `intermediate_size` 1280,
+0.760331x, **5/15**) and `ARCH.X05A` (block 5 excised with a full-width local
+re-solve, 0.947479x, **6/15**). Everything at the 4x class was 0/15. Wave 16 is
+the succession wave those two pieces were kept for: build the pair, grade it,
+and keep adding one big bite per rung until behaviour says stop.
+
+### 13.1 What is fixed before the first child
+
+**Local objectives only, everywhere.** `NOTES-MX-S` §2.1 and §5 priced the
+trajectory objective twice — 0/15 at 4x width (`ARCH.CT640`, 16 of 16 lanes at
+the cap) and 0/15 at *unchanged* width with full capacity and zero parameter cost
+(`ARCH.X05T`, against the same excision's 6/15 with local targets). It is not a
+candidate this wave and `mx16_build.py` names the ruling where the flag is
+parsed.
+
+**Dead axes are not rebuilt.** Global `intermediate_size` at 640 or below under
+any conditioning (the cliff is a step between per-site write cosine 0.891 and
+0.856, not a slope); `head_dim` reduction in any form (RoPE's block-diagonal
+rotation admits only whole frequency planes at uniform stride, and all three
+expressible ladders retain 0.20–0.24 of the score operator's energy;
+`ARCH.HD16` is dead alone at 0.938368x).
+
+**Mixed per-component levels are explicitly in scope**, and the target is the
+global net size, not a per-axis level. **Censuses order attempts and gate
+nothing.** A rung that costs drift and stays per-lane coherent is a kept rung.
+**Bisection on death**, and a different class is tried at the same depth before
+a depth is abandoned.
+
+### 13.2 The new axis: head COUNT, and the legal configurations
+
+Wave 13's head merge (T7/C10) was retired on a price, restored to the deck by
+D1, and never run in standard form, because its sealed export reconstitutes
+parent-shaped tensors and is therefore a storage format under R3. The axis that
+*is* standard is the head **count**, and it is a different axis from wave 15's
+dead `head_dim`: every surviving head keeps the parent's full `head_dim`, so the
+frequency ladder is the parent's own and none of §3's plane arithmetic applies.
+
+Three coupling facts were read off `transformers` 5.12.1 rather than assumed, and
+each is a constraint the builder enforces:
+
+* `Lfm2Attention.head_dim = getattr(config, "head_dim", hidden_size //
+  num_attention_heads)`. **This parent's config has no `head_dim` field.** Write
+  `num_attention_heads = 12` without adding it and every attention block builds
+  itself at `head_dim = 85` against tensors stored at 64. The child config must
+  therefore carry `head_dim: 64` explicitly, and that is a `config_diff` entry
+  whose parent side is absent.
+* `num_key_value_groups = num_attention_heads // num_key_value_heads` and
+  `repeat_kv` repeats each KV head exactly that many times, with no assertion.
+  **`num_attention_heads` must be an integer multiple of
+  `num_key_value_heads`** or the score matmul is handed two different head
+  counts. With the parent's 8 KV heads, 12 query heads is *illegal*; 12 query
+  heads with 6 KV heads is legal and keeps the parent's group size of 2.
+* The head count is inferred from the tensor shape (`view(*input_shape, -1,
+  head_dim)`), so nothing but the config and the projection shapes has to move.
+
+The reduction is therefore expressed as **KV groups merged in pairs**: 8 → 7, 6,
+5, 4, giving 14, 12, 10, 8 query heads. The pre-registered first rung is
+**6 groups / 12 query heads**, and the bisection on death is 7/14.
+
+**The merge gauge is forced, and it is smaller than it looks.** Two heads merge
+only in a common frame, and the frame change must be invisible downstream. RoPE
+admits per-plane rotation-scalings and nothing else. The shared per-head
+`q_layernorm`/`k_layernorm` weight admits only maps commuting with a diagonal —
+and that weight is measurably *not* plane-symmetric on this parent
+(`|w_p − w_{p+32}|` is 0.11–0.40 of `‖w‖` across the twelve q/k norms), so a
+continuous plane rotation does not commute with it. The normalization itself
+removes any uniform scale and re-weights the planes under a non-uniform one.
+**What survives both is the per-plane sign, `s_p = ±1`**, applied to the key rows
+of one head and the query rows of the heads that read it: it is a scalar, so it
+commutes with the rotation and with the diagonal, it preserves each plane's norm
+and therefore the head's RMS, and `(s q)^T R_Δ (s k) = q^T R_Δ k` exactly. The
+builder measures what the inadmissible continuous rotation would have bought and
+records it beside every pair it did not use.
+
+### 13.3 What this addendum does not do
+
+It registers no new schema, no new id form, no new ledger column and no new gate.
+An ARCH cell with a `num_attention_heads` axis is an ADDENDUM 12 receipt with one
+more entry in `architecture.axes[]`, sealed by the same script, graded by the
+same untouched `seal_matrix_behavior_review.py`, and read by the same frozen
+15-prompt protocol. The only repository change ADDENDUM 12's machinery needs for
+this wave is one more accepted build-receipt schema string.

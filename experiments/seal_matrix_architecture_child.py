@@ -80,6 +80,7 @@ from neural_forge.matrix_cell_receipt import (  # noqa: E402
 BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave14-narrow-child-v1",
     "neural-forge-matrix-wave15-standard-shape-child-v1",
+    "neural-forge-matrix-wave16-standard-shape-child-v1",
 )
 
 
