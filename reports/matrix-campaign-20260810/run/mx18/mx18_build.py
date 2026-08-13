@@ -2654,7 +2654,34 @@ def build(args: argparse.Namespace) -> int:
                 layer.self_attn.layer_idx = position
             elif hasattr(layer, "conv"):
                 layer.conv.layer_idx = position
-        log(f"excised blocks {excised}; child depth {len(harness.layers())}")
+        # MANDATORY, and it is the whole trap on this axis -- the excision
+        # counterpart of the `head_dim` trap `export` documents.  `Lfm2Model`
+        # chooses each block's mask by POSITION in a config list:
+        #
+        #     layer_mask = causal_mask if config.layer_types[i] == "full_attention"
+        #                  else linear_attention
+        #
+        # Deleting a module without deleting its type leaves `i` addressing the
+        # PARENT's fourteen, so every attention block that an excision shifts
+        # down into a conv's slot is handed the padding mask -- which is None on
+        # this corpus -- instead of the causal one, and attends to the future.
+        # Measured by `mx18_mask_probe.py`: with block 13 alone excised nothing
+        # shifts and the module's future mass is 0.0000 at all six sites; with
+        # 13 and 1 excised every site shifts and 28.6% to 48.0% of the module's
+        # attention mass lands on tokens that have not happened yet.  That is
+        # what the wave-17 attention-recompute gate refused, and it was right.
+        # The exported child was never affected -- `export` writes the child's
+        # own `layer_types` -- but every solve conditioned on the live stream
+        # was, which is the whole reason this line is here.
+        harness.model.config.layer_types = [
+            kind for i, kind in enumerate(parent_config["layer_types"]) if i not in excised
+        ]
+        harness.model.config.num_hidden_layers = len(harness.model.config.layer_types)
+        log(
+            f"excised blocks {excised}; child depth {len(harness.layers())}; "
+            f"config.layer_types re-derived ({len(harness.model.config.layer_types)} "
+            "entries) so the live mask follows the live block"
+        )
 
     surviving = [l for l in range(parent_layer_count) if l not in excised]
     per_site: list[dict[str, Any]] = []
