@@ -3275,8 +3275,20 @@ def reader_maxmin_basis(
     best: tuple[float, torch.Tensor, torch.Tensor] | None = None
     trace: list[dict[str, Any]] = []
     for step in range(int(iters) + 1):
-        pooled = torch.einsum("i,ijk->jk", weights, stacked)
-        pooled = 0.5 * (pooled + pooled.T)
+        if step == 0:
+            # Step zero must not merely EQUAL the pooled objective, it must be
+            # the same arithmetic: `pooled_moment` accumulates the trace-one
+            # blocks in endpoint order and divides by the count at the end, and
+            # a weighted sum with uniform weights is the same number only up to
+            # float associativity (measured at 4e-14, which moves eigenvectors).
+            # The control this whole mode rests on is worth six lines of loop.
+            pooled = torch.zeros_like(stacked[0])
+            for block in stacked:
+                pooled += block
+            pooled = pooled / len(names)
+        else:
+            pooled = torch.einsum("i,ijk->jk", weights, stacked)
+            pooled = 0.5 * (pooled + pooled.T)
         basis = top_k_basis(pooled, width)
         retained = torch.einsum("ijk,jl,kl->i", stacked, basis, basis)
         worst = float(retained.min())
@@ -3296,8 +3308,13 @@ def reader_maxmin_basis(
             break
         # Exponentiated gradient: down-weight what is already retained well.
         # Shifting by the max first is the standard numerically-stable form and
-        # changes nothing after the renormalisation.
-        update = torch.exp(-float(eta) * (retained - retained.max()))
+        # changes nothing after the renormalisation.  The step decays as
+        # 1/sqrt(1+t), which is mirror descent's own schedule for a convex
+        # objective with bounded subgradients and is what makes the tail of the
+        # run settle on the equalising weights rather than oscillate across
+        # them.
+        step_size = float(eta) / math.sqrt(1.0 + step)
+        update = torch.exp(-step_size * (retained - retained.max()))
         weights = weights * update
         total = float(weights.sum())
         if total <= 0.0 or not math.isfinite(total):

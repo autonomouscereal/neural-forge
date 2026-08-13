@@ -388,14 +388,18 @@ def main() -> int:
     #      pair would be nearly interchangeable at this size and the objective
     #      would have nothing to do; these two are deliberately misaligned, with
     #      one of them carrying a subspace the pooled moment under-weights.
-    left = torch.randn(hidden, hidden, dtype=torch.float64)
-    right = torch.randn(hidden, hidden, dtype=torch.float64)
-    strong = left @ torch.diag(
-        torch.linspace(9.0, 0.05, hidden, dtype=torch.float64)
-    ) @ left.T
-    weak = right @ torch.diag(
-        torch.linspace(1.0, 0.9, hidden, dtype=torch.float64)
-    ) @ right.T
+    # Two ORTHOGONAL frames with the same spectrum.  A random pair of Wishart
+    # matrices is not an instance of this problem -- both inherit the same
+    # Marchenko-Pastur tilt and end up agreeing, which is how the first draft of
+    # this check passed vacuously and then failed honestly.  Two independent
+    # orthonormal frames disagree about WHICH directions carry the energy while
+    # agreeing about how much there is, which is exactly the disagreement the
+    # max-min objective exists to arbitrate.
+    ramp = torch.diag(torch.linspace(1.0, 0.01, hidden, dtype=torch.float64))
+    frame_a, _ = torch.linalg.qr(torch.randn(hidden, hidden, dtype=torch.float64))
+    frame_b, _ = torch.linalg.qr(torch.randn(hidden, hidden, dtype=torch.float64))
+    strong = frame_a @ ramp @ frame_a.T
+    weak = frame_b @ ramp @ frame_b.T
     skewed = {
         "hidden": hidden,
         "endpoints": ("E0", "E1"),
@@ -484,7 +488,9 @@ def main() -> int:
             maxmin_min > plain_min + 1e-6,
             f"worst endpoint {plain_min:.6f} -> {maxmin_min:.6f} "
             f"(+{maxmin_min - plain_min:.6f}), argmin at uniform "
-            f"{objective['worst_endpoint_uniform']}",
+            f"{objective['worst_endpoint_uniform']}; per-endpoint plain "
+            f"{['%.6f' % v for v in per_endpoint(plain_skew)]} -> max-min "
+            f"{['%.6f' % v for v in per_endpoint(maxmin)]}",
         )
     )
 
