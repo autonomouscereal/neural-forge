@@ -11,7 +11,7 @@
 # the receipt said so.
 set -u
 TAG="${1:?tag}"; CHILD="${2:?child dir}"; GPU="${3:?gpu}"
-D="${NF_DEPLOY:?set NF_DEPLOY to this wave's own deployment directory}"
+D="${NF_DEPLOY:?set NF_DEPLOY to the deployment cut from THIS wave-16 commit}"
 W=/mnt/ai_data/neural-forge-matrix/wave16
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 PARENT=/home/cereal/model-surgery-lab/models/LFM2.5-230M

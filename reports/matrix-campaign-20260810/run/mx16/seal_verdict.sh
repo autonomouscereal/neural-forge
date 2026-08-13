@@ -7,7 +7,7 @@
 set -u
 TAG="${1:?tag}"; U="${2}"; P="${3}"; M="${4}"; SAFETY="${5}"; NOTES="${6}"
 shift 6
-D="${NF_DEPLOY:?set NF_DEPLOY to this wave's own deployment directory}"
+D="${NF_DEPLOY:?set NF_DEPLOY to the deployment cut from THIS wave-16 commit}"
 W=/mnt/ai_data/neural-forge-matrix/wave16
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 ARGS=()
