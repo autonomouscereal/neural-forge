@@ -15,8 +15,9 @@ Protocol `e5e3776885976b1be5a8469323f7083d40c11900cca66b862eb0da41517a4d7b` and
 prompt pack `0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b`
 verified digest-true on every dossier.
 
-**This wave added no mechanism.** `git diff` between the two builders is four
-schema strings, one log tag, two provenance strings and two receipt filenames —
+**This wave added no mechanism.** `git diff` between the two builders is ten
+code lines: four schema strings, one log tag, two provenance strings, two receipt
+filenames, and the one-line schema fix of §5 —
 the solver, the census, the three basis objectives, both lambda splits, the conv
 coreset, the head-gain solve, the excision path, the merge and the export are
 byte-identical. Everything below is therefore a measurement of cells that were

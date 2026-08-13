@@ -906,4 +906,4 @@ ask which initialization distils fastest rather than guessing one.
 | benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{8,9,11,12,13,16..22}/bench/` |
 | stage-2 estate | `/mnt/ai_data/neural-forge-stage2/` |
 | M5 kernel | `src/neural_forge/matrix_technique_head_merge.py` + tests |
-| the width/basis builder | `reports/matrix-campaign-20260810/run/mx22/mx22_build.py` (waves 19–22 lineage; nine lines of body differ from `mx21_build.py`) |
+| the width/basis builder | `reports/matrix-campaign-20260810/run/mx22/mx22_build.py` (waves 19–22 lineage; **ten** code lines of body differ from `mx21_build.py` — nine renamed at `5e17bb58`, one added at `70a2498d` — and the solver is byte-identical) |
