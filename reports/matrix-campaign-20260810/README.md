@@ -48,6 +48,7 @@ python experiments/render_matrix_ledger.py \
 | `wave17/ledger-merge-report.json` | the exactly-once merge of 53 shard rows into the campaign ledger (525 → 578): 21 run rows, 21 verdict rows and 11 ADDENDUM 14 re-seals of wave-16 verdicts |
 | `wave17/children-retention-manifest-wave17.json` | which of the 22 built children were kept and which were deleted, each with its sealed tensor digest |
 | `wave17/deployments-prune-manifest-wave17.json` | the two deployments pruned to hold current+1 |
+| `wave17/lane-fragility-wave17.json` | a free no-GPU probe the closed census made possible: how many of the thirteen single-block excisions each of the fifteen lanes survives |
 | `wave17/probes/KV6J-v1-unfixed-gauge/` | the build receipt and log of the first joint merge, the one that landed on the reflection of its own prior — kept because the fix is only legible beside it |
 | `run/mx17/` | the wave-17 builder (adds ADDENDUM 14 14.3's joint two-sided solve), its standalone algebra self-test, the drivers, the seal verifier, the ledger merge, the wave-16 re-sealer and the dossier readers |
 

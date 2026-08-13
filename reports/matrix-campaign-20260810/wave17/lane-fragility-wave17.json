@@ -1,0 +1,40 @@
+{
+ "schema": "neural-forge-matrix-wave17-lane-fragility-v1",
+ "children": {
+  "X00": 0,
+  "X01": 1,
+  "X02": 2,
+  "X03": 3,
+  "X04": 4,
+  "X06": 6,
+  "X07": 7,
+  "X08": 8,
+  "X09": 9,
+  "X10": 10,
+  "X11": 11,
+  "X12": 12,
+  "X13A": 13
+ },
+ "blocks_missing": {
+  "5": "ARCH.X05A, wave 15, sealed before per-case readings were written"
+ },
+ "lane_survivals_out_of": 13,
+ "lane_survivals": {
+  "arithmetic-multi-step": 4,
+  "coding-deduplicate": 3,
+  "comparison-ram-rom": 6,
+  "context-retrieval": 6,
+  "conversation-natural-greeting": 6,
+  "creative-continuity": 8,
+  "debugging-off-by-one": 2,
+  "explanation-seasons": 1,
+  "instruction-three-actions": 9,
+  "logic-ordering": 2,
+  "multi-turn-correction": 2,
+  "planning-dependencies": 9,
+  "summarization-priorities": 6,
+  "uncertainty-insufficient-data": 9,
+  "writing-concise-email": 9
+ },
+ "reading": "a count of how many single-block excisions leave each lane useful or partial; it orders lanes by fragility and gates nothing"
+}

@@ -219,6 +219,37 @@ support. This wave finds the opposite, on the same surface:
   frontier claim that quotes only its 7/15 would be the error ADDENDUM 8 exists
   to stop.
 
+## 5a. One free probe the closed census made possible: the lanes fail in an order
+
+`run/mx17/mx17_lane_fragility.py`, no GPU, reading only the sealed per-case
+verdicts of the thirteen single-block children that have them (block 5's reading
+predates the per-case file). It counts, for each of the fifteen lanes, how many
+single-block excisions leave that lane useful or partial.
+
+```
+9/13  instruction-three-actions, writing-concise-email,
+      planning-dependencies, uncertainty-insufficient-data
+8/13  creative-continuity
+6/13  context-retrieval, summarization-priorities,
+      comparison-ram-rom, conversation-natural-greeting
+4/13  arithmetic-multi-step
+3/13  coding-deduplicate
+2/13  logic-ordering, debugging-off-by-one, multi-turn-correction
+1/13  explanation-seasons
+```
+
+**A block excision does not damage lanes uniformly; it walks down a fixed
+order.** Generation-shaped lanes with no single correct answer (three actions, an
+email, a plan, an admission of insufficient data) survive nine of thirteen
+excisions. Lanes with one verifiable answer and a chain to get there — ordering,
+off-by-one, arithmetic, dedup — survive two to four. The two hardest lanes are
+the two the *parent itself* fails (seasons, the multi-turn correction), so a
+child that keeps them is not the point; what the order says is that **depth
+buys multi-step correctness and not fluency**, which is why the 15-prompt review
+and the perplexity columns can disagree in either direction and both be right.
+
+It is a count over thirteen children, it orders attempts, and it gates nothing.
+
 ## 6. Estate
 
 * **Commits.** `0a7d8f62` (ADDENDUM 14, the wave-17 builder, the two grading
