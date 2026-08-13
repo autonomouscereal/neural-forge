@@ -1,0 +1,242 @@
+{
+ "schema": "neural-forge-matrix-wave23-vocab-coverage-census-v1",
+ "pre_read": "P5",
+ "purpose": "the closure-corrected kept set at each K, pre- and post-closure coverage, and measured tokens-per-byte.  Orders the vocab ladder; gates nothing (L1).",
+ "parent_vocabulary": {
+  "config_vocab_size": 65536,
+  "bpe_vocab_entries": 64400,
+  "added_tokens": 509,
+  "merges": 63683,
+  "byte_alphabet_present": 256,
+  "byte_fallback": false,
+  "unk_token": null,
+  "dead_rows_carrying_no_token": 1134
+ },
+ "sealed_corpus": {
+  "path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+  "file_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+  "rows": 256,
+  "token_positions": 67583
+ },
+ "captured_batches": {
+  "trace": "/home/cereal/model-surgery-lab/artifacts/neural_forge_matrix_campaign_20260810/evidence/2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "rows": 24,
+  "token_positions": 6335
+ },
+ "census": {
+  "streams": "the sealed corpus is a DONOR-MAPPED id stream; the canonical stream is what this tokenizer does to the same text, and the two disagree (the parent does not round-trip its own corpus).  The ranking sums both.",
+  "sealed_corpus_donor_distinct_tokens": 2030,
+  "sealed_corpus_donor_occurrences": 67583,
+  "sealed_corpus_canonical_distinct_tokens": 4806,
+  "sealed_corpus_canonical_occurrences": 43992,
+  "sealed_corpus_distinct_tokens": 5371,
+  "sealed_corpus_occurrences": 111575,
+  "captured_batches_distinct_tokens": 981,
+  "captured_batches_occurrences": 6335,
+  "review_pack_distinct_tokens_DIAGNOSTIC": 432,
+  "review_pack_occurrences_DIAGNOSTIC": 726
+ },
+ "rungs": [
+  {
+   "k": 8192,
+   "kept_rows": 8192,
+   "mandatory_rows": 765,
+   "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+   "ranking_rule": "(-census_count, parent_token_id)",
+   "observed_tokens_admitted_by_ranking": 4633,
+   "tokens_skipped_because_their_closure_did_not_fit": 0,
+   "dead_parent_rows_dropped": 1134,
+   "parameters_at_hidden_1024": 170972928,
+   "net_stored_ratio_at_hidden_1024": 0.7443535111603485,
+   "coverage_post_closure_sealed_corpus": {
+    "occurrences": 111575,
+    "occurrences_covered": 111575,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 5371,
+    "distinct_covered": 5371,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_pre_closure_sealed_corpus": {
+    "occurrences": 111575,
+    "occurrences_covered": 111575,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 5371,
+    "distinct_covered": 5371,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_sealed_corpus_donor": {
+    "occurrences": 67583,
+    "occurrences_covered": 67583,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 2030,
+    "distinct_covered": 2030,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_sealed_corpus_canonical": {
+    "occurrences": 43992,
+    "occurrences_covered": 43992,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 4806,
+    "distinct_covered": 4806,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_captured_batches": {
+    "occurrences": 6335,
+    "occurrences_covered": 6335,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 981,
+    "distinct_covered": 981,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_review_pack_DIAGNOSTIC": {
+    "occurrences": 726,
+    "occurrences_covered": 563,
+    "occurrence_coverage": 0.7754820936639119,
+    "distinct_tokens": 432,
+    "distinct_covered": 287,
+    "distinct_coverage": 0.6643518518518519,
+    "occurrences_lost": 163
+   },
+   "merges_retained": 7462
+  },
+  {
+   "k": 16384,
+   "kept_rows": 16384,
+   "mandatory_rows": 765,
+   "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+   "ranking_rule": "(-census_count, parent_token_id)",
+   "observed_tokens_admitted_by_ranking": 4633,
+   "tokens_skipped_because_their_closure_did_not_fit": 0,
+   "dead_parent_rows_dropped": 1134,
+   "parameters_at_hidden_1024": 179361536,
+   "net_stored_ratio_at_hidden_1024": 0.7808744381374416,
+   "coverage_post_closure_sealed_corpus": {
+    "occurrences": 111575,
+    "occurrences_covered": 111575,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 5371,
+    "distinct_covered": 5371,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_pre_closure_sealed_corpus": {
+    "occurrences": 111575,
+    "occurrences_covered": 111575,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 5371,
+    "distinct_covered": 5371,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_sealed_corpus_donor": {
+    "occurrences": 67583,
+    "occurrences_covered": 67583,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 2030,
+    "distinct_covered": 2030,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_sealed_corpus_canonical": {
+    "occurrences": 43992,
+    "occurrences_covered": 43992,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 4806,
+    "distinct_covered": 4806,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_captured_batches": {
+    "occurrences": 6335,
+    "occurrences_covered": 6335,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 981,
+    "distinct_covered": 981,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_review_pack_DIAGNOSTIC": {
+    "occurrences": 726,
+    "occurrences_covered": 625,
+    "occurrence_coverage": 0.8608815426997245,
+    "distinct_tokens": 432,
+    "distinct_covered": 342,
+    "distinct_coverage": 0.7916666666666666,
+    "occurrences_lost": 101
+   },
+   "merges_retained": 15654
+  },
+  {
+   "k": 32768,
+   "kept_rows": 32768,
+   "mandatory_rows": 765,
+   "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+   "ranking_rule": "(-census_count, parent_token_id)",
+   "observed_tokens_admitted_by_ranking": 4633,
+   "tokens_skipped_because_their_closure_did_not_fit": 0,
+   "dead_parent_rows_dropped": 1134,
+   "parameters_at_hidden_1024": 196138752,
+   "net_stored_ratio_at_hidden_1024": 0.8539162920916278,
+   "coverage_post_closure_sealed_corpus": {
+    "occurrences": 111575,
+    "occurrences_covered": 111575,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 5371,
+    "distinct_covered": 5371,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_pre_closure_sealed_corpus": {
+    "occurrences": 111575,
+    "occurrences_covered": 111575,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 5371,
+    "distinct_covered": 5371,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_sealed_corpus_donor": {
+    "occurrences": 67583,
+    "occurrences_covered": 67583,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 2030,
+    "distinct_covered": 2030,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_sealed_corpus_canonical": {
+    "occurrences": 43992,
+    "occurrences_covered": 43992,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 4806,
+    "distinct_covered": 4806,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_captured_batches": {
+    "occurrences": 6335,
+    "occurrences_covered": 6335,
+    "occurrence_coverage": 1.0,
+    "distinct_tokens": 981,
+    "distinct_covered": 981,
+    "distinct_coverage": 1.0,
+    "occurrences_lost": 0
+   },
+   "coverage_post_closure_review_pack_DIAGNOSTIC": {
+    "occurrences": 726,
+    "occurrences_covered": 680,
+    "occurrence_coverage": 0.9366391184573003,
+    "distinct_tokens": 432,
+    "distinct_covered": 391,
+    "distinct_coverage": 0.9050925925925926,
+    "occurrences_lost": 46
+   },
+   "merges_retained": 32039
+  }
+ ]
+}

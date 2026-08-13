@@ -169,21 +169,29 @@ sealed.
 
 **P5 (vocabulary coverage) — run, and it changed what the arm is.**
 
+`wave23/prereads/P5-vocab-coverage.json`, the two-stream census the built
+children were selected with:
+
 | K | kept | merges | corpus coverage | review-prompt coverage | ratio @ h=1024 |
 |---:|---:|---:|---:|---:|---:|
-| 8,192 | 8,192 | 7,462 | 1.000000 | 0.749311 | 0.744354 |
-| **16,384** | **16,384** | **15,654** | **1.000000** | **0.840220** | **0.780874** |
-| 32,768 | 32,768 | 32,038 | 1.000000 | 0.924242 | 0.853916 |
+| 8,192 | 8,192 | 7,462 | 1.000000 | 0.775482 | 0.744354 |
+| **16,384** | **16,384** | **15,654** | **1.000000** | **0.860882** | **0.780874** |
+| 32,768 | 32,768 | 32,039 | 1.000000 | 0.936639 | 0.853916 |
 
-The sealed corpus has **2,030 distinct tokens** over 67,583 occurrences. At every
-K worth having it is covered **100% pre-closure and post-closure alike**, so the
-closure correction the slate called the fatal flaw repair **has no effect at
-these budgets** — 0 tokens were ever skipped for want of room for their
-ancestors. The census admits 1,586 observed tokens beyond a 765-row mandatory
-set; the **other ~14,000 rows are chosen by the tie-break**, parent token id
-order, which for a BPE table is its merge order and therefore its *training*
-corpus's frequency order. **This arm is a tokenizer-frequency-prefix coreset,
-not an evidence coreset**, and the receipt says so in its `selection` field.
+The sealed corpus carries **2,030 distinct tokens as donor-mapped ids** and
+**4,806 under this tokenizer's own segmentation** — 5,371 in the union, over
+111,575 counted occurrences. At every K worth having it is covered **100%
+pre-closure and post-closure alike**, so the closure correction the slate called
+the fatal-flaw repair **has no effect at these budgets**: 0 tokens were ever
+skipped for want of room for their ancestors. The census admits **4,633**
+observed tokens beyond a 765-row mandatory set; the **other ~11,000 rows are
+chosen by the tie-break**, parent token id order, which for a BPE table is its
+merge order and therefore its *training* corpus's frequency order. **This arm is
+a tokenizer-frequency-prefix coreset, not an evidence coreset**, and the receipt
+says so in its `selection` field. Adding the canonical stream is worth **+2.1
+points of review-prompt coverage at K=16,384** (0.8402 -> 0.8609) over the
+donor-only census the first build used, which is the whole of what the repair in
+`563b7083` bought and it is smaller than it sounds.
 
 **And the sealed corpus is not what it looked like.** The first identity gate —
 decode with the parent, re-encode with the child, demand the same sequence —
