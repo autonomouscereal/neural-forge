@@ -1,11 +1,52 @@
 # Campaign scorecard — one page, for scoring
 
-**Campaign:** stage-1 matrix, waves 1–24, `reports/matrix-campaign-20260810/`.
+**Campaign:** stage-1 matrix, waves 1–25, `reports/matrix-campaign-20260810/`.
 **Parent:** `LFM2.5-230M`, **229,693,184 parameters**, sealed **12/15** on the
 frozen 15-prompt review (parent lane `865f006e3813712e…`, identical on every
 dossier in every wave).
-**Ledger:** 682 rows, sha `5d378f85f94cab9eb55c9f46aab7e01a2c52a36a3504690dd4d911612603f1ec`.
-**Reviewed whole-model children:** 172. **Scoring at least 1 of 15:** 124.
+**Ledger:** 706 rows, sha `cd22df335ab2c503ebcf634da253cef66e8e6c22a52ce23e1085d30672408018`.
+**Reviewed whole-model children:** 184. **Scoring at least 1 of 15:** 136.
+
+## Wave 25 changed the OTHER axis, and the change is larger than any row below
+
+The table on this page ranks by **depth**, which is Cyril's criterion, and wave
+25 moved that table by one row. What it moved much further is the **score** axis,
+and those children are too shallow to appear below, so they are stated here.
+
+| child | net | review | shape | what it is |
+|---|---:|---:|---|---|
+| `ARCH.V20` | **0.799135** | **13/15** | standard | vocabulary coreset at K = 20,480, **zero solve**, zero cap hits. The highest review in 25 waves, and **one more than the parent** on the same frozen surface in the same process. |
+| `ARCH.V12` | **0.762614** | **11/15** | standard | the same axis at K = 12,288. Ties wave 24's best non-excision child **nine points of ratio deeper**, and strictly dominates `ARCH.V16` (9/15 at 0.780874x) on both axes at once. |
+| `ARCH.V32X13` | **0.801395** | **10/15** | standard | K = 32,768 on the block-13 excision — the deepest **ten** in the campaign, and the first child ever to hold the deduplication lane at all. |
+
+**Read the 13 with the scepticism it deserves.** It is one reading of one
+sixteen-prompt surface; the parent's own 12 is the same kind of number; the child
+beats the parent on lanes (planning, uncertainty, arithmetic) where the parent's
+sealed lanes are themselves weak or wrong; and two cases on fifteen items is
+inside anybody's noise. The claim it supports is narrow and it is enough:
+**at 0.799x this axis costs nothing measurable on this surface.**
+
+**And wave 25 falsified the law wave 24 proposed for that axis.** Wave 24 had
+three points (K = 32,768 / 16,384 / 8,192 reading 11 / 9 / 4) and reported that
+the review tracks the measured position agreement with the parent's segmentation
+(0.3264 / 0.1460 / 0.0565) rather than the parameter ratio. Wave 25 built four
+more rungs off the identical census. The curve is **non-monotone in both**:
+
+| K | net stored | position agreement | review |
+|---:|---:|---:|---:|
+| 32,768 | 0.853916 | 0.3264 | 11/15 |
+| 20,480 | 0.799135 | 0.1736 | **13/15** |
+| 16,384 | 0.780874 | 0.1460 | 9/15 |
+| 14,336 | 0.771744 | 0.1322 | 9/15 |
+| 12,288 | 0.762614 | 0.0992 | **11/15** |
+| 10,240 | 0.753484 | 0.0992 | 10/15 |
+| 8,192 | 0.744354 | 0.0565 | 4/15 |
+
+K = 12,288 agrees with the parent's segmentation **less often** than K = 16,384
+and reads two cases **higher**; K = 10,240 and K = 12,288 agree with it *equally
+often, to four places*, and read 10 and 11. There is no law here yet — there is a
+**cliff**, located to within 2,048 rows: everything from 10,240 up reads 9 to 13,
+and 8,192 reads 4.
 
 **Wave 24 put a child seven cases deep BELOW the re-review line.** `ARCH.V8X13GL01`
 is the 8,192-row vocabulary coreset on the excised body with **one 1,024-entry
@@ -43,11 +84,13 @@ character column here are what the text actually does.
 | 4 | `ARCH.CL896` | **0.688431** | **4/15** | standard | reproduces the supplier summary with the 11% figure, writes a real if apologetic email, names the four missing quantities -- and restates the prompt verbatim wherever ordering or arithmetic is asked for; 3 of 16 lanes run to the cap | `reports/matrix-campaign-20260810/wave15/human-review/READ-CL896.txt` |
 | 5 | `ARCH.W736` | **0.689220** | **1/15** | standard | one case: it acknowledges the multi-turn correction and restates the corrected quantity. Everything else is a loop or empty, and the summarisation lane every other living width child holds is gone | `reports/matrix-campaign-20260810/wave21/human-review/READ-W736.txt` |
 | 6 | `ARCH.V8X13GL01` | **0.691832** | **7/15** | standard | seven of fifteen at 0.691832x, the deepest seven in the campaign. It greets a person properly, writes the email with all three facts in thirty words, orders four runners correctly where the PARENT does not, and names the closed gate, the decision, the risk and the four missing data points. It cannot do arithmetic, cannot write the deduplication function and cannot finish the lighthouse. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13GL01.txt` |
+| 6= | `ARCH.V8X13GL03` | **0.691832** | **7/15** | standard | **wave 25.** The same child at a lambda the solver's fixed ladder does not contain (0.3, between the two rungs that read 7 and 6). Same seven at the same 158,909,184 parameters, with **three lanes answered in full instead of two**: the greeting answers the person and asks exactly one question, the email carries all three named items inside a salutation and a sign-off and *requests* the tracking number, and three distinct detailed actions land. | `reports/matrix-campaign-20260810/wave25/human-review/READ-V8X13GL03.txt` |
 | 7 | `ARCH.V8X13` | **0.691832** | **6/15** | standard | the 8,192-row coreset on the 13/15 body. Everything structural survives -- Saturday, 4:15 p.m., decision/risk/mitigation, the four missing data points, and an email that carries all three named items -- and everything requiring a computation is gone. Composition ran the OTHER way here: the same excision costs the 16,384 rung four cases and buys this one two. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13.txt` |
 | 8 | `ARCH.V8X13GL1` | **0.691832** | **6/15** | standard | the mildest rung on the deep base: six lanes held, none in full. The word-substitution signature is thinner here than anywhere else in the wave (one cap hit of sixteen) and the content is correspondingly flatter. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13GL1.txt` |
 | 9 | `ARCH.V8X13G` | **0.691832** | **4/15** | standard | the terminal-read solve at the lambda its own out-of-sample criterion picked, and the picking is the failure: it trades three held lanes for two Useful ones, including the only greeting in the wave that answers the person AND asks its question, and the only finish order in the wave that is correct. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13G.txt` |
 | 10 | `COMP.MA.MXO4` | **0.703396** | **5/15** | parent-shaped | five partials and no useful; the degeneracy is no longer confined to one lane, which is where wave 11's ladder stopped | `not packaged (pre-wave-15)` |
 | 11 | `COMP.MA.MXP2` | **0.703409** | **6/15** | parent-shaped | the same depth as MXO4 bought by shopping the lane instead of taking it in depth order: one more case, half the lambada perplexity, still no useful | `not packaged (pre-wave-15)` |
+| 11= | `ARCH.V12X13` | **0.710093** | **7/15** | standard | **wave 25.** K = 12,288 on the excised body, zero solve, zero cap hits. The retrieval lane lands in full — Saturday, 4:15 p.m., the north gate closed, avoid it — and six more are held in part. Built as a diagnostic and it earned a row: it is the deepest STANDARD-shape seven that is not the 0.691832x cluster. | `reports/matrix-campaign-20260810/wave25/human-review/READ-V12X13.txt` |
 | 12 | `COMP.MA.MXQ5` | **0.710270** | **7/15** | parent-shaped | the healthiest deep child in the campaign -- two Useful gradings and one lane at the cap -- and it costs 1.58M added repair parameters charged in full | `not packaged (pre-wave-15)` |
 | 13 | `COMP.MA.MXP1` | **0.712544** | **7/15** | parent-shaped | repair on the autopilot child: two cases bought for 2.1M added parameters, and no benchmark row exists because forward-hook routes cannot be written into a state_dict | `not packaged (pre-wave-15)` |
 | 14 | `ARCH.W768` | **0.722610** | **3/15** | standard | the summarisation lane names the decision, the risk and the mitigation with the supplier's name corrupted to "Supper B"; eleven of sixteen lanes are loops or empty | `reports/matrix-campaign-20260810/wave19/human-review/READ-W768.txt` |
@@ -80,10 +123,13 @@ character column here are what the text actually does.
 * **The deepest scoring child of any kind:** `ARCH.V16CL896`, **0.469305x,
   1/15**, standard shape (wave 23). The deepest at **four or more** cases is
   still `ARCH.CL896`, **0.688431x, 4/15**.
-* **The deepest STANDARD-SHAPE child at 8/15 or better:** `ARCH.V16`,
-  **0.780874x, 9/15** — seventeen points deeper than the previous holder
-  (`ARCH.X13A`, 0.947479x), and at the same ratio as `MXN2` with one case less
-  and a stock loader instead of a reconstituted `lm_head`.
+* **The deepest STANDARD-SHAPE child at 8/15 or better:** `ARCH.V12`,
+  **0.762614x, 11/15** (wave 25) — eighteen thousandths deeper than the previous
+  holder `ARCH.V16` and two cases better, stock loader, zero solve, zero cap hits.
+* **The highest-scoring child of any kind:** `ARCH.V20`, **0.799135x, 13/15**
+  (wave 25) — one case above the parent's own sealed 12/15 on the same surface.
+* **The deepest child at 10/15 or better:** `ARCH.V10`, **0.753484x, 10/15**
+  (wave 25). One rung below it, at 0.744354x, the axis reads 4/15.
 * **The deepest child of any score:** `ARCH.W512`, **0.463481x, 0/15**.
 * **0.5x with a coherent child: not reached.** Two independent 0.5x children in
   two lane orders, with and without repair, plus a third by a different axis, all

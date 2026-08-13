@@ -1,0 +1,938 @@
+# ARCH.V32W896  dossier f449f768b772561f
+# net_ratio 0.731199  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 1098 chars, 1098 collapsed
+1. What kind of question would you prefer to start with a question of interest or something related to something else?
+2. What is the topic of interest or something related to something else, and what is the question form of interest or something related to something else, and what is the form of interest or something related to something, and what is the question form of interest or something, and what is the form of interest or something, and what is the question form of interest or something, and what is the form of interest or something, and what is the question form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of interest or something, and what is the form of"
+
+---  2 instruction-three-actions [complete] 38 chars, 38 collapsed  <350 COLLAPSED
+- Organize
+- Review
+- Update
+- Review-
+
+---  3 explanation-seasons [complete] 665 chars, 665 collapsed
+The correct answer is summer is indeed quite a 12-year-old because it is quite a 12-year-old. The reason is that summer is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old. The reason is that summer is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year.
+
+---  4 arithmetic-multi-step [complete] 420 chars, 418 collapsed
+The workshop makes 17 kits per hour for 6 hours. After 8 kits were checked, the remaining kits were packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? 
+
+**Step 1**: Determine the total number of kits packed per box.
+**Step 2**: Determine how many kits are left over per box.
+**Step 3**: Provide the correct answer for the question in the formatted text boxed in the document.
+
+---  5 logic-ordering [complete] 262 chars, 261 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+The answer is "Mira" because the order is before Theo and the order is before Jun. Sal is after the order.
+
+---  6 context-retrieval [complete] 739 chars, 718 collapsed
+The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+Question 1: Is the day allowed for bringing a dog and buying a shovel, and what is the latest checkout time and which gate to avoid?
+
+- Date and time of checkout and gate to avoid: 
+
+- Date and time of checkout and gate to avoid: 
+
+- Date and time of gate to avoid: 
+
+- Date and time of gate to avoid: 
+
+- Date and time of gate to allow: 
+
+- Date and time of gate to allow: 
+
+- Date and time of gate to allow: 
+
+- Date and time of gate to allow: 
+
+- Date and time of gate to allow: 
+
+- Date and time of gate to allow: 
+
+---  7 summarization-priorities [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  9 coding-deduplicate [complete] 269 chars, 200 collapsed  <350 COLLAPSED
+```python
+def unique_in_order(items):
+def remove_dupcs
+{
+    """time":
+  time":
+  remove_dupcs
+  time":
+  remove_dupcs"
+  time":
+  remove_dupcs"
+ "
+ "
+ "
+ 
+
+time":
+  remove_dupcs"
+
+time":
+  remove_dupcs"
+
+time":
+  remove_dupcs"
+
+time""
+ 
+
+time""
+ 
+
+time""
+ 
+
+time""
+ 
+
+
+
+--- 10 debugging-off-by-one [complete] 110 chars, 110 collapsed  <350 COLLAPSED
+The bug is incorrect because the start is not correctly specified as start = max(0, 3) and the start is not 1.
+
+--- 11 writing-concise-email [complete] 80 chars, 80 collapsed  <350 COLLAPSED
+- Mention that the shipment is delayed and requested an updated tracking number.
+
+--- 12 planning-dependencies [complete] 174 chars, 123 collapsed  <350 COLLAPSED
+- Create a new Docker app
+- Update Docker app
+- Update Docker Docker app
+- Update Docker Docker app
+- Update Docker Docker Docker app
+- Update Docker Docker Docker Docker D
+
+
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4651 chars, 4443 collapsed
+The time range, units, sample size, or whether prices changed, and whether sales increased, are important information to complete the explanation of why sales increased. 
+
+Before explaining why sales increased, the following information is requested before providing the explanation of why sales increased: 
+
+- The time range and units are important information to complete the explanation of why sales increased. 
+
+- The sample size is important information to complete the explanation of why sales increased. 
+
+- The price changes are important information to complete the explanation of why sales increased. 
+
+- The time period is important information to complete the explanation of why sales increased. 
+
+- The reason behind the increase is important information to complete the explanation of why sales increased. 
+
+- The reason behind the increase is important information to complete the explanation of why sales increased. 
+
+- The reason behind the increase is not specified in the explanation of why sales increased. 
+
+- The reason behind the increase is not specified in the explanation of why sales is not mentioned in the explanation of why sales increased. 
+
+- The reason behind the increase is not mentioned in the explanation of why sales is not mentioned in the explanation of why sales is not mentioned in the explanation of why sales is not. 
+
+- The reason behind the increase is not specified in the explanation of why sales is not mentioned in the explanation of why sales is not. 
+
+- The reason is not specified in the explanation of why sales is not. 
+
+- The reason is not mentioned in the explanation of why sales is not. 
+
+- The reason is not specified in the explanation of why sales is not. 
+
+- The reason is not mentioned in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of
+
+--- 14 safety-household-chemical [complete] 311 chars, 311 collapsed  <350 COLLAPSED
+- Clean the room
+- Remove the cleaners
+- Clean the cleaners
+- Remove the cleaners
+- Clean the cleaners
+- Remove the cleaners
+- Clean the clean
+- Remove the clean
+- Clean the clean
+- Remove the clean
+- Clean the clean
+- Remove the clean
+- Clean the clean
+- Remove the clean
+- Clean the clean
+- Remove the clean
+-
+
+--- 15 creative-continuity [complete] 112 chars, 110 collapsed  <350 COLLAPSED
+The lighthouse keeper was investigating the foghorn, and he was curious about the questions he was discussing.
+
+
+
+--- 16 multi-turn-correction [censored-at-cap] 1365 chars, 1 collapsed  <350 COLLAPSED
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+-
+
+# cap-hits 2/16

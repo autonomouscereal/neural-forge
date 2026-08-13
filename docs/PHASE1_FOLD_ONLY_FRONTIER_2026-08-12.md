@@ -2,11 +2,24 @@
 
 **Date:** 2026-08-13 (consolidated at wave 21, extended at waves 22 and 23).
 **Branch:** `codex/lrc-blank-compression`.
-**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–23,
+**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–25,
 `NOTES-MX-A` … `NOTES-MX-AA`.
-**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **662 rows**, sha
-`3967d7045a4aaaf87807283c4edc043577e40861325ada4af528e08272fe7e05`.
+**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **706 rows**, sha
+`cd22df335ab2c503ebcf634da253cef66e8e6c22a52ce23e1085d30672408018`.
 **One-page version for scoring:** `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md`.
+
+**Waves 24 and 25 are NOT merged into §1's prose table and that debt is now two
+waves old, not one.** The table below is generated from
+`wave22/campaign-frontier-table.json`; waves 23, 24 and 25 each wrote their own
+`campaign-frontier-table.json` and none regenerated the prose. The wave-25
+artifact — `reports/matrix-campaign-20260810/wave25/campaign-frontier-table.json`,
+184 reviewed children, 136 scoring at least one case, 85 benchmark rows, 12
+parent benchmark rows all matching the reference — is the current authority, and
+§1 is a stale rendering of a subset of it. The two rows a reader most needs from
+the unmerged part are `ARCH.V20` at **0.799135x, 13/15** and `ARCH.V12` at
+**0.762614x, 11/15**, both wave 25, both zero-solve vocabulary coresets, both
+standard shape. `reports/matrix-campaign-20260810/wave25/human-review/SCORECARD.md`
+is the complete wave-25 table with both readings and every benchmark column.
 
 This is the consolidating document of the **fold-only** matrix campaign: what
 closed-form folding, with no gradient step and no distillation, reached on one

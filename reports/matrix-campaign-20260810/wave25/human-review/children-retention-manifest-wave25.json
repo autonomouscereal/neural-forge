@@ -1,0 +1,72 @@
+{
+ "schema": "neural-forge-matrix-wave25-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave25/children",
+ "built": [
+  "MX25-V10",
+  "MX25-V12",
+  "MX25-V12X13",
+  "MX25-V14",
+  "MX25-V16X13GL03",
+  "MX25-V20",
+  "MX25-V32W896",
+  "MX25-V32X13",
+  "MX25-V32X13G",
+  "MX25-V32X13GL01",
+  "MX25-V32X13GL1",
+  "MX25-V8X13GL03"
+ ],
+ "kept": {
+  "MX25-V10": {
+   "reason": "10/15 at 0.753484x -- the bisection of the 8,192-to-12,288 cliff.  Four cases below it and ten here, 2,048 rows apart; the collapse of this axis is located by this checkpoint and by nothing else",
+   "bytes": 346757684
+  },
+  "MX25-V12": {
+   "reason": "11/15 at 0.762614x -- ties the campaign's best non-excision review nine points of ratio deeper, and its position agreement of 0.0992 is the measurement that falsifies wave 24's segmentation law",
+   "bytes": 351060135
+  },
+  "MX25-V12X13": {
+   "reason": "7/15 at 0.710093x -- the composed rung that turns wave 24's sign-change story into a four-point curve",
+   "bytes": 326932260
+  },
+  "MX25-V14": {
+   "reason": "9/15 at 0.771744x -- the point between the two elevens that reads nine, which is the whole evidence that the axis is not monotone in K",
+   "bytes": 355364038
+  },
+  "MX25-V16X13GL03": {
+   "reason": "7/15 at 0.728353x -- the V16 recovery, and the first child built at a lambda the fixed selection ladder does not contain.  The ladder on this base is unimodal with its peak here",
+   "bytes": 335542659
+  },
+  "MX25-V20": {
+   "reason": "13/15 at 0.799135x, zero cap hits -- the highest review in 25 waves and one more than the parent scores on the same frozen surface.  If any checkpoint in this campaign is going to be re-opened by somebody who does not believe the number, it is this one",
+   "bytes": 368281098
+  },
+  "MX25-V32W896": {
+   "reason": "3/15 at 0.731199x -- kept for the SIGNATURE, as wave 24 kept V8CL896 for the same reason: three of sixteen lanes return the prompt itself, which is now the second sighting of prompt-echo and the first alongside cap hits",
+   "bytes": 337785394
+  },
+  "MX25-V32X13": {
+   "reason": "10/15 at 0.801395x -- the quality base under the campaign's best excision, and the zero-solve control every rung of its ladder is measured against at an identical parameter count",
+   "bytes": 369999453
+  },
+  "MX25-V32X13G": {
+   "reason": "10/15, the split-selected rung of that ladder (lambda 0.01)",
+   "bytes": 370000938
+  },
+  "MX25-V32X13GL01": {
+   "reason": "9/15, the lambda 0.1 rung -- the only rung of four to lose a case",
+   "bytes": 370000922
+  },
+  "MX25-V32X13GL1": {
+   "reason": "10/15, the lambda 1.0 rung, and the only one holding summarisation in full",
+   "bytes": 370000917
+  },
+  "MX25-V8X13GL03": {
+   "reason": "7/15 at 0.691832x with THREE Useful lanes -- matches the child Cyril is scoring at an identical parameter count and carries one more full answer",
+   "bytes": 318332922
+  }
+ },
+ "deleted": {},
+ "bytes_kept": 4220058420,
+ "bytes_deleted": 0,
+ "applied": true
+}

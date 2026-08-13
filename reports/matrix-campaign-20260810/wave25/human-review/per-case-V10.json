@@ -1,0 +1,17 @@
+{
+ "conversation-natural-greeting": "Partial",
+ "instruction-three-actions": "Useful",
+ "explanation-seasons": "Partial",
+ "arithmetic-multi-step": "Observed miss",
+ "logic-ordering": "Partial",
+ "context-retrieval": "Useful",
+ "summarization-priorities": "Partial",
+ "comparison-ram-rom": "Observed miss",
+ "coding-deduplicate": "Observed miss",
+ "debugging-off-by-one": "Observed miss",
+ "writing-concise-email": "Useful",
+ "planning-dependencies": "Partial",
+ "uncertainty-insufficient-data": "Partial",
+ "creative-continuity": "Observed miss",
+ "multi-turn-correction": "Partial"
+}
