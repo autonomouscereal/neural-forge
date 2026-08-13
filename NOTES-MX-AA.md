@@ -8,9 +8,14 @@ corrected after it failed), `916414bc` (the agreement statistic), `b462837f`
 commit for this note.
 
 **Five deployments, and every receipt says which.** The wave needed five because
-four guards refused in sequence and each refusal was correct; the last,
-`neural-forge-matrix-df452ac9`, built and sealed every child and is named in
-`repo_head` on all five ARCH receipts. Each was cut with
+four guards refused in sequence and each refusal was correct. **Two deployments
+sealed children and the receipts say so:** `ARCH.V16` and `ARCH.V16X13` name
+`repo_head` **`b462837f`**, `ARCH.V16W896`, `ARCH.V16W896X13` and `ARCH.V16CL896`
+name **`df452ac9`**. All five carry the **identical** `src_tree_sha`
+`311d97a7455b…`, because the only difference between those two commits is
+`run/mx23/mx23_vocab.py` — the builder, not the sealer and not the review — so
+the five children were graded by byte-identical harness code. Each deployment
+was cut with
 `git archive -c core.autocrlf=false` and verified file by file against its own
 commit's blob digests: **4,528 files, 0 content mismatches, 0 missing, 0
 undeclared, 0 hardlinks**, each. That file count is larger than waves 15–22's
@@ -298,8 +303,12 @@ estimated, and the waves that depend on them — S2, S3, S4 — were not built.
   gains the same flag under the same two refusals. Omitted, both scripts behave
   exactly as they have since wave 15, so no sealed dossier's text moves.
 * **Deployments** — five, each verified byte-true, 4,528 files and four zeros
-  (§0). Waves 21 and 22's were left alone; wave 23's four superseded ones were
-  removed as they were replaced.
+  (§0). Two of them sealed children (`b462837f` for `V16` and `V16X13`,
+  `df452ac9` for the other three) and both are named in the receipts; the
+  `src_tree_sha` is identical across all five, so the harness that graded them
+  is byte-identical and only the builder moved. Waves 21 and 22's deployments
+  were left alone; wave 23's four superseded ones were removed as they were
+  replaced, leaving `neural-forge-matrix-df452ac9` on disk.
 * **Ledger.** **652 -> 662**, sha
   `3967d7045a4aaaf87807283c4edc043577e40861325ada4af528e08272fe7e05`. Backed up
   first (`backup/ledger.jsonl.pre-wave23-20260813T135912`, verified by sha **and**
