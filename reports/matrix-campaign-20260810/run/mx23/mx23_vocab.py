@@ -474,14 +474,23 @@ def build(args: argparse.Namespace) -> int:
     # block -- digest, retained energies, full spectrum -- travels with it.
     source_axes: list[dict[str, Any]] = []
     source_excised: list[int] = [int(x) for x in (args.excised or [])]
+    source_basis: dict[str, Any] | None = None
     source_receipts = sorted(source.glob("mx*-build-receipt.json"))
     if source_receipts:
         source_build = json.loads(source_receipts[-1].read_text(encoding="utf-8"))
         source_axes = list(source_build.get("axes", []))
         source_excised = [int(x) for x in source_build.get("excised", [])] or source_excised
+        # A child narrower than the parent has terminal rows of a different
+        # length, and the sealer projects the parent's rows through the child's
+        # OWN declared basis to compare them.  The vocabulary fold does not touch
+        # the residual, so that basis is unchanged -- but it has to be carried,
+        # or the seal refuses a comparison it cannot define, which is the right
+        # refusal and would be the wrong outcome here.
+        source_basis = source_build.get("residual_basis")
         log(
             f"carried {len(source_axes)} axes from {source_receipts[-1].name} "
-            f"(excised {source_excised})"
+            f"(excised {source_excised}, residual basis "
+            f"{'yes' if source_basis else 'none'})"
         )
     elif source.resolve() != PARENT.resolve():
         raise SystemExit(
@@ -696,6 +705,7 @@ def build(args: argparse.Namespace) -> int:
         "parent_parameters": PARENT_PARAMS,
         "net_stored_ratio": live / PARENT_PARAMS,
         "excised": source_excised,
+        "residual_basis": source_basis,
         "axes": source_axes
         + [
             {
