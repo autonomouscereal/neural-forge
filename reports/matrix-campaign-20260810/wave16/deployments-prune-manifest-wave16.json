@@ -6,7 +6,14 @@
  "total_bytes": 166042082,
  "kept": [
   "neural-forge-matrix-1c197ed4 (wave 15)",
-  "neural-forge-matrix-9a7c391b (wave 16)"
+  "neural-forge-matrix-35dfe3a9 (wave 16)"
  ],
- "listing_sha256": "5b0b6057c2b923d3a0e601bde9b7cb2aff0f843383ac46c3853aed61596eda36"
+ "listing_sha256": "5b0b6057c2b923d3a0e601bde9b7cb2aff0f843383ac46c3853aed61596eda36",
+ "also_pruned": {
+  "path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-720b597a",
+  "file_count": 1635,
+  "total_bytes": 89247382,
+  "listing_sha256": "a78e939e18842d2f9a22dc62eaa465c5353affc3be52b2057a0fcba7a5bc57d4",
+  "why": "superseded mid-wave by 35dfe3a9; it could not be removed at the time because a build queue was still running against it, so three deployments coexisted for the duration of that queue and the wave ends at current+1"
+ }
 }

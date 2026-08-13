@@ -266,11 +266,15 @@ error ADDENDUM 8 was written to stop.
   seals with last wave's schema code): **12 roots present, 0 undeclared; 525
   rows, 521 resolve, 521 verify, 0 fail, 4 do not resolve** — the same four
   pre-existing non-resolvers waves 14 and 15 named.
-* **Disk.** Server `/` began at 14 GB free and ended at 13 GB. Deployments held
-  at current+1 throughout: `63e95cd8` was pruned under a manifest
-  (`wave16/deployments-prune-manifest-wave16.json`, 2,667 files, 166,042,082
-  bytes) when this wave's first deployment landed, and each superseding wave-16
-  deployment replaced its predecessor. Twenty-one children were built; the
+* **Disk.** Server `/` began at 14 GB free and ended at 13 GB. `63e95cd8` was
+  pruned under a manifest (`wave16/deployments-prune-manifest-wave16.json`, 2,667
+  files, 166,042,082 bytes) when this wave's first deployment landed, and
+  `9a7c391b` was removed the moment `720b597a` superseded it. **Three
+  deployments coexisted once, and the manifest says so**: `720b597a` could not be
+  removed when `35dfe3a9` superseded it because a build queue was still running
+  against it, so it was pruned (1,635 files, 89,247,382 bytes) at the end of the
+  wave. The wave *ends* at current+1 — `1c197ed4` (wave 15) and `35dfe3a9`
+  (wave 16) — and did not hold it throughout. Twenty-one children were built; the
   **best five by sealed score plus the deepest non-zero child** are kept
   (`MX16-X13A`, `MX16-X07`, `MX16-X09`, `MX16-X11`, `MX16-W1536X13`) and the
   other sixteen are deleted and named with their sealed tensor digests in
