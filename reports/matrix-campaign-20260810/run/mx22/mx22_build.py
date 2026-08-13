@@ -483,8 +483,17 @@ BASIS_SCHEMA = "neural-forge-matrix-wave22-residual-basis-v1"
 #: never built against, and building against it is one of this wave's leftovers.
 #: A new schema string that refuses last wave's artifact would quietly turn that
 #: leftover into a rebuild, and a rebuilt basis is not the sealed one.
+#:
+#: **Wave 22's rename did exactly that and the endpoint census caught it.**  The
+#: tree was cut from wave 21's by a token rename, which rewrote the FIRST entry
+#: of this tuple (`BASIS_SCHEMA` itself) and left the other two, so wave 21's own
+#: sealed bases -- `E-reader-pca-736`, `E-reader-maxmin-768` -- became unreadable
+#: by the wave whose job is to compare against them.  It refused loudly, which is
+#: the only reason this is a one-line fix and not a silent rebuild; the list is
+#: append-only for the same reason the seal verifier's root list is.
 BASIS_SCHEMAS_ACCEPTED = (
     BASIS_SCHEMA,
+    "neural-forge-matrix-wave21-residual-basis-v1",
     "neural-forge-matrix-wave20-residual-basis-v1",
     "neural-forge-matrix-wave19-residual-basis-v1",
 )
