@@ -373,7 +373,7 @@ BASIS_SCHEMAS_ACCEPTED = (
 #: reads the case weights out of.  It is committed in the repository; the path is
 #: resolved relative to this file so a deployment carries its own copy.
 ATTRIBUTION_ARTIFACT = (
-    Path(__file__).resolve().parents[1] / "wave19" / "percase-attribution.json"
+    Path(__file__).resolve().parents[2] / "wave19" / "percase-attribution.json"
 )
 #: The axis whose deficit defines the weighting.  `hidden_size` is the width
 #: axis's own key in the attribution artifact's `per_axis_hold_rate`.
@@ -2785,6 +2785,12 @@ def procedural_mask(pieces: list[str]) -> torch.Tensor:
 
     mask = torch.zeros(len(pieces), dtype=torch.bool)
     for t in range(len(pieces)):
+        # The opener is the token that CARRIES the line break.  Without that
+        # anchor the two-token window also fires on the token before it -- the
+        # pattern is in the window either way -- and the span starts one token
+        # early, which the self-test caught.
+        if "\n" not in pieces[t]:
+            continue
         window = pieces[t] + (pieces[t + 1] if t + 1 < len(pieces) else "")
         if PROCEDURE_OPENER.search(window):
             mask[t : min(len(pieces), t + PROCEDURE_WINDOW)] = True
@@ -3218,7 +3224,9 @@ def build_basis(
             values = spectrum(pooled)
             cumulative = torch.cumsum(values, dim=0)
             census["spectrum"][f"{kind}.{split}"] = {
-                f"top_{w}": float(cumulative[w - 1]) for w in CENSUS_WIDTHS
+                f"top_{w}": float(cumulative[w - 1])
+                for w in CENSUS_WIDTHS
+                if w <= hidden
             }
             if mode != "identity":
                 census["retained"][f"{kind}.{split}"] = retained_fraction(pooled, basis)
