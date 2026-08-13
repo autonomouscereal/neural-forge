@@ -82,6 +82,7 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave15-standard-shape-child-v1",
     "neural-forge-matrix-wave16-standard-shape-child-v1",
     "neural-forge-matrix-wave17-standard-shape-child-v1",
+    "neural-forge-matrix-wave18-standard-shape-child-v1",
 )
 
 
