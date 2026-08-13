@@ -31,7 +31,7 @@ probe () {
   echo "$TAG rc=$? $(tail -1 $W/logs/probe-$TAG.log)"
   grep "gate probe" $W/logs/probe-$TAG.log
 }
-probe GATE-X13 --excise 13 --kv-groups 6 --kv-solve joint
-probe GATE-F1301 --excise 13 --excise 1 --kv-groups 6 --kv-solve joint
-probe GATE-KV6 --kv-groups 6 --kv-solve joint
+probe GATE2-X13 --excise 13 --kv-groups 6 --kv-solve joint
+probe GATE2-F1301 --excise 13 --excise 1 --kv-groups 6 --kv-solve joint
+probe GATE2-KV6 --kv-groups 6 --kv-solve joint
 echo PROBEQ DONE
