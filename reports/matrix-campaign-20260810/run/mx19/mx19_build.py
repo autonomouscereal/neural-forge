@@ -2906,7 +2906,13 @@ def fold_reader(
         )
     gained = weight * gain[None, :]
     folded = ((gained @ basis) / child_gain[None, :]) * scale
-    amplification = float(folded.norm() / (scale * gained.norm()))
+    # Against the PARENT's own reader, not against the gained one.  Both consume
+    # a post-norm row that has already been multiplied by its endpoint's gain --
+    # ``g`` for the parent, ``g_c`` for the child -- so ``W`` is the object
+    # ``W_c`` replaces, and the ratio is 1.0 at the identity by construction.
+    # Measured against the gained weight instead it reads 1/mean|g| ~ 17 at the
+    # identity, which is how the first run of this guard refused its own gate.
+    amplification = float(folded.norm() / (scale * weight.norm()))
     if amplification > GAIN_AMPLIFICATION_CAP:
         raise SystemExit(
             f"the reader fold amplifies this weight by {amplification:.2f}x, over the "
@@ -3104,9 +3110,7 @@ def fold_layer_closed_form(
         folded = fold_reader(weight, ffn_gain, basis, ffn_child_gain, scale)
         setattr(child_mlp, name, _linear(folded, dtype, device))
         if name == "w1":
-            record["reader_amplification"] = float(
-                folded.norm() / (scale * (weight * ffn_gain[None, :]).norm())
-            )
+            record["reader_amplification"] = float(folded.norm() / (scale * weight.norm()))
     child_mlp.w2 = _linear(
         fold_writer(parent_mlp.w2.weight.data.to(torch.float64).cpu(), basis), dtype, device
     )
