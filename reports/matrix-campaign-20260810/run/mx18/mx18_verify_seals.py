@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Verify every seal, with the search roots read against the wave directories.
 
-Wave 16's verifier with `wave18/cells` added, and with the one thing wave 15
+Wave 17's verifier with `wave18/cells` added -- and `wave17/cells` KEPT, which
+is not a free line: forking this file by rewriting every `wave17` to `wave18`
+deletes last wave's root, and the audit below is exactly what catches that.  It
+caught it here.  With the one thing wave 15
 still hardcoded made an argument: the deployment whose `src` supplies
 `verify_seal`.  A verifier pinned to a previous wave's deployment either breaks
 when that deployment is pruned under the current+1 policy or, worse, verifies
@@ -52,6 +55,7 @@ SEARCH = [
     ROOT / "wave14" / "cells",
     ROOT / "wave15" / "cells",
     ROOT / "wave16" / "cells",
+    ROOT / "wave17" / "cells",
     ROOT / "wave18" / "cells",
 ]
 

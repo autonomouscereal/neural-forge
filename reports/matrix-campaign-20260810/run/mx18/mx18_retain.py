@@ -1,18 +1,31 @@
 #!/usr/bin/env python3
-"""Wave 17 retention: the best five by sealed score plus the deepest non-zero
-child, kept; every other child deleted and named with its sealed tensor digest.
+"""Wave 18 retention: the best five by sealed score plus the children a later
+wave cannot re-derive, kept; every other child deleted and named with its sealed
+tensor digest.
+
+Wave 18 adds one class to the policy and says why: the pre-repair `X07KV6JQ` is
+kept beside its repaired twin because the pair is the only behavioural price of
+the causal-mask defect this campaign will ever measure, and a control you have
+deleted is not a control.  The bit-identical rebuilds are NOT kept -- X13C, X00C,
+X07C, P1301C and T010713C reproduce their originals to the digest, so keeping
+them would be keeping the same bytes twice.
 """
 import json, os, shutil, sys
 
 W = "/mnt/ai_data/neural-forge-matrix/wave18"
-KEEP = {"MX18-X06", "MX18-KV6JQ", "MX18-P1301", "MX18-P1303", "MX18-X10", "MX18-X13KV6JQ"}
+KEEP = {
+    "MX18-KV6JS",
+    "MX18-X07KV6JQC",
+    "MX18-X07KV6JQ",
+    "MX18-X09KV6JQC",
+    "MX18-T010713",
+}
 REASON = {
-    "MX18-X06": "8/15, the highest-scoring attention excision and the best benchmark row of any child in the campaign",
-    "MX18-KV6JQ": "8/15, the joint-solve head merge, three cases above wave 16 average-in-gauge at the same size",
-    "MX18-P1301": "7/15, the highest-scoring pair (blocks 13 and 1) and the deepest non-zero child of the wave",
-    "MX18-P1303": "7/15, the second-widest pair, and the distance ladder needs both ends",
-    "MX18-X10": "7/15 and the only child of the wave whose per-CHILD verdict is not dead",
-    "MX18-X13KV6JQ": "4/15, the deepest child that stacks an excision on the joint merge",
+    "MX18-KV6JS": "7/15, the lambda fix: the value path costs one case where wave 17 unsplit lambda cost five, at the identical parameter count and an unchanged benchmark row",
+    "MX18-X07KV6JQC": "7/15, the best composed child of the wave and the best excision-plus-merge composition in the campaign",
+    "MX18-X07KV6JQ": "6/15, the SAME recipe built with the causal-mask defect -- the only behavioural price of that defect the campaign will ever measure, and a control you have deleted is not a control",
+    "MX18-X09KV6JQC": "5/15, the second composition rung and the one that says the merge does not compose by distance",
+    "MX18-T010713": "3/15, the highest-scoring triple and the deepest non-zero child of the wave at 0.842437x",
 }
 index = {c["cell_id"]: c for c in json.load(open(W + "/wave18-child-index.json"))["children"]}
 rows = []

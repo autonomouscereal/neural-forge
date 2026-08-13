@@ -1,0 +1,154 @@
+[
+ {
+  "excise": [
+   13
+  ],
+  "repair": false,
+  "sites": [
+   {
+    "position": 2,
+    "parent_block": 2,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.012538906056316385,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 4,
+    "parent_block": 4,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.01609327007395604,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 6,
+    "parent_block": 6,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.01536147684240643,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 8,
+    "parent_block": 8,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.01603484086323714,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 10,
+    "parent_block": 10,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.01326005660746148,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 12,
+    "parent_block": 12,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.011240333809755981,
+    "module_mass_on_future": 0.0
+   }
+  ]
+ },
+ {
+  "excise": [
+   13,
+   1
+  ],
+  "repair": false,
+  "sites": [
+   {
+    "position": 1,
+    "parent_block": 2,
+    "config_type_at_position": "conv",
+    "probabilities_relL2": 0.5075471405019272,
+    "module_mass_on_future": 0.28605717923539725
+   },
+   {
+    "position": 3,
+    "parent_block": 4,
+    "config_type_at_position": "conv",
+    "probabilities_relL2": 0.6484585948488385,
+    "module_mass_on_future": 0.33747714657803407
+   },
+   {
+    "position": 5,
+    "parent_block": 6,
+    "config_type_at_position": "conv",
+    "probabilities_relL2": 1.0758892631120751,
+    "module_mass_on_future": 0.45846843118267844
+   },
+   {
+    "position": 7,
+    "parent_block": 8,
+    "config_type_at_position": "conv",
+    "probabilities_relL2": 0.8810489399365208,
+    "module_mass_on_future": 0.47997698234971153
+   },
+   {
+    "position": 9,
+    "parent_block": 10,
+    "config_type_at_position": "conv",
+    "probabilities_relL2": 0.8862639522597108,
+    "module_mass_on_future": 0.4570443232102017
+   },
+   {
+    "position": 11,
+    "parent_block": 12,
+    "config_type_at_position": "conv",
+    "probabilities_relL2": 0.5873196062414068,
+    "module_mass_on_future": 0.3527424869653673
+   }
+  ]
+ },
+ {
+  "excise": [
+   13,
+   1
+  ],
+  "repair": true,
+  "sites": [
+   {
+    "position": 1,
+    "parent_block": 2,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.013682193500160856,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 3,
+    "parent_block": 4,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.014548212294780158,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 5,
+    "parent_block": 6,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.01564950899940319,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 7,
+    "parent_block": 8,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.01638258361478462,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 9,
+    "parent_block": 10,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.014362226768335522,
+    "module_mass_on_future": 0.0
+   },
+   {
+    "position": 11,
+    "parent_block": 12,
+    "config_type_at_position": "full_attention",
+    "probabilities_relL2": 0.0158429338100166,
+    "module_mass_on_future": 0.0
+   }
+  ]
+ }
+]

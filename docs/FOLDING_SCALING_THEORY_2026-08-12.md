@@ -705,3 +705,77 @@ model's own depth redundancy taken at the only level that decides anything.**
   a pair child reading 7/15 has a lambada perplexity of **2,870** (118x the
   parent's). A depth-reduction claim on a larger model that quotes only one
   surface is unfalsifiable in whichever direction it happens to be wrong.
+
+## Wave-18 additions to the sealed physics — where the distance law ends, and one harness law
+
+Wave 17 produced the campaign's one clean law (pair cost tracks block distance)
+and one unexplained refusal. Wave 18 pushed the law to three bodies, built the
+regularisation fix wave 17 named, and attributed the refusal. Two of the three
+change what transfers.
+
+* **The distance law is a two-body law. State it that way.** Spread still helps
+  at three blocks — the tightest triple available (mutual distances 2, 2, 4) is
+  0 of 15 and the widest (6, 6, 12) is 3 of 15 — but the magnitude collapses and
+  the ordering inside the middle is not monotone in either the minimum or the
+  total pairwise distance. At one block the best site keeps **13/15**, at two
+  **7/15**, at three **3/15**: roughly **three to five review cases per block
+  removed**, which is the additive-interference rule, with distance as a
+  modulation on top of it rather than a replacement for it. The transferable
+  planning rule for a larger model is: *spread the blocks you remove, and price
+  the count, not the spread, as the budget.*
+* **Any solve whose regulariser is chosen by a trust region needs a validation
+  split of its own, and the fix is worth as much as the solve was.** Wave 17
+  measured the value/`out_proj` alternation improving its own fit objective by
+  16–29% while losing held-out cosine and five of fifteen behavioural cases.
+  Selecting λ on an **internal split of the fit rows** — every third fit batch
+  withheld from each rung's solve and used only to score it, the admitted rung
+  with the lowest check objective re-solved on everything and installed, the
+  trust region kept as a veto and stripped of its vote — recovers **four of the
+  five cases** (3/15 → 7/15) at an identical parameter count and a benchmark row
+  that matches the value-path-off child on all seven columns. The selected λ is
+  **three to five orders of magnitude larger** than the trust region's pick, and
+  the fit improvement it gives up (down to 0.004–0.09%) *was* the overfit. Note
+  what this implies generally: the right answer was "move this component almost
+  not at all", and only an out-of-sample criterion could discover that. A norm
+  bound cannot, because staying near the prior and moving far from it can both
+  be small in norm.
+* **A better objective on a component still buys behaviour only once.** The same
+  fixed solve at the axis's second step (16 → 8 query heads) is **0/15** with
+  eight of sixteen lanes looping a refusal to the token cap — the same reading
+  the unfixed solve got. Regularisation quality does not extend an axis past the
+  step where it dies.
+* **Composition prefers the component that is BEST, not the component that is
+  FAR.** A head merge across all six attention blocks composed with a single
+  block excision reads 7/15 when the excised block is the campaign's best single
+  (one block from the nearest attention site), 5/15 for the next best, and 4/15
+  for the highest-scoring single of all when it sits past the last attention
+  block. The distance intuition inverts here, and this is the first two-axis
+  child in the campaign that sits *at* its better component's level rather than
+  far below both. **Distance is a within-axis law; across axes, rank by solo
+  behaviour.**
+* **A harness law, and it is not specific to this model.** Modern decoder
+  implementations select per-layer behaviour by **position in a config list**,
+  not by an attribute of the module object. In HF's Lfm2 the line is
+  `layer_mask = causal_mask if config.layer_types[i] == "full_attention" else
+  linear_attention`. Deleting a block from `model.model.layers` without deleting
+  its entry from `config.layer_types` therefore re-points every later block at
+  the wrong list entry, and a full-attention block that lands in a convolution's
+  slot is handed the padding mask — `None` on an unpadded corpus — instead of the
+  causal one. Measured here: **28.6% to 48.0% of the live model's attention mass
+  on tokens that had not happened yet**, at every attention site, invisible in
+  any loss, any norm, any drift statistic, and invisible in the exported
+  checkpoint (which is written from a correctly re-derived config and is
+  causal). **Any depth-reduction harness on any architecture with per-layer type
+  dispatch — sliding-window/full alternation, MoE/dense alternation, Mamba/
+  attention hybrids — must re-derive every per-layer config list when it deletes
+  a layer, and should assert it.** The cheap universal assertion is the one used
+  here: recompute one block's attention in fp64 from the live weights and compare
+  against the module's own returned probabilities; or, simpler still, sum the
+  module's attention mass strictly above the diagonal and require zero.
+* **Corollary worth stating because the first estimate of the damage was wrong.**
+  The blast radius of that defect was **one review case**, and only on children
+  that both excise and solve. A pure excision runs no solve at all, so five
+  rebuilds against the repaired harness came back **bit-identical** to the
+  children they reproduce. When a harness bug is found late, measure its price by
+  rebuilding rather than by reasoning about it: the reasoning here predicted a
+  campaign-wide invalidation and the digests said the census was untouched.

@@ -37,6 +37,30 @@ python experiments/render_matrix_ledger.py \
   --out    reports/matrix-campaign-20260810/LEDGER.md
 ```
 
+## wave18/ — the distance law at three bodies, the λ overfit fixed, and the mask an excision took away
+
+`wave18/NOTES-MX-V.md` is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave18/wave18-child-index.json` | every wave-18 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict — net ratio, config diff, export class, axes, both ADDENDUM 9 readings, and whether the safety lane was chargeable |
+| `wave18/human-review/` | 111 files: every dossier, every child and parent response rendered verbatim (`READ-*.txt`, `READ-PARENT-*.txt`), every run receipt, verdict receipt, per-case reading and build receipt, plus the gate-probe and mask-probe measurements |
+| `wave18/probes/mask-probe.json` | the falsifying measurement for the wave-17 anomaly: excise block 13 and the module's attention mass on the future is 0.0000; excise 13 and 1 and it is 0.286–0.480; repair `config.layer_types` and it is 0.0000 again |
+| `wave18/probes/GATE2-*-gate/` | the in-build gate probe per site — the module's own probabilities against the fp64 recomputation, the peakedness and top-two margin of both, the per-row centred logit regression, and the input-rounding leg that is a null and is labelled one |
+| `wave18/probes/forensics-F1301.json` | the same comparison on the EXPORTED child, which agrees at the bf16 floor — the measurement that localised the defect to the live harness rather than to the checkpoint |
+| `wave18/ledger-merge-report.json` | the exactly-once merge of 28 shard rows into the campaign ledger (578 → 606): 14 run rows and 14 verdict rows |
+| `wave18/children-retention-manifest-wave18.json` | which of the 21 built children were kept and which were deleted, each with its sealed tensor digest |
+| `wave18/deployments-prune-manifest-wave18.json` | the three deployments pruned to hold current+1 |
+| `run/mx18/` | the wave-18 builder (adds `--kv-lambda-split`, `--kv-gate-probe` and the causal-mask repair), its standalone algebra self-test, the mask probe, the gate forensics, the drivers, the seal verifier, the ledger merge and the dossier readers |
+
+Wave 18's one-line result: **the pair distance law does not survive to three
+blocks** (widest triple 3/15 against the best pair's 7/15), **choosing the value
+path's λ on an internal split of the fit rows is worth four review cases**
+(3/15 → 7/15 at one parameter count), and the attention gate wave 17 could not
+explain was refusing because an excision had shifted every later attention block
+into a conv's slot in `config.layer_types`, putting **28–48% of the live model's
+attention mass on tokens that had not happened yet**.
+
 ## wave17/ — the census closed, the pair distance law, and the merge's first real solve
 
 `wave17/NOTES-MX-U.md` is the narrative. The rest is raw:

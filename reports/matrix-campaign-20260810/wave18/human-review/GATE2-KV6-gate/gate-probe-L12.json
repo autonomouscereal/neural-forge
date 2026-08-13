@@ -1,0 +1,30 @@
+{
+ "parent_layer": 12,
+ "gate_fp64": 0.013037609120055936,
+ "gate_recomputed_fp64": 0.013037609120055936,
+ "gate_module_probabilities": 0.002320182301909302,
+ "gate_bf16_inputs": 0.013037609120055936,
+ "probabilities_relL2": 0.00917521928876689,
+ "argmax_agreement": 0.9923441199684293,
+ "logit_slope_module_on_fp64": 1.0000347884575649,
+ "logit_residual_rms": 0.014263049284019044,
+ "logit_scale_fp64_rms": 1.8592711552566343,
+ "peakedness_fp64": {
+  "max_probability_median": 0.49736456819054564,
+  "top2_margin_median": 0.3165674945121265,
+  "top2_margin_p05": 0.014490585299183796,
+  "top2_margin_below_1e-2": 0.036931818181818184,
+  "entropy_median": 1.9649048067428616
+ },
+ "peakedness_module": {
+  "max_probability_median": 0.498046875,
+  "top2_margin_median": 0.318359375,
+  "top2_margin_p05": 0.013671875,
+  "top2_margin_below_1e-2": 0.038983585858585856,
+  "entropy_median": 1.960183386936608
+ },
+ "context_norm": 111.86404233351715,
+ "stream_row_rms": 5.492444683319684,
+ "prenorm_query_row_rms": 1.1330325199567395,
+ "prenorm_key_row_rms": 0.9633233827786077
+}

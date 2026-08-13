@@ -1,0 +1,32 @@
+{
+ "schema": "neural-forge-matrix-wave18-deployments-prune-v1",
+ "policy": "hold current+1",
+ "kept": [
+  "neural-forge-matrix-b372d47c (wave 18, the causal repair, built everything after it)",
+  "neural-forge-matrix-049326e0 (wave 17)"
+ ],
+ "pruned": [
+  {
+   "deployment": "neural-forge-matrix-35dfe3a9",
+   "files": 2679,
+   "bytes": 166333058,
+   "wave": 16
+  },
+  {
+   "deployment": "neural-forge-matrix-bf946174",
+   "files": 3483,
+   "bytes": 125397152,
+   "wave": 18
+  },
+  {
+   "deployment": "neural-forge-matrix-c66c38ed",
+   "files": null,
+   "bytes": null,
+   "wave": 18,
+   "note": "removed when b372d47c was cut, before this manifest was written; it ran the extended gate probe and nothing else"
+  }
+ ],
+ "note": "wave 18 cut three deployments because two of its findings changed the builder mid-wave: bf946174 built and sealed the four triples, KV6JS and KV4JS; c66c38ed added the logit regression to the gate probe; b372d47c carries the causal-mask repair.  Each is a commit on codex/lrc-blank-compression and every child receipt names the one that built it.",
+ "total_bytes": 291730210,
+ "total_files": 6162
+}
