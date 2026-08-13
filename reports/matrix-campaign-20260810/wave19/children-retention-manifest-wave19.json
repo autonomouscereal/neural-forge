@@ -1,0 +1,58 @@
+{
+ "schema": "neural-forge-matrix-wave19-children-retention-v1",
+ "policy": "the best five by sealed score plus any child a later wave cannot re-derive; every deleted child is named with the sha256 of the model.safetensors it was sealed from",
+ "kept": [
+  {
+   "child": "MX19-W512",
+   "bytes": 217706112,
+   "child_tensors_sha256": "bfe2d21beaa171cf9958b058a297e1b565fb77b359eaec78ac7546916e0d05bf",
+   "reason": "0/15 at 0.463481x -- the campaign's only child under half the parent, kept as the landmark it is: a 0/15 nobody has to take on trust"
+  },
+  {
+   "child": "MX19-W768",
+   "bytes": 336746686,
+   "child_tensors_sha256": "6e41cb230a8308dae59c82039da68f9a704ec420ba8f920839615b96b2c5869f",
+   "reason": "3/15 at 0.722610x -- the deepest child in the campaign with a non-zero score, 4.7 points of net ratio below wave 16's frontier"
+  },
+  {
+   "child": "MX19-W896",
+   "bytes": 399412684,
+   "child_tensors_sha256": "bfa58964549778222141e01f071e8e7fd63935499ad3f26daf203da1adbb5b82",
+   "reason": "4/15 at 0.859023x -- the best rung of the hidden_size ladder and the child the axis's whole claim rests on"
+  },
+  {
+   "child": "MX19-W896KV6JS",
+   "bytes": 391268290,
+   "child_tensors_sha256": "c02e9099a176cd072447f4610f901a8ddca6c849ae75f92f9c77ff5195508608",
+   "reason": "2/15 at 0.841047x -- width composed with the head merge, and the best of the two width compositions"
+  },
+  {
+   "child": "MX19-W896X13",
+   "bytes": 379216706,
+   "child_tensors_sha256": "6475d689be829767c2a21b077bc5222fad97d3e6952f9ec1ff00861b32704ecc",
+   "reason": "1/15 at 0.815064x -- width composed with the census's best single excision, and the wave's cleanest demonstration that the second axis is still fatal"
+  }
+ ],
+ "deleted": [
+  {
+   "child": "MX19-IDENT",
+   "bytes": 464150209,
+   "child_tensors_sha256": "f630da86651136c9aee893b04b7542007e90fdd718355358e57e7ecc31517cfd",
+   "reason": "the identity gate: 132 of 132 tensors bit-identical to the parent, so keeping it keeps the parent twice; the gate rides in its build receipt"
+  },
+  {
+   "child": "MX19-Q01050913",
+   "bytes": 367629821,
+   "child_tensors_sha256": "380ca2a49686c5637dd8629db27c96d6fb72bf5e9b2677ef142bbfc37c1ea431",
+   "reason": "0/15 at 0.789916x, re-derivable from the committed builder"
+  },
+  {
+   "child": "MX19-W640",
+   "bytes": 276177863,
+   "child_tensors_sha256": "b9fd3bef01cca1b522214970120dfca6fd2c8105780629935cf9e9d660515a90",
+   "reason": "0/15 at 0.590763x, re-derivable from the committed builder and the sealed basis"
+  }
+ ],
+ "bytes_freed": 1107957893,
+ "applied": true
+}

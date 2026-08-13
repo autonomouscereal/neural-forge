@@ -1,0 +1,289 @@
+{
+ "schema": "neural-forge-matrix-wave19-percase-attribution-v1",
+ "children": 63,
+ "cases": 15,
+ "difficulty_order": [
+  {
+   "case": "summarization-priorities",
+   "hold_rate": 0.4444
+  },
+  {
+   "case": "uncertainty-insufficient-data",
+   "hold_rate": 0.4286
+  },
+  {
+   "case": "writing-concise-email",
+   "hold_rate": 0.4127
+  },
+  {
+   "case": "instruction-three-actions",
+   "hold_rate": 0.3492
+  },
+  {
+   "case": "context-retrieval",
+   "hold_rate": 0.3175
+  },
+  {
+   "case": "planning-dependencies",
+   "hold_rate": 0.2698
+  },
+  {
+   "case": "conversation-natural-greeting",
+   "hold_rate": 0.254
+  },
+  {
+   "case": "creative-continuity",
+   "hold_rate": 0.2063
+  },
+  {
+   "case": "comparison-ram-rom",
+   "hold_rate": 0.1429
+  },
+  {
+   "case": "debugging-off-by-one",
+   "hold_rate": 0.127
+  },
+  {
+   "case": "multi-turn-correction",
+   "hold_rate": 0.0952
+  },
+  {
+   "case": "arithmetic-multi-step",
+   "hold_rate": 0.0794
+  },
+  {
+   "case": "coding-deduplicate",
+   "hold_rate": 0.0476
+  },
+  {
+   "case": "logic-ordering",
+   "hold_rate": 0.0317
+  },
+  {
+   "case": "explanation-seasons",
+   "hold_rate": 0.0159
+  }
+ ],
+ "guttman_agreement": 0.8963,
+ "guttman_note": "the fraction of (child, case) cells a strict difficulty order predicts; 1.0 would mean the review is one number wide and 0.5 is chance on a balanced matrix",
+ "per_axis_hold_rate": {
+  "hidden_size": {
+   "children": 4,
+   "mean_held": 1.75,
+   "cases": {
+    "conversation-natural-greeting": 0.0,
+    "instruction-three-actions": 0.25,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.0,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.0,
+    "summarization-priorities": 0.5,
+    "comparison-ram-rom": 0.0,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.0,
+    "writing-concise-email": 0.25,
+    "planning-dependencies": 0.0,
+    "uncertainty-insufficient-data": 0.5,
+    "creative-continuity": 0.0,
+    "multi-turn-correction": 0.25
+   }
+  },
+  "hidden_size+num_attention_heads": {
+   "children": 1,
+   "mean_held": 2.0,
+   "cases": {
+    "conversation-natural-greeting": 0.0,
+    "instruction-three-actions": 1.0,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.0,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.0,
+    "summarization-priorities": 1.0,
+    "comparison-ram-rom": 0.0,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.0,
+    "writing-concise-email": 0.0,
+    "planning-dependencies": 0.0,
+    "uncertainty-insufficient-data": 0.0,
+    "creative-continuity": 0.0,
+    "multi-turn-correction": 0.0
+   }
+  },
+  "hidden_size+num_hidden_layers": {
+   "children": 1,
+   "mean_held": 1.0,
+   "cases": {
+    "conversation-natural-greeting": 0.0,
+    "instruction-three-actions": 0.0,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.0,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.0,
+    "summarization-priorities": 1.0,
+    "comparison-ram-rom": 0.0,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.0,
+    "writing-concise-email": 0.0,
+    "planning-dependencies": 0.0,
+    "uncertainty-insufficient-data": 0.0,
+    "creative-continuity": 0.0,
+    "multi-turn-correction": 0.0
+   }
+  },
+  "intermediate_size+num_attention_heads+num_hidden_layers": {
+   "children": 3,
+   "mean_held": 0.0,
+   "cases": {
+    "conversation-natural-greeting": 0.0,
+    "instruction-three-actions": 0.0,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.0,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.0,
+    "summarization-priorities": 0.0,
+    "comparison-ram-rom": 0.0,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.0,
+    "writing-concise-email": 0.0,
+    "planning-dependencies": 0.0,
+    "uncertainty-insufficient-data": 0.0,
+    "creative-continuity": 0.0,
+    "multi-turn-correction": 0.0
+   }
+  },
+  "intermediate_size+num_hidden_layers": {
+   "children": 10,
+   "mean_held": 0.5,
+   "cases": {
+    "conversation-natural-greeting": 0.1,
+    "instruction-three-actions": 0.0,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.0,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.0,
+    "summarization-priorities": 0.0,
+    "comparison-ram-rom": 0.1,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.0,
+    "writing-concise-email": 0.1,
+    "planning-dependencies": 0.0,
+    "uncertainty-insufficient-data": 0.2,
+    "creative-continuity": 0.0,
+    "multi-turn-correction": 0.0
+   }
+  },
+  "num_attention_heads": {
+   "children": 7,
+   "mean_held": 4.0,
+   "cases": {
+    "conversation-natural-greeting": 0.143,
+    "instruction-three-actions": 0.286,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.0,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.571,
+    "summarization-priorities": 0.571,
+    "comparison-ram-rom": 0.0,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.429,
+    "writing-concise-email": 0.714,
+    "planning-dependencies": 0.143,
+    "uncertainty-insufficient-data": 0.571,
+    "creative-continuity": 0.429,
+    "multi-turn-correction": 0.143
+   }
+  },
+  "num_attention_heads+num_hidden_layers": {
+   "children": 10,
+   "mean_held": 3.2,
+   "cases": {
+    "conversation-natural-greeting": 0.4,
+    "instruction-three-actions": 0.2,
+    "explanation-seasons": 0.0,
+    "arithmetic-multi-step": 0.1,
+    "logic-ordering": 0.0,
+    "context-retrieval": 0.4,
+    "summarization-priorities": 0.5,
+    "comparison-ram-rom": 0.0,
+    "coding-deduplicate": 0.0,
+    "debugging-off-by-one": 0.2,
+    "writing-concise-email": 0.5,
+    "planning-dependencies": 0.2,
+    "uncertainty-insufficient-data": 0.6,
+    "creative-continuity": 0.0,
+    "multi-turn-correction": 0.1
+   }
+  },
+  "num_hidden_layers": {
+   "children": 27,
+   "mean_held": 4.741,
+   "cases": {
+    "conversation-natural-greeting": 0.37,
+    "instruction-three-actions": 0.593,
+    "explanation-seasons": 0.037,
+    "arithmetic-multi-step": 0.148,
+    "logic-ordering": 0.074,
+    "context-retrieval": 0.444,
+    "summarization-priorities": 0.556,
+    "comparison-ram-rom": 0.296,
+    "coding-deduplicate": 0.111,
+    "debugging-off-by-one": 0.111,
+    "writing-concise-email": 0.519,
+    "planning-dependencies": 0.519,
+    "uncertainty-insufficient-data": 0.481,
+    "creative-continuity": 0.37,
+    "multi-turn-correction": 0.111
+   }
+  }
+ },
+ "deepest_children": [
+  {
+   "child": "wave19/W512",
+   "axis": "hidden_size",
+   "net_ratio": 0.4634807448182703,
+   "held": []
+  },
+  {
+   "child": "wave16/R5",
+   "axis": "intermediate_size+num_attention_heads+num_hidden_layers",
+   "net_ratio": 0.5799458115396232,
+   "held": []
+  },
+  {
+   "child": "wave19/W640",
+   "axis": "hidden_size",
+   "net_ratio": 0.5907628848054978,
+   "held": []
+  },
+  {
+   "child": "wave16/R4",
+   "axis": "intermediate_size+num_attention_heads+num_hidden_layers",
+   "net_ratio": 0.6039221433753994,
+   "held": []
+  },
+  {
+   "child": "wave16/R3",
+   "axis": "intermediate_size+num_attention_heads+num_hidden_layers",
+   "net_ratio": 0.6415843493205267,
+   "held": []
+  },
+  {
+   "child": "wave18/T010713W1280C",
+   "axis": "intermediate_size+num_hidden_layers",
+   "net_ratio": 0.6541256008711168,
+   "held": []
+  },
+  {
+   "child": "wave16/R2",
+   "axis": "intermediate_size+num_hidden_layers",
+   "net_ratio": 0.658703533841039,
+   "held": []
+  },
+  {
+   "child": "wave16/R1",
+   "axis": "intermediate_size+num_hidden_layers",
+   "net_ratio": 0.6895275394850201,
+   "held": []
+  }
+ ]
+}

@@ -1,64 +1,123 @@
 #!/usr/bin/env python3
-"""Wave 18 retention: the best five by sealed score plus the children a later
-wave cannot re-derive, kept; every other child deleted and named with its sealed
-tensor digest.
+"""Wave 19 retention: five children kept, three deleted and named by digest.
 
-Wave 18 adds one class to the policy and says why: the pre-repair `X07KV6JQ` is
-kept beside its repaired twin because the pair is the only behavioural price of
-the causal-mask defect this campaign will ever measure, and a control you have
-deleted is not a control.  The bit-identical rebuilds are NOT kept -- X13C, X00C,
-X07C, P1301C and T010713C reproduce their originals to the digest, so keeping
-them would be keeping the same bytes twice.
+The policy is the campaign's standing one -- the best five by sealed score, plus
+any child a later wave cannot re-derive -- with two wave-specific readings
+written down rather than assumed:
+
+* ``MX19-W512`` is kept although it scored **0/15**.  It is the only child in
+  this campaign under half the parent (0.463481x), and what a 0.463481x LFM2
+  built by an exact fold actually emits -- eight empty strings and eight lanes
+  of quotation marks -- is the answer to a question the deck has asked since
+  wave 14.  A landmark you have deleted is a number in a note.
+* ``MX19-IDENT`` is **deleted**, and precisely because its gate passed: all 132
+  of its tensors are bit-identical to the parent's, so keeping it is keeping the
+  parent twice.  The gate is in its build receipt, which is committed.
+
+``MX19-W640`` and ``MX19-Q01050913`` are deleted as re-derivable: both are
+0/15, both are one command against a committed builder and a sealed basis, and
+their tensor digests are named below so a rebuild can be checked rather than
+trusted.
 """
-import json, os, shutil, sys
+
+import json
+import os
+import shutil
+import sys
 
 W = "/mnt/ai_data/neural-forge-matrix/wave19"
 KEEP = {
-    "MX19-KV6JS",
-    "MX19-X07KV6JQC",
-    "MX19-X07KV6JQ",
-    "MX19-X09KV6JQC",
-    "MX19-T010713",
+    "MX19-W896",
+    "MX19-W768",
+    "MX19-W896KV6JS",
+    "MX19-W896X13",
+    "MX19-W512",
 }
 REASON = {
-    "MX19-KV6JS": "7/15, the lambda fix: the value path costs one case where wave 17 unsplit lambda cost five, at the identical parameter count and an unchanged benchmark row",
-    "MX19-X07KV6JQC": "7/15, the best composed child of the wave and the best excision-plus-merge composition in the campaign",
-    "MX19-X07KV6JQ": "6/15, the SAME recipe built with the causal-mask defect -- the only behavioural price of that defect the campaign will ever measure, and a control you have deleted is not a control",
-    "MX19-X09KV6JQC": "5/15, the second composition rung and the one that says the merge does not compose by distance",
-    "MX19-T010713": "3/15, the highest-scoring triple and the deepest non-zero child of the wave at 0.842437x",
+    "MX19-W896": (
+        "4/15 at 0.859023x -- the best rung of the hidden_size ladder and the "
+        "child the axis's whole claim rests on"
+    ),
+    "MX19-W768": (
+        "3/15 at 0.722610x -- the deepest child in the campaign with a non-zero "
+        "score, 4.7 points of net ratio below wave 16's frontier"
+    ),
+    "MX19-W896KV6JS": (
+        "2/15 at 0.841047x -- width composed with the head merge, and the best "
+        "of the two width compositions"
+    ),
+    "MX19-W896X13": (
+        "1/15 at 0.815064x -- width composed with the census's best single "
+        "excision, and the wave's cleanest demonstration that the second axis "
+        "is still fatal"
+    ),
+    "MX19-W512": (
+        "0/15 at 0.463481x -- the campaign's only child under half the parent, "
+        "kept as the landmark it is: a 0/15 nobody has to take on trust"
+    ),
 }
-index = {c["cell_id"]: c for c in json.load(open(W + "/wave19-child-index.json"))["children"]}
-rows = []
-for name in sorted(os.listdir(W + "/children")):
-    path = os.path.join(W, "children", name)
-    if not os.path.isdir(path):
-        continue
-    tag = name.replace("MX19-", "")
-    entry = index.get("ARCH." + tag, {})
-    receipt = json.load(open(os.path.join(path, "mx19-build-receipt.json")))
-    row = {
-        "child": name,
-        "cell_id": "ARCH." + tag,
-        "net_ratio": receipt["net_ratio"],
-        "child_tensors_sha256": receipt["child_tensors_sha256"],
-        "useful_or_partial": entry.get("useful_or_partial"),
-        "per_child_verdict": entry.get("per_child_verdict"),
-        "kept": name in KEEP,
-        "reason": REASON.get(name, "not in the best five and not the deepest non-zero"),
-        "bytes": sum(os.path.getsize(os.path.join(path, f)) for f in os.listdir(path)),
+DELETE_REASON = {
+    "MX19-IDENT": (
+        "the identity gate: 132 of 132 tensors bit-identical to the parent, so "
+        "keeping it keeps the parent twice; the gate rides in its build receipt"
+    ),
+    "MX19-W640": "0/15 at 0.590763x, re-derivable from the committed builder and the sealed basis",
+    "MX19-Q01050913": "0/15 at 0.789916x, re-derivable from the committed builder",
+}
+
+
+def digest_of(name: str) -> str | None:
+    receipt = f"{W}/children/{name}/mx19-build-receipt.json"
+    if not os.path.exists(receipt):
+        return None
+    return json.load(open(receipt, encoding="utf-8")).get("child_tensors_sha256")
+
+
+def main() -> int:
+    apply = "--apply" in sys.argv
+    manifest = {
+        "schema": "neural-forge-matrix-wave19-children-retention-v1",
+        "policy": (
+            "the best five by sealed score plus any child a later wave cannot "
+            "re-derive; every deleted child is named with the sha256 of the "
+            "model.safetensors it was sealed from"
+        ),
+        "kept": [],
+        "deleted": [],
     }
-    rows.append(row)
-freed = 0
-for row in rows:
-    if not row["kept"]:
-        shutil.rmtree(os.path.join(W, "children", row["child"]))
-        freed += row["bytes"]
-body = {
-    "schema": "neural-forge-matrix-wave19-children-retention-v1",
-    "policy": "best five by sealed ADDENDUM 6 score plus the deepest non-zero child",
-    "kept": sorted(KEEP),
-    "freed_bytes": freed,
-    "children": rows,
-}
-open(W + "/children-retention-manifest-wave19.json", "w").write(json.dumps(body, indent=1))
-print("kept", sum(1 for r in rows if r["kept"]), "deleted", sum(1 for r in rows if not r["kept"]), "freed", freed)
+    for name in sorted(os.listdir(f"{W}/children")):
+        path = f"{W}/children/{name}"
+        if not os.path.isdir(path):
+            continue
+        size = sum(
+            os.path.getsize(os.path.join(root, f))
+            for root, _, files in os.walk(path)
+            for f in files
+        )
+        row = {
+            "child": name,
+            "bytes": size,
+            "child_tensors_sha256": digest_of(name),
+        }
+        if name in KEEP:
+            row["reason"] = REASON.get(name, "")
+            manifest["kept"].append(row)
+        else:
+            row["reason"] = DELETE_REASON.get(name, "not in the retained set")
+            manifest["deleted"].append(row)
+            if apply:
+                shutil.rmtree(path)
+    manifest["bytes_freed"] = sum(r["bytes"] for r in manifest["deleted"])
+    manifest["applied"] = apply
+    out = f"{W}/children-retention-manifest-wave19.json"
+    with open(out, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=1)
+    print(
+        f"kept {len(manifest['kept'])}, deleted {len(manifest['deleted'])}, "
+        f"freed {manifest['bytes_freed'] / 2**30:.2f} GiB, applied={apply} -> {out}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

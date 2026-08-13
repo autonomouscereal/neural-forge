@@ -779,3 +779,90 @@ change what transfers.
   children they reproduce. When a harness bug is found late, measure its price by
   rebuilding rather than by reasoning about it: the reasoning here predicted a
   campaign-wide invalidation and the digests said the census was untouched.
+
+## Wave-19 additions to the sealed physics — the residual axis, and the end of the standard-axis inventory
+
+Wave 19 built `hidden_size`, the last config-standard axis nobody had moved, and
+with it the standard-axis inventory for this architecture is **closed**:
+`intermediate_size`, `head_dim`, `num_attention_heads`, `num_hidden_layers`,
+`hidden_size`. Conv width is not a live field (`Lfm2ShortConv` hardwires
+`hidden_size`), and `vocab_size` is a tokenizer change, not a fold.
+
+* **The residual axis is the only one that reaches the tied embedding, and that
+  is worth 29.2% of this model.** One config field takes the embedding to
+  `0.75x` and every `d×d` and `d×ff` tensor toward `0.56x` at H=768. The
+  arithmetic is exact and reproducible: with `head_dim` pinned, an LFM2-shaped
+  child is `32*H² + 191541*H + 768` parameters. **Generalisation:** on any
+  decoder whose embedding is tied and whose vocabulary is large relative to its
+  depth, the residual width is the only standard axis with the *leverage* to
+  reach half the parameters, and every other axis is bounded above by
+  `1 − embedding_fraction`.
+* **Pin `head_dim` explicitly whenever you narrow a residual.** Every HF
+  attention module in this family computes `head_dim = getattr(config,
+  "head_dim", hidden_size // num_attention_heads)`. Narrowing `hidden_size`
+  without writing `head_dim` therefore silently *also* narrows the head and
+  changes the RoPE frequency ladder — composing a second, differently-behaved
+  axis into what was supposed to be one variable. The cost of pinning is small
+  and computable (1.5 points of net ratio at 768 here); the cost of not pinning
+  is an uninterpretable child.
+* **A basis fold is exact against a local target, and the gauge is where the
+  identity lives.** With one shared orthonormal `E` and the norm gauge
+  `g_c = diag(E^T diag(g) E)`, readers fold as `sqrt(D/H)·W diag(g) E diag(1/g_c)`
+  and writers as `E^T W`; the lift preserves the row norm, so the two RMSNorms
+  differ by exactly `sqrt(D/H)` and nothing row-dependent is smuggled in. The
+  gauge is not cosmetic: it is what makes the fold **bit-exact at `E = I`**,
+  because a bf16 product divided by its own bf16 factor returns the other factor
+  exactly in fp64. **Any width-folding harness should carry this gate and should
+  compare bytes, not tolerances.**
+* **A tied embedding has two roles and only one of them can absorb a gain.** As
+  a writer it wants `E^T e_t`; as a reader it wants `W_emb diag(g_f) E`. The
+  writer's form wins, so the final norm's diagonal is the only home for the final
+  gain, and solving it there is closed form and worth a factor of three:
+  relative logit SSE **0.54 → 0.17** at 768, where the transported gain alone
+  leaves 0.54 and a single scalar leaves 0.41.
+* **Channelwise-gated operators cannot be basis-folded and must be coreset.**
+  A short-conv block computes `B*x` and `C*conv(·)` elementwise, so its internal
+  channel space has no rotational freedom; its channels must be *selected*. This
+  is the one lossy piece of an otherwise exact construction and it is where the
+  per-site error concentrates (conv write cos 0.99 against attention and MLP at
+  0.9999). **Generalisation:** any gated-elementwise operator — SSM/Mamba gates,
+  GLU-style conv branches — is coreset-only under a width change.
+* **THE CENTRAL RESULT, and it revises the wave-14 reading. Per-site install
+  quality does not predict a width fold's behaviour.** At H=512 (0.463481x) every
+  attention and MLP write lands at held-out cosine **0.9999** against its own
+  local target and the conv writes at 0.9916 median — *better* than the living
+  H=896 child's conv — and the child returns the **empty string** in half its
+  lanes. Wave 14 located a cliff in per-site write cosine (0.93 → 0.86) and every
+  wave since read per-site quality as the predictor. On this axis the predictor
+  is elsewhere. The two quantities that move monotonically with the score are
+  **the fraction of the parent's residual the subspace retains** (0.9705 → 0.8258
+  from 896 to 512) and **the drift the child's own stream accumulates against
+  `E^T r`** (0.267 → 0.557). A fold can be locally excellent everywhere and
+  globally dead; measure the stream, not only the writes.
+* **The residual stream of a trained decoder is not low-rank.** Pooled over all
+  29 residual-write endpoints with each equalised, the top 768 of 1024 directions
+  hold **0.9389** of the energy a reader sees (0.9729 of the raw energy) and the
+  top 512 hold 0.8465 (0.9301). There is no knee anywhere in the spectrum. Do not
+  plan a width fold around finding one; plan it around a price per direction.
+* **The behavioural cliff on this axis sits at roughly 0.92 of retained read
+  energy.** 896 (0.9627 retained, measured on held-out rows) is 4/15; 768
+  (0.9193) is 3/15; 640 (0.8697) and 512 (0.8124) are 0/15. The transition is
+  sharp — 3/15 to 0/15 across 128 dimensions — and the deeper failure is *quieter*
+  than the shallower one: 640 returns the empty string in fifteen of sixteen
+  lanes where 512 fills eight with punctuation.
+* **The composition law survives contact with a new axis.** Width composed with
+  the head merge is 2/15 and width composed with the census's best single
+  excision is 1/15, from a 4/15 width child and a 13/15 excision. **The first
+  composition step is survivable and the second is fatal** now holds across five
+  axes, not four.
+* **The excision ladder is complete and monotone: 13/15 single → 7/15 pair →
+  3/15 triple → 0/15 quad.** The max-spread quad (blocks 1+5+9+13, 0.789916x)
+  charges all sixteen lanes. Additive interference, run to its end.
+* **The 15-case review surface is 89.6% one-dimensional.** Across 63 sealed
+  children and 15 cases, a single strict difficulty order predicts **0.8963** of
+  the cells. That is why per-child scores compare at all. The remaining tenth is
+  per-axis and legible: the head merge preferentially keeps debugging
+  (0.43 against a campaign 0.13), excision keeps instruction-following (0.59
+  against 0.35), and the residual axis keeps summarisation (0.50, and 1.00 in
+  both of its compositions) while taking context-retrieval to zero. **When
+  reporting a fold class, report which cases it keeps, not only how many.**
