@@ -1,0 +1,23 @@
+{
+ "schema": "neural-forge-matrix-wave22-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave22/shards/arch-MM896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave22/shards/arch-W720.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave22/shards/arch-W896LSKV6JQ.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave22/shards/verdict-MM896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave22/shards/verdict-W720.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave22/shards/verdict-W896LSKV6JQ.jsonl"
+ ],
+ "rows_before": 646,
+ "rows_appended": 6,
+ "rows_after": 652,
+ "superseded_rows_dropped": [],
+ "appended_cells": [
+  "ARCH.MM896",
+  "ARCH.W720",
+  "ARCH.W896LSKV6JQ"
+ ],
+ "applied": true,
+ "rows_after_verified": 652
+}

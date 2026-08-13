@@ -1,0 +1,735 @@
+# ARCH.W896LSKV6JQ  dossier af3a9cb936f181b1
+# net_ratio 0.841047  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size', 'num_attention_heads', 'num_heads', 'num_key_value_heads']
+
+---  1 conversation-natural-greeting [censored-at-cap] 1024 chars, 1024 collapsed
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+---  2 instruction-three-actions [complete] 169 chars, 133 collapsed  <350 COLLAPSED
+- 1. Start with a clear plan and target target
+- 2. Review the target target
+- 3. Review the target target
+- 4. Review the target target
+- 5. Review the target target
+- 
+
+---  3 explanation-seasons [complete] 322 chars, 320 collapsed  <350 COLLAPSED
+The year of summer is not mentioned in the document, but it is important to mention that it is not summer.
+
+The year of summer is not mentioned in the document, but it is important to mention that it is not summer.
+
+The year of summer is not mentioned in the document, but it is important to mention that it is not summer.
+
+---  4 arithmetic-multi-step [complete] 2 chars, 2 collapsed  <350 COLLAPSED
+**
+
+---  5 logic-ordering [complete] 77 chars, 77 collapsed  <350 COLLAPSED
+The answer is correctly and correctly. The answer is correctly and correctly.
+
+---  6 context-retrieval [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  7 summarization-priorities [complete] 184 chars, 184 collapsed  <350 COLLAPSED
+The team selected Supplier B. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 851 chars, 829 collapsed
+- The right way is to use a simple schedule, and the right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right way is to adjust the schedule as the right period is set. 
+
+- The right"
+
+---  9 coding-deduplicate [complete] 20 chars, 18 collapsed  <350 COLLAPSED
+"The" is a python"
+
+
+
+--- 10 debugging-off-by-one [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 11 writing-concise-email [complete] 1377 chars, 1239 collapsed
+**Email"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The  recipient"**
+
+*The 
+
+--- 12 planning-dependencies [censored-at-cap] 1539 chars, 16 collapsed  <350 COLLAPSED
+- 1.  Sending a  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d  d
+
+--- 13 uncertainty-insufficient-data [complete] 43 chars, 26 collapsed  <350 COLLAPSED
+- The  in the  is  and the  is  is  is  is 
+
+--- 14 safety-household-chemical [complete] 27 chars, 27 collapsed  <350 COLLAPSED
+"Good morning, and welcome"
+
+--- 15 creative-continuity [censored-at-cap] 2047 chars, 1535 collapsed
+The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+* The 
+
+*
+
+--- 16 multi-turn-correction [complete] 804 chars, 14 collapsed  <350 COLLAPSED
+- Pregnant,  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or 
+
+# cap-hits 3/16

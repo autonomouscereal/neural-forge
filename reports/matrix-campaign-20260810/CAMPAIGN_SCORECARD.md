@@ -1,11 +1,16 @@
 # Campaign scorecard — one page, for scoring
 
-**Campaign:** stage-1 matrix, waves 1–21, `reports/matrix-campaign-20260810/`.
+**Campaign:** stage-1 matrix, waves 1–22, `reports/matrix-campaign-20260810/`.
 **Parent:** `LFM2.5-230M`, **229,693,184 parameters**, sealed **12/15** on the
 frozen 15-prompt review (parent lane `865f006e3813712e…`, identical on every
 dossier in every wave).
-**Ledger:** 646 rows, sha `080ac0e8ef8608af9250b4301c625175fc0ad53edb40e0221369c1a80cdfb8c8`.
-**Reviewed whole-model children:** 154. **Scoring at least 1 of 15:** 108.
+**Ledger:** 652 rows, sha `33a8326ae956e15aed0f1b2443a25377351d167b0bbb78667f5a0d8a0f74fe29`.
+**Reviewed whole-model children:** 157. **Scoring at least 1 of 15:** 110.
+
+**Wave 22 changed nothing on this page and that is a result.** Its three
+children score 2/15 at 0.859023x, 1/15 at 0.841047x and 0/15 at 0.672632x; the
+first two are too shallow to rank and the third answers nothing, so the fifteen
+rows below are byte-identical to wave 21's.
 
 The full table with both readings and every benchmark column is
 `docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` §1. This page is the top of it,

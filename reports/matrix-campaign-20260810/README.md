@@ -42,8 +42,39 @@ python experiments/render_matrix_ledger.py \
 | path | what it is |
 |---|---|
 | `CAMPAIGN_SCORECARD.md` | one page: the top fifteen children by intelligence-per-compression, each with its net ratio, its review, the one-line character of its failure and its `READ-` dossier path. This is the scoring page |
-| `../../docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` | the consolidating report for waves 1–21: **all 108** whole-model children that hold at least one review case, sorted by net ratio with both readings and every benchmark column; every law with its evidence; seventeen corrections of record; the scale-transfer statements with their confidence; and what remains unbuilt and why. It does **not** declare the campaign closed |
-| `wave21/campaign-frontier-table.json` | the artifact both of the above are generated from — a function of the ledger, the per-wave child indexes and the sealed `lm-eval` output, built by `run/mx21/mx21_campaign_table.py` and rendered by `run/mx21/mx21_report_tables.py` |
+| `../../docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` | the consolidating report for waves 1–22: **all 110** whole-model children that hold at least one review case, sorted by net ratio with both readings and every benchmark column; every law with its evidence; seventeen corrections of record; the scale-transfer statements with their confidence; and what remains unbuilt and why. It does **not** declare the campaign closed |
+| `wave22/campaign-frontier-table.json` | the artifact both of the above are generated from — a function of the ledger, the per-wave child indexes and the sealed `lm-eval` output, built by `run/mx22/mx22_campaign_table.py` and rendered by `run/mx22/mx22_report_tables.py` |
+
+## wave22/ — the objective loses where it had room, and the slope has 16 dimensions left
+
+`NOTES-MX-Z.md` at the repo root is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave22/basis/endpoint-retention.json` | the per-endpoint retained **read** energy of four sealed bases, fit and held-out — wave 19's 896, wave 21's 736, and this wave's max-min 896 and plain 720 — plus what the max-min iteration achieves at 896 and 720. It re-prices waves 19 and 21's bases and reproduces both (0.9627/0.9440 at 896, 0.9075 at 736) |
+| `wave22/basis/E-reader-maxmin-896.census.json` | the max-min basis at the living width: fit-side spread across 29 readers **0.00055**, worst held-out reader 0.9440 → 0.9530, 24.69 of 896 directions exchanged |
+| `wave22/basis/E-reader-pca-720.census.json` | the rung that halves the last interval of the width slope: pooled read 0.9015 held-out, worst reader 0.8545, 11 of 29 under the 0.90 floor |
+| `wave22/wave22-child-index.json` | every wave-22 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict |
+| `wave22/wave22-child-comparison.json` | one row per child with the basis, the retained read energy, the per-site write cosine, the drift and the review |
+| `wave22/campaign-frontier-table.json` | the campaign-wide table (see above), regenerated: **157** reviewed whole-model children, **110** holding at least one case, 58 benchmark rows and **nine** parent rows all matching the sealed reference |
+| `wave22/scorecard-characters.json` | the prose column of the scorecard, keyed by cell id; wave 21's file with this wave's three children added |
+| `wave22/human-review/` | 31 files: every dossier, every child and parent response rendered verbatim, every run receipt, verdict receipt, per-case reading and build receipt, both new basis censuses, the endpoint retention report, the benchmark table and every table above |
+| `wave22/bench/benchmark-table.json` | the ADDENDUM 8 column for the parent and all three children |
+| `wave22/ledger-merge-report.json` | the exactly-once merge of 6 shard rows into the campaign ledger (646 → 652): 3 ARCH run rows and 3 ADDENDUM 6 verdict rows, no superseded rows |
+| `wave22/children-retention-manifest-wave22.json` | all three children kept, each with the controlled comparison it is an arm of |
+| `wave22/deployments-prune-manifest-wave22.json` | waves 20 and 21's deployments pruned; **two** kept, because the wave ran from two commits and both are named by an artifact |
+| `run/mx22/` | the wave-22 drivers. The builder differs from `run/mx21/mx21_build.py` by **nine lines of body** — four schema strings, one log tag, two provenance strings, two receipt filenames — because this wave adds no mechanism |
+
+Wave 22's one-line result: **three cells the matrix had left, and none of them
+buys a case.** The max-min basis at the LIVING width equalises twenty-nine
+readers to within 0.00055 on the fit rows and reads **2/15** against its 4/15 and
+3/15 controls at the identical parameter count, so the objection that wave 21
+killed it at a width with nothing to lose is answered; rung **720** reads
+**0/15** at 0.9015 retained read energy, leaving **sixteen dimensions** of the
+width slope that could still hide a step; and the writers' λ split composed with
+the head merge reads **1/15** against the merge's own split at 2/15, so the
+campaign's two case-recovery mechanisms do **not** add. The gated triple was not
+built, at 1/15, by the rule the wave wrote before building.
 
 ## wave21/ — the cliff has a slope, and the worst reader is not the variable
 

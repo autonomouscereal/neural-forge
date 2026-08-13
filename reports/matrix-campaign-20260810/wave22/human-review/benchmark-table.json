@@ -1,0 +1,41 @@
+{
+ "schema": "neural-forge-matrix-wave22-benchmark-table-v1",
+ "rows": {
+  "ARCH.W896LSKV6JQ": {
+   "arc_easy": 0.33,
+   "hellaswag": 0.395,
+   "piqa": 0.5,
+   "winogrande": 0.555,
+   "lambada": 0.06,
+   "lam_ppl": 2829.1979872825555,
+   "wiki": 1128.349464471465
+  },
+  "PARENT": {
+   "arc_easy": 0.545,
+   "hellaswag": 0.505,
+   "piqa": 0.68,
+   "winogrande": 0.55,
+   "lambada": 0.46,
+   "lam_ppl": 24.391247934692974,
+   "wiki": 81.79763262054296
+  },
+  "ARCH.MM896": {
+   "arc_easy": 0.32,
+   "hellaswag": 0.435,
+   "piqa": 0.555,
+   "winogrande": 0.505,
+   "lambada": 0.055,
+   "lam_ppl": 1880.531428465419,
+   "wiki": 554.6245980675592
+  },
+  "ARCH.W720": {
+   "arc_easy": 0.26,
+   "hellaswag": 0.405,
+   "piqa": 0.505,
+   "winogrande": 0.485,
+   "lambada": 0.015,
+   "lam_ppl": 17773.8039730121,
+   "wiki": 2046.3182721835371
+  }
+ }
+}

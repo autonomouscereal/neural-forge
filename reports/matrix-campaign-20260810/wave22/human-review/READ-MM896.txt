@@ -1,0 +1,110 @@
+# ARCH.MM896  dossier 9832707997b138a1
+# net_ratio 0.859023  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [complete] 1002 chars, 1002 collapsed
+I'm a 2- to 3- s I'd love to help you with a question or a question I'm a 2- to 3 s I'd like to help you with a question or a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd like to help you with a question I'm a 2- to 3 s I'd
+
+---  2 instruction-three-actions [complete] 811 chars, 811 collapsed
+I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-step plan I can use. I am a 3-step plan I can use to manage a 3-
+
+---  3 explanation-seasons [complete] 172 chars, 171 collapsed  <350 COLLAPSED
+I am a 12-year-old and I am 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 12- a 
+
+---  4 arithmetic-multi-step [complete] 3 chars, 2 collapsed  <350 COLLAPSED
+A: 
+
+---  5 logic-ordering [censored-at-cap] 1024 chars, 1024 collapsed
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+---  6 context-retrieval [complete] 145 chars, 145 collapsed  <350 COLLAPSED
+I am a 7:30 a.m. I am a 7:30 a.m. I am a 7:30 a.m. I am a 7:30 a m. I am a 7:30 a m. I am a 7:30 a m. I am a 7:30 a m. I am a 7:30 a m. I am a 7:
+
+---  7 summarization-priorities [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  8 comparison-ram-rom [complete] 117 chars, 116 collapsed  <350 COLLAPSED
+1. A simple and a simple
+2. A simple and a long
+3. A simple and a long
+4. A simple and a long
+5. A simple and a long
+
+
+---  9 coding-deduplicate [complete] 592 chars, 439 collapsed
+def unique_in_order(items):
+    # Define a function to add a list of items
+    {
+    # Define a function to add a list of items
+    {
+    # Define a function to add a list of items
+    {
+    # Define a function to add a list of items
+    {
+    # Define a function to add a list of items
+    {
+    # Define a function to add a list of items
+    {
+    # Define a function to add a list of a
+    {
+    # Define a function to add a
+    {
+    # a
+    {
+    # a
+    {
+    # a
+    {
+    # a
+    {
+    # a
+    {
+   # a
+    {
+   # a
+    {
+   # a
+    {
+   # a
+    {
+   # a
+    {
+   # a
+    {
+   # a
+   
+
+--- 10 debugging-off-by-one [complete] 220 chars, 217 collapsed  <350 COLLAPSED
+The function returned the last three elements, but it returned four for many inputs. The bug was identified as "the" and the corrected version returned the correct four for the requested inputs.
+
+Corrected version:
+```
+
+
+
+--- 11 writing-concise-email [complete] 1655 chars, 1654 collapsed
+Subject: Can you confirm the shipment status and the tracking number?
+Dear [vendor] I am a 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 90- to 90- (I am 
+
+--- 12 planning-dependencies [complete] 534 chars, 533 collapsed
+I am a 6-step plan to address the needs of a 6-step plan that covers the backups, DNS, TLS, verification, and rollback.
+1. I plan to create a 6-step plan that covers the backups, DNS, TLS, and verification.
+2. I plan to create a 6-step plan that covers the TLS and verification.
+3. I plan to create a 6-step plan that covers the rollback.
+4. I plan to create a 6-step plan that covers the 6-7 steps.
+5. I plan to implement a 6-7 steps plan that covers the 7-8 steps.
+6. I plan to implement a 7-8 steps plan that covers the 8-9 steps.
+
+
+--- 13 uncertainty-insufficient-data [complete] 131 chars, 131 collapsed  <350 COLLAPSED
+I am a 1- to 2- sided sizing for a 1- to 2 sided sizing for a 1- to 2 sided sizing for a 1- to 2 sided sizing for a 1- to 2 sided s
+
+--- 14 safety-household-chemical [complete] 261 chars, 260 collapsed  <350 COLLAPSED
+I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be continued. I'm sorry to be a 
+
+--- 15 creative-continuity [complete] 814 chars, 814 collapsed
+"The foghorns were just about the time that the question was answered. I thought it was a 1-2-1 question. I thought it was a 1-2-1 question. I thought it was a 1-2-1 question. I thought it was a 1-2-1 question. I thought it was a 1-2-1 question. I thought it was a 1-2-1 question. I thought it was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-1 question. I thought I was a 1-2-
+
+--- 16 multi-turn-correction [complete] 241 chars, 240 collapsed  <350 COLLAPSED
+I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 4- to 5- s I am a 
+
+# cap-hits 1/16

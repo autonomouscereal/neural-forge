@@ -1,11 +1,11 @@
 # Phase 1 — the fold-only frontier on LFM2.5-230M
 
-**Date:** 2026-08-13 (final consolidation; first written 2026-08-12).
+**Date:** 2026-08-13 (consolidated at wave 21, extended at wave 22).
 **Branch:** `codex/lrc-blank-compression`.
-**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–21,
-`NOTES-MX-A` … `NOTES-MX-Y`.
-**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **646 rows**, sha
-`080ac0e8ef8608af9250b4301c625175fc0ad53edb40e0221369c1a80cdfb8c8`.
+**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–22,
+`NOTES-MX-A` … `NOTES-MX-Z`.
+**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **652 rows**, sha
+`33a8326ae956e15aed0f1b2443a25377351d167b0bbb78667f5a0d8a0f74fe29`.
 **One-page version for scoring:** `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md`.
 
 This is the consolidating document of the **fold-only** matrix campaign: what
@@ -74,12 +74,12 @@ Cyril's ruling; it is reserved for after structural folding is proven.
 
 ## 1. Every sealed child that answers anything
 
-**154 whole-model children have a sealed behaviour review. 108 hold at least one
-of fifteen cases.** All 108 are below, sorted by net stored ratio, with both
+**157 whole-model children have a sealed behaviour review. 110 hold at least one
+of fifteen cases.** All 110 are below, sorted by net stored ratio, with both
 readings, the export shape and the benchmark row where one was run. Eleven cells
 carry more than one reviewed receipt (re-seals under ADDENDUM 14, re-runs); the
 latest by `sealed_at` is shown and the superseded digests are listed in
-`wave21/campaign-frontier-table.json`.
+`wave22/campaign-frontier-table.json`.
 
 `shape` is a claim about what loads: **standard** means a stock
 `Lfm2ForCausalLM`, no `trust_remote_code`, and the loader counts the ratio
@@ -118,85 +118,87 @@ introduced and what it cost.
 | 27 | `ARCH.W896LSX13` | 21 | **0.815064** | 187,214,592 | **2/15** | dead | impaired (14/16) | standard | 0.3600 | 0.4100 | 0.5200 | 0.4850 | 0.1400 | 1675.13 | 915.75 |
 | 28 | `ARCH.W896X13` | 19 | **0.815064** | 187,214,592 | **1/15** | dead | impaired (11/16) | standard | 0.3750 | 0.4000 | 0.5200 | 0.4950 | 0.1500 | 1671.03 | 923.07 |
 | 29 | `ARCH.W896KV6JS` | 19 | **0.841047** | 193,182,848 | **2/15** | dead | impaired (11/16) | standard | 0.3150 | 0.3850 | 0.5200 | 0.5150 | 0.0650 | 2821.11 | 1161.46 |
-| 30 | `ARCH.T010713` | 18 | **0.842437** | 193,501,952 | **3/15** | dead | impaired (5/16) | standard | 0.3900 | 0.4150 | 0.5350 | 0.4600 | 0.1000 | 14860.55 | 1089.79 |
-| 31 | `ARCH.T010913` | 18 | **0.842437** | 193,501,952 | **1/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 32 | `ARCH.T030913` | 18 | **0.842437** | 193,501,952 | **2/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 33 | `ARCH.W896` | 19 | **0.859023** | 197,311,616 | **4/15** | dead | impaired (9/16) | standard | 0.3550 | 0.4000 | 0.5650 | 0.4900 | 0.1450 | 638.72 | 500.08 |
-| 34 | `ARCH.W896LS` | 21 | **0.859023** | 197,311,616 | **3/15** | dead | impaired (13/16) | standard | 0.3650 | 0.4050 | 0.5650 | 0.5100 | 0.1400 | 622.20 | 487.20 |
-| 35 | `ARCH.F1301KV6QC` | 18 | **0.874415** | 200,847,104 | **1/15** | dead | dead (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 36 | `ARCH.D2` | 16 | **0.894958** | 205,565,696 | **2/15** | dead | impaired (10/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 37 | `ARCH.D2B` | 16 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (5/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 38 | `ARCH.P0709` | 17 | **0.894958** | 205,565,696 | **4/15** | dead | impaired (7/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 39 | `ARCH.P0711` | 17 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 40 | `ARCH.P0911` | 17 | **0.894958** | 205,565,696 | **2/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 41 | `ARCH.P1301` | 17 | **0.894958** | 205,565,696 | **7/15** | dead | impaired (2/16) | standard | 0.4100 | 0.3750 | 0.5600 | 0.5400 | 0.1750 | 2870.17 | 990.35 |
-| 42 | `ARCH.P1303` | 17 | **0.894958** | 205,565,696 | **7/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 43 | `ARCH.P1307` | 17 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (1/16) | standard | 0.4550 | 0.4050 | 0.6050 | 0.5450 | 0.1300 | 1991.53 | 400.16 |
-| 44 | `COMP.MA.MXL8` | 8 | **0.895457** | 205,680,372 | **3/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 45 | `COMP.MA.MXL9` | 8 | **0.921164** | 211,585,141 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 46 | `ARCH.X07KV6JQ` | 18 | **0.926936** | 212,910,848 | **6/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 47 | `ARCH.X07KV6JQC` | 18 | **0.926936** | 212,910,848 | **7/15** | dead | impaired (3/16) | standard | 0.4200 | 0.4200 | 0.5350 | 0.5450 | 0.1200 | 740.48 | 377.65 |
-| 48 | `ARCH.X09KV6JQC` | 18 | **0.926936** | 212,910,848 | **5/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 49 | `ARCH.X13KV6` | 16 | **0.926936** | 212,910,848 | **6/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 50 | `ARCH.X13KV6J` | 17 | **0.926936** | 212,910,848 | **3/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 51 | `ARCH.X13KV6JQ` | 17 | **0.926936** | 212,910,848 | **4/15** | dead | impaired (6/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 52 | `COMP.MA.MXL7` | 8 | **0.946871** | 217,489,910 | **9/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 53 | `ARCH.X01` | 16 | **0.947479** | 217,629,440 | **9/15** | dead | alive-degraded (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 54 | `ARCH.X03` | 16 | **0.947479** | 217,629,440 | **6/15** | impaired | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
-| 55 | `ARCH.X05A` | 15 | **0.947479** | 217,629,440 | **6/15** | dead | impaired (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 56 | `ARCH.X07` | 16 | **0.947479** | 217,629,440 | **11/15** | alive-parent-band | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
-| 57 | `ARCH.X09` | 16 | **0.947479** | 217,629,440 | **10/15** | alive-parent-band | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
-| 58 | `ARCH.X11` | 16 | **0.947479** | 217,629,440 | **9/15** | alive-degraded | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
-| 59 | `ARCH.X13A` | 16 | **0.947479** | 217,629,440 | **13/15** | dead | alive-parent-band (2/16) | standard | 0.4600 | 0.4050 | 0.6350 | 0.5200 | 0.3350 | 106.78 | 297.09 |
-| 60 | `ARCH.X04` | 17 | **0.952057** | 218,680,960 | **2/15** | dead | impaired (9/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 61 | `ARCH.X06` | 17 | **0.952057** | 218,680,960 | **8/15** | dead | alive-degraded (1/16) | standard | 0.5300 | 0.4700 | 0.6050 | 0.5200 | 0.3250 | 39.52 | 127.10 |
-| 62 | `ARCH.X08` | 17 | **0.952057** | 218,680,960 | **7/15** | dead | impaired (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 63 | `ARCH.X10` | 17 | **0.952057** | 218,680,960 | **7/15** | impaired | impaired (0/16) | standard | 0.5100 | 0.4450 | 0.6200 | 0.5200 | 0.3000 | 153.37 | 239.04 |
-| 64 | `COMP.MA.MXL11` | 8 | **0.955444** | 219,459,062 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5250 | 0.4600 | 0.6350 | 0.5700 | 0.2250 | 99.22 | 118.02 |
-| 65 | `COMP.MA.MXK10` | 7 | **0.972579** | 223,394,679 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 66 | `COMP.MA.MXK7` | 7 | **0.972579** | 223,394,679 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 67 | `COMP.MA.MXL5` | 8 | **0.972579** | 223,394,679 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5100 | 0.4850 | 0.6200 | 0.5500 | 0.3200 | 55.19 | 105.53 |
-| 68 | `COMP.MA.MXK11` | 7 | **0.972590** | 223,397,366 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 69 | `COMP.MA.MXJP2C` | 6 | **0.972602** | 223,400,053 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 70 | `COMP.MA.MXJ5` | 6 | **0.974301** | 223,790,198 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 71 | `COMP.MA.MXJ4` | 6 | **0.977724** | 224,576,630 | **4/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 72 | `COMP.MA.MXJ4C` | 6 | **0.977728** | 224,577,399 | **8/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 73 | `COMP.MA.MXK15` | 7 | **0.978019** | 224,644,232 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 74 | `COMP.MA.MXL6` | 8 | **0.978304** | 224,709,687 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5150 | 0.4600 | 0.6700 | 0.5400 | 0.3350 | 59.78 | 112.29 |
-| 75 | `COMP.MA.MXK8` | 7 | **0.979437** | 224,970,095 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 76 | `ARCH.KV6` | 16 | **0.979457** | 224,974,592 | **5/15** | dead | impaired (4/16) | standard | 0.4650 | 0.4350 | 0.6050 | 0.5100 | 0.2150 | 107.87 | 201.05 |
-| 77 | `ARCH.KV6A` | 17 | **0.979457** | 224,974,592 | **5/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 78 | `ARCH.KV6J` | 17 | **0.979457** | 224,974,592 | **3/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
-| 79 | `ARCH.KV6JQ` | 17 | **0.979457** | 224,974,592 | **8/15** | dead | alive-degraded (2/16) | standard | 0.4650 | 0.4400 | 0.6100 | 0.5200 | 0.2300 | 104.96 | 241.89 |
-| 80 | `ARCH.KV6JS` | 18 | **0.979457** | 224,974,592 | **7/15** | dead | impaired (2/16) | standard | 0.4650 | 0.4350 | 0.6100 | 0.5350 | 0.2350 | 103.45 | 240.46 |
-| 81 | `COMP.MA.MXK13` | 7 | **0.979732** | 225,037,687 | **9/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 82 | `COMP.MA.MXJ3C` | 6 | **0.981152** | 225,363,831 | **9/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 83 | `COMP.MA.MXK5` | 7 | **0.981152** | 225,363,831 | **10/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 84 | `COMP.MA.MXJP2A` | 6 | **0.981163** | 225,366,518 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 85 | `COMP.MA.MXJP2B` | 6 | **0.981163** | 225,366,518 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 86 | `COMP.MA.MXK1` | 7 | **0.981163** | 225,366,518 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 87 | `COMP.MA.MXK2` | 7 | **0.981163** | 225,366,518 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 88 | `COMP.MA.MXK3` | 7 | **0.981163** | 225,366,518 | **6/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 89 | `COMP.MA.MXL1` | 8 | **0.985726** | 226,414,582 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5050 | 0.4550 | 0.6050 | 0.5700 | 0.3100 | 57.18 | 99.58 |
-| 90 | `COMP.MA.MXL10` | 8 | **0.985726** | 226,414,582 | **11/15** | alive-parent-band | `unstated` | parent-shaped | 0.5300 | 0.4450 | 0.6050 | 0.5750 | 0.3200 | 63.88 | 109.08 |
-| 91 | `COMP.MB.MXL12` | 8 | **0.985726** | 226,414,582 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 92 | `COMP.MA.MXK9` | 7 | **0.986286** | 226,543,095 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 93 | `COMP.MA.MXK12` | 7 | **0.986296** | 226,545,511 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 94 | `COMP.MA.MXJ3` | 6 | **0.986297** | 226,545,782 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 95 | `COMP.MB.MXJ3` | 6 | **0.986297** | 226,545,782 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 96 | `COMP.MA.MXJ3A` | 6 | **0.986301** | 226,546,551 | **5/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 97 | `COMP.MA.MXJ3B` | 6 | **0.986301** | 226,546,551 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 98 | `COMP.MA.MXK4` | 7 | **0.988010** | 226,939,247 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 99 | `COMP.MA.MXQ1` | 13 | **0.989586** | 227,301,120 | **6/15** | dead | `unstated` | parent-shaped | 0.5000 | 0.4750 | 0.6650 | 0.5600 | 0.1450 | 341.58 | 105.94 |
-| 100 | `COMP.MA.MXQ2` | 13 | **0.989586** | 227,301,120 | **6/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 101 | `COMP.MA.MXQ3` | 13 | **0.989586** | 227,301,120 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 102 | `COMP.MA.MXJ2` | 6 | **0.989725** | 227,332,983 | **11/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 103 | `COMP.MA.MXL2` | 8 | **0.990289** | 227,462,646 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5850 | 0.4400 | 0.6300 | 0.5700 | 0.3200 | 52.82 | 100.57 |
-| 104 | `COMP.MA.MXL3` | 8 | **0.990289** | 227,462,646 | **11/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 105 | `COMP.MA.MXL4` | 8 | **0.990864** | 227,594,615 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5450 | 0.4650 | 0.6350 | 0.5800 | 0.3700 | 38.61 | 92.29 |
-| 106 | `COMP.MA.MXJ1` | 6 | **0.991439** | 227,726,719 | **12/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 107 | `COMP.MA.MXK14` | 7 | **0.994287** | 228,381,047 | **13/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
-| 108 | `COMP.MA.MXK6` | 7 | **0.994859** | 228,512,247 | **10/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 30 | `ARCH.W896LSKV6JQ` | 22 | **0.841047** | 193,182,848 | **1/15** | dead | impaired (15/16) | standard | 0.3300 | 0.3950 | 0.5000 | 0.5550 | 0.0600 | 2829.20 | 1128.35 |
+| 31 | `ARCH.T010713` | 18 | **0.842437** | 193,501,952 | **3/15** | dead | impaired (5/16) | standard | 0.3900 | 0.4150 | 0.5350 | 0.4600 | 0.1000 | 14860.55 | 1089.79 |
+| 32 | `ARCH.T010913` | 18 | **0.842437** | 193,501,952 | **1/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 33 | `ARCH.T030913` | 18 | **0.842437** | 193,501,952 | **2/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 34 | `ARCH.MM896` | 22 | **0.859023** | 197,311,616 | **2/15** | dead | dead (16/16) | standard | 0.3200 | 0.4350 | 0.5550 | 0.5050 | 0.0550 | 1880.53 | 554.62 |
+| 35 | `ARCH.W896` | 19 | **0.859023** | 197,311,616 | **4/15** | dead | impaired (9/16) | standard | 0.3550 | 0.4000 | 0.5650 | 0.4900 | 0.1450 | 638.72 | 500.08 |
+| 36 | `ARCH.W896LS` | 21 | **0.859023** | 197,311,616 | **3/15** | dead | impaired (13/16) | standard | 0.3650 | 0.4050 | 0.5650 | 0.5100 | 0.1400 | 622.20 | 487.20 |
+| 37 | `ARCH.F1301KV6QC` | 18 | **0.874415** | 200,847,104 | **1/15** | dead | dead (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 38 | `ARCH.D2` | 16 | **0.894958** | 205,565,696 | **2/15** | dead | impaired (10/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 39 | `ARCH.D2B` | 16 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (5/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 40 | `ARCH.P0709` | 17 | **0.894958** | 205,565,696 | **4/15** | dead | impaired (7/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 41 | `ARCH.P0711` | 17 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 42 | `ARCH.P0911` | 17 | **0.894958** | 205,565,696 | **2/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 43 | `ARCH.P1301` | 17 | **0.894958** | 205,565,696 | **7/15** | dead | impaired (2/16) | standard | 0.4100 | 0.3750 | 0.5600 | 0.5400 | 0.1750 | 2870.17 | 990.35 |
+| 44 | `ARCH.P1303` | 17 | **0.894958** | 205,565,696 | **7/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 45 | `ARCH.P1307` | 17 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (1/16) | standard | 0.4550 | 0.4050 | 0.6050 | 0.5450 | 0.1300 | 1991.53 | 400.16 |
+| 46 | `COMP.MA.MXL8` | 8 | **0.895457** | 205,680,372 | **3/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 47 | `COMP.MA.MXL9` | 8 | **0.921164** | 211,585,141 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 48 | `ARCH.X07KV6JQ` | 18 | **0.926936** | 212,910,848 | **6/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 49 | `ARCH.X07KV6JQC` | 18 | **0.926936** | 212,910,848 | **7/15** | dead | impaired (3/16) | standard | 0.4200 | 0.4200 | 0.5350 | 0.5450 | 0.1200 | 740.48 | 377.65 |
+| 50 | `ARCH.X09KV6JQC` | 18 | **0.926936** | 212,910,848 | **5/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 51 | `ARCH.X13KV6` | 16 | **0.926936** | 212,910,848 | **6/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 52 | `ARCH.X13KV6J` | 17 | **0.926936** | 212,910,848 | **3/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 53 | `ARCH.X13KV6JQ` | 17 | **0.926936** | 212,910,848 | **4/15** | dead | impaired (6/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 54 | `COMP.MA.MXL7` | 8 | **0.946871** | 217,489,910 | **9/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 55 | `ARCH.X01` | 16 | **0.947479** | 217,629,440 | **9/15** | dead | alive-degraded (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 56 | `ARCH.X03` | 16 | **0.947479** | 217,629,440 | **6/15** | impaired | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 57 | `ARCH.X05A` | 15 | **0.947479** | 217,629,440 | **6/15** | dead | impaired (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 58 | `ARCH.X07` | 16 | **0.947479** | 217,629,440 | **11/15** | alive-parent-band | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 59 | `ARCH.X09` | 16 | **0.947479** | 217,629,440 | **10/15** | alive-parent-band | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 60 | `ARCH.X11` | 16 | **0.947479** | 217,629,440 | **9/15** | alive-degraded | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 61 | `ARCH.X13A` | 16 | **0.947479** | 217,629,440 | **13/15** | dead | alive-parent-band (2/16) | standard | 0.4600 | 0.4050 | 0.6350 | 0.5200 | 0.3350 | 106.78 | 297.09 |
+| 62 | `ARCH.X04` | 17 | **0.952057** | 218,680,960 | **2/15** | dead | impaired (9/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 63 | `ARCH.X06` | 17 | **0.952057** | 218,680,960 | **8/15** | dead | alive-degraded (1/16) | standard | 0.5300 | 0.4700 | 0.6050 | 0.5200 | 0.3250 | 39.52 | 127.10 |
+| 64 | `ARCH.X08` | 17 | **0.952057** | 218,680,960 | **7/15** | dead | impaired (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 65 | `ARCH.X10` | 17 | **0.952057** | 218,680,960 | **7/15** | impaired | impaired (0/16) | standard | 0.5100 | 0.4450 | 0.6200 | 0.5200 | 0.3000 | 153.37 | 239.04 |
+| 66 | `COMP.MA.MXL11` | 8 | **0.955444** | 219,459,062 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5250 | 0.4600 | 0.6350 | 0.5700 | 0.2250 | 99.22 | 118.02 |
+| 67 | `COMP.MA.MXK10` | 7 | **0.972579** | 223,394,679 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 68 | `COMP.MA.MXK7` | 7 | **0.972579** | 223,394,679 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 69 | `COMP.MA.MXL5` | 8 | **0.972579** | 223,394,679 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5100 | 0.4850 | 0.6200 | 0.5500 | 0.3200 | 55.19 | 105.53 |
+| 70 | `COMP.MA.MXK11` | 7 | **0.972590** | 223,397,366 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 71 | `COMP.MA.MXJP2C` | 6 | **0.972602** | 223,400,053 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 72 | `COMP.MA.MXJ5` | 6 | **0.974301** | 223,790,198 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 73 | `COMP.MA.MXJ4` | 6 | **0.977724** | 224,576,630 | **4/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 74 | `COMP.MA.MXJ4C` | 6 | **0.977728** | 224,577,399 | **8/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 75 | `COMP.MA.MXK15` | 7 | **0.978019** | 224,644,232 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 76 | `COMP.MA.MXL6` | 8 | **0.978304** | 224,709,687 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5150 | 0.4600 | 0.6700 | 0.5400 | 0.3350 | 59.78 | 112.29 |
+| 77 | `COMP.MA.MXK8` | 7 | **0.979437** | 224,970,095 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 78 | `ARCH.KV6` | 16 | **0.979457** | 224,974,592 | **5/15** | dead | impaired (4/16) | standard | 0.4650 | 0.4350 | 0.6050 | 0.5100 | 0.2150 | 107.87 | 201.05 |
+| 79 | `ARCH.KV6A` | 17 | **0.979457** | 224,974,592 | **5/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 80 | `ARCH.KV6J` | 17 | **0.979457** | 224,974,592 | **3/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 81 | `ARCH.KV6JQ` | 17 | **0.979457** | 224,974,592 | **8/15** | dead | alive-degraded (2/16) | standard | 0.4650 | 0.4400 | 0.6100 | 0.5200 | 0.2300 | 104.96 | 241.89 |
+| 82 | `ARCH.KV6JS` | 18 | **0.979457** | 224,974,592 | **7/15** | dead | impaired (2/16) | standard | 0.4650 | 0.4350 | 0.6100 | 0.5350 | 0.2350 | 103.45 | 240.46 |
+| 83 | `COMP.MA.MXK13` | 7 | **0.979732** | 225,037,687 | **9/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 84 | `COMP.MA.MXJ3C` | 6 | **0.981152** | 225,363,831 | **9/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 85 | `COMP.MA.MXK5` | 7 | **0.981152** | 225,363,831 | **10/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 86 | `COMP.MA.MXJP2A` | 6 | **0.981163** | 225,366,518 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 87 | `COMP.MA.MXJP2B` | 6 | **0.981163** | 225,366,518 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 88 | `COMP.MA.MXK1` | 7 | **0.981163** | 225,366,518 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 89 | `COMP.MA.MXK2` | 7 | **0.981163** | 225,366,518 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 90 | `COMP.MA.MXK3` | 7 | **0.981163** | 225,366,518 | **6/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 91 | `COMP.MA.MXL1` | 8 | **0.985726** | 226,414,582 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5050 | 0.4550 | 0.6050 | 0.5700 | 0.3100 | 57.18 | 99.58 |
+| 92 | `COMP.MA.MXL10` | 8 | **0.985726** | 226,414,582 | **11/15** | alive-parent-band | `unstated` | parent-shaped | 0.5300 | 0.4450 | 0.6050 | 0.5750 | 0.3200 | 63.88 | 109.08 |
+| 93 | `COMP.MB.MXL12` | 8 | **0.985726** | 226,414,582 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 94 | `COMP.MA.MXK9` | 7 | **0.986286** | 226,543,095 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 95 | `COMP.MA.MXK12` | 7 | **0.986296** | 226,545,511 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 96 | `COMP.MA.MXJ3` | 6 | **0.986297** | 226,545,782 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 97 | `COMP.MB.MXJ3` | 6 | **0.986297** | 226,545,782 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 98 | `COMP.MA.MXJ3A` | 6 | **0.986301** | 226,546,551 | **5/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 99 | `COMP.MA.MXJ3B` | 6 | **0.986301** | 226,546,551 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 100 | `COMP.MA.MXK4` | 7 | **0.988010** | 226,939,247 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 101 | `COMP.MA.MXQ1` | 13 | **0.989586** | 227,301,120 | **6/15** | dead | `unstated` | parent-shaped | 0.5000 | 0.4750 | 0.6650 | 0.5600 | 0.1450 | 341.58 | 105.94 |
+| 102 | `COMP.MA.MXQ2` | 13 | **0.989586** | 227,301,120 | **6/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 103 | `COMP.MA.MXQ3` | 13 | **0.989586** | 227,301,120 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 104 | `COMP.MA.MXJ2` | 6 | **0.989725** | 227,332,983 | **11/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 105 | `COMP.MA.MXL2` | 8 | **0.990289** | 227,462,646 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5850 | 0.4400 | 0.6300 | 0.5700 | 0.3200 | 52.82 | 100.57 |
+| 106 | `COMP.MA.MXL3` | 8 | **0.990289** | 227,462,646 | **11/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 107 | `COMP.MA.MXL4` | 8 | **0.990864** | 227,594,615 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5450 | 0.4650 | 0.6350 | 0.5800 | 0.3700 | 38.61 | 92.29 |
+| 108 | `COMP.MA.MXJ1` | 6 | **0.991439** | 227,726,719 | **12/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 109 | `COMP.MA.MXK14` | 7 | **0.994287** | 228,381,047 | **13/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 110 | `COMP.MA.MXK6` | 7 | **0.994859** | 228,512,247 | **10/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
 
 ### 1.1 The recipes behind the top of that table
 
@@ -417,18 +419,21 @@ and then bounded it three times.
 projected** energy the child's subspace retains, pooled over the 29 endpoints
 where a stock LFM2 reads the stream:
 
-| width | net | retained read (held-out) | review |
-|---:|---:|---:|---:|
-| 896 | 0.859023x | 0.9627 | **4/15** |
-| 768 | 0.722610x | 0.9193 | **3/15** |
-| 736 | 0.689220x | 0.9075 | **1/15** |
-| 704 | 0.656116x | 0.8953 | 0/15 |
-| 640 | 0.590763x | 0.8697 | 0/15 |
-| 512 | 0.463481x | 0.8124 | 0/15 |
+| width | net | retained read (held-out) | worst endpoint | readers under 0.90 | review |
+|---:|---:|---:|---:|---:|---:|
+| 896 | 0.859023x | 0.9627 | 0.9440 | 0 of 29 | **4/15** |
+| 768 | 0.722610x | 0.9193 | 0.8801 | 4 of 29 | **3/15** |
+| 736 | 0.689220x | 0.9075 | 0.8632 | 9 of 29 | **1/15** |
+| **720** | **0.672632x** | **0.9015** | **0.8545** | **11 of 29** | **0/15** |
+| 704 | 0.656116x | 0.8953 | — | — | 0/15 |
+| 640 | 0.590763x | 0.8697 | 0.8084 | 26 of 29 | 0/15 |
+| 512 | 0.463481x | 0.8124 | 0.7268 | 29 of 29 | 0/15 |
 
-**The cliff is 32 dimensions wide and it is a slope.** Wave 19 bracketed it at
-128 and called it a step; waves 20 and 21 halved it twice and the rung inside it
-reads 1/15, so 4 → 3 → 1 → 0 is monotone and graded.
+**The cliff is 16 dimensions wide and it is a slope.** Wave 19 bracketed it at
+128 and called it a step; waves 20, 21 and 22 halved it three times. The last
+interval that can still hide a step is **736 → 720**: sixteen dimensions and
+**0.0060** of pooled retained read energy, between the deepest child that holds
+a case and the deepest that holds none.
 
 **Per-site install quality is not the variable.** At 512 the attention writes
 land at cos **0.9999** against their own local targets, the MLP writes at
@@ -466,21 +471,45 @@ evidence-PCA basis retains **more** raw energy than reader-PCA (0.9636 vs
 3/15. The two candidate currencies point in opposite directions on that child
 and the read one is right.
 
-**Basis invariance is total, and five objectives have now tested it.** Moving
+**Basis invariance is total, and six objective tests have now failed.** Moving
 the objective toward the case-implicated rows (two betas), toward reader energy
 per unit of raw energy, onto the raw moment, and onto the **worst of the 29
-readers** all lose. The last is the most informative, because it succeeds at its
-own objective and fails anyway: `ARCH.MM768` lifts the worst endpoint's retained
-read energy from **0.8801 to 0.8997**, cuts the endpoints under the 0.90 floor
-from **four to one**, reconstructs the parent's own logits **better** than the
-living child (final-norm relative SSE 0.1522 against 0.1752) — and reads 0/15
-with every lane an "I am a" loop.
+readers** at two widths all lose. The max-min arm is the most informative,
+because it succeeds at its own objective and fails anyway: `ARCH.MM768` lifts
+the worst endpoint's retained read energy from **0.8801 to 0.8997**, cuts the
+endpoints under the 0.90 floor from **four to one**, reconstructs the parent's
+own logits **better** than the living child (final-norm relative SSE 0.1522
+against 0.1752) — and reads 0/15 with every lane an "I am a" loop.
+
+**And it loses at the width where there was something to lose.** Wave 21's one
+defensible objection to that result was that 768 has three cases to give up and
+39 of 768 directions moved. `ARCH.MM896` is the same objective at the living
+width, against the 4/15 baseline and the 3/15 λ-split child at the **identical
+197,311,616 parameters**:
+
+| at width 896 | plain reader-PCA | reader-maxmin |
+|---|---:|---:|
+| worst endpoint, read, held-out | 0.9440 | **0.9530** |
+| spread across 29 readers, read, **fit** | 0.0231 | **0.00055** |
+| pooled read, held-out | **0.9627** | 0.9603 |
+| directions exchanged | 0 | **24.69 of 896** |
+| final-norm relative logit SSE | 0.1752 (`W896`) | **0.1513** |
+| lambada / perplexity | 0.1450 / 638.72 | 0.0550 / 1880.53 |
+| review | **4/15** | **2/15** |
+
+The fit-side objective is met almost exactly — twenty-nine readers retained to
+within **0.00055** of each other, against a spread of 0.0231 for the basis it
+replaces — and it costs two review cases, including the summarisation lane that
+**every other 896 child ever built holds**. Equalising the readers is not what
+keeps a child alive at either width.
 
 **A related fact worth its own line: the pooled number hides readers.** The
 living 3/15 child at 768 has **four of its 29 readers below the 0.90 floor**
 (`B01.ffn` at 0.8801), and the badly-retained endpoints are the same ones at
-every width — blocks 0 to 3, with the argmin at `B01.ffn` in all five sealed
-bases. Whatever makes those readers survivable, it is not their retained energy.
+every width — blocks 0 to 3, with the argmin at `B01.ffn` in all **seven** sealed
+reader-PCA bases now priced. Whatever makes those readers survivable, it is not
+their retained energy: the one child built to fix exactly that, at the width
+where it had room to matter, gave up two cases for it.
 
 **And a reweighting cannot help, measured before it was built.** Under the plain
 basis the case-implicated rows are retained at the pooled rate — retrieval rows
@@ -784,15 +813,32 @@ ordering (SwiGLU lanes first) and nothing more.
 Nothing in this section is a closure. Each item says whether it is unbuilt for
 want of time, blocked on a measured precondition, or refused by a rule.
 
+**Wave 22 built three of the four items this section listed as cheap, and the
+fourth was gated out by its own rule:**
+
+* **The rung between 736 and 704** is built. `ARCH.W720` reads **0/15** at
+  0.9015 retained read energy, so the last interval that could hide a step is
+  **736 → 720**, sixteen dimensions wide.
+* **The max-min basis at 896** is built. `ARCH.MM896` reads **2/15** against its
+  4/15 and 3/15 controls at the identical parameter count, having met its own
+  objective almost exactly (§2.4).
+* **The writers' λ split composed with the head merge** is built.
+  `ARCH.W896LSKV6JQ` reads **1/15** against `W896KV6JS`'s 2/15 at the identical
+  193,182,848 parameters — the two case-recovery mechanisms do not add, and the
+  capability the split exists to recover (`planning-dependencies`) does not
+  survive the merge, though it survives an excision.
+* **The `X07 + KV6JQ + 896` triple was NOT built**, by the pre-registered gate:
+  wave 22 declared it would build the triple only if the two-mechanism child
+  held at least three cases, and it held one. A triple on a collapsed two-axis
+  child measures the collapse.
+
 **Unbuilt, and cheap:**
 
-* **One rung between 736 and 704** — the last 32-dimension interval that could
-  still hide a step in the width ladder. One build, one review.
-* **The max-min basis at 896**, priced free (worst endpoint 0.9440 → 0.9530,
-  24.7 directions exchanged) and not built.
-* **The writers' λ split composed with the head merge**, where the un-split
-  control (`W896KV6JS`) sits at 2/15. It pays inside the excision composition and
-  has not been tried on the other one.
+* **One rung between 736 and 720** — sixteen dimensions and 0.0060 of retained
+  read energy, the last interval on the width slope that could hide a step.
+* **The max-min basis at 720**, priced free by the same census (worst endpoint
+  0.8545 → 0.8783, 43.6 of 720 directions exchanged) and not built, because the
+  plain arm at that width is already 0/15 and there is nothing to lose.
 * **CBT's greedy evidence-weighted merge schedule.** At 4x the 15 base Toeplitz
   classes already clear the budget, so the only adaptive part of that class has
   never run. After its head-to-head loss there is no reason to fund it.
@@ -848,16 +894,16 @@ ask which initialization distils fastest rather than guessing one.
 
 | artifact | location |
 |---|---|
-| ledger (646 rows) | `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, copy in `reports/matrix-campaign-20260810/ledger.jsonl` |
+| ledger (652 rows) | `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, copy in `reports/matrix-campaign-20260810/ledger.jsonl` |
 | rendered ledger | `reports/matrix-campaign-20260810/LEDGER.md` (regenerate, never hand-edit) |
-| the generated campaign table | `reports/matrix-campaign-20260810/wave21/campaign-frontier-table.json` |
+| the generated campaign table | `reports/matrix-campaign-20260810/wave22/campaign-frontier-table.json` |
 | the one-page scorecard | `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md` |
-| wave notes | `NOTES-MX-{A..H,X,Y}.md` at the repository root and `reports/matrix-campaign-20260810/wave{5..19}/NOTES-MX-{I..W}.md` |
+| wave notes | `NOTES-MX-{A..H,X,Y,Z}.md` at the repository root and `reports/matrix-campaign-20260810/wave{5..19}/NOTES-MX-{I..W}.md` |
 | design + addenda 1–14 | `docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md` |
 | scaling theory | `docs/FOLDING_SCALING_THEORY_2026-08-12.md` |
-| human-review packages | `reports/matrix-campaign-20260810/wave{12..21}/human-review/` |
-| frontier child tensors | `/mnt/ai_data/neural-forge-matrix/wave{10..21}/children/` and `.../cells/<CHILD>/` |
-| benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{8,9,11,12,13,16..21}/bench/` |
+| human-review packages | `reports/matrix-campaign-20260810/wave{12..22}/human-review/` |
+| frontier child tensors | `/mnt/ai_data/neural-forge-matrix/wave{10..22}/children/` and `.../cells/<CHILD>/` |
+| benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{8,9,11,12,13,16..22}/bench/` |
 | stage-2 estate | `/mnt/ai_data/neural-forge-stage2/` |
 | M5 kernel | `src/neural_forge/matrix_technique_head_merge.py` + tests |
-| the width/basis builder | `reports/matrix-campaign-20260810/run/mx21/mx21_build.py` (waves 19–21 lineage) |
+| the width/basis builder | `reports/matrix-campaign-20260810/run/mx22/mx22_build.py` (waves 19–22 lineage; nine lines of body differ from `mx21_build.py`) |

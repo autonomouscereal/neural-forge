@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-13T11:15:26+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-13T12:33:11+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**306 cells sealed** (646 ledger rows including re-runs); newest seal 2026-08-13T11:08:34.261+00:00.
+**309 cells sealed** (652 ledger rows including re-runs); newest seal 2026-08-13T12:22:39.824+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 275 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 278 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -19,7 +19,7 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `alive-parent-band` | 40 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
 | `alive-degraded` | 23 | >= the A9 band of 8/15, outside the parent's +/-2 |
 | `impaired` | 13 | < 8/15 but still coherent, on-task language |
-| `dead` | 130 | incoherent, emit-zero floor failed, or degenerate output |
+| `dead` | 133 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
@@ -111,6 +111,9 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `ARCH.MM768` | GLOBAL | NA | 0.7226 | -- | **dead** | 0/15 | 12 | coherent | 0.0117 |
 | `ARCH.W896LS` | GLOBAL | NA | 0.8590 | -- | **dead** | 3/15 | 12 | coherent | 0.0215 |
 | `ARCH.W896LSX13` | GLOBAL | NA | 0.8151 | -- | **dead** | 2/15 | 12 | coherent | 0.0273 |
+| `ARCH.MM896` | GLOBAL | NA | 0.8590 | -- | **dead** | 2/15 | 12 | coherent | 0.0430 |
+| `ARCH.W720` | GLOBAL | NA | 0.6726 | -- | **dead** | 0/15 | 12 | coherent | 0.0137 |
+| `ARCH.W896LSKV6JQ` | GLOBAL | NA | 0.8410 | -- | **dead** | 1/15 | 12 | coherent | 0.0156 |
 | `C03.T8.S4.L00` | L00 | S4 | 0.2500 | 0.250 ok | **dead** | 0/15 | 12 | pending | 0.0078 |
 | `C05.T1.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
 | `C05.T2.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
@@ -369,11 +372,11 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 13 | 5% |
-| `solve-conditioning` | 16 | 6% |
+| `infra` | 13 | 4% |
+| `solve-conditioning` | 17 | 6% |
 | `local-solve` | 116 | 40% |
 | `macrocell-band` | 1 | 0% |
-| `composition` | 130 | 45% |
+| `composition` | 132 | 45% |
 | `free-run` | 12 | 4% |
 
 ## 4. Band-versus-behavior agreement
@@ -382,10 +385,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 197 |
+| in band (<= 0.4) | 18 | 200 |
 | out of band | 0 | 35 |
 
-Agreement 53/250 (21%).
+Agreement 53/253 (21%).
 
 ## 4b. Storage honesty
 
@@ -480,6 +483,9 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `ARCH.MM768` | architecture | NA | 165978624 | 229693184 | 0.7226 |
 | `ARCH.W896LS` | architecture | NA | 197311616 | 229693184 | 0.8590 |
 | `ARCH.W896LSX13` | architecture | NA | 187214592 | 229693184 | 0.8151 |
+| `ARCH.MM896` | architecture | NA | 197311616 | 229693184 | 0.8590 |
+| `ARCH.W720` | architecture | NA | 154499088 | 229693184 | 0.6726 |
+| `ARCH.W896LSKV6JQ` | architecture | NA | 193182848 | 229693184 | 0.8410 |
 | `C03.T5.M16.L00` | T5 | M16 | 2949632 | 3145728 | 0.9377 |
 | `C03.T8.S4.L00` | T8 | S4 | 786432 | 3145728 | 0.2500 |
 | `C04.T1.M16.L00` | T1 | M16 | 2048 | 3072 | 0.6667 |
@@ -664,7 +670,7 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.MXQ5` | composition | NA | 163144199 | 229693184 | 0.7103 |
 | `COMP.MA.MXQ7` | composition | NA | 115911947 | 229693184 | 0.5046 |
 
-221 of 270 sealed cells with a storage reading actually contract.
+224 of 273 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -1639,6 +1645,39 @@ standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / w
 | `mx21-w89` | sm86 | fail | composition | 0.9881 | 0.1586 | 0.9353 | 0.027 | 0.010 | 0.815 | -- | 42.4 | `47fdd9ca66ab` |
 
 > ADDENDUM 6 behaviour review by claude-opus5-mx21 of receipt 47fdd9ca66ab8ef7: verdict dead, 2/15 useful-or-partial (parent 12/15). hidden_size 896 with the writers' lambda on an internal split, composed with block 13 excised -- the same recipe as wave 19's sealed ARCH.W896X13 (1/15) with one flag added, at the identical 187,214,592 parameters.  The summarisation lane is BYTE-IDENTICAL to that child's and is read the same way it was sealed, Useful.  The whole difference is planning-dependencies: wave 19's composition answers 'Identify the backend and target backend' ten times, naming nothing from the task, and this one names backup, TLS, verification and rollback in the parent's own order and then implements them, missing only DNS.  The capability the lambda split recovers at 896 SURVIVES the composition step, and here it costs nothing
+
+### `ARCH.MM896` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 22
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx22-mm8` | sm86 | fail | composition | 0.9823 | 0.1964 | 0.7900 | 0.043 | 0.020 | 0.859 | -- | 36.3 | `513c6207519d` |
+| `mx22-mm8` | sm86 | fail | composition | 0.9823 | 0.1964 | 0.7900 | 0.043 | 0.020 | 0.859 | -- | 36.3 | `7575050daf8f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx22 of receipt 7575050daf8fa340: verdict dead, 2/15 useful-or-partial (parent 12/15). hidden_size 896 against the READER-MAXMIN basis -- the objective wave 21 built at 768, where it read 0/15, priced free at this width and not built.  The same 197,311,616 parameters as the sealed 4/15 child and the 3/15 lambda-split child, against a basis that lifts the worst endpoint's retained read energy and costs the pooled mean.  It reads 2/15 and the two it holds are the two the objective did NOT have to reconstruct: the email lane puts both asks in a subject line under a salutation before it loops on the prompt's own 90-word constraint, and the planning lane names backups, DNS, TLS, verification and rollback in a six-step frame before it degenerates into counting steps.  The summarisation lane -- Useful in every other 896 child ever built -- returns the EMPTY STRING, which is what it returned at 768 as well.  All sixteen lanes carry the max-min fingerprint: 'I am a' followed by a number lifted from the prompt
+
+### `ARCH.W720` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 22
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx22-w72` | sm86 | fail | composition | 0.9595 | 0.2954 | 0.9220 | 0.014 | 0.004 | 0.673 | -- | 46.4 | `0ce1ba6c7715` |
+| `mx22-w72` | sm86 | fail | composition | 0.9595 | 0.2954 | 0.9220 | 0.014 | 0.004 | 0.673 | -- | 46.4 | `375bcf146050` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx22 of receipt 375bcf146050fa70: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 720, 0.672632x, retained read energy 0.9015 pooled held-out -- the rung inside the last interval of the width slope that could still hide a step, between 736's 1/15 at 0.9075 and 704's 0/15 at 0.8953.  It is dead: seven lanes return the empty string, five fill the cap with a bare dash or a quotation mark, and the multi-turn lane echoes the user's PRE-correction premise back ('I was thinking everything will contain peannuts') where 736 answers 'Good catch, I am planning for 8 people'.  Nothing in it names a quantity, a step or a fact from any prompt
+
+### `ARCH.W896LSKV6JQ` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 22
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx22-w89` | sm86 | fail | solve-conditioning | 0.9210 | 0.3905 | 0.8725 | 0.016 | 0.006 | 0.841 | -- | 39.8 | `a8d94ee81b3d` |
+| `mx22-w89` | sm86 | fail | solve-conditioning | 0.9210 | 0.3905 | 0.8725 | 0.016 | 0.006 | 0.841 | -- | 39.8 | `0db16a9b2094` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx22 of receipt 0db16a9b20942e81: verdict dead, 1/15 useful-or-partial (parent 12/15). hidden_size 896 with the WIDTH writers' lambda on an internal split, composed with the 16-to-12 head merge under the joint solve and no ALS sweep -- the campaign's two measured case-RECOVERY mechanisms in one child, at 193,182,848 parameters and 0.841047x, which is wave 19's W896KV6JS parameter for parameter.  The summarisation lane is Useful: it names the decision, the unresolved risk and the mitigation, with one sentence repeated.  Everything else is gone, including the capability the lambda split exists for: planning-dependencies, recovered at 896 alone and again inside the 896+excision composition, fills the cap here with 'Sending a d d d d'.  Against W896KV6JS's sealed 2/15 the width split costs the instruction lane and buys nothing, so composing the two recovery mechanisms is worth one case LESS than composing the merge with its own
 
 ### `CAL.C01.T5.X4` -- FAIL
 

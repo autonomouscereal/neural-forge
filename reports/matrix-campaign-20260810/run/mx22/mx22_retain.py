@@ -1,14 +1,31 @@
 #!/usr/bin/env python3
-"""Wave 22 retention, written in the sealing commit and not before.
+"""Wave 22 retention: three children built, three kept, and nothing freed.
 
 The policy is the campaign's standing one -- the best five by sealed score, plus
-any child a later wave cannot re-derive -- and the reason ``KEEP`` is empty in
-the builder commit is that the policy cannot be applied to scores that do not
-exist yet.  A retention script shipped with last wave's ``KEEP`` set is a script
-that deletes this wave's children by inheritance.
+any child a later wave cannot re-derive.  This wave built exactly three, and
+each of the three is one arm of a controlled comparison whose other arm is
+already sealed in an earlier wave at the IDENTICAL parameter count or on the
+same ladder.  Deleting any of them deletes a measurement, not a checkpoint:
 
-Running it before the wave is graded is a refusal, not a no-op that quietly
-reports zero kept.
+* ``MX22-MM896`` (2/15, 0.859023x) is the max-min basis at the living width and
+  the wave's central negative.  Its two controls -- wave 19's ``W896`` at 4/15
+  and wave 21's ``W896LS`` at 3/15 -- are the same 197,311,616 parameters, so
+  the only variable in the comparison is which 896-dimensional subspace the
+  child keeps.  It is also the only child in the campaign whose basis equalises
+  the fit-side per-endpoint read retention to five decimal places.
+* ``MX22-W720`` (0/15, 0.672632x) is the rung that halves the last interval of
+  the width slope.  It is the deepest 0/15 width child anyone will need to
+  build between 736 and 704, and its 0.9015 is the tightest UPPER bound the
+  campaign has on where the floor is.
+* ``MX22-W896LSKV6JQ`` (1/15, 0.841047x) is the campaign's two case-recovery
+  mechanisms in one child, against wave 19's ``W896KV6JS`` at 2/15 and the same
+  193,182,848 parameters.  The pair is the finding -- the two mechanisms do not
+  add, and their benchmark rows are indistinguishable while their reviews are
+  not -- and one arm of a controlled pair is not a result.
+
+Nothing is deleted, so nothing is freed, and that is reported as zero rather
+than dressed up.  The children live on the 4.5 TB share, not on the root
+filesystem the disk policy is about.
 """
 
 import json
@@ -17,8 +34,31 @@ import shutil
 import sys
 
 W = "/mnt/ai_data/neural-forge-matrix/wave22"
-KEEP: set[str] = set()
-REASON: dict[str, str] = {}
+KEEP = {
+    "MX22-MM896",
+    "MX22-W720",
+    "MX22-W896LSKV6JQ",
+}
+REASON = {
+    "MX22-MM896": (
+        "2/15 at 0.859023x -- the reader-maxmin basis at the LIVING width, "
+        "which lifts the worst endpoint's held-out retained read energy from "
+        "0.9440 to 0.9530, flattens the fit-side spread across 29 readers from "
+        "0.0231 to 0.00055, exchanges 24.69 of 896 directions, and holds two "
+        "cases against its controls' four and three at the same parameters"
+    ),
+    "MX22-W720": (
+        "0/15 at 0.672632x, 0.9015 pooled retained read energy -- the rung "
+        "that halves the last interval of the width slope from 32 dimensions "
+        "to 16, and the child that puts the floor between 736 and 720"
+    ),
+    "MX22-W896LSKV6JQ": (
+        "1/15 at 0.841047x -- the width lambda split composed with the head "
+        "merge, against wave 19's W896KV6JS at 2/15 and the identical "
+        "193,182,848 parameters; the two case-recovery mechanisms do not add, "
+        "and the seven benchmark columns cannot tell the pair apart"
+    ),
+}
 DELETE_REASON: dict[str, str] = {}
 
 

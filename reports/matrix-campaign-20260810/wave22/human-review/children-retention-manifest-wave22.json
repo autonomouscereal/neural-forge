@@ -1,0 +1,27 @@
+{
+ "schema": "neural-forge-matrix-wave22-children-retention-v1",
+ "policy": "the best five by sealed score plus any child a later wave cannot re-derive; every deleted child is named with the sha256 of the model.safetensors it was sealed from",
+ "kept": [
+  {
+   "child": "MX22-MM896",
+   "bytes": 399431919,
+   "child_tensors_sha256": "b3a4616c6036bda3b892022d7aa9991c0a13db9e8c387124a2803670ab741fff",
+   "reason": "2/15 at 0.859023x -- the reader-maxmin basis at the LIVING width, which lifts the worst endpoint's held-out retained read energy from 0.9440 to 0.9530, flattens the fit-side spread across 29 readers from 0.0231 to 0.00055, exchanges 24.69 of 896 directions, and holds two cases against its controls' four and three at the same parameters"
+  },
+  {
+   "child": "MX22-W720",
+   "bytes": 313791130,
+   "child_tensors_sha256": "d409d8d3eed29ba9f2ecab97a2191eee29ab78a475b9ce32047db9e2094734ae",
+   "reason": "0/15 at 0.672632x, 0.9015 pooled retained read energy -- the rung that halves the last interval of the width slope from 32 dimensions to 16, and the child that puts the floor between 736 and 720"
+  },
+  {
+   "child": "MX22-W896LSKV6JQ",
+   "bytes": 391275684,
+   "child_tensors_sha256": "19fb89af74630adcd5a1ed882ae18ba41583c65381bfdede3b369e63161bf757",
+   "reason": "1/15 at 0.841047x -- the width lambda split composed with the head merge, against wave 19's W896KV6JS at 2/15 and the identical 193,182,848 parameters; the two case-recovery mechanisms do not add, and the seven benchmark columns cannot tell the pair apart"
+  }
+ ],
+ "deleted": [],
+ "bytes_freed": 0,
+ "applied": false
+}

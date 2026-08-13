@@ -1,0 +1,31 @@
+{
+ "schema": "neural-forge-matrix-wave22-deployments-prune-v1",
+ "policy": "deployments end at current+1; wave 22 keeps a PAIR because the wave ran from two commits and both are named by an artifact",
+ "kept": [
+  {
+   "deployment": "neural-forge-matrix-5e17bb58",
+   "role": "built and sealed every wave-22 child; every receipt names it"
+  },
+  {
+   "deployment": "neural-forge-matrix-70a2498d",
+   "role": "the basis-schema fix; ran the endpoint census and sealed nothing"
+  }
+ ],
+ "pruned": [
+  {
+   "deployment": "neural-forge-matrix-1c0c7e3a",
+   "present": true,
+   "files": 3604,
+   "bytes": 216612770,
+   "reason": "the wave-20 and wave-21 deployments; no wave-22 receipt names either, and both are re-cuttable from their commit"
+  },
+  {
+   "deployment": "neural-forge-matrix-d12c76db",
+   "present": true,
+   "files": 3695,
+   "bytes": 219199036,
+   "reason": "the wave-20 and wave-21 deployments; no wave-22 receipt names either, and both are re-cuttable from their commit"
+  }
+ ],
+ "bytes_freed": 435811806
+}
