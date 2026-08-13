@@ -232,21 +232,33 @@ def p6(args: argparse.Namespace) -> dict[str, Any]:
     sources: dict[int, str] = {}
     for path in sorted(MATRIX.glob("wave*/cells/ARCH.X*/per-case.json")):
         tag = path.parent.name.replace("ARCH.", "")
-        stem = tag.rstrip("ABCT")
-        if not stem.startswith("X") or not stem[1:].isdigit():
+        # `X<nn>` is the excision with the sealed local re-solve and `X<nn>A` is
+        # the same child under wave 15's naming.  Nothing else qualifies:
+        # `X05T` is the TRAJECTORY arm, a different mechanism that wave 15
+        # priced at 0/15, and a suffix-stripping rule that let it in would
+        # silently overwrite block 5's real reading with it -- which the first
+        # run of this census did, printing block 5 at 0/15 against `X05A`'s
+        # sealed 6/15.  `X13KV6`, `X07KV6JQC` and the rest are compositions.
+        if not (
+            len(tag) in (3, 4)
+            and tag[0] == "X"
+            and tag[1:3].isdigit()
+            and (len(tag) == 3 or tag[3] == "A")
+        ):
             continue
-        block = int(stem[1:])
-        if len(stem) != 3:  # X01..X13 only; X13KV6 etc are compositions
-            continue
+        block = int(tag[1:3])
         body = json.loads(path.read_text())
         rows = body.get("cases", body) if isinstance(body, dict) else body
         if isinstance(rows, dict):
             verdicts = {str(k): str(v) for k, v in rows.items()}
         else:
             verdicts = {str(r["case"]): str(r["verdict"]) for r in rows}
-        # a later wave's re-seal of the same block replaces an earlier one
-        if block in survival and "wave16" in sources.get(block, ""):
-            continue
+        if block in survival:
+            raise SystemExit(
+                f"block {block} is claimed twice: {sources[block]} and {path}.  "
+                "Two sealed readings for one excision is a choice this census "
+                "must not make silently."
+            )
         survival[block] = verdicts
         sources[block] = str(path)
 
