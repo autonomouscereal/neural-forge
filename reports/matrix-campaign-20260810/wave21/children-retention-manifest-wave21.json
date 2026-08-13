@@ -1,0 +1,39 @@
+{
+ "schema": "neural-forge-matrix-wave21-children-retention-v1",
+ "policy": "the best five by sealed score plus any child a later wave cannot re-derive; every deleted child is named with the sha256 of the model.safetensors it was sealed from",
+ "kept": [
+  {
+   "child": "MX21-MM768",
+   "bytes": 336765912,
+   "child_tensors_sha256": "2edc71f7579cc2b0380862a00017e51b7a15f027cec4d9fc9df07075d4c0ece0",
+   "reason": "0/15 at 0.722610x -- the reader-maxmin basis, which raises the worst endpoint's retained read energy from 0.8801 to 0.8997, cuts the endpoints under the 0.90 floor from four to one, reconstructs the parent's logits better than the living child, and is dead in all sixteen lanes.  The wave's central negative result"
+  },
+  {
+   "child": "MX21-W736",
+   "bytes": 321411368,
+   "child_tensors_sha256": "a010e1cb852a5fd473b306ec9401c660c2a953712e80bc48e8b7536b90e847fc",
+   "reason": "1/15 at 0.689220x -- the only child ever built inside the 0.90-0.92 band of retained read energy (0.9075 held-out), and the rung that closes the cliff to 32 dimensions"
+  },
+  {
+   "child": "MX21-W736LS",
+   "bytes": 321452618,
+   "child_tensors_sha256": "1d057ba5e86d81f287ba65d70e8cf718319bc6fd94aed4323ba5de92aeac343c",
+   "reason": "0/15 at the IDENTICAL 158,309,216 parameters and the identical sealed basis -- the matched control that prices the writers' lambda split at the cliff, where it costs the last case"
+  },
+  {
+   "child": "MX21-W896LS",
+   "bytes": 399454020,
+   "child_tensors_sha256": "b5d683acaa3c0896df5ac5c4ec92e2487795c09097bdde5579f003fba3a48bc8",
+   "reason": "3/15 at 0.859023x -- the wave's best child and the matched control for wave 19's sealed 4/15 at the same parameter count; it recovers planning-dependencies and gives up two other cases"
+  },
+  {
+   "child": "MX21-W896LSX13",
+   "bytes": 379255122,
+   "child_tensors_sha256": "307134c41a9dcb0031ce7d197ed740bd5972101164d330999769695dd626480a",
+   "reason": "2/15 at 0.815064x -- the wave's only composition, against wave 19's sealed 1/15 twin whose summarisation lane it reproduces byte for byte; the capability the lambda split recovers survives the composition step"
+  }
+ ],
+ "deleted": [],
+ "bytes_freed": 0,
+ "applied": true
+}

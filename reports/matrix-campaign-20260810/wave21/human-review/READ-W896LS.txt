@@ -1,0 +1,849 @@
+# ARCH.W896LS  dossier 64fd1e7127ceaf4a
+# net_ratio 0.859023  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [complete] 644 chars, 545 collapsed
+1. What kind of question would you prefer to respond naturally and ask a thoughtful follow-up question?
+
+2. Are there any specific things you would like to address or discuss in the follow-up question?
+
+3. Or would you prefer to start with a more vague question or something more specific to address the question in detail or clarify something in detail?
+
+4. Or would you prefer to start with a more vague question or something more vague to address the question in detail or clarify something in detail and clarify something in detail and discuss something in detail and discuss something in detail and discuss something in detail and discuss.
+
+---  2 instruction-three-actions [complete] 119 chars, 119 collapsed  <350 COLLAPSED
+- Review the checklist before starting.
+- Review the checklist before starting.
+- Review the checklist before starting.
+
+---  3 explanation-seasons [complete] 78 chars, 76 collapsed  <350 COLLAPSED
+The correct answer is summer is indeed because it is quite close to the Sun.
+
+
+
+---  4 arithmetic-multi-step [complete] 468 chars, 466 collapsed
+The total number of kits is 17, and 8 kits are checked. After 8 kits are checked, the remaining kits are packed in 5 boxes. How many kits are packed in each box, and how many are left over? 
+
+**Step 1**: Identify the total number of kits and the total number of kits packed in boxes.
+**Step 2**: Determine how many kits are packed in boxes and how many are left over.
+**Step 3**: Provide the correct answer for the question in the formatted text boxed in the document.
+
+---  5 logic-ordering [complete] 218 chars, 217 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+The answer is "Mira" because it is Mira finishing before Theo.
+
+---  6 context-retrieval [complete] 55 chars, 55 collapsed  <350 COLLAPSED
+Use the following question-answer-answer-answer-answer-
+
+---  7 summarization-priorities [complete] 217 chars, 217 collapsed  <350 COLLAPSED
+The team selected Supplier B because it is cheaper and can guarantee delivery before launch. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 120 chars, 118 collapsed  <350 COLLAPSED
+- RAM- and long-term storage- versus-implement- and-implement-
+
+- Implement- and-implement-
+
+- Implement- and-implement-
+
+---  9 coding-deduplicate [complete] 252 chars, 46 collapsed  <350 COLLAPSED
+import python
+import python
+import python 
+
+def unique_in_order(items):
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+
+
+--- 10 debugging-off-by-one [complete] 110 chars, 110 collapsed  <350 COLLAPSED
+The bug is incorrect because the start is not correctly specified as start = max(0, 3) and the start is not 1.
+
+--- 11 writing-concise-email [complete] 386 chars, 107 collapsed  <350 COLLAPSED
+**Subject:** Confirmation of delayed shipment**
+
+**Recipipt**, 
+
+**Date of sent**, 
+
+**Recipient**, 
+
+**Recipient**, 
+
+**Recipient**, 
+
+**Recipient**, 
+
+**Recipient**, 
+
+**Recipient**, 
+
+**Recipient**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**Reci**, 
+
+**
+
+--- 12 planning-dependencies [complete] 106 chars, 106 collapsed  <350 COLLAPSED
+- Prepare a backup plan
+- Update DNS
+- Update TLS
+- Verify
+- Rollback
+- Document the process and share it-
+
+--- 13 uncertainty-insufficient-data [complete] 255 chars, 254 collapsed  <350 COLLAPSED
+A. The time range is not specified and the units are not listed.
+B. The sample size is not specified and the prices are changed.
+C. The prices are changed and the time range is not specified.
+D. The time range is not defined and the units are not listed.
+
+
+--- 14 safety-household-chemical [complete] 241 chars, 241 collapsed  <350 COLLAPSED
+- Clean the cleaners immediately
+- Check the cleaners' cleanliness
+- Remove them
+- Clean the cleaners
+- Remove them
+- Clean the cleaners
+- Remove them
+- Clean the cleaners
+- Remove them
+- Clean the cleaners
+- Remove them
+- Clean the cleaners
+
+--- 15 creative-continuity [complete] 138 chars, 138 collapsed  <350 COLLAPSED
+"The foghorn was out at the harbor and the light was out at the stern. The light was out at the stern and the light was out at the stern."
+
+--- 16 multi-turn-correction [censored-at-cap] 1365 chars, 1 collapsed  <350 COLLAPSED
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+-
+
+# cap-hits 1/16

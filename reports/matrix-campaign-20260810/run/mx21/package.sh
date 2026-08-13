@@ -1,5 +1,5 @@
 #!/bin/bash
-# The wave-20 human-review package: every graded child rendered verbatim, plus
+# The wave-21 human-review package: every graded child rendered verbatim, plus
 # the receipts the rendering is bound to, plus the artifacts this wave's claims
 # are read off.  Wave 15 built the same package and left it on the server; every
 # wave since has committed its copy, under
@@ -24,18 +24,14 @@ for c in $W/children/MX21-*; do
 done
 # The basis is the wave's independent variable, so its censuses travel with the
 # dossiers: without them "attribution-weighted beta 0.25" is a name, not a number.
-for b in $W/basis/*.census.json $W/basis/selector-retention-*.json $W/basis/subspace-*.json; do
+for b in $W/basis/*.census.json $W/basis/endpoint-retention.json; do
   [ -f "$b" ] && cp -f "$b" $H/basis-$(basename $b)
 done
-# The two probes are not ledger rows and their evidence would otherwise live
-# nowhere a reader looks.
-for p in $W/probes/*-receipt.json $W/probes/*-dossier.json; do
-  [ -f "$p" ] && cp -f "$p" $H/probe-$(basename $p)
-done
-for p in $W/probes/*-dossier.json; do
-  [ -f "$p" ] || continue
-  tag=$(basename $p | sed 's/-dossier.json//')
-  $PY $MX21/mx21_read_dossier.py --dossier $p --full > $H/READ-PROBE-$tag.txt 2>/dev/null
+# The wave's own tables, and the campaign-wide one the consolidated report is
+# generated from -- the artifact, not the prose, is what a reader should be able
+# to disagree with.
+for t in $W/wave21-child-index.json $W/wave21-child-comparison.json          $W/campaign-frontier-table.json $W/ledger-merge-report.json          $W/children-retention-manifest-wave21.json          $W/deployments-prune-manifest-wave21.json; do
+  [ -f "$t" ] && cp -f "$t" $H/
 done
 [ -f $W/bench/benchmark-table.json ] && cp -f $W/bench/benchmark-table.json $H/
 ls $H | wc -l

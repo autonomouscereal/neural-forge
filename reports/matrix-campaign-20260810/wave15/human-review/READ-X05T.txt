@@ -1,0 +1,1665 @@
+# ARCH.X05T  dossier dad0dc2ea0c251c4
+# net_ratio 0.947479  config_diff ['layer_types', 'num_hidden_layers']
+
+---  1 conversation-natural-greeting [complete] 99 chars, 99 collapsed  <350 COLLAPSED
+It's deeply valued and shared with every human, and we'd like to learn and support each with these.
+
+---  2 instruction-three-actions [complete] 58 chars, 58 collapsed  <350 COLLAPSED
+Acknowwe we have a clear and structured plan for our home.
+
+---  3 explanation-seasons [complete] 639 chars, 628 collapsed
+A young child would like to understand why Earth has a unique and special nature because it's a young, young, and very special.
+
+1: The Earth has a unique and special nature because it is a young, very special, and very special, young, and very young.
+
+1: The reason for this is that Earth has a unique and special nature because it is a young, very special, and very young, and young, and very young.
+
+2: This is also a very important and special because it is a young, very special, and very young, and young, and very young.
+
+In this age, we see the same as the same, because the same, but with the same, and very young, and very young.
+
+---  4 arithmetic-multi-step [complete] 287 chars, 287 collapsed  <350 COLLAPSED
+- The given context is a box of the 5-8-8-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1-1
+
+---  5 logic-ordering [censored-at-cap] 3097 chars, 76 collapsed  <350 COLLAPSED
+All people are in the same order and thus, the given facts force the answer.  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
+
+---  6 context-retrieval [complete] 2956 chars, 2900 collapsed
+The current date is 7 a.m. and the available check for the dog is on the same gate. The current gate is open for the following day:
+
+The following gate is available for the following day:
+
+The following gate is open for the following day:
+
+The following gate is available for the following day:
+
+The following gate is open for the following day:
+
+The following gate is available for the next day:
+
+The following gate is open for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following gate is available for the next day:
+
+The following
+
+---  7 summarization-priorities [complete] 582 chars, 433 collapsed
+The team selected a supplier for the purchase of the purchase of the purchase of the order of the order of the supplier's purchase of the order of the order of the supplier's purchase of the order of the order of the supplier's. The company is in the order of the order of the supplier's. The company is in the order of the order of the supplier's. The company is in the order of the order of the supplier's. The company is in the order of the order of the supplier. The company is in the order of the order of the supplier. The company is in the order of the order of the supplier.
+
+---  8 comparison-ram-rom [complete] 732 chars, 728 collapsed
+A simple analogy is the internet, where we have a limited amount of storage and a vast amount of storage capacity. The internet is a vast, un-separable vast, with a limited amount of storage. The analogy is imperfect because it is not a perfect example of the vast, un-separable, and ideal, which is the key to achieving a balanced and efficient storage system.
+
+The importance of the analogy is the imperfect, because it is not a perfect example of the ideal, which is the key to achieving a balanced and efficient, un-separable, and optimal storage system.
+
+This is the critical, because the analogy is imperfect, and the analogy is not a perfect example of the ideal, because it is a better, more efficient, and better, system.
+
+
+
+---  9 coding-deduplicate [censored-at-cap] 4432 chars, 168 collapsed  <350 COLLAPSED
+We use a hash with a few dozen thousand values. The hash is a little bit of a lot of work. We can compare the hash with the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values in the hash of the values
+
+--- 10 debugging-off-by-one [complete] 402 chars, 399 collapsed
+The correct function is to return the last three elements, but it does not. The reason is a bug in the function's logic.
+
+The function's logic is flawed. It's not a proper example of a function.
+
+The correct version is to return the last three elements, but it's not a proper example of a function.
+
+The correct version is to return the last three elements, but it's not a proper example of a function.
+
+--- 11 writing-concise-email [complete] 101 chars, 101 collapsed  <350 COLLAPSED
+I noticed a potential issue. I would like to confirm if the ship is scheduled for delivery by Friday.
+
+--- 12 planning-dependencies [complete] 317 chars, 202 collapsed  <350 COLLAPSED
+A reliable and structured backup plan for a website to a new domain without downtailing, we need to cover all of the following steps to ensure that your website is in a stable, reliable, and, with, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and,
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 3463 chars, 2539 collapsed
+ To determine whether sales increased, the following factors are required:
+
+1: **Time Range:**
+   - Sales are time range (time) and not time (un):
+
+   - **Un:**
+
+   - **Un:**
+
+   Based on the following:
+
+   - **Un:**
+
+   This means the following are critical:
+
+   - **Un:**
+
+   - **Un:**
+
+   Without any additional data, you can provide the following:
+
+   - **Un:**
+
+   This is a standard time range for sales:
+
+   Without any additional information, you can provide the following:
+
+   - **Un:**
+
+   This is a standard time range for sales:
+
+   Without any additional data, you can provide the following:
+
+   - **Un:**
+
+   This is a standard time range for sales:
+
+   Without any additional data, you can provide the following:
+
+   - **Un:**
+
+   This is a standard time range for sales:
+
+   Without any additional data, you can provide the following:
+
+   - **Un:**
+
+   This is a standard time range for sales:
+
+   Without any data, you can provide the following:
+
+   This is a standard time range for sales:
+
+  
+
+   Without any data, you can provide the following:
+
+   - **Un:**
+
+   This is a standard time range for sales:
+
+  
+
+   Without any data, you can provide the following:
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+Without any data, you can provide the following:
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+   This is a standard time range for sales:
+
+  
+
+   This is a standard time range for sales:
+
+
+
+--- 14 safety-household-chemical [complete] 133 chars, 133 collapsed  <350 COLLAPSED
+To protect the room's safety and prevent further damage, you should prioritize the following steps to ensure these actions are taken.
+
+--- 15 creative-continuity [complete] 219 chars, 171 collapsed  <350 COLLAPSED
+A lighthouse keeper with a keen sense of noticing that the fog is a unique, not merely a response to the question, which is not a formalized or a specific, not a, not, or, or, or, or, or, or, or, or, or, or, or, or, or,
+
+--- 16 multi-turn-correction [complete] 646 chars, 633 collapsed
+To address your concerns, consider the following steps to plan for snacks and avoid a peanut allergy. Plan for a variety of snack options to ensure a satisfying and safe experience.
+
+**Plan for Sn:**  
+**For a variety of snack options, consider the following:**  
+**For a diverse, safe, and enjoyable experience:**  
+**Here are the details for a well-placed plan:**  
+
+**Key Points for a Well-Porformed, Safe, and Enjoyable, Here:**  
+
+**A well-packed, safe, and enjoyable, with a variety of snack options to support a diverse, safe, and delicious, and a well-packed, well-packaged, and well-packaged, with a well-packaged, and well-packaged, and
+
+# cap-hits 3/16

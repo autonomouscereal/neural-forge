@@ -1,15 +1,20 @@
 # Phase 1 — the fold-only frontier on LFM2.5-230M
 
-**Date:** 2026-08-12. **Branch:** `codex/lrc-blank-compression`. **Campaign:**
-`reports/matrix-campaign-20260810/` (waves 1–13, `NOTES-MX-A` … `NOTES-MX-Q`).
-**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+**Date:** 2026-08-13 (final consolidation; first written 2026-08-12).
+**Branch:** `codex/lrc-blank-compression`.
+**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–21,
+`NOTES-MX-A` … `NOTES-MX-Y`.
+**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **646 rows**, sha
+`080ac0e8ef8608af9250b4301c625175fc0ad53edb40e0221369c1a80cdfb8c8`.
+**One-page version for scoring:** `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md`.
 
-This is the closing document of the **fold-only** matrix campaign: what
+This is the consolidating document of the **fold-only** matrix campaign: what
 closed-form folding, with no gradient step and no distillation, reached on one
-real 230M-parameter model, how it was measured, and what it did not reach.
+real 230M-parameter model, how it was measured, every law the measurements
+support, every claim the campaign made and withdrew, and what it has not
+reached.
 
-Two standing rules from Cyril govern how it is written, and they overturn how
-waves 11 and 12 reasoned:
+Three standing rules from Cyril govern how it is written.
 
 1. **Nothing is gated on drift.** The drift law below has an R² of 0.62 and its
    residuals pay: `COMP.MA.MXO3` is coherent at a global drift of 0.4618 against
@@ -20,10 +25,14 @@ waves 11 and 12 reasoned:
    corrective routes on a 355× parameter-efficiency comparison; that comparison
    is a recorded diagnostic here, not a killer. 2.1M parameters is 0.9% of this
    model.
+3. **Nothing is gated on a census.** Every wave that priced a candidate before
+   building it built it anyway, and §2.10 is the list of times the census would
+   have picked the wrong child — in both directions.
 
-Consequently **this report does not declare fold-only closed.** It reports where
-the deepest behaviourally-tested coherent child sits today, and it names the
-structural mechanism classes that are queued and unplayed.
+**This report does not declare fold-only closed.** Closing the campaign is
+Cyril's call and nobody else's. What follows is where the deepest
+behaviourally-tested coherent child sits today, what has been measured about
+why, and what is queued and unplayed.
 
 **Storage is counted in parameters, everywhere, always.** Precision reduction —
 quantization, codebooks — is *not folding* and is out of scope for phase 1 by
@@ -31,392 +40,638 @@ Cyril's ruling; it is reserved for after structural folding is proven.
 
 ---
 
-## 1. The deliverables — every frontier child, with its receipt
+## 0. How a number in this report is produced
 
-The parent is `LFM2.5-230M`, **229,693,184 parameters**, sealed 12/15 on the
-frozen 15-prompt review (5 useful / 7 partial / 3 observed miss; it misses
-`arithmetic-multi-step`, `logic-ordering`, `multi-turn-correction`). Parent
-review lane `865f006e3813712e…`.
-
-Grading is ADDENDUM 6 §6.1 (band arithmetic computed by
-`matrix_cell_receipt.behavior_verdict_for`, never supplied by the reviewer), with
-ADDENDUM 8's frontier definition and ADDENDUM 9's per-lane degeneracy reading.
-**Both readings are printed for every child; neither is collapsed into the
-other.** Benchmarks are `lm-eval` (`arc_easy`, `hellaswag`, `piqa`,
-`winogrande`, `lambada_openai`, `wikitext`) at `--limit 200 --seed 1234
---batch_size 4 max_length=2048 dtype=float32` — partial evaluations by
-construction, identical settings for every row.
-
-### 1.1 The children
-
-| child | wave | net stored | review | per-child verdict | per-lane verdict (reading) | tensors |
-|---|---:|---:|---:|---|---|---|
-| **`COMP.MA.MXN2`** | 10 | **0.780518x** | **10/15** | **alive-parent-band** | `unstated` (pre-ADDENDUM 9) | `/mnt/ai_data/neural-forge-matrix/wave10/cells/COMP.MA.MXN2/composed-child-tensors.pt` |
-| `COMP.MA.MXN4` | 10 | 0.754811x | 8/15 | dead (degeneracy) | `unstated` | `…/wave10/cells/COMP.MA.MXN4/composed-child-tensors.pt` |
-| **`COMP.MA.MXO3`** | 11 | **0.729103x** | **8/15** | dead (degeneracy) | alive-degraded (lane-scoped, stated in `NOTES-MX-O`) | `…/wave11/cells/COMP.MA.MXO3/composed-child-tensors.pt` |
-| `COMP.MA.MXP1` | 12 | 0.712544x | 7/15 | dead (degeneracy) | `unstated` | `…/wave12/cells/COMP.MA.MXP1/rerun-170355/composed-child-tensors.pt` |
-| **`COMP.MA.MXP2`** | 12 | **0.703409x** | **6/15** | dead (degeneracy) | impaired (lane-scoped) | `…/wave12/cells/COMP.MA.MXP2/composed-child-tensors.pt` |
-| `COMP.MA.MXO4` | 11 | 0.703396x | 5/15 | dead | — | `…/wave11/cells/COMP.MA.MXO4/` |
-| `COMP.MA.MXO2` | 11 | **0.497739x** | **0/15** | dead | — | pruned; manifest in `wave11/` |
-| **`COMP.MA.MXQ5`** | **13** | **0.710270x** | **7/15** | dead (degeneracy) | impaired (lane-scoped, 2 of 16) | `…/wave13/cells/COMP.MA.MXQ5/composed-child-tensors.pt` + `-corrections.pt` |
-| `COMP.MA.MXQ4` | 13 | 0.682581x | 0/15 | dead | dead (lane-scoped) | `…/wave13/cells/COMP.MA.MXQ4/composed-child-tensors.pt` |
-| `COMP.MA.MXQ6` | 13 | 0.497777x | 0/15 | dead | dead (lane-scoped) | `…/wave13/cells/COMP.MA.MXQ6/composed-child-tensors.pt` |
-| `COMP.MA.MXQ7` | 13 | 0.504638x | 0/15 | dead | dead (lane-scoped) | `…/wave13/cells/COMP.MA.MXQ7/composed-child-tensors.pt` + `-corrections.pt` |
-| `COMP.MA.MXQ1` / `MXQ2` / `MXQ3` | 13 | 0.989586x | 6 / 6 / 4 /15 | dead | impaired (lane-scoped) | `…/wave13/cells/COMP.MA.MXQ{1,2,3}/composed-child-tensors.pt` |
-
-### 1.2 The recipes, in words
-
-* **`COMP.MA.MXN2` — 0.780518x, 10/15 alive-parent-band.** The token interface
-  alone: `C01.T5.S4` at a **12,288-row verbatim head** (selected by token
-  frequency) plus a **sparse-OMP tail** at rank 38 over the remaining 53,248
-  rows. Nothing in the body is folded. This is the deepest child in the campaign
-  that reads at the parent's own band, and it is one component.
-* **`COMP.MA.MXN4` — 0.754811x, 8/15.** MXN2's interface plus one SwiGLU lane.
-* **`COMP.MA.MXO3` — 0.729103x, 8/15, per-lane alive-degraded.** MXN2's
-  interface plus **two** whole SwiGLU lanes at L05 and L06, every component
-  `T8` (Gram relation matching) at `S4`: `C11@182`, `C12@182`, `C13@639` per
-  block. Body drift 0.421325; the interface adds +0.040485 on top of it.
-* **`COMP.MA.MXP2` — 0.703409x, 6/15.** MXO3 plus a **third** SwiGLU lane, and
-  the lane was **shopped rather than taken in depth order**: `L13` at `T5`
-  (sparse routes) rather than `L07` at `T8`, for +0.034129 marginal drift
-  instead of +0.076198 — 12,950 parameters of difference in storage and half the
-  lambada perplexity.
-* **`COMP.MA.MXP1` — 0.712544x, 7/15.** `COMP.MA.MXO4`'s exact fold set plus
-  **four ADDENDUM 10 corrective routes** at k=256 (L05/L06/L07/L13), whose
-  2,101,252 added parameters are charged in full — which is why a 7/15 child
-  appears at a *higher* net ratio than the 6/15 one.
-* **`COMP.MA.MXO2` — 0.497739x, 0/15.** The set that meets the 0.5x target
-  exactly: eleven whole SwiGLU lanes plus the token route, 34 components, every
-  one at 4x. Fourteen of sixteen review lanes ride a single phrase to the token
-  cap. **The 0.5x storage target is reachable; that child is not a model.**
-* **Wave 13's M5 rungs** are in §2.4 and `NOTES-MX-Q`.
-
-### 1.3 Benchmarks
-
-| model | net stored | review | arc_easy | hellaswag (n) | piqa (n) | winogrande | lambada acc | lambada ppl | wikitext wppl |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **parent** | 1.000000 | 12/15 | 0.5450 | 0.5050 | 0.6800 | 0.5500 | 0.4600 | 24.39 | 81.80 |
-| `MXN2` | 0.780518 | 10/15 | 0.4550 | 0.4450 | 0.6400 | 0.5550 | 0.2000 | 230.31 | 139.21 |
-| `MXN4` | 0.754811 | 8/15 | 0.4250 | 0.4500 | 0.6000 | 0.5250 | 0.1700 | 370.09 | 168.70 |
-| `MXO3` | 0.729103 | 8/15 | 0.4300 | 0.4300 | 0.5900 | 0.5450 | 0.1650 | 527.91 | 190.15 |
-| `MXP2` | 0.703409 | 6/15 | 0.4250 | 0.4250 | 0.5850 | 0.5400 | 0.1450 | 857.20 | 231.96 |
-
-Read the last two columns, not the first four. The multiple-choice tasks move
-from 0.545 → 0.425 on `arc_easy` while a 230M parent is only 0.045 above chance
-on `hellaswag` to begin with; **perplexity is the column that ranks these
-children**, and it degrades monotonically and steeply: 24 → 230 → 370 → 528 →
-857 on lambada while storage falls 1.00 → 0.70. `COMP.MA.MXP1` has **no
-benchmark row at all**, because its corrective routes are forward hooks rather
-than `state_dict` entries and the materializer cannot write an HF child that
-carries them; that gap is stated in `NOTES-MX-P` §6a and is still open.
+* **The grade** is ADDENDUM 6 §6.1: the frozen 15-prompt review of the **whole
+  model**, scored against the parent's own **12/15** on the same surface in the
+  same process, with the band arithmetic computed by
+  `matrix_cell_receipt.behavior_verdict_for` and never supplied by the reviewer.
+  A sixteenth lane (safety) is read and charged but not scored.
+* **Both readings are printed and neither is collapsed into the other**: the
+  per-child ADDENDUM 6 verdict and the per-lane ADDENDUM 9 reading. `dead` in
+  the per-child column is a **band**, not a description of the text — a child at
+  8/15 with one degenerate lane prints `dead` — which is why the per-lane column
+  and its lane count are always beside it.
+* **Benchmarks** are `lm-eval` (`arc_easy`, `hellaswag`, `piqa`, `winogrande`,
+  `lambada_openai`, `wikitext`) at `--limit 200 --seed 1234 --batch_size 4
+  max_length=2048 dtype=float32` on an SM86 RTX 3090 — **partial evaluations by
+  construction**, identical settings for every row.
+* **Three calibrations run before any child is graded**, and all three have
+  passed in every wave that ran them: the conditioned capture against the sealed
+  collector (L00 relL2 3.367e-3 / cos 0.9999944, L05 1.647e-2 / 0.9997207, L13
+  2.034e-2 / 0.9997842); the parent's own sixteen review responses, which digest
+  to **`865f006e3813712e…`** on **every dossier in every wave**; and the parent's
+  benchmark row, re-run in waves 8, 9, 16, 17, 18, 19, 20 and 21 and matching
+  0.5450 / 0.5050 / 0.6800 / 0.5500 / 0.4600, lambada ppl 24.39, wikitext 81.80
+  in **all eight**.
+* **Every table in §1 is generated** from `wave21/campaign-frontier-table.json`
+  by `run/mx21/mx21_report_tables.py`, which is itself a function of the ledger,
+  the per-wave child indexes and the sealed `lm-eval` output. §3.11 is why:
+  three consecutive waves quoted a frontier child the ledger does not name,
+  because the number was carried in prose instead of recomputed.
 
 ---
 
-## 2. The quantitative case — where the fold-only frontier sits, and why
+## 1. Every sealed child that answers anything
 
-### 2.1 The drift law, and what it is for
+**154 whole-model children have a sealed behaviour review. 108 hold at least one
+of fifteen cases.** All 108 are below, sorted by net stored ratio, with both
+readings, the export shape and the benchmark row where one was run. Eleven cells
+carry more than one reviewed receipt (re-seals under ADDENDUM 14, re-runs); the
+latest by `sealed_at` is shown and the superseded digests are listed in
+`wave21/campaign-frontier-table.json`.
 
-Across 55 sealed rungs, the composed child's global drift against the
-`copy_exact` control predicts its review score:
+`shape` is a claim about what loads: **standard** means a stock
+`Lfm2ForCausalLM`, no `trust_remote_code`, and the loader counts the ratio
+shown; **parent-shaped** means the ratio is a **storage-format** ratio and the
+model on disk is 229,693,184 parameters. §2.7 is why that distinction was
+introduced and what it cost.
+
+| # | child | wave | net stored | stored params | review | per-child | per-lane (reading) | shape | arc_e | hella_n | piqa_n | wino | lambada | lam ppl | wiki wppl |
+|---:|---|---:|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `ARCH.CL896` | 15 | **0.688431** | 158,127,872 | **4/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 2 | `ARCH.W736` | 21 | **0.689220** | 158,309,216 | **1/15** | dead | impaired (15/16) | standard | 0.2850 | 0.4050 | 0.5150 | 0.4800 | 0.0150 | 14146.56 | 1787.96 |
+| 3 | `COMP.MA.MXO4` | 11 | **0.703396** | 161,565,310 | **5/15** | dead | `unstated` | parent-shaped | 0.4200 | 0.4350 | 0.5600 | 0.5250 | 0.1000 | 1477.86 | 257.83 |
+| 4 | `COMP.MA.MXP2` | 12 | **0.703409** | 161,568,260 | **6/15** | dead | `unstated` | parent-shaped | 0.4250 | 0.4250 | 0.5850 | 0.5400 | 0.1450 | 857.20 | 231.96 |
+| 5 | `COMP.MA.MXQ5` | 13 | **0.710270** | 163,144,199 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 6 | `COMP.MA.MXP1` | 12 | **0.712544** | 163,666,562 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 7 | `ARCH.W768` | 19 | **0.722610** | 165,978,624 | **3/15** | dead | impaired (9/16) | standard | 0.3100 | 0.4300 | 0.5200 | 0.4850 | 0.0300 | 8176.90 | 1279.46 |
+| 8 | `ARCH.W768EV` | 20 | **0.722610** | 165,978,624 | **1/15** | dead | dead (16/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 9 | `ARCH.W768LS` | 20 | **0.722610** | 165,978,624 | **3/15** | dead | impaired (10/16) | standard | 0.3050 | 0.4300 | 0.5050 | 0.4600 | 0.0300 | 7722.72 | 1312.49 |
+| 10 | `ARCH.W768ST` | 20 | **0.722610** | 165,978,624 | **2/15** | dead | impaired (10/16) | standard | 0.2900 | 0.4350 | 0.5150 | 0.4550 | 0.0350 | 7449.50 | 1297.15 |
+| 11 | `ARCH.BX13` | 16 | **0.724929** | 166,511,360 | **1/15** | dead | impaired (5/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 12 | `COMP.MA.MXO3` | 11 | **0.729103** | 167,470,079 | **8/15** | dead | `unstated` | parent-shaped | 0.4300 | 0.4300 | 0.5900 | 0.5450 | 0.1650 | 527.91 | 190.15 |
+| 13 | `COMP.MA.MXN3` | 10 | **0.735962** | 169,045,495 | **6/15** | dead | `unstated` | parent-shaped | 0.4750 | 0.4300 | 0.5800 | 0.5650 | 0.1200 | 797.61 | 193.24 |
+| 14 | `COMP.MA.MXM9` | 9 | **0.736305** | 169,124,342 | **4/15** | dead | `unstated` | parent-shaped | 0.3700 | 0.3150 | 0.5100 | 0.5150 | 0.0700 | 15185.40 | 515.07 |
+| 15 | `COMP.MA.MXN1` | 10 | **0.744033** | 170,899,201 | **7/15** | dead | `unstated` | parent-shaped | 0.3600 | 0.3900 | 0.5750 | 0.5100 | 0.0650 | 3765.13 | 432.10 |
+| 16 | `COMP.MA.MXM8` | 9 | **0.744297** | 170,960,000 | **3/15** | dead | `unstated` | parent-shaped | 0.2750 | 0.2800 | 0.5150 | 0.4750 | 0.0550 | 2315739.18 | 11527.79 |
+| 17 | `COMP.MA.MXM10` | 9 | **0.753440** | 173,059,959 | **6/15** | dead | `unstated` | parent-shaped | 0.3950 | 0.3200 | 0.5400 | 0.4650 | 0.0800 | 11613.26 | 501.34 |
+| 18 | `COMP.MA.MXN4` | 10 | **0.754811** | 173,374,848 | **8/15** | dead | `unstated` | parent-shaped | 0.4250 | 0.4500 | 0.6000 | 0.5250 | 0.1700 | 370.09 | 168.70 |
+| 19 | `ARCH.W14FF1280` | 15 | **0.760331** | 174,642,944 | **5/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 20 | `ARCH.W1536X13` | 16 | **0.769439** | 176,734,976 | **4/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 21 | `COMP.MA.MXN5` | 10 | **0.780411** | 179,255,041 | **8/15** | dead | `unstated` | parent-shaped | 0.4350 | 0.4700 | 0.6100 | 0.5000 | 0.1300 | 355.02 | 179.00 |
+| 22 | `COMP.MA.MXN2` | 10 | **0.780518** | 179,279,617 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.4550 | 0.4450 | 0.6400 | 0.5550 | 0.2000 | 230.31 | 139.21 |
+| 23 | `COMP.MA.MXM5` | 9 | **0.780727** | 179,327,744 | **6/15** | dead | `unstated` | parent-shaped | 0.3800 | 0.3600 | 0.5400 | 0.5500 | 0.0900 | 2628.37 | 313.97 |
+| 24 | `COMP.MA.MXM3` | 9 | **0.780772** | 179,337,984 | **3/15** | dead | `unstated` | parent-shaped | 0.3850 | 0.4400 | 0.5600 | 0.5100 | 0.0600 | 5496.31 | 471.21 |
+| 25 | `COMP.MA.MXM7` | 9 | **0.780830** | 179,351,440 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 26 | `COMP.MA.MXM6` | 9 | **0.780861** | 179,358,464 | **9/15** | dead | `unstated` | parent-shaped | 0.3650 | 0.3200 | 0.5200 | 0.5350 | 0.1100 | 7337.19 | 421.68 |
+| 27 | `ARCH.W896LSX13` | 21 | **0.815064** | 187,214,592 | **2/15** | dead | impaired (14/16) | standard | 0.3600 | 0.4100 | 0.5200 | 0.4850 | 0.1400 | 1675.13 | 915.75 |
+| 28 | `ARCH.W896X13` | 19 | **0.815064** | 187,214,592 | **1/15** | dead | impaired (11/16) | standard | 0.3750 | 0.4000 | 0.5200 | 0.4950 | 0.1500 | 1671.03 | 923.07 |
+| 29 | `ARCH.W896KV6JS` | 19 | **0.841047** | 193,182,848 | **2/15** | dead | impaired (11/16) | standard | 0.3150 | 0.3850 | 0.5200 | 0.5150 | 0.0650 | 2821.11 | 1161.46 |
+| 30 | `ARCH.T010713` | 18 | **0.842437** | 193,501,952 | **3/15** | dead | impaired (5/16) | standard | 0.3900 | 0.4150 | 0.5350 | 0.4600 | 0.1000 | 14860.55 | 1089.79 |
+| 31 | `ARCH.T010913` | 18 | **0.842437** | 193,501,952 | **1/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 32 | `ARCH.T030913` | 18 | **0.842437** | 193,501,952 | **2/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 33 | `ARCH.W896` | 19 | **0.859023** | 197,311,616 | **4/15** | dead | impaired (9/16) | standard | 0.3550 | 0.4000 | 0.5650 | 0.4900 | 0.1450 | 638.72 | 500.08 |
+| 34 | `ARCH.W896LS` | 21 | **0.859023** | 197,311,616 | **3/15** | dead | impaired (13/16) | standard | 0.3650 | 0.4050 | 0.5650 | 0.5100 | 0.1400 | 622.20 | 487.20 |
+| 35 | `ARCH.F1301KV6QC` | 18 | **0.874415** | 200,847,104 | **1/15** | dead | dead (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 36 | `ARCH.D2` | 16 | **0.894958** | 205,565,696 | **2/15** | dead | impaired (10/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 37 | `ARCH.D2B` | 16 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (5/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 38 | `ARCH.P0709` | 17 | **0.894958** | 205,565,696 | **4/15** | dead | impaired (7/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 39 | `ARCH.P0711` | 17 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 40 | `ARCH.P0911` | 17 | **0.894958** | 205,565,696 | **2/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 41 | `ARCH.P1301` | 17 | **0.894958** | 205,565,696 | **7/15** | dead | impaired (2/16) | standard | 0.4100 | 0.3750 | 0.5600 | 0.5400 | 0.1750 | 2870.17 | 990.35 |
+| 42 | `ARCH.P1303` | 17 | **0.894958** | 205,565,696 | **7/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 43 | `ARCH.P1307` | 17 | **0.894958** | 205,565,696 | **6/15** | dead | impaired (1/16) | standard | 0.4550 | 0.4050 | 0.6050 | 0.5450 | 0.1300 | 1991.53 | 400.16 |
+| 44 | `COMP.MA.MXL8` | 8 | **0.895457** | 205,680,372 | **3/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 45 | `COMP.MA.MXL9` | 8 | **0.921164** | 211,585,141 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 46 | `ARCH.X07KV6JQ` | 18 | **0.926936** | 212,910,848 | **6/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 47 | `ARCH.X07KV6JQC` | 18 | **0.926936** | 212,910,848 | **7/15** | dead | impaired (3/16) | standard | 0.4200 | 0.4200 | 0.5350 | 0.5450 | 0.1200 | 740.48 | 377.65 |
+| 48 | `ARCH.X09KV6JQC` | 18 | **0.926936** | 212,910,848 | **5/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 49 | `ARCH.X13KV6` | 16 | **0.926936** | 212,910,848 | **6/15** | dead | impaired (4/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 50 | `ARCH.X13KV6J` | 17 | **0.926936** | 212,910,848 | **3/15** | dead | impaired (8/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 51 | `ARCH.X13KV6JQ` | 17 | **0.926936** | 212,910,848 | **4/15** | dead | impaired (6/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 52 | `COMP.MA.MXL7` | 8 | **0.946871** | 217,489,910 | **9/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 53 | `ARCH.X01` | 16 | **0.947479** | 217,629,440 | **9/15** | dead | alive-degraded (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 54 | `ARCH.X03` | 16 | **0.947479** | 217,629,440 | **6/15** | impaired | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 55 | `ARCH.X05A` | 15 | **0.947479** | 217,629,440 | **6/15** | dead | impaired (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 56 | `ARCH.X07` | 16 | **0.947479** | 217,629,440 | **11/15** | alive-parent-band | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 57 | `ARCH.X09` | 16 | **0.947479** | 217,629,440 | **10/15** | alive-parent-band | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 58 | `ARCH.X11` | 16 | **0.947479** | 217,629,440 | **9/15** | alive-degraded | `unstated` | standard | -- | -- | -- | -- | -- | -- | -- |
+| 59 | `ARCH.X13A` | 16 | **0.947479** | 217,629,440 | **13/15** | dead | alive-parent-band (2/16) | standard | 0.4600 | 0.4050 | 0.6350 | 0.5200 | 0.3350 | 106.78 | 297.09 |
+| 60 | `ARCH.X04` | 17 | **0.952057** | 218,680,960 | **2/15** | dead | impaired (9/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 61 | `ARCH.X06` | 17 | **0.952057** | 218,680,960 | **8/15** | dead | alive-degraded (1/16) | standard | 0.5300 | 0.4700 | 0.6050 | 0.5200 | 0.3250 | 39.52 | 127.10 |
+| 62 | `ARCH.X08` | 17 | **0.952057** | 218,680,960 | **7/15** | dead | impaired (1/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 63 | `ARCH.X10` | 17 | **0.952057** | 218,680,960 | **7/15** | impaired | impaired (0/16) | standard | 0.5100 | 0.4450 | 0.6200 | 0.5200 | 0.3000 | 153.37 | 239.04 |
+| 64 | `COMP.MA.MXL11` | 8 | **0.955444** | 219,459,062 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5250 | 0.4600 | 0.6350 | 0.5700 | 0.2250 | 99.22 | 118.02 |
+| 65 | `COMP.MA.MXK10` | 7 | **0.972579** | 223,394,679 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 66 | `COMP.MA.MXK7` | 7 | **0.972579** | 223,394,679 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 67 | `COMP.MA.MXL5` | 8 | **0.972579** | 223,394,679 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5100 | 0.4850 | 0.6200 | 0.5500 | 0.3200 | 55.19 | 105.53 |
+| 68 | `COMP.MA.MXK11` | 7 | **0.972590** | 223,397,366 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 69 | `COMP.MA.MXJP2C` | 6 | **0.972602** | 223,400,053 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 70 | `COMP.MA.MXJ5` | 6 | **0.974301** | 223,790,198 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 71 | `COMP.MA.MXJ4` | 6 | **0.977724** | 224,576,630 | **4/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 72 | `COMP.MA.MXJ4C` | 6 | **0.977728** | 224,577,399 | **8/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 73 | `COMP.MA.MXK15` | 7 | **0.978019** | 224,644,232 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 74 | `COMP.MA.MXL6` | 8 | **0.978304** | 224,709,687 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5150 | 0.4600 | 0.6700 | 0.5400 | 0.3350 | 59.78 | 112.29 |
+| 75 | `COMP.MA.MXK8` | 7 | **0.979437** | 224,970,095 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 76 | `ARCH.KV6` | 16 | **0.979457** | 224,974,592 | **5/15** | dead | impaired (4/16) | standard | 0.4650 | 0.4350 | 0.6050 | 0.5100 | 0.2150 | 107.87 | 201.05 |
+| 77 | `ARCH.KV6A` | 17 | **0.979457** | 224,974,592 | **5/15** | dead | impaired (2/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 78 | `ARCH.KV6J` | 17 | **0.979457** | 224,974,592 | **3/15** | dead | impaired (3/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| 79 | `ARCH.KV6JQ` | 17 | **0.979457** | 224,974,592 | **8/15** | dead | alive-degraded (2/16) | standard | 0.4650 | 0.4400 | 0.6100 | 0.5200 | 0.2300 | 104.96 | 241.89 |
+| 80 | `ARCH.KV6JS` | 18 | **0.979457** | 224,974,592 | **7/15** | dead | impaired (2/16) | standard | 0.4650 | 0.4350 | 0.6100 | 0.5350 | 0.2350 | 103.45 | 240.46 |
+| 81 | `COMP.MA.MXK13` | 7 | **0.979732** | 225,037,687 | **9/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 82 | `COMP.MA.MXJ3C` | 6 | **0.981152** | 225,363,831 | **9/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 83 | `COMP.MA.MXK5` | 7 | **0.981152** | 225,363,831 | **10/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 84 | `COMP.MA.MXJP2A` | 6 | **0.981163** | 225,366,518 | **5/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 85 | `COMP.MA.MXJP2B` | 6 | **0.981163** | 225,366,518 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 86 | `COMP.MA.MXK1` | 7 | **0.981163** | 225,366,518 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 87 | `COMP.MA.MXK2` | 7 | **0.981163** | 225,366,518 | **7/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 88 | `COMP.MA.MXK3` | 7 | **0.981163** | 225,366,518 | **6/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 89 | `COMP.MA.MXL1` | 8 | **0.985726** | 226,414,582 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5050 | 0.4550 | 0.6050 | 0.5700 | 0.3100 | 57.18 | 99.58 |
+| 90 | `COMP.MA.MXL10` | 8 | **0.985726** | 226,414,582 | **11/15** | alive-parent-band | `unstated` | parent-shaped | 0.5300 | 0.4450 | 0.6050 | 0.5750 | 0.3200 | 63.88 | 109.08 |
+| 91 | `COMP.MB.MXL12` | 8 | **0.985726** | 226,414,582 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 92 | `COMP.MA.MXK9` | 7 | **0.986286** | 226,543,095 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 93 | `COMP.MA.MXK12` | 7 | **0.986296** | 226,545,511 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 94 | `COMP.MA.MXJ3` | 6 | **0.986297** | 226,545,782 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 95 | `COMP.MB.MXJ3` | 6 | **0.986297** | 226,545,782 | **6/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 96 | `COMP.MA.MXJ3A` | 6 | **0.986301** | 226,546,551 | **5/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 97 | `COMP.MA.MXJ3B` | 6 | **0.986301** | 226,546,551 | **7/15** | impaired | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 98 | `COMP.MA.MXK4` | 7 | **0.988010** | 226,939,247 | **8/15** | alive-degraded | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 99 | `COMP.MA.MXQ1` | 13 | **0.989586** | 227,301,120 | **6/15** | dead | `unstated` | parent-shaped | 0.5000 | 0.4750 | 0.6650 | 0.5600 | 0.1450 | 341.58 | 105.94 |
+| 100 | `COMP.MA.MXQ2` | 13 | **0.989586** | 227,301,120 | **6/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 101 | `COMP.MA.MXQ3` | 13 | **0.989586** | 227,301,120 | **4/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 102 | `COMP.MA.MXJ2` | 6 | **0.989725** | 227,332,983 | **11/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 103 | `COMP.MA.MXL2` | 8 | **0.990289** | 227,462,646 | **9/15** | alive-degraded | `unstated` | parent-shaped | 0.5850 | 0.4400 | 0.6300 | 0.5700 | 0.3200 | 52.82 | 100.57 |
+| 104 | `COMP.MA.MXL3` | 8 | **0.990289** | 227,462,646 | **11/15** | dead | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 105 | `COMP.MA.MXL4` | 8 | **0.990864** | 227,594,615 | **10/15** | alive-parent-band | `unstated` | parent-shaped | 0.5450 | 0.4650 | 0.6350 | 0.5800 | 0.3700 | 38.61 | 92.29 |
+| 106 | `COMP.MA.MXJ1` | 6 | **0.991439** | 227,726,719 | **12/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 107 | `COMP.MA.MXK14` | 7 | **0.994287** | 228,381,047 | **13/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+| 108 | `COMP.MA.MXK6` | 7 | **0.994859** | 228,512,247 | **10/15** | alive-parent-band | `unstated` | parent-shaped | -- | -- | -- | -- | -- | -- | -- |
+
+### 1.1 The recipes behind the top of that table
+
+* **`ARCH.CL896` — 0.688431x, 4/15, standard shape (wave 15).** The deepest
+  scoring child in the campaign. `intermediate_size` 896 at every MLP site,
+  solved **conditioned-local** — each site against a capture taken through the
+  partially-built child rather than through the parent. It is **2.86x per site**,
+  which is why wave 15 declined to call it a frontier claim under a 4x-class
+  eligibility rule; that rule was then not applied to the child wave 16
+  promoted, and §3.11 is the correction.
+* **`ARCH.W736` — 0.689220x, 1/15, standard shape (wave 21).** `hidden_size`
+  736: the residual stream itself narrowed, which is the only standard axis that
+  reaches the tied embedding. 0.0008 of net ratio shallower than `CL896` and
+  three review cases worse, so it does not take the frontier.
+* **`COMP.MA.MXP2` — 0.703409x, 6/15, parent-shaped (wave 12).** The deepest
+  child whose output is coherent, on-prompt language in most lanes — ADDENDUM 8
+  §8.2's success band. The `MXN2` token interface plus three whole SwiGLU lanes,
+  the third **shopped** rather than taken in depth order.
+* **`COMP.MA.MXQ5` — 0.710270x, 7/15, parent-shaped (wave 13).** `MXP2` plus
+  three ADDENDUM 10 corrective routes at k=256, whose 1,575,939 added parameters
+  are charged in full. The healthiest deep text in the campaign: two `Useful`
+  gradings and one lane at the token cap.
+* **`ARCH.W768` / `W768LS` / `W768ST` / `W768EV` — 0.722610x, 3 / 3 / 2 / 1 of
+  15 (waves 19–20).** Four children at the **identical** 165,978,624 parameters
+  against the same corpus and the same solver, differing only in the residual
+  basis or the solve. This is the campaign's cleanest controlled experiment and
+  §2.9 is what it says.
+* **`COMP.MA.MXO3` — 0.729103x, 8/15, parent-shaped (wave 11).** The best
+  reading below 0.78x. `MXN2`'s interface plus two whole SwiGLU lanes at L05 and
+  L06, every component `T8` (Gram relation matching) at `S4`.
+* **`COMP.MA.MXN2` — 0.780518x, 10/15, `alive-parent-band`, parent-shaped
+  (wave 10).** The deepest child that reads at the parent's own band, and it is
+  **one component**: the token interface alone, a 12,288-row verbatim head
+  selected by token frequency plus a sparse-OMP tail at rank 38 over the
+  remaining 53,248 rows. Nothing in the body is folded.
+* **`ARCH.X13A` — 0.947479x, 13/15 (wave 16).** One conv block excised. The
+  highest-scoring child in the campaign, **one case above the same-process
+  parent**, and it removes 5.25% of the model.
+
+### 1.2 The children that are not in the table, and why
+
+* **`ARCH.W512` — 0.463481x, 0/15 (wave 19).** 106,458,368 parameters, **under
+  half the parent**, standard shape, loads and counts. Eight of sixteen lanes
+  return the empty string and eight fill the cap with punctuation. It is the
+  deepest artifact the campaign has produced and it is not a model.
+* **`COMP.MA.MXO2` — 0.497739x, 0/15 (wave 11)** and **`COMP.MA.MXQ6` —
+  0.497777x, 0/15 (wave 13).** The 0.5x storage target reached twice, in two
+  different lane orders — by depth and by measured-cheapest — with the same
+  result. Fourteen of sixteen lanes on the first ride a single phrase to the
+  token cap; ten of sixteen on the second.
+* **`ARCH.MM768` — 0.722610x, 0/15 (wave 21).** The basis that maximises the
+  minimum per-endpoint retained read energy. It is in this list rather than the
+  table because it holds nothing, and §2.9 is why it matters anyway.
+* **`COMP.MA.MXP1` has no benchmark row at all**, because its corrective routes
+  are forward hooks rather than `state_dict` entries and the materializer cannot
+  write an HF child that carries them. That gap was stated in `NOTES-MX-P` §6a
+  and is still open.
+
+---
+
+## 2. The laws, each with the measurement that supports it
+
+### 2.1 Behaviour-first: every cheaper gate has been measured and every one fails
+
+This is the campaign's first law and the one the rest depend on. Four proxies
+for behaviour were used or proposed as gates, and all four were measured against
+the frozen review and retired:
+
+* **Token match against the `copy_exact` control** was the campaign's original
+  pass/fail. Wave 4 sealed a child at **0.551 token match and 12/15**, the
+  parent's own band, and other children match tokens while incoherent. Demoted
+  to a diagnostic column, printed on every dossier labelled `[DIAGNOSTIC ONLY]`.
+* **Accuracy benchmarks** disagree with the review in **both directions** and
+  §2.11 is the list.
+* **Drift** has R² = 0.62 against the review and its residuals are the
+  interesting children, not noise (§2.2).
+* **Parameter efficiency** was used once to kill a mechanism and the kill was
+  withdrawn (§3.9).
+
+There is no cheap surrogate. **A child gets built and read**, and every claim in
+this document that is not a frozen-review reading says which instrument produced
+it.
+
+### 2.2 The drift law, and exactly where it stops working
+
+Across 55 sealed composed rungs:
 
 ```
 review(useful-or-partial, /15) = 12.9554 − 13.1626 × global_drift     R² = 0.6243, n = 55
 review = 8   ->   drift 0.376476        (the nominal coherence budget)
 ```
 
-**R² = 0.62 means 38% of the variance in behaviour is not drift**, and the
-residuals are not noise around the line — they are the interesting cases:
+**38% of the variance in behaviour is not drift**, and the residuals pay:
 
 | child | drift | predicted | sealed | residual |
 |---|---:|---:|---:|---:|
 | `COMP.MA.MXO3` | 0.461810 | 6.88 | **8** | +1.1 |
 | `COMP.MA.MXO4` | 0.540899 | 5.84 | 5 | −0.8 |
 | `COMP.MA.MXO2` | 0.814086 | 2.24 | 0 | −2.2 |
-| **wave 13 `COMP.MA.MXQ2`** | **0.399369** | 7.70 | **6** | −1.7 |
-| **wave 13 `COMP.MA.MXQ1`** | **0.429852** | 7.30 | **6** | −1.3 |
+| `COMP.MA.MXQ2` | 0.399369 | 7.70 | **6** | −1.7 |
+| `COMP.MA.MXQ1` | 0.429852 | 7.30 | **6** | −1.3 |
 
-Wave 13 added the cleanest counter-example the campaign has: `MXQ2` (head merge
-at L02) has **lower** drift than `MXQ1` (head merge at L12) — 0.399 vs 0.430 —
-and **four** review lanes that loop to the 1024-token cap against `MXQ1`'s
-**one**. Same score, worse text, lower drift. **The law ranks them backwards.**
+**The law ranks the wave-13 pair backwards.** `MXQ2` (head merge at L02) has
+*lower* drift than `MXQ1` (head merge at L12) — 0.399 vs 0.430 — and **four**
+review lanes that loop to the 1024-token cap against `MXQ1`'s **one**. Same
+score, worse text, lower drift.
 
-So the law is used here for what it is good for — ordering a search — and never
-to refuse a child a reading.
+**And at depth drift stops discriminating at all.** `COMP.MA.MXO2`'s eleven-lane
+install trace: 0.3659, 0.1139, 0.0421, 0.0687, 0.0685, 0.0530, 0.0518, 0.0297,
+0.0054, 0.0105, **−0.0061** — the last lane *reduced* drift. Once a child is far
+enough from the parent, moving it further barely registers on a
+distance-to-parent metric, which is exactly the depth where a gate would be doing
+the most work.
 
-### 2.2 The lane price table, and saturation
+### 2.3 Additive interference, and the second composition step
 
-A "lane" is one whole component group folded at one block. The prices below are
-**marginal composed drift measured on a fixed base in one process**, every
-candidate against the same base, with the parent's own tensors written back and
-the base re-measured after each one (`base_restored_exactly: true` for all of
-them). The method is exact for M-A because every component is solved against the
-*parent's* sealed evidence, so the composed child is a function of the **set**,
-not the install order — and the probe proves it rather than asserting it: the
-`MXO3` base re-reads **0.421325**, its own sealed body drift, and `L07.T8.S4`
-prices at **+0.076198** against `COMP.MA.MXO4`'s sealed **+0.076199**.
+**The single most reliable finding in the campaign.** Two folds that are
+individually fine compose to something much worse than either, and the effect is
+not a rounding error:
 
-**Third lane, on the `COMP.MA.MXO3` base (wave 12, `wave12/probes/lane-shopping.json`):**
+| composition | the singles | composed | axes |
+|---|---|---:|---|
+| `ARCH.BX13` | 13/15 and 5/15 | **1/15** | excision + `intermediate_size` |
+| `ARCH.W896X13` | 13/15 and 4/15 | **1/15** | excision + `hidden_size` |
+| `ARCH.W896KV6JS` | 7/15 and 4/15 | **2/15** | head merge + `hidden_size` |
+| `ARCH.X13KV6J` | 13/15 and 3/15 | **3/15** | excision + head merge |
+| `COMP.MA.MXQ4` | six lanes + two merges | **0/15** | SwiGLU + head merge |
 
-| rank | lane | marginal drift | removes | drift / M-param |
-|---:|---|---:|---:|---:|
-| 1 | `L13.T5.S4` | **+0.034129** | 5,901,819 | 0.005783 |
-| 2 | `L13.T8.S4` | +0.043967 | 5,904,769 | 0.007446 |
-| 9 | `L07.T8.S4` | +0.076198 | 5,904,769 | 0.012905 |
-| 16 | `L00.T8.S4` | +0.182174 | 5,904,769 | 0.030852 |
+**The rule that survives every test of it: the first composition step is
+survivable and the second is fatal.** `ARCH.X07KV6JQC` is the best two-axis
+child in the campaign at **7/15, 0.926936x**; every three-axis child measured is
+at or below 3/15. Wave 19 tried the rule on a brand-new axis (`hidden_size`) and
+it held.
 
-**Fourth lane, on the `COMP.MA.MXP2` base (wave 13, `wave13/probes/deep-ladder.json`):**
+**The excision ladder is the clean form of it**, complete and monotone:
 
-| rank | lane | marginal drift | removes | drift / M-param |
-|---:|---|---:|---:|---:|
-| 1 | `L02.T8.S4` | **+0.050518** | 5,904,769 | 0.008555 |
-| 2 | `L09.T8.S4` | +0.055169 | 5,904,769 | 0.009343 |
-| 3 | `L08.T8.S4` | +0.057867 | 5,904,769 | 0.009800 |
-| 4 | `L11.T5.S4` | +0.061364 | 5,901,819 | 0.010398 |
-| … | `L02.T7.S4` (**head merge**) | +0.092359 | 2,392,064 | 0.038610 |
-| … | `L00.T5.S4` | +0.211109 | 5,901,819 | 0.035770 |
+| blocks excised | net | review |
+|---|---:|---:|
+| 1 (block 13) | 0.947479x | **13/15** |
+| 2 (13 and 1) | 0.894958x | **7/15** |
+| 3 (1, 7, 13) | 0.842437x | **3/15** |
+| 4 (1, 5, 9, 13) | 0.789916x | **0/15** |
 
-**Saturation, measured across seven rounds — and it is not what wave 12
-inferred.** `NOTES-MX-P` §6a listed the compounding rate as inferred from
-`COMP.MA.MXO2`'s install trace, and waves 11–12 argued from it that the per-lane
-allowance "gets harder, not easier". Wave 13's greedy ladder measured it: price
-every remaining lane on the current base, install the cheapest **permanently**,
-re-price, seven times (`wave13/probes/deep-ladder.json`, 3,982 s).
+### 2.4 The distance law between excisions, and its collapse at three bodies
 
-| the lane being bought | base lanes | base drift | cheapest marginal | drift / M-param | winner |
-|---:|---:|---:|---:|---:|---|
-| 3rd (wave 12, MXO3 base) | 2 | 0.421325 | +0.034129 | **0.005783** | `L13.T5` |
-| 4th | 3 | 0.455455 | +0.050518 | **0.008555** | `L02.T8` |
-| 5th | 4 | 0.505972 | +0.043186 | 0.007314 | `L08.T8` |
-| 6th | 5 | 0.549159 | +0.038762 | 0.006565 | `L11.T8` |
-| 7th | 6 | 0.587921 | +0.030083 | **0.005095** | `L09.T8` |
-| 8th | 7 | 0.618004 | +0.046781 | 0.007923 | `L12.T8` |
-| 9th | 8 | 0.664785 | +0.041657 | 0.007055 | `L07.T8` |
-| 10th | 9 | 0.706443 | +0.037158 | 0.006293 | (not installed) |
+Wave 17 measured the cost of removing two blocks as a function of how far apart
+they are: **2 apart reads 2–4 of 15, twelve apart reads 7**, monotone across two
+anchors (`P0911` 2/15, `P0709` 4/15, `P1307` 6/15, `P1301` and `P1303` 7/15).
+The mechanism is plausible — adjacent blocks share more of the same residual
+subspace — and it does **not survive to three bodies**: the widest-spread triple
+reads 3/15 against the best pair's 7/15, and the three triples measured
+(`T010713` 3/15, `T030913` 2/15, `T010913` 1/15) do not order by spread.
 
-**The marginal price does not run away.** It rises 48% from lane 3 to lane 4,
-then *falls* through lane 7 — the seventh lane is the cheapest per parameter the
-campaign has ever measured, on a six-lane base — then oscillates between 0.0051
-and 0.0079. Over seven rounds the total drift accumulates **roughly linearly at
-about 0.042 per lane**, and the shape of the curve is flat, not exponential.
+### 2.5 Deeper-is-sometimes-safer, and it is one component
 
-**So the reason 0.5x is hard is not that lanes get expensive. It is that the
-coherence budget is small and drift accumulates steadily against it.** Nine
-shopped lanes already sit at drift 0.706 — 1.5× the deepest *coherent* drift
-ever measured (0.4618) — while removing 53.1M parameters, which is only 23% of
-the parent. That is the real arithmetic, and it is an argument about a budget,
-not about a price curve.
+`S8` (8x) beats `S4` (4x) on the short conv writer `C05` — **13/15 against
+10/15**, one case *above* the same-process parent — and **loses on every SwiGLU
+site measured**. The level ladder is per component and is not monotone. This is
+also the correction of a wrong belief: `C05` was thought to poison a block until
+the block rule explained the earlier reading (§3.3).
 
-`COMP.MA.MXO2`'s own eleven-lane install trace shows where the curve ends up —
-0.3659, 0.1139, 0.0421, 0.0687, 0.0685, 0.0530, 0.0518, 0.0297, 0.0054, 0.0105,
-**−0.0061** — the last lane *reduced* drift. Once the child is far enough from
-the parent, moving it further barely registers on a distance-to-parent metric.
-**That is another reason drift cannot be a gate: at depth it stops
-discriminating**, which is exactly the depth where a gate would be doing the
-most work.
+### 2.6 The block-conflict rule and lane concentration
 
-### 2.3 The repair exchange rate — a diagnostic, not a verdict
+**A block hosts at most one folded lane.** Two MLP components in one block cost
+nothing; a conv or attention writer **plus** an MLP fold in the same block costs
+−3 to −4 review cases, because they sit on opposite sides of that block's FFN
+norm. Machine-enforced in the recipe generator, overridable only with a written
+reason.
+
+**And a lane's fragility is not uniform.** The completed excision census made a
+free probe possible: how many of the thirteen single-block excisions each of the
+fifteen review lanes survives. The answer concentrates — a few lanes survive
+almost every excision and a few survive almost none — which is the same
+structure the per-case attribution artifact found from the other side (§2.12).
+
+### 2.7 R3 and the re-pricing: parent-shaped is not standard-shape
+
+ADDENDUM 11's R3 asks a frontier claim to have a standard-architecture export
+path, and applying it to this document's own table changed what the table says.
+
+**Every child in waves 5–13 is parent-shaped.** `T1`/`T4`/`T5`/`T8`/`T7` store a
+factored, sparse, tied or merged form and reconstruct the parent's shapes to
+run, so `0.703409x` and `0.729103x` are **storage-format ratios**; the model on
+disk is 229,693,184 parameters. Each is an honest count of stored parameters
+under a registered, tested storage model, and it is a different quantity from
+the one R3 names.
+
+Three axes on this checkpoint are config-standard against `transformers` 5.12.1
+— `intermediate_size`/`block_ff_dim`, `head_dim`, `num_hidden_layers` +
+`layer_types` — and wave 19 added a fourth, `hidden_size` (with `block_dim` and
+`conv_dim`, this checkpoint's own restatements of the residual width). **Conv
+channel count is not**: `Lfm2ShortConv.__init__` hardwires `config.hidden_size`
+and never reads `conv_dim`, so a conv-width fold is a research probe under R3 as
+a fact about the modeling file.
+
+**What the re-pricing cost:** the deepest *standard-shape* child that answers
+anything is `ARCH.CL896` at 0.688431x and **4/15**, against a parent-shaped
+`COMP.MA.MXO3` at 0.729103x and 8/15. The standard-export requirement bought
+4 points of net ratio and cost 4 review cases.
+
+### 2.8 The RoPE plane constraint on `head_dim`
+
+`head_dim` 16 is **not available on this architecture**, and the reason is
+structural rather than empirical. RoPE's rotation is block diagonal over
+frequency planes, so `q^T R_Δ k` is exactly a sum of per-plane terms and a
+smaller `head_dim` can keep whole planes on a uniform stride and nothing else.
+The three expressible ladders retain **0.2394 / 0.2379 / 0.2018** of the
+evidence-weighted score energy, against the 0.99 that an unconstrained `Δ=0`
+census promised for the same operator. Built with both scale corrections the
+change forces, it is dead alone at 0.938368x (`ARCH.HD16`, 0/15).
+
+### 2.9 The retained-read-energy law, its ceiling, and the flatness underneath it
+
+The `hidden_size` axis produced the campaign's most predictive single variable
+and then bounded it three times.
+
+**The law.** Behaviour tracks the fraction of the residual stream's **reader-
+projected** energy the child's subspace retains, pooled over the 29 endpoints
+where a stock LFM2 reads the stream:
+
+| width | net | retained read (held-out) | review |
+|---:|---:|---:|---:|
+| 896 | 0.859023x | 0.9627 | **4/15** |
+| 768 | 0.722610x | 0.9193 | **3/15** |
+| 736 | 0.689220x | 0.9075 | **1/15** |
+| 704 | 0.656116x | 0.8953 | 0/15 |
+| 640 | 0.590763x | 0.8697 | 0/15 |
+| 512 | 0.463481x | 0.8124 | 0/15 |
+
+**The cliff is 32 dimensions wide and it is a slope.** Wave 19 bracketed it at
+128 and called it a step; waves 20 and 21 halved it twice and the rung inside it
+reads 1/15, so 4 → 3 → 1 → 0 is monotone and graded.
+
+**Per-site install quality is not the variable.** At 512 the attention writes
+land at cos **0.9999** against their own local targets, the MLP writes at
+0.9999, and the conv writes at 0.9916 median — every one of them *better* than
+the living 896 child's conv — and the model returns the empty string. A fold can
+be locally excellent everywhere and globally dead.
+
+**The spectrum is flat, so there was never a subspace to find.** Pooled over all
+29 endpoints, the top 768 of 1024 directions hold 0.9389 of the read energy and
+the top 512 hold 0.8465. There is no knee; there is a price per direction.
+
+**The retained fraction is a ceiling, not a predictor — and this is the sharpest
+result the campaign has.** Six children at the **identical** 165,978,624
+parameters, same corpus, same solver, same code, differing only in the basis or
+the solve:
+
+| child | what moved | retained read (hld) | directions exchanged vs plain | review |
+|---|---|---:|---:|---:|
+| `ARCH.W768` | — the baseline | 0.9193 | 0 | **3/15** |
+| `ARCH.W768LS` | writers' λ on an internal fit split | 0.9193 | 0 | **3/15** |
+| `ARCH.W768ST` | `--arm stale`, nothing re-solved | 0.9193 | 0 | **2/15** |
+| `ARCH.W768AW25` | case-weighted basis, beta 0.25 | 0.9178 | **17.2 of 768** | **0/15** |
+| `ARCH.MM768` | max-min over the 29 readers | 0.9137 | **39.4 of 768** | **0/15** |
+| `ARCH.W768EV` | evidence-PCA (raw moment) | 0.9122 | 51.4 | **1/15** |
+| `ARCH.W768AW100` | case-weighted, beta 1.0 | 0.8967 | 96.7 | **0/15** |
+| `ARCH.W768RG` | reader-energy per unit raw | 0.4780 | 230.5 | **0/15** |
+
+Below ~0.90 every child measured is dead. **Above it the retained fraction stops
+predicting**: 0.9178 reads 0/15 and 0.9193 reads 3/15, so a difference of 0.0015
+in energy and **seventeen of 768 directions** is worth three cases.
+
+**The currency is what a reader consumes, not what the stream carries.** The
+evidence-PCA basis retains **more** raw energy than reader-PCA (0.9636 vs
+0.9522) and **less** read energy (0.9122 vs 0.9193), and scores 1/15 against
+3/15. The two candidate currencies point in opposite directions on that child
+and the read one is right.
+
+**Basis invariance is total, and five objectives have now tested it.** Moving
+the objective toward the case-implicated rows (two betas), toward reader energy
+per unit of raw energy, onto the raw moment, and onto the **worst of the 29
+readers** all lose. The last is the most informative, because it succeeds at its
+own objective and fails anyway: `ARCH.MM768` lifts the worst endpoint's retained
+read energy from **0.8801 to 0.8997**, cuts the endpoints under the 0.90 floor
+from **four to one**, reconstructs the parent's own logits **better** than the
+living child (final-norm relative SSE 0.1522 against 0.1752) — and reads 0/15
+with every lane an "I am a" loop.
+
+**A related fact worth its own line: the pooled number hides readers.** The
+living 3/15 child at 768 has **four of its 29 readers below the 0.90 floor**
+(`B01.ffn` at 0.8801), and the badly-retained endpoints are the same ones at
+every width — blocks 0 to 3, with the argmin at `B01.ffn` in all five sealed
+bases. Whatever makes those readers survivable, it is not their retained energy.
+
+**And a reweighting cannot help, measured before it was built.** Under the plain
+basis the case-implicated rows are retained at the pooled rate — retrieval rows
+at 0.9265 against a pooled 0.9193, i.e. *better* — so the hypothesis that the
+basis discards case-relevant directions is false, and one capture pass said so.
+
+### 2.10 The census would have picked the wrong child, in both directions
+
+* **By retained case energy**, `W768AW25` is the best basis in wave 20. By review
+  it is the worst of the four that are not obviously broken.
+* **By per-site write cosine**, wave 14 located a cliff between 0.93 and 0.86 and
+  every wave after read per-site quality as predictive. On the width axis it does
+  not move at all across a 4/15-to-0/15 collapse.
+* **By minimum per-endpoint read energy**, `MM768` is strictly better than the
+  living child on the quantity the law is stated in. It is 0/15.
+* **By the excision census**, block 13 is the best single at 13/15 — and it is
+  the block whose composition with `intermediate_size` 1280 reads 1/15 while the
+  *worse* single composes better.
+
+### 2.11 Review versus benchmark: the divergence runs both ways
+
+| case | review says | the distribution says |
+|---|---|---|
+| `ARCH.W768AW25` (wave 20) | 0/15, worst of four | **best** of the four width children on arc_easy, hellaswag, piqa and winogrande |
+| `ARCH.W896X13` (wave 19) | 1/15, worst but one | **best** `arc_easy` in the wave, above the child it is built from |
+| `ARCH.W896LS` (wave 21) | 3/15, one case **worse** than its control | better on **six of seven** columns including both perplexities |
+| `PROBE.CBT-L12` (wave 20) | reads near-parent on all sixteen lanes | lambada **0.4600 → 0.1800**, its perplexity 24.39 → 134.66 |
+| `ARCH.MM768` (wave 21) | 0/15 | agrees: lambada **0.0000**, perplexity **23,120**, the worst row in the campaign |
+
+**A frozen review at one site is not a sensitive instrument** — CBT touches one
+tensor in a fourteen-block model and reads near-parent while its benchmark
+collapses — and **the accuracy columns are not a behaviour measurement** — a
+230M parent is only 0.045 above chance on `hellaswag` to begin with. Where the
+two disagree, this campaign gates on the review, and every disagreement is
+printed rather than reconciled.
+
+**Perplexity is the benchmark column that ranks these children**, and it does so
+monotonically and steeply: 24 → 230 → 370 → 528 → 857 on lambada while storage
+falls 1.00 → 0.70.
+
+### 2.12 Per-axis capability retention, and review one-dimensionality
+
+From 63 sealed per-case readings across waves 15–19:
+
+* **The review is 89.6% a ladder.** A single strict difficulty order predicts
+  **0.8963** of the (child, case) cells (Guttman coefficient). The 15-case score
+  is mostly one number wide, which is why per-child scores compare at all.
+* **The difficulty order**, campaign-wide hold rate: summarization-priorities
+  **0.44**, uncertainty-insufficient-data 0.43, writing-concise-email 0.41,
+  instruction-three-actions 0.35, context-retrieval 0.32, planning-dependencies
+  0.27, conversation-natural-greeting 0.25, creative-continuity 0.21,
+  comparison-ram-rom 0.14, debugging-off-by-one 0.13, multi-turn-correction 0.10,
+  arithmetic-multi-step 0.08, coding-deduplicate 0.05, logic-ordering 0.03,
+  explanation-seasons **0.02**.
+* **The tenth that is not the ladder is per-axis and legible.** The head merge
+  holds debugging-off-by-one at **0.43** against a campaign 0.13; excision holds
+  instruction-three-actions at **0.59** against 0.35; the width fold holds
+  summarisation (0.50, and 1.00 in both compositions) and takes
+  **context-retrieval and planning-dependencies to zero**.
+* **And those two zeros are recoverable, at a price.** Choosing the width
+  writers' regularisation on an internal split of the fit rows recovers
+  `context-retrieval` at 768, `planning-dependencies` at 896 and inside the
+  896+excision composition — the same capability every time — for **0** cases at
+  768, **−1** at 896, **−1** at the cliff and **+1** inside the composition.
+  **When reporting a fold, report which cases it keeps**, because the score alone
+  hides this entirely.
+
+### 2.13 Repair, and where it has purchase
 
 ADDENDUM 10's corrective routes are additive sparse maps from `mlp.input` into
 `mlp.down`, solved in closed form against a capture taken *through* the composed
-child. Measured on `COMP.MA.MXO4`'s identical fold set:
+child. On `COMP.MA.MXO4`'s fold set: review **5/15 → 7/15**, drift 0.540899 →
+0.517480, cost **2,101,252 stored parameters charged in full**. On the shopped
+child: **6/15 → 7/15** for 1,575,939 parameters.
 
-* review **5/15 → 7/15**; drift **0.540899 → 0.517480**;
-* cost **2,101,252 stored parameters**, charged in full (a route replaces
-  nothing, so it is never subject to the 4x floor);
-* **0.011146 drift per million stored parameters**, against lane shopping's
-  **3.961** — the 355× ratio wave 12 closed the mechanism on;
-* out of sample, the explained fraction of the block gap decays with depth —
-  28.0% at L05, 10.4% at L06, 10.0% at L07, and **0.0% at L13, a block that was
-  never folded**, where drift went *up*.
+**Its purchase is local and collapses with depth.** Out of sample the explained
+fraction of the block gap decays 28.0% at L05, 10.4% at L06, 10.0% at L07 and
+**0.0% at L13**. On an eleven-lane child, three routes net **+0.000092 drift —
+worse than the unrepaired child** — for 1.58M added parameters. Repair works
+where a fold's own error is still linear in that block's input, and at the end of
+a deep stack it is not.
 
-**Wave 13's reading of the same numbers.** 2.1M parameters is **0.91% of this
-model** and it bought two review cases and a 4.3% drift reduction with no
-gradient step. The efficiency ratio is a true statement about *where the next
-parameter is best spent*; it is not a reason to stop carrying routes, and the
-comparison that matters — against full distillation — was never run.
-
-**So wave 13 built the rung wave 12 designed and never ran: routes on the
-SHOPPED child.** `COMP.MA.MXQ5` is `COMP.MA.MXP2`'s exact fold set plus three
-k=256 routes at L05/L06/L13:
-
-| child | net stored | drift | review | per-child | per-lane (reading) | lanes charged |
-|---|---:|---:|---:|---|---|---:|
-| `COMP.MA.MXP2` (no routes) | 0.703409x | 0.489603 | 6/15 | dead | impaired | — |
-| **`COMP.MA.MXQ5` (+3 routes)** | **0.710270x** | **0.487874** | **7/15** | dead | impaired (lane-scoped) | 2 of 16 |
-
-**Repair pays on the shopped child too: +1 review case for 1,575,939 added
-parameters — 0.69% of the model — charged in full.** It is also the healthiest
-text wave 13 produced: one lane at the token cap, against `MXP2`'s profile, and
-the only child in the wave with two `Useful` gradings (`context-retrieval` and
-`summarization-priorities`, both near-complete against the source).
-
-And the route trace repeats wave 12's locality result with a new twist:
-`0.489603 → 0.474727` (L05 route, −0.014876), `→ 0.472629` (L06, −0.002098),
-`→ 0.487874` (**L13, +0.015245 — worse**). Wave 12 saw a route make drift worse
-only at a block that was *never folded*. Here L13 **is** folded, and its route
-still hurt. Repair's purchase is not "wherever a fold is"; it is where the
-fold's own error is still linear in that block's input, and at the end of a
-stack it is not.
-
-**And at depth it buys nothing at all.** `COMP.MA.MXQ7` is the eleven-lane
-shopped set plus three k=256 routes at L10/L12/L13:
-
-| step | drift |
-|---|---:|
-| `COMP.MA.MXQ6` (no routes) | 0.821803 |
-| + L10 route | 0.801589 (**−0.020214**) |
-| + L12 route | 0.818947 (**+0.017358**) |
-| + L13 route | **0.821895** (**+0.002948**) |
-
-Net **+0.000092 — worse than the unrepaired child** — for 1,575,939 added
-parameters, and 0/15 either way. The locality result stands on its own and is
-the transferable part: **repair has purchase only where a fold's own error is
-still linear in that block's input, and that purchase collapses with depth**;
-on a deep stack the later routes actively re-break what the earlier ones fixed.
-
-### 2.4 What wave 13 measured: M5, the head merge
-
-`C10` (all four attention projections at one block) had **never produced a
-number at 4x**. Its only kernel was head *drop*, which stores `k_proj`/`v_proj`
-whole and bottoms out near 0.5x — ADDENDUM 6 calls that `cannot-express-4x` and
-no behavioural claim follows from it. Wave 13 built the merge kernel from
-`NOTES-MX-P` §8: group heads, align each to its group with a closed-form
-orthogonal Procrustes rotation, store `g` shared bases plus one rotation per
-head, and re-solve the O group bases against the sealed attention write.
-
-```
-stored = g_q*(D*hidden + hidden*D) + g_kv*2*(D*hidden) + (H + H_kv)*D*D
-g_q = 4, g_kv = 2  ->  884,736  = 0.281250x   (over the 4x bar: diagnostic only)
-g_q = 3, g_kv = 2  ->  753,664  = 0.239583x   (the qualifying config)
-g_q = 1, g_kv = 1  ->  360,448  = 0.114583x   (S8 IS expressible, unlike head drop)
-```
-
-**Identity gate:** at one basis per head the whole pipeline must return the
-parent. Measured across five sites: **6.7e-16 to 8.7e-15** max absolute
-deviation over all four projections.
-
-**Price, on the same `COMP.MA.MXO3` base as the wave-12 table:**
-
-| lane | marginal drift | removes | drift / M-param | ×  the cheapest SwiGLU lane |
-|---|---:|---:|---:|---:|
-| `L13.T5.S4` (SwiGLU) | +0.034129 | 5,901,819 | 0.005783 | 1.0 |
-| `L02.T7.S4` (merge) | +0.110941 | 2,392,064 | 0.046379 | **8.0×** |
-| `L08.T7.S4` | +0.157162 | 2,392,064 | 0.065701 | 11.4× |
-| `L12.T7.S4` | +0.157983 | 2,392,064 | 0.066045 | 11.4× |
-| `L10.T7.S4` | +0.176884 | 2,392,064 | 0.073946 | 12.8× |
-| `L04.T7.S4` | +0.183834 | 2,392,064 | 0.076852 | 13.3× |
-
-**And the behavioural reading, which is the one that counts.** One merged
-attention block, alone, nothing else folded — net 0.989586x, 1.04% of the model
-removed:
-
-| child | site | drift | review | per-child | per-lane (reading) | lanes charged |
-|---|---|---:|---:|---|---|---:|
-| `COMP.MA.MXQ1` | L12 | 0.429852 | **6/15** | dead | impaired (lane-scoped) | 1 of 16 |
-| `COMP.MA.MXQ2` | L02 | 0.399369 | **6/15** | dead | impaired (lane-scoped) | 4 of 16 |
-| `COMP.MA.MXQ3` | L08 | 0.468446 | **4/15** | dead | impaired (lane-scoped) | 6 of 16 |
-
-**A single merged attention block costs more behaviour than two whole SwiGLU
-lanes plus the entire token interface.** `COMP.MA.MXO3` removes 27.1% of the
-model and reads 8/15; `COMP.MA.MXQ1` removes 1.04% and reads 6/15.
-
-**Stacked, and read rather than predicted.** Per the directive, the stack was
-built regardless of the solo price. `COMP.MA.MXQ4` is `COMP.MA.MXP2`'s exact
-fold set plus head merges at the two cheapest sites (L02 and L12):
-
-| child | net stored | drift | review | per-child | per-lane (reading) | lanes charged |
-|---|---:|---:|---:|---|---|---:|
-| `COMP.MA.MXQ4` | **0.682581x** | 0.679394 | **0/15** | dead | dead (lane-scoped) | 9 of 15 graded |
-
-It is **deeper than every previous coherent child** — 0.682581x against
-`COMP.MA.MXP2`'s 0.703409x — and it is a wreck: five lanes run to the
-1024-token cap on a single repeated phrase (`instruction-three-actions` emits
-"1. Plan a meal plan:" 90+ times), and the safety lane emits "The room is still
-clean" four times. Its own install trace says where the budget went: the L02
-merge, installed first, is 0.399369 of the child's 0.679394 terminal drift by
-itself, and the L12 merge adds **+0.111632** on top of six SwiGLU lanes.
-
-**M5 does not reopen the road to 0.5x, and that is now a behavioural finding
-rather than an arithmetic one.**
-
-**The continuous axis says the same thing, independently.** `COMP.MA.MXQ1` — one
-merged attention block, 1.04% of the parent removed — was materialized and
-benchmarked under the identical settings as every other row:
-
-| model | net stored | review | arc_easy | hellaswag (n) | piqa (n) | winogrande | lambada acc | **lambada ppl** | wikitext wppl |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| parent | 1.000000 | 12/15 | 0.5450 | 0.5050 | 0.6800 | 0.5500 | 0.4600 | **24.39** | 81.80 |
-| `MXQ1` (one merged block) | **0.989586** | 6/15 | 0.5000 | 0.4750 | 0.6650 | 0.5600 | 0.1450 | **341.58** | 105.94 |
-| `MXP2` (10 folds, 29.7% removed) | 0.703409 | 6/15 | 0.4250 | 0.4250 | 0.5850 | 0.5400 | 0.1450 | **857.20** | 231.96 |
-
-**Merging one attention block multiplies lambada perplexity by 14× while
-removing 1% of the model.** Ten SwiGLU/interface folds that remove 30× more
-storage multiply it by 35×. Per parameter removed, M5 is roughly **12× worse on
-perplexity as well as on drift** — two independent instruments, the same
-verdict.
-
-**Why, mechanically.** The merge's own reconstruction says it: the held-out
-write relL2 of the merged O map is **0.35–0.56** at S4, and the head partitions
-the objective-linkage clustering finds are wildly unbalanced — at L12,
-`[[0,8,9,15], [1,2,3,4,5,6,7,10,11,12,13], [14]]`, and at every site the kv
-partition is 7 heads + 1 outlier. **LFM2's attention heads are not redundant up
-to rotation.** There is no low-rank head structure to exploit at this scale; the
-clustering is merging things that are not alike because the level told it to.
-
-### 2.5 The mechanism results that are load-bearing for the frontier
+### 2.14 The mechanism results that are load-bearing and negative
 
 * **Locality (ALS, wave 11).** Re-solving every component against the *composed
-  child's own* activations — the obvious fix for "every body fold was solved
-  against activations the rest of the composition then invalidated" — made the
-  composition **worse**, not better. The fold's error is local to its block; the
-  composition's error is not the sum of local errors that a local re-solve can
-  reach.
-* **Sharing falsified (wave 11).** Parameter sharing across blocks was measured
-  and does not pay on this model.
+  child's own* activations made the composition **worse**. The fold's error is
+  local to its block; the composition's error is not a sum of local errors a
+  local re-solve can reach.
+* **Sharing falsified (wave 11).** Parameter sharing across blocks does not pay
+  on this model.
 * **Interface × body multiplies (wave 10).** The token interface's cost and the
-  body's cost compose multiplicatively, not additively: MXN2's interface is
-  10/15 alone, and it costs +0.040485 drift when installed on top of MXO3's
-  body.
-* **The block rule (wave 7, `NOTES-MX-K` §2.1).** A block hosts at most one
-  folded **lane**. Two MLP components in one block cost nothing; a conv or
-  attention writer *plus* an MLP fold in the same block costs −3 to −4 review
-  cases, because they sit on opposite sides of that block's FFN norm. Machine-
-  enforced in the recipe generator, overridable only with a written reason.
-* **Deeper-is-safer is conv-specific (wave 12).** `S8` beats `S4` on the short
-  conv writer (13/15 vs 10/15 — one case *above* the same-process parent) and
-  **loses on every SwiGLU site measured**. The level ladder is per component and
-  is not monotone.
+  body's compose multiplicatively: `MXN2`'s interface is 10/15 alone and costs
+  +0.040485 drift installed on top of `MXO3`'s body.
 * **The min-drift variant is per site (wave 12).** `T5` beats `T8` at L13 and
   loses at L07. A pooled per-site median ranks nothing.
-
-### 2.6 Per-component-class safety table (updated with M5)
-
-| class | component | 4x in isolation | 4x in composition | 8x | note |
-|---|---|---|---|---|---|
-| MLP gate `w1` | C11 | yes, 10–11/15 | yes at L05 (10/15, drift 0.168344 — the smallest single install measured) | 9/15 at L05 | the safest body fold known |
-| MLP up `w3` | C12 | yes, 9/15 | yes, with C11 in the same lane | untested alone | |
-| MLP down `w2` | C13 | yes, 12/15 at L05 | yes at L04/L05; 5–7/15 at L00/L03/L06/L13 | only inside a dead all-S8 child | strongest site dependence measured |
-| short conv out | C05 | yes, 12/15 | 10/15 at S4, **13/15 at S8** | better than its own S4 arm | the one component where 8x beat 4x |
-| attn q | C06 | 10/15 | one site only | — | |
-| attn k | C07 | 11–12/15 at L12 | yes at L12; 8/15 as a second; **4/15 as a third — five lanes become single-token loops** | — | three stacked attention folds collapse the decoder |
-| attn v / out | C08 / C09 | 8–9/15 | degrade at S4 | — | |
-| **heads** | **C10** | **expressible at 4x from wave 13 (0.239583x) and at 8x (0.114583x); 6/15 solo at the two cheapest sites, 4/15 at L08** | **8–13× the per-parameter drift of a SwiGLU lane** | expressible, unmeasured | head *drop* remains `cannot-express-4x`; the merge is expressible and **behaviourally expensive** |
-| norms | C14 | n/a (diagonal) | — | — | |
-| token table | C01 | see §3.1 | **10/15 alive at 0.780518x** | 7/15 dead at S8 | the only 4x fold that pays 29% of this model |
+* **Head merging is expressible and expensive (wave 13).** The merge is exact
+  where exactness is checkable (identity gate 6.7e-16 to 8.7e-15), stores
+  0.239583x per attention block, and costs **8–13× more drift per parameter**
+  than the MLP lanes it competes with, because the heads are not rotations of a
+  few shared bases: held-out write relL2 of the merged O map is 0.35–0.56 and
+  every kv partition found is 7 heads plus 1 outlier.
+* **Block-Toeplitz tied ridge loses its own head-to-head (wave 20).** The first
+  family offered to the rank-truncation graves that does not truncate stores
+  *fewer* numbers (4.27x vs 4.00x), is **full rank**, and fits **worse**
+  (held-out cos 0.9108 vs 0.9434) than the sealed rank-128 twin at the same site.
+  Channel space has no translation structure.
+* **Verbatim coverage beats reconstruction, in gated feature space only (wave
+  14).** A matched-storage control gives the coreset **40 of 42** site-levels on
+  the SwiGLU write and the low-rank basis **12 of 15** on the conv write.
 
 ---
 
-## 3. What transfers off this model
+## 3. Corrections of record — every claim the campaign withdrew
+
+1. **A9 storage accounting (`8d59c4d2`).** Route storage counted coefficient
+   values and not the indices that route them. A table nobody can index is not
+   storage. Fixed in `_t5_route_storage` and `_c01_token_route_storage`.
+2. **The block rule (wave 7).** "Two folds in one block" was the hypothesis; the
+   conflict is **two folds on opposite sides of one block's operator/FFN
+   boundary**. Two MLP folds in one block cost nothing. Rewritten on the lane
+   axis and machine-enforced.
+3. **C05 "toxicity" (wave 7).** The short-conv writer was believed to poison a
+   block. It folds at **13/15 at S8**, one case above the same-process parent;
+   the earlier reading was a block-collision artifact.
+4. **Token match as a gate (ADDENDUM 6).** Retired to a diagnostic column after
+   a child matched 0.551 and read 12/15.
+5. **The per-child verdict for a lane-scoped failure (ADDENDUM 9, wave 12).**
+   `COMP.MA.MXO3` printed `dead` in the calculator and `alive-degraded` in the
+   note. Fixed by sealing a **per-lane** reading with four refusals, including
+   "a review that names no lanes seals `unstated`".
+6. **`NOTES-MX-P` §8's head-merge arithmetic (wave 13).** `g=3` was priced at
+   0.21875x by evaluating its kv term at `g/2 = 1.5`. The implementable config
+   stores **0.239583x** — 8.7% higher. The verdict survived; the number did not.
+7. **"Impaired" is the calculator's floor band (wave 13).** `behavior_verdict_for`
+   returns `impaired` for *any* non-degenerate score below 8/15, so a per-lane
+   `impaired` at 4/15 and one at 7/15 print the same word. **A per-lane verdict
+   must always be quoted with its score.**
+8. **"0.5x is arithmetically out of reach" (waves 11–12) — withdrawn.** An
+   extrapolation of an R²=0.62 heuristic past its fitted range, used as a
+   conclusion. Two of its three premises are measured false: the lane price does
+   **not** run away (the seventh lane is the cheapest per parameter ever
+   measured), and its saturation story was inferred from a trace rather than
+   measured.
+9. **"Routes are not the road" (wave 12) — reframed.** The 355× efficiency ratio
+   is real and retained as a diagnostic. It was used as a kill decision; the
+   comparison that would justify a kill — against the cost of the distillation it
+   replaces — was never run.
+10. **The 0.4666x arithmetic (wave 14) — withdrawn (wave 15).** Two errors: the
+    three bites are not additive (the excised block's FFN is priced at parent
+    width in one term and at 640 in the other), and the tied embedding is
+    **67,108,864 parameters = 0.2922x** and is untouched by every axis in the R3
+    standard set at that time.
+11. **The frontier three waves quoted was not the frontier (wave 19).** Waves
+    16, 17 and 18 named `ARCH.W1536X13` (0.769439x, 4/15). Sorted by net ratio
+    over the sealed rows, `ARCH.CL896` (0.688431x, **4/15**, wave 15) is 8.1
+    points deeper at the same score and had been sealed the whole time. Wave 15
+    held it to a 4x-class eligibility rule that wave 16 then did not apply to the
+    child it promoted. Every table in §1 is now generated from the ledger.
+12. **"The embedding wall is arithmetic" (wave 18) — withdrawn (wave 19).** One
+    standard axis does reach the tied embedding. `ARCH.W512` loads, the loader
+    counts 106,458,368 parameters, and the whole remaining problem is
+    behavioural.
+13. **"Retained read energy predicts behaviour" (wave 19) — bounded (wave 20).**
+    It is a **ceiling**. Below ~0.90 everything is dead; above it, two subspaces
+    with energies differing by 0.0015 read 3/15 and 0/15.
+14. **"The width fold kills cases by discarding their directions" (wave 20's own
+    hypothesis) — falsified by its own free measurement.** The case-implicated
+    rows are retained at the pooled rate, retrieval rows *better* than average.
+15. **"The cliff is a step" (wave 19) — withdrawn (wave 21).** The rung inside
+    the bracket reads 1/15; the ladder is 4 → 3 → 1 → 0 and graded.
+16. **Wave 19's committed human-review renderings were empty files.** The
+    packager called the dossier reader through a directory that holds only shell
+    scripts and `2>/dev/null` hid it. Regenerated and committed in wave 20.
+17. **The campaign's frontier child had no committed dossier (wave 21).** Wave
+    15 built its human-review package and left it on the server; `ARCH.CL896`'s
+    text was quoted by four subsequent waves and shipped by none. The 74-file
+    package is now in `wave15/human-review/`.
+
+---
+
+## 4. What transfers off this model
 
 Full derivations in `docs/FOLDING_SCALING_THEORY_2026-08-12.md`; this is the
-summary a 7B/70B attempt should start from.
+summary a 7B/70B attempt should start from, with the confidence of each claim
+stated.
 
-### 3.1 The interface rule and the interface share formula
+### 4.1 The interface rule, and why the biggest win here is the smallest at scale
 
 The token interface (`embed_tokens`, tied to `lm_head`) is **29.2%** of
-LFM2.5-230M and folds to 0.25x while reading 10/15. That is the single biggest
-fold-only win in the campaign, and **it is a shrinking prize**: interface share
-is `vocab × hidden / total`, which falls roughly as `1/depth` at fixed vocab.
+LFM2.5-230M and folds to 0.25x while reading 10/15 — the single biggest
+fold-only win in the campaign, and **a shrinking prize**:
 
 ```
 interface share ≈ (V·H) / (V·H + L·c·H²)          c ≈ 12–16 for a standard block
@@ -425,319 +680,184 @@ Llama-3-8B    V=128,256 H=4,096  L=32   ->  ~13%      projected
 Llama-3-70B   V=128,256 H=8,192  L=80   ->  ~4%       projected
 ```
 
-**So the technique that pays best here pays least at scale**, and the body is
-where a large-model fold has to win. What transfers is the *method*: a verbatim
-head selected by token frequency plus a sparse-route tail, with the route
-indices counted in the storage (`_c01_token_route_storage`) — a sparse tail beat
-a low-rank tail everywhere it was measured.
+**High confidence** (it is arithmetic). What transfers is the *method*: a
+verbatim head selected by token frequency plus a sparse-route tail, with the
+route indices counted in the storage — a sparse tail beat a low-rank tail
+everywhere it was measured.
 
-### 3.2 Attention share moves the other way — and M5 is the reason to care
+### 4.2 Attention share moves the other way, and the merge is the measurement to repeat
 
-Attention is **11.61%** of LFM2.5-230M's body (six attention blocks in fourteen
-layers, GQA 16/8). On a standard dense transformer it is ~⅓. That is why M5 was
-worth building even though the head-drop verdict was negative: a mechanism that
-is worth 1% here could be worth 8% at 70B.
+Attention is **11.61%** of this model's body (six attention blocks in fourteen
+layers, GQA 16/8). On a standard dense transformer it is ~⅓, so a mechanism
+worth 1% here could be worth 8% at 70B. **The measurement to repeat first is not
+the merged child — it is the cluster objective**
+(`solve.query_family.objective_relative` in any wave-13 receipt): if a 70B
+model's heads cluster tightly, M5's price falls and it becomes the largest
+fold-only prize at scale; if they scatter the way LFM2's do, it does not.
+**Medium confidence**, and the sign of the answer is architecture-dependent by
+construction.
 
-**Wave 13's result therefore transfers as a warning, and it is a specific one.**
-The merge is exact where exactness is checkable (identity gate ≤ 8.7e-15), the
-storage claim is honest (0.239583x per attention block, all four projections),
-and the mechanism still costs **8–13× more drift per parameter** than the MLP
-lanes it competes with, because **the heads are not rotations of a few shared
-bases**. The measurement to repeat first on a larger model is not the merged
-child — it is the *cluster objective* (`solve.query_family.objective_relative`
-in any wave-13 receipt): if a 70B model's heads cluster tightly, M5's price
-falls and the mechanism becomes the largest single fold-only prize available at
-scale; if they scatter the way LFM2's do, it does not.
+### 4.3 The residual-width axis, and what to measure before spending a GPU on it
 
-### 3.3 Drift-budget methodology (as a heuristic)
+`hidden_size` is the only standard axis that reaches a tied embedding, and it is
+the one whose behaviour is predictable enough to plan around — **up to a
+ceiling**. The transferable procedure, in order:
 
-Re-derive, do not import, the constants:
+1. Capture the residual's second moment at **every endpoint that reads the
+   stream**, in both raw and reader (post-norm, gain-scaled) form. Costs one
+   pass.
+2. Publish the cumulative **reader** spectrum. If it has a knee, this axis is
+   cheap on that model; on LFM2.5-230M it is flat and there was never a subspace
+   to find.
+3. Take the top-k eigenvectors of the **pooled reader moment** and nothing else.
+   Five alternative objectives have been tried on this model and all five lose.
+4. Expect a floor near **0.90 of retained read energy** and expect the retained
+   fraction to stop predicting above it. Re-derive the constant; do not import
+   0.90.
+
+**Medium-to-high confidence on the shape, low confidence on the constant.** The
+floor is one model's number. The *structure* — a ceiling rather than a predictor,
+basis-invariance, and per-site install quality being irrelevant — rests on eight
+sealed children at one parameter count and is the part worth assuming.
+
+### 4.4 Composition, which is the finding most likely to survive scale
+
+**One structural axis is survivable; two is fatal.** This held on every pair of
+axes tried (§2.3), including on an axis introduced two waves after the rule was
+written. A large-model attempt should plan for **one** fold class and a deep
+ladder within it, not a composition of classes. **High confidence** — it is the
+most-replicated result in the campaign.
+
+### 4.5 Drift-budget methodology, as a heuristic only
 
 1. Seal ≥ 20 composed rungs with both drift and a frozen review score.
 2. Regress review on drift; publish the R² and the residuals.
 3. Use the fit to **order** candidate lanes, and shop them with a fixed-base
    probe (~40 s per candidate) rather than taking them in depth order.
-4. **Then build and review.** Wave 13's `MXQ1`/`MXQ2` pair is the standing
+4. **Then build and review.** The `MXQ1`/`MXQ2` pair is the standing
    demonstration that the order is not the verdict.
 
-### 3.4 Per-class safety, transferable shape
+### 4.6 Per-class safety, transferable shape
 
 MLP mass folds; the last attention block's key projection folds; value/output
 projections and stacked attention folds do not; head merging is expressible but
-expensive; mid-depth sites are safest; one component folds *better* at 8x than
-at 4x. Re-measure the ladder per component and never assume it is monotone.
+expensive; mid-depth sites are safest; one component folds *better* at 8x than at
+4x. **Re-measure the ladder per component and never assume it is monotone.**
 
 ---
 
-## 4. What fold-only did not reach, and what happens next
+## 5. Where the frontier sits today, stated four ways
 
-### 4.1 The honest statement
+Each statement carries the eligibility rule that produces it, because the
+campaign has already lost three waves to a frontier claim quoted without one.
 
-**Fold-only did not produce a coherent 0.5x child on this model.** The deepest
-behaviourally-tested children are:
+* **Deepest sealed child with a non-zero score, no eligibility rule:**
+  `ARCH.CL896`, **0.688431x at 4/15**, standard shape, since wave 15.
+* **Deepest child that reads at the parent's own band (`alive-parent-band`):**
+  `COMP.MA.MXN2`, **0.780518x at 10/15**, parent-shaped, one component.
+* **Deepest 4x-class rung with a non-zero score:** there has never been one.
+  Every 4x-class rung in the campaign is 0/15.
+* **Deepest child of any score:** `ARCH.W512`, **0.463481x**, standard shape,
+  **0/15** — under half the parent, and not a model.
 
-* **0.780518x — 10/15, alive-parent-band** (`COMP.MA.MXN2`): the deepest child
-  that reads at the parent's own band.
-* **0.729103x — 8/15** (`COMP.MA.MXO3`): the deepest child at the 8/15 alive
-  line the drift budget is calibrated on.
-* **0.703409x — 6/15** (`COMP.MA.MXP2`): the deepest child whose output is
-  coherent, on-prompt language, which is ADDENDUM 8 §8.2's success band.
-* **0.497739x — 0/15** (`COMP.MA.MXO2`): the storage target is reachable and
-  that artifact is not a model.
-* **0.497777x — 0/15** (`COMP.MA.MXQ6`, wave 13): **the same depth, bought in
-  the measured-cheapest order instead of by depth**, and it is the same wreck.
-  Ten of sixteen lanes run to the 1024-token cap, one emits zero tokens, and its
-  drift is **0.821803** against `MXO2`'s 0.814086 — shopping the order did not
-  help at this depth. That is the directive's test executed: the depth the
-  allowance arithmetic wrote off was built and read rather than predicted, and
-  the reading agrees with the prediction *for a reason the prediction did not
-  give* (see §2.2 — the lane price does not run away; the budget simply runs
-  out).
+**Distance to 0.5x from the honest frontier: 43.3M parameters.** 0.5x is
+114,846,592; `CL896` is 158,127,872. The width axis crosses 0.5x and reads 0/15
+on the other side.
 
-### 4.2 The measured reason — stated as measurement, not as closure
+**Fold-only did not produce a coherent 0.5x child on this model.** That has now
+been read on three independent children at or below 0.5x, built by two different
+mechanisms in three different orders, with and without repair.
 
-From 0.703409x, reaching 0.5x needs 46.7M more parameters removed ≈ **7.9 more
-SwiGLU lanes**. Wave 13 bought them and read the result: `COMP.MA.MXQ6` at
-0.497777x, **0/15**. And the ladder that ordered the purchase (§2.2) says the
-reason is **not** a runaway lane price — the per-parameter price at lane 7 is
-the cheapest the campaign has ever measured — but a budget: drift accumulates
-about 0.042 per lane, so nine lanes already sit at 0.706, which is 1.5× the
+**And the measured reason is not a runaway price.** The per-lane marginal price
+does not increase with depth — the seventh lane is the cheapest per parameter
+ever measured, on a six-lane base — and total drift accumulates roughly linearly
+at about 0.042 per lane. Nine shopped lanes sit at drift 0.706, which is 1.5× the
 deepest coherent drift ever recorded, while removing only 23% of the parent.
+**The coherence budget is small and drift accumulates steadily against it.** That
+is an argument about a budget, not about a price curve, and it licenses an
+ordering (SwiGLU lanes first) and nothing more.
 
-Head merging, the last unplayed fold class *in the matrix*, prices 8–13× worse
-per parameter and could not have supplied the missing storage anyway: **all six
-attention blocks merged at once remove only 6.25% of the parent** (6 ×
-2,392,064 = 14.35M), which moves 0.703409x to 0.640920x at best — and the
-two-block version of exactly that, `COMP.MA.MXQ4` at 0.682581x, reads 0/15.
+---
 
-**What that licenses, and what it does not.** It licenses an ordering: SwiGLU
-lanes first, then everything else. It does **not** license the sentence "0.5x is
-arithmetically closed", which waves 11 and 12 wrote and which this report
-withdraws. Two of that sentence's three premises are now measured false — the
-lane price does not run away (§2.2), and its saturation story was inferred from
-a trace rather than measured — and the third, that no other mechanism could
-supply the storage, is a statement about the mechanisms that have been *tried*.
-**What is true is narrower and better supported: at 0.5x, on this model, by
-every fold class the matrix has priced, the child is a wreck — and that has now
-been read on two independent 0.5x children built in two different lane orders,
-with and without repair.** Four whole classes of structural fold have never been
-priced at all (§4.4).
+## 6. What remains unbuilt, and what is gated on what
 
-### 4.3 The designed next stage: fold-init → distillation
+Nothing in this section is a closure. Each item says whether it is unbuilt for
+want of time, blocked on a measured precondition, or refused by a rule.
 
-The stage-2 estate is built and preserved at
-**`/mnt/ai_data/neural-forge-stage2/`**: a trainer, **26 corpus shards**, and
-admission gates. Its design document is
-`docs/STAGE2_FIRST_MEASUREMENT_DESIGN_2026-08-08.md`, and the stage-1 ceiling it
-was written against is `docs/STAGE1_CEILING_REPORT_2026-08-08.md`.
+**Unbuilt, and cheap:**
 
-The thesis stage 2 tests is that **a fold is an initializer, not a product**:
-`COMP.MA.MXO2` at 0.497739x is a model-shaped object whose weights are
-individually well-solved and whose composition is far from the parent's
-function. Distillation from the parent onto that initialization is the designed
-experiment; the fold-only campaign's contribution is a *ranked family of
-initializations* with sealed receipts, so stage 2 can ask which initialization
-distils fastest rather than guessing one.
+* **One rung between 736 and 704** — the last 32-dimension interval that could
+  still hide a step in the width ladder. One build, one review.
+* **The max-min basis at 896**, priced free (worst endpoint 0.9440 → 0.9530,
+  24.7 directions exchanged) and not built.
+* **The writers' λ split composed with the head merge**, where the un-split
+  control (`W896KV6JS`) sits at 2/15. It pays inside the excision composition and
+  has not been tried on the other one.
+* **CBT's greedy evidence-weighted merge schedule.** At 4x the 15 base Toeplitz
+  classes already clear the budget, so the only adaptive part of that class has
+  never run. After its head-to-head loss there is no reason to fund it.
 
-### 4.4 Queued and unplayed: the structural classes (wave 14)
+**Never priced behaviourally — four structural fold classes:**
 
-The matrix priced **factorization** (T1–T4), **sparse routing** (T5), **relation
-matching** (T7/T8), **progressive multi-pass** (T9), **repair** (X01) and now
-**head merging** (M5). It has never priced:
-
-* **CUR / interpolative decomposition** — a factorization whose factors are
-  *actual rows and columns of the parent*, so the basis is not a new dense
-  object that has to be stored at full width. Storage: `k` column ids + a `k×n`
-  coefficient block, and the ids are integers.
-* **Nearest-Kronecker-product (Van Loan)** — approximate `W ≈ A ⊗ B` by an SVD
-  of the rearranged matrix. A `1024×1024` weight becomes `32×32` + `32×32` in
-  the exact rank-1 case, which is a 512× contraction, and the residual is
-  measurable rank by rank. This is the highest-leverage unplayed class by
-  storage arithmetic alone.
+* **CUR / interpolative decomposition** — factors that are *actual rows and
+  columns of the parent*, so the basis is not a new dense object; storage is `k`
+  column ids plus a `k×n` coefficient block, and the ids are integers.
+* **Nearest-Kronecker-product (Van Loan)** — `W ≈ A ⊗ B` by an SVD of the
+  rearranged matrix; a `1024×1024` weight becomes `32×32` + `32×32` in the exact
+  rank-1 case, and the residual is measurable rank by rank. **The highest-leverage
+  unplayed class by storage arithmetic alone.**
 * **Monarch / block-diagonal + low-rank** — permutation-sandwiched block-diagonal
-  factors; expressly designed to be a drop-in for a dense linear layer, and the
-  closest structural relative of what the campaign already knows folds (MLP
-  mass).
-* **Tensor-train / tensor-ring on the reshaped weight** — the natural
-  generalization of the low-rank family the campaign has already priced, with a
-  storage model that is linear rather than quadratic in the mode widths.
+  factors, expressly designed as a drop-in for a dense linear layer, and the
+  closest structural relative of what is known to fold here (MLP mass).
+* **Tensor-train / tensor-ring on the reshaped weight** — storage linear rather
+  than quadratic in the mode widths.
 
-Each of these is closed-form, gradient-free, and expressible in the existing
-kernel contract (parent-shaped installed tensors, a published storage model, an
-identity gate). **The fold-only frontier is open until they are priced
-behaviourally.**
+Each is closed-form, gradient-free, and expressible in the existing kernel
+contract (parent-shaped installed tensors, a published storage model, an identity
+gate). **The fold-only frontier is open until they are priced behaviourally.**
 
-**Explicitly out of scope for phase 1:** quantization and codebook/precision
-reduction of any kind. Per Cyril's ruling, that is not folding; it is applied
-after real structural folding is proven, and storage in this campaign is counted
-in parameters and never in bytes.
+**Blocked on a measured precondition, not on time:**
 
----
+* **XGRAM retrospective calibration and the gap-4 attribution.** Both consume the
+  terminal-transfer surrogate G, whose published held-out R² clears the
+  pre-registered 0.5 floor at **three of thirteen layers** (L10 0.615, L11 0.706,
+  L12 0.874). Restricted to L10–L12 or it is pricing noise.
+* **F-LANDMARK has no distribution measurement** and cannot get one without a
+  loader that accepts a custom module. It reads near-parent on a frozen review at
+  one site, and §2.11 is why that is not enough to fund a class.
 
-## 5. Corrections of record — the epistemic trail
+**Refused by a rule, and the rule is Cyril's:**
 
-Every one of these was a claim the campaign made, then measured wrong, then
-withdrew in a receipt rather than in a summary.
+* **Quantization and codebook/precision reduction of any kind.** Not folding.
+  Applied after real structural folding is proven; storage in this campaign is
+  counted in parameters and never in bytes.
+* **Any gate on token match, drift, efficiency, per-site cosine, or retained
+  energy.** All five have been measured against the review and all five fail
+  (§2.1, §2.10).
 
-1. **A9 storage accounting (`8d59c4d2`).** Route storage counted the coefficient
-   values and not the indices that route them. A table nobody can index is not
-   storage. Fixed in `_t5_route_storage` and `_c01_token_route_storage`, and the
-   same class of error was caught one level down in the composition accounting.
-2. **The block rule (wave 7).** "Two folds in one block" was the hypothesis;
-   the measurement said the conflict is **two folds on opposite sides of one
-   block's operator/FFN boundary** — two MLP folds in one block cost nothing.
-   The rule was rewritten on the lane axis and machine-enforced.
-3. **C05 "toxicity" (wave 7).** The short-conv writer was believed to poison a
-   block. It folds at 13/15 at **S8** — one case above the same-process parent —
-   and the earlier reading was a block-collision artifact, not a component
-   property.
-4. **Token match retired as a gate (ADDENDUM 6).** Free-run token match against
-   the control was the campaign's original pass/fail. It was demoted to a
-   diagnostic column and replaced by the frozen 15-prompt review, because a
-   child can match tokens and be incoherent and vice versa. Every dossier still
-   prints token match, labelled `[DIAGNOSTIC ONLY]`.
-5. **The per-child verdict was the wrong object for a lane-scoped failure
-   (ADDENDUM 9, wave 12).** `COMP.MA.MXO3` printed `dead` in the calculator and
-   `alive-degraded` in the note. Fixed by sealing a **per-lane** reading computed
-   from reviewer-supplied per-lane readings, with four refusals — including "a
-   review that names no lanes seals `unstated`", which keeps every wave-1..11
-   review meaning exactly what it meant.
-6. **`NOTES-MX-P` §8's head-merge arithmetic (wave 13).** §8 priced `g=3` at
-   688,128 = 0.21875x by evaluating its kv term at `g/2 = 1.5`. Eight kv heads
-   split into two groups; the implementable config stores **753,664 =
-   0.239583x**. Still under the 4x bar — the verdict survived — but the number
-   was 8.7% low, and the kernel and its tests now pin both.
-7. **"Impaired" is the calculator's floor band (wave 13).** `behavior_verdict_for`
-   returns `impaired` for *any* non-degenerate score below 8/15, so a per-lane
-   `impaired` at 4/15 and one at 7/15 print the same word. ADDENDUM 8 §8.2's
-   prose treats 6–7/15 as the success band. **A per-lane verdict must always be
-   quoted with its score**, and every table in this report does.
-8. **"0.5x is arithmetically out of reach" (waves 11–12) — withdrawn.** It was
-   an extrapolation of an R² = 0.62 heuristic past its fitted range, used as a
-   conclusion. What is measured is a lane price and its saturation; what is not
-   measured is three structural mechanism classes and every deep shopped set
-   built with repair on top.
-9. **"Routes are not the road" (wave 12) — reframed.** The 355× efficiency ratio
-   is real and is retained as a diagnostic. It was used as a kill decision; the
-   comparison that would justify a kill — against the cost of the distillation
-   it replaces — was never run.
+**The designed next stage, built and preserved:** `/mnt/ai_data/neural-forge-stage2/`
+— a trainer, 26 corpus shards, and admission gates, with its design in
+`docs/STAGE2_FIRST_MEASUREMENT_DESIGN_2026-08-08.md`. Its thesis is that **a fold
+is an initializer, not a product**, and the fold-only campaign's contribution to
+it is a *ranked family of initializations with sealed receipts*, so stage 2 can
+ask which initialization distils fastest rather than guessing one.
 
 ---
 
-## 6. Where everything is
+## 7. Where everything is
 
 | artifact | location |
 |---|---|
-| ledger (447 rows) | `/mnt/ai_data/neural-forge-matrix/ledger.jsonl` |
-| wave notes | `reports/matrix-campaign-20260810/wave{5..13}/NOTES-MX-{I..Q}.md` |
-| design + addenda 1–10 | `docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md` |
+| ledger (646 rows) | `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, copy in `reports/matrix-campaign-20260810/ledger.jsonl` |
+| rendered ledger | `reports/matrix-campaign-20260810/LEDGER.md` (regenerate, never hand-edit) |
+| the generated campaign table | `reports/matrix-campaign-20260810/wave21/campaign-frontier-table.json` |
+| the one-page scorecard | `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md` |
+| wave notes | `NOTES-MX-{A..H,X,Y}.md` at the repository root and `reports/matrix-campaign-20260810/wave{5..19}/NOTES-MX-{I..W}.md` |
+| design + addenda 1–14 | `docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md` |
 | scaling theory | `docs/FOLDING_SCALING_THEORY_2026-08-12.md` |
-| frontier child tensors | `/mnt/ai_data/neural-forge-matrix/wave{10,11,12,13}/cells/<CHILD>/composed-child-tensors.pt` |
-| human-review packages | `reports/matrix-campaign-20260810/wave{12,13}/human-review/` |
-| benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{11,12,13}/bench/` |
-| stage-2 estate | `/mnt/ai_data/neural-forge-stage2/` (trainer, 26 corpus shards, admission gates) |
-| M5 kernel | `src/neural_forge/matrix_technique_head_merge.py`, tests in `tests/test_matrix_technique_head_merge.py` |
-
-
----
-
-## 7. Wave 14 — the export requirement, and the first architecturally smaller children
-
-ADDENDUM 11's R3 asks a frontier claim to have a standard-architecture export
-path.  Applying it to this document's own table changes what the table says.
-
-**Every child above is parent-shaped.**  `mxq_materialize_child.py:120` refuses a
-folded tensor whose shape differs from the parent's, so `T1`/`T4`/`T5`/`T8`/`T7`
-all store a factored, sparse, tied or merged form and reconstruct the parent's
-shapes to run.  `0.703409x`, `0.729103x` and `0.710270x` are **storage-format
-ratios**; the model on disk is 229,693,184 parameters.  This is not an error in
-any of those counts -- each is an honest count of stored parameters under a
-registered, tested storage model -- but it is a different quantity from the one
-R3 names, and the two had not been distinguished.
-
-Three axes on this checkpoint are config-standard, verified against the installed
-`transformers` 5.12.1: `intermediate_size` / `block_ff_dim`
-(`modeling_lfm2.py:138-149`), `head_dim` (`:233` and `:109`), and
-`num_hidden_layers` + `layer_types`.  Conv channel count is **not**:
-`Lfm2ShortConv.__init__` hardwires `config.hidden_size` (`:312-321`) and never
-reads `conv_dim`, so **F-C is a research probe under R3** as a fact about the
-modeling file.
-
-Wave 14 built the first genuinely narrower children in the campaign -- stock
-`Lfm2ForCausalLM`, no `trust_remote_code`, loaded back and counted before review:
-
-| child | `intermediate_size` | net | per-site write cos | cap-hits | reading |
-|---|---:|---:|---:|---:|---|
-| `MX14-ff1280` | 1280 | 0.760331x | 0.925 | 3 / 16 | ~5/15, degraded not degenerate (**sub-4x diagnostic**) |
-| `MX14-ff640` | 640 | 0.640497x | 0.856 | 7 / 16 | **0/15**, fluent and empty |
-| `MX14-ff320` | 320 | 0.580580x | 0.781 | 16 / 16 | **0/15**, total collapse |
-
-**The measured reason 0.5x is hard, restated.**  Wave 13 said the per-lane price
-does not run away and the coherence budget is small.  Wave 14 puts a number on
-the second half: the cliff sits between a per-site held-out write cosine of
-**0.93 and 0.86 when the fold is installed at all fourteen MLP sites at once**.
-The sealed alive lanes sit at 0.86 -- the bottom of the dead band -- and survive
-because they are installed three at a time.  Per-component fidelity inside the
-sealed alive band, at every site, still composed to 0/15, so no census could have
-predicted it.
-
-**One new positive law.**  A matched-storage control (coreset vs evidence-weighted
-low-rank, identical stored-parameter count, same rows, same target, same harness)
-gives the coreset **40 of 42** site-levels on the SwiGLU write and the low-rank
-basis **12 of 15** on the conv write.  Verbatim coverage beats reconstruction in
-gated feature space and stops at the conv context.
-
-**Distance to 0.5x, in the standard-export lane.**  `intermediate_size` alone
-reaches 0.5507x at keep=160 and is dead well before that.  The arithmetic that
-still closes: `intermediate_size` 640 (-82.6M) + `head_dim` 16 (-14.2M) + one
-block excised (-12.1M) = 0.4666x, all three config-standard.  Wave 14 measured
-the second (q/k score operators are **0.993-0.999** rank-16 per head; v/o
-contracts to cosine 0.84-0.94) and the third (only L05 of thirteen blocks clears
-the absorption floor, and L05 is the massive-activation block).  Neither was
-built.
-
-Full results: `reports/matrix-campaign-20260810/wave14/NOTES-MX-R.md`, sixteen
-censuses under `wave14/probes/`.
-
----
-
-## Wave 15 — the frontier is 0.552023x, standard-shape, and it is dead
-
-**The frontier claim moved and shrank at the same time.** Ten children this wave
-are `ARCH.<TAG>` cells under ADDENDUM 12: each loads as a stock
-`Lfm2ForCausalLM` with no `trust_remote_code`, each carries a sealed machine
-verdict, and each one's `stored_parameter_ratio` is the size of the model that
-runs rather than a storage format. The smallest is
-`ARCH.A552` — `intermediate_size` 640 + `head_dim` 16 + one block excised —
-at **126,795,968 parameters = 0.552023x**, and it is **dead, 0/15**, with 12 of
-16 lanes at the cap and tokenizer debris on most of them.
-
-**The best standard-shape child that answers anything is 0.947479x** (`ARCH.X05A`,
-one conv block deleted, 6/15) and the best 4x-class child is **0/15**. There is no
-alive frontier below 0.94x in the standard-export lane.
-
-**The 0.4666x arithmetic is withdrawn.** Two errors: the three bites are not
-additive (the excised block's FFN is priced at parent width in the excision term
-and at 640 in the narrowing term, so the third bite is worth −6.2M in the presence
-of the first, not −12.1M), and the **tied embedding is 67,108,864 parameters =
-0.2922x of the parent by itself** and is untouched by every axis in the R3
-standard set. Body parameters are 162.58M; 0.5x net requires the body to fall to
-47.7M, a **3.4x fold of the entire body** with the embedding fixed.
-
-**`head_dim` 16 is not available.** RoPE's rotation is block diagonal over
-frequency planes, so `q^T R_Δ k` is exactly a sum of per-plane terms and a smaller
-`head_dim` can keep whole planes on a uniform stride and nothing else. The three
-expressible ladders retain **0.2394 / 0.2379 / 0.2018** of the evidence-weighted
-score energy — against the 0.99 that wave 14's `Δ=0` census promised for the same
-operator without the constraint. Built with both scale corrections the change
-forces, it is dead alone at 0.938368x. The **−14.2M** bite is off the table for a
-frontier claim.
-
-**Conditioning does not move the cliff.** Re-solving every site against a capture
-taken through the partially built child gives better late-layer solves and a
-better terminal drift than wave 14's stale objective and the same 0/15. The cliff
-now brackets between a per-site write cosine of **0.891 (4/15) and 0.856 (0/15)**
-under simultaneous installation at all fourteen sites, and the collapse across
-that gap is a step, not a slope.
-
-Full results: `reports/matrix-campaign-20260810/wave15/NOTES-MX-S.md`.
+| human-review packages | `reports/matrix-campaign-20260810/wave{12..21}/human-review/` |
+| frontier child tensors | `/mnt/ai_data/neural-forge-matrix/wave{10..21}/children/` and `.../cells/<CHILD>/` |
+| benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{8,9,11,12,13,16..21}/bench/` |
+| stage-2 estate | `/mnt/ai_data/neural-forge-stage2/` |
+| M5 kernel | `src/neural_forge/matrix_technique_head_merge.py` + tests |
+| the width/basis builder | `reports/matrix-campaign-20260810/run/mx21/mx21_build.py` (waves 19–21 lineage) |

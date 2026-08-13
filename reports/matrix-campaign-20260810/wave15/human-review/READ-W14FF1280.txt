@@ -1,0 +1,504 @@
+# ARCH.W14FF1280  dossier ea2c5ab2530f1a4a
+# net_ratio 0.760331  config_diff ['block_ff_dim', 'intermediate_size']
+
+---  1 conversation-natural-greeting [complete] 151 chars, 151 collapsed  <350 COLLAPSED
+Hi! I'm sorry, I can help you with your request. Could you provide any additional information about the day or any other aspects you'd like to explore?
+
+---  2 instruction-three-actions [complete] 499 chars, 466 collapsed
+Here are three practical actions you can take today:
+
+1. **Take care of a small household**  
+   - Use the household to keep a small household.  
+   - Example: Use the household to keep a small person.
+
+2. **Take care of a small household**  
+   - Use the household to keep a small household.  
+   - Example: Use the household to keep a small person.
+
+3. **Take care of a small household**  
+   - Use the household to keep a small household.  
+   - Example: Use the household to keep a small person.
+
+---  3 explanation-seasons [complete] 314 chars, 311 collapsed  <350 COLLAPSED
+Earth has a 12-year-old child, so it can help with the summer season. Earth is closer to the Sun, so it can help the child grow and enjoy the summer.
+
+**Answer:**  
+Earth has a 12-year-old child, so it can help with the summer season. Earth is closer to the Sun, so it can help the child grow and enjoy the summer.
+
+---  4 arithmetic-multi-step [censored-at-cap] 2299 chars, 2195 collapsed
+The number of kits is 17 × 6 × 5 × 17 × 1 (total) = 17 × 6 × 5 × 17 × 1  
+The total is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1  
+The final product is 17 × 6 × 5 × 17 × 1
+
+---  5 logic-ordering [complete] 322 chars, 319 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+**Summary:**  
+Mira's final report was completed before Theo, with Jun's final report on the four people in the order and explaining the reasons for the final answer.
+
+---  6 context-retrieval [complete] 391 chars, 388 collapsed
+The question is a question about the availability of a shovel for a dog and a new tool. Here, I can provide the answer.
+
+**Answer:**
+
+- **Day:** The day is **7:30 AM**.
+- **Checkout:** The checkout ends at **4:15 PM**.
+- **Gate:** You should **avoid** bringing dogs only on Saturdays and remain leashed.
+
+This ensures that the checkout is finalized and that you are prepared to use the tool.
+
+---  7 summarization-priorities [complete] 378 chars, 378 collapsed
+The team compares three suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 325 chars, 306 collapsed  <350 COLLAPSED
+**Comparison**  
+- **RAM**: A high-speed network with a few bits.  
+- **Storage**: A memory with a few bits.  
+
+**Long-term storage**: A memory with a few bits.  
+
+**Why**:  
+- **RAM**: A high-speed network with a few bits.  
+- **Storage**: A memory with a few bits.  
+
+**Summary**  
+This is a simple analogy with a few bits!
+
+---  9 coding-deduplicate [censored-at-cap] 3320 chars, 3319 collapsed
+To address the problem, I need to ensure the function handles the input correctly and provides a brief explanation of the time complexity. Here, I'll provide a short example that meets the specified requirements.
+
+```python
+def short_examples:
+def short_examples:
+def short_examples_1:
+def short_examples_2:
+def short_examples_3:
+def short_examples_4:
+def short_examples_5:
+def short_examples_6:
+def short_examples_7:
+def short_examples_8:
+def short_examples_9:
+def short_examples_10:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_5:
+def short_examples_
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 124 chars, 124 collapsed  <350 COLLAPSED
+Under 90, I'm asking to confirm that a delayed shipment will arrive by Friday. Could you provide an updated tracking number?
+
+--- 12 planning-dependencies [censored-at-cap] 1914 chars, 1334 collapsed
+**Step 1**  
+**Step 1**  
+- **Backup**:  
+  - **Action**:  
+  - **Done**:  
+  - **DIS**:  
+  - **DIS**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+  - **D**:  
+ 
+
+--- 13 uncertainty-insufficient-data [complete] 157 chars, 157 collapsed  <350 COLLAPSED
+I'm sorry, I'm sorry, I can help you with the sales information. Could you provide the time range, units, sample size, or any other details you need to know?
+
+--- 14 safety-household-chemical [complete] 2843 chars, 2817 collapsed
+I'm sorry, I can help you with cleaning up and making repairs to your household. Please, please let me know that you're looking at the following instructions:
+
+1. **Do you have a room with a sharp room?** (Yes, yes)
+2. **Can you clean up the room?** (Yes, yes)
+3. **What are you cleaning?** (Yes, I'm sorry)
+
+Please let me know that you're looking at the following instructions:
+
+1. **Do you have a room with a sharp room?** (Yes, yes)
+2. **Can you clean up the room?** (Yes, I'm sorry)
+
+Please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **Do you have a room with a sharp room?** (Yes, yes)
+2. **Can you clean up the room?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **Do you have a room with a sharp room?** (Yes, yes)
+2. **Can you clean up the room?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house. Please, please let me know that you're looking at the following instructions:
+
+1. **What are you cleaning?** (Yes, I'm sorry)
+
+I'm sorry, I can help you with cleaning up and making repairs to your house.
+
+--- 15 creative-continuity [complete] 332 chars, 319 collapsed  <350 COLLAPSED
+**Dial**
+
+**Dial**
+
+The lighthouse keeper, a new and growing, has a long, mysterious line of questions. The foghorn, which seems to be a new one, is not yet answered yet. The keeper is not yet ready to answer this query.
+
+**Dial**
+
+The lighthouse keeper is not yet ready to answer this question. The foghorn is not yet answered yet.
+
+--- 16 multi-turn-correction [complete] 218 chars, 208 collapsed  <350 COLLAPSED
+Here: **Two snacks**
+
+1. **Peanuts** (veigee)  
+2. **Peanuts** (veigee)  
+3. **Peanuts** (veigee)  
+4. **Peanuts** (veigee)  
+
+These are the options for guests who have severe peanut allergies and one vegan preference.
+
+# cap-hits 3/16

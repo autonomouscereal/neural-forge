@@ -1,33 +1,34 @@
 #!/usr/bin/env python3
-"""Wave 20 retention: five children kept, three deleted and named by digest.
+"""Wave 21 retention: all five children kept, and the reason is not sentiment.
 
 The policy is the campaign's standing one -- the best five by sealed score, plus
-any child a later wave cannot re-derive -- with this wave's readings written
-down rather than assumed:
+any child a later wave cannot re-derive.  This wave built exactly five, and each
+of the five is one arm of a controlled comparison whose other arm is already
+sealed in an earlier wave.  Deleting any of them deletes a measurement, not a
+checkpoint:
 
-* the five kept are the wave's ANSWERS, not its best scores.  Three of them
-  (`W768LS`, `W768ST`, `W768AW25`) are the same 165,978,624 parameters against
-  the same corpus and differ only in the basis or the solve, which is what makes
-  the comparison between 3/15, 2/15 and 0/15 a controlled measurement rather
-  than three unrelated children.  Deleting any one of them deletes one arm of
-  the only controlled experiment this wave ran.
-* ``MX21-W768AW25`` is kept although it scored **0/15**.  It is the wave's
-  central negative result and the one child whose benchmark row disagrees with
-  its review in the awkward direction -- better than the living reader-PCA child
-  on four of five accuracy tasks, and zero cases held.  A disagreement you have
-  deleted is a sentence in a note.
-* ``MX21-W704`` is kept as the bisection rung: it is what locates the cliff to
-  a 64-wide interval, and its retained read energy (0.8953) is the tightest
-  upper bound the campaign has on where the floor sits.
+* ``MX21-W736`` (1/15, 0.689220x) is the rung that closes the cliff.  It is the
+  only child ever built inside the 0.90-0.92 band of retained read energy, and
+  its 0.9075 is the tightest LOWER bound the campaign has on where the floor is
+  not.
+* ``MX21-W736LS`` (0/15) is its matched control at the IDENTICAL 158,309,216
+  parameters and the identical sealed basis.  The pair is the finding -- the
+  writers' lambda split costs the last case at the cliff, where at 768 it cost
+  nothing -- and one arm of a controlled pair is not a result.
+* ``MX21-MM768`` (0/15) is the wave's central negative and the most expensive
+  thing in it: the basis that maximises the MINIMUM per-endpoint retained read
+  energy, which does exactly what it was built to do and is dead.  A refutation
+  you have deleted is a sentence in a note.
+* ``MX21-W896LS`` (3/15) is the wave's best child and the control for wave 19's
+  sealed 4/15 at the same parameter count.
+* ``MX21-W896LSX13`` (2/15) is the only composition in the wave and the child
+  that shows the lambda split's recovered capability surviving a composition
+  step, against wave 19's sealed 1/15 twin whose summarisation lane it
+  reproduces byte for byte.
 
-``MX21-W768AW100``, ``MX21-W768RG`` and ``MX21-W704AW25`` are deleted as
-re-derivable: all three are 0/15, each is one command against a committed
-builder and a sealed basis whose digest is in its receipt, and their tensor
-digests are named below so a rebuild can be checked rather than trusted.
-
-The two CBT probe checkpoints and the F-LANDMARK state are NOT children and are
-not covered by the best-five rule; `probeq.sh` writes them and the wave keeps
-the reviewed one.
+Nothing is deleted, so nothing is freed, and that is reported as zero rather
+than dressed up.  The children live on the 4.5 TB share, not on the root
+filesystem the disk policy is about.
 """
 
 import json
@@ -37,56 +38,42 @@ import sys
 
 W = "/mnt/ai_data/neural-forge-matrix/wave21"
 KEEP = {
-    "MX21-W768LS",
-    "MX21-W768ST",
-    "MX21-W768AW25",
-    "MX21-W768EV",
-    "MX21-W704",
+    "MX21-W736",
+    "MX21-W736LS",
+    "MX21-MM768",
+    "MX21-W896LS",
+    "MX21-W896LSX13",
 }
 REASON = {
-    "MX21-W768LS": (
-        "3/15 at 0.722610x -- wave 19's sealed reader-PCA basis with the "
-        "writers' lambda chosen on an internal fit split; the same score as the "
-        "child it controls for, on a different set of cases, and the only child "
-        "in the wave that recovers context-retrieval"
+    "MX21-W736": (
+        "1/15 at 0.689220x -- the only child ever built inside the 0.90-0.92 "
+        "band of retained read energy (0.9075 held-out), and the rung that "
+        "closes the cliff to 32 dimensions"
     ),
-    "MX21-W768ST": (
-        "2/15 at 0.722610x -- the stale arm, which prices the conditioned solve "
-        "on this axis for the first time at one review case"
+    "MX21-W736LS": (
+        "0/15 at the IDENTICAL 158,309,216 parameters and the identical sealed "
+        "basis -- the matched control that prices the writers' lambda split at "
+        "the cliff, where it costs the last case"
     ),
-    "MX21-W768AW25": (
-        "0/15 at 0.722610x -- the attribution-weighted basis at beta 0.25: same "
-        "parameters, same retained read energy to 0.0015, seventeen of 768 "
-        "directions exchanged, three review cases gone and four of five "
-        "accuracy benchmarks slightly better.  The wave's central measurement"
+    "MX21-MM768": (
+        "0/15 at 0.722610x -- the reader-maxmin basis, which raises the worst "
+        "endpoint's retained read energy from 0.8801 to 0.8997, cuts the "
+        "endpoints under the 0.90 floor from four to one, reconstructs the "
+        "parent's logits better than the living child, and is dead in all "
+        "sixteen lanes.  The wave's central negative result"
     ),
-    "MX21-W768EV": (
-        "1/15 at 0.722610x -- wave 19's sealed evidence-pca basis, finally built "
-        "against: more raw energy retained and less read energy, and it is the "
-        "measurement that says which of the two the law is about"
+    "MX21-W896LS": (
+        "3/15 at 0.859023x -- the wave's best child and the matched control for "
+        "wave 19's sealed 4/15 at the same parameter count; it recovers "
+        "planning-dependencies and gives up two other cases"
     ),
-    "MX21-W704": (
-        "0/15 at 0.656116x -- the bisection rung inside wave 19's cliff, at "
-        "0.8953 retained read energy: the tightest bound the campaign has on "
-        "where the behavioural floor sits"
-    ),
-}
-DELETE_REASON = {
-    "MX21-W768AW100": (
-        "0/15 at 0.722610x -- the attribution-weighted basis taken to beta 1.0, "
-        "0.8967 retained read energy, below the floor; re-derivable from the "
-        "committed builder and the sealed basis E-attribution-weighted-b10-768"
-    ),
-    "MX21-W768RG": (
-        "0/15 at 0.722610x -- the reader-generalized basis at 0.4780 retained "
-        "read energy; re-derivable from the committed builder and the sealed "
-        "basis E-reader-generalized-768"
-    ),
-    "MX21-W704AW25": (
-        "0/15 at 0.656116x -- attribution-weighted at 704, fifteen empty lanes; "
-        "re-derivable from the committed builder and its sealed basis"
+    "MX21-W896LSX13": (
+        "2/15 at 0.815064x -- the wave's only composition, against wave 19's "
+        "sealed 1/15 twin whose summarisation lane it reproduces byte for byte; "
+        "the capability the lambda split recovers survives the composition step"
     ),
 }
+DELETE_REASON: dict[str, str] = {}
 
 
 def digest_of(name: str) -> str | None:

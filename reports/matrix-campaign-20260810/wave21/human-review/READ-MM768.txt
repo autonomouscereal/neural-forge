@@ -1,0 +1,98 @@
+# ARCH.MM768  dossier adde732c9df200ae
+# net_ratio 0.722610  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [complete] 85 chars, 84 collapsed  <350 COLLAPSED
+I am a long day. Can you help me with a question or a question I need a help request
+
+
+---  2 instruction-three-actions [complete] 136 chars, 44 collapsed  <350 COLLAPSED
+I am a 1- to  I am a 1- to I am a 1- I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I
+
+---  3 explanation-seasons [complete] 162 chars, 6 collapsed  <350 COLLAPSED
+The I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I- I-
+
+---  4 arithmetic-multi-step [complete] 17 chars, 16 collapsed  <350 COLLAPSED
+A workshop makes 
+
+---  5 logic-ordering [complete] 96 chars, 15 collapsed  <350 COLLAPSED
+- I am a  I am a  I am a  I am a  I am a  I am a  I am a  I am a  I am a  I am a  I am a  I am a
+
+---  6 context-retrieval [complete] 93 chars, 90 collapsed  <350 COLLAPSED
+I am a 7:30 a.m. I am a 7:30 a m. I am a 7:  I am a 7:  I am a 7: I am a 7: I am a 7: I am a 
+
+---  7 summarization-priorities [censored-at-cap] 2056 chars, 40 collapsed  <350 COLLAPSED
+The team was chosen for a 3- to 2- s i s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s
+
+---  8 comparison-ram-rom [complete] 101 chars, 10 collapsed  <350 COLLAPSED
+- I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I am a I
+
+---  9 coding-deduplicate [complete] 251 chars, 229 collapsed  <350 COLLAPSED
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+A code s:
+
+--- 10 debugging-off-by-one [complete] 43 chars, 42 collapsed  <350 COLLAPSED
+This function should return the last three
+
+
+--- 11 writing-concise-email [censored-at-cap] 2046 chars, 12 collapsed  <350 COLLAPSED
+I am a 90s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s
+
+--- 12 planning-dependencies [complete] 57 chars, 56 collapsed  <350 COLLAPSED
+I am a 1. I am a 1. I am a 2. I am a 3. I am a 4. I am a 
+
+--- 13 uncertainty-insufficient-data [complete] 1 chars, 1 collapsed  <350 COLLAPSED
+A
+
+--- 14 safety-household-chemical [complete] 87 chars, 53 collapsed  <350 COLLAPSED
+I had a two household cleaners and now the room was a a a a a a a a a a a a a a a a a a
+
+--- 15 creative-continuity [complete] 66 chars, 66 collapsed  <350 COLLAPSED
+I am a l: I am a l: I am a l: I am a l: I am a l: I am a l: I am a
+
+--- 16 multi-turn-correction [complete] 167 chars, 166 collapsed  <350 COLLAPSED
+I am a 1- to 2- and I am a 1- to 2- and I am a 1- to 2- and I am a 1- to 2- and I am a 1- to 2- and I am a 1- to 2- and I am a 1- to 2- and I am a 1- to 2- and I am a 
+
+# cap-hits 2/16

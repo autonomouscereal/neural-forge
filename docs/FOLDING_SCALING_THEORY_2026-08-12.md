@@ -969,3 +969,65 @@ variable wave 19 never moved.
   told. **Generalisation:** always report whether a selected hyperparameter is
   interior, and widen until it is; a boundary hit is the mechanism declining
   itself, or the grid being wrong, and those look identical in a receipt.
+
+---
+
+## Wave-21 additions to the sealed physics — the reader is not the unit, and the cliff has a slope
+
+Wave 20 closed with the energy law bounded into a ceiling and one axis of the
+basis objective unmoved: the objective is an **endpoint-equalised average** over
+the 29 places a stock LFM2 reads the residual, and the top-k eigenvectors of an
+average maximise the MEAN retained read energy over those readers, which says
+nothing about the worst of them. Wave 21 moved that axis, and it lost like the
+other four. Four things generalise.
+
+* **A pooled retention number hides its own readers, and the hiding is
+  structural rather than incidental.** The living 3/15 width child sits at
+  0.9193 pooled read energy with **four of its 29 readers below 0.90** — the
+  level at which three separate children read 0/15 — and the worst is 0.8801.
+  The badly-retained endpoints are the same ones at every width: blocks 0 to 3,
+  argmin at `B01.ffn` in all five sealed bases, while blocks 6 to 9 sit near
+  0.99. **Generalisation:** publish the per-endpoint retention, not only the
+  pool, on any axis whose law is stated in retained energy; the spread at the
+  width where a model dies is 0.065 and rising, and a mean over 29 numbers that
+  span 0.065 is not a description of any of them.
+* **Fixing the worst reader is not the same as fixing the model, and the
+  experiment is cheap enough that nobody should assume either way.**
+  `max_E min_i tr(E^T M_i E)` over the endpoint moments is a concave problem on
+  the convex hull of rank-k projections, so by Sion it is the convex
+  `min_w [top-k eigenvalue sum of Σ w_i M_i]` over the endpoint simplex, whose
+  subgradient is the vector of per-endpoint retentions — an eigensolve and an
+  exponentiated-gradient step per round, no capture of its own, and **uniform
+  weights return the pooled basis bit for bit**. It succeeded at its objective
+  (worst reader 0.8801 → 0.8997, readers under the floor 4 → 1) and produced a
+  child that reconstructs the parent's own logits BETTER than the living one
+  (final-norm relative SSE 0.1522 against 0.1752) and returns loops in all
+  sixteen review lanes. **Generalisation:** a basis objective that is provably
+  better on the quantity your law is stated in can still be behaviourally dead;
+  the law names a necessary condition, not the thing being optimised.
+* **The subspace is a point, not a direction to search in.** Five objectives
+  have now been measured against the pooled reader moment's own top eigenvectors
+  on one model at one width and identical parameter count — case-weighted at two
+  strengths, evidence (raw) PCA, reader-energy-per-raw, and max-min over readers
+  — exchanging between **17 and 231 of 768 directions**, and every one of them
+  scores at or below 1/15 where the unexchanged constructions score 3/15.
+  **Generalisation:** on a residual-width fold, spend the search budget on the
+  width and the solver, not on the objective. The eigenvectors of the pooled
+  reader moment are not one good choice among many; they are, so far, the only
+  choice that produces a model.
+* **A cliff located by bisection may be a slope, and the difference matters for
+  planning.** Wave 19 saw 3/15 at 768 and 0/15 at 640 and called it a step; two
+  bisections later the ladder reads 4 → 3 → 1 → 0 across 896/768/736/704 and the
+  interval that could still hide a step is 32 dimensions wide. **Generalisation:**
+  bisect a behavioural cliff at least twice before describing its shape, because
+  "step" and "slope" imply different strategies — a step says find the edge and
+  stop, a slope says every rung costs something and the question is what you can
+  afford.
+* **And one estate law, from an operational failure worth repeating.** A
+  deployment cut as a hardlink copy plus a verified delta is cheap and byte-true,
+  and it breaks the frozen review, because the prompt-pack guard refuses a file
+  with `st_nlink != 1`. The guard is right: a pack reachable under a second name
+  is a pack something else can rewrite, and a review's whole authority is that
+  the pack it read is the pack the seal names. **Generalisation:** integrity
+  guards on evidence files should test reachability, not just content, and a
+  cheap deployment trick that defeats one is a bug in the trick.

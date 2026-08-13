@@ -37,6 +37,43 @@ python experiments/render_matrix_ledger.py \
   --out    reports/matrix-campaign-20260810/LEDGER.md
 ```
 
+## Start here — the two consolidated documents
+
+| path | what it is |
+|---|---|
+| `CAMPAIGN_SCORECARD.md` | one page: the top fifteen children by intelligence-per-compression, each with its net ratio, its review, the one-line character of its failure and its `READ-` dossier path. This is the scoring page |
+| `../../docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` | the consolidating report for waves 1–21: **all 108** whole-model children that hold at least one review case, sorted by net ratio with both readings and every benchmark column; every law with its evidence; seventeen corrections of record; the scale-transfer statements with their confidence; and what remains unbuilt and why. It does **not** declare the campaign closed |
+| `wave21/campaign-frontier-table.json` | the artifact both of the above are generated from — a function of the ledger, the per-wave child indexes and the sealed `lm-eval` output, built by `run/mx21/mx21_campaign_table.py` and rendered by `run/mx21/mx21_report_tables.py` |
+
+## wave21/ — the cliff has a slope, and the worst reader is not the variable
+
+`NOTES-MX-Y.md` at the repo root is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave21/basis/endpoint-retention.json` | the free measurement the wave opens with: the retained **read** energy of every sealed basis **per endpoint**, fit and held-out, which no census had ever printed — the census records the per-endpoint moment for the raw residual only — plus what the max-min iteration achieves at 896, 768 and 736 |
+| `wave21/wave21-child-index.json` | every wave-21 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict |
+| `wave21/wave21-child-comparison.json` | one row per child with the basis, the retained read energy, the per-site write cosine, the drift and the review |
+| `wave21/campaign-frontier-table.json` | the campaign-wide table (see above); regenerated in this wave for the first time |
+| `wave21/scorecard-characters.json` | the prose column of the scorecard, kept apart from the generated numbers and keyed by cell id, so a child with no line written prints `**UNWRITTEN**` |
+| `wave21/human-review/` | 45 files: every dossier, every child and parent response rendered verbatim, every run receipt, verdict receipt, per-case reading and build receipt, both new basis censuses, the endpoint retention report, the benchmark table and every table above |
+| `wave21/ledger-merge-report.json` | the exactly-once merge of 10 shard rows into the campaign ledger (636 → 646): 5 ARCH run rows and 5 ADDENDUM 6 verdict rows, no superseded rows |
+| `wave21/children-retention-manifest-wave21.json` | all five children kept, each with the controlled comparison it is an arm of |
+| `wave21/deployments-prune-manifest-wave21.json` | the deployment pruned to hold current+1 |
+| `run/mx21/` | the wave-21 builder (adds `--basis reader-maxmin`, `--mode endpoints`, and the per-endpoint **reader** retention the census was missing), its standalone algebra self-test (24 checks), the campaign-table and report-table generators, the drivers, the seal verifier, the ledger merge and the dossier readers |
+| `wave15/human-review/` | **new in wave 21, four waves late.** The campaign's own frontier child, `ARCH.CL896`, had no dossier rendering anywhere in the repository; wave 15 built its 74-file package and left it on the server |
+
+Wave 21's one-line result: **the retained-energy law names a necessary condition
+and not the thing to optimise.** A basis that maximises the *minimum*
+per-endpoint retained read energy — lifting the worst reader from 0.8801 to
+0.8997, cutting the readers under the 0.90 floor from four to one, and
+reconstructing the parent's own logits better than the living child — reads
+**0/15** against that child's 3/15; the 0.90–0.92 band is measured and the cliff
+is a **slope** (4 → 3 → 1 → 0 at 896/768/736/704), leaving 32 dimensions that
+could still hide a step; and the writers' λ split is a **case trade** whose sign
+depends on what the child has left to lose (0 at 768, −1 at 896, −1 at the cliff,
+**+1** inside a composition, buying the same capability every time).
+
 ## wave20/ — the basis objective moved, and it was the wrong variable
 
 `NOTES-MX-X.md` at the repo root is the narrative. The rest is raw:

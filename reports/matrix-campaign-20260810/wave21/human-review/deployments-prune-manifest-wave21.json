@@ -1,0 +1,24 @@
+{
+ "schema": "neural-forge-matrix-wave21-deployments-prune-v1",
+ "policy": "current+1: the deployment this wave sealed from, plus the previous wave's, and nothing older",
+ "kept": [
+  {
+   "deployment": "neural-forge-matrix-1c0c7e3a",
+   "bytes": 216612770,
+   "reason": "wave 20's deployment, kept as the current+1 slot"
+  },
+  {
+   "deployment": "neural-forge-matrix-f336b04d",
+   "bytes": 219942579,
+   "reason": "the deployment every wave-21 child was built, sealed and reviewed from"
+  }
+ ],
+ "pruned": [
+  {
+   "deployment": "neural-forge-matrix-e7d068da",
+   "bytes": 101916905,
+   "reason": "wave 19's deployment; older than current+1 and superseded"
+  }
+ ],
+ "bytes_freed": 101916905
+}
