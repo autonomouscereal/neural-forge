@@ -101,6 +101,7 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave20-standard-shape-child-v1",
     "neural-forge-matrix-wave21-standard-shape-child-v1",
     "neural-forge-matrix-wave22-standard-shape-child-v1",
+    "neural-forge-matrix-wave23-standard-shape-child-v1",
 )
 
 
@@ -275,15 +276,62 @@ def run(args: argparse.Namespace) -> int:
 
     tokenizer = cell_runner._load_tokenizer(parent_dir)
     eos_id = getattr(tokenizer, "eos_token_id", None)
+    # ADDENDUM 15 section 15.3 (wave 23, the `vocab_size` axis).  A child whose
+    # vocabulary is a dense remap of a subset of the parent's does not read the
+    # parent's ids -- the same id names a different token in the two tables -- so
+    # it gets its own tokenizer and the parent keeps the parent's.  The gate is a
+    # gate rather than a preference: the flag is refused when the vocabularies
+    # already agree, and its absence is refused when they do not, so neither
+    # direction can be reached by forgetting an argument.
+    parent_vocab_size = int(
+        json.loads((parent_dir / "config.json").read_text(encoding="utf-8"))["vocab_size"]
+    )
+    child_vocab_size = int(
+        json.loads((child_dir / "config.json").read_text(encoding="utf-8"))["vocab_size"]
+    )
+    child_tokenizer = tokenizer
+    if child_vocab_size != parent_vocab_size:
+        if args.child_tokenizer is None:
+            raise ArchitectureSealError(
+                f"the child declares vocab_size {child_vocab_size} against the "
+                f"parent's {parent_vocab_size} and no --child-tokenizer was "
+                "given; the parent's ids do not name the child's tokens."
+            )
+        child_tokenizer = cell_runner._load_tokenizer(Path(args.child_tokenizer))
+        if int(len(child_tokenizer)) > child_vocab_size:
+            raise ArchitectureSealError(
+                f"--child-tokenizer carries {len(child_tokenizer)} tokens and the "
+                f"child's table has {child_vocab_size} rows."
+            )
+        _log(
+            f"child tokenizer: {args.child_tokenizer} "
+            f"({len(child_tokenizer)} tokens, child table {child_vocab_size})"
+        )
+    elif args.child_tokenizer is not None:
+        raise ArchitectureSealError(
+            "--child-tokenizer was given for a child whose vocab_size equals the "
+            "parent's; there is nothing for it to repair and it can only "
+            "introduce a difference the receipt would not name."
+        )
+    child_eos_id = getattr(child_tokenizer, "eos_token_id", None)
 
     child_ids = _free_run(
-        child, tokenizer, probe_prompts, tokens=int(args.probe_tokens), device=str(args.device)
+        child,
+        child_tokenizer,
+        probe_prompts,
+        tokens=int(args.probe_tokens),
+        device=str(args.device),
     )
     smoke = cell_runner._decode_smoke(
-        child, tokenizer, smoke_prompts, cap=128, device=str(args.device), eos_id=eos_id
+        child,
+        child_tokenizer,
+        smoke_prompts,
+        cap=128,
+        device=str(args.device),
+        eos_id=child_eos_id,
     )
     child_terminal, child_norms = cell_runner._terminal_states(
-        child, tokenizer, probe_prompts, device=str(args.device)
+        child, child_tokenizer, probe_prompts, device=str(args.device)
     )
     del child
     torch.cuda.empty_cache()
@@ -305,6 +353,31 @@ def run(args: argparse.Namespace) -> int:
             f"receipt claims {build['parent_parameters']}."
         )
 
+    # The free-run token match is [DIAGNOSTIC ONLY] and has been since ADDENDUM
+    # 6 retired it as a gate.  Across two vocabularies it is not merely
+    # uninformative, it is undefined -- id 4,211 is not the same token in both
+    # tables -- so for a vocab child it is taken where it IS defined: the child's
+    # continuation is decoded through the child's tokenizer and re-encoded with
+    # the PARENT's, which compares the two models on the strings they actually
+    # emitted.  The receipt says which of the two definitions produced the
+    # number, and it is still never a gate.
+    token_match_basis = "parent-token-ids, both models"
+    if child_tokenizer is not tokenizer:
+        token_match_basis = (
+            "the child's continuation DECODED with the child tokenizer and "
+            "RE-ENCODED with the parent's, compared against the parent's own ids "
+            "-- a string-level comparison, because the two id spaces are "
+            "different tables"
+        )
+        child_ids = [
+            list(
+                tokenizer(
+                    child_tokenizer.decode(row, skip_special_tokens=False),
+                    add_special_tokens=False,
+                ).input_ids
+            )
+            for row in child_ids
+        ]
     match, lcp = cell_runner._token_match(child_ids, parent_ids)
     parent_hidden = int(parent_terminal.shape[-1])
     child_hidden = int(child_terminal.shape[-1])
@@ -436,6 +509,10 @@ def run(args: argparse.Namespace) -> int:
             "tokens_per_prompt": int(args.probe_tokens),
             "token_match_vs_control": match,
             "mean_lcp": lcp,
+            "token_match_basis": token_match_basis,
+            "child_tokenizer": (
+                None if child_tokenizer is tokenizer else str(args.child_tokenizer)
+            ),
         },
         "decode_smoke": smoke,
     }
@@ -496,6 +573,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--cell-id", required=True)
     parser.add_argument("--cell-instance-id", required=True)
     parser.add_argument("--child-model", type=Path, required=True)
+    parser.add_argument(
+        "--child-tokenizer",
+        type=Path,
+        help=(
+            "the child's OWN tokenizer directory.  Required for, and only for, a "
+            "child whose `vocab_size` differs from the parent's: its ids are a "
+            "dense remap of a subset of the parent's and feeding it the parent's "
+            "ids would be feeding it a different sentence.  Omitted, this script "
+            "behaves exactly as it has since wave 15 -- one tokenizer, the "
+            "parent's, for both models -- so no sealed child's numbers move."
+        ),
+    )
     parser.add_argument("--build-receipt", type=Path, required=True)
     parser.add_argument("--parent-model", type=Path, required=True)
     parser.add_argument("--campaign-wave", type=int, required=True)

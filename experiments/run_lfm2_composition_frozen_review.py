@@ -426,6 +426,48 @@ def run(args: argparse.Namespace) -> int:
     dtype = cell_runner._dtype(str(args.dtype))
     tokenizer = cell_runner._load_tokenizer(Path(args.parent_model))
     eos_id = getattr(tokenizer, "eos_token_id", None)
+    # ADDENDUM 15 section 15.3 (wave 23, the `vocab_size` axis).  The fifteen
+    # prompts and the 1,024-token cap do not move: what moves is which table the
+    # child's ids are read out of.  A child whose vocabulary is a dense remap of
+    # a subset of the parent's must be prompted and decoded through its OWN
+    # tokenizer or the review is reading a different sentence than the one the
+    # pack contains, and the pack's digest would still check out.  Both
+    # directions are refused rather than defaulted, and the dossier names the
+    # tokenizer each side used, because the review's whole authority is that the
+    # text it renders is the text the model produced from the pack's prompt.
+    child_tokenizer = tokenizer
+    child_tokenizer_note = "the parent's tokenizer, both models"
+    if args.child_model is not None:
+        child_vocab = int(
+            json.loads(
+                (Path(args.child_model) / "config.json").read_text(encoding="utf-8")
+            )["vocab_size"]
+        )
+        parent_vocab = int(
+            json.loads(
+                (Path(args.parent_model) / "config.json").read_text(encoding="utf-8")
+            )["vocab_size"]
+        )
+        if child_vocab != parent_vocab:
+            if args.child_tokenizer is None:
+                raise FrozenReviewError(
+                    f"the child declares vocab_size {child_vocab} against the "
+                    f"parent's {parent_vocab} and no --child-tokenizer was given."
+                )
+            child_tokenizer = cell_runner._load_tokenizer(Path(args.child_tokenizer))
+            child_tokenizer_note = (
+                f"the CHILD's own tokenizer at {args.child_tokenizer} "
+                f"({len(child_tokenizer)} tokens) for the child; the parent's for "
+                "the parent.  The prompt pack, its digest, the chat template "
+                "path and the 1,024-token cap are unchanged."
+            )
+            _log(child_tokenizer_note)
+        elif args.child_tokenizer is not None:
+            raise FrozenReviewError(
+                "--child-tokenizer was given for a child whose vocab_size equals "
+                "the parent's."
+            )
+    child_eos_id = getattr(child_tokenizer, "eos_token_id", None)
 
     corrections_summary: dict[str, Any] | None = None
     if cell.kind == "architecture":
@@ -464,11 +506,11 @@ def run(args: argparse.Namespace) -> int:
         )
     child_records = _generate(
         child,
-        tokenizer,
+        child_tokenizer,
         rows,
         cap=int(args.maximum_new_tokens),
         device=str(args.device),
-        eos_id=eos_id,
+        eos_id=child_eos_id,
         label="child",
     )
     del child
@@ -578,6 +620,7 @@ def run(args: argparse.Namespace) -> int:
             "dtype": str(args.dtype),
             "cases": len(rows),
             "parent_control_generated": not bool(args.skip_parent),
+            "tokenizer": child_tokenizer_note,
         },
         "child_responses": child_records,
         "parent_responses": parent_records,
@@ -615,6 +658,16 @@ def _parser() -> argparse.ArgumentParser:
             "ADDENDUM 12: the standard-shape child's own checkpoint directory, "
             "loaded by stock transformers with no trust_remote_code.  Mandatory "
             "for an ARCH.<TAG> receipt and meaningless for any other."
+        ),
+    )
+    parser.add_argument(
+        "--child-tokenizer",
+        type=Path,
+        help=(
+            "ADDENDUM 15 section 15.3: the child's own tokenizer directory, "
+            "required for and only for a child whose `vocab_size` differs from "
+            "the parent's.  Omitted, this script behaves exactly as it has "
+            "since wave 12 and no sealed dossier's text moves."
         ),
     )
     parser.add_argument(

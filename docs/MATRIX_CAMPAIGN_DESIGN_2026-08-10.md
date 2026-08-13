@@ -1800,3 +1800,143 @@ build-receipt schema string, graded by the same untouched frozen 15-prompt
 protocol, and reported beside the average-in-gauge baseline it must beat at the
 only level that decides anything. Censuses — including every number the joint
 solve prints about its own objective — order attempts and gate nothing.
+
+---
+
+## ADDENDUM 15 — 2026-08-13 (wave 23, before any child): the round-2 discovery slate, and three rulings the builds do not wait for
+
+**On the number.** The wave-23 dispatch asked for "ADDENDUM 14". Fourteen was
+taken by wave 17 (the lane bookkeeping and the joint head-merge solve) and this
+document is append-only, so this is **15**. Nothing else about the dispatch is
+reinterpreted; the collision is recorded here rather than resolved by renaming a
+sealed addendum.
+
+Wave 22 closed the mechanism search that waves 19–22 had been running on one
+axis: three children at parameter counts the campaign had already sealed, no new
+mechanism, and the slope with no step left to hide. Round 2 is a **discovery**
+slate rather than a ladder — four independent lenses proposed twelve fold
+classes, three were killed on the record, one was merged, and eight survive as
+funded waves. The slate as dispatched, with its reviewer fixes already applied,
+is committed verbatim at `docs/WAVE23_ROUND2_SLATE_2026-08-13.md`; the
+completeness critique that names three gaps in it is at
+`docs/WAVE23_ROUND2_COMPLETENESS_CRITIQUE_2026-08-13.md`. **Both are committed as
+they were dispatched, and neither is edited to agree with what the wave then
+measured** — the same discipline that keeps a census from becoming a verdict
+after the fact.
+
+### 15.1 What the eight survivors are, in one line each
+
+| # | wave | the axis it moves | export status at dispatch |
+|---|---|---|---|
+| S1 | `VOCAB-CORESET` | `vocab_size` — a stock config axis with zero waves on it | standard, **A2 pending on the claim only** |
+| S2 | `SEGBASIS` | per-segment reader bases on `hidden_size`, zero added tensors | standard |
+| S3 | `ORTHO-PAIR` | the cross term of L3's additive-interference arithmetic | standard (value-only) |
+| S4 | `PAIR-KKT` | one joint convex solve over two fold classes' tensors | standard, **A1 pending on the mechanism** |
+| S5 | `LP-ATLAS + ATTR` | which capabilities the lambda profile selects, at fixed storage | standard, zero storage delta |
+| S6 | `29-DIAGONAL` | the 28 block RMSNorm gains + the final norm | standard, zero param delta |
+| S7 | `NKP-VANLOAN` | nearest-Kronecker structure on the SwiGLU stack | research probe, permanently |
+| S8 | `EARLY-SPARED` | per-block residual width — where L2 lives | research probe, permanently |
+
+Three classes were killed on the record and stay killed: `FFN-CORESET` (a
+selection-rule variant of `ARCH.CL896`'s own recipe, i.e. selection against
+itself), `ABSORB-THEN-FOLD` (its core cell is sealed 0/15 twice, at `X05T` and
+`CT640`), and `CLIFF-LAMBDA` (its falsifier is on disk —
+`build-receipt-MX21-W736LS.json` already ran interior-converged per-writer
+lambda selection at the cliff and read 0/15). `ATTR-LAMBDA` is merged into S5
+rather than killed, because its width-axis half is **unidentified** — no sealed
+row varies one width writer — and only its `X13A` half has data behind it.
+
+### 15.2 Three rulings are Cyril's, and none of them blocks a build
+
+This addendum registers the queue and the fallback each item ships with, so a
+wave can execute while a ruling is outstanding without a later reader having to
+guess which artifacts were built under which assumption.
+
+* **A1 — do frozen-gate linear response operators count as a gradient?** The
+  object is a fixed linear map assembled from sealed weights and sealed
+  activations, entering a ridge KKT with no differentiated objective and no
+  update rule. It appears in `PAIR-KKT`'s `J_k` and in `ORTHO-PAIR`'s constraint
+  form (ii). One ruling covers both. **Fallback, in force until Cyril rules:
+  those arms are built and sealed as RESEARCH PROBES by mechanism.** The
+  artifacts are standard-shape either way — the label is about the solve, not the
+  export — and promotion to a frontier row waits on the ruling.
+* **A2 — is a vocabulary row coreset with a tokenizer remap a fold?** The wave-19
+  dismissal ("a tokenizer change, not a fold") is a one-line category claim with
+  zero builds behind it, and vocabulary is not on the refused-by-rule list. **The
+  ruling gates FRONTIER PROMOTION only.** The build proceeds, the review is
+  frozen and read the same way, and every receipt is labelled
+  `adjudication-pending`.
+* **A3 — the priority vector `p` over the fifteen review cases** that `LP-ATLAS`
+  allocates against. **Default in force:** `conversation-natural-greeting`,
+  `multi-turn-correction` and `instruction-three-actions` high;
+  `explanation-seasons` and `logic-ordering` low — Cyril's stated want, read off
+  the campaign hold rates, labelled `default-pending-ruling` in every artifact
+  that consumes it.
+
+### 15.3 What is fixed before the first child
+
+**The six free pre-reads run first and gate nothing.** `P1` the ORTHO rho census,
+`P2` the SEGBASIS `J(c)` cut census, `P3` the NKP rearrangement-spectrum census,
+`P4` the PAIR-KKT linearisation pre-read, `P5` the VOCAB post-closure coverage
+census, `P6` the ATTR case-by-block excision-survival matrix. Each is published
+in `NOTES-MX-AA` whatever it says, and each **orders** the builds it belongs to.
+This is the standing L1 clause and not a new rule: waves 19–22 each ran a census
+that would have picked the wrong child in at least one direction, and every one
+of those children was built anyway.
+
+**Identity gates are in bytes, not tolerances** — the wave-19 standard, restated
+per wave here because each survivor has a different one: `SEGBASIS` at
+`E_A = E_B` must reproduce the sealed global W-child bit-for-bit; `PAIR-KKT` at
+`lambda -> infinity` must reproduce the sealed 7/15 pair in bytes; `ORTHO-PAIR`
+with an inactive constraint must return `B`'s sealed solo tensors, **carrying the
+affine offset `c0`** or the retreat assertion is not the assertion it claims to
+be; `29-DIAGONAL` at `E = I` must return the parent's own gains;
+`VOCAB-CORESET`'s base arm is **zero-solve**, so its identity gate is that every
+kept row is the parent's bytes; `NKP` reconstructs in fp64; `EARLY-SPARED` at
+`E = I` is bit-exact.
+
+**Storage honesty is unchanged and gains one column.** All auxiliaries counted
+(R1); storage-format ratios labelled against standard-shape ratios (R3, §2.7 of
+the frontier report). **A `VOCAB` dossier additionally prints measured
+tokens-per-byte beside the ratio**, because a vocabulary coreset moves sequence
+length and sequence length is compute the parameter count does not see. That is a
+new printed column, not a new gate.
+
+**Per-endpoint printing, never pooled-only**, and a directions-exchanged table
+wherever a basis differs from the sealed plain pooled reader-PCA. Both are
+wave-20/21 laws and both bind every basis-moving survivor here (S2, S8).
+
+### 15.4 The completeness critique, and what this addendum does with it
+
+The critique names three gaps and this addendum accepts all three as **queued**,
+not as funded this wave:
+
+1. **`intermediate_size` has no wave on the standard column**, and the critique's
+   arithmetic on `ARCH.CL896` is correct — 14 blocks x 3 x 1024 x (2560 − 896) =
+   71,565,312 removed, which is exactly the 158,127,872 the ledger carries. The
+   fork it names (either the campaign's deepest scoring child is already a legal
+   standard export, or there is an unstated obstruction) is **registered as open
+   here** and is the first thing wave 24 should resolve, because one side of it is
+   a zero-solve re-export.
+2. **`REBASE-AFTER-EXCISION`** — nobody has re-derived the residual basis on a
+   composed child's *surviving* reader set. Every one of the six condemned basis
+   objectives re-weighted the same 29-endpoint parent capture. Queued.
+3. **The resolution rider** — five of eight survivors expect effects of one case
+   against a 15-prompt instrument. The rider as written (a frozen 30-prompt
+   extension bank, reviewed on 45, **gated on the sealed 15 only**, with a
+   one-case kill required to show extension-bank concordance) is **accepted in
+   principle and not funded in wave 23**, because authoring and freezing the bank
+   before the wave's first review is itself the wave's largest single piece of
+   work and it would be authored by the same agent that reads the reviews. It is
+   named here so that every one-case verdict this wave writes is read with its
+   instrument's resolution attached.
+
+### 15.5 What this addendum does not do
+
+It registers no new schema version, no new id form, no new ledger column, and no
+new gate on a child. Every survivor is sealed by the same script, graded by the
+same untouched `seal_matrix_behavior_review.py` against the same frozen 15-prompt
+protocol, and read with both the ADDENDUM 6 per-child verdict and the ADDENDUM 9
+per-lane reading printed side by side. What it adds is a queue with three
+outstanding rulings, a fallback for each, and the requirement that an artifact
+built under a fallback **says so in its own receipt**.
