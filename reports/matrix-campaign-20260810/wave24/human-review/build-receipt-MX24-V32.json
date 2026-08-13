@@ -1,0 +1,151 @@
+{
+ "schema": "neural-forge-matrix-wave24-standard-shape-child-v1",
+ "built_at": "2026-08-13T15:39:22Z",
+ "builder": "mx24_vocab.py",
+ "tag": "V32",
+ "arm": "vocab-row-coreset (zero-solve)",
+ "adjudication": {
+  "item": "A2",
+  "status": "RESOLVED 2026-08-13 by Cyril: a vocabulary row coreset with a tokenizer remap COUNTS AS FOLDING and is frontier-eligible",
+  "scale_caveat_recorded_at_his_instruction": "the token interface is 29.2% of THIS parent and ~1% of a 70B model by the same arithmetic (docs/PHASE1 section 4.1); these rows are this model's phase-1 numbers, not a transferable strategy"
+ },
+ "source_model": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+ "source_config_vocab_size": 65536,
+ "source_tensors_sha256": "f630da86651136c9aee893b04b7542007e90fdd718355358e57e7ecc31517cfd",
+ "source_cell_receipt": ".",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave24/children/MX24-V32",
+ "child_tensors_sha256": "5e6227c243c64bdb46e4a5c1d35f6d6972ffbd221413133acd5d61d91b526918",
+ "child_directory_sha256": "e0b6d0b1d0ab13129012b5e83702fb9f0fb9f033d90fe1f7862f1a6cffa7264d",
+ "child_parameters": 196138752,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.8539162920916278,
+ "excised": [],
+ "residual_basis": null,
+ "axes": [
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 32768 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 33554432,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.3264 on the frozen review prompts, with tokens-per-byte beside it"
+  }
+ ],
+ "vocabulary": {
+  "k": 32768,
+  "kept_rows": 32768,
+  "mandatory_rows": 765,
+  "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+  "ranking_rule": "(-census_count, parent_token_id)",
+  "observed_tokens_admitted_by_ranking": 4633,
+  "tokens_skipped_because_their_closure_did_not_fit": 0,
+  "dead_parent_rows_dropped": 1134,
+  "sealed_corpus": {
+   "path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+   "file_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+   "rows": 256,
+   "token_positions": 67583
+  },
+  "sealed_corpus_is_a_donor_mapped_stream": "mapped_donor_calibration.json carries a DONOR tokenizer's segmentation mapped into this vocabulary, so the parent does not round-trip its own sealed corpus (264 donor ids re-encode to 186 canonical ones on row 0).  The census therefore reads BOTH streams and both coverages are published.",
+  "sealed_corpus_coverage_donor_mapped": {
+   "occurrences": 67583,
+   "occurrences_covered": 67583,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 2030,
+   "distinct_covered": 2030,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "sealed_corpus_coverage_canonical": {
+   "occurrences": 43992,
+   "occurrences_covered": 43992,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 4806,
+   "distinct_covered": 4806,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "kept_token_occurrences_lost": {
+   "donor_mapped": 0,
+   "canonical": 0,
+   "claim": "every token occurrence in the sealed corpus, on both streams, has a kept row; asserted, not asserted-about"
+  },
+  "lossless_on_text_and_agreement": {
+   "sealed_corpus": {
+    "rows": 256,
+    "rows_lossless_on_text": 256,
+    "rows_segmented_exactly_as_parent": 256,
+    "parent_positions": 43992,
+    "parent_positions_whose_token_was_dropped": 0,
+    "positions_agreeing": 43992,
+    "position_agreement": 1.0
+   },
+   "frozen_review_prompts": {
+    "rows": 16,
+    "rows_lossless_on_text": 16,
+    "rows_segmented_exactly_as_parent": 3,
+    "parent_positions": 726,
+    "parent_positions_whose_token_was_dropped": 46,
+    "positions_agreeing": 237,
+    "position_agreement": 0.32644628099173556
+   },
+   "claim": "decode(child_encode(t)) == t for every t (the byte alphabet is complete and there is no unk); `position_agreement` is how often the child's segmentation equals the parent's under the remap, and it is the measured size of the input-distribution shift this arm bets on"
+  },
+  "frozen_review_prompt_coverage_DIAGNOSTIC_ONLY": {
+   "occurrences": 726,
+   "occurrences_covered": 680,
+   "occurrence_coverage": 0.9366391184573003,
+   "distinct_tokens": 432,
+   "distinct_covered": 391,
+   "distinct_coverage": 0.9050925925925926,
+   "occurrences_lost": 46
+  },
+  "tokens_per_byte": {
+   "sealed_corpus": {
+    "utf8_bytes": 187896,
+    "parent_tokens": 43992,
+    "child_tokens": 43992,
+    "parent_tokens_per_byte": 0.23412951845701876,
+    "child_tokens_per_byte": 0.23412951845701876,
+    "sequence_length_ratio": 1.0
+   },
+   "frozen_review_prompts": {
+    "utf8_bytes": 3401,
+    "parent_tokens": 726,
+    "child_tokens": 775,
+    "parent_tokens_per_byte": 0.21346662746251102,
+    "child_tokens_per_byte": 0.227874154660394,
+    "sequence_length_ratio": 1.0674931129476584
+   }
+  }
+ },
+ "identity_gate": {
+  "kind": "bytes",
+  "assertion": "torch.equal(gathered_table, source_table[kept_ids])",
+  "passed": true
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 0,
+  "heldout_rows": 0,
+  "parent_model_forward_calls": 0,
+  "split_authority": "not consumed: the base arm solves nothing",
+  "conditioned": false
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "none -- the base arm is a gather"
+ },
+ "elapsed_seconds": 31.39034991292283
+}

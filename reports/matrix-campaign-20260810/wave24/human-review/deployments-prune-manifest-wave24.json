@@ -1,0 +1,34 @@
+{
+ "schema": "neural-forge-matrix-wave24-deployments-prune-v1",
+ "policy": "current + 1.  A deployment is not evidence -- the COMMIT is, and deploy.py reproduces the tree from it byte for byte and verifies every file against the commit blob digest.  The root filesystem is at 100% with 12 GiB free, so this is not cosmetic.",
+ "kept": 2,
+ "deleted": 2,
+ "freed_bytes": 443557320,
+ "freed_mib": 423.0,
+ "deployments": [
+  {
+   "deployment": "neural-forge-matrix-5e17bb58",
+   "kept": false,
+   "bytes": 228519036,
+   "reason": "older than current+1; no live receipt names it, and it is byte-reproducible from its own commit with run/mx24/deploy.py --emit on a repository that still holds that commit"
+  },
+  {
+   "deployment": "neural-forge-matrix-66fc7beb",
+   "kept": true,
+   "bytes": 253195888,
+   "reason": "the wave-24 deployment; every wave-24 receipt names commit 66fc7beb"
+  },
+  {
+   "deployment": "neural-forge-matrix-70a2498d",
+   "kept": false,
+   "bytes": 215038284,
+   "reason": "older than current+1; no live receipt names it, and it is byte-reproducible from its own commit with run/mx24/deploy.py --emit on a repository that still holds that commit"
+  },
+  {
+   "deployment": "neural-forge-matrix-df452ac9",
+   "kept": true,
+   "bytes": 249769787,
+   "reason": "the wave-23 deployment; wave-23 receipts name commit df452ac9 and wave 24 compares against them"
+  }
+ ]
+}

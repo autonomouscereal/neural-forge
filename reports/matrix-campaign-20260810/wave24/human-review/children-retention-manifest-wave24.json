@@ -1,0 +1,96 @@
+{
+ "schema": "neural-forge-matrix-wave24-children-retention-v1",
+ "policy": "every child carrying a sealed ADDENDUM 6 verdict is kept, because a verdict without its checkpoint is a claim and TEN of this wave's twelve carry one (the lambda atlas grades four rungs per base and every rung is a separate measurement at an identical parameter count).  The two deletions are byte-identical duplicates of kept children, proved by sha256, whose solves returned their own priors",
+ "built": 12,
+ "kept": 10,
+ "deleted": 2,
+ "freed_bytes": 678065901,
+ "freed_gib": 0.631,
+ "applied": true,
+ "children": [
+  {
+   "child": "MX24-V16X13G",
+   "kept": true,
+   "bytes": 335542223,
+   "reason": "5/15 at 0.728353x -- the terminal-read solve at the split-selected lambda on the 16,384 base.  Same score as its source and three Useful lanes where its source had none",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V16X13G29",
+   "kept": false,
+   "bytes": 335605427,
+   "reason": "a byte-identical duplicate of a kept child -- the solve that produced it returned its own prior, so this directory is a second copy and not a measurement",
+   "rebuild": "byte-identical duplicate of a kept child, proved by sha256 in the build receipt beside it; re-derive with run/mx24/gainq.sh if a copy is ever wanted"
+  },
+  {
+   "child": "MX24-V16X13GL01",
+   "kept": true,
+   "bytes": 335542206,
+   "reason": "6/15 at 0.728353x -- the lambda 0.1 rung, the peak of the atlas on this base, and the rung the internal fit split did NOT choose",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V16X13GL1",
+   "kept": true,
+   "bytes": 335542204,
+   "reason": "6/15 at 0.728353x -- the lambda 1.0 rung.  Three rungs of one ladder at one parameter count with three different held sets is the atlas, and it is not an atlas with a rung missing",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V32",
+   "kept": true,
+   "bytes": 394127328,
+   "reason": "11/15 at 0.853916x, verdict alive-parent-band, zero charged lanes -- the highest review this campaign has recorded for a child that is not an excision, and the only wave-24 child that is not read dead",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V8",
+   "kept": true,
+   "bytes": 342459104,
+   "reason": "4/15 at 0.744354x -- the deep solo rung of the dose-response.  Nothing in this wave is attributable without it: V8X13's six is only a composition finding against this four",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V8CL896",
+   "kept": true,
+   "bytes": 199338395,
+   "reason": "0/15 at 0.432784x -- the deepest standard-shape child in the campaign, kept for its SIGNATURE: five of sixteen lanes return the prompt itself verbatim with zero cap hits, which is a failure mode 662 rows had not seen and which a later wave will want the checkpoint for",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V8G",
+   "kept": false,
+   "bytes": 342460474,
+   "reason": "a byte-identical duplicate of a kept child -- the solve that produced it returned its own prior, so this directory is a second copy and not a measurement",
+   "rebuild": "byte-identical duplicate of a kept child, proved by sha256 in the build receipt beside it; re-derive with run/mx24/gainq.sh if a copy is ever wanted"
+  },
+  {
+   "child": "MX24-V8X13",
+   "kept": true,
+   "bytes": 318331229,
+   "reason": "6/15 at 0.691832x -- the zero-solve baseline the bar-beating child is measured against, at an identical parameter count",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V8X13G",
+   "kept": true,
+   "bytes": 318332483,
+   "reason": "4/15 at 0.691832x -- the split-selected rung on the 8,192 base, and the low end of the ladder whose high end beats the bar.  The three-case swing between this and V8X13GL01 at five ten-thousandths of solver criterion is this wave's sharpest measurement",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V8X13GL01",
+   "kept": true,
+   "bytes": 318332464,
+   "reason": "7/15 at 0.691832x -- THE BAR.  The deepest child in 24 waves to hold seven review cases, 8.4 percent below the 0.7548x re-review line, standard shape, stock Lfm2ForCausalLM, 1,024 values re-solved and zero parameters added",
+   "rebuild": null
+  },
+  {
+   "child": "MX24-V8X13GL1",
+   "kept": true,
+   "bytes": 318332459,
+   "reason": "6/15 at 0.691832x -- the lambda 1.0 rung on the 8,192 base, six Partials and no Useful, which is the other end of the same swap",
+   "rebuild": null
+  }
+ ]
+}

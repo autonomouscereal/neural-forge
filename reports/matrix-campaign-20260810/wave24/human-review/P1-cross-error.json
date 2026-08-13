@@ -1,0 +1,209 @@
+{
+ "schema": "neural-forge-matrix-wave24-cross-error-census-v1",
+ "pre_read": "P1",
+ "purpose": "L3's cross term, evaluated on the one surface every child shares with the parent whatever it folded: the next-token distribution at a text prefix.  Orders; gates nothing (L1).",
+ "surface": {
+  "prefixes": 192,
+  "cuts_per_corpus_row": 8,
+  "rule": "character offsets k*len(text)/(cuts+1); a prefix is a STRING, so it is the same object for models with different tokenizers",
+  "corpus": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff"
+ },
+ "metrics": {
+  "identity": "unweighted inner product on restricted log-probabilities",
+  "parent_probability_weighted": "the same, weighted by the parent's own restricted next-token probability"
+ },
+ "results": [
+  {
+   "pair": "V16X13",
+   "prefixes": 192,
+   "shared_rows": 16384,
+   "identity_metric": {
+    "norm_A": 5285.501872932365,
+    "norm_B": 955.2261129371493,
+    "norm_AB_observed": 5405.817262255299,
+    "norm_AB_predicted_additive": 5417.31699756919,
+    "cross_term": 249168.23827175432,
+    "rho": 0.04935148943587676,
+    "additive_prediction_relative_residual": 0.1735872481871562,
+    "additive_prediction_r2": 0.9698674672668106,
+    "cosine_observed_vs_additive": 0.9849679737757827
+   },
+   "parent_probability_weighted_metric": {
+    "norm_A": 35.94010881368155,
+    "norm_B": 5.816762216462473,
+    "norm_AB_observed": 37.02037868044762,
+    "norm_AB_predicted_additive": 36.96041059740782,
+    "cross_term": 20.27290365342069,
+    "rho": 0.09697398845220248,
+    "additive_prediction_relative_residual": 0.11614305030849188,
+    "additive_prediction_r2": 0.9865107918650391,
+    "cosine_observed_vs_additive": 0.9932457669587854
+   },
+   "models": {
+    "A": "/mnt/ai_data/neural-forge-matrix/wave16/children/MX16-X13A",
+    "B": "/mnt/ai_data/neural-forge-matrix/wave23/children/MX23-V16",
+    "AB": "/mnt/ai_data/neural-forge-matrix/wave23/children/MX23-V16X13"
+   }
+  },
+  {
+   "pair": "V8X13",
+   "prefixes": 192,
+   "shared_rows": 8192,
+   "identity_metric": {
+    "norm_A": 3784.2560224736044,
+    "norm_B": 805.3492298209766,
+    "norm_AB_observed": 3896.471748710595,
+    "norm_AB_predicted_additive": 3909.002413922612,
+    "cross_term": 155559.42322591037,
+    "rho": 0.0510424563169426,
+    "additive_prediction_relative_residual": 0.19009661758820556,
+    "additive_prediction_r2": 0.9638632759815235,
+    "cosine_observed_vs_additive": 0.9819947122115079
+   },
+   "parent_probability_weighted_metric": {
+    "norm_A": 35.34802810198484,
+    "norm_B": 10.640242227164833,
+    "norm_AB_observed": 37.32093927075428,
+    "norm_AB_predicted_additive": 38.30110330744955,
+    "cross_term": 52.138334608235525,
+    "rho": 0.1386246454679237,
+    "additive_prediction_relative_residual": 0.17230359416906335,
+    "additive_prediction_r2": 0.9703114714364227,
+    "cosine_observed_vs_additive": 0.9858716653115129
+   },
+   "models": {
+    "A": "/mnt/ai_data/neural-forge-matrix/wave16/children/MX16-X13A",
+    "B": "/mnt/ai_data/neural-forge-matrix/wave24/children/MX24-V8",
+    "AB": "/mnt/ai_data/neural-forge-matrix/wave24/children/MX24-V8X13"
+   }
+  },
+  {
+   "pair": "V16W896",
+   "prefixes": 192,
+   "shared_rows": 16384,
+   "identity_metric": {
+    "norm_A": 7413.759532601215,
+    "norm_B": 955.2261129371493,
+    "norm_AB_observed": 7484.042866840367,
+    "norm_AB_predicted_additive": 7561.58307716457,
+    "cross_term": 650625.6493946015,
+    "rho": 0.09187270398308311,
+    "additive_prediction_relative_residual": 0.15366471174094018,
+    "additive_prediction_r2": 0.9763871563655737,
+    "cosine_observed_vs_additive": 0.9883677691339144
+   },
+   "parent_probability_weighted_metric": {
+    "norm_A": 31.12983666832096,
+    "norm_B": 5.816762216462473,
+    "norm_AB_observed": 32.13971565608673,
+    "norm_AB_predicted_additive": 32.3607790946132,
+    "cross_term": 22.15928496557455,
+    "rho": 0.12237637650262413,
+    "additive_prediction_relative_residual": 0.18544378304402367,
+    "additive_prediction_r2": 0.9656106033303211,
+    "cosine_observed_vs_additive": 0.9829462555821122
+   },
+   "models": {
+    "A": "/mnt/ai_data/neural-forge-matrix/wave19/children/MX19-W896",
+    "B": "/mnt/ai_data/neural-forge-matrix/wave23/children/MX23-V16",
+    "AB": "/mnt/ai_data/neural-forge-matrix/wave23/children/MX23-V16W896"
+   }
+  },
+  {
+   "pair": "W896X13",
+   "prefixes": 192,
+   "shared_rows": 65536,
+   "identity_metric": {
+    "norm_A": 15209.775105440138,
+    "norm_B": 10454.14800644303,
+    "norm_AB_observed": 14448.973141653427,
+    "norm_AB_predicted_additive": 19446.199576363942,
+    "cross_term": 18764104.332546942,
+    "rho": 0.11800934561088641,
+    "additive_prediction_relative_residual": 0.5146420273178112,
+    "additive_prediction_r2": 0.7351435837182133,
+    "cosine_observed_vs_additive": 0.9460409859965411
+   },
+   "parent_probability_weighted_metric": {
+    "norm_A": 32.36064534094899,
+    "norm_B": 36.70347269577454,
+    "norm_AB_observed": 43.100966405600886,
+    "norm_AB_predicted_additive": 57.441159249211374,
+    "cross_term": 452.5652505405555,
+    "rho": 0.3810279846013037,
+    "additive_prediction_relative_residual": 0.5470478950828753,
+    "additive_prediction_r2": 0.7007386004853954,
+    "cosine_observed_vs_additive": 0.929255374726233
+   },
+   "models": {
+    "A": "/mnt/ai_data/neural-forge-matrix/wave19/children/MX19-W896",
+    "B": "/mnt/ai_data/neural-forge-matrix/wave16/children/MX16-X13A",
+    "AB": "/mnt/ai_data/neural-forge-matrix/wave19/children/MX19-W896X13"
+   }
+  },
+  {
+   "pair": "X07KV6JQ",
+   "prefixes": 192,
+   "shared_rows": 65536,
+   "identity_metric": {
+    "norm_A": 7834.6369726106295,
+    "norm_B": 6484.97146273978,
+    "norm_AB_observed": 11402.305683975852,
+    "norm_AB_predicted_additive": 12988.21946532127,
+    "cross_term": 32628726.757101785,
+    "rho": 0.6422042569150104,
+    "additive_prediction_relative_residual": 0.4046067086651585,
+    "additive_prediction_r2": 0.8362934113031475,
+    "cosine_observed_vs_additive": 0.9366328694408539
+   },
+   "parent_probability_weighted_metric": {
+    "norm_A": 18.04748236259159,
+    "norm_B": 14.012929340467446,
+    "norm_AB_observed": 24.99469906800926,
+    "norm_AB_predicted_additive": 26.65556377486194,
+    "cross_term": 94.22263591337207,
+    "rho": 0.3725715524608484,
+    "additive_prediction_relative_residual": 0.5150860256508558,
+    "additive_prediction_r2": 0.7346863861792059,
+    "cosine_observed_vs_additive": 0.8776789767554336
+   },
+   "models": {
+    "A": "/mnt/ai_data/neural-forge-matrix/wave16/children/MX16-X07",
+    "B": "/mnt/ai_data/neural-forge-matrix/wave17/children/MX17-KV6JQ",
+    "AB": "/mnt/ai_data/neural-forge-matrix/wave18/children/MX18-X07KV6JQ"
+   }
+  },
+  {
+   "pair": "W896LSX13",
+   "prefixes": 192,
+   "shared_rows": 65536,
+   "identity_metric": {
+    "norm_A": 15221.003859908726,
+    "norm_B": 10454.14800644303,
+    "norm_AB_observed": 14344.857479401257,
+    "norm_AB_predicted_additive": 19415.452395614175,
+    "cross_term": 17995811.34119352,
+    "rho": 0.11309398080331069,
+    "additive_prediction_relative_residual": 0.5210959392674298,
+    "additive_prediction_r2": 0.7284590220789952,
+    "cosine_observed_vs_additive": 0.9458454111899279
+   },
+   "parent_probability_weighted_metric": {
+    "norm_A": 32.51897048357747,
+    "norm_B": 36.70347269577454,
+    "norm_AB_observed": 43.28666054602241,
+    "norm_AB_predicted_additive": 57.58856315613278,
+    "cross_term": 455.9071285733221,
+    "rho": 0.38197279991696714,
+    "additive_prediction_relative_residual": 0.5477493606723539,
+    "additive_prediction_r2": 0.6999706378830275,
+    "cosine_observed_vs_additive": 0.9282676681622887
+   },
+   "models": {
+    "A": "/mnt/ai_data/neural-forge-matrix/wave21/children/MX21-W896LS",
+    "B": "/mnt/ai_data/neural-forge-matrix/wave16/children/MX16-X13A",
+    "AB": "/mnt/ai_data/neural-forge-matrix/wave21/children/MX21-W896LSX13"
+   }
+  }
+ ]
+}

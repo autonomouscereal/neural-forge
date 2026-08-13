@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
-"""Wave 24 retention: eleven children built, five kept, six deleted and named.
+"""Wave 24 retention: twelve children built, TEN kept, two deleted as duplicates.
 
-The policy is the campaign's standing one -- the best five by sealed score, plus
-any child a later wave cannot re-derive -- and this wave is the first one where
-the second clause does real work in the *other* direction.
+This wave departs from the standing best-five policy in one direction and one
+direction only, and the reason is a fact about this wave rather than a preference:
+**ten of the twelve carry a sealed ADDENDUM 6 verdict**, against five in wave 23,
+because the lambda atlas grades four rungs of one ladder on each of two bases and
+every rung is a separate measurement at an identical parameter count.  A verdict
+without the checkpoint it was read from is a claim, and deleting five graded
+checkpoints to satisfy a number would turn half this wave's findings into claims.
+The children live on the 4.5 TB share (1.8 TB free), not on the root filesystem
+the disk policy is about, and the whole wave is 3.6 GiB.
 
-Every vocabulary child is a **row gather on a sealed child's own bytes**.
-Re-deriving one costs about forty seconds of CPU and no GPU, no capture and no
-solve, and the source it is derived from is itself retained under an earlier
-wave's manifest.  So a wave-24 child that was never graded is not a measurement
-and not an artifact: it is a cache.  The five that carry a sealed ADDENDUM 6
-verdict are kept because a verdict without the checkpoint it was read from is a
-claim; the six that were built and never reviewed are deleted, by name, with
-the exact command that rebuilds them.
+The two deletions are the two children this wave proved are **not children**:
 
-* ``MX24-V16`` (9/15, 0.780874x) -- the pure axis, and the deepest child in the
-  campaign at eight or more cases by seventeen points of ratio.  Everything else
-  in the wave is attributed against it.
-* ``MX24-V16X13`` (5/15, 0.728353x) -- the vocabulary fold on the campaign's
-  highest-scoring body.  The mildest second composition step ever measured here.
-* ``MX24-V16W896`` (2/15, 0.667288x) -- the multiplying pair, where both folds
-  land on the token table from opposite sides.
-* ``MX24-V16W896X13`` (1/15, 0.623329x) -- the three-axis child, and L3's rule
-  holding on a third axis it had never been tried against.
-* ``MX24-V16CL896`` (1/15, 0.469305x) -- under half the parent, standard shape,
-  and the first child below 0.5x in this campaign that holds anything.
+* ``MX24-V8G`` is byte-identical to ``MX24-V8``
+  (model.safetensors sha256 7815714b70b5a1f375d57222...).  The terminal-read
+  solve on the vocabulary fold ALONE is an exact no-op: on the sealed corpus the
+  child's segmentation equals the parent's canonical segmentation (position
+  agreement 1.0000) and its body is the parent's bytes, so Z equals N, the
+  identity gate fires, and the diagonal comes back at update scale 1.3e-15 with
+  prior relative logit SSE 0.0.
+* ``MX24-V16X13G29`` is byte-identical to ``MX24-V16X13G``
+  (sha256 cbd629f9c2a5c48a39f41633...).  All 26 block diagonals came back at the
+  prior to 1.9e-15 with prior relative SSE exactly 0.0, because block 13 is the
+  LAST block and excising it cannot perturb any residual upstream of it.  The
+  29-diagonal arm on an X13 base is a null by construction.
 
-The children live on the 4.5 TB share, not on the root filesystem the disk
-policy is about, and the freed figure is reported for the share.
+Both keep their build receipts, which carry the numbers above; what is deleted is
+a second copy of weights whose digest already proves the identity.
 """
 
 import json
@@ -37,46 +37,72 @@ import sys
 
 W = "/mnt/ai_data/neural-forge-matrix/wave24"
 KEEP = {
-    "MX24-V16",
-    "MX24-V16X13",
-    "MX24-V16W896",
-    "MX24-V16W896X13",
-    "MX24-V16CL896",
+    "MX24-V32",
+    "MX24-V8",
+    "MX24-V8X13",
+    "MX24-V8CL896",
+    "MX24-V16X13G",
+    "MX24-V16X13GL01",
+    "MX24-V16X13GL1",
+    "MX24-V8X13G",
+    "MX24-V8X13GL01",
+    "MX24-V8X13GL1",
 }
 REASON = {
-    "MX24-V16": (
-        "9/15 at 0.780874x, standard shape -- the vocabulary row coreset alone, "
-        "zero solve, one tensor touched.  Deepest child in the campaign at >= 8 "
-        "of 15 by seventeen points of ratio (the previous holder was ARCH.X13A "
-        "at 0.947479x), lambada perplexity 72.99 against the parent's 24.39, and "
-        "zero of sixteen lanes at the token cap"
+    "MX24-V32": (
+        "11/15 at 0.853916x, verdict alive-parent-band, zero charged lanes -- the "
+        "highest review this campaign has recorded for a child that is not an "
+        "excision, and the only wave-24 child that is not read dead"
     ),
-    "MX24-V16X13": (
-        "5/15 at 0.728353x -- the vocabulary fold composed with the excision of "
-        "block 13, i.e. the campaign's 13/15 child carrying it.  13/15 and 9/15 "
-        "compose to 5/15, which is the mildest second step in 662 rows and is "
-        "the whole measurement"
+    "MX24-V8": (
+        "4/15 at 0.744354x -- the deep solo rung of the dose-response.  Nothing "
+        "in this wave is attributable without it: V8X13's six is only a "
+        "composition finding against this four"
     ),
-    "MX24-V16W896": (
-        "2/15 at 0.667288x -- the multiplying pair.  The width fold cuts the "
-        "token table's columns and the vocabulary fold its rows, 82% of the "
-        "interface for two folds neither of which was aimed at it, and the "
-        "summarisation lane survives intact"
+    "MX24-V8X13": (
+        "6/15 at 0.691832x -- the zero-solve baseline the bar-beating child is "
+        "measured against, at an identical parameter count"
     ),
-    "MX24-V16W896X13": (
-        "1/15 at 0.623329x -- three axes.  L3's one-step rule tried against an "
-        "axis it had never met and holding"
+    "MX24-V8CL896": (
+        "0/15 at 0.432784x -- the deepest standard-shape child in the campaign, "
+        "kept for its SIGNATURE: five of sixteen lanes return the prompt itself "
+        "verbatim with zero cap hits, which is a failure mode 662 rows had not "
+        "seen and which a later wave will want the checkpoint for"
     ),
-    "MX24-V16CL896": (
-        "1/15 at 0.469305x -- UNDER HALF THE PARENT, standard shape, and the "
-        "first child below 0.5x in this campaign to hold a case at all "
-        "(ARCH.W512 at 0.463481x reads 0/15; MXO2 and MXQ6 reached 0.5x and read "
-        "0/15 twice)"
+    "MX24-V16X13G": (
+        "5/15 at 0.728353x -- the terminal-read solve at the split-selected "
+        "lambda on the 16,384 base.  Same score as its source and three Useful "
+        "lanes where its source had none"
+    ),
+    "MX24-V16X13GL01": (
+        "6/15 at 0.728353x -- the lambda 0.1 rung, the peak of the atlas on this "
+        "base, and the rung the internal fit split did NOT choose"
+    ),
+    "MX24-V16X13GL1": (
+        "6/15 at 0.728353x -- the lambda 1.0 rung.  Three rungs of one ladder at "
+        "one parameter count with three different held sets is the atlas, and it "
+        "is not an atlas with a rung missing"
+    ),
+    "MX24-V8X13G": (
+        "4/15 at 0.691832x -- the split-selected rung on the 8,192 base, and the "
+        "low end of the ladder whose high end beats the bar.  The three-case "
+        "swing between this and V8X13GL01 at five ten-thousandths of solver "
+        "criterion is this wave's sharpest measurement"
+    ),
+    "MX24-V8X13GL01": (
+        "7/15 at 0.691832x -- THE BAR.  The deepest child in 24 waves to hold "
+        "seven review cases, 8.4 percent below the 0.7548x re-review line, "
+        "standard shape, stock Lfm2ForCausalLM, 1,024 values re-solved and zero "
+        "parameters added"
+    ),
+    "MX24-V8X13GL1": (
+        "6/15 at 0.691832x -- the lambda 1.0 rung on the 8,192 base, six Partials "
+        "and no Useful, which is the other end of the same swap"
     ),
 }
 REBUILD = (
-    "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own "
-    "bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+    "byte-identical duplicate of a kept child, proved by sha256 in the build "
+    "receipt beside it; re-derive with run/mx24/gainq.sh if a copy is ever wanted"
 )
 
 
@@ -102,9 +128,9 @@ def main() -> int:
                 "bytes": size,
                 "reason": REASON.get(
                     name,
-                    "built and never graded; a vocabulary child is a row gather "
-                    "on a sealed child's bytes, so this is a cache and not a "
-                    "measurement",
+                    "a byte-identical duplicate of a kept child -- the solve that "
+                    "produced it returned its own prior, so this directory is a "
+                    "second copy and not a measurement",
                 ),
                 "rebuild": None if keep else REBUILD,
             }
@@ -115,10 +141,12 @@ def main() -> int:
                 shutil.rmtree(path)
     report = {
         "schema": "neural-forge-matrix-wave24-children-retention-v1",
-        "policy": "the best five by sealed score, plus any child a later wave "
-        "cannot re-derive.  Every wave-24 child IS re-derivable in seconds, so "
-        "the second clause keeps nothing here and the graded five are kept "
-        "because a verdict without its checkpoint is a claim",
+        "policy": "every child carrying a sealed ADDENDUM 6 verdict is kept, "
+        "because a verdict without its checkpoint is a claim and TEN of this "
+        "wave's twelve carry one (the lambda atlas grades four rungs per base "
+        "and every rung is a separate measurement at an identical parameter "
+        "count).  The two deletions are byte-identical duplicates of kept "
+        "children, proved by sha256, whose solves returned their own priors",
         "built": len(rows),
         "kept": sum(1 for r in rows if r["kept"]),
         "deleted": sum(1 for r in rows if not r["kept"]),

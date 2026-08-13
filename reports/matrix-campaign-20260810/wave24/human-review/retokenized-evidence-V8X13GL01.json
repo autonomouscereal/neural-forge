@@ -1,0 +1,20 @@
+{
+ "schema": "neural-forge-matrix-wave24-retokenized-evidence-v1",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave24/children/MX24-V8X13GL01",
+ "parent_model": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+ "trace": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+ "identity_gate": {
+  "assertion": "torch.equal(child_embed, parent_embed[injection])",
+  "passed": true,
+  "child_rows": 8192,
+  "hidden": 1024
+ },
+ "batches": 24,
+ "utf8_bytes": 17045,
+ "parent_stream_positions": 6335,
+ "child_stream_positions": 4181,
+ "sequence_length_ratio": 0.6599842146803473,
+ "fit_positions": 3145,
+ "heldout_positions": 1036,
+ "note": "the parent runs on `parent_ids` and the child on `child_ids`; the two are the SAME segmentation of the same text named in the two tables, so position n is the same prefix in both streams and a target taken from the parent at n is a target for the child at n"
+}

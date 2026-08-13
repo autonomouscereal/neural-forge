@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-13T12:33:11+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-13T16:33:54+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**309 cells sealed** (652 ledger rows including re-runs); newest seal 2026-08-13T12:22:39.824+00:00.
+**324 cells sealed** (682 ledger rows including re-runs); newest seal 2026-08-13T16:26:22.405+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 278 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 293 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -16,10 +16,10 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 
 | verdict | cells | meaning |
 |---|---:|---|
-| `alive-parent-band` | 40 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
-| `alive-degraded` | 23 | >= the A9 band of 8/15, outside the parent's +/-2 |
+| `alive-parent-band` | 41 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
+| `alive-degraded` | 24 | >= the A9 band of 8/15, outside the parent's +/-2 |
 | `impaired` | 13 | < 8/15 but still coherent, on-task language |
-| `dead` | 133 | incoherent, emit-zero floor failed, or degenerate output |
+| `dead` | 146 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
@@ -114,6 +114,21 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `ARCH.MM896` | GLOBAL | NA | 0.8590 | -- | **dead** | 2/15 | 12 | coherent | 0.0430 |
 | `ARCH.W720` | GLOBAL | NA | 0.6726 | -- | **dead** | 0/15 | 12 | coherent | 0.0137 |
 | `ARCH.W896LSKV6JQ` | GLOBAL | NA | 0.8410 | -- | **dead** | 1/15 | 12 | coherent | 0.0156 |
+| `ARCH.V16` | GLOBAL | NA | 0.7809 | -- | **alive-degraded** | 9/15 | 12 | coherent | 0.1289 |
+| `ARCH.V16X13` | GLOBAL | NA | 0.7284 | -- | **dead** | 5/15 | 12 | coherent | 0.0781 |
+| `ARCH.V16W896` | GLOBAL | NA | 0.6673 | -- | **dead** | 2/15 | 12 | coherent | 0.0156 |
+| `ARCH.V16W896X13` | GLOBAL | NA | 0.6233 | -- | **dead** | 1/15 | 12 | coherent | 0.0723 |
+| `ARCH.V16CL896` | GLOBAL | NA | 0.4693 | -- | **dead** | 1/15 | 12 | coherent | 0.0176 |
+| `ARCH.V32` | GLOBAL | NA | 0.8539 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.3066 |
+| `ARCH.V8` | GLOBAL | NA | 0.7444 | -- | **dead** | 4/15 | 12 | coherent | 0.1465 |
+| `ARCH.V8X13` | GLOBAL | NA | 0.6918 | -- | **dead** | 6/15 | 12 | coherent | 0.1055 |
+| `ARCH.V8CL896` | GLOBAL | NA | 0.4328 | -- | **dead** | 0/15 | 12 | coherent | 0.0195 |
+| `ARCH.V16X13G` | GLOBAL | NA | 0.7284 | -- | **dead** | 5/15 | 12 | coherent | 0.0508 |
+| `ARCH.V16X13GL01` | GLOBAL | NA | 0.7284 | -- | **dead** | 6/15 | 12 | coherent | 0.0488 |
+| `ARCH.V16X13GL1` | GLOBAL | NA | 0.7284 | -- | **dead** | 6/15 | 12 | coherent | 0.0312 |
+| `ARCH.V8X13G` | GLOBAL | NA | 0.6918 | -- | **dead** | 4/15 | 12 | coherent | 0.0762 |
+| `ARCH.V8X13GL01` | GLOBAL | NA | 0.6918 | -- | **dead** | 7/15 | 12 | coherent | 0.0410 |
+| `ARCH.V8X13GL1` | GLOBAL | NA | 0.6918 | -- | **dead** | 6/15 | 12 | coherent | 0.0820 |
 | `C03.T8.S4.L00` | L00 | S4 | 0.2500 | 0.250 ok | **dead** | 0/15 | 12 | pending | 0.0078 |
 | `C05.T1.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
 | `C05.T2.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
@@ -374,9 +389,9 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 |---|---:|---:|
 | `infra` | 13 | 4% |
 | `solve-conditioning` | 17 | 6% |
-| `local-solve` | 116 | 40% |
+| `local-solve` | 116 | 38% |
 | `macrocell-band` | 1 | 0% |
-| `composition` | 132 | 45% |
+| `composition` | 147 | 48% |
 | `free-run` | 12 | 4% |
 
 ## 4. Band-versus-behavior agreement
@@ -486,6 +501,21 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `ARCH.MM896` | architecture | NA | 197311616 | 229693184 | 0.8590 |
 | `ARCH.W720` | architecture | NA | 154499088 | 229693184 | 0.6726 |
 | `ARCH.W896LSKV6JQ` | architecture | NA | 193182848 | 229693184 | 0.8410 |
+| `ARCH.V16` | architecture | NA | 179361536 | 229693184 | 0.7809 |
+| `ARCH.V16X13` | architecture | NA | 167297792 | 229693184 | 0.7284 |
+| `ARCH.V16W896` | architecture | NA | 153271424 | 229693184 | 0.6673 |
+| `ARCH.V16W896X13` | architecture | NA | 143174400 | 229693184 | 0.6233 |
+| `ARCH.V16CL896` | architecture | NA | 107796224 | 229693184 | 0.4693 |
+| `ARCH.V32` | architecture | NA | 196138752 | 229693184 | 0.8539 |
+| `ARCH.V8` | architecture | NA | 170972928 | 229693184 | 0.7444 |
+| `ARCH.V8X13` | architecture | NA | 158909184 | 229693184 | 0.6918 |
+| `ARCH.V8CL896` | architecture | NA | 99407616 | 229693184 | 0.4328 |
+| `ARCH.V16X13G` | architecture | NA | 167297792 | 229693184 | 0.7284 |
+| `ARCH.V16X13GL01` | architecture | NA | 167297792 | 229693184 | 0.7284 |
+| `ARCH.V16X13GL1` | architecture | NA | 167297792 | 229693184 | 0.7284 |
+| `ARCH.V8X13G` | architecture | NA | 158909184 | 229693184 | 0.6918 |
+| `ARCH.V8X13GL01` | architecture | NA | 158909184 | 229693184 | 0.6918 |
+| `ARCH.V8X13GL1` | architecture | NA | 158909184 | 229693184 | 0.6918 |
 | `C03.T5.M16.L00` | T5 | M16 | 2949632 | 3145728 | 0.9377 |
 | `C03.T8.S4.L00` | T8 | S4 | 786432 | 3145728 | 0.2500 |
 | `C04.T1.M16.L00` | T1 | M16 | 2048 | 3072 | 0.6667 |
@@ -670,7 +700,7 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.MXQ5` | composition | NA | 163144199 | 229693184 | 0.7103 |
 | `COMP.MA.MXQ7` | composition | NA | 115911947 | 229693184 | 0.5046 |
 
-224 of 273 sealed cells with a storage reading actually contract.
+239 of 288 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -1678,6 +1708,177 @@ standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / w
 | `mx22-w89` | sm86 | fail | solve-conditioning | 0.9210 | 0.3905 | 0.8725 | 0.016 | 0.006 | 0.841 | -- | 39.8 | `0db16a9b2094` |
 
 > ADDENDUM 6 behaviour review by claude-opus5-mx22 of receipt 0db16a9b20942e81: verdict dead, 1/15 useful-or-partial (parent 12/15). hidden_size 896 with the WIDTH writers' lambda on an internal split, composed with the 16-to-12 head merge under the joint solve and no ALS sweep -- the campaign's two measured case-RECOVERY mechanisms in one child, at 193,182,848 parameters and 0.841047x, which is wave 19's W896KV6JS parameter for parameter.  The summarisation lane is Useful: it names the decision, the unresolved risk and the mitigation, with one sentence repeated.  Everything else is gone, including the capability the lambda split exists for: planning-dependencies, recovered at 896 alone and again inside the 896+excision composition, fills the cap here with 'Sending a d d d d'.  Against W896KV6JS's sealed 2/15 the width split costs the instruction lane and buys nothing, so composing the two recovery mechanisms is worth one case LESS than composing the merge with its own
+
+### `ARCH.V16` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 23
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.3507 | 0.129 | 0.049 | 0.781 | -- | 40.5 | `4095ca8bb737` |
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.3507 | 0.129 | 0.049 | 0.781 | -- | 40.5 | `aa66a4a68604` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx23 of receipt aa66a4a6860478a4: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). vocab_size 16,384 -- the tied token table cut to a quarter of its rows, gathered VERBATIM out of the parent's own bytes, with the BPE merge list restricted to the closure of what was kept and a stock tokenizer emitted beside it.  Zero solve, zero capture, one tensor touched, 0.780874x.  It holds NINE of fifteen: retrieval answers all three supported questions and adds nothing, summarisation names the decision, the unresolved risk and the mitigation, the email carries both asks under the word limit, the uncertainty lane names the four data points it would need, and the instruction lane gives three distinct household actions with detail.  Four more are held in structure and lost in content -- the greeting supplies its one question without answering the person, seasons reaches the 23.5-degree tilt and raises the distance fallacy but explains the mechanism backwards, the analogy lane produces one analogy and two near-duplicate caveats, and the correction lane produces four options that contradict their own labels.  What it loses is arithmetic, ord
+> ... [236 more characters in the receipt]
+
+### `ARCH.V16X13` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 23
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.7720 | 0.078 | 0.035 | 0.728 | -- | 39.6 | `f7e7f3c1f66c` |
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.7720 | 0.078 | 0.035 | 0.728 | -- | 39.6 | `aaf9e095f058` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx23 of receipt aaf9e095f058f309: verdict dead, 5/15 useful-or-partial (parent 12/15). vocab_size 16,384 composed with block 13 excised -- the campaign's HIGHEST scoring child (ARCH.X13A, 13/15) carrying the vocabulary fold on top, at 0.728353x.  The two folds share no tensor: one is a row gather on the tied table, the other deleted a conv block, and neither re-solved anything the other touched.  It reads 5/15, all Partial, and the arithmetic of that is the finding: 13/15 and 9/15 compose to 5/15, which is additive interference exactly as L3 predicts -- and it is the MILDEST second step in the campaign, against 13/15 + 4/15 -> 1/15 for the same excision with the width fold.  What survives is structural: retrieval still names Saturdays, 4:15 p.m. and the north gate; summarisation still names decision, risk and mitigation in one garbled sentence; the uncertainty lane still lists the missing data after wrongly opening with confidence.  What breaks is a signature this campaign has not seen: not the loop-to-the-cap of a dying width child (cap hits 0 of 16) but a word substituted for itself -- 'Earth's Earth-like Earth', 'imper imper imper', 'p
+> ... [136 more characters in the receipt]
+
+### `ARCH.V16W896` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 23
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.8421 | 0.016 | 0.002 | 0.667 | -- | 36.8 | `cdb800e59275` |
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.8421 | 0.016 | 0.002 | 0.667 | -- | 36.8 | `cbe6dcc0a0e0` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx23 of receipt cbe6dcc0a0e0d861: verdict dead, 2/15 useful-or-partial (parent 12/15). vocab_size 16,384 composed with hidden_size 896 -- the MULTIPLYING pair, where the width fold narrows the token table's columns and the vocabulary fold cuts its rows: 16,384 x 896 = 14,680,064 against the parent's 65,536 x 1,024 = 67,108,864, an 82% cut of the interface for two folds neither of which was aimed at it.  0.667288x, deeper than the campaign frontier ARCH.CL896 by two points of ratio.  It reads 2/15.  Summarisation survives INTACT -- decision, unresolved risk and mitigation, one clean sentence, the same lane the width axis holds in every 896 child ever built -- and the uncertainty lane names all four missing data points in its first line before it degenerates.  Everything else is gone: two lanes return the empty string, retrieval returns a bare dash, and the greeting and the correction lane loop.  Against W896's sealed 4/15 and V16's 9/15 the composed child is worth 2, which is additive interference at its usual severity and NOT at the excision's
+
+### `ARCH.V16W896X13` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 23
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.9948 | 0.072 | 0.008 | 0.623 | -- | 41.4 | `b423ebe76e4c` |
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.9948 | 0.072 | 0.008 | 0.623 | -- | 41.4 | `b91139879333` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx23 of receipt b91139879333f992: verdict dead, 1/15 useful-or-partial (parent 12/15). vocab_size 16,384 composed with hidden_size 896 AND block 13 excised -- three axes, 0.623329x, and the third step is fatal exactly as L3 says.  It reads 1/15 and the one it holds is a lane the wave-20 calibration decides rather than a lane it answers:  returns six numbered lines naming backup, DNS, TLs, Verify and rollback in a sensible order and nothing else, and wave 20 sealed a Partial on this lane for four such items before a degeneration.  That calibration is applied here in both directions and it is worth stating that it cuts against this wave's own headline: the SAME lane in  is read a MISS despite six well-formed paragraphs, because it names one of the five work items and substitutes DDoS protection for TLS.  The lane keys on the items, not the prose.  Four of sixteen lanes hit the cap, two return the empty string
+
+### `ARCH.V16CL896` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 23
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.7664 | 0.018 | 0.008 | 0.469 | -- | 38.1 | `fbeaf8563227` |
+| `mx23-v16` | sm86 | fail | composition | -- | -- | 0.7664 | 0.018 | 0.008 | 0.469 | -- | 38.1 | `5d2bce5aa832` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx23 of receipt 5d2bce5aa83260b3: verdict dead, 1/15 useful-or-partial (parent 12/15). vocab_size 16,384 composed with the campaign frontier's own body -- ARCH.CL896, intermediate_size 896 at every MLP site, 4/15 at 0.688431x -- giving 107,796,224 parameters and **0.469305x, UNDER HALF THE PARENT, standard shape, and the first child below 0.5x in this campaign that holds anything at all**.  ARCH.W512 (0.463481x) reads 0/15 and the note that sealed it said it is not a model; ARCH.MXO2 and MXQ6 reached 0.5x twice and read 0/15 both times.  This holds ONE: summarisation echoes the prompt and then names the decision, the unresolved risk and the mitigation correctly, which is the substance the lane asks for carried behind a formatting failure.  Six of sixteen lanes fill the cap.  It is a marginal reading at a depth nothing has ever read non-zero at, and it is reported as exactly that and not as a coherent child
+
+### `ARCH.V32` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v32` | sm86 | fail | composition | -- | -- | 0.0941 | 0.307 | 0.246 | 0.854 | -- | 45.3 | `5b2d5ec7f1da` |
+| `mx24-v32` | sm86 | fail | composition | -- | -- | 0.0941 | 0.307 | 0.246 | 0.854 | -- | 45.3 | `85c46542ee51` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 85c46542ee510906: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). vocab_size 32,768 -- the shallow rung of the dose-response, one integer away from wave 23's sealed 16,384, off the same census and the same zero-solve gather.  0.853916x, and it reads ELEVEN OF FIFTEEN, which is the highest review this campaign has recorded for any child that is not an excision.  It is the only child in 24 waves to answer the arithmetic lane correctly (102 kits, 94 after inspection, 18 per box, 4 left over, steps shown) and the only one to name all five work items the planning lane asks for inside the six steps it asks for; the retrieval, summarisation, email and uncertainty lanes all land.  It loses the four lanes the vocabulary axis loses at every K: the ordering proof, the RAM analogy, the deduplication function and the lighthouse scene.  CAP HITS 0 OF 16.  Measured tokens per byte 0.2279 against the parent's 0.2135, so the sequence is 6.75 percent longer -- compute the parameter count does not show.  Position agreement with the parent's segmentation on the review prompts is 0.3264
+
+### `ARCH.V8` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v8-` | sm86 | fail | composition | -- | -- | 0.5611 | 0.146 | 0.104 | 0.744 | -- | 39.7 | `989fd814143c` |
+| `mx24-v8-` | sm86 | fail | composition | -- | -- | 0.5611 | 0.146 | 0.104 | 0.744 | -- | 39.7 | `458fc46fad1b` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 458fc46fad1ba6b4: verdict dead, 4/15 useful-or-partial (parent 12/15). vocab_size 8,192 -- the deep rung, 0.744354x, and it reads FOUR of fifteen against the 16,384 rung's nine and the 32,768 rung's eleven.  Three points now exist on this axis and they do not track the parameter ratio; they track the SEGMENTATION SHIFT.  Position agreement with the parent's segmentation on the review prompts is 0.3264 at 32,768, 0.1460 at 16,384 and 0.0565 here -- the child and the parent read the same sentence one time in eighteen -- and the review goes 11, 9, 4 across those three numbers while the ratio moves only from 0.8539 to 0.7444.  What survives is the email, which carries all three items the prompt names in under forty words, and three lanes held in part: the greeting supplies its question, retrieval names Saturday and 4:15 p.m. but inverts the gate (it recommends the north gate, which the note says is closed), and the uncertainty lane lists the four data points before offering to speculate anyway.  Everything else fails on content: 17 kits per hour for 6 hours is answered 17 kits, the seasons lane says Earth has seasons because i
+> ... [125 more characters in the receipt]
+
+### `ARCH.V8X13` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8806 | 0.105 | 0.078 | 0.692 | -- | 35.4 | `7385b728039d` |
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8806 | 0.105 | 0.078 | 0.692 | -- | 35.4 | `9f751328d9d5` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 9f751328d9d59133: verdict dead, 6/15 useful-or-partial (parent 12/15). vocab_size 8,192 composed with block 13 excised -- 158,909,184 parameters, 0.691832x, and it reads SIX of fifteen.  That is the first child in this campaign to hold six or more materially below 0.7548x, and it strictly dominates the previous best below that line (wave 23's V16X13, five of fifteen at 0.728353x) on BOTH axes: deeper by 3.7 points of ratio and one case higher, holding a SUPERSET of V16X13's five lanes plus the email.  The composition arithmetic is the surprise and it is reported as one: the same excision that takes the 16,384 rung DOWN from nine to five takes the 8,192 rung UP from four to six.  Composition is not a tax with a fixed rate on this axis, and the campaign has no story for that yet.  What holds: the greeting supplies its question, three numbered actions land, retrieval names Saturday and 4:15 p.m., summarisation names decision, risk and mitigation in one garbled sentence, the uncertainty lane lists the missing data, and the email carries all three named items with an email form -- the same lane wave 23 charged V16X13 a miss on 
+> ... [143 more characters in the receipt]
+
+### `ARCH.V8CL896` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v8c` | sm86 | fail | composition | -- | -- | 0.7968 | 0.020 | 0.008 | 0.433 | -- | 34.5 | `15d54128b681` |
+| `mx24-v8c` | sm86 | fail | composition | -- | -- | 0.7968 | 0.020 | 0.008 | 0.433 | -- | 34.5 | `d9eba2806d8f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt d9eba2806d8fbdd2: verdict dead, 0/15 useful-or-partial (parent 12/15). vocab_size 8,192 on the campaign frontier's own body -- ARCH.CL896, intermediate_size 896 at every MLP site -- giving 99,407,616 parameters and 0.432784x, the deepest standard-shape child this campaign has ever built.  It reads ZERO of fifteen and it is reported as exactly that.  Its value is the SIGNATURE, which is new in 662 rows: five of sixteen lanes return THE PROMPT ITSELF, verbatim, character for character -- the instruction lane, the seasons lane, the summarisation lane, the coding lane and the creative lane are the prompt text and nothing else -- with ZERO cap hits.  A width child dies by looping to the cap; wave 23's vocabulary children died by substituting a word for itself; this one dies by copying.  That is what a model does when the segmentation under it is far enough from its training distribution that the likeliest continuation of a prompt is the prompt.  Wave 23's V16CL896 held one lane at 0.469305x; the 8,192 rung of the same body holds none, so the sub-half region is priced twice now and both prices are marginal or zero
+
+### `ARCH.V16X13G` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v16` | sm86 | fail | composition | -- | -- | 0.7759 | 0.051 | 0.021 | 0.728 | -- | 45.7 | `69fdad412bd9` |
+| `mx24-v16` | sm86 | fail | composition | -- | -- | 0.7759 | 0.051 | 0.021 | 0.728 | -- | 45.7 | `47af1dcc822e` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 47af1dcc822e460b: verdict dead, 5/15 useful-or-partial (parent 12/15). wave 23's V16X13 with ONE tensor re-solved: the final norm's 1,024-entry diagonal, against the parent's own logits over the child's own kept rows on the child's own segmentation of the campaign's own 24 batches.  IDENTICAL parameter count, identical shapes, identical config -- 167,297,792 and 0.728353x -- because 1,024 values are overwritten in place and nothing is added.  Out-of-sample terminal logit error falls 0.2931 to 0.2039, a 30 percent reduction on rows the solve never saw, and the identity gate is exact: at Z equal to N the solve returns the prior to 4.0e-13.  The review is a CASE SWAP and not a gain.  It holds five, the same count as its source, but where V16X13 held five PARTIALS and no Useful, this child holds THREE USEFUL -- the instruction lane gives three clean distinct actions with no preamble, summarisation names decision, unresolved risk and mitigation correctly in one sentence, and the uncertainty lane names all four data points and withholds the explanation -- and loses the email, which inverts Friday to Monday exactly as its source 
+> ... [115 more characters in the receipt]
+
+### `ARCH.V16X13GL01` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v16` | sm86 | fail | composition | -- | -- | 0.7721 | 0.049 | 0.021 | 0.728 | -- | 35.9 | `5238a40493a7` |
+| `mx24-v16` | sm86 | fail | composition | -- | -- | 0.7721 | 0.049 | 0.021 | 0.728 | -- | 35.9 | `a3163739dca1` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt a3163739dca10cf7: verdict dead, 6/15 useful-or-partial (parent 12/15). the same solve at the lambda rung ONE STEP MILDER than the one the internal fit split chose -- relative lambda 0.1, update scale 0.2728 against 0.3152.  Identical parameters, 0.728353x.  It reads SIX, one more than both the sealed source and the split-selected rung, and it keeps all three Useful lanes while adding the RAM comparison, which no other child on this base holds.  Held-out terminal logit SSE at this rung is 0.2048 against 0.2039 at the chosen rung: the solver's own out-of-sample criterion is WORSE here by nine ten-thousandths and the behaviour is better by a case.  That is the atlas doing exactly what S5 said it would do, and it is also the sharpest thing this wave has to say about solver criteria
+
+### `ARCH.V16X13GL1` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v16` | sm86 | fail | composition | -- | -- | 0.7712 | 0.031 | 0.021 | 0.728 | -- | 37.6 | `13a5c3106158` |
+| `mx24-v16` | sm86 | fail | composition | -- | -- | 0.7712 | 0.031 | 0.021 | 0.728 | -- | 37.6 | `570f58aba393` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 570f58aba393beda: verdict dead, 6/15 useful-or-partial (parent 12/15). the same solve at relative lambda 1.0 -- update scale 0.1360, less than half the move of the split-selected rung, held-out terminal logit SSE 0.2234 against 0.2039.  Identical parameters, 0.728353x.  It reads SIX: summarisation and the uncertainty lane land cleanly, and the greeting, the three actions, retrieval and the RAM comparison are held in part.  Three rungs of one ladder on one base now read 5, 6 and 6 with three DIFFERENT held sets at the same 167,297,792 parameters, and the ladder's own out-of-sample error is monotone across them while the review is not
+
+### `ARCH.V8X13G` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8814 | 0.076 | 0.027 | 0.692 | -- | 38.9 | `ea75747b8b8f` |
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8814 | 0.076 | 0.027 | 0.692 | -- | 38.9 | `96cb625e361d` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 96cb625e361d827d: verdict dead, 4/15 useful-or-partial (parent 12/15). the terminal-read solve on the 8,192 base at the rung the internal fit split chose (relative lambda 0.01, update 0.3183); out-of-sample terminal logit error 0.2402 to 0.1622, a 32 percent cut.  Identical parameters to its source, 0.691832x.  It reads FOUR against its source's six -- the split-selected rung LOSES two cases here while the same rung on the 16,384 base held its count -- and what it buys instead is two Useful lanes where the source had one: the greeting is the only lane in this wave, INCLUDING THE PARENT'S OWN, that both responds naturally to the person and asks exactly one follow-up question, and the ordering lane states the correct finish order (Mira, Theo, Jun, Sal) which the parent's own lane does not.  It loses the three actions, retrieval and summarisation.  Three of sixteen lanes hit the cap
+
+### `ARCH.V8X13GL01` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8791 | 0.041 | 0.027 | 0.692 | -- | 36.2 | `f860a2caf62b` |
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8791 | 0.041 | 0.027 | 0.692 | -- | 36.2 | `f2f8217f3419` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt f2f8217f34192aa0: verdict dead, 7/15 useful-or-partial (parent 12/15). SEVEN OF FIFTEEN AT 0.691832x.  This is the deepest child in 24 waves to hold seven review cases and it is 8.4 percent below the 0.7548x re-review line.  It is wave 23's excision plus this wave's 8,192-row vocabulary coreset plus ONE re-solved diagonal -- 1,024 values overwritten in the final norm, zero parameters added, zero shapes moved, stock Lfm2ForCausalLM with vocab_size 8192 and num_hidden_layers 13 -- at the lambda rung the internal fit split did NOT choose.  It holds: the greeting, answered naturally with exactly one follow-up question (Useful, and better than the parent's own lane); the email, carrying arrival by Friday, installation Monday and the tracking request in about thirty words with a salutation and a sign-off (Useful); three numbered actions; the correct finish order Mira, Theo, Jun, Sal, which the PARENT does not produce; retrieval, naming 4:15 p.m. and the closed north gate with the day mangled into a non-word; summarisation, naming decision, risk and mitigation; and the uncertainty lane, naming all four data points the prompt list
+> ... [406 more characters in the receipt]
+
+### `ARCH.V8X13GL1` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 24
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8801 | 0.082 | 0.027 | 0.692 | -- | 41.0 | `bb8897d38ed7` |
+| `mx24-v8x` | sm86 | fail | composition | -- | -- | 0.8801 | 0.082 | 0.027 | 0.692 | -- | 41.0 | `30e6a493fe9a` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx24 of receipt 30e6a493fe9af086: verdict dead, 6/15 useful-or-partial (parent 12/15). the same ladder's mildest reviewed rung on the 8,192 base -- relative lambda 1.0, update scale 0.1446, held-out terminal logit SSE 0.1765.  Identical parameters, 0.691832x.  It reads SIX, all Partial: the greeting, three actions, retrieval, summarisation, the email and the uncertainty lane are each held in part and none in full, and the two Useful lanes the neighbouring rungs carry are gone.  Four rungs of one ladder on one base now read 6, 6, 7 and 4 going from no solve through lambda 1.0, 0.1 and 0.01, at ONE parameter count, and the solver's own held-out error is monotone decreasing across that sequence.  One of sixteen lanes hits the cap, the fewest of any 8,192 composed child
 
 ### `CAL.C01.T5.X4` -- FAIL
 

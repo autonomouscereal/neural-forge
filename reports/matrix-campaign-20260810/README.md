@@ -45,6 +45,39 @@ python experiments/render_matrix_ledger.py \
 | `../../docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` | the consolidating report for waves 1–22: **all 110** whole-model children that hold at least one review case, sorted by net ratio with both readings and every benchmark column; every law with its evidence; seventeen corrections of record; the scale-transfer statements with their confidence; and what remains unbuilt and why. It does **not** declare the campaign closed |
 | `wave22/campaign-frontier-table.json` | the artifact both of the above are generated from — a function of the ledger, the per-wave child indexes and the sealed `lm-eval` output, built by `run/mx22/mx22_campaign_table.py` and rendered by `run/mx22/mx22_report_tables.py` |
 
+## wave24/ — a seven-case child below the line, and the lambda that found it was not the one the solver picked
+
+`NOTES-MX-AB.md` at the repo root is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave24/prereads/P1-cross-error.json` | **L3's cross term, measured.** Twenty-three waves described composition damage with score arithmetic; scores are not a vector space. This gives the error field a representation -- the next-token distribution at a text prefix, which is the same object for models that do not share a tokenizer -- and evaluates `\|\|e_A+e_B\|\|^2 = \|\|e_A\|\|^2 + \|\|e_B\|\|^2 + 2<e_A,e_B>` on six sealed triples in two metrics. rho is positive on all six (+0.049 to +0.642) and it does **not** separate the murdered pair from the living one: the LIVING pair `X07+KV6JQ` carries the largest rho in the census, which falsifies S3's pre-registration outright |
+| `wave24/wave24-child-index.json` | every wave-24 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict |
+| `wave24/campaign-frontier-table.json` | the campaign-wide table regenerated: **172** reviewed whole-model children, **124** holding at least one case, 71 benchmark rows and **eleven** parent rows all matching the sealed reference. The per-lane column is populated for waves 15-24 for the first time -- earlier regenerations passed a `--repo` that resolved above the child indexes, so 105 rows read `unstated` that had a sealed reading all along |
+| `wave24/human-review/` | 80 files: every dossier, every child and parent response verbatim, every receipt, verdict, per-case reading and build receipt, the cross-error census, the re-tokenized evidence manifest, the frontier table and the scorecard |
+| `wave24/ledger-merge-report.json` | the exactly-once merge of 20 shard rows into the campaign ledger (662 -> 682): 10 ARCH run rows and 10 ADDENDUM 6 verdict rows, no superseded rows |
+| `wave24/children-retention-manifest-wave24.json` | ten of twelve children kept -- this wave grades ten, and a verdict without its checkpoint is a claim. The two deletions are byte-identical duplicates of kept children, proved by sha256 |
+| `wave24/deployments-prune-manifest-wave24.json` | current+1; two older deployments freed 423 MiB on a root filesystem sitting at 100% |
+| `run/mx24/mx24_retok.py` | the campaign's 24 captured batches re-tokenized into a vocabulary child's own segmentation, with the parent run on the injection of that same segmentation so the two streams are position-aligned. The child->parent injection is recomputed by token STRING and gated with `torch.equal` against the parent's rows |
+| `run/mx24/mx24_termgain.py` | the terminal-read solve: one convex quadratic in the final norm's diagonal against the parent's own logits over the child's own kept rows, normal equations `[(E^T E) o (Z^T Z)] d = [(E^T E) o (Z^T N)] g`, no K-column target ever formed, identity gate exact to 4e-13 |
+| `run/mx24/mx24_rho.py` | the cross-error census above |
+
+Wave 24's one-line result: **`ARCH.V8X13GL01`, 7/15 at 0.691832x, standard shape** --
+the deepest seven-case child in the campaign, 8.4% below the 0.7548x re-review
+line, built from a sealed excision plus an 8,192-row verbatim vocabulary coreset
+plus **1,024 re-solved values and zero added parameters**. Three things sit under
+it. The vocabulary axis has a **dose-response** that tracks the measured
+segmentation shift and not the parameter ratio: K = 32,768 / 16,384 / 8,192 read
+**11 / 9 / 4** at position agreements 0.3264 / 0.1460 / 0.0565. The lambda
+portfolio is **non-monotone in the solver's own criterion**: four rungs at one
+parameter count read 6, 6, 7 and 4, and five ten-thousandths of held-out terminal
+logit SSE separate the four from the seven. And the solve is a **provable no-op**
+on the vocabulary fold alone -- `MX24-V8G` is byte-identical to `MX24-V8` -- which
+is the sharpest statement this campaign has of a structural limit: the sealed
+corpus was used to CHOOSE the kept set, so it is covered at 1.0 and agrees with
+the parent at 1.0, and **no closed-form solve on that evidence can see the
+vocabulary axis's failure mode at all.**
+
 ## wave22/ — the objective loses where it had room, and the slope has 16 dimensions left
 
 `NOTES-MX-Z.md` at the repo root is the narrative. The rest is raw:

@@ -1,19 +1,25 @@
 # Campaign scorecard — one page, for scoring
 
-**Campaign:** stage-1 matrix, waves 1–23, `reports/matrix-campaign-20260810/`.
+**Campaign:** stage-1 matrix, waves 1–24, `reports/matrix-campaign-20260810/`.
 **Parent:** `LFM2.5-230M`, **229,693,184 parameters**, sealed **12/15** on the
 frozen 15-prompt review (parent lane `865f006e3813712e…`, identical on every
 dossier in every wave).
-**Ledger:** 662 rows, sha `3967d7045a4aaaf87807283c4edc043577e40861325ada4af528e08272fe7e05`.
-**Reviewed whole-model children:** 162. **Scoring at least 1 of 15:** 115.
+**Ledger:** 682 rows, sha `5d378f85f94cab9eb55c9f46aab7e01a2c52a36a3504690dd4d911612603f1ec`.
+**Reviewed whole-model children:** 172. **Scoring at least 1 of 15:** 124.
 
-**Wave 23 rewrote the top of this page with one axis nobody had moved.** The
-tied token interface is 29.2% of this parent; a **verbatim row coreset** of it --
-16,384 of 65,536 rows gathered out of the parent's own bytes, the BPE merge tree
-closed over what was kept, a stock tokenizer emitted, **nothing solved** -- is
-`ARCH.V16` at **0.780874x and 9/15**, and composing it onto four sealed bodies
-put three new children below every row wave 22 left here. Four rows are new, one
-is displaced, and the child that has held rank 1 since wave 15 is now rank 4.
+**Wave 24 put a child seven cases deep BELOW the re-review line.** `ARCH.V8X13GL01`
+is the 8,192-row vocabulary coreset on the excised body with **one 1,024-entry
+diagonal re-solved** -- zero parameters added, zero shapes moved, stock
+`Lfm2ForCausalLM` -- at **0.691832x and 7/15**, which is 8.4% below 0.7548x and
+the deepest seven-case child in 24 waves on the standard-shape column. Two things
+under it are worth as much as the row. First, the vocabulary axis now has a
+**dose-response** and it does not track the parameter ratio: K = 32,768 / 16,384 /
+8,192 read **11 / 9 / 4** while the ratio moves only 0.8539 -> 0.7444, and what
+those three reviews DO track is the measured position agreement with the parent's
+segmentation (0.3264 / 0.1460 / 0.0565). Second, the lambda that produced the
+seven is **not** the lambda the solver's own out-of-sample criterion chose: four
+rungs of one ladder at one parameter count read 6, 6, 7 and 4, and five
+ten-thousandths of held-out terminal logit SSE separate the four from the seven.
 
 The full table with both readings and every benchmark column is
 `docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` §1. This page is the top of it,
@@ -31,21 +37,21 @@ character column here are what the text actually does.
 
 | rank | child | net | review | shape | the character of its failure | READ- dossier |
 |---:|---|---:|---:|---|---|---|
-| 1 | `ARCH.V16CL896` | **0.469305** | **1/15** | standard | **under half the parent, and the first child below 0.5x in this campaign that holds anything at all.** The vocabulary coreset on `CL896`'s body. One case: it echoes the summarisation prompt and then names the decision, the unresolved risk and the mitigation correctly. Six of sixteen lanes fill the cap | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16CL896.txt` |
-| 2 | `ARCH.V16W896X13` | **0.623329** | **1/15** | standard | three axes -- vocabulary, width 896 and block 13 excised -- and the third step is fatal exactly as the composition rule says. Its one case is six bare numbered lines naming backup, DNS, TLs, verify and rollback; four of sixteen lanes hit the cap | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16W896X13.txt` |
-| 3 | `ARCH.V16W896` | **0.667288** | **2/15** | standard | the multiplying pair: the width fold cuts the token table's columns and the vocabulary fold its rows, 82% of the interface gone. Summarisation survives INTACT -- decision, risk, mitigation, one clean sentence -- and the uncertainty lane names all four missing data points before it degenerates; two lanes return the empty string | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16W896.txt` |
+| 1 | `ARCH.V16CL896` | **0.469305** | **1/15** | standard | under half the parent and it holds one lane: summarisation echoes the prompt and then names the decision, the risk and the mitigation correctly. Six of sixteen lanes fill the cap. A marginal reading at a depth nothing had read non-zero at. | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16CL896.txt` |
+| 2 | `ARCH.V16W896X13` | **0.623329** | **1/15** | standard | three axes; the third step is fatal exactly as L3 says. The one lane it holds is decided by the wave-20 planning calibration rather than answered. | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16W896X13.txt` |
+| 3 | `ARCH.V16W896` | **0.667288** | **2/15** | standard | the multiplying pair. Summarisation survives intact, the uncertainty lane names all four data points and then degenerates, two lanes return the empty string and retrieval returns a bare dash. | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16W896.txt` |
 | 4 | `ARCH.CL896` | **0.688431** | **4/15** | standard | reproduces the supplier summary with the 11% figure, writes a real if apologetic email, names the four missing quantities -- and restates the prompt verbatim wherever ordering or arithmetic is asked for; 3 of 16 lanes run to the cap | `reports/matrix-campaign-20260810/wave15/human-review/READ-CL896.txt` |
 | 5 | `ARCH.W736` | **0.689220** | **1/15** | standard | one case: it acknowledges the multi-turn correction and restates the corrected quantity. Everything else is a loop or empty, and the summarisation lane every other living width child holds is gone | `reports/matrix-campaign-20260810/wave21/human-review/READ-W736.txt` |
-| 6 | `COMP.MA.MXO4` | **0.703396** | **5/15** | parent-shaped | five partials and no useful; the degeneracy is no longer confined to one lane, which is where wave 11's ladder stopped | `not packaged (pre-wave-15)` |
-| 7 | `COMP.MA.MXP2` | **0.703409** | **6/15** | parent-shaped | the same depth as MXO4 bought by shopping the lane instead of taking it in depth order: one more case, half the lambada perplexity, still no useful | `not packaged (pre-wave-15)` |
-| 8 | `COMP.MA.MXQ5` | **0.710270** | **7/15** | parent-shaped | the healthiest deep child in the campaign -- two Useful gradings and one lane at the cap -- and it costs 1.58M added repair parameters charged in full | `not packaged (pre-wave-15)` |
-| 9 | `COMP.MA.MXP1` | **0.712544** | **7/15** | parent-shaped | repair on the autopilot child: two cases bought for 2.1M added parameters, and no benchmark row exists because forward-hook routes cannot be written into a state_dict | `not packaged (pre-wave-15)` |
-| 10 | `ARCH.W768` | **0.722610** | **3/15** | standard | the summarisation lane names the decision, the risk and the mitigation with the supplier's name corrupted to "Supper B"; eleven of sixteen lanes are loops or empty | `reports/matrix-campaign-20260810/wave19/human-review/READ-W768.txt` |
-| 11 | `ARCH.W768LS` | **0.722610** | **3/15** | standard | the same three cases as its control on a DIFFERENT set: it recovers context-retrieval, the width axis's signature zero, and gives up uncertainty | `reports/matrix-campaign-20260810/wave20/human-review/READ-W768LS.txt` |
-| 12 | `ARCH.W768ST` | **0.722610** | **2/15** | standard | the closed-form fold with nothing re-solved -- two cases against the conditioned child's three, which is what the conditioned solve is worth on this axis | `reports/matrix-campaign-20260810/wave20/human-review/READ-W768ST.txt` |
-| 13 | `ARCH.W768EV` | **0.722610** | **1/15** | standard | the evidence-PCA basis: all sixteen lanes fill the cap, and the one case it holds is the planning lane naming backups, DNS, TLS and rollback before it degenerates | `reports/matrix-campaign-20260810/wave20/human-review/READ-W768EV.txt` |
-| 14 | `ARCH.BX13` | **0.724929** | **1/15** | standard | intermediate_size 1280 plus the GOOD block excised: 13/15 and 5/15 compose to 1/15, and only two lanes reach the cap, so it is interference and not collapse | `reports/matrix-campaign-20260810/wave16/human-review/READ-BX13.txt` |
-| 15 | `ARCH.V16X13` | **0.728353** | **5/15** | standard | the vocabulary coreset on the campaign's HIGHEST-scoring body (`X13A`, 13/15): 13 and 9 compose to 5, between two folds that share no tensor. Retrieval still names Saturdays, 4:15 p.m. and the north gate; summarisation still names decision, risk and mitigation. **Zero lanes hit the cap** -- it fails by substituting a word for itself, not by looping | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16X13.txt` |
+| 6 | `ARCH.V8X13GL01` | **0.691832** | **7/15** | standard | seven of fifteen at 0.691832x, the deepest seven in the campaign. It greets a person properly, writes the email with all three facts in thirty words, orders four runners correctly where the PARENT does not, and names the closed gate, the decision, the risk and the four missing data points. It cannot do arithmetic, cannot write the deduplication function and cannot finish the lighthouse. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13GL01.txt` |
+| 7 | `ARCH.V8X13` | **0.691832** | **6/15** | standard | the 8,192-row coreset on the 13/15 body. Everything structural survives -- Saturday, 4:15 p.m., decision/risk/mitigation, the four missing data points, and an email that carries all three named items -- and everything requiring a computation is gone. Composition ran the OTHER way here: the same excision costs the 16,384 rung four cases and buys this one two. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13.txt` |
+| 8 | `ARCH.V8X13GL1` | **0.691832** | **6/15** | standard | the mildest rung on the deep base: six lanes held, none in full. The word-substitution signature is thinner here than anywhere else in the wave (one cap hit of sixteen) and the content is correspondingly flatter. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13GL1.txt` |
+| 9 | `ARCH.V8X13G` | **0.691832** | **4/15** | standard | the terminal-read solve at the lambda its own out-of-sample criterion picked, and the picking is the failure: it trades three held lanes for two Useful ones, including the only greeting in the wave that answers the person AND asks its question, and the only finish order in the wave that is correct. | `reports/matrix-campaign-20260810/wave24/human-review/READ-V8X13G.txt` |
+| 10 | `COMP.MA.MXO4` | **0.703396** | **5/15** | parent-shaped | five partials and no useful; the degeneracy is no longer confined to one lane, which is where wave 11's ladder stopped | `not packaged (pre-wave-15)` |
+| 11 | `COMP.MA.MXP2` | **0.703409** | **6/15** | parent-shaped | the same depth as MXO4 bought by shopping the lane instead of taking it in depth order: one more case, half the lambada perplexity, still no useful | `not packaged (pre-wave-15)` |
+| 12 | `COMP.MA.MXQ5` | **0.710270** | **7/15** | parent-shaped | the healthiest deep child in the campaign -- two Useful gradings and one lane at the cap -- and it costs 1.58M added repair parameters charged in full | `not packaged (pre-wave-15)` |
+| 13 | `COMP.MA.MXP1` | **0.712544** | **7/15** | parent-shaped | repair on the autopilot child: two cases bought for 2.1M added parameters, and no benchmark row exists because forward-hook routes cannot be written into a state_dict | `not packaged (pre-wave-15)` |
+| 14 | `ARCH.W768` | **0.722610** | **3/15** | standard | the summarisation lane names the decision, the risk and the mitigation with the supplier's name corrupted to "Supper B"; eleven of sixteen lanes are loops or empty | `reports/matrix-campaign-20260810/wave19/human-review/READ-W768.txt` |
+| 15 | `ARCH.W768LS` | **0.722610** | **3/15** | standard | the same three cases as its control on a DIFFERENT set: it recovers context-retrieval, the width axis's signature zero, and gives up uncertainty | `reports/matrix-campaign-20260810/wave20/human-review/READ-W768LS.txt` |
 
 ## The three numbers that qualify every row above
 

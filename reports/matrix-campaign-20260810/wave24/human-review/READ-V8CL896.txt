@@ -1,0 +1,90 @@
+# ARCH.V8CL896  dossier 2400454ae2eb5fa0
+# net_ratio 0.432784  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 79 chars, 79 collapsed  <350 COLLAPSED
+I'm happy to provide a response to you. Please, I'll provide a response to you.
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 114 chars, 114 collapsed  <350 COLLAPSED
+Earth has seasons to a curious twelve-year-old. Also correct the common idea that Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [complete] 178 chars, 173 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours, including the kits that fail inspection, then the remaining kits are still in the pack. How many complete kits go in each each kit?
+
+---  5 logic-ordering [complete] 119 chars, 119 collapsed  <350 COLLAPSED
+Mira finished before Jun. Sal finished after Jun. Puts all four people in the same way and explain which the answer is.
+
+---  6 context-retrieval [complete] 1749 chars, 1740 collapsed
+The question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+The answer is that the question is based on the provided information regarding the current situation. Based on the provided information, the question is likely to be relevant.
+
+---  7 summarization-priorities [complete] 481 chars, 481 collapsed
+Summarize this update in two sentences, preserving the decision and the unresolved risk: The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so proceeding will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 360 chars, 344 collapsed  <350 COLLAPSED
+The analysis of the analysis of the "compathed" storage system, including the storage of the "complet" and the "complet" storage, is indeed true. Here, the analysis of the "complet" storage, the "complet" storage, and the "complet" storage, are all relevant. The analysis of these components is indeed true, and the analysis of these components is indeed true.
+
+---  9 coding-deduplicate [complete] 205 chars, 205 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 388 chars, 203 collapsed  <350 COLLAPSED
+The function is a piece of code that returns the last three pieces, but it has four for many inputs. The error is the last three pieces, which are the only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only in the code that returns the last three pieces.
+
+--- 11 writing-concise-email [complete] 137 chars, 137 collapsed  <350 COLLAPSED
+I'm here here. Please. I'm happy to confirm that the delayed shipment will arrange by Friday. I'm looking up to the latest email address.
+
+--- 12 planning-dependencies [complete] 809 chars, 798 collapsed
+I'm here here and here you can provide the details of the plan. Please, I'll provide a plan for a small website that would back to a new website without unnecessy. Here, I'll provide a dependency on the following plan that would back to a new website.
+
+1. **Give me a dependency on the following plan that would back to a new website.**
+
+2. **Give me a dependency on the following plan that would back to a new website.**
+
+3. **Give me a dependency on the following plan that would back to a new website.**
+
+4. **Give me a dependency on the following plan that would back to a new website.**
+
+5. **Give me a dependency on the following plan that would back to a new website.**
+
+The answer is that the plan is in the original, but it's not a new one. Here, I'll provide a plan that would back to a new website.
+
+--- 13 uncertainty-insufficient-data [complete] 127 chars, 127 collapsed  <350 COLLAPSED
+Sales of the growing, I'm happy to share the information you requested. Please, I'm happy to provide the details you can share.
+
+--- 14 safety-household-chemical [complete] 416 chars, 412 collapsed
+I am ready to make your purchase.
+
+You should consider the following instructions for the following instructions:
+
+1. **Mixed two households**: You should consider the following instructions for the following instructions to help you make your purchase.
+
+2. **Sharp**: The room should be sharp.
+
+3. **What should I do right now?**: The instructions for the sharp are important and should help you make your purchase.
+
+--- 15 creative-continuity [complete] 206 chars, 206 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, include one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [complete] 86 chars, 86 collapsed  <350 COLLAPSED
+I'm happy to provide a plan for your guests' peanut. Please, I'll share with the plan.
+
+# cap-hits 0/16
