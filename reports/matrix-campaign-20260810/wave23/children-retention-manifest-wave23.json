@@ -1,0 +1,89 @@
+{
+ "schema": "neural-forge-matrix-wave23-children-retention-v1",
+ "policy": "the best five by sealed score, plus any child a later wave cannot re-derive.  Every wave-23 child IS re-derivable in seconds, so the second clause keeps nothing here and the graded five are kept because a verdict without its checkpoint is a claim",
+ "built": 11,
+ "kept": 5,
+ "deleted": 6,
+ "freed_bytes": 1723143319,
+ "freed_gib": 1.605,
+ "applied": true,
+ "children": [
+  {
+   "child": "MX23-V16",
+   "kept": true,
+   "bytes": 359668812,
+   "reason": "9/15 at 0.780874x, standard shape -- the vocabulary row coreset alone, zero solve, one tensor touched.  Deepest child in the campaign at >= 8 of 15 by seventeen points of ratio (the previous holder was ARCH.X13A at 0.947479x), lambada perplexity 72.99 against the parent's 24.39, and zero of sixteen lanes at the token cap",
+   "rebuild": null
+  },
+  {
+   "child": "MX23-V16CL896",
+   "kept": true,
+   "bytes": 216548138,
+   "reason": "1/15 at 0.469305x -- UNDER HALF THE PARENT, standard shape, and the first child below 0.5x in this campaign to hold a case at all (ARCH.W512 at 0.463481x reads 0/15; MXO2 and MXQ6 reached 0.5x and read 0/15 twice)",
+   "rebuild": null
+  },
+  {
+   "child": "MX23-V16W736",
+   "kept": false,
+   "bytes": 245239893,
+   "reason": "built and never graded; a vocabulary child is a row gather on a sealed child's bytes, so this is a cache and not a measurement",
+   "rebuild": "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+  },
+  {
+   "child": "MX23-V16W768",
+   "kept": false,
+   "bytes": 257432871,
+   "reason": "built and never graded; a vocabulary child is a row gather on a sealed child's bytes, so this is a cache and not a measurement",
+   "rebuild": "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+  },
+  {
+   "child": "MX23-V16W896",
+   "kept": true,
+   "bytes": 307521198,
+   "reason": "2/15 at 0.667288x -- the multiplying pair.  The width fold cuts the token table's columns and the vocabulary fold its rows, 82% of the interface for two folds neither of which was aimed at it, and the summarisation lane survives intact",
+   "rebuild": null
+  },
+  {
+   "child": "MX23-V16W896KV6JS",
+   "kept": false,
+   "bytes": 299371510,
+   "reason": "built and never graded; a vocabulary child is a row gather on a sealed child's bytes, so this is a cache and not a measurement",
+   "rebuild": "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+  },
+  {
+   "child": "MX23-V16W896LS",
+   "kept": false,
+   "bytes": 307557319,
+   "reason": "built and never graded; a vocabulary child is a row gather on a sealed child's bytes, so this is a cache and not a measurement",
+   "rebuild": "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+  },
+  {
+   "child": "MX23-V16W896LSX13",
+   "kept": false,
+   "bytes": 287358433,
+   "reason": "built and never graded; a vocabulary child is a row gather on a sealed child's bytes, so this is a cache and not a measurement",
+   "rebuild": "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+  },
+  {
+   "child": "MX23-V16W896X13",
+   "kept": true,
+   "bytes": 287325231,
+   "reason": "1/15 at 0.623329x -- three axes.  L3's one-step rule tried against an axis it had never met and holding",
+   "rebuild": null
+  },
+  {
+   "child": "MX23-V16X07KV6JQC",
+   "kept": false,
+   "bytes": 326183293,
+   "reason": "built and never graded; a vocabulary child is a row gather on a sealed child's bytes, so this is a cache and not a measurement",
+   "rebuild": "bash queues/vocabq.sh 16384 <TAG> -- a row gather on a sealed child's own bytes, about forty seconds of CPU, no GPU, no capture, no solve"
+  },
+  {
+   "child": "MX23-V16X13",
+   "kept": true,
+   "bytes": 335540938,
+   "reason": "5/15 at 0.728353x -- the vocabulary fold composed with the excision of block 13, i.e. the campaign's 13/15 child carrying it.  13/15 and 9/15 compose to 5/15, which is the mildest second step in 662 rows and is the whole measurement",
+   "rebuild": null
+  }
+ ]
+}

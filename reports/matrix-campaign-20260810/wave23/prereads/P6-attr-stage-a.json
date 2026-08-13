@@ -1,0 +1,465 @@
+{
+ "pre_read": "P6",
+ "schema": "neural-forge-matrix-wave23-attr-stage-a-v1",
+ "purpose": "the complete case x block excision-survival matrix, which is the ONLY identified half of the ATTR proposal.  Orders; gates nothing.",
+ "unidentified_and_not_computed": "the width-writer half: no sealed row varies one width writer, so D(writer, c) is not estimable from anything on disk and inventing it would be a guess wearing a number's clothes",
+ "priority_vector": {
+  "status": "A3 default-pending-ruling",
+  "weights": {
+   "conversation-natural-greeting": 3.0,
+   "multi-turn-correction": 3.0,
+   "instruction-three-actions": 3.0,
+   "explanation-seasons": 0.25,
+   "logic-ordering": 0.25
+  },
+  "note": "cases not named carry weight 1.0"
+ },
+ "blocks_measured": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13
+ ],
+ "case_survival": [
+  {
+   "case": "summarization-priorities",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": false,
+    "4": true,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": true,
+    "9": true,
+    "10": false,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 6,
+   "blocks_measured": 14,
+   "survival_rate": 0.42857142857142855
+  },
+  {
+   "case": "uncertainty-insufficient-data",
+   "held_by_block": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": true,
+    "4": true,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": true,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 9,
+   "blocks_measured": 14,
+   "survival_rate": 0.6428571428571429
+  },
+  {
+   "case": "writing-concise-email",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": true,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": true,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 9,
+   "blocks_measured": 14,
+   "survival_rate": 0.6428571428571429
+  },
+  {
+   "case": "instruction-three-actions",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": true,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": true,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 9,
+   "blocks_measured": 14,
+   "survival_rate": 0.6428571428571429
+  },
+  {
+   "case": "context-retrieval",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": false,
+    "8": true,
+    "9": true,
+    "10": false,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 6,
+   "blocks_measured": 14,
+   "survival_rate": 0.42857142857142855
+  },
+  {
+   "case": "planning-dependencies",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": true,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": true,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 9,
+   "blocks_measured": 14,
+   "survival_rate": 0.6428571428571429
+  },
+  {
+   "case": "conversation-natural-greeting",
+   "held_by_block": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": false,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 6,
+   "blocks_measured": 14,
+   "survival_rate": 0.42857142857142855
+  },
+  {
+   "case": "creative-continuity",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": true,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": false,
+    "9": true,
+    "10": true,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 8,
+   "blocks_measured": 14,
+   "survival_rate": 0.5714285714285714
+  },
+  {
+   "case": "comparison-ram-rom",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": true,
+    "7": true,
+    "8": false,
+    "9": true,
+    "10": false,
+    "11": true,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 6,
+   "blocks_measured": 14,
+   "survival_rate": 0.42857142857142855
+  },
+  {
+   "case": "debugging-off-by-one",
+   "held_by_block": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": true,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 2,
+   "blocks_measured": 14,
+   "survival_rate": 0.14285714285714285
+  },
+  {
+   "case": "multi-turn-correction",
+   "held_by_block": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": true,
+    "9": false,
+    "10": true,
+    "11": false,
+    "12": false,
+    "13": false
+   },
+   "blocks_survived": 2,
+   "blocks_measured": 14,
+   "survival_rate": 0.14285714285714285
+  },
+  {
+   "case": "arithmetic-multi-step",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": true,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": true,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 4,
+   "blocks_measured": 14,
+   "survival_rate": 0.2857142857142857
+  },
+  {
+   "case": "coding-deduplicate",
+   "held_by_block": {
+    "0": false,
+    "1": true,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": false,
+    "9": true,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 3,
+   "blocks_measured": 14,
+   "survival_rate": 0.21428571428571427
+  },
+  {
+   "case": "logic-ordering",
+   "held_by_block": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": true,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": true
+   },
+   "blocks_survived": 2,
+   "blocks_measured": 14,
+   "survival_rate": 0.14285714285714285
+  },
+  {
+   "case": "explanation-seasons",
+   "held_by_block": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": true,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": false
+   },
+   "blocks_survived": 1,
+   "blocks_measured": 14,
+   "survival_rate": 0.07142857142857142
+  }
+ ],
+ "block_damage": [
+  {
+   "block": 13,
+   "cases_held": 13,
+   "damage_unweighted": 2,
+   "damage_A3_weighted": 3.25,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X13A/per-case.json"
+  },
+  {
+   "block": 9,
+   "cases_held": 10,
+   "damage_unweighted": 5,
+   "damage_A3_weighted": 5.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X09/per-case.json"
+  },
+  {
+   "block": 7,
+   "cases_held": 11,
+   "damage_unweighted": 4,
+   "damage_A3_weighted": 6.0,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X07/per-case.json"
+  },
+  {
+   "block": 10,
+   "cases_held": 7,
+   "damage_unweighted": 8,
+   "damage_A3_weighted": 6.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave17/cells/ARCH.X10/per-case.json"
+  },
+  {
+   "block": 11,
+   "cases_held": 9,
+   "damage_unweighted": 6,
+   "damage_A3_weighted": 6.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X11/per-case.json"
+  },
+  {
+   "block": 6,
+   "cases_held": 8,
+   "damage_unweighted": 7,
+   "damage_A3_weighted": 7.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave17/cells/ARCH.X06/per-case.json"
+  },
+  {
+   "block": 1,
+   "cases_held": 9,
+   "damage_unweighted": 6,
+   "damage_A3_weighted": 8.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X01/per-case.json"
+  },
+  {
+   "block": 8,
+   "cases_held": 7,
+   "damage_unweighted": 8,
+   "damage_A3_weighted": 8.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave17/cells/ARCH.X08/per-case.json"
+  },
+  {
+   "block": 3,
+   "cases_held": 6,
+   "damage_unweighted": 9,
+   "damage_A3_weighted": 11.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X03/per-case.json"
+  },
+  {
+   "block": 4,
+   "cases_held": 2,
+   "damage_unweighted": 13,
+   "damage_A3_weighted": 17.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave17/cells/ARCH.X04/per-case.json"
+  },
+  {
+   "block": 0,
+   "cases_held": 0,
+   "damage_unweighted": 15,
+   "damage_A3_weighted": 19.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave17/cells/ARCH.X00/per-case.json"
+  },
+  {
+   "block": 2,
+   "cases_held": 0,
+   "damage_unweighted": 15,
+   "damage_A3_weighted": 19.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave17/cells/ARCH.X02/per-case.json"
+  },
+  {
+   "block": 5,
+   "cases_held": 0,
+   "damage_unweighted": 15,
+   "damage_A3_weighted": 19.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave15/cells/ARCH.X05T/per-case.json"
+  },
+  {
+   "block": 12,
+   "cases_held": 0,
+   "damage_unweighted": 15,
+   "damage_A3_weighted": 19.5,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave16/cells/ARCH.X12/per-case.json"
+  }
+ ]
+}

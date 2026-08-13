@@ -1,0 +1,2490 @@
+{
+ "schema": "neural-forge-matrix-wave23-standard-shape-child-v1",
+ "built_at": "2026-08-13T14:34:58Z",
+ "builder": "mx23_vocab.py",
+ "tag": "V16W896LS",
+ "arm": "vocab-row-coreset (zero-solve)",
+ "adjudication": {
+  "item": "A2",
+  "status": "RESOLVED 2026-08-13 by Cyril: a vocabulary row coreset with a tokenizer remap COUNTS AS FOLDING and is frontier-eligible",
+  "scale_caveat_recorded_at_his_instruction": "the token interface is 29.2% of THIS parent and ~1% of a 70B model by the same arithmetic (docs/PHASE1 section 4.1); these rows are this model's phase-1 numbers, not a transferable strategy"
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave21/children/MX21-W896LS",
+ "source_config_vocab_size": 65536,
+ "source_tensors_sha256": "b5d683acaa3c0896df5ac5c4ec92e2487795c09097bdde5579f003fba3a48bc8",
+ "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave21/cells/ARCH.W896LS/cell-receipt.json",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave23/children/MX23-V16W896LS",
+ "child_tensors_sha256": "8defb77e5f76a685d404970749c26ec4bdd39a882135a6964d40ba9fe7d6a5bb",
+ "child_directory_sha256": "9c4ae9f7f5b56161fde68282d57edcca8b173a32871412e28df8def2804ea4dc",
+ "child_parameters": 153271424,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.667287645766624,
+ "excised": [],
+ "axes": [
+  {
+   "axis": "hidden_size",
+   "kind": "residual",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "hidden_size",
+    "block_dim",
+    "conv_dim",
+    "head_dim"
+   ],
+   "selection": "one shared orthonormal basis E (1024 x 896), the top eigenvectors of the reader-pca second moment of the residual stream pooled over all 29 residual-write endpoints with each endpoint equalised to trace one; a per-boundary chart is not expressible in a stock child because the residual is a running sum with nowhere to put a chart transition.  The conv blocks' internal channels are a pivoted-Cholesky coreset of the parent's own, because Lfm2ShortConv gates channelwise and no rotation of that space is representable",
+   "solve": "readers folded EXACTLY as sqrt(1024/H) W diag(g) E diag(1/g_c) with g_c = diag(E^T diag(g) E) (the lift preserves the norm, so the parent's RMSNorm at the lifted row and the child's at the row differ by that one constant); writers folded as E^T W and re-solved against the child's own installed activations by the prior-anchored ridge under THE LAW; the final norm's diagonal solved in closed form against the tied head's Gram",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": null,
+   "basis": {
+    "mode": "reader-pca",
+    "width": 896,
+    "sha256": "d054349102f2621e79a73ec07982ec604ab35d81c4bdfe7932dea9167cc11b74",
+    "path": "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-896.safetensors",
+    "retained": {
+     "raw.fit": 0.9836282649233465,
+     "raw.hld": 0.9776635883652569,
+     "reader.fit": 0.9729449091222423,
+     "reader.hld": 0.9626584251735685
+    },
+    "selector_retained": null,
+    "objective": null,
+    "spectrum": {
+     "raw.fit": {
+      "top_1024": 0.9999999999999984,
+      "top_960": 0.9945040738178852,
+      "top_896": 0.9881317249346414,
+      "top_832": 0.9809430476566875,
+      "top_768": 0.9729027856239278,
+      "top_704": 0.9639278118889743,
+      "top_640": 0.9539187114427733,
+      "top_576": 0.9426947277432213,
+      "top_512": 0.930055598779807,
+      "top_448": 0.9157038024690827,
+      "top_384": 0.8991564043868423,
+      "top_256": 0.8564539685479146
+     },
+     "raw.hld": {
+      "top_1024": 0.9999999999999986,
+      "top_960": 0.995413239778586,
+      "top_896": 0.9899230568601572,
+      "top_832": 0.9835845192716397,
+      "top_768": 0.9763424098890582,
+      "top_704": 0.9680895922286523,
+      "top_640": 0.9586783635768756,
+      "top_576": 0.9479566986094046,
+      "top_512": 0.9356808943862043,
+      "top_448": 0.9215347475784846,
+      "top_384": 0.9050178518074082,
+      "top_256": 0.8613690587267553
+     },
+     "reader.fit": {
+      "top_1024": 0.9999999999999996,
+      "top_960": 0.9874235763718416,
+      "top_896": 0.9729449091222421,
+      "top_832": 0.9567570783003496,
+      "top_768": 0.9388523528007287,
+      "top_704": 0.9190634331038701,
+      "top_640": 0.8972751937441246,
+      "top_576": 0.8731974796481545,
+      "top_512": 0.8464956116904321,
+      "top_448": 0.8167341713771931,
+      "top_384": 0.7831922326785933,
+      "top_256": 0.7004409661394944
+     },
+     "reader.hld": {
+      "top_1024": 1.0000000000000016,
+      "top_960": 0.9894594449333637,
+      "top_896": 0.9769487556811509,
+      "top_832": 0.9626598973094056,
+      "top_768": 0.946550762441625,
+      "top_704": 0.9284302990388815,
+      "top_640": 0.9080821274110242,
+      "top_576": 0.8852646873803557,
+      "top_512": 0.8595934445730893,
+      "top_448": 0.8305505376101998,
+      "top_384": 0.7974058171473369,
+      "top_256": 0.714172127333594
+     }
+    }
+   },
+   "width_lambda_split": {
+    "rule": "every 3rd fit batch from the 3rd, in fit order",
+    "check_rows": 1583,
+    "inner_rows": 3168
+   },
+   "reader_fold_gate": [
+    {
+     "layer": 0,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 0,
+     "reader": "mlp.w1",
+     "relL2": 0.003558393373640764,
+     "max_abs": 0.013103473828778078
+    },
+    {
+     "layer": 1,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 1,
+     "reader": "mlp.w1",
+     "relL2": 0.0044657198854759165,
+     "max_abs": 0.016869702172698453
+    },
+    {
+     "layer": 2,
+     "reader": "attention.q",
+     "relL2": 0.00449732286379004,
+     "max_abs": 0.003985786457633367
+    },
+    {
+     "layer": 2,
+     "reader": "mlp.w1",
+     "relL2": 0.003928659800618516,
+     "max_abs": 0.015574427437968552
+    },
+    {
+     "layer": 3,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 3,
+     "reader": "mlp.w1",
+     "relL2": 0.004152548138968475,
+     "max_abs": 0.014199847195641269
+    },
+    {
+     "layer": 4,
+     "reader": "attention.q",
+     "relL2": 0.00487524383964778,
+     "max_abs": 0.004597109313181136
+    },
+    {
+     "layer": 4,
+     "reader": "mlp.w1",
+     "relL2": 0.0044939096210674595,
+     "max_abs": 0.031142685504164547
+    },
+    {
+     "layer": 5,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 5,
+     "reader": "mlp.w1",
+     "relL2": 0.00460163964412589,
+     "max_abs": 0.010527109843678772
+    },
+    {
+     "layer": 6,
+     "reader": "attention.q",
+     "relL2": 0.0044070513355913945,
+     "max_abs": 0.004597613893565722
+    },
+    {
+     "layer": 6,
+     "reader": "mlp.w1",
+     "relL2": 0.0045415279452855,
+     "max_abs": 0.02250439105046098
+    },
+    {
+     "layer": 7,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 7,
+     "reader": "mlp.w1",
+     "relL2": 0.004254824381266919,
+     "max_abs": 0.019242969181505032
+    },
+    {
+     "layer": 8,
+     "reader": "attention.q",
+     "relL2": 0.0042584896650647635,
+     "max_abs": 0.006270901956213493
+    },
+    {
+     "layer": 8,
+     "reader": "mlp.w1",
+     "relL2": 0.003717400847718011,
+     "max_abs": 0.011671094702251139
+    },
+    {
+     "layer": 9,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 9,
+     "reader": "mlp.w1",
+     "relL2": 0.0042999972158001614,
+     "max_abs": 0.01744927524123341
+    },
+    {
+     "layer": 10,
+     "reader": "attention.q",
+     "relL2": 0.00370279842661102,
+     "max_abs": 0.00602074963535415
+    },
+    {
+     "layer": 10,
+     "reader": "mlp.w1",
+     "relL2": 0.004147464483983573,
+     "max_abs": 0.03090663318289444
+    },
+    {
+     "layer": 11,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 11,
+     "reader": "mlp.w1",
+     "relL2": 0.004667610562367236,
+     "max_abs": 0.016944722505286336
+    },
+    {
+     "layer": 12,
+     "reader": "attention.q",
+     "relL2": 0.00439535501269039,
+     "max_abs": 0.008622907615063014
+    },
+    {
+     "layer": 12,
+     "reader": "mlp.w1",
+     "relL2": 0.003929535560672244,
+     "max_abs": 0.022213256714167073
+    },
+    {
+     "layer": 13,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 13,
+     "reader": "mlp.w1",
+     "relL2": 0.004703530316537487,
+     "max_abs": 0.034645878715309664
+    }
+   ],
+   "final_norm_gain": {
+    "lambda_relative": 1e-06,
+    "update_scale": 0.33239179012066594,
+    "scalar_anchor_alpha": 1.9944818183306623,
+    "scalar_anchor_distance": 0.3927923521968737,
+    "logit_relative_sse_transported": 0.554599005888549,
+    "logit_relative_sse_scalar": 0.3980476904208719,
+    "logit_relative_sse_solved": 0.16993487576912986,
+    "ladder": [
+     {
+      "lambda_relative": 1e-06,
+      "update_scale": 0.33239179012066594
+     },
+     {
+      "lambda_relative": 1e-05,
+      "update_scale": 0.33237778689974823
+     },
+     {
+      "lambda_relative": 0.0001,
+      "update_scale": 0.3322378934864314
+     },
+     {
+      "lambda_relative": 0.001,
+      "update_scale": 0.33085266288133136
+     },
+     {
+      "lambda_relative": 0.01,
+      "update_scale": 0.3182171760616716
+     },
+     {
+      "lambda_relative": 0.1,
+      "update_scale": 0.24876979400870822
+     },
+     {
+      "lambda_relative": 1.0,
+      "update_scale": 0.13627776835791805
+     },
+     {
+      "lambda_relative": 10.0,
+      "update_scale": 0.06235882806764509
+     },
+     {
+      "lambda_relative": 100.0,
+      "update_scale": 0.017805338492547767
+     }
+    ],
+    "rows": 4751,
+    "solved": true
+   },
+   "conv_coreset": {
+    "sites": [
+     0,
+     1,
+     3,
+     5,
+     7,
+     9,
+     11,
+     13
+    ],
+    "channels_kept": 896,
+    "channels_dropped": 128,
+    "channels_moved_vs_stale": {
+     "0": 617,
+     "1": 813,
+     "3": 811,
+     "5": 759,
+     "7": 878,
+     "9": 509,
+     "11": 706,
+     "13": 746
+    }
+   },
+   "heldout": {
+    "median_cos": 0.999927282333374,
+    "min_cos": 0.9881145015791393,
+    "median_relL2": 0.008692779578268528,
+    "max_input_drift": 0.2702484842093866,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "input_drift_vs_parent": 0.0016625798470518167,
+      "input_cos_vs_parent": 0.9999986324876708,
+      "parent_energy_retained": 0.9729004112028119,
+      "prior_only_cos": 0.9971410041356338,
+      "prior_only_relL2": 0.07122147287386459,
+      "update_scale": 0.08019779865952349,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.24128438799028404,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 3.636794261929974,
+      "check_sse_law_pick": 7.965266729212546,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 7.965266729212546,
+        "update_scale": 0.24128438799028404
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 7.956040196713277,
+        "update_scale": 0.24115803699119348
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 7.866198950476967,
+        "update_scale": 0.23990842624633854
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 7.1547932662565215,
+        "update_scale": 0.22863831027876527
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 4.983117730532229,
+        "update_scale": 0.1704411871644041
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 3.636794261929974,
+        "update_scale": 0.08019779865952349
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 3.7535546639612907,
+        "update_scale": 0.025596770760078144
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 4.29200280226939,
+        "update_scale": 0.005849929683602633
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 4.6183819813515665,
+        "update_scale": 0.0008541864093267938
+       }
+      ],
+      "relL2": 0.06097753647722087,
+      "cos": 0.9979170919521642,
+      "cos_p05": 0.9918377192236884
+     },
+     {
+      "layer": 0,
+      "position": 0,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.07446606192804588,
+      "input_cos_vs_parent": 0.9975425887384767,
+      "parent_energy_retained": 0.9748708253292365,
+      "prior_only_cos": 0.9999752009122113,
+      "prior_only_relL2": 0.007105813477154704,
+      "update_scale": 0.0026998214073401337,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.13290511564192664,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.030658242832456613,
+      "check_sse_law_pick": 25.335539731971892,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 25.335539731971892,
+        "update_scale": 0.13290511564192664
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 7.44343004981784,
+        "update_scale": 0.1271164097042955
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.585652383395188,
+        "update_scale": 0.09594581714318769
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.29109768358166455,
+        "update_scale": 0.047022578061400006
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.07104592373541789,
+        "update_scale": 0.018710640222222918
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.03651386804133089,
+        "update_scale": 0.00729136548182449
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.030658242832456613,
+        "update_scale": 0.0026998214073401337
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.03307096583492091,
+        "update_scale": 0.0008181109108393611
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.03852362218245499,
+        "update_scale": 0.00016049234466260185
+       }
+      ],
+      "relL2": 0.006164549002369084,
+      "cos": 0.999981442441015,
+      "cos_p05": 0.9999701390292829
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "input_drift_vs_parent": 0.15315013588350965,
+      "input_cos_vs_parent": 0.9876578206428116,
+      "parent_energy_retained": 0.9768928335677914,
+      "prior_only_cos": 0.9869009171062145,
+      "prior_only_relL2": 0.17635105120005645,
+      "update_scale": 0.06048656799273764,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.24687480639363657,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 3.1823386199478847,
+      "check_sse_law_pick": 5.827792651989124,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 5.827792651989124,
+        "update_scale": 0.24687480639363657
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 5.826852377018854,
+        "update_scale": 0.24685166065183034
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 5.817491637130087,
+        "update_scale": 0.24662066421716033
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 5.7278874826009,
+        "update_scale": 0.24435569947043398
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 5.1013796053779865,
+        "update_scale": 0.22533664288020488
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 3.736967136245517,
+        "update_scale": 0.14984712396063518
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 3.1823386199478847,
+        "update_scale": 0.06048656799273764
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 3.410399310048147,
+        "update_scale": 0.014948818505823495
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 3.697217919467491,
+        "update_scale": 0.0024522742780854786
+       }
+      ],
+      "relL2": 0.1585567370825108,
+      "cos": 0.9881145015791393,
+      "cos_p05": 0.9680618138866017
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.17782729362268107,
+      "input_cos_vs_parent": 0.9834259972747419,
+      "parent_energy_retained": 0.9744023018672119,
+      "prior_only_cos": 0.9999630074807134,
+      "prior_only_relL2": 0.00813999732121884,
+      "update_scale": 0.003020593395603555,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.06559001080446397,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.02058075410931507,
+      "check_sse_law_pick": 7.656829920781272,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 7.656829920781272,
+        "update_scale": 0.06559001080446397
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 3.5253408745801953,
+        "update_scale": 0.06506419083996545
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.8495965480364593,
+        "update_scale": 0.06054822958493571
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.17890557731028744,
+        "update_scale": 0.04151621529960175
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.048667055674436646,
+        "update_scale": 0.019176564619057902
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.024885240166229467,
+        "update_scale": 0.007825480629234336
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.02058075410931507,
+        "update_scale": 0.003020593395603555
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.02231098871183745,
+        "update_scale": 0.0009313133688556134
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.026150996627899336,
+        "update_scale": 0.0001951275066401459
+       }
+      ],
+      "relL2": 0.006876568507153078,
+      "cos": 0.999972321282363,
+      "cos_p05": 0.999938131034669
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.20991322556930203,
+      "input_cos_vs_parent": 0.9788184838146714,
+      "parent_energy_retained": 0.9764165847143741,
+      "prior_only_cos": 0.9999027076895111,
+      "prior_only_relL2": 0.013937421509767518,
+      "update_scale": 0.003683132663682433,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.2683645456953551,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.027713301516872985,
+      "check_sse_law_pick": 0.07988351032386619,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.07988351032386619,
+        "update_scale": 0.2683645456953551
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.07087960834405341,
+        "update_scale": 0.23260718528665983
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.054295795319882295,
+        "update_scale": 0.131471492185993
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.04470327287994207,
+        "update_scale": 0.05670823127688912
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.03679083871409901,
+        "update_scale": 0.028094700016755077
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.03016922319981519,
+        "update_scale": 0.011868393466402366
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.027713301516872985,
+        "update_scale": 0.003683132663682433
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.027806509824834784,
+        "update_scale": 0.0009970774060395465
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.028945989031814667,
+        "update_scale": 0.00042384801913163963
+       }
+      ],
+      "relL2": 0.01208241335965807,
+      "cos": 0.999927259489137,
+      "cos_p05": 0.9998685296432672
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.24849319574371642,
+      "input_cos_vs_parent": 0.9716864296474773,
+      "parent_energy_retained": 0.9705373056823914,
+      "prior_only_cos": 0.9999663656553641,
+      "prior_only_relL2": 0.008772039224571891,
+      "update_scale": 0.0027779854630070227,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.02781990963537827,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.009796617793768194,
+      "check_sse_law_pick": 0.1152237371754916,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.1152237371754916,
+        "update_scale": 0.02781990963537827
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.1139473331880838,
+        "update_scale": 0.027797183569361686
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.10305849530811621,
+        "update_scale": 0.02757368679611812
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.06048585398644926,
+        "update_scale": 0.025652624407659665
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.02340862743127289,
+        "update_scale": 0.01751615920353636
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.012230087330367694,
+        "update_scale": 0.007809747789389388
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.009796617793768194,
+        "update_scale": 0.0027779854630070227
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.010228695371566574,
+        "update_scale": 0.0008065110396204527
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.01158790968549018,
+        "update_scale": 0.00018540465348827398
+       }
+      ],
+      "relL2": 0.007674039321461886,
+      "cos": 0.9999718550425024,
+      "cos_p05": 0.999960313045754
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "input_drift_vs_parent": 0.26605497371564524,
+      "input_cos_vs_parent": 0.9671323503013841,
+      "parent_energy_retained": 0.9711843033460587,
+      "prior_only_cos": 0.9912310269301564,
+      "prior_only_relL2": 0.12398284580076033,
+      "update_scale": 0.038314463348245544,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.16188316263063285,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 1.0576663221300904,
+      "check_sse_law_pick": 1.44496232516862,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 1.44496232516862,
+        "update_scale": 0.16188316263063285
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 1.444862429835559,
+        "update_scale": 0.1618702552634672
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.4438661535559298,
+        "update_scale": 0.16174137786510015
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 1.4341635229657397,
+        "update_scale": 0.16047187949077982
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 1.3573357554154533,
+        "update_scale": 0.14941040740187594
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 1.1312619505258588,
+        "update_scale": 0.10008012319433081
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 1.0576663221300904,
+        "update_scale": 0.038314463348245544
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 1.189903291832548,
+        "update_scale": 0.008831575972197683
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 1.2802117668072277,
+        "update_scale": 0.0013647837235323682
+       }
+      ],
+      "relL2": 0.11333824873645656,
+      "cos": 0.9927255853826775,
+      "cos_p05": 0.9808368601741648
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.2702484842093866,
+      "input_cos_vs_parent": 0.9660418822864829,
+      "parent_energy_retained": 0.97316639065382,
+      "prior_only_cos": 0.999958829541436,
+      "prior_only_relL2": 0.008891100754090409,
+      "update_scale": 0.002772573437313818,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.031337236110709814,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.010098655216436745,
+      "check_sse_law_pick": 0.09318405224683574,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.09318405224683574,
+        "update_scale": 0.031337236110709814
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.092201752146326,
+        "update_scale": 0.0313091507506901
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.08384491752564806,
+        "update_scale": 0.0310332928243293
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.051312072853802154,
+        "update_scale": 0.028686144569952523
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.022155165521950237,
+        "update_scale": 0.01909601241069279
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.012471326088742041,
+        "update_scale": 0.008152788805077074
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.010098655216436745,
+        "update_scale": 0.002772573437313818
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.01034831450635843,
+        "update_scale": 0.0008000390157136035
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.011564745337295316,
+        "update_scale": 0.00019106150373393306
+       }
+      ],
+      "relL2": 0.00783981094513776,
+      "cos": 0.9999681963879885,
+      "cos_p05": 0.9999476855655525
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.251629378005556,
+      "input_cos_vs_parent": 0.9687148926888528,
+      "parent_energy_retained": 0.9748764838051843,
+      "prior_only_cos": 0.9998669617676073,
+      "prior_only_relL2": 0.016448235783848086,
+      "update_scale": 0.000664895360683039,
+      "lambda_relative": 10.0,
+      "free_solve_update_scale": 0.044426267392471804,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.03310581004412188,
+      "check_sse_law_pick": 0.07143223511977292,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.07143223511977292,
+        "update_scale": 0.044426267392471804
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.07130814551274896,
+        "update_scale": 0.04435390073385357
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.07013967016521529,
+        "update_scale": 0.0436574975894448
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.06261033427547094,
+        "update_scale": 0.03849657815029649
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.046616288652100484,
+        "update_scale": 0.023113952219479154
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.0363822164396414,
+        "update_scale": 0.008820235364790914
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.03324131766509922,
+        "update_scale": 0.0025604753427249135
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.03310581004412188,
+        "update_scale": 0.000664895360683039
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.034029107462967015,
+        "update_scale": 0.00020121762462987897
+       }
+      ],
+      "relL2": 0.01557014412030176,
+      "cos": 0.9998804575029422,
+      "cos_p05": 0.9997819518492482
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.26150109087083045,
+      "input_cos_vs_parent": 0.9666816929292776,
+      "parent_energy_retained": 0.9761363010816183,
+      "prior_only_cos": 0.9999581091045635,
+      "prior_only_relL2": 0.010030763744363076,
+      "update_scale": 0.002886751740043371,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.029805827784419352,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.007680269595957606,
+      "check_sse_law_pick": 0.055486927381172696,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.055486927381172696,
+        "update_scale": 0.029805827784419352
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.05511872557587599,
+        "update_scale": 0.029785406536755477
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.05181708993820412,
+        "update_scale": 0.029583952028054746
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.0357791537290444,
+        "update_scale": 0.02780666364954708
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.01677080486116707,
+        "update_scale": 0.019495161505642115
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.009394920910025802,
+        "update_scale": 0.008536327956378154
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.007680269595957606,
+        "update_scale": 0.002886751740043371
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.008139011147726832,
+        "update_scale": 0.0008691759082458012
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.00940252716517069,
+        "update_scale": 0.0002486248462176667
+       }
+      ],
+      "relL2": 0.008173669333640233,
+      "cos": 0.9999663175508724,
+      "cos_p05": 0.9999447698809834
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       8,
+       9
+      ],
+      "input_drift_vs_parent": 0.26965436150172073,
+      "input_cos_vs_parent": 0.9647717287442952,
+      "parent_energy_retained": 0.9754447713511907,
+      "prior_only_cos": 0.993577270376172,
+      "prior_only_relL2": 0.10874843305158816,
+      "update_scale": 0.03321142053156623,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.15677220100987704,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.6788272709411466,
+      "check_sse_law_pick": 0.8769765555081273,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.8769765555081273,
+        "update_scale": 0.15677220100987704
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.876901394173425,
+        "update_scale": 0.1567556449199158
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.8761525035038151,
+        "update_scale": 0.1565904245803409
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.8689255594264369,
+        "update_scale": 0.15497145119270045
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.81553915846386,
+        "update_scale": 0.14145308336081774
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.6897143750904344,
+        "update_scale": 0.08937742370318981
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.6788272709411466,
+        "update_scale": 0.03321142053156623
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.7774106088849273,
+        "update_scale": 0.008051497259880965
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.8480032520063456,
+        "update_scale": 0.00146729936807736
+       }
+      ],
+      "relL2": 0.09617658281658395,
+      "cos": 0.9950276501336054,
+      "cos_p05": 0.9874466287585929
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.2639107827750549,
+      "input_cos_vs_parent": 0.9664043923375801,
+      "parent_energy_retained": 0.9782109733350423,
+      "prior_only_cos": 0.9999552762595062,
+      "prior_only_relL2": 0.004183989402689044,
+      "update_scale": 0.002164702877202013,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.030046429660275924,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.006671573139617361,
+      "check_sse_law_pick": 0.04498579070002416,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.04498579070002416,
+        "update_scale": 0.030046429660275924
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.04126298461884177,
+        "update_scale": 0.02974887273144775
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.026282670824967203,
+        "update_scale": 0.02726451957361617
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.012356931732340468,
+        "update_scale": 0.017659255751715227
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.0076534049068206125,
+        "update_scale": 0.007088357562843243
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.006671573139617361,
+        "update_scale": 0.002164702877202013
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.007006907443003576,
+        "update_scale": 0.0006000698277142162
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.007714504374459412,
+        "update_scale": 0.000208549585533693
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.008371569090287665,
+        "update_scale": 0.00014382572044785834
+       }
+      ],
+      "relL2": 0.001255780666787858,
+      "cos": 0.9999651778006936,
+      "cos_p05": 0.9999419073334656
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.11577171544000991,
+      "input_cos_vs_parent": 0.9647016395411334,
+      "parent_energy_retained": 0.9956038633527915,
+      "prior_only_cos": 0.9998363749093044,
+      "prior_only_relL2": 0.018160917080578824,
+      "update_scale": 0.0031670103029600638,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.044401496783418926,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.05382809061833306,
+      "check_sse_law_pick": 0.11397122793668284,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.11397122793668284,
+        "update_scale": 0.044401496783418926
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.113826163568723,
+        "update_scale": 0.04434805940747774
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.11243408652934907,
+        "update_scale": 0.043828322511372086
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.10240065848165143,
+        "update_scale": 0.03968494524656676
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.07664705612596046,
+        "update_scale": 0.024985680873156797
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.058865633005327225,
+        "update_scale": 0.009999147323794467
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.05382809061833306,
+        "update_scale": 0.0031670103029600638
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.05488648491533884,
+        "update_scale": 0.0009249991834617147
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.05837013551166972,
+        "update_scale": 0.0002948950756622871
+       }
+      ],
+      "relL2": 0.016198412161017566,
+      "cos": 0.9998659375197335,
+      "cos_p05": 0.999713319265827
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.13510913750863507,
+      "input_cos_vs_parent": 0.9616655303082464,
+      "parent_energy_retained": 0.99505398509618,
+      "prior_only_cos": 0.999958571826807,
+      "prior_only_relL2": 0.010286402914409055,
+      "update_scale": 0.0027019555047576855,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03128254677802959,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.009745246753555765,
+      "check_sse_law_pick": 0.07528771018631264,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.07528771018631264,
+        "update_scale": 0.03128254677802959
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.07478919141014778,
+        "update_scale": 0.031261918478706054
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.07031747906205248,
+        "update_scale": 0.031058296681132906
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.048612036972849666,
+        "update_scale": 0.029252296647410043
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.02251642141494764,
+        "update_scale": 0.020596389607576145
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.012111683522710533,
+        "update_scale": 0.008752078525557299
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.009745246753555765,
+        "update_scale": 0.0027019555047576855
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.009911260993148518,
+        "update_scale": 0.0007528426879023802
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.010812076387646,
+        "update_scale": 0.00021641489380938976
+       }
+      ],
+      "relL2": 0.008692779780261721,
+      "cos": 0.9999679369448076,
+      "cos_p05": 0.999941999428113
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       7,
+       8,
+       9
+      ],
+      "input_drift_vs_parent": 0.1304556824691738,
+      "input_cos_vs_parent": 0.9606702641269248,
+      "parent_energy_retained": 0.995360528643268,
+      "prior_only_cos": 0.9903671916744495,
+      "prior_only_relL2": 0.12895796008724913,
+      "update_scale": 0.03707754675019586,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.165038577326862,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.8652994239556655,
+      "check_sse_law_pick": 1.1330108035452688,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 1.1330108035452688,
+        "update_scale": 0.165038577326862
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 1.1329243504538191,
+        "update_scale": 0.16502321523130814
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.1320625520145424,
+        "update_scale": 0.16486987147380616
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 1.1237087518051079,
+        "update_scale": 0.16336356320294232
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 1.0599107851207874,
+        "update_scale": 0.150534987144946
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.893837293505483,
+        "update_scale": 0.09776754091389565
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.8652994239556655,
+        "update_scale": 0.03707754675019586
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.9909586265427164,
+        "update_scale": 0.009568782715558754
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 1.1036232768438972,
+        "update_scale": 0.0019054383869756843
+       }
+      ],
+      "relL2": 0.11196297010545674,
+      "cos": 0.9927750457729099,
+      "cos_p05": 0.9818402277832073
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.13681675134245783,
+      "input_cos_vs_parent": 0.9622328150499814,
+      "parent_energy_retained": 0.9950632356943463,
+      "prior_only_cos": 0.9999665917288982,
+      "prior_only_relL2": 0.008453106303457152,
+      "update_scale": 0.002398325897792216,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.026906426174408967,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.011633909158446292,
+      "check_sse_law_pick": 0.07820961853009073,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.07820961853009073,
+        "update_scale": 0.026906426174408967
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.07774191240666106,
+        "update_scale": 0.026888340773767134
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.07351660455608655,
+        "update_scale": 0.026709843340513403
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.05218380078252816,
+        "update_scale": 0.02512862274527972
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.0251223406613233,
+        "update_scale": 0.017608766179747378
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.014291279256640536,
+        "update_scale": 0.007508602666022141
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.011633909158446292,
+        "update_scale": 0.002398325897792216
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.011909086869964412,
+        "update_scale": 0.000698230738753022
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.013265000818904187,
+        "update_scale": 0.0001722926723022842
+       }
+      ],
+      "relL2": 0.007489948959963019,
+      "cos": 0.9999726419431945,
+      "cos_p05": 0.9999586926817277
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.14672255448210283,
+      "input_cos_vs_parent": 0.9633518068506193,
+      "parent_energy_retained": 0.9931506507178756,
+      "prior_only_cos": 0.9998552771366457,
+      "prior_only_relL2": 0.0166254966063631,
+      "update_scale": 0.002758536062688252,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.04326763885138223,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.1089020488814369,
+      "check_sse_law_pick": 0.26033941805831984,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.26033941805831984,
+        "update_scale": 0.04326763885138223
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.2599310151714416,
+        "update_scale": 0.04320994457024981
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.2560285311846928,
+        "update_scale": 0.04265163601110629
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.22866971300087957,
+        "update_scale": 0.038317930218805425
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.16246902238941427,
+        "update_scale": 0.023626598802010727
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.12004970302655116,
+        "update_scale": 0.00908732708298312
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.1089020488814369,
+        "update_scale": 0.002758536062688252
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.10980072598729106,
+        "update_scale": 0.0007765038350250926
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.11505784638358296,
+        "update_scale": 0.000223594882597288
+       }
+      ],
+      "relL2": 0.015442176274244088,
+      "cos": 0.9998778032637006,
+      "cos_p05": 0.999752741709605
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.17218790952838564,
+      "input_cos_vs_parent": 0.9624614460105466,
+      "parent_energy_retained": 0.9920577804195013,
+      "prior_only_cos": 0.9999642433690594,
+      "prior_only_relL2": 0.008747165424615214,
+      "update_scale": 0.002297068185498889,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.02858870416294071,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.01718232494930414,
+      "check_sse_law_pick": 0.14269810241749992,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.14269810241749992,
+        "update_scale": 0.02858870416294071
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.14163397838142225,
+        "update_scale": 0.02856679340961173
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.13220796445860683,
+        "update_scale": 0.02835094000135272
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.08874831117003491,
+        "update_scale": 0.026468384904143192
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.03994877198725816,
+        "update_scale": 0.018042816209894296
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.02148846752622664,
+        "update_scale": 0.0074679617926286836
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.01718232494930414,
+        "update_scale": 0.002297068185498889
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.017341892492756583,
+        "update_scale": 0.0006314555064648019
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.01878515519016158,
+        "update_scale": 0.000167101608214075
+       }
+      ],
+      "relL2": 0.007798941163566998,
+      "cos": 0.999971538277549,
+      "cos_p05": 0.9999595982458467
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       5,
+       6,
+       7,
+       9,
+       10
+      ],
+      "input_drift_vs_parent": 0.16898763124255076,
+      "input_cos_vs_parent": 0.9621526971561581,
+      "parent_energy_retained": 0.9924706164217743,
+      "prior_only_cos": 0.9923635504132772,
+      "prior_only_relL2": 0.11755852032687447,
+      "update_scale": 0.08830016925683902,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.1765844053638702,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 1.8892644640602385,
+      "check_sse_law_pick": 2.4895167023303104,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 2.4895167023303104,
+        "update_scale": 0.1765844053638702
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 2.4891740235224873,
+        "update_scale": 0.17655625721533774
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 2.4857663360059123,
+        "update_scale": 0.1762756571310378
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 2.4534911244412245,
+        "update_scale": 0.17355459495853076
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 2.2440183744193063,
+        "update_scale": 0.15255737675581885
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 1.8892644640602385,
+        "update_scale": 0.08830016925683902
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 1.9162865165111147,
+        "update_scale": 0.032246854998610935
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 2.237900907788659,
+        "update_scale": 0.008972803809887844
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 2.5589518487412293,
+        "update_scale": 0.0018947787612606812
+       }
+      ],
+      "relL2": 0.09575174351803509,
+      "cos": 0.9950292392498874,
+      "cos_p05": 0.9881754268764426
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.17501579922789876,
+      "input_cos_vs_parent": 0.9648244942643255,
+      "parent_energy_retained": 0.9919830942621792,
+      "prior_only_cos": 0.9999625561484308,
+      "prior_only_relL2": 0.008730771539362843,
+      "update_scale": 0.002380823366114819,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.028556368473576624,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.026172474467022932,
+      "check_sse_law_pick": 0.19069167442560325,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.19069167442560325,
+        "update_scale": 0.028556368473576624
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.18931627325909717,
+        "update_scale": 0.02853452431805777
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.17710687614176934,
+        "update_scale": 0.028319348696671996
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.12029435634219136,
+        "update_scale": 0.026444315943397866
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.05589560145821136,
+        "update_scale": 0.01807614287310996
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.03175063893677514,
+        "update_scale": 0.007559936468510742
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.026172474467022932,
+        "update_scale": 0.002380823366114819
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.026711210159512735,
+        "update_scale": 0.0007009584901200904
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.029789967140910773,
+        "update_scale": 0.00018905503051629252
+       }
+      ],
+      "relL2": 0.007614657969072514,
+      "cos": 0.9999714910586283,
+      "cos_p05": 0.9999569672667192
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.18091034939190467,
+      "input_cos_vs_parent": 0.963531414934838,
+      "parent_energy_retained": 0.9902141290188368,
+      "prior_only_cos": 0.9998237868117488,
+      "prior_only_relL2": 0.018593794326639337,
+      "update_scale": 0.0010628297922781601,
+      "lambda_relative": 10.0,
+      "free_solve_update_scale": 0.0464324433423227,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.33313884572079594,
+      "check_sse_law_pick": 0.6903245104438243,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.6903245104438243,
+        "update_scale": 0.0464324433423227
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.6898561299196906,
+        "update_scale": 0.04621698159375524
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.6854463675849856,
+        "update_scale": 0.04475218947546
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.6507976025346373,
+        "update_scale": 0.040768433693899604
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.5218759069702612,
+        "update_scale": 0.028826828766190773
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.3881908127983001,
+        "update_scale": 0.012613050347990314
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.33636663838076,
+        "update_scale": 0.003964410407327795
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.33313884572079594,
+        "update_scale": 0.0010628297922781601
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.34518555462030315,
+        "update_scale": 0.0002869106138433967
+       }
+      ],
+      "relL2": 0.017367407792371052,
+      "cos": 0.9998493552283458,
+      "cos_p05": 0.9996789993088683
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.21035606136905546,
+      "input_cos_vs_parent": 0.9616040893073888,
+      "parent_energy_retained": 0.9885358037568509,
+      "prior_only_cos": 0.9999684038601798,
+      "prior_only_relL2": 0.00819930912578237,
+      "update_scale": 0.0022216156307581494,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.02852508569467002,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.06549135176679687,
+      "check_sse_law_pick": 0.48461493928472277,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.48461493928472277,
+        "update_scale": 0.02852508569467002
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.4806351576431408,
+        "update_scale": 0.02849976608535894
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.44585692382222564,
+        "update_scale": 0.028250918921343626
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.29477427677981205,
+        "update_scale": 0.026122756255786053
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.1372084673646124,
+        "update_scale": 0.017264434181075504
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.07928350345690527,
+        "update_scale": 0.007006237192415557
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.06549135176679687,
+        "update_scale": 0.0022216156307581494
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.0673756888625227,
+        "update_scale": 0.0006736536075994485
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.07544160628946181,
+        "update_scale": 0.00018037910144971678
+       }
+      ],
+      "relL2": 0.007080603496528392,
+      "cos": 0.9999762795938117,
+      "cos_p05": 0.9999660506612131
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       4,
+       5,
+       8,
+       10,
+       11,
+       12
+      ],
+      "input_drift_vs_parent": 0.21276944927731672,
+      "input_cos_vs_parent": 0.9640880501671458,
+      "parent_energy_retained": 0.9883496743810386,
+      "prior_only_cos": 0.9927958404139053,
+      "prior_only_relL2": 0.11427097613412365,
+      "update_scale": 0.09124856205077442,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.17158341390185405,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 6.022245659437376,
+      "check_sse_law_pick": 7.767775003156091,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 7.767775003156091,
+        "update_scale": 0.17158341390185405
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 7.766892641181162,
+        "update_scale": 0.17156018145595855
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 7.758110143197024,
+        "update_scale": 0.1713284812750182
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 7.67420131061656,
+        "update_scale": 0.16907195250535212
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 7.097667664779316,
+        "update_scale": 0.15110252362175547
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 6.022245659437376,
+        "update_scale": 0.09124856205077442
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 6.304996700927677,
+        "update_scale": 0.034457245711063844
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 7.665795458050829,
+        "update_scale": 0.009106365510887972
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 8.72810579223117,
+        "update_scale": 0.0018259436538342498
+       }
+      ],
+      "relL2": 0.09071078731842214,
+      "cos": 0.9955036054870808,
+      "cos_p05": 0.9896103074547571
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.21675176148418188,
+      "input_cos_vs_parent": 0.96616404012106,
+      "parent_energy_retained": 0.988070708712162,
+      "prior_only_cos": 0.9999644514241441,
+      "prior_only_relL2": 0.008400825316648236,
+      "update_scale": 0.002213187277206768,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.02394271970784363,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.08451724628401547,
+      "check_sse_law_pick": 0.5971158508075485,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.5971158508075485,
+        "update_scale": 0.02394271970784363
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.5934989163911638,
+        "update_scale": 0.023927901808314833
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.5607768788591996,
+        "update_scale": 0.023781545949591417
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.39497279121193457,
+        "update_scale": 0.02247672141737564
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.18623103482603393,
+        "update_scale": 0.01608712551579618
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.10395332724920325,
+        "update_scale": 0.007050323189652433
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.08451724628401547,
+        "update_scale": 0.002213187277206768
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.0858418577684838,
+        "update_scale": 0.0006124324718225207
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.09424987448051296,
+        "update_scale": 0.00015595445003223053
+       }
+      ],
+      "relL2": 0.007416261348257376,
+      "cos": 0.9999731331542133,
+      "cos_p05": 0.9999594137929491
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.2420504549585298,
+      "input_cos_vs_parent": 0.9590979040484275,
+      "parent_energy_retained": 0.9837990876128319,
+      "prior_only_cos": 0.9998189853670754,
+      "prior_only_relL2": 0.01819381712427466,
+      "update_scale": 0.0059316032355971725,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.06338508932003342,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 1.7685857163630567,
+      "check_sse_law_pick": 4.586106304320709,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 4.586106304320709,
+        "update_scale": 0.06338508932003342
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 4.5809702091061935,
+        "update_scale": 0.06333920778690881
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 4.531007395313929,
+        "update_scale": 0.06288715771038852
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 4.1375682977987465,
+        "update_scale": 0.058938755143639686
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 2.9261046535872297,
+        "update_scale": 0.04099898657870186
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 2.029809611389283,
+        "update_scale": 0.017764683910176885
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 1.7685857163630567,
+        "update_scale": 0.0059316032355971725
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 1.7960549745276178,
+        "update_scale": 0.0017878589840999183
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 1.931671594894036,
+        "update_scale": 0.00042687694853929997
+       }
+      ],
+      "relL2": 0.01641751054435989,
+      "cos": 0.9998637131661525,
+      "cos_p05": 0.9996775383372352
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.25306090318168367,
+      "input_cos_vs_parent": 0.9625338560955001,
+      "parent_energy_retained": 0.9855089710919954,
+      "prior_only_cos": 0.9999729826855667,
+      "prior_only_relL2": 0.007643139024549055,
+      "update_scale": 0.0018978267293201698,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03375135196691187,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.24370754793834237,
+      "check_sse_law_pick": 2.300460796566347,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 2.300460796566347,
+        "update_scale": 0.03375135196691187
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 2.2685063430171573,
+        "update_scale": 0.03370550190629287
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 2.009220030084336,
+        "update_scale": 0.033258918580534216
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 1.1496869276969406,
+        "update_scale": 0.02969919083541763
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.4914942701771479,
+        "update_scale": 0.017800562179540555
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.2887523929725614,
+        "update_scale": 0.00660859071949921
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.24370754793834237,
+        "update_scale": 0.0018978267293201698
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.2453282956228542,
+        "update_scale": 0.0005152536106613152
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.26164504914348646,
+        "update_scale": 0.00012607855961764902
+       }
+      ],
+      "relL2": 0.006862456595569815,
+      "cos": 0.99997870453463,
+      "cos_p05": 0.9999694522310274
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       7,
+       9
+      ],
+      "input_drift_vs_parent": 0.2521975068107215,
+      "input_cos_vs_parent": 0.9637604386641309,
+      "parent_energy_retained": 0.985816092855764,
+      "prior_only_cos": 0.9919111811318776,
+      "prior_only_relL2": 0.11772031943872756,
+      "update_scale": 0.10010119421067176,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.22229372999017924,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 19.526161975224035,
+      "check_sse_law_pick": 26.901387949218197,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 26.901387949218197,
+        "update_scale": 0.22229372999017924
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 26.894318313082408,
+        "update_scale": 0.22224018963719952
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 26.824299278176674,
+        "update_scale": 0.22170749320119087
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 26.185488276377857,
+        "update_scale": 0.2166356369627014
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 22.857218549615503,
+        "update_scale": 0.18197970937817723
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 19.526161975224035,
+        "update_scale": 0.10010119421067176
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 22.325549290953035,
+        "update_scale": 0.03726221588554462
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 28.96155806710696,
+        "update_scale": 0.00987533903831141
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 33.59016831111195,
+        "update_scale": 0.0036296760905231372
+       }
+      ],
+      "relL2": 0.06973704422507028,
+      "cos": 0.9955514847049981,
+      "cos_p05": 0.9880143931230465
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.2498659610316209,
+      "input_cos_vs_parent": 0.9664553635143659,
+      "parent_energy_retained": 0.9853304091153183,
+      "prior_only_cos": 0.9999766812180718,
+      "prior_only_relL2": 0.00799242063171064,
+      "update_scale": 0.002210652687547479,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.053655781618884055,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.5352215938013141,
+      "check_sse_law_pick": 6.216800868348596,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 6.216800868348596,
+        "update_scale": 0.053655781618884055
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 6.0794838675471965,
+        "update_scale": 0.05355021742072933
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 5.064668344629482,
+        "update_scale": 0.052533392796773395
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 2.5262515673597994,
+        "update_scale": 0.04504126378473359
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 1.0550172035759537,
+        "update_scale": 0.02457261836044721
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.6280494781388725,
+        "update_scale": 0.00849516979708695
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.5352215938013141,
+        "update_scale": 0.002210652687547479
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.5358165506957657,
+        "update_scale": 0.0005373659310955397
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.558927139533522,
+        "update_scale": 0.00014831083537711115
+       }
+      ],
+      "relL2": 0.007370501318029381,
+      "cos": 0.9999816353781336,
+      "cos_p05": 0.9999610218300656
+     }
+    ]
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 16384 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 44040192,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.1460 on the frozen review prompts, with tokens-per-byte beside it"
+  }
+ ],
+ "vocabulary": {
+  "k": 16384,
+  "kept_rows": 16384,
+  "mandatory_rows": 765,
+  "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+  "ranking_rule": "(-census_count, parent_token_id)",
+  "observed_tokens_admitted_by_ranking": 4633,
+  "tokens_skipped_because_their_closure_did_not_fit": 0,
+  "dead_parent_rows_dropped": 1134,
+  "sealed_corpus": {
+   "path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+   "file_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+   "rows": 256,
+   "token_positions": 67583
+  },
+  "sealed_corpus_is_a_donor_mapped_stream": "mapped_donor_calibration.json carries a DONOR tokenizer's segmentation mapped into this vocabulary, so the parent does not round-trip its own sealed corpus (264 donor ids re-encode to 186 canonical ones on row 0).  The census therefore reads BOTH streams and both coverages are published.",
+  "sealed_corpus_coverage_donor_mapped": {
+   "occurrences": 67583,
+   "occurrences_covered": 67583,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 2030,
+   "distinct_covered": 2030,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "sealed_corpus_coverage_canonical": {
+   "occurrences": 43992,
+   "occurrences_covered": 43992,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 4806,
+   "distinct_covered": 4806,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "kept_token_occurrences_lost": {
+   "donor_mapped": 0,
+   "canonical": 0,
+   "claim": "every token occurrence in the sealed corpus, on both streams, has a kept row; asserted, not asserted-about"
+  },
+  "lossless_on_text_and_agreement": {
+   "sealed_corpus": {
+    "rows": 256,
+    "rows_lossless_on_text": 256,
+    "rows_segmented_exactly_as_parent": 256,
+    "parent_positions": 43992,
+    "parent_positions_whose_token_was_dropped": 0,
+    "positions_agreeing": 43992,
+    "position_agreement": 1.0
+   },
+   "frozen_review_prompts": {
+    "rows": 16,
+    "rows_lossless_on_text": 16,
+    "rows_segmented_exactly_as_parent": 0,
+    "parent_positions": 726,
+    "parent_positions_whose_token_was_dropped": 101,
+    "positions_agreeing": 106,
+    "position_agreement": 0.14600550964187328
+   },
+   "claim": "decode(child_encode(t)) == t for every t (the byte alphabet is complete and there is no unk); `position_agreement` is how often the child's segmentation equals the parent's under the remap, and it is the measured size of the input-distribution shift this arm bets on"
+  },
+  "frozen_review_prompt_coverage_DIAGNOSTIC_ONLY": {
+   "occurrences": 726,
+   "occurrences_covered": 625,
+   "occurrence_coverage": 0.8608815426997245,
+   "distinct_tokens": 432,
+   "distinct_covered": 342,
+   "distinct_coverage": 0.7916666666666666,
+   "occurrences_lost": 101
+  },
+  "tokens_per_byte": {
+   "sealed_corpus": {
+    "utf8_bytes": 187896,
+    "parent_tokens": 43992,
+    "child_tokens": 43992,
+    "parent_tokens_per_byte": 0.23412951845701876,
+    "child_tokens_per_byte": 0.23412951845701876,
+    "sequence_length_ratio": 1.0
+   },
+   "frozen_review_prompts": {
+    "utf8_bytes": 3401,
+    "parent_tokens": 726,
+    "child_tokens": 841,
+    "parent_tokens_per_byte": 0.21346662746251102,
+    "child_tokens_per_byte": 0.24728021170244047,
+    "sequence_length_ratio": 1.1584022038567494
+   }
+  }
+ },
+ "identity_gate": {
+  "kind": "bytes",
+  "assertion": "torch.equal(gathered_table, source_table[kept_ids])",
+  "passed": true
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 0,
+  "heldout_rows": 0,
+  "parent_model_forward_calls": 0,
+  "split_authority": "not consumed: the base arm solves nothing",
+  "conditioned": false
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "none -- the base arm is a gather"
+ },
+ "elapsed_seconds": 26.909036027966067
+}

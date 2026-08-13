@@ -1,11 +1,11 @@
 # Phase 1 — the fold-only frontier on LFM2.5-230M
 
-**Date:** 2026-08-13 (consolidated at wave 21, extended at wave 22).
+**Date:** 2026-08-13 (consolidated at wave 21, extended at waves 22 and 23).
 **Branch:** `codex/lrc-blank-compression`.
-**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–22,
-`NOTES-MX-A` … `NOTES-MX-Z`.
-**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **652 rows**, sha
-`33a8326ae956e15aed0f1b2443a25377351d167b0bbb78667f5a0d8a0f74fe29`.
+**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–23,
+`NOTES-MX-A` … `NOTES-MX-AA`.
+**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **662 rows**, sha
+`3967d7045a4aaaf87807283c4edc043577e40861325ada4af528e08272fe7e05`.
 **One-page version for scoring:** `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md`.
 
 This is the consolidating document of the **fold-only** matrix campaign: what
@@ -74,9 +74,30 @@ Cyril's ruling; it is reserved for after structural folding is proven.
 
 ## 1. Every sealed child that answers anything
 
-**157 whole-model children have a sealed behaviour review. 110 hold at least one
-of fifteen cases.** All 110 are below, sorted by net stored ratio, with both
-readings, the export shape and the benchmark row where one was run. Eleven cells
+**162 whole-model children have a sealed behaviour review. 115 hold at least one
+of fifteen cases.** The 110 sealed through wave 22 are below, sorted by net
+stored ratio, with both readings, the export shape and the benchmark row where
+one was run.
+
+**Wave 23's five rows are listed here rather than merged into the table, and
+that is a debt, not a style choice.** The table is generated from
+`wave22/campaign-frontier-table.json`; wave 23 wrote
+`wave23/campaign-frontier-table.json` and did not regenerate the prose table,
+so the 110 rows below are wave 22's and the five below them are wave 23's. Wave
+24 should regenerate the whole thing from the wave-23 artifact.
+
+| child | wave | net stored | stored params | review | per-child | per-lane | shape | arc_e | hella_n | piqa_n | wino | lambada | lam ppl | wiki wppl |
+|---|---:|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `ARCH.V16CL896` | 23 | **0.469305** | 107,796,224 | **1/15** | dead | impaired (15/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| `ARCH.V16W896X13` | 23 | **0.623329** | 143,174,400 | **1/15** | dead | impaired (15/16) | standard | -- | -- | -- | -- | -- | -- | -- |
+| `ARCH.V16W896` | 23 | **0.667288** | 153,271,424 | **2/15** | dead | impaired (12/16) | standard | 0.3100 | 0.4100 | 0.5050 | 0.5250 | 0.1450 | 1131.48 | 1246.14 |
+| `ARCH.V16X13` | 23 | **0.728353** | 167,297,792 | **5/15** | dead | impaired (6/16) | standard | 0.4050 | 0.3950 | 0.6100 | 0.4950 | 0.3000 | 340.72 | 1048.24 |
+| `ARCH.V16` | 23 | **0.780874** | 179,361,536 | **9/15** | **alive-degraded** | **none (0/16)** | standard | 0.4300 | 0.4550 | 0.6050 | 0.5200 | 0.3450 | **72.99** | 228.04 |
+
+**`bits_per_byte` is the tokenizer-independent column and a vocabulary child
+needs it**: `word_perplexity` is per *word* over a token stream, and a child that
+segments differently is not on the same denominator. Parent **1.1882**, `V16`
+**1.4648**, `V16X13` **1.8764**, `V16W896` **1.9230**. Eleven cells
 carry more than one reviewed receipt (re-seals under ADDENDUM 14, re-runs); the
 latest by `sealed_at` is shown and the superseded digests are listed in
 `wave22/campaign-frontier-table.json`.
@@ -202,6 +223,25 @@ introduced and what it cost.
 
 ### 1.1 The recipes behind the top of that table
 
+* **`ARCH.V16` — 0.780874x, 9/15, standard shape (wave 23).** `vocab_size`
+  16,384: a **verbatim row coreset** of the tied token table. Every kept row is
+  the parent's own bytes (the identity gate is `torch.equal`, not a tolerance),
+  the BPE merge list is restricted to the closure of what was kept, the ids are
+  densely remapped and a stock `tokenizer.json` is emitted. **Nothing is solved,
+  no capture is read, one tensor is touched.** It is the deepest standard-shape
+  child at 8/15 or better by seventeen points of ratio, it sits at `MXN2`'s own
+  ratio one case below it with a stock loader instead of a reconstituted
+  `lm_head`, and **zero of sixteen lanes hit the token cap**. Its cost is
+  sequence length: 0.2473 child tokens per byte against 0.2135, **+15.8%** on the
+  review prompts. The census behind the selection is thin — the sealed corpus
+  has 2,030 distinct tokens — so roughly 14,000 of the 16,384 rows are chosen by
+  the tie-break, parent token id order, which for a BPE table is its own
+  training-corpus frequency order. It is a tokenizer-frequency-prefix coreset and
+  the receipt says so.
+* **`ARCH.V16CL896` — 0.469305x, 1/15, standard shape (wave 23).** The same
+  fold on `CL896`'s body: **under half the parent**, and the first child below
+  0.5x in this campaign that holds anything at all.
+
 * **`ARCH.CL896` — 0.688431x, 4/15, standard shape (wave 15).** The deepest
   scoring child in the campaign. `intermediate_size` 896 at every MLP site,
   solved **conditioned-local** — each site against a capture taken through the
@@ -326,6 +366,17 @@ not a rounding error:
 | `ARCH.W896KV6JS` | 7/15 and 4/15 | **2/15** | head merge + `hidden_size` |
 | `ARCH.X13KV6J` | 13/15 and 3/15 | **3/15** | excision + head merge |
 | `COMP.MA.MXQ4` | six lanes + two merges | **0/15** | SwiGLU + head merge |
+
+**Wave 23 added the cleanest test the rule has been given, and it held.** The
+vocabulary fold and the block-13 excision **share no tensor**: one gathers rows
+out of the embedding, the other deletes a conv block, and neither re-solves
+anything the other touched. If additive interference were a *contention* effect
+— two folds competing for one residual budget — that pair should have been free.
+`ARCH.V16X13` is **13/15 and 9/15 composing to 5/15**. So the cross term is real
+between folds on disjoint tensors, **L3 is not a contention effect**, and its
+magnitude does depend on which folds: the same excision with the width fold is
+13 + 4 -> 1, so this is the **mildest** second step in 662 rows. The third step
+is still fatal (`ARCH.V16W896X13`, 0.623329x, **1/15**).
 
 **The rule that survives every test of it: the first composition step is
 survivable and the second is fatal.** `ARCH.X07KV6JQC` is the best two-axis
@@ -781,21 +832,37 @@ Each statement carries the eligibility rule that produces it, because the
 campaign has already lost three waves to a frontier claim quoted without one.
 
 * **Deepest sealed child with a non-zero score, no eligibility rule:**
-  `ARCH.CL896`, **0.688431x at 4/15**, standard shape, since wave 15.
+  `ARCH.V16CL896`, **0.469305x at 1/15**, standard shape, since wave 23 — under
+  half the parent. It is one marginal case (a summarisation lane that echoes its
+  prompt and then names the decision, the risk and the mitigation) with six of
+  sixteen lanes at the cap, and it is reported as that and not as a model.
+* **Deepest sealed child at four or more cases:** `ARCH.CL896`, **0.688431x at
+  4/15**, standard shape, since wave 15. Unmoved.
+* **Deepest STANDARD-SHAPE child at eight or more cases:** `ARCH.V16`,
+  **0.780874x at 9/15** (wave 23). The previous holder was `ARCH.X13A` at
+  0.947479x — **seventeen points of ratio**.
 * **Deepest child that reads at the parent's own band (`alive-parent-band`):**
-  `COMP.MA.MXN2`, **0.780518x at 10/15**, parent-shaped, one component.
+  `COMP.MA.MXN2`, **0.780518x at 10/15**, parent-shaped, one component. `V16` is
+  at the same ratio, one case below it, on the standard column.
 * **Deepest 4x-class rung with a non-zero score:** there has never been one.
   Every 4x-class rung in the campaign is 0/15.
 * **Deepest child of any score:** `ARCH.W512`, **0.463481x**, standard shape,
-  **0/15** — under half the parent, and not a model.
+  **0/15** — under half the parent, and not a model. `V16CL896` is five
+  thousandths shallower and holds one case; that gap is the whole of what
+  "coherent at half the parent" is worth so far.
 
-**Distance to 0.5x from the honest frontier: 43.3M parameters.** 0.5x is
-114,846,592; `CL896` is 158,127,872. The width axis crosses 0.5x and reads 0/15
-on the other side.
+**0.5x is crossed with a case, for the first time (wave 23).** 0.5x is
+114,846,592 parameters; `ARCH.V16CL896` is **107,796,224** and holds one of
+fifteen. The distance from the deepest child at four or more cases is
+unchanged: `CL896` is 158,127,872, i.e. 43.3M above 0.5x.
 
-**Fold-only did not produce a coherent 0.5x child on this model.** That has now
-been read on three independent children at or below 0.5x, built by two different
-mechanisms in three different orders, with and without repair.
+**Fold-only did not produce a COHERENT 0.5x child on this model.** Four
+independent children at or below 0.5x have now been read, built by three
+different mechanisms in four different orders, with and without repair. Three
+read 0/15. The fourth, `ARCH.V16CL896`, holds one case out of fifteen with six
+of sixteen lanes at the token cap — which moves the line from "nothing survives
+here" to "almost nothing survives here", and is a real move that is not
+coherence.
 
 **And the measured reason is not a runaway price.** The per-lane marginal price
 does not increase with depth — the seventh lane is the cheapest per parameter
@@ -848,10 +915,20 @@ fourth was gated out by its own rule:**
 * **CUR / interpolative decomposition** — factors that are *actual rows and
   columns of the parent*, so the basis is not a new dense object; storage is `k`
   column ids plus a `k×n` coefficient block, and the ids are integers.
-* **Nearest-Kronecker-product (Van Loan)** — `W ≈ A ⊗ B` by an SVD of the
-  rearranged matrix; a `1024×1024` weight becomes `32×32` + `32×32` in the exact
-  rank-1 case, and the residual is measurable rank by rank. **The highest-leverage
-  unplayed class by storage arithmetic alone.**
+* **Nearest-Kronecker-product (Van Loan) — PRICED AND BURIED (wave 23).** This
+  entry called it "the highest-leverage unplayed class by storage arithmetic
+  alone", and that was true only in the sense that nobody had looked. Wave 23's
+  `P3` census ran all 42 SwiGLU tensors through four admissible grids each:
+  **the top Kronecker term holds 0.25% of the energy** (median 0.00253 across the
+  stack), 196 of 1,280 terms retain **0.3734** at the 4x bound, and the class
+  loses its own head-to-head to plain rank truncation at **38 of 42 sites**
+  (median 0.4341) and to a Monarch blockwise-SVD control at **all 42** (median
+  0.5050, and at 0.35x storage rather than 0.25x). Rearrangement rank and matrix
+  rank are indeed independent — and on this model **both** spectra are flat. The
+  cell was not built; a priced grave is a deliverable and an unpriced backlog is
+  not. `wave23/prereads/P3-nkp-rearrangement.json`. What the census does **not**
+  do is the evidence-weighted selection, which needs the sealed ffn-input moment
+  and therefore a capture.
 * **Monarch / block-diagonal + low-rank** — permutation-sandwiched block-diagonal
   factors, expressly designed as a drop-in for a dense linear layer, and the
   closest structural relative of what is known to fold here (MLP mass).
@@ -894,16 +971,18 @@ ask which initialization distils fastest rather than guessing one.
 
 | artifact | location |
 |---|---|
-| ledger (652 rows) | `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, copy in `reports/matrix-campaign-20260810/ledger.jsonl` |
+| ledger (662 rows) | `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, copy in `reports/matrix-campaign-20260810/ledger.jsonl` |
 | rendered ledger | `reports/matrix-campaign-20260810/LEDGER.md` (regenerate, never hand-edit) |
-| the generated campaign table | `reports/matrix-campaign-20260810/wave22/campaign-frontier-table.json` |
+| the generated campaign table | `reports/matrix-campaign-20260810/wave23/campaign-frontier-table.json` |
 | the one-page scorecard | `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md` |
 | wave notes | `NOTES-MX-{A..H,X,Y,Z}.md` at the repository root and `reports/matrix-campaign-20260810/wave{5..19}/NOTES-MX-{I..W}.md` |
-| design + addenda 1–14 | `docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md` |
+| design + addenda 1–15 | `docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md` |
 | scaling theory | `docs/FOLDING_SCALING_THEORY_2026-08-12.md` |
 | human-review packages | `reports/matrix-campaign-20260810/wave{12..22}/human-review/` |
 | frontier child tensors | `/mnt/ai_data/neural-forge-matrix/wave{10..22}/children/` and `.../cells/<CHILD>/` |
 | benchmarks | `/mnt/ai_data/neural-forge-matrix/wave{8,9,11,12,13,16..22}/bench/` |
 | stage-2 estate | `/mnt/ai_data/neural-forge-stage2/` |
 | M5 kernel | `src/neural_forge/matrix_technique_head_merge.py` + tests |
-| the width/basis builder | `reports/matrix-campaign-20260810/run/mx22/mx22_build.py` (waves 19–22 lineage; **ten** code lines of body differ from `mx21_build.py` — nine renamed at `5e17bb58`, one added at `70a2498d` — and the solver is byte-identical) |
+| the vocabulary builder | `reports/matrix-campaign-20260810/run/mx23/mx23_vocab.py` (wave 23; a row gather, a merge-tree closure and a tokenizer emit, and it solves nothing) |
+| the deployment protocol | `reports/matrix-campaign-20260810/run/mx23/deploy.py` (wave 23; it had only ever lived in a shell history) |
+| the width/basis builder | `reports/matrix-campaign-20260810/run/mx23/mx23_build.py` (waves 19–22 lineage; **ten** code lines of body differ from `mx21_build.py` — nine renamed at `5e17bb58`, one added at `70a2498d` — and the solver is byte-identical) |

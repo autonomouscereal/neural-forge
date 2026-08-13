@@ -1,0 +1,29 @@
+{
+ "schema": "neural-forge-matrix-wave23-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/arch-V16CL896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/arch-V16.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/arch-V16W896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/arch-V16W896X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/arch-V16X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/verdict-V16CL896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/verdict-V16.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/verdict-V16W896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/verdict-V16W896X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave23/shards/verdict-V16X13.jsonl"
+ ],
+ "rows_before": 652,
+ "rows_appended": 10,
+ "rows_after": 662,
+ "superseded_rows_dropped": [],
+ "appended_cells": [
+  "ARCH.V16",
+  "ARCH.V16CL896",
+  "ARCH.V16W896",
+  "ARCH.V16W896X13",
+  "ARCH.V16X13"
+ ],
+ "applied": true,
+ "rows_after_verified": 662
+}

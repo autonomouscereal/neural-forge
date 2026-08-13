@@ -1,0 +1,1060 @@
+{
+ "schema": "neural-forge-matrix-wave23-standard-shape-child-v1",
+ "built_at": "2026-08-13T14:37:33Z",
+ "builder": "mx23_vocab.py",
+ "tag": "V16W736",
+ "arm": "vocab-row-coreset (zero-solve)",
+ "adjudication": {
+  "item": "A2",
+  "status": "RESOLVED 2026-08-13 by Cyril: a vocabulary row coreset with a tokenizer remap COUNTS AS FOLDING and is frontier-eligible",
+  "scale_caveat_recorded_at_his_instruction": "the token interface is 29.2% of THIS parent and ~1% of a 70B model by the same arithmetic (docs/PHASE1 section 4.1); these rows are this model's phase-1 numbers, not a transferable strategy"
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave21/children/MX21-W736",
+ "source_config_vocab_size": 65536,
+ "source_tensors_sha256": "a010e1cb852a5fd473b306ec9401c660c2a953712e80bc48e8b7536b90e847fc",
+ "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave21/cells/ARCH.W736/cell-receipt.json",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave23/children/MX23-V16W736",
+ "child_tensors_sha256": "f60d9a4ab96d62288078b4735fb5c0559baca36af6467920d7e8e428d7f42f6e",
+ "child_directory_sha256": "a8fb3f091a02525069e70f04a9085776e692006d3b5bbb99969736086dda2e0c",
+ "child_parameters": 122133344,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.5317238494982942,
+ "excised": [],
+ "axes": [
+  {
+   "axis": "hidden_size",
+   "kind": "residual",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "hidden_size",
+    "block_dim",
+    "conv_dim",
+    "head_dim"
+   ],
+   "selection": "one shared orthonormal basis E (1024 x 736), the top eigenvectors of the reader-pca second moment of the residual stream pooled over all 29 residual-write endpoints with each endpoint equalised to trace one; a per-boundary chart is not expressible in a stock child because the residual is a running sum with nowhere to put a chart transition.  The conv blocks' internal channels are a pivoted-Cholesky coreset of the parent's own, because Lfm2ShortConv gates channelwise and no rotation of that space is representable",
+   "solve": "readers folded EXACTLY as sqrt(1024/H) W diag(g) E diag(1/g_c) with g_c = diag(E^T diag(g) E) (the lift preserves the norm, so the parent's RMSNorm at the lifted row and the child's at the row differ by that one constant); writers folded as E^T W and re-solved against the child's own installed activations by the prior-anchored ridge under THE LAW; the final norm's diagonal solved in closed form against the tied head's Gram",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": null,
+   "basis": {
+    "mode": "reader-pca",
+    "width": 736,
+    "sha256": "4734cdc98ff54f1400f54b388b4117e21a2564d74b4ed2a7d170a4b9e4873daf",
+    "path": "/mnt/ai_data/neural-forge-matrix/wave21/basis/E-reader-pca-736.safetensors",
+    "retained": {
+     "raw.fit": 0.9577916586793509,
+     "raw.hld": 0.9452077272856281,
+     "reader.fit": 0.9291968202062231,
+     "reader.hld": 0.9075239780726679
+    },
+    "selector_retained": {},
+    "objective": {
+     "mode": "reader-pca"
+    },
+    "spectrum": {
+     "raw.fit": {
+      "top_1024": 0.9999999999999984,
+      "top_960": 0.9945040738178852,
+      "top_896": 0.9881317249346414,
+      "top_832": 0.9809430476566875,
+      "top_768": 0.9729027856239278,
+      "top_704": 0.9639278118889743,
+      "top_640": 0.9539187114427733,
+      "top_576": 0.9426947277432213,
+      "top_512": 0.930055598779807,
+      "top_448": 0.9157038024690827,
+      "top_384": 0.8991564043868423,
+      "top_256": 0.8564539685479146
+     },
+     "raw.hld": {
+      "top_1024": 0.9999999999999986,
+      "top_960": 0.995413239778586,
+      "top_896": 0.9899230568601572,
+      "top_832": 0.9835845192716397,
+      "top_768": 0.9763424098890582,
+      "top_704": 0.9680895922286523,
+      "top_640": 0.9586783635768756,
+      "top_576": 0.9479566986094046,
+      "top_512": 0.9356808943862043,
+      "top_448": 0.9215347475784846,
+      "top_384": 0.9050178518074082,
+      "top_256": 0.8613690587267553
+     },
+     "reader.fit": {
+      "top_1024": 0.9999999999999996,
+      "top_960": 0.9874235763718416,
+      "top_896": 0.9729449091222421,
+      "top_832": 0.9567570783003496,
+      "top_768": 0.9388523528007287,
+      "top_704": 0.9190634331038701,
+      "top_640": 0.8972751937441246,
+      "top_576": 0.8731974796481545,
+      "top_512": 0.8464956116904321,
+      "top_448": 0.8167341713771931,
+      "top_384": 0.7831922326785933,
+      "top_256": 0.7004409661394944
+     },
+     "reader.hld": {
+      "top_1024": 1.0000000000000016,
+      "top_960": 0.9894594449333637,
+      "top_896": 0.9769487556811509,
+      "top_832": 0.9626598973094056,
+      "top_768": 0.946550762441625,
+      "top_704": 0.9284302990388815,
+      "top_640": 0.9080821274110242,
+      "top_576": 0.8852646873803557,
+      "top_512": 0.8595934445730893,
+      "top_448": 0.8305505376101998,
+      "top_384": 0.7974058171473369,
+      "top_256": 0.714172127333594
+     }
+    }
+   },
+   "width_lambda_split": null,
+   "reader_fold_gate": [
+    {
+     "layer": 0,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 0,
+     "reader": "mlp.w1",
+     "relL2": 0.0036787227733606136,
+     "max_abs": 0.012341626810098205
+    },
+    {
+     "layer": 1,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 1,
+     "reader": "mlp.w1",
+     "relL2": 0.005310038953370362,
+     "max_abs": 0.022549486020579934
+    },
+    {
+     "layer": 2,
+     "reader": "attention.q",
+     "relL2": 0.005360405443708235,
+     "max_abs": 0.00507785478112055
+    },
+    {
+     "layer": 2,
+     "reader": "mlp.w1",
+     "relL2": 0.0054905661873756026,
+     "max_abs": 0.02287500580860069
+    },
+    {
+     "layer": 3,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 3,
+     "reader": "mlp.w1",
+     "relL2": 0.004488910370126901,
+     "max_abs": 0.015016610887641946
+    },
+    {
+     "layer": 4,
+     "reader": "attention.q",
+     "relL2": 0.006359703829838439,
+     "max_abs": 0.005674838783932046
+    },
+    {
+     "layer": 4,
+     "reader": "mlp.w1",
+     "relL2": 0.005750955881266591,
+     "max_abs": 0.03375705449434463
+    },
+    {
+     "layer": 5,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 5,
+     "reader": "mlp.w1",
+     "relL2": 0.005024485750484197,
+     "max_abs": 0.02586968769901432
+    },
+    {
+     "layer": 6,
+     "reader": "attention.q",
+     "relL2": 0.005345388119770153,
+     "max_abs": 0.007196463964646682
+    },
+    {
+     "layer": 6,
+     "reader": "mlp.w1",
+     "relL2": 0.005227821333516024,
+     "max_abs": 0.03088316854700679
+    },
+    {
+     "layer": 7,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 7,
+     "reader": "mlp.w1",
+     "relL2": 0.0049120337245032505,
+     "max_abs": 0.02547766757197678
+    },
+    {
+     "layer": 8,
+     "reader": "attention.q",
+     "relL2": 0.004011594197846657,
+     "max_abs": 0.006748340019839816
+    },
+    {
+     "layer": 8,
+     "reader": "mlp.w1",
+     "relL2": 0.004071568527955668,
+     "max_abs": 0.015024516236735508
+    },
+    {
+     "layer": 9,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 9,
+     "reader": "mlp.w1",
+     "relL2": 0.004551200154058695,
+     "max_abs": 0.015279443003237247
+    },
+    {
+     "layer": 10,
+     "reader": "attention.q",
+     "relL2": 0.003594299381703713,
+     "max_abs": 0.005891189754038351
+    },
+    {
+     "layer": 10,
+     "reader": "mlp.w1",
+     "relL2": 0.004454990303947675,
+     "max_abs": 0.02890475356252864
+    },
+    {
+     "layer": 11,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 11,
+     "reader": "mlp.w1",
+     "relL2": 0.005011872444806628,
+     "max_abs": 0.020663955714553595
+    },
+    {
+     "layer": 12,
+     "reader": "attention.q",
+     "relL2": 0.004566184022000497,
+     "max_abs": 0.008068753260886297
+    },
+    {
+     "layer": 12,
+     "reader": "mlp.w1",
+     "relL2": 0.004016903267007595,
+     "max_abs": 0.02921053220052272
+    },
+    {
+     "layer": 13,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 13,
+     "reader": "mlp.w1",
+     "relL2": 0.004870727569560732,
+     "max_abs": 0.028717263252474368
+    }
+   ],
+   "final_norm_gain": {
+    "lambda_relative": 1e-06,
+    "update_scale": 0.3703065221418881,
+    "scalar_anchor_alpha": 2.1109800431592127,
+    "scalar_anchor_distance": 0.3566140578543444,
+    "logit_relative_sse_transported": 0.5366361653700958,
+    "logit_relative_sse_scalar": 0.4108048991447265,
+    "logit_relative_sse_solved": 0.17509346231962095,
+    "ladder": [
+     {
+      "lambda_relative": 1e-06,
+      "update_scale": 0.3703065221418881
+     },
+     {
+      "lambda_relative": 1e-05,
+      "update_scale": 0.3702853106648283
+     },
+     {
+      "lambda_relative": 0.0001,
+      "update_scale": 0.3700735132502912
+     },
+     {
+      "lambda_relative": 0.001,
+      "update_scale": 0.3679866438384423
+     },
+     {
+      "lambda_relative": 0.01,
+      "update_scale": 0.3497159521613428
+     },
+     {
+      "lambda_relative": 0.1,
+      "update_scale": 0.2631561353411626
+     },
+     {
+      "lambda_relative": 1.0,
+      "update_scale": 0.1424895974791586
+     },
+     {
+      "lambda_relative": 10.0,
+      "update_scale": 0.06416679811770497
+     },
+     {
+      "lambda_relative": 100.0,
+      "update_scale": 0.018056308943806103
+     }
+    ],
+    "rows": 4751,
+    "solved": true
+   },
+   "conv_coreset": {
+    "sites": [
+     0,
+     1,
+     3,
+     5,
+     7,
+     9,
+     11,
+     13
+    ],
+    "channels_kept": 736,
+    "channels_dropped": 288,
+    "channels_moved_vs_stale": {
+     "0": 688,
+     "1": 643,
+     "3": 667,
+     "5": 565,
+     "7": 658,
+     "9": 657,
+     "11": 578,
+     "13": 648
+    }
+   },
+   "heldout": {
+    "median_cos": 0.9998569488525391,
+    "min_cos": 0.9612505474914852,
+    "median_relL2": 0.016987837851047516,
+    "max_input_drift": 0.39800781509661853,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       3,
+       4,
+       6,
+       8,
+       11,
+       13
+      ],
+      "input_drift_vs_parent": 0.0016628115621796025,
+      "input_cos_vs_parent": 0.99999863298844,
+      "parent_energy_retained": 0.9253857784456825,
+      "prior_only_cos": 0.993132558577606,
+      "prior_only_relL2": 0.1049531653550433,
+      "update_scale": 0.3690416326957737,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.3690416326957737,
+      "relL2": 0.10610800407003487,
+      "cos": 0.9931516358542866,
+      "cos_p05": 0.9658758386526247
+     },
+     {
+      "layer": 0,
+      "position": 0,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.14344203864542648,
+      "input_cos_vs_parent": 0.9923383138498449,
+      "parent_energy_retained": 0.9323165589636997,
+      "prior_only_cos": 0.9999775687837564,
+      "prior_only_relL2": 0.007187714070792516,
+      "update_scale": 0.15312422242076404,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.15312422242076404,
+      "relL2": 0.0414830260319143,
+      "cos": 0.9993449076375678,
+      "cos_p05": 0.9970632327164517
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8
+      ],
+      "input_drift_vs_parent": 0.24088089646947095,
+      "input_cos_vs_parent": 0.9687848874741966,
+      "parent_energy_retained": 0.9398533763135252,
+      "prior_only_cos": 0.9668142372055669,
+      "prior_only_relL2": 0.2899689782140764,
+      "update_scale": 0.3776746199853478,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.3776746199853478,
+      "relL2": 0.29083806942687024,
+      "cos": 0.9612505474914852,
+      "cos_p05": 0.8945778076771653
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.27004818882915016,
+      "input_cos_vs_parent": 0.9606823229101067,
+      "parent_energy_retained": 0.9341456247507609,
+      "prior_only_cos": 0.9999633962341619,
+      "prior_only_relL2": 0.009191856584135356,
+      "update_scale": 0.08096236170998068,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.08096236170998068,
+      "relL2": 0.02441545138948409,
+      "cos": 0.9997500225403237,
+      "cos_p05": 0.9990311186989005
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.30832244771615525,
+      "input_cos_vs_parent": 0.9528318610488513,
+      "parent_energy_retained": 0.9398867282071454,
+      "prior_only_cos": 0.9999264078629325,
+      "prior_only_relL2": 0.012678797354453616,
+      "update_scale": 0.37420067710863475,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.37420067710863475,
+      "relL2": 0.015612826601139235,
+      "cos": 0.9998771579413758,
+      "cos_p05": 0.999770414193667
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3672146081718742,
+      "input_cos_vs_parent": 0.9360107459904627,
+      "parent_energy_retained": 0.924562343261678,
+      "prior_only_cos": 0.9999664795840415,
+      "prior_only_relL2": 0.011286783389088855,
+      "update_scale": 0.0339986256978038,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.0339986256978038,
+      "relL2": 0.013683294537226564,
+      "cos": 0.9999114199036221,
+      "cos_p05": 0.999811723646554
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8
+      ],
+      "input_drift_vs_parent": 0.38678365611755844,
+      "input_cos_vs_parent": 0.9286447489452679,
+      "parent_energy_retained": 0.9272555469237312,
+      "prior_only_cos": 0.9803600420075708,
+      "prior_only_relL2": 0.17923178501684522,
+      "update_scale": 0.25982572062376896,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.25982572062376896,
+      "relL2": 0.16356564678487753,
+      "cos": 0.9848800228039701,
+      "cos_p05": 0.9646681222747094
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.39800781509661853,
+      "input_cos_vs_parent": 0.9267206528459324,
+      "parent_energy_retained": 0.9323577178070006,
+      "prior_only_cos": 0.999958998214023,
+      "prior_only_relL2": 0.010083253762799975,
+      "update_scale": 0.04042464245489591,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.04042464245489591,
+      "relL2": 0.013158557423499842,
+      "cos": 0.9999049761408564,
+      "cos_p05": 0.9997792940816267
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.3668340583961584,
+      "input_cos_vs_parent": 0.932374434581357,
+      "parent_energy_retained": 0.9367314595714775,
+      "prior_only_cos": 0.9998743381108655,
+      "prior_only_relL2": 0.016108967927737215,
+      "update_scale": 0.05409556487076129,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.05409556487076129,
+      "relL2": 0.018428369462933886,
+      "cos": 0.9998266816768074,
+      "cos_p05": 0.9996718822446032
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3826351568515687,
+      "input_cos_vs_parent": 0.9285567875426278,
+      "parent_energy_retained": 0.9402457907498976,
+      "prior_only_cos": 0.9999584982149757,
+      "prior_only_relL2": 0.01164775286626462,
+      "update_scale": 0.03877730992905934,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.03877730992905934,
+      "relL2": 0.012545382898693263,
+      "cos": 0.9999174502530644,
+      "cos_p05": 0.9998329511347435
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       8,
+       11
+      ],
+      "input_drift_vs_parent": 0.3913939652450614,
+      "input_cos_vs_parent": 0.9243921031281574,
+      "parent_energy_retained": 0.9387592067932432,
+      "prior_only_cos": 0.9845825590925422,
+      "prior_only_relL2": 0.1673288896368246,
+      "update_scale": 0.2649395062965416,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.2649395062965416,
+      "relL2": 0.14199419103089694,
+      "cos": 0.9893351283330927,
+      "cos_p05": 0.9757337285127227
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3846333373406355,
+      "input_cos_vs_parent": 0.9285452181926581,
+      "parent_energy_retained": 0.9454523893592236,
+      "prior_only_cos": 0.9999592675308892,
+      "prior_only_relL2": 0.01369946520999912,
+      "update_scale": 0.03766278859678556,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.03766278859678556,
+      "relL2": 0.00180974905076946,
+      "cos": 0.9999149222280428,
+      "cos_p05": 0.9998114821295219
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.15327359450955855,
+      "input_cos_vs_parent": 0.9241261146184756,
+      "parent_energy_retained": 0.9888236198094305,
+      "prior_only_cos": 0.9998784637631911,
+      "prior_only_relL2": 0.016492736647610813,
+      "update_scale": 0.05025064602323683,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.05025064602323683,
+      "relL2": 0.017746475714846187,
+      "cos": 0.9998395348210701,
+      "cos_p05": 0.999700428256516
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.1858079634510933,
+      "input_cos_vs_parent": 0.9185139287494621,
+      "parent_energy_retained": 0.9872901190127573,
+      "prior_only_cos": 0.9999636745588074,
+      "prior_only_relL2": 0.011208235839686654,
+      "update_scale": 0.04102124063311674,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.04102124063311674,
+      "relL2": 0.012736303952740433,
+      "cos": 0.9999292927672616,
+      "cos_p05": 0.9998577174980118
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       2,
+       4,
+       5,
+       7,
+       9,
+       12,
+       13,
+       14
+      ],
+      "input_drift_vs_parent": 0.1756607256767287,
+      "input_cos_vs_parent": 0.9166985000740839,
+      "parent_energy_retained": 0.988101841668819,
+      "prior_only_cos": 0.9795380780324163,
+      "prior_only_relL2": 0.18487422329608713,
+      "update_scale": 0.26326578328583866,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.26326578328583866,
+      "relL2": 0.15026026281089483,
+      "cos": 0.9869746826245225,
+      "cos_p05": 0.9692735889148885
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.1862721907883125,
+      "input_cos_vs_parent": 0.9211323780095277,
+      "parent_energy_retained": 0.9873030446211636,
+      "prior_only_cos": 0.9999666090084517,
+      "prior_only_relL2": 0.009484602268423972,
+      "update_scale": 0.034180088531419385,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.034180088531419385,
+      "relL2": 0.011369856312950677,
+      "cos": 0.9999332259867869,
+      "cos_p05": 0.9998775509904781
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.2009071839357213,
+      "input_cos_vs_parent": 0.9221196295246572,
+      "parent_energy_retained": 0.9825579227444955,
+      "prior_only_cos": 0.9999005067499611,
+      "prior_only_relL2": 0.014065485063925161,
+      "update_scale": 0.04983065051542774,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.04983065051542774,
+      "relL2": 0.016987838749907943,
+      "cos": 0.9998569769133201,
+      "cos_p05": 0.9997685549768403
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.24020459588765586,
+      "input_cos_vs_parent": 0.9225954634348319,
+      "parent_energy_retained": 0.9796608636700832,
+      "prior_only_cos": 0.9999657014425215,
+      "prior_only_relL2": 0.008945025124363319,
+      "update_scale": 0.03731323084218174,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.03731323084218174,
+      "relL2": 0.012440550828279363,
+      "cos": 0.9999260494256429,
+      "cos_p05": 0.9998718653980262
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       5,
+       6,
+       7,
+       9,
+       10
+      ],
+      "input_drift_vs_parent": 0.2340974203337295,
+      "input_cos_vs_parent": 0.9216841672411142,
+      "parent_energy_retained": 0.9806001908437312,
+      "prior_only_cos": 0.9831630689055851,
+      "prior_only_relL2": 0.16929365244683753,
+      "update_scale": 0.2815574417234853,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.2815574417234853,
+      "relL2": 0.12972743093963832,
+      "cos": 0.9906071532569981,
+      "cos_p05": 0.9774706154754566
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.24465232180323437,
+      "input_cos_vs_parent": 0.9275160520347603,
+      "parent_energy_retained": 0.979059820385562,
+      "prior_only_cos": 0.999962395741527,
+      "prior_only_relL2": 0.00902282107629914,
+      "update_scale": 0.036300791299529594,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.036300791299529594,
+      "relL2": 0.01201268583581918,
+      "cos": 0.9999264456866526,
+      "cos_p05": 0.9998633281219177
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.25255892395643936,
+      "input_cos_vs_parent": 0.9238751089174749,
+      "parent_energy_retained": 0.9743242044804612,
+      "prior_only_cos": 0.9998542805468887,
+      "prior_only_relL2": 0.017006573955315765,
+      "update_scale": 0.05586471896003755,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.05586471896003755,
+      "relL2": 0.018219808932339158,
+      "cos": 0.9998342378693913,
+      "cos_p05": 0.9996940108707385
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.30112434420767464,
+      "input_cos_vs_parent": 0.9198961677692075,
+      "parent_energy_retained": 0.9701520888596449,
+      "prior_only_cos": 0.9999691071425211,
+      "prior_only_relL2": 0.008632646040636346,
+      "update_scale": 0.03735259836736333,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.03735259836736333,
+      "relL2": 0.010648636704311579,
+      "cos": 0.9999443501763464,
+      "cos_p05": 0.9999030271703847
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       4,
+       5,
+       10,
+       11,
+       12,
+       13
+      ],
+      "input_drift_vs_parent": 0.3094000258415844,
+      "input_cos_vs_parent": 0.9228599946184434,
+      "parent_energy_retained": 0.9695710236120725,
+      "prior_only_cos": 0.9858048734743484,
+      "prior_only_relL2": 0.1633681720890266,
+      "update_scale": 0.29046780927343935,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.29046780927343935,
+      "relL2": 0.11886818465668597,
+      "cos": 0.9925896660162766,
+      "cos_p05": 0.9855100205595383
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3210896247189585,
+      "input_cos_vs_parent": 0.9260650313404243,
+      "parent_energy_retained": 0.9686068309625062,
+      "prior_only_cos": 0.9999623481660798,
+      "prior_only_relL2": 0.008889554317698145,
+      "update_scale": 0.03244532971485584,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.03244532971485584,
+      "relL2": 0.011482847024637107,
+      "cos": 0.9999324180582901,
+      "cos_p05": 0.9998635636274524
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.35771249765917434,
+      "input_cos_vs_parent": 0.9100506494335543,
+      "parent_energy_retained": 0.9575570338565477,
+      "prior_only_cos": 0.9998894825532664,
+      "prior_only_relL2": 0.014555021621280173,
+      "update_scale": 0.0666074258201549,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.0666074258201549,
+      "relL2": 0.017153438502659837,
+      "cos": 0.999857034445442,
+      "cos_p05": 0.999752884872326
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3710769762921771,
+      "input_cos_vs_parent": 0.9201083170574639,
+      "parent_energy_retained": 0.9619200527968073,
+      "prior_only_cos": 0.9999748649272042,
+      "prior_only_relL2": 0.007523548316188479,
+      "update_scale": 0.049787989177419514,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.049787989177419514,
+      "relL2": 0.010984850698349494,
+      "cos": 0.9999428429017355,
+      "cos_p05": 0.9998704475436128
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       7,
+       10,
+       11,
+       12
+      ],
+      "input_drift_vs_parent": 0.36995813550257217,
+      "input_cos_vs_parent": 0.9237892991610918,
+      "parent_energy_retained": 0.96286811004857,
+      "prior_only_cos": 0.985475151101721,
+      "prior_only_relL2": 0.14073576094872314,
+      "update_scale": 0.3653452859327208,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.3653452859327208,
+      "relL2": 0.08046251275967309,
+      "cos": 0.9936346519124525,
+      "cos_p05": 0.9832192581183771
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.36572989672944534,
+      "input_cos_vs_parent": 0.9302671641217504,
+      "parent_energy_retained": 0.9612687085104381,
+      "prior_only_cos": 0.9999809504771962,
+      "prior_only_relL2": 0.008068082312668548,
+      "update_scale": 0.08711767991761654,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.08711767991761654,
+      "relL2": 0.012970570404386853,
+      "cos": 0.9999502406537877,
+      "cos_p05": 0.9998867262578319
+     }
+    ]
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 16384 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 36175872,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.1460 on the frozen review prompts, with tokens-per-byte beside it"
+  }
+ ],
+ "vocabulary": {
+  "k": 16384,
+  "kept_rows": 16384,
+  "mandatory_rows": 765,
+  "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+  "ranking_rule": "(-census_count, parent_token_id)",
+  "observed_tokens_admitted_by_ranking": 4633,
+  "tokens_skipped_because_their_closure_did_not_fit": 0,
+  "dead_parent_rows_dropped": 1134,
+  "sealed_corpus": {
+   "path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+   "file_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+   "rows": 256,
+   "token_positions": 67583
+  },
+  "sealed_corpus_is_a_donor_mapped_stream": "mapped_donor_calibration.json carries a DONOR tokenizer's segmentation mapped into this vocabulary, so the parent does not round-trip its own sealed corpus (264 donor ids re-encode to 186 canonical ones on row 0).  The census therefore reads BOTH streams and both coverages are published.",
+  "sealed_corpus_coverage_donor_mapped": {
+   "occurrences": 67583,
+   "occurrences_covered": 67583,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 2030,
+   "distinct_covered": 2030,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "sealed_corpus_coverage_canonical": {
+   "occurrences": 43992,
+   "occurrences_covered": 43992,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 4806,
+   "distinct_covered": 4806,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "kept_token_occurrences_lost": {
+   "donor_mapped": 0,
+   "canonical": 0,
+   "claim": "every token occurrence in the sealed corpus, on both streams, has a kept row; asserted, not asserted-about"
+  },
+  "lossless_on_text_and_agreement": {
+   "sealed_corpus": {
+    "rows": 256,
+    "rows_lossless_on_text": 256,
+    "rows_segmented_exactly_as_parent": 256,
+    "parent_positions": 43992,
+    "parent_positions_whose_token_was_dropped": 0,
+    "positions_agreeing": 43992,
+    "position_agreement": 1.0
+   },
+   "frozen_review_prompts": {
+    "rows": 16,
+    "rows_lossless_on_text": 16,
+    "rows_segmented_exactly_as_parent": 0,
+    "parent_positions": 726,
+    "parent_positions_whose_token_was_dropped": 101,
+    "positions_agreeing": 106,
+    "position_agreement": 0.14600550964187328
+   },
+   "claim": "decode(child_encode(t)) == t for every t (the byte alphabet is complete and there is no unk); `position_agreement` is how often the child's segmentation equals the parent's under the remap, and it is the measured size of the input-distribution shift this arm bets on"
+  },
+  "frozen_review_prompt_coverage_DIAGNOSTIC_ONLY": {
+   "occurrences": 726,
+   "occurrences_covered": 625,
+   "occurrence_coverage": 0.8608815426997245,
+   "distinct_tokens": 432,
+   "distinct_covered": 342,
+   "distinct_coverage": 0.7916666666666666,
+   "occurrences_lost": 101
+  },
+  "tokens_per_byte": {
+   "sealed_corpus": {
+    "utf8_bytes": 187896,
+    "parent_tokens": 43992,
+    "child_tokens": 43992,
+    "parent_tokens_per_byte": 0.23412951845701876,
+    "child_tokens_per_byte": 0.23412951845701876,
+    "sequence_length_ratio": 1.0
+   },
+   "frozen_review_prompts": {
+    "utf8_bytes": 3401,
+    "parent_tokens": 726,
+    "child_tokens": 841,
+    "parent_tokens_per_byte": 0.21346662746251102,
+    "child_tokens_per_byte": 0.24728021170244047,
+    "sequence_length_ratio": 1.1584022038567494
+   }
+  }
+ },
+ "identity_gate": {
+  "kind": "bytes",
+  "assertion": "torch.equal(gathered_table, source_table[kept_ids])",
+  "passed": true
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 0,
+  "heldout_rows": 0,
+  "parent_model_forward_calls": 0,
+  "split_authority": "not consumed: the base arm solves nothing",
+  "conditioned": false
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "none -- the base arm is a gather"
+ },
+ "elapsed_seconds": 24.599721734877676
+}

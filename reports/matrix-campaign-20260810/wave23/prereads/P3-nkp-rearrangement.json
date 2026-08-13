@@ -1,0 +1,1482 @@
+{
+ "pre_read": "P3",
+ "schema": "neural-forge-matrix-wave23-nkp-rearrangement-census-v1",
+ "purpose": "the never-measured rearrangement spectrum of the SwiGLU stack at the 4x storage bound, with a matched-storage rank-truncation twin and a Monarch blockwise-SVD control.  Orders; gates nothing.",
+ "not_run": "the evidence-weighted selection tr[(W-What) M_x (W-What)^T] needs the sealed ffn-input moment, which is a capture and is not free; the unweighted spectrum is reported instead and the omission is named",
+ "hidden_size": 1024,
+ "intermediate_size": 2560,
+ "sites": 42,
+ "kronecker_beats_rank_truncation_at_4x": 4,
+ "rows": [
+  {
+   "tensor": "model.layers.0.feed_forward.w1.weight",
+   "layer": 0,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3740481498422473,
+    "top_term_energy_fraction": 0.002575010560254873,
+    "energy_in_top_half": 0.8221132316600895
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.43256212937317756
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7010416807110426,
+    "retained_energy": 0.5085405619058367
+   }
+  },
+  {
+   "tensor": "model.layers.0.feed_forward.w3.weight",
+   "layer": 0,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3720350753287842,
+    "top_term_energy_fraction": 0.002500155785309026,
+    "energy_in_top_half": 0.8211422047125637
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.3767822790127733
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7195038235935486,
+    "retained_energy": 0.4823142478342637
+   }
+  },
+  {
+   "tensor": "model.layers.0.feed_forward.w2.weight",
+   "layer": 0,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37272020459400146,
+    "top_term_energy_fraction": 0.002490055444695214,
+    "energy_in_top_half": 0.8213565067298828
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.33850392022669734
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7210430597457654,
+    "retained_energy": 0.4800969059924646
+   }
+  },
+  {
+   "tensor": "model.layers.1.feed_forward.w1.weight",
+   "layer": 1,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37623035552286255,
+    "top_term_energy_fraction": 0.0036432827105504118,
+    "energy_in_top_half": 0.8227849238881183
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.42056687972041185
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.702974342382659,
+    "retained_energy": 0.5058270739516681
+   }
+  },
+  {
+   "tensor": "model.layers.1.feed_forward.w3.weight",
+   "layer": 1,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3721202050123917,
+    "top_term_energy_fraction": 0.002502388637457107,
+    "energy_in_top_half": 0.8210268488432488
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.36882013461870394
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7187804258975269,
+    "retained_energy": 0.4833546993465698
+   }
+  },
+  {
+   "tensor": "model.layers.1.feed_forward.w2.weight",
+   "layer": 1,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3729934995039766,
+    "top_term_energy_fraction": 0.002523673067706587,
+    "energy_in_top_half": 0.8214668128271638
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.37154000962009576
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.716179604949482,
+    "retained_energy": 0.487086773454404
+   }
+  },
+  {
+   "tensor": "model.layers.2.feed_forward.w1.weight",
+   "layer": 2,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3782551959256329,
+    "top_term_energy_fraction": 0.00371382287151321,
+    "energy_in_top_half": 0.8240883502503845
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4814639796271326
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6833903398268567,
+    "retained_energy": 0.5329776434313334
+   }
+  },
+  {
+   "tensor": "model.layers.2.feed_forward.w3.weight",
+   "layer": 2,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37219869104542397,
+    "top_term_energy_fraction": 0.002485406455457112,
+    "energy_in_top_half": 0.8210415942485896
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.37839335170716987
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7179843669960891,
+    "retained_energy": 0.4844984487492252
+   }
+  },
+  {
+   "tensor": "model.layers.2.feed_forward.w2.weight",
+   "layer": 2,
+   "layer_type": "full_attention",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(64x40)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.373930473047714,
+    "top_term_energy_fraction": 0.0026156765176648515,
+    "energy_in_top_half": 0.8217183121590641
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4037314325763411
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7062048267688132,
+    "retained_energy": 0.5012747426484305
+   }
+  },
+  {
+   "tensor": "model.layers.3.feed_forward.w1.weight",
+   "layer": 3,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3789000802559007,
+    "top_term_energy_fraction": 0.0043463895939375155,
+    "energy_in_top_half": 0.8235086099098007
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4764071568089407
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.689591182247975,
+    "retained_energy": 0.5244640013658401
+   }
+  },
+  {
+   "tensor": "model.layers.3.feed_forward.w3.weight",
+   "layer": 3,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37236951901265664,
+    "top_term_energy_fraction": 0.002492943939025128,
+    "energy_in_top_half": 0.8211943572676168
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.37025754144441786
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.718406901485207,
+    "retained_energy": 0.48389152389842405
+   }
+  },
+  {
+   "tensor": "model.layers.3.feed_forward.w2.weight",
+   "layer": 3,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(64x40)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37554046501814753,
+    "top_term_energy_fraction": 0.002704169247432799,
+    "energy_in_top_half": 0.8226933770669835
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4205337117808867
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7041205746907245,
+    "retained_energy": 0.5042142162972039
+   }
+  },
+  {
+   "tensor": "model.layers.4.feed_forward.w1.weight",
+   "layer": 4,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37678384734881215,
+    "top_term_energy_fraction": 0.003135155966563174,
+    "energy_in_top_half": 0.8231193186953303
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.47587811944402375
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6923359727587619,
+    "retained_energy": 0.5206709008241789
+   }
+  },
+  {
+   "tensor": "model.layers.4.feed_forward.w3.weight",
+   "layer": 4,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37216747520249305,
+    "top_term_energy_fraction": 0.0025254484681314945,
+    "energy_in_top_half": 0.82115134722364
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4064270188647561
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7138886177320448,
+    "retained_energy": 0.49036304147263043
+   }
+  },
+  {
+   "tensor": "model.layers.4.feed_forward.w2.weight",
+   "layer": 4,
+   "layer_type": "full_attention",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37515286302031786,
+    "top_term_energy_fraction": 0.0027744260385347153,
+    "energy_in_top_half": 0.8225937123778154
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4425245267267025
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6960539311538843,
+    "retained_energy": 0.5155089249252238
+   }
+  },
+  {
+   "tensor": "model.layers.5.feed_forward.w1.weight",
+   "layer": 5,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3753105679750533,
+    "top_term_energy_fraction": 0.00295693421742576,
+    "energy_in_top_half": 0.8225613769708706
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.47913521714067187
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.692223779310131,
+    "retained_energy": 0.5208262393575991
+   }
+  },
+  {
+   "tensor": "model.layers.5.feed_forward.w3.weight",
+   "layer": 5,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37226035436862304,
+    "top_term_energy_fraction": 0.0024888235450205172,
+    "energy_in_top_half": 0.8207247866384761
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.416259082348165
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7129457631473893,
+    "retained_energy": 0.4917083388101866
+   }
+  },
+  {
+   "tensor": "model.layers.5.feed_forward.w2.weight",
+   "layer": 5,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37541680618609136,
+    "top_term_energy_fraction": 0.002765057920698202,
+    "energy_in_top_half": 0.8226057006220971
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.47447370653919674
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6923617543881136,
+    "retained_energy": 0.5206352010606135
+   }
+  },
+  {
+   "tensor": "model.layers.6.feed_forward.w1.weight",
+   "layer": 6,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37685276176108723,
+    "top_term_energy_fraction": 0.0027429595946816417,
+    "energy_in_top_half": 0.823546468590387
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.499165078005318
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6835628023407737,
+    "retained_energy": 0.5327418952560283
+   }
+  },
+  {
+   "tensor": "model.layers.6.feed_forward.w3.weight",
+   "layer": 6,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37213411415444364,
+    "top_term_energy_fraction": 0.0025029404888015656,
+    "energy_in_top_half": 0.8208182712952933
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4362824793406208
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7104585535157941,
+    "retained_energy": 0.49524864373624555
+   }
+  },
+  {
+   "tensor": "model.layers.6.feed_forward.w2.weight",
+   "layer": 6,
+   "layer_type": "full_attention",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37434510943824534,
+    "top_term_energy_fraction": 0.00254907529857947,
+    "energy_in_top_half": 0.8225981852434224
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4714141808128931
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.687784007823694,
+    "retained_energy": 0.5269531585819769
+   }
+  },
+  {
+   "tensor": "model.layers.7.feed_forward.w1.weight",
+   "layer": 7,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3782819172718914,
+    "top_term_energy_fraction": 0.003090897788259796,
+    "energy_in_top_half": 0.8243071921289522
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.5087872044858369
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6732969587921953,
+    "retained_energy": 0.5466712052811808
+   }
+  },
+  {
+   "tensor": "model.layers.7.feed_forward.w3.weight",
+   "layer": 7,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3729391054966966,
+    "top_term_energy_fraction": 0.0025031738711332693,
+    "energy_in_top_half": 0.8214634717083408
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4114109380701484
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7111442505498883,
+    "retained_energy": 0.4942738549098378
+   }
+  },
+  {
+   "tensor": "model.layers.7.feed_forward.w2.weight",
+   "layer": 7,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37340605428143364,
+    "top_term_energy_fraction": 0.0025801905249812434,
+    "energy_in_top_half": 0.8217992999759709
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.40733818769662195
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7108539803319363,
+    "retained_energy": 0.4946866186462432
+   }
+  },
+  {
+   "tensor": "model.layers.8.feed_forward.w1.weight",
+   "layer": 8,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37596013309491316,
+    "top_term_energy_fraction": 0.002620006228124386,
+    "energy_in_top_half": 0.8234339639975413
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4966267901611604
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6821072175302292,
+    "retained_energy": 0.5347297437931686
+   }
+  },
+  {
+   "tensor": "model.layers.8.feed_forward.w3.weight",
+   "layer": 8,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3725862711433161,
+    "top_term_energy_fraction": 0.002485186930821449,
+    "energy_in_top_half": 0.8214580243289538
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.43567289388959624
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7104449593556412,
+    "retained_energy": 0.49526795972616133
+   }
+  },
+  {
+   "tensor": "model.layers.8.feed_forward.w2.weight",
+   "layer": 8,
+   "layer_type": "full_attention",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37370068257937533,
+    "top_term_energy_fraction": 0.0025104342665177083,
+    "energy_in_top_half": 0.8220919746532386
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.45531726024236874
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6897417868646448,
+    "retained_energy": 0.5242562674527669
+   }
+  },
+  {
+   "tensor": "model.layers.9.feed_forward.w1.weight",
+   "layer": 9,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37722250097190513,
+    "top_term_energy_fraction": 0.0026185958871985547,
+    "energy_in_top_half": 0.8239963208139041
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.48330521460032466
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6794952469108115,
+    "retained_energy": 0.5382862094256153
+   }
+  },
+  {
+   "tensor": "model.layers.9.feed_forward.w3.weight",
+   "layer": 9,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37287878340938974,
+    "top_term_energy_fraction": 0.0024862795905056146,
+    "energy_in_top_half": 0.8215122145681547
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4238465415041257
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.711798648270327,
+    "retained_energy": 0.4933426843205353
+   }
+  },
+  {
+   "tensor": "model.layers.9.feed_forward.w2.weight",
+   "layer": 9,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37339050733346035,
+    "top_term_energy_fraction": 0.0024949034745209717,
+    "energy_in_top_half": 0.8217211664175904
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4508267089676321
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6932415959277775,
+    "retained_energy": 0.5194160896755081
+   }
+  },
+  {
+   "tensor": "model.layers.10.feed_forward.w1.weight",
+   "layer": 10,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3785596052639334,
+    "top_term_energy_fraction": 0.0026181748913852504,
+    "energy_in_top_half": 0.8244260230514561
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.5097302107283016
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6670798369862169,
+    "retained_energy": 0.5550044910864423
+   }
+  },
+  {
+   "tensor": "model.layers.10.feed_forward.w3.weight",
+   "layer": 10,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37215745228292924,
+    "top_term_energy_fraction": 0.0024894931263548655,
+    "energy_in_top_half": 0.8211417240185122
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4279366742830125
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7119826791732884,
+    "retained_energy": 0.4930806645572263
+   }
+  },
+  {
+   "tensor": "model.layers.10.feed_forward.w2.weight",
+   "layer": 10,
+   "layer_type": "full_attention",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.373232702078632,
+    "top_term_energy_fraction": 0.0025096555124568902,
+    "energy_in_top_half": 0.8219974177852536
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.41339395632693365
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6988059846958947,
+    "retained_energy": 0.5116701957532009
+   }
+  },
+  {
+   "tensor": "model.layers.11.feed_forward.w1.weight",
+   "layer": 11,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37638973442032303,
+    "top_term_energy_fraction": 0.002557641648146177,
+    "energy_in_top_half": 0.8238916071073057
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.46194652888332854
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6844408788799444,
+    "retained_energy": 0.5315406833180493
+   }
+  },
+  {
+   "tensor": "model.layers.11.feed_forward.w3.weight",
+   "layer": 11,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3723987812637193,
+    "top_term_energy_fraction": 0.002492551896981703,
+    "energy_in_top_half": 0.8210678454722833
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.428212748264527
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7127122712689907,
+    "retained_energy": 0.4920412183825966
+   }
+  },
+  {
+   "tensor": "model.layers.11.feed_forward.w2.weight",
+   "layer": 11,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3732100909680085,
+    "top_term_energy_fraction": 0.0025139495003863354,
+    "energy_in_top_half": 0.8218035670302687
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.43027360426390415
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6928258210993464,
+    "retained_energy": 0.5199923816180164
+   }
+  },
+  {
+   "tensor": "model.layers.12.feed_forward.w1.weight",
+   "layer": 12,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(64x40)(x)(32x32)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37623577286296467,
+    "top_term_energy_fraction": 0.002567556639862696,
+    "energy_in_top_half": 0.8230607294512834
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4978882358767153
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6794052113948436,
+    "retained_energy": 0.538408558729528
+   }
+  },
+  {
+   "tensor": "model.layers.12.feed_forward.w3.weight",
+   "layer": 12,
+   "layer_type": "full_attention",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3721159564962297,
+    "top_term_energy_fraction": 0.002491126827996657,
+    "energy_in_top_half": 0.8210177946082773
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4650443949898656
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7066420151119398,
+    "retained_energy": 0.500657062478537
+   }
+  },
+  {
+   "tensor": "model.layers.12.feed_forward.w2.weight",
+   "layer": 12,
+   "layer_type": "full_attention",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(40x64)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37244991594187404,
+    "top_term_energy_fraction": 0.0024892245886533396,
+    "energy_in_top_half": 0.8214157696805027
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.38728330323732724
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7131664103768799,
+    "retained_energy": 0.49139367111015575
+   }
+  },
+  {
+   "tensor": "model.layers.13.feed_forward.w1.weight",
+   "layer": 13,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3771535743375431,
+    "top_term_energy_fraction": 0.002884517133817299,
+    "energy_in_top_half": 0.8235361908297236
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4770070521886599
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.6832951645049385,
+    "retained_energy": 0.533107718164169
+   }
+  },
+  {
+   "tensor": "model.layers.13.feed_forward.w3.weight",
+   "layer": 13,
+   "layer_type": "conv",
+   "shape": [
+    2560,
+    1024
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(40x64)(x)(32x32)",
+    "rearranged_shape": [
+     1280,
+     2048
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.3722647192167619,
+    "top_term_energy_fraction": 0.0025265553764967498,
+    "energy_in_top_half": 0.8215044281506013
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4563751213030039
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7075908854407107,
+    "retained_energy": 0.499315138841231
+   }
+  },
+  {
+   "tensor": "model.layers.13.feed_forward.w2.weight",
+   "layer": 13,
+   "layer_type": "conv",
+   "shape": [
+    1024,
+    2560
+   ],
+   "budget_at_4x": 655360,
+   "kronecker_best": {
+    "grid": "(32x32)(x)(64x40)",
+    "rearranged_shape": [
+     2048,
+     1280
+    ],
+    "params_per_term": 3328,
+    "r_at_4x": 196,
+    "terms_available": 1280,
+    "retained_energy_at_4x": 0.37251293464224683,
+    "top_term_energy_fraction": 0.0025269543897195866,
+    "energy_in_top_half": 0.8212499114805919
+   },
+   "rank_truncation_at_4x": {
+    "rank": 182,
+    "retained_energy": 0.4057969856324685
+   },
+   "monarch_blockwise": {
+    "grid": "8x8",
+    "rank_per_block": 32,
+    "stored": 917504,
+    "storage_ratio_vs_dense": 0.35,
+    "relative_frobenius_error": 0.7119682010883416,
+    "retained_energy": 0.4931012806390308
+   }
+  }
+ ]
+}
