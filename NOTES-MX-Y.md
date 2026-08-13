@@ -220,6 +220,17 @@ called it a free win.
   mismatches**, 714 declared absent (`tests/` and the repository-root notes and
   scripts, which no deployment has ever carried) and 7 files over 20 MB excluded
   by name. Every previous deployment's completeness was an assumption.
+* **The deployment directory ends at the sealing commit and the receipts do
+  not, and the difference is seven driver files.** Every child in this wave was
+  built, sealed and reviewed from `neural-forge-matrix-f336b04d` and every
+  receipt says so in `repo_head`. Four more driver files were written during the
+  wave (`mx21_campaign_table.py`, `mx21_report_tables.py`, `queues/benchq.sh`,
+  `queues/reviewonly.sh`) and three were finalised (`sealq.sh`, `package.sh`,
+  `mx21_retain.py`), so the directory was re-cut to `d12c76db` afterwards and
+  re-verified: **3,571 files, 0 content mismatches, 0 hardlinks**. `git diff
+  f336b04d d12c76db -- src experiments` is **empty** — the code that sealed
+  every receipt is byte-identical in both commits, and the whole drift is in
+  scripts that write tables and copy files.
 * **And the hardlinks broke the review, correctly.** The frozen review refused
   every child with `manual prompt artifact must be one ordinary file`: the guard
   is `st_nlink != 1`, and it is right, because a prompt pack reachable under a
