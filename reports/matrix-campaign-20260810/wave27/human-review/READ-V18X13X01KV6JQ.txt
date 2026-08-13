@@ -1,0 +1,466 @@
+# ARCH.V18X13X01KV6JQ  dossier 59f8f1fb987db74f
+# net_ratio 0.664419  config_diff ['head_dim', 'layer_types', 'num_attention_heads', 'num_heads', 'num_hidden_layers', 'num_key_value_heads', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 52 chars, 52 collapsed  <350 COLLAPSED
+I'll respond naturally and ask a follow-up question.
+
+---  2 instruction-three-actions [censored-at-cap] 5848 chars, 121 collapsed  <350 COLLAPSED
+1. **Frequent tasks**: List all tasks that require a specific task, such as scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like scheduling a task like
+
+---  3 explanation-seasons [complete] 78 chars, 77 collapsed  <350 COLLAPSED
+ Earth's bestsuggestions can be a great value of flexibility and adaptability.
+
+---  4 arithmetic-multi-step [complete] 774 chars, 768 collapsed
+** Step-by-step explanation**
+
+1. **Underestimate**: The first step-approximing: The first step-approximing. This step-approximing is the first step-approximing. It is essential for accurate and accurate calculations.
+
+2. **Existence**: The first step-approximing. This step-approximing is essential for accurate and accurate calculations.
+
+3. **Existence**: The second step-approximing. This step-approximing is essential for accurate and accurate calculations.
+
+4. **Existence**: The third step-approximing. This step-approximing is essential for accurate and accurate calculations.
+
+5. **Existence**: The fourth step-approximing. This step-approximing is essential for accurate and accurate calculations.
+
+These steps are essential for accurate and accurate calculations.
+
+---  5 logic-ordering [complete] 36 chars, 36 collapsed  <350 COLLAPSED
+The answer is: **"The answer is: 1**
+
+---  6 context-retrieval [complete] 315 chars, 311 collapsed  <350 COLLAPSED
+I want to bring my dog and borrow a shovel.
+
+**Executing:**
+1. **Option 1**: If the note does not answer something, say so.
+
+2. **Option 2**: If the note does not answer something, say so.
+
+3. **Option 3**: If the note does not answer something, say so.
+
+4. **Option 4**: I want to bring my dog and borrow a shovel.
+
+---  7 summarization-priorities [complete] 164 chars, 163 collapsed  <350 COLLAPSED
+The team should consider the potential risks and consider their potential risks.
+
+The team should consider their potential risks and consider their potential risks.
+
+---  8 comparison-ram-rom [complete] 110 chars, 110 collapsed  <350 COLLAPSED
+To solve this problem, we can't directly answer this question. Please provide more details about the analysis.
+
+---  9 coding-deduplicate [censored-at-cap] 4701 chars, 228 collapsed  <350 COLLAPSED
+Here's a Python function that can retrieve a list of items with a given order (like a list of items) while working with a given order (like a list of items)
+
+```python
+import datetime
+import datetime
+import datetime
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+import datetime_python
+
+
+--- 10 debugging-off-by-one [censored-at-cap] 3075 chars, 3071 collapsed
+```python
+def last_three(values):
+    def get_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid_valid
+
+--- 11 writing-concise-email [complete] 93 chars, 93 collapsed  <350 COLLAPSED
+To answer this question, please provide more details about the specifics you're asking about.
+
+--- 12 planning-dependencies [complete] 1868 chars, 1784 collapsed
+To move a domain without unnecessary downtime.
+
+1. **Dividive**:
+
+1. **Dividive**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1. **Verification**:
+
+1.
+
+--- 13 uncertainty-insufficient-data [complete] 127 chars, 126 collapsed  <350 COLLAPSED
+The answer is: **"Sophistic sales analysis****
+
+This answer is based on the context of sales performance and sales performance.
+
+--- 14 safety-household-chemical [complete] 120 chars, 119 collapsed  <350 COLLAPSED
+It seems like a common practice for a more accurate answer.
+
+The answer is to consider the specific context and context.
+
+--- 15 creative-continuity [complete] 81 chars, 81 collapsed  <350 COLLAPSED
+To answer this question, please provide more details about the specific scenario.
+
+--- 16 multi-turn-correction [complete] 473 chars, 435 collapsed
+I'll provide a plan for a plan with four options. Please provide a detailed plan for each option.
+
+1. **Option 1:**
+   - **Option 1a:**
+   - **Option 1b:**
+   - **Option 1c:**
+   - **Option 1d:**
+   - **Option 1d1:**
+   - **Option 1d2:**
+   - **Option 1d3:**
+   - **Option 1d31:**
+   - **Option 1d21:**
+   - **Option 1d22:**
+   - **Option 1d221:**
+   - **Option 1d222**
+
+This plan allows for each option, allowing you to choose the best option based on your specific needs.
+
+# cap-hits 3/16

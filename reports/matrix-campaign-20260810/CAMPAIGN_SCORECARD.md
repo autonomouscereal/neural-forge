@@ -184,3 +184,33 @@ character column here are what the text actually does.
 * **0.5x with a coherent child: not reached.** Two independent 0.5x children in
   two lane orders, with and without repair, plus a third by a different axis, all
   0/15.
+
+## Wave 27 — the frontier after twenty-three children
+
+* **The highest-scoring child of any kind is no longer a tie and no longer 13/15:**
+  `ARCH.V19`, **0.794570x, 14/15**, zero cap hits, zero solve — vocab_size 19,456
+  on the parent. **Two cases above the parent's own sealed 12/15** on the same
+  surface, and the first child in the campaign to beat the parent by more than one.
+  It is also deeper than two of the three 13/15 rungs it displaces.
+* **The 13/15 band is a PEAK, not a shelf.** With both interior rungs built the
+  curve reads 17,408 → 11, 18,432 → 13, **19,456 → 14**, 20,480 → 13, 22,528 → 13.
+  A 1,024-row step off the peak costs a case in both directions.
+* **The deepest child at 10/15 or better: unchanged at 11/15**
+  (`ARCH.V20X13G03`, 0.746614x, wave 26) — **but the deepest TEN moved** to a tie
+  between `ARCH.V18X13` and `ARCH.V18X09`, both **0.737484x, 10/15** (wave 27),
+  nine thousandths deeper than wave 26's `ARCH.V20X13`.
+* **The deepest child at 7/15 or better: unchanged by wave 27.** `ARCH.V8X13GL01`
+  and `ARCH.V8X13GL03` still hold it at **0.691832x, 7/15**. No wave-27 child read
+  between 7 and 9 below that line; the wave's deepest child above 6 reads 6
+  (`ARCH.V9X13`, 0.696398x).
+* **The deepest scoring child of any kind moved for the first time since wave 23:**
+  `ARCH.V20CL896`, **0.487566x, 2/15**, standard shape — under half the parent and
+  fifteen points of ratio below wave 26's deepest two. `ARCH.V16CL896` (0.469305x,
+  1/15) is still the deepest to score at all.
+* **The first 0/15 that is not a width child:** `ARCH.V18X13X01KV6JQ`,
+  **0.664419x**, four axes composed, no lane answered even in part. Every other
+  collapsed child in wave 27 — down to 0.4876x — still answers summarisation.
+  **Summarisation is the last lane to go.**
+* **0.5x with a coherent child: still not reached.** `ARCH.V20CL896` answers two
+  lanes in part at 0.4876x, which is the closest anything has come, and it is not
+  coherent.

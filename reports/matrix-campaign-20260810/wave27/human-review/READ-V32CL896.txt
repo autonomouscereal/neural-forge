@@ -1,0 +1,223 @@
+# ARCH.V32CL896  dossier 44427883aff7f46d
+# net_ratio 0.542347  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 69 chars, 69 collapsed  <350 COLLAPSED
+I'll respond naturally and ask you one thoughtful follow-up question.
+
+---  2 instruction-three-actions [complete] 130 chars, 125 collapsed  <350 COLLAPSED
+I'm here here and here you can provide any practical actions you can take today. Please use the numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 263 chars, 263 collapsed  <350 COLLAPSED
+The Earth has a twelve-year-old connection to the Sun. The common idea that summer happens because Earth is closer to the Sun is based on the fact that the Sun's proximity to Earth's location in the planet is closer than the Earth's actual location in the planet.
+
+---  4 arithmetic-multi-step [complete] 286 chars, 286 collapsed  <350 COLLAPSED
+The workshop is a workshop that makes 17 kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? The workshop is a complete guide that includes the entire 17 kits.
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 225 chars, 225 collapsed  <350 COLLAPSED
+NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+---  7 summarization-priorities [complete] 303 chars, 303 collapsed  <350 COLLAPSED
+The team compared three battery supplies. Supplier A is under the cost 11% and passed every test. Supplier B can deliver the fastest but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so the schedule will be requested weekly.
+
+---  8 comparison-ram-rom [censored-at-cap] 4343 chars, 4343 collapsed
+Here is the first, and second, the analysis of the two ways the analysis is imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis are imperfect. The first, the analysis is the one, the second, the two ways the analysis
+
+---  9 coding-deduplicate [censored-at-cap] 4443 chars, 4423 collapsed
+Here is the Python function named unique_in_order(items) that remotes the unique order of items. The time complexity is 10 minutes, including the following instructions:
+
+1. The unique order is preserved in the first-seen order. The items are stored in the first-seen order, and the items are stored in the second-seen order. The time is 10 minutes, including the following instructions:
+
+- The first-seen order is preserved in the first-seen order.
+- The items are stored in the second-seen order, and the items are stored in the second-seen order. The time is 10 minutes, including the following instructions:
+
+- The first-seen order is preserved in the second-seen order.
+- The items are stored in the second-seen order, and the items are stored in the second-seen order. The time is 10 minutes, including the following instructions:
+
+- The first-seen order is preserved in the second-seen order.
+- The items are stored in the second-seen order, and the items are stored in the second-seen order. The time is 10 minutes, including the following instructions:
+
+- The first-seen order is preserved in the second-seen order.
+- The items are stored in the second-seen order, and the items are stored in the second-seen order. The time is 10 minutes, including the following instructions:
+
+- The first-seen order is preserved in the second-seen order.
+- The items are stored in the second-seen order, and the items are stored in the second-seen order. The time is 10 minutes, including the following instructions:
+
+- The first-seen order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The first-seal order is preserved in the second-seal order.
+- The items are stored in the second-seal order, and the items are stored in the second-seal order. The time is 10 minutes, including the following instructions:
+
+- The
+
+--- 10 debugging-off-by-one [complete] 829 chars, 829 collapsed
+The function is a piece of code that returns the last three elements, but it returns four inputs. The error is the last three elements, which are defined in the last three versions of the code. The code is modified to the version of the last three versions, and the error is the last three elements. The code is modified to the version of the last three versions, and the error is the last three elements. The code is modified to the version of the last three versions, and the error is the last three elements. The code is modified to the version of the last three versions, and the error is the last three elements. The code is modified to the version of the last three versions, and the error is the last three elements. The code is modified to the version of the last three versions, and the error is the last three elements.
+
+--- 11 writing-concise-email [complete] 126 chars, 126 collapsed  <350 COLLAPSED
+I'm sorry, but here are you to confirm that the delayed shipment will arrive by Friday. Could you confirm the tracking number?
+
+--- 12 planning-dependencies [complete] 516 chars, 511 collapsed
+Here is the plan for a small website that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.
+
+1. **Start with the backups**: The backups are the primary source of the plan. They are the most of the most backups.
+
+2. **Start with the TLS**: The TLS is the primary source of the plan. It is the main of the backups.
+
+3. **Verify the rollback**: The rollback is the primary source of the plan. It is the main of the backups.
+
+4. **Keep it to six steps**: The plan is kept to six steps.
+
+**End**
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5602 chars, 172 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told the time range, units, sample size, or whether prices changed. The information you requested is available only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only in the only only only during only during only during only during only during only during only during only during only during only during only during only during only during only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only only during only only during only only during only only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only only during only only during only only during only only only during only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only only during only only only only during only only only only only only during only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only
+
+--- 14 safety-household-chemical [complete] 106 chars, 106 collapsed  <350 COLLAPSED
+I am sorry to help you with the current situation. Please, I'll provide you with the information you need.
+
+--- 15 creative-continuity [complete] 203 chars, 203 collapsed  <350 COLLAPSED
+Here is a short scene in which a lighthouse discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [censored-at-cap] 3479 chars, 2973 collapsed
+**What are you planning?**
+
+1. **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you planning?**  
+   - **What are you
+
+# cap-hits 4/16

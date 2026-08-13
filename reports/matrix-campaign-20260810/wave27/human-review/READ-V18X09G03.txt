@@ -1,0 +1,739 @@
+# ARCH.V18X09G03  dossier 4daa6ea6861f2af6
+# net_ratio 0.737484  config_diff ['layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 89 chars, 89 collapsed  <350 COLLAPSED
+Of course! I'd love to share a thought about your day. What would you like to reflect on?
+
+---  2 instruction-three-actions [complete] 390 chars, 385 collapsed
+Here are three practical actions to help manage small household tasks:
+
+1. **Set a daily 10-15 minute window** for focused work, using a dedicated block of time to prioritize tasks.  
+2. **Use a digital task manager** (e.g., app or app) to track progress and set reminders for deadlines.  
+3. **Prep small items** (e.g. a box, a checklist) to streamline routine tasks and reduce time waste.
+
+---  3 explanation-seasons [complete] 1096 chars, 1087 collapsed
+A cool, twinkling question about Earth's seasons! Let me explain!
+
+**Why Earth has seasons:**
+- **The Sun's cycle** is a natural rhythm, like a clock! The Sun's energy changes over time, just like a day or another day. This is why we see different seasons.
+
+**Why summer doesn't happen because Earth is closer to the Sun:**
+- **The Sun's position changes** over time. The Sun's orbit around the Earth changes, and the seasons shift because the Sun's position changes. This is like a "tune to the sun" for the seasons!
+
+**Other reasons:**
+- **The seasons are caused by the tilt of Earth's axis** (like a "wink" in the sky). This is why we see the sun's path through the sky over the seasons.
+
+**What does summer look like?**  
+The seasons are a beautiful cycle of light and dark, like a sun's changing light. The days and nights shift, and the seasons change. Even the seasons are a natural rhythm, just like the Earth's orbit around the Sun!
+
+**What do you ask?**  
+Let me ask! What do you think about the seasons? Would you want to learn more about the sun's cycle or how the seasons are caused?
+
+---  4 arithmetic-multi-step [censored-at-cap] 2238 chars, 898 collapsed
+First, the workshop makes 17 kits per hour and works for 6 hours. So, the total number of kits is calculated:
+
+**Number of kits** = 17 kits per hour × 6 hours = 102 kits
+
+**Fail in the first kit**:
+- Fail = 8 kits
+- Remaining kits = 102 - 8 = 102 kits
+
+**Remaining kits after the first kit fail:**
+- Remaining kits = 102
+
+**Each box contains 5 kits:**
+- Boxes = 102 kits � 5 = 102 kits
+
+**Lefards left:**
+- Lefards = 102 kits - 5 = 102 kits
+
+**Number of complete kits left:**
+- Number of kits = 5
+- Lefards = 102
+
+**Lefards left:**
+- Lefards = 5
+
+****
+
+**Number of complete kits left**: 5
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+******
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+************
+
+************
+
+************
+
+**************
+
+****************
+
+******************************************************************************************************************************************************************************************************************************************************
+
+---  5 logic-ordering [complete] 562 chars, 556 collapsed
+To determine which facts force the answer, we first establish the order of the four people:
+
+1. **Mira** finished before Theo.
+2 3. Jun.
+3. Pals finish before their own.
+4. Sal finished after Jun.
+
+We examine the sequence of these events:
+
+- **Mira** is finished before Theo.
+- Jun is finished before Pals.
+- Sal is finished after Jun.
+- Pals finish before their own.
+
+This sequence is determined by the order of the events, which is **Mira before Theo, Jun before Pals, Sal before P**.
+
+**This is the only fact that forces the answer to be true.**
+
+\boxed{Mira}
+
+---  6 context-retrieval [complete] 103 chars, 103 collapsed  <350 COLLAPSED
+The day is Monday, 7th. The latest checkout time is 4:15 p.m. and the north gill is closed for repairs.
+
+---  7 summarization-priorities [complete] 278 chars, 278 collapsed  <350 COLLAPSED
+The team compared three battery options, with Supplier B being the most expensive but not guaranteeing delivery before launch. Supier two samples overheil, and the risk is that the factory expansion may delay by one week, so procurement will request a week of schedule evidence.
+
+---  8 comparison-ram-rom [complete] 1298 chars, 1294 collapsed
+**RAM vs. Long-term storage** is like a **simplified version of a computer's memory**, where the "analyst" is the **user**, and the "data" is the "data" being processed.
+
+**RAM is like a short-term memory** (like a short memory) that stores data for quick access, while the **long-term storage** is a long-term memory that holds information permanently.
+
+**Imperative differences:**
+
+1. **Access speed**: RAM is faster because it is directly used for quick tasks (e.g, running a program), while long-term storage is slow and requires more time to access data.
+2. **use of memory:** RAM is used for short tasks, while long-term storage is used for long-term storage.
+3. **data type:** RAM can hold different types of data (e.g., text, images, software programs), while long-term storage holds data in a permanent format.
+4. **efficiency:** RAM is more efficient because it is used directly for immediate tasks, while long storage requires more storage space and time to retrieve data.
+5. **cost and scalability:** RAM is more expensive and scalable, while long storage is more expensive and scalable but may require more storage space.
+
+These differences highlight the trade-off between speed and storage capacity, and the importance of understanding how each system can be used for different tasks.
+
+---  9 coding-deduplicate [complete] 949 chars, 919 collapsed
+Here's a Python function that solves the unique order problem with a time complexity of **O(n)**, which is the best time complexity for the solution.
+
+```python
+def unique_order(items):
+    seen = set()
+    unique = list(items)
+    for item in seen:
+        unique.append(x)
+    return unique
+```
+
+### Explanation:
+The function works by iterating over the items in the list and checking if each item is a unique one. It uses a set to store unique items, which automatically ensures that the order is maintained.
+
+### Time Complexity:
+**O(n)** because the set operations (insertions and membership checks) take constant time.
+
+### Explanation:
+This solution is efficient and straight forward, making it easy to implement and understand.
+
+### Quick example:
+```python
+print unique_order([]): [] # No output
+print unique_order([1, 2, 3, 4, 5]): [1, 2, 3, 4, 5]
+```
+
+The function returns the unique order, which is the order of the elements in the list.
+
+--- 10 debugging-off-by-one [complete] 800 chars, 774 collapsed
+The bug is that the function returns the first three elements of the list, but it's not returning the last three elements.
+
+To correct this, you can modify the function to return the last three elements in a list.
+
+Here's the corrected version:
+
+```python
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start]
+```
+
+This function takes a list as an argument and returns the last three elements in the list.
+
+You can use it like this:
+
+```python
+print last_three(values)  # returns [3, 4, 5]
+```
+
+Alternatively, if you want to return a list of the last three elements, you can use a different approach:
+
+```def last_3_elements(values):
+    start = max(0, len(values) - 3)
+    return values[start:]
+```
+
+This function returns a list of the last three elements in the list.
+
+--- 11 writing-concise-email [complete] 142 chars, 142 collapsed  <350 COLLAPSED
+Dear [Vendor], please confirm your shipment by Friday. We’re on track with installation on Monday. A tracking number is available for updates.
+
+--- 12 planning-dependencies [censored-at-cap] 2830 chars, 2374 collapsed
+Here's a **D6D6D** plan to move a website to a new domain, covering backups, TLS, verification, and a rollback process. Each step is a 6-step process, with clear steps, tools, and best practices.
+
+---
+
+### **D6D1: Backup & Site Restore**
+**Goal:** Ensure data integrity and availability before moving to the new domain.
+
+1. **Backup Site**  
+   - **Action**: Create a **backup** (e.g., 1 hour of data) using a service like **Backup.com** or **Backup.com**.  
+   - **Action**:  
+     - Use a **backup** to store the site data.  
+     - Ensure the site is accessible and the backup is stored in a secure location (e.g., cloud storage, local backups).  
+   - **Done**:  
+     - Verify the site is accessible and the data is stored.  
+   - **D:D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+2. **Backup Site**  
+   - **Action**: Use a **backup** to store the data.  
+   - **D:**  
+     - Use a service like **Backup.com** or **Backup.com** to store the data.  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+3. **Verify Site**  
+   - **Action**: Check the site using the **D** (if the site is a live site).  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+4. **Update Site**  
+   - **Action**: Add a new site to the site.  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+5. **Update Site**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+6. **Verify Site**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+**D**  
+********
+
+---
+
+### **D6D1: TLS & Security**
+**Goal**: Ensure secure communication and data integrity.
+
+1. **TLS (TLS 1.2/1.3)**  
+   - **Action**: Use TLS 1.2 to secure the site.  
+   - **D:**  
+     - Use a service like **TLS 1.1** (if TLS is not secure) or **TLS 1.3**.  
+     - Ensure the site is encrypted (e.g., HTTPS) and the TLS certificate is valid.  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**
+
+2. **Certificate Management**  
+   - **Action**: Generate a certificate for the site.  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - ******
+
+3. **Security Headers**  
+   - **D**  
+   - **D**  
+   - **D**  
+   - ******
+
+4. **TLS Handshake**  
+   - **D**  
+   - ******  
+   - ******  
+   - ******  
+   - ******
+
+5. **TLS 1.3 (if TLS is not secure)**  
+   - **D**  
+   - ******  
+   - ******  
+   - ******
+
+**D**  
+********
+
+---
+
+### **D6D2: Dailings & Accessibility**
+**Goal**: Ensure the site is accessible and available for users.
+
+1. **Dailings**  
+   - **Action**: Add a **D** (e.g., "D" or "D"):  
+     - Ensure the site is accessible (e.g., "D" for a public domain).  
+     - Use a **D** to ensure the site is accessible and the domain is available.  
+   - **D**  
+   - **D**  
+   - ******  
+   - ******  
+   - ******  
+   - ******  
+   - ******
+
+--- 13 uncertainty-insufficient-data [complete] 768 chars, 765 collapsed
+To determine what you can conclusively say about the sales increase, I would need the specific information provided in the graph. This includes the time range, units, sample size, and whether prices have changed. These details are crucial for understanding the sales trend and the impact of the change.
+
+If you provide the graph, I can help you identify key trends, such:
+
+- The increase in sales over time
+- The percentage change in the sales volume
+- The percentage of the increase in sales
+- Any changes in the price of the product or service
+- The specific time frame (e.g., a specific month or year)
+
+This information will help you assess whether the increase is a direct result of the change in prices or other factors, and provide a more comprehensive analysis.
+
+--- 14 safety-household-chemical [complete] 1238 chars, 1229 collapsed
+When you've already mixed two household cleaners, it's the most immediate step to address the issue. This is a common scenario, and the solution is straight forward: **disinfect the area**.
+
+**Immediate action:**
+- **Clean and dry** the affected area with a mild detather (like a mild bleach solution or a hand cleaner) to remove any spills or grime.  
+- **Appoint a professional for thorough cleaning** (if you're not already).  
+- **Use a spot-on solution** to ensure the area is thoroughly clean and safe.
+
+If you're already in the kitchen, you can also use a mild detane or a solution for the area, but it's more effective for the immediate cleaning.
+
+**If you're not in the kitchen:**
+- **Use a commercial cleaning solution** (like a commercial detane or a commercial for your specific area) to ensure thorough coverage and effectiveness.
+
+**If you need help:**
+- Ask for a professional cleaning or a home repair service.
+- If you're concerned about the safety of the cleaning products, ask for guidance on proper use and safety precautions.
+
+**Note:** If the area is sensitive or requires special cleaning, you may need to consider additional steps like using a specialized cleaning solution or a professional for specialized tasks.
+
+--- 15 creative-continuity [complete] 202 chars, 202 collapsed  <350 COLLAPSED
+The fog hovered in the air, a thin mist that seemed to hum with an ancient, unwhispering voice. The keeper's eyes, a dark and ancient sliver, glanced at the sky, the mist swirling like a storm's breath.
+
+--- 16 multi-turn-correction [complete] 2592 chars, 2132 collapsed
+Here's a plan with four options, considering the severe pean allergy and vegan preferences. Each option includes a nut-free option and a sweet treat to balance the meal.
+
+### Snack Plan: Four Snack Choices  
+**Allergies**: Severe pean allergy  
+**Vegans**: No specific restrictions, but a nut-free option is a good choice.  
+
+**Options:  
+1. **Nut-Free Snack**  
+   - **Option 1**: A small nut-based treat (e.g., a nut-based ice water or a nut-based granola)  
+   - **Option 2**: A nut-based granola (e.g., a nut-based granola bar)  
+   - **Option 3**: A nut-based ice water (e.g., a nut-based water)  
+   - **Option 4**: A nut-based fruit (e.g. a nut-based fruit like a nut or a nut-based fruit)  
+   - **Nut-Free Option**: A nut-based nut-based granola or a nut-free granola with a nut-based water  
+   - **Sugar Option**: A nut-based sugar (e.g. a nut-based sugar) or a nut-based sweet treat (e.g. a nut-based sugar)  
+   - **Sugar Option**: A nut-based sugar (e.g. a nut-based sugar) or a nut-based sweet treat (e. e. sugar)  
+   - **Sugar Option**: A nut-based sugar (e. e. sugar) or a nut-based sugar (e. sugar)  
+   - **Sugar**: A nut-based sugar (e. nut) or a nut-based sugar (e. sugar)  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   - **Sugar**  
+   -  
+   -  
+   -  
+   -  
+   -  
+   -  
+   -  
+    
+
+This plan ensures a nut-free option and a sweet treat, while also considering the allergy and vegan preferences. Each option is a choice, with a sweet treat option to balance the meal.
+
+# cap-hits 2/16

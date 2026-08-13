@@ -1,0 +1,138 @@
+{
+ "schema": "neural-forge-matrix-wave27-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave27/children",
+ "built": [
+  "MX27-F1301KV6Q",
+  "MX27-F1301KV6Q-R2",
+  "MX27-V17",
+  "MX27-V18W896",
+  "MX27-V18X07",
+  "MX27-V18X07G03",
+  "MX27-V18X09",
+  "MX27-V18X09G03",
+  "MX27-V18X13",
+  "MX27-V18X13G03",
+  "MX27-V18X13KV6JQ",
+  "MX27-V18X13X01",
+  "MX27-V18X13X01KV6JQ",
+  "MX27-V19",
+  "MX27-V20CL896",
+  "MX27-V20X07",
+  "MX27-V20X09",
+  "MX27-V20X09G03",
+  "MX27-V20X13KV6JQ",
+  "MX27-V20X13KV6JQG03",
+  "MX27-V20X13X01",
+  "MX27-V20X13X01G03",
+  "MX27-V22X13KV6JQ",
+  "MX27-V32CL896",
+  "MX27-V9X13"
+ ],
+ "kept": {
+  "MX27-F1301KV6Q": {
+   "reason": "not a reviewed child: the blocks 1+13 excision plus the 16-to-12 joint head merge, rebuilt as the source for V18X13X01KV6JQ and found NOT to reproduce wave 17's sealed ARCH.F1301KV6Q (rebuilt ad406f480a181901, sealed 90a9e5187feef678, identical parameter counts).  It is the one body in this wave that cannot be recovered from a sealed citation, so the bytes are the only record of what was actually composed",
+   "bytes": 406529175
+  },
+  "MX27-V17": {
+   "reason": "11/15 at 0.785440x -- the lower shoulder.  On its own it is an unremarkable row; with V19 it is the entire evidence that the 13/15 band is a PEAK with 1,024-row shoulders and not the flat plateau wave 26 sealed, which is this wave's correction to the campaign record",
+   "bytes": 361821620
+  },
+  "MX27-V18X07": {
+   "reason": "9/15 at 0.737484x -- THE ROW THE WAVE'S CENTRAL FINDING RESTS ON.  Same K, same ratio, same parameter count and same base as V18X13 and V18X09, and four cases cheaper instead of three, which is what makes the excision-composition cost a property of the BLOCK",
+   "bytes": 339846715
+  },
+  "MX27-V18X09": {
+   "reason": "10/15 at 0.737484x -- ties the deepest ten, and is the block-9 arm of the identity matrix at the K where block 9 costs three",
+   "bytes": 339846715
+  },
+  "MX27-V18X13": {
+   "reason": "10/15 at 0.737484x -- the DEEPEST TEN in the campaign, nine thousandths below wave 26's V20X13, and the byte-identical zero-solve control that V18X13G03 is differenced against",
+   "bytes": 339846727
+  },
+  "MX27-V18X13G03": {
+   "reason": "the lambda 0.3 solve at an identical 169,394,944 parameters -- a GPU pass at one lambda that nothing else reproduces, and the fifth ladder in the atlas.  It reads the same ten as its control, which is the measurement that stops lambda 0.3 being called the rung that never hurts",
+   "bytes": 339848414
+  },
+  "MX27-V18X13X01KV6JQ": {
+   "reason": "0/15 at 0.664419x -- the first zero of fifteen in 27 waves, the child that shows summarisation is the last lane to go, and a four-axis stack no other row in the campaign has",
+   "bytes": 306360641
+  },
+  "MX27-V19": {
+   "reason": "14/15 at 0.794570x -- the HIGHEST REVIEW IN 27 WAVES, two cases above the parent, and the only child that has ever beaten the parent by more than one.  If any checkpoint in this wave is re-opened by somebody who does not believe the number, it is this one",
+   "bytes": 366127448
+  },
+  "MX27-V20CL896": {
+   "reason": "2/15 at 0.487566x -- the DEEPEST CHILD IN THE CAMPAIGN TO ANSWER ANYTHING AT ALL, fifteen points of ratio below the previous holder, and the floor of the coherence spectrum",
+   "bytes": 225160404
+  }
+ },
+ "deleted": {
+  "MX27-F1301KV6Q-R2": {
+   "reason": "the second rebuild, kept only long enough to answer whether the non-reproduction was nondeterminism or code drift.  It is BYTE-IDENTICAL to MX27-F1301KV6Q (both ad406f480a181901), which settles the question as drift between wave 17's builder and wave 27's, and storing the same bytes twice records nothing the digest equality does not",
+   "bytes": 406529174
+  },
+  "MX27-V18W896": {
+   "reason": "2/15.  One CPU pass off the retained MX19-W896; the empty-string failure mode is visible in the packaged dossier",
+   "bytes": 311302666
+  },
+  "MX27-V18X07G03": {
+   "reason": "8/15.  Same, and its one unique contribution -- the third SEAL THE ROOM safety defect -- is in the sealed safety field and the packaged READ- file",
+   "bytes": 339848422
+  },
+  "MX27-V18X09G03": {
+   "reason": "9/15.  Same: a lambda arm that lost a case, differenced against a retained control",
+   "bytes": 339848417
+  },
+  "MX27-V18X13KV6JQ": {
+   "reason": "2/15.  The third of three identical head-merge collapses",
+   "bytes": 330489108
+  },
+  "MX27-V18X13X01": {
+   "reason": "3/15.  One CPU pass off MX17-P1301, and the width-signature falsification it carries is the READ- text, not the weights",
+   "bytes": 315718343
+  },
+  "MX27-V20X07": {
+   "reason": "9/15 at 0.746614x.  One CPU pass off the retained MX16-X07; its row -- block 7 costs four at BOTH shelf K -- is preserved by V18X07 plus this sealed verdict",
+   "bytes": 344153210
+  },
+  "MX27-V20X09": {
+   "reason": "9/15 at 0.746614x.  One CPU pass off the retained MX16-X09; the K-sensitivity it shows is an arithmetic statement about two sealed numbers",
+   "bytes": 344153210
+  },
+  "MX27-V20X09G03": {
+   "reason": "8/15.  A solve that COST a case; the finding is the sign of the delta and that is in the verdict, not the weights",
+   "bytes": 344154913
+  },
+  "MX27-V20X13KV6JQ": {
+   "reason": "2/15.  One CPU pass off MX17-X13KV6JQ; the head-merge-costs-eleven row is arithmetic over three sealed numbers",
+   "bytes": 334795605
+  },
+  "MX27-V20X13KV6JQG03": {
+   "reason": "2/15.  A solve on a collapsed base that changed nothing but the cap count",
+   "bytes": 334797303
+  },
+  "MX27-V20X13X01": {
+   "reason": "3/15.  One CPU pass off the retained MX17-P1301; the prompt-echo evidence is TEXT and lives in the packaged READ- file, which is where evidence for a text signature belongs",
+   "bytes": 320024845
+  },
+  "MX27-V20X13X01G03": {
+   "reason": "1/15.  The solve that cost two cases while improving its own objective by 23 percent out of sample; both numbers are in the verdict",
+   "bytes": 320026536
+  },
+  "MX27-V22X13KV6JQ": {
+   "reason": "2/15.  One CPU pass off the retained MX17-X13KV6JQ; seven of its lanes are byte-identical to V20X13KV6JQ's, which is the point and needs no second copy",
+   "bytes": 339103036
+  },
+  "MX27-V32CL896": {
+   "reason": "2/15 at 0.542347x.  One CPU pass off the retained MX15-CL896, and V20CL896 is both deeper and retained",
+   "bytes": 251006659
+  },
+  "MX27-V9X13": {
+   "reason": "6/15 at 0.696398x.  One CPU pass off the retained MX16-X13A; its finding -- block 13 costs three even off the shelf -- is a statement about two sealed reviews",
+   "bytes": 320480036
+  }
+ },
+ "bytes_kept": 3025387859,
+ "bytes_deleted": 5296431483,
+ "applied": true
+}

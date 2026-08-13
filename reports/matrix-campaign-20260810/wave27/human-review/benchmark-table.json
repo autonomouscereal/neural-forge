@@ -1,0 +1,246 @@
+{
+ "schema": "neural-forge-matrix-wave27-benchmark-table-v1",
+ "invocation": "lm_eval --tasks arc_easy,hellaswag,piqa,winogrande,lambada_openai,wikitext --limit 200 --batch_size 4 --seed 1234 dtype=float32 max_length=2048, sm86 RTX 3090",
+ "rows": {
+  "ARCH.V20X13KV6JQG03": {
+   "arc_e": 0.34,
+   "hella_n": 0.39,
+   "piqa_n": 0.6,
+   "wino": 0.495,
+   "lambada": 0.135,
+   "lam_ppl": 887.6863619449149,
+   "wiki_wppl": 1860.619504700126,
+   "bits_per_byte": 2.031167386686356
+  },
+  "ARCH.V18X09": {
+   "arc_e": 0.435,
+   "hella_n": 0.39,
+   "piqa_n": 0.595,
+   "wino": 0.57,
+   "lambada": 0.165,
+   "lam_ppl": 767.9424211373654,
+   "wiki_wppl": 480.81165722725706,
+   "bits_per_byte": 1.6660888833648166
+  },
+  "ARCH.V18W896": {
+   "arc_e": 0.3,
+   "hella_n": 0.405,
+   "piqa_n": 0.54,
+   "wino": 0.515,
+   "lambada": 0.14,
+   "lam_ppl": 1115.103668884134,
+   "wiki_wppl": 1112.3117269547884,
+   "bits_per_byte": 1.892368182447379
+  },
+  "ARCH.V20X09": {
+   "arc_e": 0.405,
+   "hella_n": 0.405,
+   "piqa_n": 0.58,
+   "wino": 0.595,
+   "lambada": 0.19,
+   "lam_ppl": 607.3025868537549,
+   "wiki_wppl": 425.87095855363475,
+   "bits_per_byte": 1.6333526255050388
+  },
+  "ARCH.V18X13G03": {
+   "arc_e": 0.4,
+   "hella_n": 0.38,
+   "piqa_n": 0.61,
+   "wino": 0.505,
+   "lambada": 0.3,
+   "lam_ppl": 242.51983620706216,
+   "wiki_wppl": 756.7234131414517,
+   "bits_per_byte": 1.788445171009884
+  },
+  "ARCH.V20X13X01G03": {
+   "arc_e": 0.33,
+   "hella_n": 0.37,
+   "piqa_n": 0.545,
+   "wino": 0.49,
+   "lambada": 0.145,
+   "lam_ppl": 2711.4298811066164,
+   "wiki_wppl": 1596.276047410405,
+   "bits_per_byte": 1.9898256504155125
+  },
+  "ARCH.V20CL896": {
+   "arc_e": 0.325,
+   "hella_n": 0.345,
+   "piqa_n": 0.515,
+   "wino": 0.48,
+   "lambada": 0.105,
+   "lam_ppl": 4249.613556544009,
+   "wiki_wppl": 834.5763863037428,
+   "bits_per_byte": 1.8148648666246048
+  },
+  "ARCH.V18X07G03": {
+   "arc_e": 0.39,
+   "hella_n": 0.4,
+   "piqa_n": 0.58,
+   "wino": 0.56,
+   "lambada": 0.15,
+   "lam_ppl": 412.51544544117274,
+   "wiki_wppl": 344.7808113042085,
+   "bits_per_byte": 1.5763653079581208
+  },
+  "ARCH.V19": {
+   "arc_e": 0.415,
+   "hella_n": 0.43,
+   "piqa_n": 0.62,
+   "wino": 0.525,
+   "lambada": 0.365,
+   "lam_ppl": 60.706132115116525,
+   "wiki_wppl": 191.1987327800533,
+   "bits_per_byte": 1.4172976363338992
+  },
+  "ARCH.V22X13KV6JQ": {
+   "arc_e": 0.375,
+   "hella_n": 0.395,
+   "piqa_n": 0.555,
+   "wino": 0.53,
+   "lambada": 0.145,
+   "lam_ppl": 1268.1877136458907,
+   "wiki_wppl": 2414.494452614891,
+   "bits_per_byte": 2.101469689361023
+  },
+  "ARCH.V17": {
+   "arc_e": 0.405,
+   "hella_n": 0.425,
+   "piqa_n": 0.61,
+   "wino": 0.53,
+   "lambada": 0.37,
+   "lam_ppl": 62.593805914033254,
+   "wiki_wppl": 214.64110481216665,
+   "bits_per_byte": 1.448500060703458
+  },
+  "ARCH.V9X13": {
+   "arc_e": 0.33,
+   "hella_n": 0.385,
+   "piqa_n": 0.565,
+   "wino": 0.475,
+   "lambada": 0.275,
+   "lam_ppl": 794.6368594904161,
+   "wiki_wppl": 3202.0865444323144,
+   "bits_per_byte": 2.1776351707184727
+  },
+  "ARCH.V18X13": {
+   "arc_e": 0.41,
+   "hella_n": 0.385,
+   "piqa_n": 0.625,
+   "wino": 0.505,
+   "lambada": 0.295,
+   "lam_ppl": 314.935721376466,
+   "wiki_wppl": 902.7113413369175,
+   "bits_per_byte": 1.836037690725038
+  },
+  "ARCH.V20X07": {
+   "arc_e": 0.37,
+   "hella_n": 0.425,
+   "piqa_n": 0.57,
+   "wino": 0.55,
+   "lambada": 0.155,
+   "lam_ppl": 344.67567932184244,
+   "wiki_wppl": 310.8119901134791,
+   "bits_per_byte": 1.54838238027709
+  },
+  "ARCH.V18X13KV6JQ": {
+   "arc_e": 0.36,
+   "hella_n": 0.365,
+   "piqa_n": 0.585,
+   "wino": 0.505,
+   "lambada": 0.135,
+   "lam_ppl": 1423.8719677974743,
+   "wiki_wppl": 3025.622335212103,
+   "bits_per_byte": 2.1623418304129203
+  },
+  "ARCH.V18X07": {
+   "arc_e": 0.385,
+   "hella_n": 0.4,
+   "piqa_n": 0.58,
+   "wino": 0.555,
+   "lambada": 0.155,
+   "lam_ppl": 377.8270126818127,
+   "wiki_wppl": 345.9926867013718,
+   "bits_per_byte": 1.5773119384672445
+  },
+  "PARENT": {
+   "arc_e": 0.545,
+   "hella_n": 0.505,
+   "piqa_n": 0.68,
+   "wino": 0.55,
+   "lambada": 0.46,
+   "lam_ppl": 24.391247934692974,
+   "wiki_wppl": 81.79763262054296,
+   "bits_per_byte": 1.1882273653524755
+  },
+  "ARCH.V18X13X01KV6JQ": {
+   "arc_e": 0.345,
+   "hella_n": 0.32,
+   "piqa_n": 0.525,
+   "wino": 0.5,
+   "lambada": 0.095,
+   "lam_ppl": 21786.48828034771,
+   "wiki_wppl": 3046.8209752837356,
+   "bits_per_byte": 2.1642254970528487
+  },
+  "ARCH.V20X13KV6JQ": {
+   "arc_e": 0.35,
+   "hella_n": 0.385,
+   "piqa_n": 0.59,
+   "wino": 0.52,
+   "lambada": 0.145,
+   "lam_ppl": 1267.9146409921511,
+   "wiki_wppl": 2659.7476818234795,
+   "bits_per_byte": 2.1275696481714506
+  },
+  "ARCH.V18X09G03": {
+   "arc_e": 0.43,
+   "hella_n": 0.395,
+   "piqa_n": 0.58,
+   "wino": 0.58,
+   "lambada": 0.16,
+   "lam_ppl": 879.1643671262572,
+   "wiki_wppl": 478.2555856488502,
+   "bits_per_byte": 1.6646508044059403
+  },
+  "ARCH.V20X13X01": {
+   "arc_e": 0.35,
+   "hella_n": 0.375,
+   "piqa_n": 0.54,
+   "wino": 0.515,
+   "lambada": 0.16,
+   "lam_ppl": 4494.905486905056,
+   "wiki_wppl": 2706.1166804916365,
+   "bits_per_byte": 2.1322325533917272
+  },
+  "ARCH.V32CL896": {
+   "arc_e": 0.37,
+   "hella_n": 0.405,
+   "piqa_n": 0.49,
+   "wino": 0.495,
+   "lambada": 0.1,
+   "lam_ppl": 3398.8151198747773,
+   "wiki_wppl": 585.0234974279543,
+   "bits_per_byte": 1.7190155424858817
+  },
+  "ARCH.V20X09G03": {
+   "arc_e": 0.405,
+   "hella_n": 0.405,
+   "piqa_n": 0.565,
+   "wino": 0.6,
+   "lambada": 0.165,
+   "lam_ppl": 700.2648337916721,
+   "wiki_wppl": 424.20081400672956,
+   "bits_per_byte": 1.6322925012436074
+  },
+  "ARCH.V18X13X01": {
+   "arc_e": 0.335,
+   "hella_n": 0.37,
+   "piqa_n": 0.54,
+   "wino": 0.515,
+   "lambada": 0.17,
+   "lam_ppl": 4697.825860198476,
+   "wiki_wppl": 3093.5555961428067,
+   "bits_per_byte": 2.1683323566350596
+  }
+ }
+}

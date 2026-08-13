@@ -39,11 +39,100 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave27")
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: worth its bytes.  An empty mapping is not a policy and the script says so.
-KEEP: dict[str, str] = {}
+#:
+#: THE POLICY THIS WAVE APPLIED, stated so the next one can argue with it.  Keep
+#: the rows that carry a CLAIM no other artifact can re-derive: the campaign's
+#: new best review and the shoulder that proves it is a peak; the two children
+#: that tie the deepest ten; the block-7 arm, which is the single row the whole
+#: identity-matrix finding rests on; one solve and the zero-solve control it is
+#: differenced against at an identical parameter count; the deepest child that
+#: still answers anything; the first zero; and the one BODY in this wave that
+#: does not reproduce a sealed cell and therefore cannot be recovered from a
+#: citation.  Drop what one CPU pass rebuilds from a retained source and that
+#: carries no row of its own.  Nine kept and sixteen dropped, which is more than
+#: best-five, and the deviation is named rather than assumed: this wave built
+#: twenty-three children instead of nine and the extra four keeps are the
+#: identity matrix's own axes, which is the result the wave was sent to get.
+KEEP: dict[str, str] = {
+    "MX27-V19": (
+        "14/15 at 0.794570x -- the HIGHEST REVIEW IN 27 WAVES, two cases above "
+        "the parent, and the only child that has ever beaten the parent by more "
+        "than one.  If any checkpoint in this wave is re-opened by somebody who "
+        "does not believe the number, it is this one"
+    ),
+    "MX27-V17": (
+        "11/15 at 0.785440x -- the lower shoulder.  On its own it is an "
+        "unremarkable row; with V19 it is the entire evidence that the 13/15 "
+        "band is a PEAK with 1,024-row shoulders and not the flat plateau wave "
+        "26 sealed, which is this wave's correction to the campaign record"
+    ),
+    "MX27-V18X13": (
+        "10/15 at 0.737484x -- the DEEPEST TEN in the campaign, nine "
+        "thousandths below wave 26's V20X13, and the byte-identical zero-solve "
+        "control that V18X13G03 is differenced against"
+    ),
+    "MX27-V18X13G03": (
+        "the lambda 0.3 solve at an identical 169,394,944 parameters -- a GPU "
+        "pass at one lambda that nothing else reproduces, and the fifth ladder "
+        "in the atlas.  It reads the same ten as its control, which is the "
+        "measurement that stops lambda 0.3 being called the rung that never hurts"
+    ),
+    "MX27-V18X09": (
+        "10/15 at 0.737484x -- ties the deepest ten, and is the block-9 arm of "
+        "the identity matrix at the K where block 9 costs three"
+    ),
+    "MX27-V18X07": (
+        "9/15 at 0.737484x -- THE ROW THE WAVE'S CENTRAL FINDING RESTS ON.  Same "
+        "K, same ratio, same parameter count and same base as V18X13 and V18X09, "
+        "and four cases cheaper instead of three, which is what makes the "
+        "excision-composition cost a property of the BLOCK"
+    ),
+    "MX27-V20CL896": (
+        "2/15 at 0.487566x -- the DEEPEST CHILD IN THE CAMPAIGN TO ANSWER "
+        "ANYTHING AT ALL, fifteen points of ratio below the previous holder, and "
+        "the floor of the coherence spectrum"
+    ),
+    "MX27-V18X13X01KV6JQ": (
+        "0/15 at 0.664419x -- the first zero of fifteen in 27 waves, the child "
+        "that shows summarisation is the last lane to go, and a four-axis stack "
+        "no other row in the campaign has"
+    ),
+    "MX27-F1301KV6Q": (
+        "not a reviewed child: the blocks 1+13 excision plus the 16-to-12 joint "
+        "head merge, rebuilt as the source for V18X13X01KV6JQ and found NOT to "
+        "reproduce wave 17's sealed ARCH.F1301KV6Q (rebuilt "
+        "ad406f480a181901, sealed 90a9e5187feef678, identical parameter counts).  "
+        "It is the one body in this wave that cannot be recovered from a sealed "
+        "citation, so the bytes are the only record of what was actually composed"
+    ),
+}
 
 #: Tag -> why this checkpoint is NOT worth its bytes.  Every built child must
 #: appear in exactly one of the two mappings or the script refuses.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX27-F1301KV6Q-R2": (
+        "the second rebuild, kept only long enough to answer whether the "
+        "non-reproduction was nondeterminism or code drift.  It is BYTE-IDENTICAL "
+        "to MX27-F1301KV6Q (both ad406f480a181901), which settles the question as "
+        "drift between wave 17's builder and wave 27's, and storing the same "
+        "bytes twice records nothing the digest equality does not"
+    ),
+    "MX27-V20X07": "9/15 at 0.746614x.  One CPU pass off the retained MX16-X07; its row -- block 7 costs four at BOTH shelf K -- is preserved by V18X07 plus this sealed verdict",
+    "MX27-V20X09": "9/15 at 0.746614x.  One CPU pass off the retained MX16-X09; the K-sensitivity it shows is an arithmetic statement about two sealed numbers",
+    "MX27-V20X09G03": "8/15.  A solve that COST a case; the finding is the sign of the delta and that is in the verdict, not the weights",
+    "MX27-V18X09G03": "9/15.  Same: a lambda arm that lost a case, differenced against a retained control",
+    "MX27-V18X07G03": "8/15.  Same, and its one unique contribution -- the third SEAL THE ROOM safety defect -- is in the sealed safety field and the packaged READ- file",
+    "MX27-V22X13KV6JQ": "2/15.  One CPU pass off the retained MX17-X13KV6JQ; seven of its lanes are byte-identical to V20X13KV6JQ's, which is the point and needs no second copy",
+    "MX27-V20X13KV6JQ": "2/15.  One CPU pass off MX17-X13KV6JQ; the head-merge-costs-eleven row is arithmetic over three sealed numbers",
+    "MX27-V20X13KV6JQG03": "2/15.  A solve on a collapsed base that changed nothing but the cap count",
+    "MX27-V18X13KV6JQ": "2/15.  The third of three identical head-merge collapses",
+    "MX27-V9X13": "6/15 at 0.696398x.  One CPU pass off the retained MX16-X13A; its finding -- block 13 costs three even off the shelf -- is a statement about two sealed reviews",
+    "MX27-V20X13X01": "3/15.  One CPU pass off the retained MX17-P1301; the prompt-echo evidence is TEXT and lives in the packaged READ- file, which is where evidence for a text signature belongs",
+    "MX27-V20X13X01G03": "1/15.  The solve that cost two cases while improving its own objective by 23 percent out of sample; both numbers are in the verdict",
+    "MX27-V18X13X01": "3/15.  One CPU pass off MX17-P1301, and the width-signature falsification it carries is the READ- text, not the weights",
+    "MX27-V18W896": "2/15.  One CPU pass off the retained MX19-W896; the empty-string failure mode is visible in the packaged dossier",
+    "MX27-V32CL896": "2/15 at 0.542347x.  One CPU pass off the retained MX15-CL896, and V20CL896 is both deeper and retained",
+}
 
 
 def main() -> int:
