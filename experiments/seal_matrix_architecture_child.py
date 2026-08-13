@@ -27,6 +27,20 @@ chain needs:
   copy-exact child to compare to, and the receipt says so in its own notes
   rather than leaving the field null.
 
+**Wave 19 (`hidden_size`).**  One child form breaks that last comparison: a child
+whose RESIDUAL is narrower than the parent's has terminal rows of a different
+length, and ``candidate - reference`` is not an operation on them.  The honest
+repair is not to skip the measurement but to take it where it is defined.  A
+``hidden_size`` child is built against one shared orthonormal basis ``E``
+(1024 x H), its build receipt names that artifact and its digest, and the child's
+terminal row is meant to approximate ``E^T r_parent`` exactly -- so the parent's
+row is projected through the child's own declared basis and the comparison is the
+same metric on the same object.  If the widths differ and the receipt declares no
+basis, or the basis on disk does not digest to what the receipt claims, this
+script REFUSES rather than reporting a number it cannot define.  The per-layer
+norm ratio needs no repair: it is a ratio of two scalars, and on this axis it
+reads as the retained energy it is.
+
 What it refuses:
 
 * a child whose directory digests differently from the build receipt's claim;
@@ -83,11 +97,61 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave16-standard-shape-child-v1",
     "neural-forge-matrix-wave17-standard-shape-child-v1",
     "neural-forge-matrix-wave18-standard-shape-child-v1",
+    "neural-forge-matrix-wave19-standard-shape-child-v1",
 )
 
 
 class ArchitectureSealError(RuntimeError):
     """A standard-shape child cannot be sealed as measured.  Always fatal."""
+
+
+def _residual_basis(build: dict, parent_hidden: int, child_hidden: int) -> Any:
+    """The child's own declared basis, verified by digest, or a refusal.
+
+    Only reached when the child's residual is narrower than the parent's.  The
+    basis is the build receipt's, not this script's: re-deriving it here would
+    measure the child against a basis it was not built with, which is exactly
+    the mistake this comparison exists to avoid.
+    """
+
+    declared = (build.get("residual_basis") or {})
+    path = declared.get("basis_path")
+    digest = declared.get("basis_sha256")
+    if not path or not digest:
+        raise ArchitectureSealError(
+            f"the child's residual is {child_hidden} wide and the parent's is "
+            f"{parent_hidden}; the terminal comparison needs the basis the child "
+            "was built against and the build receipt declares none."
+        )
+    basis_path = Path(path)
+    if not basis_path.is_file():
+        raise ArchitectureSealError(f"{basis_path} (the declared basis) is missing.")
+    measured = cell_runner._file_sha256(basis_path)
+    if measured != digest:
+        raise ArchitectureSealError(
+            f"{basis_path} digests {measured}; the build receipt claims {digest}."
+        )
+    from safetensors import safe_open
+
+    with safe_open(str(basis_path), "pt") as handle:
+        basis = handle.get_tensor("basis").to(torch.float64)
+    if tuple(basis.shape) != (parent_hidden, child_hidden):
+        raise ArchitectureSealError(
+            f"{basis_path} is {tuple(basis.shape)}; this child needs "
+            f"({parent_hidden}, {child_hidden})."
+        )
+    orthonormality = float(
+        (basis.T @ basis - torch.eye(child_hidden, dtype=torch.float64)).abs().max()
+    )
+    if orthonormality > 1e-8:
+        raise ArchitectureSealError(
+            f"{basis_path} is not orthonormal (max off-identity {orthonormality:.3e})."
+        )
+    _log(
+        f"residual basis {basis_path.name} verified: {tuple(basis.shape)}, "
+        f"orthonormal to {orthonormality:.2e}"
+    )
+    return basis
 
 
 def _log(message: str) -> None:
@@ -239,7 +303,21 @@ def run(args: argparse.Namespace) -> int:
         )
 
     match, lcp = cell_runner._token_match(child_ids, parent_ids)
-    terminal = cell_runner._row_metrics(child_terminal, parent_terminal)
+    parent_hidden = int(parent_terminal.shape[-1])
+    child_hidden = int(child_terminal.shape[-1])
+    terminal_basis = None
+    if child_hidden != parent_hidden:
+        terminal_basis = _residual_basis(build, parent_hidden, child_hidden)
+        terminal = cell_runner._row_metrics(
+            child_terminal, parent_terminal.to(torch.float64) @ terminal_basis
+        )
+    else:
+        terminal = cell_runner._row_metrics(child_terminal, parent_terminal)
+    terminal["reference"] = (
+        "the parent's own terminal rows"
+        if terminal_basis is None
+        else "the parent's terminal rows PROJECTED through the child's declared basis"
+    )
     # The per-layer norm ratio needs a layer correspondence, and a child that
     # excised blocks does not have the parent's depth.  The build receipt knows
     # exactly which parent blocks survived, so the ratio is taken against those
