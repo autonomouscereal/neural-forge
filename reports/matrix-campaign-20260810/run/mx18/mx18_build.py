@@ -1469,8 +1469,12 @@ def law_abiding_stein_split(
         if scale <= 1.0:
             chosen = (row, candidate, report, scale)
             break
+    # Every rung whose installable weight was actually solved for reports its
+    # update scale, whichever walk solved it: a ladder row that says `null` is a
+    # rung this call never had to price, not one THE LAW was silent about.
     for row in rungs:
-        row.setdefault("update_scale", None)
+        cached = solved_cache.get(row["lambda_relative"])
+        row["update_scale"] = None if cached is None else cached[2]
     if chosen is None:
         candidate, report, scale = full(LAMBDA_LADDER[-1])
         report = dict(report)
@@ -2019,6 +2023,12 @@ def attention_gate_probe(
         return None
 
     def post_hook(module, args, kwargs, output):
+        if not isinstance(output, tuple) or output[1] is None:
+            raise SystemExit(
+                f"L{parent_layer:02d}: the attention module returned no weights; "
+                "the probe compares the recomputation against the module's own "
+                "probabilities and there is nothing to compare against"
+            )
         weights.append(output[1].detach()[0].to("cpu", torch.float64))
         return None
 
