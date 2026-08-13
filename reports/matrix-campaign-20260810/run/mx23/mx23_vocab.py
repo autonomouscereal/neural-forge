@@ -38,11 +38,36 @@ and `unk_token: null`, so the 256 single-byte tokens are not a nicety -- they ar
 the only reason an arbitrary byte can still be encoded, and dropping one would
 make some inputs untokenizable rather than merely longer.
 
-With that closure the sealed corpus re-tokenizes **identically**: every token it
-contains is kept, every merge used to build those tokens is kept, and merge
-priority order is preserved among the survivors, so BPE takes the same path.
-`--mode build` asserts exactly that, by decoding the sealed corpus with the
-parent's tokenizer and re-encoding it with the child's.
+### What the sealed corpus turned out to be, and what the gate therefore is
+
+The first version of this file asserted the obvious-looking thing -- decode the
+sealed corpus with the parent's tokenizer, re-encode with the child's, demand
+the same sequence under the remap -- and it failed on **256 of 256 rows**.  The
+reason is worth more than the assertion was: the sealed corpus is
+`mapped_donor_calibration.json`, a tokenizer-BRIDGE artifact, and its ids are a
+donor tokenizer's segmentation mapped into this vocabulary.  They are not this
+tokenizer's own output and they never were.  Row 0 carries
+`Ġdocument`+`ed` where this parent's own tokenizer produces `Ġdocumented`;
+264 donor-mapped ids re-encode to 186 canonical ones.  **The parent does not
+round-trip its own sealed corpus**, so an identity gate written against those ids
+was measuring the bridge, not the coreset.
+
+Two consequences, both applied:
+
+1. **The census reads both streams.**  The donor-mapped ids are what the
+   campaign's captures actually ran on; the canonical tokenization of the same
+   text is what a child will actually consume.  Counts are summed over both and
+   both are published, because a census taken only on the donor stream is biased
+   toward short pieces -- exactly the pieces a coreset keeps anyway -- and would
+   quietly starve the coarse tokens the model meets at inference.
+2. **The identity gate is the invariant that is actually true.**  With the byte
+   alphabet complete and no `unk`, the child tokenizer is *lossless on text*:
+   ``decode(child_encode(t)) == t`` for every t, whatever it drops.  That is
+   asserted on all 256 corpus rows and all sixteen review prompts, and beside it
+   the receipt publishes the **agreement rate** against the parent's canonical
+   segmentation under the remap -- how often the child sees the same sentence
+   the parent would have, position for position.  A dropped token costs sequence
+   length and a different segmentation; it never costs the text.
 
 ### Composition, which is why this axis is worth a stack
 
@@ -168,6 +193,22 @@ def captured_batch_ids() -> tuple[list[list[int]], dict[str, Any]]:
         "rows": len(out),
         "token_positions": sum(len(r) for r in out),
     }
+
+
+def canonical_census(texts: list[str], tokenizer: Any) -> dict[int, int]:
+    """The census over what THIS tokenizer does to the corpus text.
+
+    The donor-mapped ids are the stream the campaign captured through; this is
+    the stream a child meets at inference.  Both are counted, because they
+    disagree -- see the module docstring -- and keeping only the first biases the
+    coreset toward pieces it would keep anyway.
+    """
+
+    counts: dict[int, int] = {}
+    for text in texts:
+        for tid in tokenizer(text, add_special_tokens=False).input_ids:
+            counts[int(tid)] = counts.get(int(tid), 0) + 1
+    return counts
 
 
 def review_pack_texts() -> list[str]:
@@ -432,20 +473,31 @@ def build(args: argparse.Namespace) -> int:
             "builder folds the PARENT vocabulary once, not a folded one twice."
         )
 
+    from transformers import AutoTokenizer
+
+    parent_tok = AutoTokenizer.from_pretrained(str(PARENT))
     corpus, corpus_meta = sealed_corpus_ids()
-    counts = census(corpus)
+    corpus_texts = [parent_tok.decode(ids, skip_special_tokens=False) for ids in corpus]
+    donor_counts = census(corpus)
+    canonical_counts = canonical_census(corpus_texts, parent_tok)
+    counts = dict(donor_counts)
+    for tid, n in canonical_counts.items():
+        counts[tid] = counts.get(tid, 0) + n
     order, report = choose_kept(vocab, counts, int(args.k))
     keptset = set(order)
     log(f"kept {len(order)} rows of 65,536 ({report['mandatory_rows']} mandatory)")
-    cov = coverage(counts, keptset)
+    cov = coverage(donor_counts, keptset)
+    cov_canonical = coverage(canonical_counts, keptset)
     log(
-        f"sealed-corpus coverage: {cov['occurrence_coverage']:.6f} of "
-        f"{cov['occurrences']} occurrences, {cov['occurrences_lost']} lost"
+        f"sealed-corpus coverage: donor-mapped {cov['occurrence_coverage']:.6f} "
+        f"({cov['occurrences_lost']} lost), canonical "
+        f"{cov_canonical['occurrence_coverage']:.6f} "
+        f"({cov_canonical['occurrences_lost']} lost)"
     )
-    if cov["occurrences_lost"] != 0:
+    if cov["occurrences_lost"] or cov_canonical["occurrences_lost"]:
         raise SystemExit(
-            "the kept set loses sealed-corpus occurrences; the closure is wrong "
-            "or K is below the observed vocabulary."
+            "the kept set loses sealed-corpus occurrences on one of the two "
+            "streams; the closure is wrong or K is below the observed vocabulary."
         )
 
     outdir.mkdir(parents=True, exist_ok=True)
@@ -499,39 +551,66 @@ def build(args: argparse.Namespace) -> int:
             (outdir / name).write_bytes(src.read_bytes())
 
     # ------------------------------------------------------------- the proof
-    # Decode the sealed corpus with the PARENT's tokenizer and re-encode it with
-    # the CHILD's.  If the closure is right the two id streams are the same
-    # sequence under the remap, position for position, in every one of the 256
-    # rows -- which is the receipt's claim that no kept-token occurrence was lost
-    # to re-tokenization, executed rather than asserted.
-    from transformers import AutoTokenizer
-
-    parent_tok = AutoTokenizer.from_pretrained(str(PARENT))
+    # Two claims, and they are different claims.
+    #
+    # (1) LOSSLESS ON TEXT.  With all 256 ByteLevel alphabet rows kept and no
+    #     `unk`, `decode(child_encode(t)) == t` for every t, whatever the coreset
+    #     dropped.  Asserted on all 256 corpus rows and all sixteen review
+    #     prompts; a failure here is a broken tokenizer, not a lost token.
+    # (2) AGREEMENT with the parent's canonical segmentation under the remap --
+    #     how often the child reads the same sentence the parent would have.
+    #     This is NOT 1.0 and is not supposed to be: a dropped token is exactly a
+    #     position where the child splits where the parent fused.  It is the
+    #     honest size of the input-distribution shift this arm bets on, and it is
+    #     published rather than asserted.
     child_tok = AutoTokenizer.from_pretrained(str(outdir))
-    exact_rows = 0
-    checked_positions = 0
-    mismatches: list[dict[str, Any]] = []
-    for row_index, ids in enumerate(corpus):
-        text = parent_tok.decode(ids, skip_special_tokens=False)
-        expected = [new_of_old[t] for t in ids]
-        got = child_tok(text, add_special_tokens=False).input_ids
-        checked_positions += len(expected)
-        if got == expected:
-            exact_rows += 1
-        elif len(mismatches) < 3:
-            first = next(
-                (i for i in range(min(len(got), len(expected))) if got[i] != expected[i]),
-                min(len(got), len(expected)),
+    review_texts = review_pack_texts()
+
+    def _agreement(texts: list[str]) -> dict[str, Any]:
+        lossless = 0
+        exact = 0
+        positions = 0
+        agreed = 0
+        for text in texts:
+            got = child_tok(text, add_special_tokens=False).input_ids
+            if child_tok.decode(got, skip_special_tokens=False) == text:
+                lossless += 1
+            expected = [
+                new_of_old[int(t)]
+                for t in parent_tok(text, add_special_tokens=False).input_ids
+            ]
+            if list(got) == expected:
+                exact += 1
+            positions += len(expected)
+            agreed += sum(
+                1 for i in range(min(len(got), len(expected))) if got[i] == expected[i]
             )
-            mismatches.append(
-                {
-                    "row": row_index,
-                    "parent_len": len(expected),
-                    "child_len": len(got),
-                    "first_divergent_position": first,
-                }
-            )
-    log(f"re-tokenization identity: {exact_rows}/{len(corpus)} rows exact")
+        return {
+            "rows": len(texts),
+            "rows_lossless_on_text": lossless,
+            "rows_segmented_exactly_as_parent": exact,
+            "parent_positions": positions,
+            "positions_agreeing": agreed,
+            "position_agreement": agreed / positions if positions else 0.0,
+        }
+
+    corpus_agreement = _agreement(corpus_texts)
+    review_agreement = _agreement(review_texts)
+    if corpus_agreement["rows_lossless_on_text"] != len(corpus_texts) or review_agreement[
+        "rows_lossless_on_text"
+    ] != len(review_texts):
+        raise SystemExit(
+            "the child tokenizer is not lossless on text; the byte alphabet or "
+            "the merge closure is broken."
+        )
+    log(
+        f"lossless on text: {corpus_agreement['rows_lossless_on_text']}/"
+        f"{len(corpus_texts)} corpus rows, "
+        f"{review_agreement['rows_lossless_on_text']}/{len(review_texts)} review "
+        f"prompts; position agreement with the parent's segmentation "
+        f"{corpus_agreement['position_agreement']:.4f} corpus / "
+        f"{review_agreement['position_agreement']:.4f} review"
+    )
 
     # tokens-per-byte, measured on three surfaces and printed beside the ratio.
     def _tpb(texts: list[str]) -> dict[str, float]:
@@ -547,8 +626,6 @@ def build(args: argparse.Namespace) -> int:
             "sequence_length_ratio": (cb / pb) if pb else 0.0,
         }
 
-    corpus_texts = [parent_tok.decode(ids, skip_special_tokens=False) for ids in corpus]
-    review_texts = review_pack_texts()
     tokens_per_byte = {
         "sealed_corpus": _tpb(corpus_texts),
         "frozen_review_prompts": _tpb(review_texts),
@@ -604,15 +681,29 @@ def build(args: argparse.Namespace) -> int:
         "vocabulary": {
             **report,
             "sealed_corpus": corpus_meta,
-            "sealed_corpus_coverage": cov,
-            "re_tokenization_identity": {
-                "rows": len(corpus),
-                "rows_exact": exact_rows,
-                "positions_checked": checked_positions,
-                "kept_token_occurrences_lost": cov["occurrences_lost"],
-                "first_mismatches": mismatches,
-                "claim": "the sealed corpus re-tokenizes to the same sequence "
-                "under the id remap; no kept-token occurrence is lost",
+            "sealed_corpus_is_a_donor_mapped_stream": (
+                "mapped_donor_calibration.json carries a DONOR tokenizer's "
+                "segmentation mapped into this vocabulary, so the parent does "
+                "not round-trip its own sealed corpus (264 donor ids re-encode "
+                "to 186 canonical ones on row 0).  The census therefore reads "
+                "BOTH streams and both coverages are published."
+            ),
+            "sealed_corpus_coverage_donor_mapped": cov,
+            "sealed_corpus_coverage_canonical": cov_canonical,
+            "kept_token_occurrences_lost": {
+                "donor_mapped": cov["occurrences_lost"],
+                "canonical": cov_canonical["occurrences_lost"],
+                "claim": "every token occurrence in the sealed corpus, on both "
+                "streams, has a kept row; asserted, not asserted-about",
+            },
+            "lossless_on_text_and_agreement": {
+                "sealed_corpus": corpus_agreement,
+                "frozen_review_prompts": review_agreement,
+                "claim": "decode(child_encode(t)) == t for every t (the byte "
+                "alphabet is complete and there is no unk); `position_agreement` "
+                "is how often the child's segmentation equals the parent's under "
+                "the remap, and it is the measured size of the "
+                "input-distribution shift this arm bets on",
             },
             "frozen_review_prompt_coverage_DIAGNOSTIC_ONLY": review_cov,
             "tokens_per_byte": tokens_per_byte,
@@ -650,11 +741,16 @@ def census_mode(args: argparse.Namespace) -> int:
     vocab = Vocabulary(PARENT / "tokenizer.json")
     corpus, corpus_meta = sealed_corpus_ids()
     captured, captured_meta = captured_batch_ids()
-    counts = census(corpus)
-    counts_captured = census(captured)
     from transformers import AutoTokenizer
 
     parent_tok = AutoTokenizer.from_pretrained(str(PARENT))
+    corpus_texts = [parent_tok.decode(ids, skip_special_tokens=False) for ids in corpus]
+    donor_counts = census(corpus)
+    canonical_counts = canonical_census(corpus_texts, parent_tok)
+    counts = dict(donor_counts)
+    for tid, n in canonical_counts.items():
+        counts[tid] = counts.get(tid, 0) + n
+    counts_captured = census(captured)
     review_texts = review_pack_texts()
     review_counts = census(
         [parent_tok(t, add_special_tokens=False).input_ids for t in review_texts]
@@ -678,6 +774,14 @@ def census_mode(args: argparse.Namespace) -> int:
         "sealed_corpus": corpus_meta,
         "captured_batches": captured_meta,
         "census": {
+            "streams": "the sealed corpus is a DONOR-MAPPED id stream; the "
+            "canonical stream is what this tokenizer does to the same text, and "
+            "the two disagree (the parent does not round-trip its own corpus).  "
+            "The ranking sums both.",
+            "sealed_corpus_donor_distinct_tokens": len(donor_counts),
+            "sealed_corpus_donor_occurrences": sum(donor_counts.values()),
+            "sealed_corpus_canonical_distinct_tokens": len(canonical_counts),
+            "sealed_corpus_canonical_occurrences": sum(canonical_counts.values()),
             "sealed_corpus_distinct_tokens": len(counts),
             "sealed_corpus_occurrences": sum(counts.values()),
             "captured_batches_distinct_tokens": len(counts_captured),
@@ -701,6 +805,10 @@ def census_mode(args: argparse.Namespace) -> int:
             "net_stored_ratio_at_hidden_1024": (body_params + k * 1024) / PARENT_PARAMS,
             "coverage_post_closure_sealed_corpus": coverage(counts, keptset),
             "coverage_pre_closure_sealed_corpus": coverage(counts, set(pre_closure)),
+            "coverage_post_closure_sealed_corpus_donor": coverage(donor_counts, keptset),
+            "coverage_post_closure_sealed_corpus_canonical": coverage(
+                canonical_counts, keptset
+            ),
             "coverage_post_closure_captured_batches": coverage(counts_captured, keptset),
             "coverage_post_closure_review_pack_DIAGNOSTIC": coverage(review_counts, keptset),
             "merges_retained": sum(
