@@ -294,13 +294,18 @@ PINNED_HEAD_DIM = 64
 #: The basis artifact's schema.  A width child, and every composition built on
 #: top of it, must be built against the same bytes or the rungs are not a ladder.
 BASIS_SCHEMA = "neural-forge-matrix-wave19-residual-basis-v1"
-#: The floor under a transported gain ``g_c = diag(E^T diag(g) E)`` before the
-#: reader fold's division by it is refused.  ``g_c[j]`` is a convex combination
-#: of the parent's gains (the weights ``E[:,j]**2`` sum to one), so it can only
-#: approach zero if the parent's own gains straddle zero; the guard is here to
-#: make that a refusal rather than a silent amplification, and every child's
-#: receipt carries the measured minimum.
-GAIN_FLOOR = 1e-3
+#: The reader fold divides by the transported gain, and the guard on that
+#: division is FUNCTIONAL rather than a floor on the divisor.  A floor is the
+#: wrong instrument and this parent proves it: `model.layers.1.ffn_norm` carries
+#: an entry of 9.2e-7 and `layers.0.ffn_norm` one of 1.3e-6 -- channels the
+#: parent has switched off -- and at ``E = I`` dividing by one of those is
+#: EXACT, because the numerator is the same tiny number times the weight.  What
+#: actually has to be bounded is whether the fold blew the reader up, so the
+#: guard is ``||W_c||_F / (sqrt(1024/H) ||W diag(g)||_F)``, which is exactly 1.0
+#: at the identity and is measured and recorded at every site.  A true zero
+#: divisor is still refused outright.
+GAIN_AMPLIFICATION_CAP = 8.0
+GAIN_ZERO = 1e-30
 RIDGE_REL = 1e-6
 LAMBDA_LADDER = (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0)
 #: The internal FIT-side split the value path selects its lambda on when
@@ -2894,12 +2899,21 @@ def fold_reader(
     ``sqrt(1024/H)``.  Everything this axis loses is lost in the stream, not here.
     """
 
-    if float(child_gain.abs().min()) < GAIN_FLOOR:
+    if float(child_gain.abs().min()) < GAIN_ZERO:
         raise SystemExit(
-            f"transported gain reaches {float(child_gain.abs().min()):.3e}, under the "
-            f"{GAIN_FLOOR:g} floor; the reader fold's division is refused"
+            f"transported gain reaches {float(child_gain.abs().min()):.3e}; the "
+            "reader fold's division is refused"
         )
-    return (((weight * gain[None, :]) @ basis) / child_gain[None, :]) * scale
+    gained = weight * gain[None, :]
+    folded = ((gained @ basis) / child_gain[None, :]) * scale
+    amplification = float(folded.norm() / (scale * gained.norm()))
+    if amplification > GAIN_AMPLIFICATION_CAP:
+        raise SystemExit(
+            f"the reader fold amplifies this weight by {amplification:.2f}x, over the "
+            f"{GAIN_AMPLIFICATION_CAP:g}x cap; the transported gain is too small "
+            "against what it divides and the install is refused"
+        )
+    return folded
 
 
 def fold_writer(weight: torch.Tensor, basis: torch.Tensor) -> torch.Tensor:
@@ -3023,6 +3037,8 @@ def fold_layer_closed_form(
         )
         record[f"{norm_name}_gain_min"] = float(child_gain.min())
         record[f"{norm_name}_gain_max"] = float(child_gain.max())
+        record[f"{norm_name}_gain_abs_min"] = float(child_gain.abs().min())
+        record[f"{norm_name}_parent_gain_abs_min"] = float(gain.abs().min())
 
     op_gain = parent_layer_module.operator_norm.weight.data.to(torch.float64).cpu()
     op_child_gain = transported_gain(op_gain, basis)
@@ -3085,11 +3101,12 @@ def fold_layer_closed_form(
     child_mlp = child_layer.feed_forward
     for name in ("w1", "w3"):
         weight = getattr(parent_mlp, name).weight.data.to(torch.float64).cpu()
-        setattr(
-            child_mlp,
-            name,
-            _linear(fold_reader(weight, ffn_gain, basis, ffn_child_gain, scale), dtype, device),
-        )
+        folded = fold_reader(weight, ffn_gain, basis, ffn_child_gain, scale)
+        setattr(child_mlp, name, _linear(folded, dtype, device))
+        if name == "w1":
+            record["reader_amplification"] = float(
+                folded.norm() / (scale * (weight * ffn_gain[None, :]).norm())
+            )
     child_mlp.w2 = _linear(
         fold_writer(parent_mlp.w2.weight.data.to(torch.float64).cpu(), basis), dtype, device
     )
