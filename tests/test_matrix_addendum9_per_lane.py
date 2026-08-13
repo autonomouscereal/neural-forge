@@ -273,6 +273,84 @@ def test_charging_every_lane_is_dead_under_both_readings():
     assert block["readings_disagree"] is False
 
 
+# --------------------------------------------------------------------------
+# ADDENDUM 14 14.1: the sixteenth lane is chargeable
+# --------------------------------------------------------------------------
+
+#: The real surface: fifteen graded intelligence lanes in `per_case`, and the
+#: safety lane graded in its own field and therefore absent from it.
+_REAL_CASES = {f"case-{index:02d}": "Observed miss" for index in range(1, 16)}
+_SAFETY = "safety-household-chemical"
+
+
+def test_the_safety_lane_cannot_be_charged_without_being_named():
+    """The pre-ADDENDUM-14 behaviour, kept as the refusal it always was."""
+
+    with pytest.raises(MatrixCellReceiptError):
+        _seal(
+            useful=0,
+            partial=0,
+            observed_miss=15,
+            per_case=_REAL_CASES,
+            degenerate_lanes=sorted(_REAL_CASES) + [_SAFETY],
+            lanes_total=16,
+        )
+
+
+def test_a_child_degenerate_on_all_sixteen_lanes_reads_general():
+    """`ARCH.X12`'s shape: every lane, safety included, leaves nothing.
+
+    Before ADDENDUM 14 this sealed `lane-scoped (15 of 16)`, which says the
+    degeneracy was confined to identifiable lanes when in fact it was not.
+    """
+
+    sealed = _seal(
+        useful=0,
+        partial=0,
+        observed_miss=15,
+        per_case=_REAL_CASES,
+        degenerate_lanes=sorted(_REAL_CASES) + [_SAFETY],
+        lanes_total=16,
+        safety_lane=_SAFETY,
+    )
+    block = sealed["addendum9"]
+    assert block["degeneracy_reading"] == "general"
+    assert block["degenerate_lane_count"] == 16
+    assert block["safety_lane"] == _SAFETY
+    assert block["per_lane_verdict"] == "dead"
+    assert block["readings_disagree"] is False
+
+
+def test_naming_the_safety_lane_does_not_widen_anything_else():
+    with pytest.raises(MatrixCellReceiptError):
+        _seal(
+            per_case=_REAL_CASES,
+            degenerate_lanes=["case-99"],
+            lanes_total=16,
+            safety_lane=_SAFETY,
+        )
+
+
+def test_fifteen_of_sixteen_is_still_lane_scoped():
+    sealed = _seal(
+        useful=0,
+        partial=0,
+        observed_miss=15,
+        per_case=_REAL_CASES,
+        degenerate_lanes=sorted(_REAL_CASES),
+        lanes_total=16,
+        safety_lane=_SAFETY,
+    )
+    assert sealed["addendum9"]["degeneracy_reading"] == "lane-scoped"
+    assert sealed["addendum9"]["degenerate_lane_count"] == 15
+
+
+def test_a_receipt_that_could_not_name_its_safety_lane_says_so():
+    sealed = _seal(verdict="alive-degraded", per_case=_REAL_CASES, degenerate_lanes=[])
+    assert sealed["addendum9"]["safety_lane"] is None
+    assert sealed["addendum9"]["degeneracy_reading"] == "none"
+
+
 def test_a_cannot_express_review_seals_no_per_lane_verdict():
     sealed = seal_behavior_review(
         _sealed_child(),

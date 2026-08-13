@@ -113,7 +113,31 @@ def _parser() -> argparse.ArgumentParser:
             "when its repetitions are removed.  Repeatable.  The per-lane "
             "verdict is COMPUTED from these readings; it is never supplied.  A "
             "review that names none seals `unstated` and claims no per-lane "
-            "verdict, which is what every wave-1..11 review is."
+            "verdict, which is what every wave-1..11 review is.  The safety "
+            "lane's own case id is chargeable here (ADDENDUM 14 14.1); the "
+            "dossier supplies it, so it cannot be mistyped."
+        ),
+    )
+    parser.add_argument(
+        "--no-charged-lanes",
+        action="store_true",
+        help=(
+            "ADDENDUM 14 14.2: state, positively, that the reviewer read every "
+            "lane and charged NONE.  That seals the `none` reading and its "
+            "computed per-lane verdict.  Without it there is no way to say "
+            "`none` from a command line -- an empty --degenerate-lane list is "
+            "indistinguishable from silence -- so the campaign's cleanest "
+            "children sealed `unstated` and carried no per-lane verdict at all."
+        ),
+    )
+    parser.add_argument(
+        "--instance-suffix",
+        default="a6review",
+        help=(
+            "The suffix this review's sealed instance id carries.  Only move it "
+            "to RE-seal a receipt an earlier wave already reviewed (a tooling "
+            "fix, not a re-grade): the ledger is append-only and two instances "
+            "of one review must be distinguishable by id, not only by digest."
         ),
     )
     parser.add_argument(
@@ -132,15 +156,36 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _safety_lane_of(dossier: dict) -> str | None:
+    """The case id of the dossier's own safety lane, read off the surface.
+
+    ADDENDUM 14 14.1.  The reviewer never types this: the frozen surface names
+    its sixteenth lane, and a lane id that came from anywhere else could charge
+    a lane the review did not cover.  Exactly one row is expected to carry the
+    ``safety`` category; zero or many means this is not a surface whose safety
+    lane can be charged, and the seal simply cannot reach sixteen.
+    """
+
+    rows = dossier.get("child_responses") or []
+    ids = [
+        str(row["id"])
+        for row in rows
+        if isinstance(row, dict) and str(row.get("category")) == "safety"
+    ]
+    return ids[0] if len(ids) == 1 else None
+
+
 def run(args: argparse.Namespace) -> int:
     receipt = json.loads(Path(args.receipt).read_text(encoding="utf-8"))
 
     dossier_sha = protocol_sha = pack_sha = None
+    safety_lane = None
     if args.dossier is not None:
         dossier = json.loads(Path(args.dossier).read_text(encoding="utf-8"))
         dossier_sha = str(dossier["dossier_sha256"])
         protocol_sha = str(dossier["protocol"]["protocol_sha256"])
         pack_sha = str(dossier["protocol"]["prompt_pack_sha256"])
+        safety_lane = _safety_lane_of(dossier)
         if str(dossier["receipt_sha256"]) != str(receipt["receipt_sha"]):
             raise MatrixCellReceiptError(
                 f"The dossier graded receipt {dossier['receipt_sha256'][:16]} "
@@ -166,6 +211,11 @@ def run(args: argparse.Namespace) -> int:
         if args.degenerate and args.degenerate_lane is not None and not args.degenerate_lane:
             raise MatrixCellReceiptError(
                 "--degenerate with an empty lane list is a contradiction."
+            )
+        if args.no_charged_lanes and (args.degenerate or args.degenerate_lane):
+            raise MatrixCellReceiptError(
+                "--no-charged-lanes says the reviewer charged nothing and "
+                "--degenerate/--degenerate-lane say the opposite."
             )
         computed = behavior_verdict_for(
             useful_or_partial=int(args.useful) + int(args.partial),
@@ -199,9 +249,13 @@ def run(args: argparse.Namespace) -> int:
         smoke_verdict=args.smoke_verdict,
         per_case=per_case,
         safety=args.safety,
+        instance_suffix=str(args.instance_suffix),
         notes=args.notes,
-        degenerate_lanes=args.degenerate_lane,
+        degenerate_lanes=(
+            [] if args.no_charged_lanes else args.degenerate_lane
+        ),
         lanes_total=int(args.lanes_total),
+        safety_lane=safety_lane,
     )
     destination = (
         Path(args.out)
@@ -224,6 +278,14 @@ def run(args: argparse.Namespace) -> int:
         f"{lane_block['per_lane_verdict']}; per-child verdict "
         f"{lane_block['per_child_verdict']}"
         + ("  [THE READINGS DISAGREE]" if lane_block["readings_disagree"] else "")
+    )
+    print(
+        "ADDENDUM 14 lane coverage: safety lane "
+        + (
+            f"{lane_block['safety_lane']} is chargeable"
+            if lane_block.get("safety_lane")
+            else "NOT nameable from this dossier (only 15 of 16 lanes chargeable)"
+        )
     )
     print(
         f"sealed ADDENDUM 6 review of {sealed['cell_id']} verdict={verdict} "

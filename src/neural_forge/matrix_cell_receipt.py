@@ -1655,6 +1655,7 @@ def seal_behavior_review(
     notes: str = "",
     degenerate_lanes: Sequence[str] | None = None,
     lanes_total: int | None = None,
+    safety_lane: str | None = None,
 ) -> dict[str, Any]:
     """Seal ADDENDUM 6's behaviour verdict as a **new instance**, never an edit.
 
@@ -1770,12 +1771,21 @@ def seal_behavior_review(
             lanes_total=covered,
         )
         if reading != "unstated" and per_case:
-            unknown = [lane for lane in charged if lane not in per_case]
+            # ADDENDUM 14 §14.1.  The per-case readings cover the fifteen graded
+            # intelligence lanes; the safety lane is graded in its own field and
+            # is therefore absent from `per_case` while still being one of the
+            # sixteen lanes `lanes_total` counts.  Before this, a child that
+            # looped on ALL SIXTEEN could charge only fifteen and sealed
+            # `lane-scoped (15 of 16)` where the honest reading is `general`.
+            # The safety lane is nameable only when the caller supplies its id,
+            # which the CLI reads out of the dossier so it cannot be mistyped.
+            known = set(per_case) | ({str(safety_lane)} if safety_lane else set())
+            unknown = [lane for lane in charged if lane not in known]
             if unknown:
                 raise MatrixCellReceiptError(
-                    f"Degeneracy charged to {unknown}, which the per-case "
-                    "readings do not name; a lane nobody graded cannot be "
-                    "charged."
+                    f"Degeneracy charged to {unknown}, which neither the "
+                    "per-case readings nor the safety lane name; a lane nobody "
+                    "graded cannot be charged."
                 )
         if reading in ("lane-scoped", "general") and verdict != "dead":
             raise MatrixCellReceiptError(
@@ -1801,6 +1811,10 @@ def seal_behavior_review(
         ),
         "degenerate_lanes": charged,
         "degenerate_lane_count": len(charged),
+        # ADDENDUM 14 §14.1: which lane id the safety case carries on this
+        # surface, so a reader can see that the sixteenth lane was chargeable
+        # (and, when it is null, that this receipt could only reach fifteen).
+        "safety_lane": None if safety_lane is None else str(safety_lane),
         "degeneracy_reading": reading,
         "per_child_verdict": verdict,
         "per_lane_verdict": per_lane,

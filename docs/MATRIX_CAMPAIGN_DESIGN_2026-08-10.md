@@ -1684,3 +1684,119 @@ more entry in `architecture.axes[]`, sealed by the same script, graded by the
 same untouched `seal_matrix_behavior_review.py`, and read by the same frozen
 15-prompt protocol. The only repository change ADDENDUM 12's machinery needs for
 this wave is one more accepted build-receipt schema string.
+
+## ADDENDUM 14 — 2026-08-12 (wave 17, before any child): the lane bookkeeping, and the joint head-merge solve
+
+Wave 16 replaced the assembly ladder with a behavioural single-block excision
+census and found the campaign had been deleting the wrong block for two waves:
+block 13 alone reads **13/15** where block 5 alone reads **6/15** at the identical
+0.947479x. It also closed with two limits that are not arguments about the model
+— they are places where the sealer could not express a reading a reviewer had
+already taken — and with two unbuilt things: six of the fourteen single-block
+excisions, and the *joint* solve for a merged head pair.
+
+### 14.1 The degeneracy clause can charge the safety lane
+
+Charged lanes are validated against the per-case readings, which cover the
+**fifteen graded intelligence lanes**; the safety lane is graded in its own
+field and is absent from them. A child degenerate on all sixteen lanes could
+therefore charge only fifteen and sealed `lane-scoped (15 of 16)` — the reading
+whose whole meaning is *the degeneracy is confined to identifiable lanes and the
+others stand* — when the honest reading is `general`. `ARCH.R2`, `R3`, `R4`,
+`R5`, `D3` and `X12` are all in that position.
+
+The safety lane is now chargeable. Its case id is **read off the dossier** by
+`seal_matrix_behavior_review.py` (the one row whose category is `safety`), never
+typed, for the same reason the dossier supplies the protocol and pack digests: a
+lane id from anywhere else could charge a lane the review did not cover. A
+surface without exactly one safety row names none, and such a receipt seals
+`safety_lane: null` so a reader can see it could only reach fifteen.
+
+### 14.2 A review that charges no lane can say so
+
+`--degenerate-lane` is repeatable and defaults to *not supplied*, so a review
+that read every lane and charged **none** was indistinguishable from a review
+that never looked, and sealed `unstated` with no per-lane verdict at all. That
+made the campaign's four cleanest children — `ARCH.X07`, `X09`, `X11`, `X03` —
+the only children carrying no per-lane reading. `--no-charged-lanes` states it
+positively and seals the `none` reading with its computed verdict.
+
+Neither repair moves a band, a threshold or a verdict function. `none` and
+`lane-scoped` produce the **same** per-lane verdict from the same arithmetic;
+what 14.1 changes is that a child degenerate everywhere can no longer *borrow*
+`lane-scoped`'s meaning, and what 14.2 changes is that a clean child can state
+its own. Both directions of the repair are stricter or neutral, never looser,
+and the wave-16 receipts they affect are **re-sealed as new instances** under
+`--instance-suffix a6review-w17` rather than edited: the ledger is append-only,
+the wave-16 rows stand, and the re-seal names the receipt it was read from.
+
+### 14.3 The joint two-sided solve for a merged head pair (T7)
+
+Wave 16's merge is *average-in-gauge*: the two heads' `q`/`k` rows are averaged
+in the exact per-plane sign gauge with evidence-energy weights, `v` is contracted
+by an evidence-whitened low-rank projection, and only `out_proj` is re-solved
+against the installed context (`ARCH.KV6`, 16 → 12 query heads, **5/15** at
+0.979457x, per-lane impaired). Averaging weights is not a solve: it minimises
+nothing that the model computes.
+
+What the model computes, per plane, is a **relation**. For plane `p` the score
+contribution of a head is `q_p(i) · conj(k_p(j)) · e^{iθ_p(i−j)}`, an outer
+product over the evidence rows whose frequency `θ_p` is shared by every head, so
+the merged head's plane-`p` job is one rank-one matrix that must serve both
+parents at once:
+
+```
+min  Σ_j Σ_{P∈{a,b}} ω_P ‖ û^j ŵ^H − u^{P,j} (w^P)^H ‖²_F
+```
+
+over the merged query rows `û^j` (one per query slot in the GQA group) and the
+**shared** merged key rows `ŵ`. This is two-sided by construction — the query
+side and the key side are solved together, not averaged separately — and it is
+evidence-weighted twice over: the vectors *are* the evidence activations and the
+`ω_P` are the parents' key energies. Its solution is closed form and small: `ŵ`
+lies in `span{w^a, w^b}`, so the problem reduces to one 2×2 Hermitian
+generalised eigenproblem per plane, and `û^j` follows in one step. The exact
+per-plane sign gauge of ADDENDUM 13 is **not** replaced — it is the initialiser
+and the prior, and the joint solve is free to do better than it inside the same
+admissible frame because a per-plane complex scalar of unit modulus is exactly
+what the rank-one factorisation's own scale freedom absorbs.
+
+The recovered weights are then a **prior-anchored ridge onto the target rows**
+under THE LAW's `update_scale ≤ 1` trust region, with wave 16's average-in-gauge
+weights as the prior, iterated twice for the per-row radius the shared RMSNorm
+divides out (only the direction of a post-norm row is achievable; its length is
+not).
+
+`v` and `out_proj` are solved as the linear pair they are. With the merged
+`q`/`k` installed the attention probabilities are fixed, and the block output is
+then **linear** in both: `out(i) = Σ_h Wo_h · Wv_g · z_h(i)` with
+`z_h = (A_h X)(i)`. That is the two-sided Stein form T7 registered
+(`(AᵀA)S(BBᵀ) + λS = AᵀEBᵀ`) with one Kronecker term per query head in the
+group; at group size 1 it is the primitive itself and the builder checks the
+conjugate-gradient solution against the two-`eigh` closed form, and at group size
+2 the same normal equations are solved by CG on the same operator. The
+alternation is `Wv | Wo` then `Wo | Wv`, both prior-anchored, both law-abiding.
+
+`A_h` is recomputed rather than hooked, and **the recomputation is gated**: the
+context it predicts is compared against the context the installed module
+actually produced, and the build refuses the joint value path (falling back to
+wave 16's, and saying so in the receipt) if the two disagree by more than the
+bf16 floor the harness runs at.
+
+**Identity gate at trivial grouping.** With `--kv-groups` equal to the parent's
+own KV head count nothing merges, and the builder asserts `q`/`k`/`v` come back
+**bit-identical** while reporting what the `out_proj` re-solve does against a
+target that is already exact — the numerical floor of the whole path, measured
+rather than assumed. The rank-one solver carries a second gate: fed a pair of
+identical heads it must return that head, and the residual is an algebra error if
+it is not zero.
+
+### 14.4 What this addendum does not do
+
+No new schema version, no new id form, no new ledger column, no new gate on a
+child. The joint solve is a *solver path* inside the existing
+`num_attention_heads` axis, sealed by the same script under one more accepted
+build-receipt schema string, graded by the same untouched frozen 15-prompt
+protocol, and reported beside the average-in-gauge baseline it must beat at the
+only level that decides anything. Censuses — including every number the joint
+solve prints about its own objective — order attempts and gate nothing.
