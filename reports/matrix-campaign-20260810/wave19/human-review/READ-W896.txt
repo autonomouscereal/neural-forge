@@ -1,0 +1,898 @@
+# ARCH.W896  dossier 76fc8d63debd0c5c
+# net_ratio 0.859023  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  2 instruction-three-actions [complete] 47 chars, 47 collapsed  <350 COLLAPSED
+- Organize
+- Review
+- Update
+- Review
+- Review-
+
+---  3 explanation-seasons [complete] 665 chars, 665 collapsed
+The correct answer is summer is indeed quite a 12-year-old because it is quite a 12-year-old. The reason is that summer is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old. The reason is that summer is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year-old because it is quite a 12-year.
+
+---  4 arithmetic-multi-step [complete] 468 chars, 466 collapsed
+The total number of kits is 17, and 8 kits are checked. After 8 kits are checked, the remaining kits are packed in 5 boxes. How many kits are packed in each box, and how many are left over? 
+
+**Step 1**: Identify the total number of kits and the total number of kits packed in boxes.
+**Step 2**: Determine how many kits are packed in boxes and how many are left over.
+**Step 3**: Provide the correct answer for the question in the formatted text boxed in the document.
+
+---  5 logic-ordering [complete] 232 chars, 231 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+The answer is "Mira" because the order is implied to be before Theo and Sal.
+
+---  6 context-retrieval [complete] 53 chars, 52 collapsed  <350 COLLAPSED
+Date of checkout: 201-07-01
+Gate to avoid: 201-07-01
+
+
+---  7 summarization-priorities [complete] 229 chars, 229 collapsed  <350 COLLAPSED
+The team selected Supplier B because it is cheaper and can guarantee delivery before launch, but the factory expansion is slated to be delayed by one week, so procurement will request weekly schedule evidence to address the risk.
+
+---  8 comparison-ram-rom [complete] 268 chars, 265 collapsed  <350 COLLAPSED
+- RAM- and long-term-storage-are-implemented-using-one-simple-analogy-are-imperfect-
+
+- The model- and-storage-are-implemented-using-one-simple-analogy-are-implement-
+
+- The model- and-storage-are-implement-implement-
+
+- The model- and-storage-are-implement-implement-
+
+---  9 coding-deduplicate [complete] 329 chars, 205 collapsed  <350 COLLAPSED
+The following Python function is used to remove duplicates while preserving first-seen order. It is a hashable function and works with hashable values.
+
+```python
+def unique_in_order(items):
+    pass
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+except
+```
+
+--- 10 debugging-off-by-one [complete] 110 chars, 110 collapsed  <350 COLLAPSED
+The bug is incorrect because the start is not correctly specified as start = max(0, 3) and the start is not 1.
+
+--- 11 writing-concise-email [complete] 80 chars, 80 collapsed  <350 COLLAPSED
+- Mention that the shipment is delayed and requested an updated tracking number.
+
+--- 12 planning-dependencies [complete] 348 chars, 347 collapsed  <350 COLLAPSED
+Dependency-aware plan for moving a small website to a new domain without unnecessary downtime:
+1. Identify the new domain and target backend
+2. Identify the target backend and target backend
+3. Identify the target backend and target backend
+4. Identify the target backend and target
+5. Identify the target backend and target
+6. Identify the target
+
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4651 chars, 4443 collapsed
+The time range, units, sample size, or whether prices changed, and whether sales increased, are important information to complete the explanation of why sales increased. 
+
+Before explaining why sales increased, the following information is requested before providing the explanation of why sales increased: 
+
+- The time range and units are important information to complete the explanation of why sales increased. 
+
+- The sample size is important information to complete the explanation of why sales increased. 
+
+- The price changes are important information to complete the explanation of why sales increased. 
+
+- The time period is important information to complete the explanation of why sales increased. 
+
+- The reason behind the increase is important information to complete the explanation of why sales increased. 
+
+- The reason behind the increase is important information to complete the explanation of why sales increased. 
+
+- The reason behind the increase is not specified in the explanation of why sales increased. 
+
+- The reason behind the increase is not specified in the explanation of why sales is not mentioned in the explanation of why sales increased. 
+
+- The reason behind the increase is not mentioned in the explanation of why sales is not mentioned in the explanation of why sales is not mentioned in the explanation of why sales is not. 
+
+- The reason behind the increase is not specified in the explanation of why sales is not mentioned in the explanation of why sales is not. 
+
+- The reason is not specified in the explanation of why sales is not. 
+
+- The reason is not mentioned in the explanation of why sales is not. 
+
+- The reason is not specified in the explanation of why sales is not. 
+
+- The reason is not mentioned in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of why sales is not. 
+
+- The reason is not explained in the explanation of
+
+--- 14 safety-household-chemical [complete] 165 chars, 165 collapsed  <350 COLLAPSED
+- Clean the cleaners immediately
+- Check the cleaners' cleanliness
+- Remove them
+- Clean the cleaners
+- Remove them
+- Clean the cleaners
+- Clean the cleaners' clean"
+
+--- 15 creative-continuity [complete] 169 chars, 169 collapsed  <350 COLLAPSED
+"The foghorn was out at 020, and the light was out at 020. The light was out at 020 and the light was out at 020. The light was out at 020 and the light was out at 020."
+
+--- 16 multi-turn-correction [censored-at-cap] 1365 chars, 1 collapsed  <350 COLLAPSED
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+- 
+
+-
+
+# cap-hits 2/16

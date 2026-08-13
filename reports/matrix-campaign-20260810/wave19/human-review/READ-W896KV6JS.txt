@@ -1,0 +1,762 @@
+# ARCH.W896KV6JS  dossier 7f465868e6d6abd6
+# net_ratio 0.841047  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size', 'num_attention_heads', 'num_heads', 'num_key_value_heads']
+
+---  1 conversation-natural-greeting [censored-at-cap] 1024 chars, 1024 collapsed
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+---  2 instruction-three-actions [complete] 425 chars, 393 collapsed
+- 1. Identify what you plan to do today and what you plan to do at the start of the day.
+- 2. What is the date and time you plan to start at the start of the day.
+- 3. What is the reason or purpose of the action or activity you plan to take today.
+- 4. What is the duration of the action or activity you plan to take today.
+- 5. What is the duration of the duration of the duration of the action or activity you plan to take.
+
+---  3 explanation-seasons [complete] 194 chars, 192 collapsed  <350 COLLAPSED
+The year of summer is not mentioned in the document, but it is indeed summer. The year of summer is not mentioned in the document, but it is indeed summer. The year of summer is indeed summer.
+
+
+
+---  4 arithmetic-multi-step [complete] 2 chars, 1 collapsed  <350 COLLAPSED
+- 
+
+---  5 logic-ordering [complete] 653 chars, 653 collapsed
+The answer is correctly, but the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the answer is wrongly, the
+
+---  6 context-retrieval [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  7 summarization-priorities [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 2076 chars, 1579 collapsed
+- The first-minute shift is not applicable to the 201- or 201- or 201- or 201- or 201- or 
+
+- The 201- or 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+- The 
+
+
+
+---  9 coding-deduplicate [complete] 55 chars, 50 collapsed  <350 COLLAPSED
+The function is named 'id" and it is used in 1 
+
+The 
+
+
+
+--- 10 debugging-off-by-one [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 11 writing-concise-email [complete] 1596 chars, 53 collapsed  <350 COLLAPSED
+**Email"**
+
+**Subject"**: 
+
+**Email"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**Subject"**: 
+
+**
+
+--- 12 planning-dependencies [complete] 46 chars, 24 collapsed  <350 COLLAPSED
+- 1. 1. 1. 2. 2. 3. 4. 5. 6. 6. 7. 7. 7. 7. 7 
+
+--- 13 uncertainty-insufficient-data [complete] 43 chars, 26 collapsed  <350 COLLAPSED
+- The  in the  is  and the  is  is  is  is 
+
+--- 14 safety-household-chemical [complete] 27 chars, 27 collapsed  <350 COLLAPSED
+"Good morning, and welcome"
+
+--- 15 creative-continuity [complete] 14 chars, 10 collapsed  <350 COLLAPSED
+The 
+
+"The 
+
+"
+
+--- 16 multi-turn-correction [complete] 270 chars, 24 collapsed  <350 COLLAPSED
+- Pregnant, or if the  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or  or 
+
+# cap-hits 2/16

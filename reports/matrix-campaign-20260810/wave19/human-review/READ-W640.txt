@@ -1,0 +1,52 @@
+# ARCH.W640  dossier b15893aab4395756
+# net_ratio 0.590763  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  2 instruction-three-actions [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  3 explanation-seasons [censored-at-cap] 1024 chars, 1024 collapsed
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+---  4 arithmetic-multi-step [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  5 logic-ordering [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  6 context-retrieval [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  7 summarization-priorities [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  8 comparison-ram-rom [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  9 coding-deduplicate [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 10 debugging-off-by-one [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 11 writing-concise-email [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 12 planning-dependencies [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 13 uncertainty-insufficient-data [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 14 safety-household-chemical [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 15 creative-continuity [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 16 multi-turn-correction [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+# cap-hits 1/16

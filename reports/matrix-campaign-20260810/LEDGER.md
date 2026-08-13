@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-13T06:06:36+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-13T09:40:31+00:00 from `/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-1c0c7e3a/reports/matrix-campaign-20260810/ledger.jsonl`.
 
-**286 cells sealed** (606 ledger rows including re-runs); newest seal 2026-08-13T06:02:52.353+00:00.
+**301 cells sealed** (636 ledger rows including re-runs); newest seal 2026-08-13T09:30:38.052+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 255 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 270 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -19,7 +19,7 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `alive-parent-band` | 40 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
 | `alive-degraded` | 23 | >= the A9 band of 8/15, outside the parent's +/-2 |
 | `impaired` | 13 | < 8/15 but still coherent, on-task language |
-| `dead` | 110 | incoherent, emit-zero floor failed, or degenerate output |
+| `dead` | 125 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
@@ -91,6 +91,21 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `ARCH.T010713KV6JQC` | GLOBAL | NA | 0.8219 | -- | **dead** | 0/15 | 12 | coherent | 0.0488 |
 | `ARCH.T010713W1536C` | GLOBAL | NA | 0.6918 | -- | **dead** | 0/15 | 12 | coherent | 0.0215 |
 | `ARCH.T010713W1280C` | GLOBAL | NA | 0.6541 | -- | **dead** | 0/15 | 12 | coherent | 0.0137 |
+| `ARCH.W896` | GLOBAL | NA | 0.8590 | -- | **dead** | 4/15 | 12 | coherent | 0.0215 |
+| `ARCH.W768` | GLOBAL | NA | 0.7226 | -- | **dead** | 3/15 | 12 | coherent | 0.0098 |
+| `ARCH.W640` | GLOBAL | NA | 0.5908 | -- | **dead** | 0/15 | 12 | coherent | 0.0098 |
+| `ARCH.W512` | GLOBAL | NA | 0.4635 | -- | **dead** | 0/15 | 12 | coherent | 0.0039 |
+| `ARCH.W896X13` | GLOBAL | NA | 0.8151 | -- | **dead** | 1/15 | 12 | coherent | 0.0273 |
+| `ARCH.W896KV6JS` | GLOBAL | NA | 0.8410 | -- | **dead** | 2/15 | 12 | coherent | 0.0156 |
+| `ARCH.Q01050913` | GLOBAL | NA | 0.7899 | -- | **dead** | 0/15 | 12 | coherent | 0.0312 |
+| `ARCH.W768AW25` | GLOBAL | NA | 0.7226 | -- | **dead** | 0/15 | 12 | coherent | 0.0137 |
+| `ARCH.W768AW100` | GLOBAL | NA | 0.7226 | -- | **dead** | 0/15 | 12 | coherent | 0.0156 |
+| `ARCH.W768EV` | GLOBAL | NA | 0.7226 | -- | **dead** | 1/15 | 12 | coherent | 0.0117 |
+| `ARCH.W768RG` | GLOBAL | NA | 0.7226 | -- | **dead** | 0/15 | 12 | coherent | 0.0000 |
+| `ARCH.W768LS` | GLOBAL | NA | 0.7226 | -- | **dead** | 3/15 | 12 | coherent | 0.0117 |
+| `ARCH.W768ST` | GLOBAL | NA | 0.7226 | -- | **dead** | 2/15 | 12 | coherent | 0.0137 |
+| `ARCH.W704` | GLOBAL | NA | 0.6561 | -- | **dead** | 0/15 | 12 | coherent | 0.0195 |
+| `ARCH.W704AW25` | GLOBAL | NA | 0.6561 | -- | **dead** | 0/15 | 12 | coherent | 0.0059 |
 | `C03.T8.S4.L00` | L00 | S4 | 0.2500 | 0.250 ok | **dead** | 0/15 | 12 | pending | 0.0078 |
 | `C05.T1.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
 | `C05.T2.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
@@ -350,10 +365,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 | first divergent metric | cells | share |
 |---|---:|---:|
 | `infra` | 13 | 5% |
-| `solve-conditioning` | 15 | 6% |
-| `local-solve` | 116 | 43% |
+| `solve-conditioning` | 16 | 6% |
+| `local-solve` | 116 | 41% |
 | `macrocell-band` | 1 | 0% |
-| `composition` | 111 | 41% |
+| `composition` | 125 | 44% |
 | `free-run` | 12 | 4% |
 
 ## 4. Band-versus-behavior agreement
@@ -362,10 +377,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 179 |
+| in band (<= 0.4) | 18 | 192 |
 | out of band | 0 | 35 |
 
-Agreement 53/232 (23%).
+Agreement 53/245 (22%).
 
 ## 4b. Storage honesty
 
@@ -440,6 +455,21 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `ARCH.T010713KV6JQC` | architecture | NA | 188783360 | 229693184 | 0.8219 |
 | `ARCH.T010713W1536C` | architecture | NA | 158898944 | 229693184 | 0.6918 |
 | `ARCH.T010713W1280C` | architecture | NA | 150248192 | 229693184 | 0.6541 |
+| `ARCH.W896` | architecture | NA | 197311616 | 229693184 | 0.8590 |
+| `ARCH.W768` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W640` | architecture | NA | 135694208 | 229693184 | 0.5908 |
+| `ARCH.W512` | architecture | NA | 106458368 | 229693184 | 0.4635 |
+| `ARCH.W896X13` | architecture | NA | 187214592 | 229693184 | 0.8151 |
+| `ARCH.W896KV6JS` | architecture | NA | 193182848 | 229693184 | 0.8410 |
+| `ARCH.Q01050913` | architecture | NA | 181438208 | 229693184 | 0.7899 |
+| `ARCH.W768AW25` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W768AW100` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W768EV` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W768RG` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W768LS` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W768ST` | architecture | NA | 165978624 | 229693184 | 0.7226 |
+| `ARCH.W704` | architecture | NA | 150705344 | 229693184 | 0.6561 |
+| `ARCH.W704AW25` | architecture | NA | 150705344 | 229693184 | 0.6561 |
 | `C03.T5.M16.L00` | T5 | M16 | 2949632 | 3145728 | 0.9377 |
 | `C03.T8.S4.L00` | T8 | S4 | 786432 | 3145728 | 0.2500 |
 | `C04.T1.M16.L00` | T1 | M16 | 2048 | 3072 | 0.6667 |
@@ -624,7 +654,7 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.MXQ5` | composition | NA | 163144199 | 229693184 | 0.7103 |
 | `COMP.MA.MXQ7` | composition | NA | 115911947 | 229693184 | 0.5046 |
 
-201 of 250 sealed cells with a storage reading actually contract.
+216 of 265 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
 
@@ -1379,6 +1409,171 @@ standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / w
 | `mx18-t01` | sm86 | fail | local-solve | 0.9138 | 0.4206 | 1.0113 | 0.014 | 0.006 | 0.654 | -- | 57.2 | `61d40b14afce` |
 
 > ADDENDUM 6 behaviour review by claude-opus5-mx18 of receipt 61d40b14afceee0b: verdict dead, 0/15 useful-or-partial (parent 12/15). the widest triple at intermediate_size 1280, 0.654126x: five lanes echo the prompt verbatim, the seasons lane loops Earths to the cap, and no lane carries an answer
+
+### `ARCH.W896` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-w89` | sm86 | fail | composition | 0.9820 | 0.1970 | 0.7801 | 0.021 | 0.004 | 0.859 | -- | 37.4 | `b5f2cd8964e9` |
+| `mx19-w89` | sm86 | fail | composition | 0.9820 | 0.1970 | 0.7801 | 0.021 | 0.004 | 0.859 | -- | 37.4 | `005eacdbdcfe` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt 005eacdbdcfeac4d: verdict dead, 4/15 useful-or-partial (parent 12/15). hidden_size 1024 to 896 against the reader-PCA basis: the summarisation lane returns the decision and the risk correctly, three more lanes carry structure, and nine of sixteen lanes loop
+
+### `ARCH.W768` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-w76` | sm86 | fail | composition | 0.9652 | 0.2754 | 0.8997 | 0.010 | 0.002 | 0.723 | -- | 36.2 | `e3c737106d5d` |
+| `mx19-w76` | sm86 | fail | composition | 0.9652 | 0.2754 | 0.8997 | 0.010 | 0.002 | 0.723 | -- | 36.2 | `4f6c5b654fa6` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt 4f6c5b654fa65db6: verdict dead, 3/15 useful-or-partial (parent 12/15). hidden_size 768, 0.722610x: the summarisation lane names the decision, the risk and the mitigation with the supplier's name corrupted, and eleven of sixteen lanes are loops or empty
+
+### `ARCH.W640` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-w64` | sm86 | fail | composition | 0.9523 | 0.3183 | 0.9597 | 0.010 | 0.000 | 0.591 | -- | 33.7 | `66d769a8697f` |
+| `mx19-w64` | sm86 | fail | composition | 0.9523 | 0.3183 | 0.9597 | 0.010 | 0.000 | 0.591 | -- | 33.7 | `3cbfd0a9fe0b` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt 3cbfd0a9fe0b2a32: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 640, 0.590763x: fifteen of sixteen lanes return the empty string and the sixteenth fills the cap with quotation marks
+
+### `ARCH.W512` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-w51` | sm86 | fail | composition | 0.9505 | 0.3229 | 0.9929 | 0.004 | 0.002 | 0.463 | -- | 41.7 | `a843bf2a607f` |
+| `mx19-w51` | sm86 | fail | composition | 0.9505 | 0.3229 | 0.9929 | 0.004 | 0.002 | 0.463 | -- | 41.7 | `8c414197596c` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt 8c414197596ccac3: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 512, 0.463481x -- the first child in the campaign under half the parent: eight lanes return the empty string and eight fill the cap with quotation marks
+
+### `ARCH.W896X13` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-w89` | sm86 | fail | composition | 0.9820 | 0.1970 | 0.9342 | 0.027 | 0.010 | 0.815 | -- | 33.8 | `b87975008989` |
+| `mx19-w89` | sm86 | fail | composition | 0.9820 | 0.1970 | 0.9342 | 0.027 | 0.010 | 0.815 | -- | 33.8 | `40bc15a2c65f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt 40bc15a2c65fd043: verdict dead, 1/15 useful-or-partial (parent 12/15). hidden_size 896 composed with the excision of block 13, the census's best single: the summarisation lane is clean and every other lane loops, echoes the prompt or returns nothing
+
+### `ARCH.W896KV6JS` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-w89` | sm86 | fail | solve-conditioning | 0.9221 | 0.3881 | 0.8734 | 0.016 | 0.006 | 0.841 | -- | 37.3 | `89131c1d1472` |
+| `mx19-w89` | sm86 | fail | solve-conditioning | 0.9221 | 0.3881 | 0.8734 | 0.016 | 0.006 | 0.841 | -- | 37.3 | `b1807df6d40f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt b1807df6d40f8d47: verdict dead, 2/15 useful-or-partial (parent 12/15). hidden_size 896 composed with the 16 to 12 head merge and its split-chosen lambda: the summarisation lane is the same clean two sentences the width child returns, and thirteen lanes carry nothing
+
+### `ARCH.Q01050913` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 19
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx19-q01` | sm86 | fail | composition | -- | -- | 1.1258 | 0.031 | 0.000 | 0.790 | -- | 37.4 | `1c53cf9cf4a5` |
+| `mx19-q01` | sm86 | fail | composition | -- | -- | 1.1258 | 0.031 | 0.000 | 0.790 | -- | 37.4 | `2bd6c2d4aa05` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx19 of receipt 2bd6c2d4aa055d16: verdict dead, 0/15 useful-or-partial (parent 12/15). blocks 1, 5, 9 and 13 excised -- the max-spread quad the wave-18 rule gated and this wave built anyway: no lane carries an answer, the summarisation lane echoes the prompt and degenerates, and seven lanes fill the cap
+
+### `ARCH.W768AW25` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w76` | sm86 | fail | composition | 0.9649 | 0.2757 | 0.8945 | 0.014 | 0.002 | 0.723 | -- | 41.8 | `9873a1a01182` |
+| `mx20-w76` | sm86 | fail | composition | 0.9649 | 0.2757 | 0.8945 | 0.014 | 0.002 | 0.723 | -- | 41.8 | `f8bd332f9e21` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt f8bd332f9e21aaab: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 768 against the ATTRIBUTION-WEIGHTED basis at beta 0.25 -- same parameter count and same retained read energy as the sealed reader-PCA child (0.9178 against 0.9193), seventeen of 768 directions exchanged: the summarisation lane the plain basis holds is gone, the logic lane restates its three premises without ordering them, and no lane carries an answer
+
+### `ARCH.W768AW100` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w76` | sm86 | fail | composition | 0.9656 | 0.2748 | 0.9336 | 0.016 | 0.006 | 0.723 | -- | 46.7 | `b968c6cffb25` |
+| `mx20-w76` | sm86 | fail | composition | 0.9656 | 0.2748 | 0.9336 | 0.016 | 0.006 | 0.723 | -- | 46.7 | `55779939660f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt 55779939660f33d0: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 768 against the attribution-weighted basis at beta 1.0 -- the case-implicated rows alone, 0.8967 retained read energy, below the floor wave 19 measured: ninety-seven of 768 directions differ from the plain basis and every lane is a loop or empty
+
+### `ARCH.W768EV` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w76` | sm86 | fail | composition | 0.9647 | 0.2750 | 0.8210 | 0.012 | 0.002 | 0.723 | -- | 44.3 | `be5a8a5bebd5` |
+| `mx20-w76` | sm86 | fail | composition | 0.9647 | 0.2750 | 0.8210 | 0.012 | 0.002 | 0.723 | -- | 44.3 | `0c866b55844b` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt 0c866b55844bfd63: verdict dead, 1/15 useful-or-partial (parent 12/15). hidden_size 768 against wave 19's sealed EVIDENCE-PCA basis, the alternative that wave never built: it retains MORE raw energy than reader-PCA (0.9636 against 0.9522) and LESS read energy (0.9122 against 0.9193), and all sixteen lanes fill the cap.  The planning lane names backups, DNS, TLS and rollback in a numbered list before it degenerates, which is the wave's only case held on a non-reader basis
+
+### `ARCH.W768RG` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w76` | sm86 | fail | composition | 0.9532 | 0.2718 | 2.2192 | 0.000 | 0.000 | 0.723 | -- | 43.1 | `2aa36c670d9c` |
+| `mx20-w76` | sm86 | fail | composition | 0.9532 | 0.2718 | 2.2192 | 0.000 | 0.000 | 0.723 | -- | 43.1 | `1fa2f5a69b4a` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt 1fa2f5a69b4a0330: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 768 against the READER-GENERALIZED basis -- the top generalised eigenvectors of the reader moment against the raw moment, which retain 0.4780 of the read energy and 0.1862 of the raw: every one of the sixteen lanes fills the cap with unrelated multilingual tokens.  The directions with the most reader energy per unit of raw energy are the ones the stream barely carries
+
+### `ARCH.W768LS` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w76` | sm86 | fail | composition | 0.9749 | 0.2349 | 0.8993 | 0.012 | 0.002 | 0.723 | -- | 35.8 | `6551692282d4` |
+| `mx20-w76` | sm86 | fail | composition | 0.9749 | 0.2349 | 0.8993 | 0.012 | 0.002 | 0.723 | -- | 35.8 | `c825586a5f0c` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt c825586a5f0cc8cd: verdict dead, 3/15 useful-or-partial (parent 12/15). hidden_size 768 against wave 19's sealed reader-PCA basis with the WRITERS' lambda chosen on an internal split of the fit rows: the same score as the child it is a control for, 3/15, on a DIFFERENT set of cases -- it recovers context-retrieval, which the attribution artifact names as the width axis's signature zero, and gives up uncertainty-insufficient-data
+
+### `ARCH.W768ST` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w76` | sm86 | fail | composition | -- | -- | 0.9006 | 0.014 | 0.002 | 0.723 | -- | 36.9 | `d45675377e21` |
+| `mx20-w76` | sm86 | fail | composition | -- | -- | 0.9006 | 0.014 | 0.002 | 0.723 | -- | 36.9 | `ce50c41f9900` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt ce50c41f990030cb: verdict dead, 2/15 useful-or-partial (parent 12/15). hidden_size 768 against wave 19's sealed reader-PCA basis with --arm STALE: the closed-form fold installed and nothing re-solved, which prices the conditioned solve on this axis for the first time.  Two cases held against the conditioned child's three
+
+### `ARCH.W704` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w70` | sm86 | fail | composition | 0.9578 | 0.3022 | 0.9315 | 0.020 | 0.002 | 0.656 | -- | 33.6 | `196e537d68ec` |
+| `mx20-w70` | sm86 | fail | composition | 0.9578 | 0.3022 | 0.9315 | 0.020 | 0.002 | 0.656 | -- | 33.6 | `43c9b210e8e2` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt 43c9b210e8e22b93: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 704, 0.656116x -- the bisection rung inside wave 19's 768-to-640 cliff, at 0.8952 retained read energy: no lane carries an answer, and the cliff is now located to a 64-wide interval
+
+### `ARCH.W704AW25` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 20
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx20-w70` | sm86 | fail | composition | 0.9583 | 0.3013 | 0.9304 | 0.006 | 0.000 | 0.656 | -- | 33.3 | `302c9d1c1109` |
+| `mx20-w70` | sm86 | fail | composition | 0.9583 | 0.3013 | 0.9304 | 0.006 | 0.000 | 0.656 | -- | 33.3 | `0a55c509a439` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx20 of receipt 0a55c509a439d312: verdict dead, 0/15 useful-or-partial (parent 12/15). hidden_size 704 against the attribution-weighted basis at beta 0.25: fifteen of sixteen lanes return the empty string and the sixteenth fills the cap with a counting sequence -- deader than the plain basis at the same width, which itself is 0/15
 
 ### `CAL.C01.T5.X4` -- FAIL
 

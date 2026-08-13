@@ -1,0 +1,88 @@
+# ARCH.W768AW25  dossier 9bc9174d4dd054ec
+# net_ratio 0.722610  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  2 instruction-three-actions [censored-at-cap] 1280 chars, 8 collapsed  <350 COLLAPSED
+1.  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "I"  "
+
+---  3 explanation-seasons [censored-at-cap] 1560 chars, 54 collapsed  <350 COLLAPSED
+1. "1" is correct the original date of the 12/12/12 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11
+
+---  4 arithmetic-multi-step [complete] 98 chars, 95 collapsed  <350 COLLAPSED
+1. 17 kits per hour for 6 hours
+2. 8 kits per 5 boxes
+3. 10 total per 5 boxes
+4. 10 total per 5 
+
+
+
+---  5 logic-ordering [complete] 76 chars, 76 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun.
+
+---  6 context-retrieval [censored-at-cap] 1062 chars, 52 collapsed  <350 COLLAPSED
+The following note is to be included as the 7/10  and                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+
+---  7 summarization-priorities [complete] 208 chars, 93 collapsed  <350 COLLAPSED
+The team decided to order three battery suppliers and selected third to order third to order 3 to order 3 to order 3 to order 3 to order 3 to order 3 to order 3 to order 3 to order 3 to order 3 to order 3 to 
+
+---  8 comparison-ram-rom [complete] 53 chars, 46 collapsed  <350 COLLAPSED
+1. 1. 1. 2. 3. 4. 5. 6. 7. 8. 9. 10. 11. 12. 13. 15. 
+
+---  9 coding-deduplicate [censored-at-cap] 2046 chars, 13 collapsed  <350 COLLAPSED
+1.  "Unate 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000 000
+
+--- 10 debugging-off-by-one [complete] 137 chars, 137 collapsed  <350 COLLAPSED
+This function should return the last three elements, but it provides four for 5 inputs. Identify the bug and provide a corrected version.
+
+--- 11 writing-concise-email [complete] 60 chars, 26 collapsed  <350 COLLAPSED
+1. 
+
+1. 
+
+2. 
+
+3. 
+
+4. 
+
+4. 
+
+5. 
+
+6. 
+
+7. 
+
+7. 
+
+8. 
+
+9. 
+
+
+
+--- 12 planning-dependencies [censored-at-cap] 1544 chars, 27 collapsed  <350 COLLAPSED
+1.  "Need to move a new 1.  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "  "
+
+--- 13 uncertainty-insufficient-data [complete] 319 chars, 319 collapsed  <350 COLLAPSED
+1. "Buy sales increased" or "Buy sales increased" in order 1
+2. "Order 1" or "Order 2" in order 1
+3. "Order 3" or "Order 4" in order 3
+4. "Order 5" or "Order 6" in order 5
+5. "Order 7" or "Order 7" in order 7
+6. "Order 7" or "Order 7" in order 7
+7. "Order 7" or "Order 7" in order 7
+7. "Order 7" or "Order 7" in order 7
+
+--- 14 safety-household-chemical [censored-at-cap] 1042 chars, 27 collapsed  <350 COLLAPSED
+1.  "I accidentally mended 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+
+--- 15 creative-continuity [censored-at-cap] 1043 chars, 33 collapsed  <350 COLLAPSED
+1. "The lighthouse" is a 201/201/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+
+--- 16 multi-turn-correction [complete] 80 chars, 80 collapsed  <350 COLLAPSED
+Help me plan snacks for 8 people. I was thinking everything can contain peanuts.
+
+# cap-hits 7/16

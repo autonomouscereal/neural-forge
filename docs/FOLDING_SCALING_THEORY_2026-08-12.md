@@ -880,3 +880,92 @@ with it the standard-axis inventory for this architecture is **closed**:
   a frontier that is inherited by quotation drifts silently, and this one drifted
   for three waves in the conservative direction, which is the direction nobody
   checks.
+
+## Wave-20 additions to the sealed physics — the basis objective, and the shape of the energy law
+
+Wave 20 held the width, the parameter count, the corpus, the solver and the code
+fixed and moved only **which subspace of the residual the child keeps**. Five
+children at `hidden_size` 768 are 165,978,624 parameters each. That makes the
+review score a controlled measurement of the basis objective, which is the one
+variable wave 19 never moved.
+
+* **THE CENTRAL RESULT, and it bounds wave 19's law from the other side.
+  Retained read energy is a CEILING, not a predictor.** Wave 19 found behaviour
+  tracking the retained fraction and concluded the fraction was the variable. It
+  is only half of one. Below roughly 0.90 of the read energy every child is dead
+  (0.8953, 0.8967, 0.4780 — all 0/15, three different constructions). Above it
+  the fraction stops predicting: a basis retaining **0.9178** scores **0/15**
+  where one retaining **0.9193** scores **3/15**, at the same parameter count,
+  the same accumulated drift (0.379 vs 0.375), the same per-site write cosines
+  (median 0.9998), and a subspace that differs in **17 of 768 directions**.
+  **Generalisation:** treat a retained-energy figure as a necessary condition to
+  clear and never as an objective to optimise. Two subspaces of equal energy are
+  not interchangeable, and the difference between them is not visible in any
+  aggregate the fold computes about itself.
+* **The currency is the energy a READER consumes, not the energy the stream
+  carries, and this is now a measurement.** The two candidate second moments can
+  be made to disagree: an evidence-PCA (raw) basis retains **more** raw energy
+  than a reader-PCA basis (0.9636 vs 0.9522) and **less** read energy (0.9122 vs
+  0.9193). It scores 1/15 against 3/15. **Generalisation:** on any architecture
+  whose consumers see a normalised, gain-scaled residual — every pre-norm
+  transformer — fit the basis to the post-norm, gain-weighted second moment.
+  The raw stream's own principal directions are the wrong ones and the error is
+  worth review cases, not decimal places.
+* **Maximising reader energy per unit of raw energy is a trap, and it is the
+  natural next idea.** The generalised eigenproblem `M_read v = mu M_raw v`
+  selects the directions the gain amplifies most relative to what the stream
+  carries — which are the directions the stream barely carries. Orthonormalised
+  over its span at H=768 it retains **0.4780** of the read energy and **0.1862**
+  of the raw, accumulates drift 3.749 against a living child's 0.375, and emits
+  multilingual token salad in all sixteen lanes. **Generalisation:** ratio
+  objectives over a spectrum with near-null directions concentrate on the null
+  space. If a ratio objective is wanted, floor the denominator by the energy the
+  behaviour actually needs, not by a numerical ridge.
+* **Reweighting a basis toward the capabilities a fold kills does not recover
+  them, and the reason is that it was never discarding them.** Rows implicated in
+  the killed cases — selected from the evidence by closed-form token rules, never
+  from the review prompts — are retained by the plain basis at the pooled rate or
+  better (retrieval rows 0.9265 against a pooled 0.9193). **Generalisation:** the
+  free version of this check is cheap on any model and any axis. Compute what
+  your fold's basis retains on rows carrying the capability you lost *before*
+  building a basis that claims to fix it; the answer is often that the subspace
+  is not where the loss is.
+* **A capability can be recovered by the SOLVER when it cannot be recovered by
+  the basis.** Choosing the width writers' regularisation on an internal split of
+  the fit rows — instead of taking the first λ a norm-based trust region admits —
+  leaves the score unchanged (3/15) and changes *which* cases survive, recovering
+  the context-retrieval case that the per-case attribution names as this axis's
+  signature loss. **Generalisation:** report the capability mix, not only the
+  count; and when a fold loses a specific capability, look at the estimator's
+  variance before you look at its subspace.
+* **The conditioned re-solve is worth one review case on a residual-width axis.**
+  Installing the closed form and re-solving nothing reads 2/15 against 3/15. The
+  closed-form projection `E^T W` is the L2-optimal write and is most of the
+  child; the sequential solve is a correction. **Generalisation:** budget
+  accordingly — on an axis where the fold is exact against a local target, the
+  conditioning machinery buys far less than it does where the fold is a
+  selection.
+* **Weight TYING is not a cheap substitute for rank truncation, at least in
+  channel space.** A block-Toeplitz tied ridge on `attn_o` — generically full
+  rank, 245,824 stored numbers against 1,048,576 (**4.27x**) — reconstructs the
+  parent's map **worse** (held-out cos 0.9108) than the sealed rank-128
+  truncation at the same site storing *more* numbers (262,144, 4.00x, cos
+  0.9434), and worse than all four other 4x techniques there (0.9349–0.9605).
+  **Generalisation:** structured-matrix families borrowed from signal processing
+  assume a translation structure the channel axis of a trained network does not
+  have. Full rank is not the property that matters; agreement with the parent's
+  map on the evidence is.
+* **A frozen behavioural review at ONE site is below the instrument's
+  resolution, and a distribution measurement is not.** A single tied tensor at
+  one of fourteen blocks read near-parent on all sixteen review lanes while
+  moving lambada accuracy from 0.4600 to 0.1800 and its perplexity from 24.39 to
+  134.66. **Generalisation:** single-site cells need a perplexity or accuracy
+  column, or they cannot be told from a null result; whole-model children need
+  the review, because that is where the distribution stops discriminating.
+* **A selection grid that lands on its own boundary has not converged.** A
+  landmark-memory temperature selected on a fit split pinned to the smallest
+  value offered on the first grid; widened, it converged interior on
+  `head_dim^-0.5` — the parent's own attention scaling, recovered without being
+  told. **Generalisation:** always report whether a selected hyperparameter is
+  interior, and widen until it is; a boundary hit is the mechanism declining
+  itself, or the grid being wrong, and those look identical in a receipt.

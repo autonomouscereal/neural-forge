@@ -1,0 +1,58 @@
+{
+ "schema": "neural-forge-matrix-wave20-children-retention-v1",
+ "policy": "the best five by sealed score plus any child a later wave cannot re-derive; every deleted child is named with the sha256 of the model.safetensors it was sealed from",
+ "kept": [
+  {
+   "child": "MX20-W704",
+   "bytes": 306201578,
+   "child_tensors_sha256": "08a2211dc8a009d9b9afab1b16c8bd66b93dc7760c92db37d1ad352793acfa20",
+   "reason": "0/15 at 0.656116x -- the bisection rung inside wave 19's cliff, at 0.8953 retained read energy: the tightest bound the campaign has on where the behavioural floor sits"
+  },
+  {
+   "child": "MX20-W768AW25",
+   "bytes": 336750766,
+   "child_tensors_sha256": "678b6ea1be74afcc3bdecb3245e7c11fd4fea6e692114c880a572b5cc595e46d",
+   "reason": "0/15 at 0.722610x -- the attribution-weighted basis at beta 0.25: same parameters, same retained read energy to 0.0015, seventeen of 768 directions exchanged, three review cases gone and four of five accuracy benchmarks slightly better.  The wave's central measurement"
+  },
+  {
+   "child": "MX20-W768EV",
+   "bytes": 336746782,
+   "child_tensors_sha256": "753be682df63711c2e62ef455d5f0b5113a8d1049d2a4c915da49c5de67e2d9b",
+   "reason": "1/15 at 0.722610x -- wave 19's sealed evidence-pca basis, finally built against: more raw energy retained and less read energy, and it is the measurement that says which of the two the law is about"
+  },
+  {
+   "child": "MX20-W768LS",
+   "bytes": 336788054,
+   "child_tensors_sha256": "84e9a46facc06086c6583741acecb1e25109e8a32ebb0057855e3856ffbd1c2f",
+   "reason": "3/15 at 0.722610x -- wave 19's sealed reader-PCA basis with the writers' lambda chosen on an internal fit split; the same score as the child it controls for, on a different set of cases, and the only child in the wave that recovers context-retrieval"
+  },
+  {
+   "child": "MX20-W768ST",
+   "bytes": 336724574,
+   "child_tensors_sha256": "99d4a8f7b8356d0e8d9da8b652a5ad66ee1e8c8b35613fa94c37168db2d622b1",
+   "reason": "2/15 at 0.722610x -- the stale arm, which prices the conditioned solve on this axis for the first time at one review case"
+  }
+ ],
+ "deleted": [
+  {
+   "child": "MX20-W704AW25",
+   "bytes": 306204154,
+   "child_tensors_sha256": "b6fed8bb3556be6c0c00d18544dc41a4bd938f13d6155d929a93fa4412e6c4f9",
+   "reason": "0/15 at 0.656116x -- attribution-weighted at 704, fifteen empty lanes; re-derivable from the committed builder and its sealed basis"
+  },
+  {
+   "child": "MX20-W768AW100",
+   "bytes": 336750738,
+   "child_tensors_sha256": "245679fb5705649a5c695b9889f8533a2bac5f1d4de7407d1a23f819d9a747ea",
+   "reason": "0/15 at 0.722610x -- the attribution-weighted basis taken to beta 1.0, 0.8967 retained read energy, below the floor; re-derivable from the committed builder and the sealed basis E-attribution-weighted-b10-768"
+  },
+  {
+   "child": "MX20-W768RG",
+   "bytes": 336748663,
+   "child_tensors_sha256": "c87381ede0f82befabf6cc830d6d6e8f6b1ca20ff5493e1263e79043a391b9b1",
+   "reason": "0/15 at 0.722610x -- the reader-generalized basis at 0.4780 retained read energy; re-derivable from the committed builder and the sealed basis E-reader-generalized-768"
+  }
+ ],
+ "bytes_freed": 979703555,
+ "applied": true
+}

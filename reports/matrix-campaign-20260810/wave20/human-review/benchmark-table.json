@@ -1,0 +1,51 @@
+{
+ "schema": "neural-forge-matrix-wave20-benchmarks-v1",
+ "invocation": "limit 200 seed 1234 batch 4 max_length 2048 float32 sm86",
+ "rows": {
+  "ARCH.W768AW25": {
+   "arc_easy": 0.32,
+   "hellaswag_acc_norm": 0.435,
+   "piqa_acc_norm": 0.535,
+   "winogrande": 0.52,
+   "lambada_openai": 0.02,
+   "lambada_perplexity": 10442.307274369012,
+   "wikitext_word_perplexity": 1419.6682297986758
+  },
+  "ARCH.W768LS": {
+   "arc_easy": 0.305,
+   "hellaswag_acc_norm": 0.43,
+   "piqa_acc_norm": 0.505,
+   "winogrande": 0.46,
+   "lambada_openai": 0.03,
+   "lambada_perplexity": 7722.716054070093,
+   "wikitext_word_perplexity": 1312.486632141379
+  },
+  "ARCH.W768ST": {
+   "arc_easy": 0.29,
+   "hellaswag_acc_norm": 0.435,
+   "piqa_acc_norm": 0.515,
+   "winogrande": 0.455,
+   "lambada_openai": 0.035,
+   "lambada_perplexity": 7449.4952663202785,
+   "wikitext_word_perplexity": 1297.1541086123837
+  },
+  "PROBE.CBT-L12": {
+   "arc_easy": 0.455,
+   "hellaswag_acc_norm": 0.475,
+   "piqa_acc_norm": 0.67,
+   "winogrande": 0.585,
+   "lambada_openai": 0.18,
+   "lambada_perplexity": 134.65952386606654,
+   "wikitext_word_perplexity": 99.87657338587229
+  },
+  "PARENT": {
+   "arc_easy": 0.545,
+   "hellaswag_acc_norm": 0.505,
+   "piqa_acc_norm": 0.68,
+   "winogrande": 0.55,
+   "lambada_openai": 0.46,
+   "lambada_perplexity": 24.391247934692974,
+   "wikitext_word_perplexity": 81.79763262054296
+  }
+ }
+}

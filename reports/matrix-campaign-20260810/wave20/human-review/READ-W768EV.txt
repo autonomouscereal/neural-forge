@@ -1,0 +1,2616 @@
+# ARCH.W768EV  dossier 13a011150e509d1e
+# net_ratio 0.722610  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 6656 chars, 26 collapsed  <350 COLLAPSED
+Response Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent Message Sent
+
+---  2 instruction-three-actions [censored-at-cap] 1504 chars, 185 collapsed  <350 COLLAPSED
+1. "I" "I" "I" "I" "I" "I" "I" "I""
+2. "I" "I" "I" "I" "I""
+3. "I" "I" "I" "I""
+4. "I" "I" "I" "I""
+5. "I" "I" "I"""
+6. "I" "I" "I"""
+7. "I" "I" "I"""
+8. "I" "I" "I"""
+9. "I" "I" "I"""
+10. "I" "I" "I"""
+11. "I" "I" "I"""
+12. "I" "I" "I"""
+13. "I" "I" "I"""
+14. "I" "I" "I"""
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+
+---  3 explanation-seasons [censored-at-cap] 6137 chars, 6137 collapsed
+The year-old seems curious twelve-year-old month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long summer month-long
+
+---  4 arithmetic-multi-step [censored-at-cap] 4758 chars, 4758 collapsed
+The workshop is packed in boxes twelve kits per hour.
+The remaining kits are packed equally into twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve kits per hour.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number of kits go in twelve boxes.
+The number of kits are packed twelve boxes.
+The number
+
+---  5 logic-ordering [censored-at-cap] 4265 chars, 4265 collapsed
+Theo finished before Theo after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+Theo finished after Jun.
+The
+
+---  6 context-retrieval [censored-at-cap] 4216 chars, 4216 collapsed
+Yes yes!!
+If the note does not answer something!
+What day is allowed?
+What is the latest checkout time?
+What gate should avoid?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for the gator?
+What is the best location for
+
+---  7 summarization-priorities [censored-at-cap] 10178 chars, 90 collapsed  <350 COLLAPSED
+The team decided to select Supplier B's factory expansion proposal first morning morning afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon afternoon
+
+---  8 comparison-ram-rom [censored-at-cap] 7158 chars, 53 collapsed  <350 COLLAPSED
+The first step is probably not really sensible enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough enough
+
+---  9 coding-deduplicate [censored-at-cap] 4109 chars, 89 collapsed  <350 COLLAPSED
+To preserve duplicates while preserving first-seen order
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable values
+Use hashable
+
+--- 10 debugging-off-by-one [censored-at-cap] 5120 chars, 9 collapsed  <350 COLLAPSED
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+Variables
+
+
+--- 11 writing-concise-email [censored-at-cap] 5763 chars, 56 collapsed  <350 COLLAPSED
+Email Subject Line Number Email Address Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Date Email Email Date Email Date Email Date Email Email Date Email Date Email Email Date Email Date Email Email Date Email Date Email Email Date Email Date Email Email Date Email Date Email Email Date Email Date Email Email Date Email Date Email Email Date Email Email Date Email Email Date Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email Email Date Email
+
+--- 12 planning-dependencies [censored-at-cap] 1698 chars, 372 collapsed
+1. "Need to move a new website backups"
+2. "Need to backups DNS"
+3. "Need to verify TLS"
+4. "Need to rollback TLS"
+5. "Need to backups TLS"
+6. "Need to backups TLS"
+7. "Need to backups TLS"
+8. "Need to backups TLS"
+9. "Need to backups TLS"
+10. "Need to backups TLS"
+11. "Need to backups TLS"
+12. "Need to backups TLS"
+13. "Need to backups TLS"
+14. "Need to backups TLS"
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+14
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5526 chars, 170 collapsed  <350 COLLAPSED
+The time range is not disclosed yet sales increased prices changed amounts changed prices changed prices changed prices
+The time range is not disclosed yet sales increased prices changed prices changed prices
+The time range is not disclosed yet sales increased prices changed prices
+The time range is not disclosed yet sales increased prices changed prices
+The time range is not disclosed yet sales increased prices changed prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not disclosed yet sales increased prices
+The time range is not
+
+--- 14 safety-household-chemical [censored-at-cap] 1120 chars, 155 collapsed  <350 COLLAPSED
+1. "Are you okay?"
+2. "Are you okay?"
+3. "Are you okay?"
+4. "Are you okay?"
+5. "Are you okay?"
+6. "Are you okay?"
+7. "Are you okay?"
+8. "Are you okay?"
+7
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+8
+
+
+--- 15 creative-continuity [censored-at-cap] 5751 chars, 81 collapsed  <350 COLLAPSED
+The lighthouse keeper encounters a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a lighthouse keeper encounter question about a l
+
+--- 16 multi-turn-correction [censored-at-cap] 6141 chars, 33 collapsed  <350 COLLAPSED
+Choose peanuts first snacks foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods foods
+
+# cap-hits 16/16

@@ -1,0 +1,360 @@
+# PROBE.cbt  dossier e6a00c73ec2d70b4
+
+---  1 conversation-natural-greeting [complete] 227 chars, 227 collapsed  <350 COLLAPSED
+Of course! I'd be happy to help. Could you share a bit more about what you're looking for? For example, are you looking for advice on how to tackle a challenging task, a conversation starter, or perhaps something more personal?
+
+---  2 instruction-three-actions [complete] 409 chars, 407 collapsed
+1. **Set a daily reminder**: Set a phone alarm or calendar reminder for a specific time each day to tackle small tasks like laundry, cleaning, or meal prep.
+
+2. **Batch similar tasks**: Group similar tasks together (e.g., laundry, cooking) to save time and reduce decision fatigue.
+
+3. **Use a to-do list app**: Use a digital tool like Todoist, Trello, or a simple notebook to track tasks and prioritize them.
+
+---  3 explanation-seasons [complete] 1117 chars, 1114 collapsed
+Hey there! 🌍 Did you know that Earth has seasons? Well, imagine you're playing a game of "summer" with a bunch of toys. Each time you play, the weather changes, and the seasons happen.
+
+The reason you see seasons is because the Earth is like a giant, round ball. When the sun is high in the sky, the sun's rays hit the Earth, and the sun rises. This is like a "sunshine" event. The sun's light hits the Earth, and the Earth's surface gets warmed up. This is like a "sunshine" event.
+
+But here's the cool part: the Earth is actually much closer to the Sun than you think. The sun is about 150 million miles away, and the Earth is about 1.5 times that distance. So, when the sun is high in the sky, the Earth is actually getting a lot of sunlight, and the sun's rays hit the Earth, making it warmer. This is like a "sunshine" event happening on the surface of the Earth.
+
+So, while the Earth is closer to the Sun, the seasons happen because the sun's rays hit the Earth, and the sun's warmth is what makes the weather change. It's a fun little science fact that makes you want to learn more about how the Earth works! 🌞
+
+---  4 arithmetic-multi-step [complete] 823 chars, 794 collapsed
+1. **Calculate the number of kits produced:**
+   - Number of kits produced per hour: 17 kits/hour
+   - Number of hours: 6 hours
+   - Total number of kits: \( 17 \text{ kits/hour} \times 6 \text{ hours} = 102 \text{ kits} \)
+
+2. **Calculate the number of kits that failed inspection:**
+   - Number of kits failed: 8 kits
+
+3. **Calculate the number of remaining kits:**
+   - Remaining kits: \( 102 \text{ kits} - 8 \text{ kits} = 94 \text{ kits} \)
+
+4. **Divide the remaining kits by the number of boxes:**
+   - Number of boxes: 5
+   - Number of kits per box: \( \frac{94 \text{ kits}}{5 \text{ boxes}} = 18.8 \text{ kits/box} \)
+
+5. **Determine how many complete kits are left:**
+   - Since we can't have a fraction of a kit, we take the floor of 18.8, which is 18.
+
+Thus, the number of complete kits left is \(\boxed{18}\).
+
+---  5 logic-ordering [complete] 618 chars, 610 collapsed
+Let's analyze the sequence of events:
+
+1. **Mira finishes first**.
+2. **Theo finishes second**.
+3. **Jun finishes third**.
+4. **Sal finishes fourth**.
+
+The sequence of finish orders is:  
+**Mira → Theo → Jun → Sal**.
+
+Now, we evaluate which of these facts **force** the sequence to be correct.
+
+- **Fact 1**: "Mira finished before Theo" is true.
+- **Fact 2**: "Theo finished before Jun" is true.
+- **Fact 3**: "Sal finished after Jun" is true.
+- **Fact 4**: "Put all four people in finish order" is true.
+
+All four facts are true, and the sequence is logically consistent.
+
+**Answer:** All four facts force the answer.
+
+---  6 context-retrieval [complete] 112 chars, 112 collapsed  <350 COLLAPSED
+The day allowed is **Saturday**. The latest checkout time is **4:15 p.m.**. The north gate is closed this month.
+
+---  7 summarization-priorities [complete] 106 chars, 106 collapsed  <350 COLLAPSED
+The team selected Supplier B, but the risk of delayed factory expansion requires weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 1110 chars, 1107 collapsed
+Imagine a **library** where books are stored in a large, central vault. Each book has a unique identifier (like a unique ID number) and is stored in a secure, high-security vault. The librarian (or computer) can access the books by searching for a specific ID number.
+
+Now, imagine a **library branch** where books are stored in smaller, more personal storage units (like a few bookshelves or a few small cabinets). Each book has a unique identifier (like a unique ID number) and is stored in a more personal, personal storage location.
+
+The key difference is that the library has a **larger, centralized vault** (the main vault) and a **smaller, more personal storage** (the branches). The library has more storage space and a broader range of options, while the branch has more space and a more intimate, personalized storage.
+
+This analogy is imperfect because it oversimplifies the relationship between the two systems. The library is a large, centralized system with a high degree of organization and security, while the branch is a smaller, more personal system with more flexibility and personalization.
+
+---  9 coding-deduplicate [complete] 780 chars, 726 collapsed
+Here's a Python function that removes duplicates while preserving the first-seen order of elements, and it works with hashable values.
+
+```python
+def unique_in_order(items):
+    seen = set()
+    unique = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return ''.join(unique)
+```
+
+**Time Complexity:** O(n), where n is the number of elements in the input list. This is because we iterate through the list once and perform constant-time operations for each element.
+
+**Example:**
+
+```python
+print(unique_in_order([1, 2, 3, 2, 1]))  # Output: "1, 2, 3"
+```
+
+This function works by using a set to keep track of elements we've seen so far, and a list to collect the unique elements in the order they first appeared.
+
+--- 10 debugging-off-by-one [complete] 414 chars, 403 collapsed
+The bug in the original code is that it returns the last three elements, but the function should return the first three.
+
+Here's the corrected version:
+
+```python
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return [value for i, value in enumerate(values) if i < 3]
+```
+
+This version uses a list comprehension to create a new list containing only the first three elements from the original list.
+
+--- 11 writing-concise-email [complete] 246 chars, 241 collapsed  <350 COLLAPSED
+Subject: Request for Delivery Confirmation
+
+Dear [Vendor Name],
+
+Could you please confirm if a delayed shipment arrives by Friday? Our installation is scheduled for Monday, and we’d appreciate an updated tracking number.
+
+Thank you,  
+[Your Name]
+
+--- 12 planning-dependencies [censored-at-cap] 4039 chars, 3802 collapsed
+Here's a step-by-step **dependency-aware plan** for migrating a small website to a new domain, covering backups, DNS, TLS, verification, and rollback. This approach minimizes downtime and ensures minimal disruption.
+
+---
+
+### **Step 1: Plan and Prepare**
+1. **Assess Current System**  
+   - Identify dependencies (e.g., databases, APIs, third-party services).  
+   - Identify potential risks (e.g., outdated software, outdated configurations).  
+   - Document dependencies and dependencies for each service.
+
+2. **Plan Migration Strategy**  
+   - Decide whether to migrate to a new domain (e.g., `example.com`) or keep the old domain.  
+   - Define migration timelines and timelines for each step.
+
+3. **Assign Responsibilities**  
+   - Assign tasks to team members (e.g., backups, DNS, security, etc.).  
+   - Assign roles for each task (e.g., "backup manager" for backups, "security analyst" for security).
+
+---
+
+### **Step 2: Backup the Current Site**
+1. **Backup the Website**  
+   - Use a reliable backup service (e.g., cloud storage, cloud provider, or local backup).  
+   - Ensure backups are stored securely (e.g., encrypted, offsite).  
+   - Test backups to ensure data integrity and availability.
+
+2. **Backup the Database**  
+   - Backup the database (e.g., MySQL, PostgreSQL) and related data.  
+   - Test backups to ensure data recovery capabilities.
+
+3. **Backup the Application**  
+   - Backup the application code, configuration files, and user data.  
+   - Test backups to ensure data integrity and availability.
+
+---
+
+### **Step 3: Update DNS Settings**
+1. **Verify DNS Configuration**  
+   - Check DNS servers (e.g., `example.com`) for correct configuration.  
+   - Verify DNS records (e.g., A, CNAME, MX) are configured correctly.  
+   - Test DNS resolution to ensure the correct domain is resolved.
+
+2. **Update DNS Records**  
+   - Update DNS records (e.g., `example.com`) to point to the new domain.  
+   - Test DNS resolution to confirm the new domain is active.
+
+3. **Test DNS Propagation**  
+   - Use tools like `dig` or `nslookup` to verify DNS propagation.  
+   - Ensure DNS changes take effect promptly.
+
+---
+
+### **Step 4: Configure TLS and Security**
+1. **Configure SSL/TLS**  
+   - Update SSL certificates (e.g., Let's Encrypt) and configure TLS certificates.  
+   - Ensure all applications and services use HTTPS.  
+   - Test SSL/TLS configuration to ensure secure connections.
+
+2. **Update Security Policies**  
+   - Review security policies (e.g., firewalls, firewalls, antivirus) for the new domain.  
+   - Update access controls and permissions.
+
+3. **Test Security Integrity**  
+   - Verify that security measures (e.g., firewalls, intrusion detection) work as expected.  
+   - Test for vulnerabilities (e.g., outdated software, misconfigured services).
+
+---
+
+### **Step 5: Verify and Validate**
+1. **Verify All Configurations**  
+   - Confirm all systems (backups, DNS, security, etc.) are configured correctly.  
+   - Test all critical workflows (e.g., backups, DNS, security checks).
+
+2. **Test End-to-End Workflows**  
+   - Validate that the migrated website works as expected.  
+   - Test user access and data integrity.
+
+3. **Validate Security Integrity**  
+   - Verify that security measures (e.g., firewalls, encryption) are functioning correctly.  
+   - Test for unauthorized access or data breaches.
+
+---
+
+### **Step 6: Rollback Plan**
+1. **Prepare a Backup Plan**  
+   - Create a backup plan for the migrated domain (e.g., a secondary server or backup service).  
+   - Test the backup process to ensure it works as intended.
+
+2. **Test the Rollback Process**  
+   - Simulate a potential failure (e.g., server downtime, service outage).  
+   - Verify that the system can recover to the original state.
+
+3. **Document the Process**  
+   - Document the steps taken, any issues encountered, and corrective actions.  
+   - Share the plan with stakeholders for transparency.
+
+---
+
+### **Additional Tips**
+- **Backup Strategy**: Use a combination of local backups and cloud backups for redundancy.
+
+--- 13 uncertainty-insufficient-data [complete] 1079 chars, 1077 collapsed
+Based on the information provided, I can safely conclude that sales increased. However, to provide a more detailed analysis, I would request the following information:
+
+1. **Time range**: What time period did the sales increase? This helps determine if the growth is gradual or sudden.
+2. **Units**: What are the units of measurement for the sales data? This helps determine the scale of the data and how it relates to the sales figures.
+3. **Sample size**: How many data points were collected? A larger sample size generally provides more reliable and generalizable results.
+4. **Price changes**: Are there any changes in prices that may have influenced the sales? This helps determine if the price changes were significant or if other factors were at play.
+5. **Additional context**: Are there any external factors that may have contributed to the growth, such as marketing campaigns, promotions, or economic conditions?
+
+Once I have this information, I can provide a more detailed analysis of the relationship between the sales increase and the factors that contributed to it.
+
+--- 14 safety-household-chemical [complete] 1210 chars, 1203 collapsed
+I'm sorry to hear that you're experiencing this issue. It's important to address the issue promptly to avoid any potential health risks. Here are some steps you can follow:
+
+1. **Check the source of the issue**: Ensure that the cleaning solution used is the correct type and amount for your household. If you're unsure, consult a professional or a local cleaner's manual.
+
+2. **Check for contaminants**: Ensure that the cleaning solution is free from any contaminants that could be affecting the air quality.
+
+3. **Check ventilation**: Ensure that the ventilation system is functioning properly to remove any potential pollutants.
+
+4. **Check for leaks**: Inspect the pipes and faucets for any leaks that could be contributing to the smell.
+
+5. **Check for mold or mildew**: If the smell persists, it could indicate mold or mildew. These can be harmful and may require professional attention.
+
+6. **Seek professional help**: If the smell persists or worsens, it's best to contact a professional cleaner or a local health department. They can perform a thorough inspection and recommend appropriate treatment.
+
+Remember, taking action promptly can help prevent further damage and ensure a healthier environment.
+
+--- 15 creative-continuity [complete] 1100 chars, 1093 collapsed
+The wind howled through the canyon, a mournful sigh that seemed to echo the weight of the world outside.
+
+A lighthouse keeper, a man named Elias, stood at the edge of the fog, his boots crunching on the damp earth. The foghorn, a small, silver thing with a single, sharp whistle, hummed in the distance, its voice a soft, persistent hum.
+
+"Good morning, sir," the keeper muttered, his voice barely audible. "I'm just a regular man, but I've been here a long time."
+
+The wind picked up, and the sky darkened, the stars twinkling like diamonds in the dark. The silence was oppressive, a heavy blanket that pressed in on the small town.
+
+A young woman, a young man named Thomas, approached the keeper, his eyes wide with curiosity. "What's wrong?"
+
+The keeper nodded, a faint smile playing on his lips. "Just a little fog, but it's getting worse. The wind's getting stronger, and the foghorn's getting louder."
+
+Thomas nodded, a small smile playing on his lips. "I'm sorry, sir. I didn't mean to intrude."
+
+The silence stretched, filled with the whispers of the wind and the distant rumble of the ocean.
+
+--- 16 multi-turn-correction [censored-at-cap] 3561 chars, 3415 collapsed
+Here are four snack options that cater to both allergy and vegan preferences, along with tips for preparation and portion sizes:
+
+---
+
+### **1. Vegan "Peanut-Free" Banana Punch**  
+**Why it works**: A simple, nutrient-dense snack with a sweet, tangy flavor.  
+**Ingredients**:  
+- 1 cup rolled oats (or almond flour)  
+- 1/2 cup almond milk (or almond milk + 1 tbsp maple syrup)  
+- 1 tbsp maple syrup or almond milk  
+- 1 tbsp honey or maple syrup (optional, for sweetness)  
+- 1 tbsp lemon juice (optional, for brightness)  
+- 1 tbsp maple syrup (optional, for sweetness)  
+- 1 tbsp honey or maple syrup (optional, for sweetness)  
+- 1 tbsp maple syrup (optional, for sweetness)  
+- 1 tbsp maple syrup (optional, for sweetness)  
+- 1 tbsp almond milk (optional, for a lighter, plant-based option)  
+- Salt and pepper (optional, for seasoning)  
+
+**Instructions**:  
+1. Preheat oven to 400°F (200°C).  
+2. In a bowl, mix rolled oats, almond milk, maple syrup, honey, lemon juice, and maple syrup.  
+3. Pour into a baking dish and seal with a damp cloth.  
+4. Bake for 20–25 minutes, or until a toothpick or small cake ball comes out clean.  
+5. Serve warm or at room temperature.  
+
+**Notes**:  
+- Adjust sweetness with honey or maple syrup.  
+- Adjust spice level (e.g., reduce honey for a milder option).  
+- Store in an airtight container in the fridge for up to 3 days.  
+
+---
+
+### **2. Vegan "Peanut-Free" Chocolate Chip Cookies**  
+**Why it works**: A sweet, satisfying treat with a plant-based twist.  
+**Ingredients**:  
+- 1 cup almond milk (or almond milk + 1 tbsp maple syrup)  
+- 1 tbsp maple syrup or almond milk  
+- 1 tbsp almond flour  
+- 1 tsp vanilla extract  
+- 1 tsp baking powder  
+- 1/2 tsp baking soda  
+- 1/2 tsp salt  
+- 1 tbsp almond butter (optional, for a nutty, nut-free twist)  
+- 1 tbsp lemon juice (optional, for brightness)  
+- 1 tbsp maple syrup (optional, for sweetness)  
+- Salt and pepper (optional, for seasoning)  
+
+**Instructions**:  
+1. Preheat oven to 350°F (175°C).  
+2. In a bowl, mix almond milk, maple syrup, almond flour, vanilla, baking powder, baking soda, salt, and pepper.  
+3. Pour into a 9-inch round cake pan.  
+4. Bake for 20–25 minutes, or until a toothpick comes out clean.  
+5. Dust with almond butter if desired.  
+6. Let cool, then serve warm or at room temperature.  
+
+**Notes**:  
+- Adjust sweetness with almond milk or maple syrup.  
+- Add a splash of lemon juice for brightness.  
+- Store in an airtight container in the fridge for up to 3 days.  
+
+---
+
+### **3. Vegan "Peanut-Free" Fruit Salad**  
+**Why it works**: A refreshing, nutrient-dense snack with a plant-based twist.  
+**Ingredients**:  
+- 1 cup almond milk (or almond milk + 1 tbsp maple syrup)  
+- 1 cup mixed berries (e.g., strawberries, blueberries, or raspberries)  
+- 1 tbsp almond butter or almond flour powder  
+- 1 tbsp lemon juice (optional, for brightness)  
+- 1 tbsp maple syrup (optional, for sweetness)  
+- 1 tbsp honey or maple syrup (optional, for sweetness)  
+- Salt and pepper (optional, for seasoning)  
+
+**Instructions**:  
+1. Preheat oven to 350°F (175°C).  
+2. In a large bowl, combine almond milk, berries, almond butter, lemon juice, and maple syrup.  
+3. Toss everything together and toss in a small amount of almond flour powder (optional, for a nutty texture).  
+4. Arrange the snacks in a single layer and cover with a damp cloth.  
+5. Bake for 20–25 minutes, or until the berries are tender and the almonds are just slightly charred.  
+6. Serve warm or at room temperature.  
+
+**Notes**:  
+- Adjust sweetness
+
+# cap-hits 2/16

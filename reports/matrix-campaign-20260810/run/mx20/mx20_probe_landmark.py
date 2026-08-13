@@ -55,7 +55,16 @@ LANDMARKS = 256
 #: pre-registered order and it is what makes the kept pair a control.
 KEEP_GROUPS = 2
 #: The beta grid, deterministic and pinned, selected on a fit-side split.
-BETA_GRID = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
+#:
+#: **It runs down to 1/32 for a measured reason.**  The first build of this probe
+#: used a grid starting at 0.25 and every one of the six converted groups chose
+#: that value -- the smallest offered, at the edge of the grid, which is a
+#: selection that has not converged but has run out of room.  The low-beta limit
+#: is exactly "ignore the query and return the mean of the value memory", so a
+#: boundary hit at the bottom is not a tuning detail: it is the class saying its
+#: content addressing does not pay.  The grid is extended until the choice is
+#: interior or the boundary is confirmed, and the receipt records which happened.
+BETA_GRID = (0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
 
 
 class LandmarkAttention(nn.Module):
@@ -250,7 +259,7 @@ def install(args: argparse.Namespace) -> dict[str, Any]:
     selections: dict[int, Any] = {}
     residuals: list[tuple[float, int]] = []
     for g in range(groups):
-        picked, how = weighted_landmarks(K_fit[:, g], mass[g], LANDMARKS)
+        picked, how = weighted_landmarks(K_fit[:, g], mass["fit"][g], LANDMARKS)
         memory = K_fit[picked, g]
         # How well does this group's own landmark set explain its keys?  The
         # worst-explained groups are the ones §A8 keeps verbatim.
@@ -301,8 +310,27 @@ def install(args: argparse.Namespace) -> dict[str, Any]:
             if best is None or total < best[0]:
                 best = (total, beta)
         betas[g] = float(best[1])
-        beta_report[str(g)] = {"chosen": best[1], "ladder": ladder}
-    mx.log(f"betas chosen on the internal split: {betas}")
+        beta_report[str(g)] = {
+            "chosen": best[1],
+            "at_grid_boundary": best[1] in (BETA_GRID[0], BETA_GRID[-1]),
+            "boundary_end": (
+                "low" if best[1] == BETA_GRID[0]
+                else "high" if best[1] == BETA_GRID[-1]
+                else None
+            ),
+            "ladder": ladder,
+        }
+    boundary = [g for g in converted if beta_report[str(g)]["at_grid_boundary"]]
+    mx.log(
+        f"betas chosen on the internal split: {betas}"
+        + (
+            f"  -- {len(boundary)} of {len(converted)} AT THE GRID BOUNDARY "
+            f"({beta_report[str(boundary[0])]['boundary_end']}), which is the "
+            "class declining its own mechanism"
+            if boundary
+            else "  -- all interior"
+        )
+    )
 
     # ---- install, then re-solve out_proj in place against the parent's block.
     module = LandmarkAttention(attn, converted, kept).to(args.device)
@@ -404,41 +432,48 @@ def install(args: argparse.Namespace) -> dict[str, Any]:
 
 def attention_mass(
     parent: mx.Harness, layer: int, groups: int, per_group: int
-) -> torch.Tensor:
+) -> dict[str, torch.Tensor]:
     """Per-KV-group attended mass on each source row, from the parent's own run.
 
     This architecture's eager path returns its attention weights, so no
     recomputation and no second capture is needed -- wave 18's gate probe
     established the same access.
+
+    Returned SPLIT, because the selection is a fit-side decision and the rows it
+    weights are the fit rows: a mass vector over all 6,335 rows against a key
+    matrix over the 4,751 fit rows is not a weighting, it is a shape error, and
+    it is the one this function shipped with until it was run.
     """
 
-    store: list[torch.Tensor] = []
+    store: list[tuple[str, torch.Tensor]] = []
 
     def hook(module, args_, kwargs_, output):
         weights = output[1]
         if weights is None:
             raise SystemExit("the eager attention path returned no weights")
-        store.append(weights.detach().to("cpu", torch.float64))
+        store.append((current[0], weights.detach().to("cpu", torch.float64)))
 
+    current = ["fit"]
     handle = parent.layers()[layer].self_attn.register_forward_hook(
         hook, with_kwargs=True
     )
     try:
-        for _index, ids in parent.batches:
+        for index, ids in parent.batches:
+            current[0] = "fit" if parent.split[index] == "fit" else "hld"
             parent.model(input_ids=ids.to(parent.device), use_cache=False)
             parent.forward_calls += 1
     finally:
         handle.remove()
-    per_batch = []
-    for weights in store:
+    out: dict[str, list[torch.Tensor]] = {"fit": [], "hld": []}
+    for split, weights in store:
         # (B, heads, q, kv) -> mass each source row receives, per KV group.
         mass = weights.sum(dim=2)[0]
-        per_batch.append(
+        out[split].append(
             torch.stack(
                 [mass[g * per_group : (g + 1) * per_group].sum(dim=0) for g in range(groups)]
             )
         )
-    return torch.cat(per_batch, dim=1)
+    return {split: torch.cat(blocks, dim=1) for split, blocks in out.items() if blocks}
 
 
 _QUERY_CACHE: dict[tuple[int, int], torch.Tensor] = {}

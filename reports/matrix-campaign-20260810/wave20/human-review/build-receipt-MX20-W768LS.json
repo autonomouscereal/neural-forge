@@ -1,0 +1,2559 @@
+{
+ "schema": "neural-forge-matrix-wave20-standard-shape-child-v1",
+ "arm": "conditioned-local",
+ "keep_ff": null,
+ "keep_head_dim": null,
+ "keep_kv_groups": null,
+ "keep_hidden_size": 768,
+ "head_dim_pinned": 64,
+ "kv_solve": null,
+ "kv_als_sweeps": null,
+ "kv_lambda_split": null,
+ "excised": [],
+ "rope_theta": 1000000.0,
+ "parent_parameters": 229693184,
+ "child_parameters": 165978624,
+ "net_ratio": 0.7226101406648618,
+ "axes": [
+  {
+   "axis": "hidden_size",
+   "kind": "residual",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "hidden_size",
+    "block_dim",
+    "conv_dim",
+    "head_dim"
+   ],
+   "selection": "one shared orthonormal basis E (1024 x 768), the top eigenvectors of the reader-pca second moment of the residual stream pooled over all 29 residual-write endpoints with each endpoint equalised to trace one; a per-boundary chart is not expressible in a stock child because the residual is a running sum with nowhere to put a chart transition.  The conv blocks' internal channels are a pivoted-Cholesky coreset of the parent's own, because Lfm2ShortConv gates channelwise and no rotation of that space is representable",
+   "solve": "readers folded EXACTLY as sqrt(1024/H) W diag(g) E diag(1/g_c) with g_c = diag(E^T diag(g) E) (the lift preserves the norm, so the parent's RMSNorm at the lifted row and the child's at the row differ by that one constant); writers folded as E^T W and re-solved against the child's own installed activations by the prior-anchored ridge under THE LAW; the final norm's diagonal solved in closed form against the tied head's Gram",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": null,
+   "basis": {
+    "mode": "reader-pca",
+    "width": 768,
+    "sha256": "641788c64a2b719b1fa2cc3ef27502d5f1d1dd81ff215dbd2a9e26f697762bb2",
+    "path": "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-768.safetensors",
+    "retained": {
+     "raw.fit": 0.9634897651820558,
+     "raw.hld": 0.9521844457577822,
+     "reader.fit": 0.9388523528007287,
+     "reader.hld": 0.919315382042014
+    },
+    "selector_retained": null,
+    "objective": null,
+    "spectrum": {
+     "raw.fit": {
+      "top_1024": 0.9999999999999984,
+      "top_960": 0.9945040738178852,
+      "top_896": 0.9881317249346414,
+      "top_832": 0.9809430476566875,
+      "top_768": 0.9729027856239278,
+      "top_704": 0.9639278118889743,
+      "top_640": 0.9539187114427733,
+      "top_576": 0.9426947277432213,
+      "top_512": 0.930055598779807,
+      "top_448": 0.9157038024690827,
+      "top_384": 0.8991564043868423,
+      "top_256": 0.8564539685479146
+     },
+     "raw.hld": {
+      "top_1024": 0.9999999999999986,
+      "top_960": 0.995413239778586,
+      "top_896": 0.9899230568601572,
+      "top_832": 0.9835845192716397,
+      "top_768": 0.9763424098890582,
+      "top_704": 0.9680895922286523,
+      "top_640": 0.9586783635768756,
+      "top_576": 0.9479566986094046,
+      "top_512": 0.9356808943862043,
+      "top_448": 0.9215347475784846,
+      "top_384": 0.9050178518074082,
+      "top_256": 0.8613690587267553
+     },
+     "reader.fit": {
+      "top_1024": 0.9999999999999996,
+      "top_960": 0.9874235763718416,
+      "top_896": 0.9729449091222421,
+      "top_832": 0.9567570783003496,
+      "top_768": 0.9388523528007287,
+      "top_704": 0.9190634331038701,
+      "top_640": 0.8972751937441246,
+      "top_576": 0.8731974796481545,
+      "top_512": 0.8464956116904321,
+      "top_448": 0.8167341713771931,
+      "top_384": 0.7831922326785933,
+      "top_256": 0.7004409661394944
+     },
+     "reader.hld": {
+      "top_1024": 1.0000000000000016,
+      "top_960": 0.9894594449333637,
+      "top_896": 0.9769487556811509,
+      "top_832": 0.9626598973094056,
+      "top_768": 0.946550762441625,
+      "top_704": 0.9284302990388815,
+      "top_640": 0.9080821274110242,
+      "top_576": 0.8852646873803557,
+      "top_512": 0.8595934445730893,
+      "top_448": 0.8305505376101998,
+      "top_384": 0.7974058171473369,
+      "top_256": 0.714172127333594
+     }
+    }
+   },
+   "width_lambda_split": {
+    "rule": "every 3rd fit batch from the 3rd, in fit order",
+    "check_rows": 1583,
+    "inner_rows": 3168
+   },
+   "reader_fold_gate": [
+    {
+     "layer": 0,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 0,
+     "reader": "mlp.w1",
+     "relL2": 0.0036735614754342346,
+     "max_abs": 0.014158301382849459
+    },
+    {
+     "layer": 1,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 1,
+     "reader": "mlp.w1",
+     "relL2": 0.005119830974056542,
+     "max_abs": 0.017393846879713237
+    },
+    {
+     "layer": 2,
+     "reader": "attention.q",
+     "relL2": 0.005162747520025658,
+     "max_abs": 0.004382482491564588
+    },
+    {
+     "layer": 2,
+     "reader": "mlp.w1",
+     "relL2": 0.005075778585615894,
+     "max_abs": 0.020581890363246202
+    },
+    {
+     "layer": 3,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 3,
+     "reader": "mlp.w1",
+     "relL2": 0.004340044402818351,
+     "max_abs": 0.017062693396610484
+    },
+    {
+     "layer": 4,
+     "reader": "attention.q",
+     "relL2": 0.005993326278661003,
+     "max_abs": 0.0068247415492805885
+    },
+    {
+     "layer": 4,
+     "reader": "mlp.w1",
+     "relL2": 0.0056318021167751165,
+     "max_abs": 0.042632712284103036
+    },
+    {
+     "layer": 5,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 5,
+     "reader": "mlp.w1",
+     "relL2": 0.004844900175550141,
+     "max_abs": 0.020819569588638842
+    },
+    {
+     "layer": 6,
+     "reader": "attention.q",
+     "relL2": 0.0050034692702986385,
+     "max_abs": 0.006367098992996034
+    },
+    {
+     "layer": 6,
+     "reader": "mlp.w1",
+     "relL2": 0.005017918194489834,
+     "max_abs": 0.028160794725408778
+    },
+    {
+     "layer": 7,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 7,
+     "reader": "mlp.w1",
+     "relL2": 0.004687815605929784,
+     "max_abs": 0.02186214752146043
+    },
+    {
+     "layer": 8,
+     "reader": "attention.q",
+     "relL2": 0.004050858579934785,
+     "max_abs": 0.005859650666025118
+    },
+    {
+     "layer": 8,
+     "reader": "mlp.w1",
+     "relL2": 0.0039687025015651385,
+     "max_abs": 0.01400109964015428
+    },
+    {
+     "layer": 9,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 9,
+     "reader": "mlp.w1",
+     "relL2": 0.004464259887851652,
+     "max_abs": 0.01928349310765043
+    },
+    {
+     "layer": 10,
+     "reader": "attention.q",
+     "relL2": 0.003657174766052841,
+     "max_abs": 0.00595532899023965
+    },
+    {
+     "layer": 10,
+     "reader": "mlp.w1",
+     "relL2": 0.0044056669790923835,
+     "max_abs": 0.032761331560323015
+    },
+    {
+     "layer": 11,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 11,
+     "reader": "mlp.w1",
+     "relL2": 0.0049569656946640145,
+     "max_abs": 0.02003934106323868
+    },
+    {
+     "layer": 12,
+     "reader": "attention.q",
+     "relL2": 0.004510334909144871,
+     "max_abs": 0.00938795464753639
+    },
+    {
+     "layer": 12,
+     "reader": "mlp.w1",
+     "relL2": 0.003924689718228227,
+     "max_abs": 0.023719152406556532
+    },
+    {
+     "layer": 13,
+     "reader": "conv.in",
+     "note": "a conv coreset keeps a SUBSET of the parent's channels, so the reader fold is gated on the attention and MLP readers, which keep all of them"
+    },
+    {
+     "layer": 13,
+     "reader": "mlp.w1",
+     "relL2": 0.004824414410440108,
+     "max_abs": 0.034335471922531724
+    }
+   ],
+   "final_norm_gain": {
+    "lambda_relative": 1e-06,
+    "update_scale": 0.36171635111728107,
+    "scalar_anchor_alpha": 2.0788471650323976,
+    "scalar_anchor_distance": 0.3665758999443257,
+    "logit_relative_sse_transported": 0.5430486461427805,
+    "logit_relative_sse_scalar": 0.4108416514095734,
+    "logit_relative_sse_solved": 0.17544100574294028,
+    "ladder": [
+     {
+      "lambda_relative": 1e-06,
+      "update_scale": 0.36171635111728107
+     },
+     {
+      "lambda_relative": 1e-05,
+      "update_scale": 0.36169729005636436
+     },
+     {
+      "lambda_relative": 0.0001,
+      "update_scale": 0.36150693411966833
+     },
+     {
+      "lambda_relative": 0.001,
+      "update_scale": 0.3596283882969354
+     },
+     {
+      "lambda_relative": 0.01,
+      "update_scale": 0.3429688740579559
+     },
+     {
+      "lambda_relative": 0.1,
+      "update_scale": 0.2604196803011756
+     },
+     {
+      "lambda_relative": 1.0,
+      "update_scale": 0.14094462097225918
+     },
+     {
+      "lambda_relative": 10.0,
+      "update_scale": 0.06385344187731519
+     },
+     {
+      "lambda_relative": 100.0,
+      "update_scale": 0.018036667456267228
+     }
+    ],
+    "rows": 4751,
+    "solved": true
+   },
+   "conv_coreset": {
+    "sites": [
+     0,
+     1,
+     3,
+     5,
+     7,
+     9,
+     11,
+     13
+    ],
+    "channels_kept": 768,
+    "channels_dropped": 256,
+    "channels_moved_vs_stale": {
+     "0": 471,
+     "1": 722,
+     "3": 586,
+     "5": 645,
+     "7": 642,
+     "9": 682,
+     "11": 645,
+     "13": 702
+    }
+   },
+   "heldout": {
+    "median_cos": 0.9999380707740784,
+    "min_cos": 0.974882625288614,
+    "median_relL2": 0.008563554845750332,
+    "max_input_drift": 0.37945438303857437,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       3,
+       4,
+       6,
+       8,
+       11,
+       13
+      ],
+      "input_drift_vs_parent": 0.0016630376509402527,
+      "input_cos_vs_parent": 0.9999986323812772,
+      "parent_energy_retained": 0.9362822906128659,
+      "prior_only_cos": 0.9938203559536574,
+      "prior_only_relL2": 0.1009847498425102,
+      "update_scale": 0.12560857597663264,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.34636935233301896,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 8.227637674751353,
+      "check_sse_law_pick": 15.529189353020158,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 15.529189353020158,
+        "update_scale": 0.34636935233301896
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 15.517833418764027,
+        "update_scale": 0.34623119223479737
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 15.406291065093788,
+        "update_scale": 0.3448609974017276
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 14.459401878705208,
+        "update_scale": 0.3321955343976068
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 10.855409363026784,
+        "update_scale": 0.25871249739560187
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 8.227637674751353,
+        "update_scale": 0.12560857597663264
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 8.548692868514921,
+        "update_scale": 0.04075962930078315
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 9.83398942746477,
+        "update_scale": 0.00899103558296238
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 10.555988137933497,
+        "update_scale": 0.0012804034720759918
+       }
+      ],
+      "relL2": 0.08683024141890872,
+      "cos": 0.9954737516165953,
+      "cos_p05": 0.9802135431473543
+     },
+     {
+      "layer": 0,
+      "position": 0,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.12860080428420484,
+      "input_cos_vs_parent": 0.9934520253985814,
+      "parent_energy_retained": 0.9420394498932643,
+      "prior_only_cos": 0.9999770873049894,
+      "prior_only_relL2": 0.007245823521027476,
+      "update_scale": 0.002862322936897967,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.14943538066208073,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.028212538881480436,
+      "check_sse_law_pick": 22.579145284582367,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 22.579145284582367,
+        "update_scale": 0.14943538066208073
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 6.340342876869734,
+        "update_scale": 0.14196910130348986
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.3285781018975162,
+        "update_scale": 0.10421356377162415
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.24201005005212117,
+        "update_scale": 0.04969125812276871
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.060622061824513504,
+        "update_scale": 0.01956290352072474
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.032813337340101334,
+        "update_scale": 0.007601195359646777
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.028212538881480436,
+        "update_scale": 0.002862322936897967
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.03100454099678063,
+        "update_scale": 0.0009106420980712734
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.036974189852645695,
+        "update_scale": 0.00018990873523953774
+       }
+      ],
+      "relL2": 0.006062809694737546,
+      "cos": 0.9999826871887764,
+      "cos_p05": 0.9999715741165939
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "input_drift_vs_parent": 0.22662899439333442,
+      "input_cos_vs_parent": 0.9724112308486105,
+      "parent_energy_retained": 0.9480332509986246,
+      "prior_only_cos": 0.9713926753766335,
+      "prior_only_relL2": 0.26694055643134523,
+      "update_scale": 0.0927485913145014,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.35441160867665583,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 5.942359467264155,
+      "check_sse_law_pick": 9.891240552579076,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 9.891240552579076,
+        "update_scale": 0.35441160867665583
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 9.890150501245348,
+        "update_scale": 0.3543840024788682
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 9.879285370569486,
+        "update_scale": 0.35410839053680293
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 9.774050396512894,
+        "update_scale": 0.3513963921809195
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 8.974426790855842,
+        "update_scale": 0.32796319836917953
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 6.855460764870635,
+        "update_scale": 0.22546443430840543
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 5.942359467264155,
+        "update_scale": 0.0927485913145014
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 6.482300969085335,
+        "update_scale": 0.02324791263336346
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 7.0823614455267645,
+        "update_scale": 0.0037940428529382527
+       }
+      ],
+      "relL2": 0.23494615666204363,
+      "cos": 0.974882625288614,
+      "cos_p05": 0.932266208218309
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.25644345833929755,
+      "input_cos_vs_parent": 0.9646362452055437,
+      "parent_energy_retained": 0.9429234177050615,
+      "prior_only_cos": 0.9999609070106557,
+      "prior_only_relL2": 0.00915770968906259,
+      "update_scale": 0.003485784073893812,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.0788925308219863,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.01917332309320406,
+      "check_sse_law_pick": 7.214350073830129,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 7.214350073830129,
+        "update_scale": 0.0788925308219863
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 3.173510834178991,
+        "update_scale": 0.07807724881286315
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.7420738730180692,
+        "update_scale": 0.07133346551597872
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.1565705398476753,
+        "update_scale": 0.04638449403680101
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.04266869692238713,
+        "update_scale": 0.02072361131542506
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.022329095617504093,
+        "update_scale": 0.008505970166184183
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.01917332309320406,
+        "update_scale": 0.003485784073893812
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.022183443767327036,
+        "update_scale": 0.0011927889000580615
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.028256432737826728,
+        "update_scale": 0.0002866057123005597
+       }
+      ],
+      "relL2": 0.006900933384054184,
+      "cos": 0.9999727504601154,
+      "cos_p05": 0.9999406280128937
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.2942693392431437,
+      "input_cos_vs_parent": 0.9572748426936831,
+      "parent_energy_retained": 0.9479302569801142,
+      "prior_only_cos": 0.9999181785468099,
+      "prior_only_relL2": 0.0130010073943005,
+      "update_scale": 0.003649397242410727,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.34806025874236995,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.024662996860921316,
+      "check_sse_law_pick": 0.06373804795173049,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.06373804795173049,
+        "update_scale": 0.34806025874236995
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.055499388172204414,
+        "update_scale": 0.2754983200557076
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.04590130975451646,
+        "update_scale": 0.1363514344482208
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.03943549361514164,
+        "update_scale": 0.05773852993749444
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.032399260126874704,
+        "update_scale": 0.028839763017384272
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.02672569132569741,
+        "update_scale": 0.011829382610619166
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.024662996860921316,
+        "update_scale": 0.003649397242410727
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.02481939530585157,
+        "update_scale": 0.001035410535676753
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.025987824410138527,
+        "update_scale": 0.0004328621873806367
+       }
+      ],
+      "relL2": 0.011130222643797521,
+      "cos": 0.9999380924226422,
+      "cos_p05": 0.9998826658576767
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3516193341701708,
+      "input_cos_vs_parent": 0.9416487602019988,
+      "parent_energy_retained": 0.9346326235153777,
+      "prior_only_cos": 0.9999662774973439,
+      "prior_only_relL2": 0.01060433929105611,
+      "update_scale": 0.003460794977566648,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.032445827070856796,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.009366103325634513,
+      "check_sse_law_pick": 0.10794915995203092,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.10794915995203092,
+        "update_scale": 0.032445827070856796
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.1065007432514066,
+        "update_scale": 0.03241379238012679
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.09452152338268471,
+        "update_scale": 0.03209988884081404
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.052612421972189585,
+        "update_scale": 0.029480052475746758
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.020176408373150365,
+        "update_scale": 0.01948064978562531
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.01093056210947969,
+        "update_scale": 0.008827596081251566
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.009366103325634513,
+        "update_scale": 0.003460794977566648
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.010880839702624233,
+        "update_scale": 0.0011237243032874251
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.013543370173552657,
+        "update_scale": 0.00027341806383475296
+       }
+      ],
+      "relL2": 0.008120899872147907,
+      "cos": 0.9999708440131653,
+      "cos_p05": 0.9999568668663282
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8
+      ],
+      "input_drift_vs_parent": 0.36980780235159716,
+      "input_cos_vs_parent": 0.9351542306680193,
+      "parent_energy_retained": 0.9367927860662649,
+      "prior_only_cos": 0.9819092798632728,
+      "prior_only_relL2": 0.17327353504932286,
+      "update_scale": 0.15143932026241416,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.24331680686282406,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 2.3011240188067688,
+      "check_sse_law_pick": 2.7884414861624602,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 2.7884414861624602,
+        "update_scale": 0.24331680686282406
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 2.7882829879055366,
+        "update_scale": 0.2432977162061542
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 2.786702143403472,
+        "update_scale": 0.24310709643826794
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 2.7712964565731717,
+        "update_scale": 0.24122907175173489
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 2.6489016850742133,
+        "update_scale": 0.22484138143361573
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 2.3011240188067688,
+        "update_scale": 0.15143932026241416
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 2.3064806823128325,
+        "update_scale": 0.05910645289907457
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 2.7332039488619655,
+        "update_scale": 0.013981196411310326
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 2.9936354324038588,
+        "update_scale": 0.0023440012857052187
+       }
+      ],
+      "relL2": 0.151995272220156,
+      "cos": 0.986695893285003,
+      "cos_p05": 0.9679495766933252
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.37945438303857437,
+      "input_cos_vs_parent": 0.9336061144116715,
+      "parent_energy_retained": 0.941280697248173,
+      "prior_only_cos": 0.9999590995861267,
+      "prior_only_relL2": 0.0095863765516271,
+      "update_scale": 0.0031473876776905623,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03808279539569362,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.00941196521121445,
+      "check_sse_law_pick": 0.08112079355439283,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.08112079355439283,
+        "update_scale": 0.03808279539569362
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.07997743318806422,
+        "update_scale": 0.03803628092113289
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.0707365421009922,
+        "update_scale": 0.0375824652583927
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.04061320789445032,
+        "update_scale": 0.033919824529929664
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.018105827367797214,
+        "update_scale": 0.02126416102745338
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.0110691001983941,
+        "update_scale": 0.008903594181191134
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.00941196521121445,
+        "update_scale": 0.0031473876776905623
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.010123905199900238,
+        "update_scale": 0.0009679025862068784
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.011807471932029783,
+        "update_scale": 0.00023719822890926626
+       }
+      ],
+      "relL2": 0.007929311085817395,
+      "cos": 0.9999678859981966,
+      "cos_p05": 0.9999440657987757
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.34883252742450316,
+      "input_cos_vs_parent": 0.9389269269874813,
+      "parent_energy_retained": 0.9448853346710084,
+      "prior_only_cos": 0.9998827647327141,
+      "prior_only_relL2": 0.015842988965034544,
+      "update_scale": 0.0025474430742498336,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.051795617144239275,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.02936299782090618,
+      "check_sse_law_pick": 0.06016252202273395,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.06016252202273395,
+        "update_scale": 0.051795617144239275
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.06002626185212416,
+        "update_scale": 0.051665220113396054
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.05877835538243172,
+        "update_scale": 0.05043680780503957
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.0517056814738148,
+        "update_scale": 0.042389655845209005
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.039064569939203556,
+        "update_scale": 0.023443528729184836
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.03156463978865852,
+        "update_scale": 0.00856419171884345
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.02936299782090618,
+        "update_scale": 0.0025474430742498336
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.029738889295107034,
+        "update_scale": 0.0007163399247807406
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.031127868705251756,
+        "update_scale": 0.00022401520781727136
+       }
+      ],
+      "relL2": 0.014498138362627155,
+      "cos": 0.9998946036509412,
+      "cos_p05": 0.999792542784044
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.36375580202274643,
+      "input_cos_vs_parent": 0.9355005748660724,
+      "parent_energy_retained": 0.9480056934514252,
+      "prior_only_cos": 0.9999556713344216,
+      "prior_only_relL2": 0.011397003144220421,
+      "update_scale": 0.003326867741477225,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03683066102195582,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.007622818185571846,
+      "check_sse_law_pick": 0.05436466708579313,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.05436466708579313,
+        "update_scale": 0.03683066102195582
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.05385637963000489,
+        "update_scale": 0.03679509611097228
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.049481842877103624,
+        "update_scale": 0.0364463114467947
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.031548103471446855,
+        "update_scale": 0.03351504893708443
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.014363754606299316,
+        "update_scale": 0.02200340574257832
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.008727680649942567,
+        "update_scale": 0.009332141062247553
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.007622818185571846,
+        "update_scale": 0.003326867741477225
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.008523647104561983,
+        "update_scale": 0.0010744675516992208
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.010268724862558821,
+        "update_scale": 0.0003287920626754498
+       }
+      ],
+      "relL2": 0.0081796083214903,
+      "cos": 0.9999675901605445,
+      "cos_p05": 0.9999429661511064
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       8,
+       11
+      ],
+      "input_drift_vs_parent": 0.37364865443057343,
+      "input_cos_vs_parent": 0.9313965821069579,
+      "parent_energy_retained": 0.9466210332442826,
+      "prior_only_cos": 0.9859996672555593,
+      "prior_only_relL2": 0.15973096103406761,
+      "update_scale": 0.1434994097098816,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.24714235924131817,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 1.485630978851819,
+      "check_sse_law_pick": 1.7811746372949904,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 1.7811746372949904,
+        "update_scale": 0.24714235924131817
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 1.7810559434465318,
+        "update_scale": 0.24711769461741573
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.779872993136411,
+        "update_scale": 0.24687152533456522
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 1.7684287580702756,
+        "update_scale": 0.2444564450541871
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 1.68257324008349,
+        "update_scale": 0.2241002070889307
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 1.485630978851819,
+        "update_scale": 0.1434994097098816
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 1.5512007227680273,
+        "update_scale": 0.054851430202209256
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 1.864601389349274,
+        "update_scale": 0.014119332525820549
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 2.09727116045923,
+        "update_scale": 0.00284690695644929
+       }
+      ],
+      "relL2": 0.12997448617217036,
+      "cos": 0.9909927432709412,
+      "cos_p05": 0.9790288148922673
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3666087973147145,
+      "input_cos_vs_parent": 0.9351872287352859,
+      "parent_energy_retained": 0.9524930504168813,
+      "prior_only_cos": 0.9999574036524331,
+      "prior_only_relL2": 0.0037294687619048575,
+      "update_scale": 0.002411949493792453,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.036114880004462925,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.006343715942106053,
+      "check_sse_law_pick": 0.042674998463853586,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.042674998463853586,
+        "update_scale": 0.036114880004462925
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.03806517880783283,
+        "update_scale": 0.035641043744499355
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.02261926627578465,
+        "update_scale": 0.03187427283993744
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.010641280872510164,
+        "update_scale": 0.019346416242311083
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.0069976415159304405,
+        "update_scale": 0.007549860801180934
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.006343715942106053,
+        "update_scale": 0.002411949493792453
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.006898290028662045,
+        "update_scale": 0.0007017599026700156
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.0077929879806874925,
+        "update_scale": 0.0002215274867516703
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.008495765227945637,
+        "update_scale": 0.00013819693156510857
+       }
+      ],
+      "relL2": 0.0011891060610570825,
+      "cos": 0.9999675850633506,
+      "cos_p05": 0.9999412693093408
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.15036547854044519,
+      "input_cos_vs_parent": 0.9314032432709993,
+      "parent_energy_retained": 0.9902647557222689,
+      "prior_only_cos": 0.9998758286937748,
+      "prior_only_relL2": 0.015637351380085193,
+      "update_scale": 0.0027911009887367933,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.04853177545592264,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.045047757516999035,
+      "check_sse_law_pick": 0.09564648430699751,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.09564648430699751,
+        "update_scale": 0.04853177545592264
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.09548863442070421,
+        "update_scale": 0.04845049955620506
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.0939974064398277,
+        "update_scale": 0.04766980705553448
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.0841620997026436,
+        "update_scale": 0.04188200057455808
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.06260627894734626,
+        "update_scale": 0.02446986689278184
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.048999689491494226,
+        "update_scale": 0.009207968229906445
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.045047757516999035,
+        "update_scale": 0.0027911009887367933
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.045430033187945175,
+        "update_scale": 0.0007732875867233118
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.047348544768686954,
+        "update_scale": 0.0002299133460883735
+       }
+      ],
+      "relL2": 0.014513916057097807,
+      "cos": 0.999891895913986,
+      "cos_p05": 0.999778859058642
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.1797536329439331,
+      "input_cos_vs_parent": 0.9263703548987369,
+      "parent_energy_retained": 0.9889644113893584,
+      "prior_only_cos": 0.9999626013837888,
+      "prior_only_relL2": 0.011028381210458585,
+      "update_scale": 0.002913956462757791,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.038946438133783456,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.009134658433311784,
+      "check_sse_law_pick": 0.06646928651267672,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.06646928651267672,
+        "update_scale": 0.038946438133783456
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.06587038011496589,
+        "update_scale": 0.038909378712648185
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.060680561126476865,
+        "update_scale": 0.03854550660398056
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.039077445713987746,
+        "update_scale": 0.03545912041830389
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.018104034986526796,
+        "update_scale": 0.023033460453059155
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.010705275024003322,
+        "update_scale": 0.00921643203091473
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.009134658433311784,
+        "update_scale": 0.002913956462757791
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.00968113729115538,
+        "update_scale": 0.000889078815348189
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.010964656212251381,
+        "update_scale": 0.00029051028829247616
+       }
+      ],
+      "relL2": 0.00856355511179255,
+      "cos": 0.9999709468370046,
+      "cos_p05": 0.9999439272537076
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       12,
+       13
+      ],
+      "input_drift_vs_parent": 0.17057324322193995,
+      "input_cos_vs_parent": 0.9249131483734861,
+      "parent_energy_retained": 0.9896656216445777,
+      "prior_only_cos": 0.9818422152170877,
+      "prior_only_relL2": 0.17227616281946914,
+      "update_scale": 0.14534578085127772,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.2451098614267742,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 1.6285931842743075,
+      "check_sse_law_pick": 1.9674715290760765,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 1.9674715290760765,
+        "update_scale": 0.2451098614267742
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 1.9673417053281255,
+        "update_scale": 0.24508678425962682
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.9660476380001641,
+        "update_scale": 0.24485643645471972
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 1.9535103491721175,
+        "update_scale": 0.24259443052561713
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 1.858371920924408,
+        "update_scale": 0.22338235935485296
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 1.6285931842743075,
+        "update_scale": 0.14534578085127772
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 1.6790857511755184,
+        "update_scale": 0.05700370649459739
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 2.037008035457755,
+        "update_scale": 0.015549291409751056
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 2.3424364004057017,
+        "update_scale": 0.003088821421133621
+       }
+      ],
+      "relL2": 0.13737982110827854,
+      "cos": 0.9888591212057358,
+      "cos_p05": 0.972171803508539
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.1803412724001249,
+      "input_cos_vs_parent": 0.9286768004988082,
+      "parent_energy_retained": 0.988992077429535,
+      "prior_only_cos": 0.9999663467395236,
+      "prior_only_relL2": 0.009264846735088376,
+      "update_scale": 0.002658168486509974,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03207263729186884,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.010464692968035656,
+      "check_sse_law_pick": 0.06914063272122668,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.06914063272122668,
+        "update_scale": 0.03207263729186884
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.06860484111968082,
+        "update_scale": 0.03204367086237765
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.06390196676584402,
+        "update_scale": 0.03175911867098968
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.04301784990629952,
+        "update_scale": 0.02933487686893765
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.020579708554493592,
+        "update_scale": 0.019366305777433267
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.012308665487373475,
+        "update_scale": 0.007961581937129314
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.010464692968035656,
+        "update_scale": 0.002658168486509974
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.011223858517712718,
+        "update_scale": 0.0008703131299693773
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.013303224401000312,
+        "update_scale": 0.0002304661165369424
+       }
+      ],
+      "relL2": 0.007582445172402207,
+      "cos": 0.99997273538974,
+      "cos_p05": 0.9999588158902887
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.1942057442192915,
+      "input_cos_vs_parent": 0.9298223919880625,
+      "parent_energy_retained": 0.9848610802737224,
+      "prior_only_cos": 0.9998878868283837,
+      "prior_only_relL2": 0.014708524307792833,
+      "update_scale": 0.0025850795519847874,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.048391422287069434,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.09337091398646653,
+      "check_sse_law_pick": 0.22178037693811314,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.22178037693811314,
+        "update_scale": 0.048391422287069434
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.22128990047815603,
+        "update_scale": 0.048301807379846164
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.21668522122279915,
+        "update_scale": 0.0474425330419741
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.18768261358119553,
+        "update_scale": 0.041201918600573414
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.13127272890977318,
+        "update_scale": 0.023573271053792328
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.10094074895656503,
+        "update_scale": 0.008676928341092927
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.09337091398646653,
+        "update_scale": 0.0025850795519847874
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.09443423878698047,
+        "update_scale": 0.0007072547926782965
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.09836726913390985,
+        "update_scale": 0.00020748406488930104
+       }
+      ],
+      "relL2": 0.013643230689331662,
+      "cos": 0.9999053569213832,
+      "cos_p05": 0.9998170214110551
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.2299766748309636,
+      "input_cos_vs_parent": 0.9303137345730803,
+      "parent_energy_retained": 0.9823689970018608,
+      "prior_only_cos": 0.999965409388878,
+      "prior_only_relL2": 0.008916789328254012,
+      "update_scale": 0.0022819558998126714,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03463134068831738,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.0149507132081147,
+      "check_sse_law_pick": 0.1225700941120732,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.1225700941120732,
+        "update_scale": 0.03463134068831738
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.12124870180477262,
+        "update_scale": 0.034592180512413064
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.11010853873826268,
+        "update_scale": 0.03420909192169738
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.0680743085128959,
+        "update_scale": 0.03105244075574071
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.030766288154477392,
+        "update_scale": 0.019427189004048565
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.01786283927207179,
+        "update_scale": 0.007505637227953533
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.0149507132081147,
+        "update_scale": 0.0022819558998126714
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.015329095152534269,
+        "update_scale": 0.0006619330524536208
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.016840453824885075,
+        "update_scale": 0.00018670872839156796
+       }
+      ],
+      "relL2": 0.007679084458252571,
+      "cos": 0.9999731542976315,
+      "cos_p05": 0.999959974816835
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       2,
+       3,
+       5,
+       6,
+       7,
+       9,
+       10
+      ],
+      "input_drift_vs_parent": 0.22472069978532433,
+      "input_cos_vs_parent": 0.9295132602870383,
+      "parent_energy_retained": 0.9832188918979655,
+      "prior_only_cos": 0.9849162881401793,
+      "prior_only_relL2": 0.16085875976166766,
+      "update_scale": 0.130667016839275,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.2630790723268385,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 3.317889495476262,
+      "check_sse_law_pick": 4.096396110421463,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 4.096396110421463,
+        "update_scale": 0.2630790723268385
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 4.095911481143208,
+        "update_scale": 0.2630354422100671
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 4.091092672022284,
+        "update_scale": 0.26260057908894885
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 4.045498002877012,
+        "update_scale": 0.25839025459181947
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 3.7529205433747777,
+        "update_scale": 0.22626402043925412
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 3.317889495476262,
+        "update_scale": 0.130667016839275
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 3.583410930433045,
+        "update_scale": 0.04854526161436999
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 4.374648410788014,
+        "update_scale": 0.01379635641390453
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 5.1208228419207815,
+        "update_scale": 0.003008697967992807
+       }
+      ],
+      "relL2": 0.12117464002402073,
+      "cos": 0.9916174430142247,
+      "cos_p05": 0.9796807985207044
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.23425947445843598,
+      "input_cos_vs_parent": 0.9347495946587728,
+      "parent_energy_retained": 0.9819125519298297,
+      "prior_only_cos": 0.9999622759080908,
+      "prior_only_relL2": 0.00897995518909737,
+      "update_scale": 0.0023729411732816216,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.034066633608011376,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.022174490616540185,
+      "check_sse_law_pick": 0.16300430672581007,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.16300430672581007,
+        "update_scale": 0.034066633608011376
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.16142761276838613,
+        "update_scale": 0.03403053193176086
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.147943989564026,
+        "update_scale": 0.03367690426964564
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.09413256359843394,
+        "update_scale": 0.030733216418286916
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.04363856735791394,
+        "update_scale": 0.019539102698229664
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.026235582519599072,
+        "update_scale": 0.007672002487321894
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.022174490616540185,
+        "update_scale": 0.0023729411732816216
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.02284456255602549,
+        "update_scale": 0.0007319672970110104
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.025879931539738863,
+        "update_scale": 0.000216324261678278
+       }
+      ],
+      "relL2": 0.0076444681662453775,
+      "cos": 0.9999721553117579,
+      "cos_p05": 0.9999561474359389
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.24182604331543078,
+      "input_cos_vs_parent": 0.9316322308844418,
+      "parent_energy_retained": 0.977787602144296,
+      "prior_only_cos": 0.9998531670947928,
+      "prior_only_relL2": 0.016718522479091336,
+      "update_scale": 0.0010916917355013106,
+      "lambda_relative": 10.0,
+      "free_solve_update_scale": 0.052832724580135985,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.3011434474189245,
+      "check_sse_law_pick": 0.6093516941418675,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.6093516941418675,
+        "update_scale": 0.052832724580135985
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.6087903763137361,
+        "update_scale": 0.052604614794224076
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.6035862225115904,
+        "update_scale": 0.051015528514985496
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.5652504868141709,
+        "update_scale": 0.04580553043075916
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.44602971699455796,
+        "update_scale": 0.030341942998261928
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.3415057296284658,
+        "update_scale": 0.012616963192072962
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.30233995937874214,
+        "update_scale": 0.003919789462006347
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.3011434474189245,
+        "update_scale": 0.0010916917355013106
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.3147968283128466,
+        "update_scale": 0.00028499353212713846
+       }
+      ],
+      "relL2": 0.015600508284038965,
+      "cos": 0.9998747702313506,
+      "cos_p05": 0.9997355063149234
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.28599315878602516,
+      "input_cos_vs_parent": 0.9283509612213755,
+      "parent_energy_retained": 0.9741994612629064,
+      "prior_only_cos": 0.9999695603427681,
+      "prior_only_relL2": 0.008409487070945795,
+      "update_scale": 0.0022373634516883534,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.03520173903633773,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.055653215231183426,
+      "check_sse_law_pick": 0.41845313742769985,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.41845313742769985,
+        "update_scale": 0.03520173903633773
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.41360863403846776,
+        "update_scale": 0.03515604289927532
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.3733595030592798,
+        "update_scale": 0.03471030190751313
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.22882104248076815,
+        "update_scale": 0.0311186978686371
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.10650908849611807,
+        "update_scale": 0.018808358127775558
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.06506700400333237,
+        "update_scale": 0.00714012536544507
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.055653215231183426,
+        "update_scale": 0.0022373634516883534
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.057832424833307555,
+        "update_scale": 0.0007077954248722511
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.06549996543338116,
+        "update_scale": 0.00021023386951010443
+       }
+      ],
+      "relL2": 0.006945272476297321,
+      "cos": 0.9999780624916934,
+      "cos_p05": 0.999968003666864
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       4,
+       5,
+       10,
+       11,
+       12,
+       13
+      ],
+      "input_drift_vs_parent": 0.29334935915137267,
+      "input_cos_vs_parent": 0.9312598539946595,
+      "parent_energy_retained": 0.97375596581901,
+      "prior_only_cos": 0.9871505365421162,
+      "prior_only_relL2": 0.15544315850306004,
+      "update_scale": 0.1370513141831876,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.2678781137732405,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 9.598682319665738,
+      "check_sse_law_pick": 11.57105299971893,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 11.57105299971893,
+        "update_scale": 0.2678781137732405
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 11.569811461407927,
+        "update_scale": 0.2678365807516902
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 11.557463685746995,
+        "update_scale": 0.26742253925563625
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 11.440385388890395,
+        "update_scale": 0.2634063698550019
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 10.680743935005522,
+        "update_scale": 0.2323611566375554
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 9.598682319665738,
+        "update_scale": 0.1370513141831876
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 10.745868068038032,
+        "update_scale": 0.052483206863215524
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 13.644319899106193,
+        "update_scale": 0.014553729708957717
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 15.973613023401747,
+        "update_scale": 0.003012272981613538
+       }
+      ],
+      "relL2": 0.11094331207667095,
+      "cos": 0.993409630640533,
+      "cos_p05": 0.9869257823569534
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.30371342317783984,
+      "input_cos_vs_parent": 0.9342252610639665,
+      "parent_energy_retained": 0.9729792015936706,
+      "prior_only_cos": 0.999962846638799,
+      "prior_only_relL2": 0.00878362664183481,
+      "update_scale": 0.0021687626455974916,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.030241869092832933,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.0637516991822937,
+      "check_sse_law_pick": 0.47347722540646964,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 0.47347722540646964,
+        "update_scale": 0.030241869092832933
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 0.4691459516215479,
+        "update_scale": 0.030212978685501362
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 0.4318702407039221,
+        "update_scale": 0.029929456211394978
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.27927308984671473,
+        "update_scale": 0.02753333610303443
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.1300760052368138,
+        "update_scale": 0.017943702958476148
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.07629808112320607,
+        "update_scale": 0.007185205831500084
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.0637516991822937,
+        "update_scale": 0.0021687626455974916
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.06518507458388233,
+        "update_scale": 0.0006449899854365536
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.07310697766179418,
+        "update_scale": 0.00019380531246325088
+       }
+      ],
+      "relL2": 0.007330936152593707,
+      "cos": 0.9999745028959842,
+      "cos_p05": 0.9999596689679967
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "branch": "full_attention",
+      "endpoint": "attention.o",
+      "conv_channels_first8": null,
+      "input_drift_vs_parent": 0.33747245302519,
+      "input_cos_vs_parent": 0.9200988664425498,
+      "parent_energy_retained": 0.9633775669482016,
+      "prior_only_cos": 0.9998486374611938,
+      "prior_only_relL2": 0.01622254322632965,
+      "update_scale": 0.005534198872913792,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.06832196691327974,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 1.3200454964656774,
+      "check_sse_law_pick": 3.336751807425002,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 3.336751807425002,
+        "update_scale": 0.06832196691327974
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 3.331610544404994,
+        "update_scale": 0.06824865600274621
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 3.282182373541778,
+        "update_scale": 0.06753148368618683
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 2.9239153954112655,
+        "update_scale": 0.061617035358530726
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 2.018220942895482,
+        "update_scale": 0.03957157200323599
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 1.4464392636137928,
+        "update_scale": 0.01631112307668694
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 1.3200454964656774,
+        "update_scale": 0.005534198872913792
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 1.3795594165517775,
+        "update_scale": 0.0017467030847859238
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 1.5058962035334464,
+        "update_scale": 0.0005008681731877148
+       }
+      ],
+      "relL2": 0.013476636176989566,
+      "cos": 0.9999019344350798,
+      "cos_p05": 0.9997881684012998
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.35026401441995536,
+      "input_cos_vs_parent": 0.9289047941582046,
+      "parent_energy_retained": 0.9672638661824318,
+      "prior_only_cos": 0.9999751098684981,
+      "prior_only_relL2": 0.007403297604475185,
+      "update_scale": 0.001777151877948524,
+      "lambda_relative": 1.0,
+      "free_solve_update_scale": 0.04517054275635058,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.21897950483611725,
+      "check_sse_law_pick": 2.1523288565525256,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 2.1523288565525256,
+        "update_scale": 0.04517054275635058
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 2.101715385385811,
+        "update_scale": 0.045064280349431524
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 1.737465435147052,
+        "update_scale": 0.04404788525442414
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 0.8771285952293727,
+        "update_scale": 0.036907009497182515
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.39032425391156755,
+        "update_scale": 0.019346012993748447
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.25133739683119705,
+        "update_scale": 0.006494829224298141
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.21897950483611725,
+        "update_scale": 0.001777151877948524
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.22059358379665764,
+        "update_scale": 0.0005023211269639874
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.23504628706069813,
+        "update_scale": 0.00013242410280845082
+       }
+      ],
+      "relL2": 0.00659396031540704,
+      "cos": 0.9999808364934902,
+      "cos_p05": 0.9999719324735532
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "branch": "conv",
+      "endpoint": "conv.out",
+      "conv_channels_first8": [
+       0,
+       1,
+       2,
+       3,
+       7,
+       10,
+       11,
+       12
+      ],
+      "input_drift_vs_parent": 0.34934176497841085,
+      "input_cos_vs_parent": 0.9318215103921148,
+      "parent_energy_retained": 0.9679818634057282,
+      "prior_only_cos": 0.9863176418695483,
+      "prior_only_relL2": 0.13910598653575196,
+      "update_scale": 0.13925846763249353,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 0.3389780014814215,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 25.228896870294182,
+      "check_sse_law_pick": 31.24057362913048,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 31.24057362913048,
+        "update_scale": 0.3389780014814215
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 31.231509161809974,
+        "update_scale": 0.3388678143651442
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 31.142016172562563,
+        "update_scale": 0.3377735581072685
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 30.34864020311919,
+        "update_scale": 0.32753376707993453
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 26.82651412515802,
+        "update_scale": 0.2642747927044835
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 25.228896870294182,
+        "update_scale": 0.13925846763249353
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 32.11074620251856,
+        "update_scale": 0.052203109323578634
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 44.109561638691005,
+        "update_scale": 0.01409511116208662
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 52.68497867413472,
+        "update_scale": 0.004610672547182866
+       }
+      ],
+      "relL2": 0.07730639677685079,
+      "cos": 0.9942709217165823,
+      "cos_p05": 0.9842440072905111
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "branch": "mlp",
+      "endpoint": "mlp.down",
+      "input_drift_vs_parent": 0.3454562087270692,
+      "input_cos_vs_parent": 0.9374615376542855,
+      "parent_energy_retained": 0.9667461298873542,
+      "prior_only_cos": 0.9999807219207297,
+      "prior_only_relL2": 0.008069770604651031,
+      "update_scale": 0.0005215851450766956,
+      "lambda_relative": 10.0,
+      "free_solve_update_scale": 0.0775760303099042,
+      "lambda_selected_on": "internal fit split",
+      "lambda_law_would_have_picked": 1e-06,
+      "check_sse_chosen": 0.5632604806432773,
+      "check_sse_law_pick": 6.223532590229782,
+      "lambda_ladder": [
+       {
+        "lambda_relative": 1e-06,
+        "check_sse": 6.223532590229782,
+        "update_scale": 0.0775760303099042
+       },
+       {
+        "lambda_relative": 1e-05,
+        "check_sse": 6.002274427717578,
+        "update_scale": 0.07729649402080976
+       },
+       {
+        "lambda_relative": 0.0001,
+        "check_sse": 4.6129137440753185,
+        "update_scale": 0.07468105844231712
+       },
+       {
+        "lambda_relative": 0.001,
+        "check_sse": 2.1358002215686547,
+        "update_scale": 0.058595222831594435
+       },
+       {
+        "lambda_relative": 0.01,
+        "check_sse": 0.9355075110504351,
+        "update_scale": 0.027813867646944726
+       },
+       {
+        "lambda_relative": 0.1,
+        "check_sse": 0.6380936378290631,
+        "update_scale": 0.008614333410092294
+       },
+       {
+        "lambda_relative": 1.0,
+        "check_sse": 0.569867814229891,
+        "update_scale": 0.0020771138953994696
+       },
+       {
+        "lambda_relative": 10.0,
+        "check_sse": 0.5632604806432773,
+        "update_scale": 0.0005215851450766956
+       },
+       {
+        "lambda_relative": 100.0,
+        "check_sse": 0.5809243370279225,
+        "update_scale": 0.0001680464604494153
+       }
+      ],
+      "relL2": 0.007291198589746738,
+      "cos": 0.9999856509044937,
+      "cos_p05": 0.9999712404247817
+     }
+    ]
+   }
+  }
+ ],
+ "identity_gate": null,
+ "passed_through": [
+  "intermediate_size",
+  "head_dim",
+  "num_attention_heads",
+  "num_hidden_layers",
+  "vocab_size"
+ ],
+ "solver_path": "mx20_build.fold_reader/fold_writer (closed-form basis fold, fp64 CPU) + mx15_build.law_abiding_solve (prior-anchored ridge on every writer) + mx20_build.solve_head_gain (final norm diagonal)",
+ "ridge_relative": 1e-06,
+ "condition_number": null,
+ "prior_norm": null,
+ "correction_norm": null,
+ "clamp_engaged": true,
+ "requested_clamp_ratio": 0.35441160867665583,
+ "allowed_clamp_ratio": 1.0,
+ "condition_cap_saturated": false,
+ "worst_site": {
+  "endpoint": "conv.out",
+  "layer": 1,
+  "relL2": 0.23494615666204363,
+  "cos": 0.974882625288614
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "split_authority": "matrix-campaign-capture-manifest",
+  "fit_rows": 4751,
+  "heldout_rows": 1584,
+  "parent_model_forward_calls": 1548,
+  "conditioned": true
+ },
+ "residual_basis": {
+  "schema": "neural-forge-matrix-wave19-residual-basis-v1",
+  "mode": "reader-pca",
+  "width": 768,
+  "parent_hidden": 1024,
+  "orthonormality_max_abs_offdiag": 3.3540878408011565e-15,
+  "spectrum": {
+   "raw.fit": {
+    "top_1024": 0.9999999999999984,
+    "top_960": 0.9945040738178852,
+    "top_896": 0.9881317249346414,
+    "top_832": 0.9809430476566875,
+    "top_768": 0.9729027856239278,
+    "top_704": 0.9639278118889743,
+    "top_640": 0.9539187114427733,
+    "top_576": 0.9426947277432213,
+    "top_512": 0.930055598779807,
+    "top_448": 0.9157038024690827,
+    "top_384": 0.8991564043868423,
+    "top_256": 0.8564539685479146
+   },
+   "raw.hld": {
+    "top_1024": 0.9999999999999986,
+    "top_960": 0.995413239778586,
+    "top_896": 0.9899230568601572,
+    "top_832": 0.9835845192716397,
+    "top_768": 0.9763424098890582,
+    "top_704": 0.9680895922286523,
+    "top_640": 0.9586783635768756,
+    "top_576": 0.9479566986094046,
+    "top_512": 0.9356808943862043,
+    "top_448": 0.9215347475784846,
+    "top_384": 0.9050178518074082,
+    "top_256": 0.8613690587267553
+   },
+   "reader.fit": {
+    "top_1024": 0.9999999999999996,
+    "top_960": 0.9874235763718416,
+    "top_896": 0.9729449091222421,
+    "top_832": 0.9567570783003496,
+    "top_768": 0.9388523528007287,
+    "top_704": 0.9190634331038701,
+    "top_640": 0.8972751937441246,
+    "top_576": 0.8731974796481545,
+    "top_512": 0.8464956116904321,
+    "top_448": 0.8167341713771931,
+    "top_384": 0.7831922326785933,
+    "top_256": 0.7004409661394944
+   },
+   "reader.hld": {
+    "top_1024": 1.0000000000000016,
+    "top_960": 0.9894594449333637,
+    "top_896": 0.9769487556811509,
+    "top_832": 0.9626598973094056,
+    "top_768": 0.946550762441625,
+    "top_704": 0.9284302990388815,
+    "top_640": 0.9080821274110242,
+    "top_576": 0.8852646873803557,
+    "top_512": 0.8595934445730893,
+    "top_448": 0.8305505376101998,
+    "top_384": 0.7974058171473369,
+    "top_256": 0.714172127333594
+   }
+  },
+  "retained": {
+   "raw.fit": 0.9634897651820558,
+   "raw.hld": 0.9521844457577822,
+   "reader.fit": 0.9388523528007287,
+   "reader.hld": 0.919315382042014
+  },
+  "per_endpoint_retained": {
+   "B00.op.fit.raw": 0.936282290612866,
+   "B00.op.hld.raw": 0.9136655181875458,
+   "B00.ffn.fit.raw": 0.9420394498932645,
+   "B00.ffn.hld.raw": 0.9228410426453774,
+   "B01.op.fit.raw": 0.9480332509986246,
+   "B01.op.hld.raw": 0.9315745645998285,
+   "B01.ffn.fit.raw": 0.9429234177050614,
+   "B01.ffn.hld.raw": 0.9264268135789142,
+   "B02.op.fit.raw": 0.9479302569801142,
+   "B02.op.hld.raw": 0.9314211002979508,
+   "B02.ffn.fit.raw": 0.9346326235153777,
+   "B02.ffn.hld.raw": 0.9130469780391512,
+   "B03.op.fit.raw": 0.9367927860662649,
+   "B03.op.hld.raw": 0.9187957838063842,
+   "B03.ffn.fit.raw": 0.941280697248173,
+   "B03.ffn.hld.raw": 0.9241748379930432,
+   "B04.op.fit.raw": 0.9448853346710084,
+   "B04.op.hld.raw": 0.9310247961270137,
+   "B04.ffn.fit.raw": 0.9480056934514254,
+   "B04.ffn.hld.raw": 0.9312374143198983,
+   "B05.op.fit.raw": 0.9466210332442827,
+   "B05.op.hld.raw": 0.9312888706434563,
+   "B05.ffn.fit.raw": 0.9524930504168813,
+   "B05.ffn.hld.raw": 0.9379288634408777,
+   "B06.op.fit.raw": 0.9902647557222685,
+   "B06.op.hld.raw": 0.9880766803958299,
+   "B06.ffn.fit.raw": 0.9889644113893584,
+   "B06.ffn.hld.raw": 0.9858926061591603,
+   "B07.op.fit.raw": 0.9896656216445774,
+   "B07.op.hld.raw": 0.9868374924341624,
+   "B07.ffn.fit.raw": 0.9889920774295347,
+   "B07.ffn.hld.raw": 0.9859770129276683,
+   "B08.op.fit.raw": 0.9848610802737227,
+   "B08.op.hld.raw": 0.9811643256391418,
+   "B08.ffn.fit.raw": 0.9823689970018608,
+   "B08.ffn.hld.raw": 0.9762192058247333,
+   "B09.op.fit.raw": 0.9832188918979659,
+   "B09.op.hld.raw": 0.9773686455739582,
+   "B09.ffn.fit.raw": 0.9819125519298295,
+   "B09.ffn.hld.raw": 0.9756508858182961,
+   "B10.op.fit.raw": 0.977787602144296,
+   "B10.op.hld.raw": 0.9713102043391771,
+   "B10.ffn.fit.raw": 0.9741994612629062,
+   "B10.ffn.hld.raw": 0.9664421197864499,
+   "B11.op.fit.raw": 0.97375596581901,
+   "B11.op.hld.raw": 0.9651621019216646,
+   "B11.ffn.fit.raw": 0.9729792015936706,
+   "B11.ffn.hld.raw": 0.9638400162188354,
+   "B12.op.fit.raw": 0.9633775669482016,
+   "B12.op.hld.raw": 0.9519837983112429,
+   "B12.ffn.fit.raw": 0.9672638661824322,
+   "B12.ffn.hld.raw": 0.9545989435397226,
+   "B13.op.fit.raw": 0.967981863405728,
+   "B13.op.hld.raw": 0.9566175431280126,
+   "B13.ffn.fit.raw": 0.9667461298873542,
+   "B13.ffn.hld.raw": 0.9554911222254239,
+   "OUT.final.fit.raw": 0.9649432609435629,
+   "OUT.final.hld.raw": 0.9572896390527682
+  },
+  "parent_forward_calls": 24,
+  "endpoints": [
+   "B00.op",
+   "B00.ffn",
+   "B01.op",
+   "B01.ffn",
+   "B02.op",
+   "B02.ffn",
+   "B03.op",
+   "B03.ffn",
+   "B04.op",
+   "B04.ffn",
+   "B05.op",
+   "B05.ffn",
+   "B06.op",
+   "B06.ffn",
+   "B07.op",
+   "B07.ffn",
+   "B08.op",
+   "B08.ffn",
+   "B09.op",
+   "B09.ffn",
+   "B10.op",
+   "B10.ffn",
+   "B11.op",
+   "B11.ffn",
+   "B12.op",
+   "B12.ffn",
+   "B13.op",
+   "B13.ffn",
+   "OUT.final"
+  ],
+  "basis_sha256": "641788c64a2b719b1fa2cc3ef27502d5f1d1dd81ff215dbd2a9e26f697762bb2",
+  "basis_path": "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-768.safetensors"
+ },
+ "export_path": "stock Lfm2ForCausalLM with hidden_size=block_dim=conv_dim=768, head_dim=64 (written explicitly: the fallback hidden_size//num_attention_heads would be 48); no trust_remote_code, no custom module, no hook",
+ "built_at": "2026-08-13T02:55:10",
+ "wall_time_seconds": 495.4,
+ "child_tensors_sha256": "84e9a46facc06086c6583741acecb1e25109e8a32ebb0057855e3856ffbd1c2f"
+}

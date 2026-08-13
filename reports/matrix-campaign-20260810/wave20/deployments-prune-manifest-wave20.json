@@ -1,0 +1,11 @@
+{
+ "schema": "neural-forge-matrix-wave20-deployment-prune-v1",
+ "policy": "deployments are held at current+1: the deployment that built this wave and the one that built the last",
+ "kept": [
+  {"deployment": "neural-forge-matrix-1c0c7e3a", "why": "wave 20 -- built, sealed and reviewed every child and both probes"},
+  {"deployment": "neural-forge-matrix-e7d068da", "why": "wave 19 -- the deployment the sealed bases and the W768 baseline were built by"}
+ ],
+ "pruned": [
+  {"deployment": "neural-forge-matrix-b372d47c", "bytes": 125717265, "why": "wave 18, now current+2; its commit is in the repository and a deployment is one git archive away"}
+ ]
+}

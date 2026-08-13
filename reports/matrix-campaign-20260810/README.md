@@ -37,6 +37,35 @@ python experiments/render_matrix_ledger.py \
   --out    reports/matrix-campaign-20260810/LEDGER.md
 ```
 
+## wave20/ — the basis objective moved, and it was the wrong variable
+
+`NOTES-MX-X.md` at the repo root is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave20/wave20-child-index.json` | every wave-20 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict |
+| `wave20/wave20-child-comparison.json` | the wave's central table: one row per child with the basis, the beta, the retained read energy, the per-selector retention, the drift and the review score — five children at 768 are the same 165,978,624 parameters and differ only in the basis or the solve |
+| `wave20/human-review/` | 68 files: every dossier, every child and parent response rendered verbatim (`READ-*.txt`, `READ-PARENT-*.txt`, `READ-PROBE-*.txt`), every run receipt, verdict receipt, per-case reading and build receipt, the five new basis censuses, the free retention report, the subspace comparison, both probe receipts and dossiers, and the benchmark table |
+| `wave20/human-review/basis-selector-retention-768.json` | the free measurement the wave opens with, and the one that falsified its own hypothesis: what every sealed basis retains of the pooled stream, of the retrieval rows and of the procedural rows, on a beta grid, with no build at all |
+| `wave20/human-review/basis-subspace-768.json` | principal angles between every pair of sealed bases — the measurement that makes "same energy, different subspace" a number (17.2 of 768 directions exchanged at beta 0.25, 230.5 for the generalised basis) |
+| `wave20/human-review/probe-CBT-L12-receipt.json`, `probe-CBT-L02-receipt.json` | the block-Toeplitz tied ridge at `attn_o`, full rank at 4.266x storage, and its matched-site comparison against the sealed rank-128 twin |
+| `wave20/human-review/probe-LANDMARK-L12-receipt.json` | the verbatim-state landmark memory: six of eight KV groups converted at L12, the selection split between QR pivots and attended mass, and the beta grid that converged on the parent's own attention scaling |
+| `wave20/ledger-merge-report.json` | the exactly-once merge of 16 shard rows into the campaign ledger (620 → 636): 8 ARCH run rows and 8 ADDENDUM 6 verdict rows, no superseded rows |
+| `wave20/children-retention-manifest-wave20.json` | which of the 8 built children were kept and which were deleted, each with its sealed tensor digest |
+| `wave20/deployments-prune-manifest-wave20.json` | the deployment pruned to hold current+1 |
+| `run/mx20/` | the wave-20 builder (adds `--basis attribution-weighted`, `--basis reader-generalized`, `--width-lambda-split`, `--mode selectors`), its standalone algebra self-test (17 checks), the two slate probes and their review driver, the subspace comparison, the comparison table, the drivers, the seal verifier, the ledger merge and the dossier readers |
+
+Wave 20's one-line result: **the residual basis objective is a real degree of
+freedom and every direction the wave moved it in lost.** At an identical
+parameter count and retained read energy differing by 0.0015, exchanging
+**seventeen of 768 directions** takes the width child from 3/15 to 0/15, so
+retained energy is a **ceiling and not a predictor**; the energy that matters is
+what a **reader** consumes, not what the stream carries (evidence-PCA retains
+more raw and less read energy, and scores 1/15 against 3/15); and choosing the
+width writers' λ on an internal fit split keeps the score at 3/15 while
+recovering **context-retrieval**, the case the attribution artifact names as this
+axis's signature zero.
+
 ## wave18/ — the distance law at three bodies, the λ overfit fixed, and the mask an excision took away
 
 `wave18/NOTES-MX-V.md` is the narrative. The rest is raw:

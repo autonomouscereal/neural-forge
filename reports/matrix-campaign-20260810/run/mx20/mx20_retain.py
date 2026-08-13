@@ -1,23 +1,33 @@
 #!/usr/bin/env python3
-"""Wave 19 retention: five children kept, three deleted and named by digest.
+"""Wave 20 retention: five children kept, three deleted and named by digest.
 
 The policy is the campaign's standing one -- the best five by sealed score, plus
-any child a later wave cannot re-derive -- with two wave-specific readings
-written down rather than assumed:
+any child a later wave cannot re-derive -- with this wave's readings written
+down rather than assumed:
 
-* ``MX20-W512`` is kept although it scored **0/15**.  It is the only child in
-  this campaign under half the parent (0.463481x), and what a 0.463481x LFM2
-  built by an exact fold actually emits -- eight empty strings and eight lanes
-  of quotation marks -- is the answer to a question the deck has asked since
-  wave 14.  A landmark you have deleted is a number in a note.
-* ``MX20-IDENT`` is **deleted**, and precisely because its gate passed: all 132
-  of its tensors are bit-identical to the parent's, so keeping it is keeping the
-  parent twice.  The gate is in its build receipt, which is committed.
+* the five kept are the wave's ANSWERS, not its best scores.  Three of them
+  (`W768LS`, `W768ST`, `W768AW25`) are the same 165,978,624 parameters against
+  the same corpus and differ only in the basis or the solve, which is what makes
+  the comparison between 3/15, 2/15 and 0/15 a controlled measurement rather
+  than three unrelated children.  Deleting any one of them deletes one arm of
+  the only controlled experiment this wave ran.
+* ``MX20-W768AW25`` is kept although it scored **0/15**.  It is the wave's
+  central negative result and the one child whose benchmark row disagrees with
+  its review in the awkward direction -- better than the living reader-PCA child
+  on four of five accuracy tasks, and zero cases held.  A disagreement you have
+  deleted is a sentence in a note.
+* ``MX20-W704`` is kept as the bisection rung: it is what locates the cliff to
+  a 64-wide interval, and its retained read energy (0.8953) is the tightest
+  upper bound the campaign has on where the floor sits.
 
-``MX20-W640`` and ``MX20-Q01050913`` are deleted as re-derivable: both are
-0/15, both are one command against a committed builder and a sealed basis, and
-their tensor digests are named below so a rebuild can be checked rather than
-trusted.
+``MX20-W768AW100``, ``MX20-W768RG`` and ``MX20-W704AW25`` are deleted as
+re-derivable: all three are 0/15, each is one command against a committed
+builder and a sealed basis whose digest is in its receipt, and their tensor
+digests are named below so a rebuild can be checked rather than trusted.
+
+The two CBT probe checkpoints and the F-LANDMARK state are NOT children and are
+not covered by the best-five rule; `probeq.sh` writes them and the wave keeps
+the reviewed one.
 """
 
 import json
@@ -27,42 +37,55 @@ import sys
 
 W = "/mnt/ai_data/neural-forge-matrix/wave20"
 KEEP = {
-    "MX20-W896",
-    "MX20-W768",
-    "MX20-W896KV6JS",
-    "MX20-W896X13",
-    "MX20-W512",
+    "MX20-W768LS",
+    "MX20-W768ST",
+    "MX20-W768AW25",
+    "MX20-W768EV",
+    "MX20-W704",
 }
 REASON = {
-    "MX20-W896": (
-        "4/15 at 0.859023x -- the best rung of the hidden_size ladder and the "
-        "child the axis's whole claim rests on"
+    "MX20-W768LS": (
+        "3/15 at 0.722610x -- wave 19's sealed reader-PCA basis with the "
+        "writers' lambda chosen on an internal fit split; the same score as the "
+        "child it controls for, on a different set of cases, and the only child "
+        "in the wave that recovers context-retrieval"
     ),
-    "MX20-W768": (
-        "3/15 at 0.722610x -- the deepest child in the campaign with a non-zero "
-        "score, 4.7 points of net ratio below wave 16's frontier"
+    "MX20-W768ST": (
+        "2/15 at 0.722610x -- the stale arm, which prices the conditioned solve "
+        "on this axis for the first time at one review case"
     ),
-    "MX20-W896KV6JS": (
-        "2/15 at 0.841047x -- width composed with the head merge, and the best "
-        "of the two width compositions"
+    "MX20-W768AW25": (
+        "0/15 at 0.722610x -- the attribution-weighted basis at beta 0.25: same "
+        "parameters, same retained read energy to 0.0015, seventeen of 768 "
+        "directions exchanged, three review cases gone and four of five "
+        "accuracy benchmarks slightly better.  The wave's central measurement"
     ),
-    "MX20-W896X13": (
-        "1/15 at 0.815064x -- width composed with the census's best single "
-        "excision, and the wave's cleanest demonstration that the second axis "
-        "is still fatal"
+    "MX20-W768EV": (
+        "1/15 at 0.722610x -- wave 19's sealed evidence-pca basis, finally built "
+        "against: more raw energy retained and less read energy, and it is the "
+        "measurement that says which of the two the law is about"
     ),
-    "MX20-W512": (
-        "0/15 at 0.463481x -- the campaign's only child under half the parent, "
-        "kept as the landmark it is: a 0/15 nobody has to take on trust"
+    "MX20-W704": (
+        "0/15 at 0.656116x -- the bisection rung inside wave 19's cliff, at "
+        "0.8953 retained read energy: the tightest bound the campaign has on "
+        "where the behavioural floor sits"
     ),
 }
 DELETE_REASON = {
-    "MX20-IDENT": (
-        "the identity gate: 132 of 132 tensors bit-identical to the parent, so "
-        "keeping it keeps the parent twice; the gate rides in its build receipt"
+    "MX20-W768AW100": (
+        "0/15 at 0.722610x -- the attribution-weighted basis taken to beta 1.0, "
+        "0.8967 retained read energy, below the floor; re-derivable from the "
+        "committed builder and the sealed basis E-attribution-weighted-b10-768"
     ),
-    "MX20-W640": "0/15 at 0.590763x, re-derivable from the committed builder and the sealed basis",
-    "MX20-Q01050913": "0/15 at 0.789916x, re-derivable from the committed builder",
+    "MX20-W768RG": (
+        "0/15 at 0.722610x -- the reader-generalized basis at 0.4780 retained "
+        "read energy; re-derivable from the committed builder and the sealed "
+        "basis E-reader-generalized-768"
+    ),
+    "MX20-W704AW25": (
+        "0/15 at 0.656116x -- attribution-weighted at 704, fifteen empty lanes; "
+        "re-derivable from the committed builder and its sealed basis"
+    ),
 }
 
 

@@ -1,0 +1,314 @@
+{
+ "schema": "neural-forge-matrix-wave20-selector-retention-v1",
+ "parent_forward_calls": 24,
+ "selector_report": {
+  "corpus_rows": 6335,
+  "coverage": {
+   "retrieval": {
+    "rows": 998,
+    "fraction": 0.15753749013417523
+   },
+   "procedural": {
+    "rows": 311,
+    "fraction": 0.04909234411996843
+   }
+  },
+  "rules": {
+   "retrieval": "position t where the bigram (x_t, x_{t+1}) recurs from earlier in the same sequence",
+   "procedural": "position within 32 of a list-item opener matched by '\\\\n[ \\\\t]*(?:\\\\*\\\\*)?(?:\\\\d{1,2}[.)]|[-*\u2022])' on a two-token decoded window"
+  }
+ },
+ "attribution": {
+  "artifact": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-1c0c7e3a/reports/matrix-campaign-20260810/wave19/percase-attribution.json",
+  "artifact_sha256": "5e05682cce13a33fe559cd44ea95fd13c5fefc0e54fbec5e0ddae8f8ded2c443",
+  "axis": "hidden_size",
+  "per_case_deficit": {
+   "summarization-priorities": 0.0,
+   "uncertainty-insufficient-data": 0.0,
+   "writing-concise-email": 0.1627,
+   "instruction-three-actions": 0.09920000000000001,
+   "context-retrieval": 0.3175,
+   "planning-dependencies": 0.2698,
+   "conversation-natural-greeting": 0.254,
+   "creative-continuity": 0.2063,
+   "comparison-ram-rom": 0.1429,
+   "debugging-off-by-one": 0.127,
+   "multi-turn-correction": 0.0,
+   "arithmetic-multi-step": 0.0794,
+   "coding-deduplicate": 0.0476,
+   "logic-ordering": 0.0317,
+   "explanation-seasons": 0.0159
+  },
+  "family_deficit": {
+   "retrieval": 0.3175,
+   "procedural": 0.369
+  },
+  "weights": {
+   "retrieval": 0.46249089584850694,
+   "procedural": 0.5375091041514931
+  },
+  "deficit_covered": 0.6865,
+  "deficit_total": 1.754,
+  "deficit_unassigned_fraction": 0.6086088939566705
+ },
+ "law": {
+  "source": "NOTES-MX-W section 4",
+  "statement": "behaviour tracked the retained READER energy of the pooled stream; 0.9705 read 4/15, 0.9346 read 3/15, 0.8883 and 0.8258 read 0/15, so the floor sits near 0.92"
+ },
+ "sealed_bases": {
+  "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-896.safetensors": {
+   "sha256": "d054349102f2621e79a73ec07982ec604ab35d81c4bdfe7932dea9167cc11b74",
+   "mode": "reader-pca",
+   "width": 896,
+   "retained": {
+    "pooled.raw.fit": 0.9836282649233465,
+    "pooled.raw.hld": 0.9776635883652569,
+    "pooled.reader.fit": 0.9729449091222423,
+    "pooled.reader.hld": 0.9626584251735685,
+    "retrieval.raw.fit": 0.9811259242277472,
+    "retrieval.raw.hld": 0.9728973107838967,
+    "retrieval.reader.fit": 0.9769100731521784,
+    "retrieval.reader.hld": 0.9662315583271835,
+    "procedural.raw.fit": 0.9777610738415311,
+    "procedural.raw.hld": 0.9677815404937897,
+    "procedural.reader.fit": 0.972557549331297,
+    "procedural.reader.hld": 0.9593845171525507,
+    "case.reader.fit": 0.9745705519724185,
+    "case.reader.hld": 0.9625512113593183
+   }
+  },
+  "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-768.safetensors": {
+   "sha256": "641788c64a2b719b1fa2cc3ef27502d5f1d1dd81ff215dbd2a9e26f697762bb2",
+   "mode": "reader-pca",
+   "width": 768,
+   "retained": {
+    "pooled.raw.fit": 0.9634897651820558,
+    "pooled.raw.hld": 0.9521844457577822,
+    "pooled.reader.fit": 0.9388523528007287,
+    "pooled.reader.hld": 0.919315382042014,
+    "retrieval.raw.fit": 0.9576914539556809,
+    "retrieval.raw.hld": 0.9416683004662695,
+    "retrieval.reader.fit": 0.9471364281246947,
+    "retrieval.reader.hld": 0.9265187399636945,
+    "procedural.raw.fit": 0.9504412322220812,
+    "procedural.raw.hld": 0.93075729859928,
+    "procedural.reader.fit": 0.9378849739248936,
+    "procedural.reader.hld": 0.9119816491649552,
+    "case.reader.fit": 0.9421636872656611,
+    "case.reader.hld": 0.9187049213114953
+   }
+  },
+  "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-640.safetensors": {
+   "sha256": "de6de9b63506ca92b2b7c841e2d4c30635957599777347667deb61f7519d47b9",
+   "mode": "reader-pca",
+   "width": 640,
+   "retained": {
+    "pooled.raw.fit": 0.9390349359845783,
+    "pooled.raw.hld": 0.9227955607123358,
+    "pooled.reader.fit": 0.8972751937441243,
+    "pooled.reader.hld": 0.8697266304100875,
+    "retrieval.raw.fit": 0.9288122510339372,
+    "retrieval.raw.hld": 0.9053140794161129,
+    "retrieval.reader.fit": 0.9100886652153555,
+    "retrieval.reader.hld": 0.8803796538037921,
+    "procedural.raw.fit": 0.9172938631050009,
+    "procedural.raw.hld": 0.8885952468770513,
+    "procedural.reader.fit": 0.8956812123653171,
+    "procedural.reader.hld": 0.8584293158017297,
+    "case.reader.fit": 0.9023445281408264,
+    "case.reader.hld": 0.868581147288481
+   }
+  },
+  "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-512.safetensors": {
+   "sha256": "52cf32b1f31bad6b4d11d05b7ac2afab690676c0fc6cf7d5d2eb09d9993215fd",
+   "mode": "reader-pca",
+   "width": 512,
+   "retained": {
+    "pooled.raw.fit": 0.9089955837623115,
+    "pooled.raw.hld": 0.8886761762839016,
+    "pooled.reader.fit": 0.8464956116904315,
+    "pooled.reader.hld": 0.8124354819654168,
+    "retrieval.raw.fit": 0.8927537803683144,
+    "retrieval.raw.hld": 0.8621805266181899,
+    "retrieval.reader.fit": 0.8635841486736918,
+    "retrieval.reader.hld": 0.8254027923004811,
+    "procedural.raw.fit": 0.8770333428205361,
+    "procedural.raw.hld": 0.840018261225763,
+    "procedural.reader.fit": 0.8445744989981254,
+    "procedural.reader.hld": 0.7970401207738708,
+    "case.reader.fit": 0.8533662889063445,
+    "case.reader.hld": 0.8101575981368698
+   }
+  },
+  "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-evidence-pca-768.safetensors": {
+   "sha256": "e431de339b234489ee3e0f9374e5ab84376313a04c582e2943b9404014104725",
+   "mode": "evidence-pca",
+   "width": 768,
+   "retained": {
+    "pooled.raw.fit": 0.9729027856239291,
+    "pooled.raw.hld": 0.9635734008878163,
+    "pooled.reader.fit": 0.9288289146313673,
+    "pooled.reader.hld": 0.912160257148874,
+    "retrieval.raw.fit": 0.9654879589369273,
+    "retrieval.raw.hld": 0.953464976814939,
+    "retrieval.reader.fit": 0.9352649954962319,
+    "retrieval.reader.hld": 0.9181734145436358,
+    "procedural.raw.fit": 0.9617057854975322,
+    "procedural.raw.hld": 0.9462331827920422,
+    "procedural.reader.fit": 0.9283941990985234,
+    "procedural.reader.hld": 0.9053233851814607,
+    "case.reader.fit": 0.9315718798796924,
+    "case.reader.hld": 0.9112664067728526
+   }
+  }
+ },
+ "beta_grid": {
+  "768.beta0": {
+   "width": 768,
+   "beta": 0.0,
+   "retained": {
+    "pooled.raw.fit": 0.9634897651820558,
+    "pooled.raw.hld": 0.9521844457577822,
+    "pooled.reader.fit": 0.9388523528007287,
+    "pooled.reader.hld": 0.919315382042014,
+    "retrieval.raw.fit": 0.9576914539556809,
+    "retrieval.raw.hld": 0.9416683004662695,
+    "retrieval.reader.fit": 0.9471364281246947,
+    "retrieval.reader.hld": 0.9265187399636945,
+    "procedural.raw.fit": 0.9504412322220812,
+    "procedural.raw.hld": 0.93075729859928,
+    "procedural.reader.fit": 0.9378849739248936,
+    "procedural.reader.hld": 0.9119816491649552,
+    "case.reader.fit": 0.9421636872656611,
+    "case.reader.hld": 0.9187049213114953
+   }
+  },
+  "768.beta0.125": {
+   "width": 768,
+   "beta": 0.125,
+   "retained": {
+    "pooled.raw.fit": 0.9630930614955092,
+    "pooled.raw.hld": 0.9517288841532325,
+    "pooled.reader.fit": 0.9384495261528137,
+    "pooled.reader.hld": 0.9188423455995138,
+    "retrieval.raw.fit": 0.9590526884871604,
+    "retrieval.raw.hld": 0.9421183103238394,
+    "retrieval.reader.fit": 0.9491284045009258,
+    "retrieval.reader.hld": 0.9272823492505511,
+    "procedural.raw.fit": 0.958038582251042,
+    "procedural.raw.hld": 0.9319731158037656,
+    "procedural.reader.fit": 0.9483108653533774,
+    "procedural.reader.hld": 0.9136358513601466,
+    "case.reader.fit": 0.9486889697661184,
+    "case.reader.hld": 0.9199472323946746
+   }
+  },
+  "768.beta0.25": {
+   "width": 768,
+   "beta": 0.25,
+   "retained": {
+    "pooled.raw.fit": 0.9623167547131961,
+    "pooled.raw.hld": 0.9508635651896653,
+    "pooled.reader.fit": 0.9374946278697357,
+    "pooled.reader.hld": 0.9178146044202483,
+    "retrieval.raw.fit": 0.9599241892745142,
+    "retrieval.raw.hld": 0.9420306316702407,
+    "retrieval.reader.fit": 0.9505517952092251,
+    "retrieval.reader.hld": 0.9274221507442029,
+    "procedural.raw.fit": 0.9626670243134112,
+    "procedural.raw.hld": 0.932229069269111,
+    "procedural.reader.fit": 0.9548869166570684,
+    "procedural.reader.hld": 0.9143541838945551,
+    "case.reader.fit": 0.9528819624550433,
+    "case.reader.hld": 0.9203979995897673
+   }
+  },
+  "768.beta0.5": {
+   "width": 768,
+   "beta": 0.5,
+   "retained": {
+    "pooled.raw.fit": 0.9596345298998494,
+    "pooled.raw.hld": 0.9479817525352553,
+    "pooled.reader.fit": 0.9342544956247121,
+    "pooled.reader.hld": 0.9144404705458782,
+    "retrieval.raw.fit": 0.9607774895725264,
+    "retrieval.raw.hld": 0.9404941931932942,
+    "retrieval.reader.fit": 0.9525295498351055,
+    "retrieval.reader.hld": 0.9264965542669286,
+    "procedural.raw.fit": 0.9682150133127708,
+    "procedural.raw.hld": 0.930822573338371,
+    "procedural.reader.fit": 0.9633248340945031,
+    "procedural.reader.hld": 0.9138648502154438,
+    "case.reader.fit": 0.9583321134064351,
+    "case.reader.hld": 0.9197068983383083
+   }
+  },
+  "768.beta0.75": {
+   "width": 768,
+   "beta": 0.75,
+   "retained": {
+    "pooled.raw.fit": 0.9547708172307523,
+    "pooled.raw.hld": 0.942898287664483,
+    "pooled.reader.fit": 0.9285706374626351,
+    "pooled.reader.hld": 0.9086463895852231,
+    "retrieval.raw.fit": 0.9605835375545585,
+    "retrieval.raw.hld": 0.9372043906092764,
+    "retrieval.reader.fit": 0.9536132715319747,
+    "retrieval.reader.hld": 0.9241082189053798,
+    "procedural.raw.fit": 0.971269283110033,
+    "procedural.raw.hld": 0.9269123170374154,
+    "procedural.reader.fit": 0.9686248204586658,
+    "procedural.reader.hld": 0.9111292996904338,
+    "case.reader.fit": 0.9616821157474869,
+    "case.reader.hld": 0.9171319316652995
+   }
+  },
+  "768.beta1": {
+   "width": 768,
+   "beta": 1.0,
+   "retained": {
+    "pooled.raw.fit": 0.9438731077779181,
+    "pooled.raw.hld": 0.93167357928606,
+    "pooled.reader.fit": 0.9167836815833493,
+    "pooled.reader.hld": 0.8966944538002213,
+    "retrieval.raw.fit": 0.9586246321583607,
+    "retrieval.raw.hld": 0.9301994321725877,
+    "retrieval.reader.fit": 0.9530686488785908,
+    "retrieval.reader.hld": 0.9182942298513741,
+    "procedural.raw.fit": 0.9725168439032501,
+    "procedural.raw.hld": 0.9183485096737196,
+    "procedural.reader.fit": 0.9718917946413774,
+    "procedural.reader.hld": 0.9039082638823454,
+    "case.reader.fit": 0.9631862610948593,
+    "case.reader.hld": 0.9105616421710077
+   }
+  }
+ },
+ "generalized": {
+  "768": {
+   "width": 768,
+   "objective": {
+    "mode": "reader-generalized",
+    "generalized_ridge_relative": 1e-06,
+    "generalized_eigenvalue_top": 49.1367144498423,
+    "generalized_eigenvalue_cut": 1.7582813546324056
+   },
+   "retained": {
+    "pooled.raw.fit": 0.17116326474927396,
+    "pooled.raw.hld": 0.18615510248156883,
+    "pooled.reader.fit": 0.4632775460466795,
+    "pooled.reader.hld": 0.4779750233236748,
+    "retrieval.raw.fit": 0.24208005780037245,
+    "retrieval.raw.hld": 0.2624760287248376,
+    "retrieval.reader.fit": 0.4588316259044679,
+    "retrieval.reader.hld": 0.4734851871259829,
+    "procedural.raw.fit": 0.24225758224254418,
+    "procedural.raw.hld": 0.27370937512429183,
+    "procedural.reader.fit": 0.45587319626019174,
+    "procedural.reader.hld": 0.4901926962187639,
+    "case.reader.fit": 0.4572414430366778,
+    "case.reader.hld": 0.48246562537104654
+   }
+  }
+ }
+}

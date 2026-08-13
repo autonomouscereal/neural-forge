@@ -1,0 +1,65 @@
+{
+ "schema": "neural-forge-matrix-wave20-cbt-probe-v1",
+ "class": "CBT",
+ "spec": "docs/FOLD_CLASS_CANDIDATES_2026-08-12.md section A6",
+ "status": "probe",
+ "export_class": "standard-export",
+ "research_only": true,
+ "research_only_reason": "the installed tensor is dense, so the loader counts the parent's own parameter count and R3 counts the loader; the 4.266x is a STORAGE ratio (245,824 numbers determine the tensor) and is reported as one",
+ "site": {
+  "component": "C09 attn_o",
+  "layer": 12,
+  "shape": [
+   1024,
+   1024
+  ],
+  "grid": 8,
+  "block": 128,
+  "permutations": "identity (level-1 arm)",
+  "tying_rule": "class(I,J) = I - J",
+  "base_classes": 15,
+  "merged_classes": 15
+ },
+ "storage": {
+  "parent_numbers": 1048576,
+  "child_numbers_stored": 245824,
+  "storage_ratio": 4.265555844832075,
+  "loader_counted_parameters": 229693184,
+  "loader_counted_ratio": 1.0
+ },
+ "rank": {
+  "installed": 1024,
+  "parent": 1024,
+  "full": 1024
+ },
+ "solve": {
+  "update_scale": 0.5333186365737347,
+  "lambda_relative": 1.0,
+  "free_solve_update_scale": 1.6016047235180928
+ },
+ "heldout": {
+  "solved": {
+   "relL2": 0.4481259403672237,
+   "cos": 0.9031589794349765,
+   "cos_p05": 0.8103652901660279
+  },
+  "tied_projection_only": {
+   "relL2": 0.7379074906387527,
+   "cos": 0.6936880043902052,
+   "cos_p05": 0.6221479340586294
+  },
+  "fit_solved": {
+   "relL2": 0.38618745542040095,
+   "cos": 0.9240931664871123,
+   "cos_p05": 0.8449534867467204
+  }
+ },
+ "rows": {
+  "fit": 4751,
+  "held_out": 1584
+ },
+ "parent_forward_calls": 24,
+ "built_at": "2026-08-13T02:55:34",
+ "wall_time_seconds": 43.2,
+ "child_tensors_sha256": "149c68f217afa01f0f720f52e8ae27d239a7dc8484788a2e89ac8bc7b72ebc97"
+}

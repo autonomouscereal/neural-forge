@@ -1,0 +1,391 @@
+{
+ "schema": "neural-forge-matrix-wave20-landmark-probe-v1",
+ "class": "F-LANDMARK",
+ "spec": "docs/FOLD_CLASS_CANDIDATES_2026-08-12.md section A8",
+ "status": "probe",
+ "export_class": "custom-runtime",
+ "research_only": true,
+ "research_only_reason": "a landmark memory has no config that expresses it and Lfm2ForCausalLM.from_pretrained cannot produce this model; R3 makes custom runtime research-only",
+ "site": {
+  "component": "C07+C08 attn_k/attn_v, with C09 refit in place",
+  "layer": 12,
+  "kv_groups": 8,
+  "kept_verbatim": [
+   0,
+   3
+  ],
+  "converted": [
+   1,
+   2,
+   4,
+   5,
+   6,
+   7
+  ],
+  "landmarks": 256,
+  "rope_on_converted_queries": false
+ },
+ "selection": {
+  "0": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.6426643539792751
+  },
+  "1": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.4409529467445574
+  },
+  "2": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.5320608396996584
+  },
+  "3": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.5461122097303582
+  },
+  "4": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.37792983520071494
+  },
+  "5": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.3963180915920093
+  },
+  "6": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.44524093685323984
+  },
+  "7": {
+   "qr_pivots": 64,
+   "mass_filled": 192,
+   "reconstruction_relL2": 0.4749199353515891
+  }
+ },
+ "beta": {
+  "1": {
+   "chosen": 0.125,
+   "at_grid_boundary": false,
+   "boundary_end": null,
+   "ladder": [
+    {
+     "beta": 0.03125,
+     "check_sse": 226.9502590605605
+    },
+    {
+     "beta": 0.0625,
+     "check_sse": 205.34239666317717
+    },
+    {
+     "beta": 0.125,
+     "check_sse": 199.0727921195604
+    },
+    {
+     "beta": 0.25,
+     "check_sse": 306.05886535305984
+    },
+    {
+     "beta": 0.5,
+     "check_sse": 632.4069320210452
+    },
+    {
+     "beta": 1.0,
+     "check_sse": 1006.5839077806593
+    },
+    {
+     "beta": 2.0,
+     "check_sse": 1277.4946818992032
+    },
+    {
+     "beta": 4.0,
+     "check_sse": 1447.6388790387527
+    },
+    {
+     "beta": 8.0,
+     "check_sse": 1535.3486701710112
+    },
+    {
+     "beta": 16.0,
+     "check_sse": 1582.335986802987
+    }
+   ]
+  },
+  "2": {
+   "chosen": 0.125,
+   "at_grid_boundary": false,
+   "boundary_end": null,
+   "ladder": [
+    {
+     "beta": 0.03125,
+     "check_sse": 382.40581905329327
+    },
+    {
+     "beta": 0.0625,
+     "check_sse": 341.4259702877776
+    },
+    {
+     "beta": 0.125,
+     "check_sse": 323.40347777536675
+    },
+    {
+     "beta": 0.25,
+     "check_sse": 394.186390780783
+    },
+    {
+     "beta": 0.5,
+     "check_sse": 673.642931506035
+    },
+    {
+     "beta": 1.0,
+     "check_sse": 1111.1739653285933
+    },
+    {
+     "beta": 2.0,
+     "check_sse": 1495.164893287821
+    },
+    {
+     "beta": 4.0,
+     "check_sse": 1734.9424700513293
+    },
+    {
+     "beta": 8.0,
+     "check_sse": 1866.6098803186017
+    },
+    {
+     "beta": 16.0,
+     "check_sse": 1937.988788810384
+    }
+   ]
+  },
+  "4": {
+   "chosen": 0.125,
+   "at_grid_boundary": false,
+   "boundary_end": null,
+   "ladder": [
+    {
+     "beta": 0.03125,
+     "check_sse": 458.9470456049861
+    },
+    {
+     "beta": 0.0625,
+     "check_sse": 441.94070387717596
+    },
+    {
+     "beta": 0.125,
+     "check_sse": 439.396268297608
+    },
+    {
+     "beta": 0.25,
+     "check_sse": 526.4942180989833
+    },
+    {
+     "beta": 0.5,
+     "check_sse": 821.7460378040176
+    },
+    {
+     "beta": 1.0,
+     "check_sse": 1251.3814385298988
+    },
+    {
+     "beta": 2.0,
+     "check_sse": 1570.7113023287745
+    },
+    {
+     "beta": 4.0,
+     "check_sse": 1750.9234986791105
+    },
+    {
+     "beta": 8.0,
+     "check_sse": 1849.1925637642503
+    },
+    {
+     "beta": 16.0,
+     "check_sse": 1902.977684408504
+    }
+   ]
+  },
+  "5": {
+   "chosen": 0.125,
+   "at_grid_boundary": false,
+   "boundary_end": null,
+   "ladder": [
+    {
+     "beta": 0.03125,
+     "check_sse": 344.17264618233963
+    },
+    {
+     "beta": 0.0625,
+     "check_sse": 332.75110265680706
+    },
+    {
+     "beta": 0.125,
+     "check_sse": 315.57266681748166
+    },
+    {
+     "beta": 0.25,
+     "check_sse": 337.10705676493063
+    },
+    {
+     "beta": 0.5,
+     "check_sse": 475.77405521533126
+    },
+    {
+     "beta": 1.0,
+     "check_sse": 689.454286378594
+    },
+    {
+     "beta": 2.0,
+     "check_sse": 865.3558023269655
+    },
+    {
+     "beta": 4.0,
+     "check_sse": 974.4523936192091
+    },
+    {
+     "beta": 8.0,
+     "check_sse": 1028.8761337262883
+    },
+    {
+     "beta": 16.0,
+     "check_sse": 1057.8502913086586
+    }
+   ]
+  },
+  "6": {
+   "chosen": 0.125,
+   "at_grid_boundary": false,
+   "boundary_end": null,
+   "ladder": [
+    {
+     "beta": 0.03125,
+     "check_sse": 459.9196295212927
+    },
+    {
+     "beta": 0.0625,
+     "check_sse": 368.0669197240821
+    },
+    {
+     "beta": 0.125,
+     "check_sse": 356.48031973994136
+    },
+    {
+     "beta": 0.25,
+     "check_sse": 444.5814573751175
+    },
+    {
+     "beta": 0.5,
+     "check_sse": 718.7354457699419
+    },
+    {
+     "beta": 1.0,
+     "check_sse": 1112.37299955164
+    },
+    {
+     "beta": 2.0,
+     "check_sse": 1418.9813991759224
+    },
+    {
+     "beta": 4.0,
+     "check_sse": 1614.0983093787847
+    },
+    {
+     "beta": 8.0,
+     "check_sse": 1720.5931168386162
+    },
+    {
+     "beta": 16.0,
+     "check_sse": 1777.547623922185
+    }
+   ]
+  },
+  "7": {
+   "chosen": 0.125,
+   "at_grid_boundary": false,
+   "boundary_end": null,
+   "ladder": [
+    {
+     "beta": 0.03125,
+     "check_sse": 604.5846080820722
+    },
+    {
+     "beta": 0.0625,
+     "check_sse": 520.9850997719539
+    },
+    {
+     "beta": 0.125,
+     "check_sse": 458.2081386008729
+    },
+    {
+     "beta": 0.25,
+     "check_sse": 509.61136823976983
+    },
+    {
+     "beta": 0.5,
+     "check_sse": 841.5060781066344
+    },
+    {
+     "beta": 1.0,
+     "check_sse": 1263.9268934908819
+    },
+    {
+     "beta": 2.0,
+     "check_sse": 1545.998320982775
+    },
+    {
+     "beta": 4.0,
+     "check_sse": 1702.0230479200065
+    },
+    {
+     "beta": 8.0,
+     "check_sse": 1782.274142730886
+    },
+    {
+     "beta": 16.0,
+     "check_sse": 1820.6650317036454
+    }
+   ]
+  }
+ },
+ "storage": {
+  "parent_numbers_per_group": 131072,
+  "child_numbers_per_group": 32768,
+  "ratio_per_converted_group": 4.0,
+  "converted_groups": 6,
+  "beta_scalars": 6,
+  "parameters_removed": 589824
+ },
+ "out_proj_refit": {
+  "prior_only": {
+   "relL2": 0.5246359839212127,
+   "cos": 0.8584510197058476,
+   "cos_p05": 0.7570790501190668
+  },
+  "solved": {
+   "relL2": 0.4399833330982225,
+   "cos": 0.9045176954584484,
+   "cos_p05": 0.8203830109640299
+  },
+  "guard": {
+   "update_scale": 0.25816212270410016,
+   "lambda_relative": 1.0,
+   "free_solve_update_scale": 14.975958101729981,
+   "lambda_selected_on": "internal fit split",
+   "lambda_law_would_have_picked": 0.1,
+   "check_sse_chosen": 1111.5953473509053,
+   "check_sse_law_pick": 1129.1187241227622
+  }
+ },
+ "rows": {
+  "fit": 4751,
+  "held_out": 1584
+ },
+ "parent_forward_calls": 96,
+ "built_at": "2026-08-13T02:58:25",
+ "wall_time_seconds": 12.2,
+ "state_sha256": "7534861f959fbcbbc26cb2198726013356a9c27ac6e0bce410b5ece0a438aff0"
+}

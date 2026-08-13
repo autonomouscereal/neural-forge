@@ -1,0 +1,38 @@
+{
+ "schema": "neural-forge-matrix-wave20-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W704AW25.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W704.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W768AW100.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W768AW25.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W768EV.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W768LS.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W768RG.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/arch-W768ST.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W704AW25.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W704.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W768AW100.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W768AW25.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W768EV.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W768LS.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W768RG.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave20/shards/verdict-W768ST.jsonl"
+ ],
+ "rows_before": 620,
+ "rows_appended": 16,
+ "rows_after": 636,
+ "superseded_rows_dropped": [],
+ "appended_cells": [
+  "ARCH.W704",
+  "ARCH.W704AW25",
+  "ARCH.W768AW100",
+  "ARCH.W768AW25",
+  "ARCH.W768EV",
+  "ARCH.W768LS",
+  "ARCH.W768RG",
+  "ARCH.W768ST"
+ ],
+ "applied": true,
+ "rows_after_verified": 636
+}

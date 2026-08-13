@@ -1,0 +1,52 @@
+# ARCH.W768AW100  dossier dfd94601c9390d43
+# net_ratio 0.722610  config_diff ['block_dim', 'conv_dim', 'head_dim', 'hidden_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 2072 chars, 2072 collapsed
+I can help you make up-up-up-up-up-up-up-up-up-up-up-up-up-up-upupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupupup
+
+---  2 instruction-three-actions [complete] 525 chars, 525 collapsed
+I am wondering about the outcosts for my account. I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and I can start up to my account, and
+
+---  3 explanation-seasons [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  4 arithmetic-multi-step [complete] 146 chars, 40 collapsed  <350 COLLAPSED
+A list of 8 to 12 to 6 to 5 to 7 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 1 to 
+
+---  5 logic-ordering [complete] 365 chars, 365 collapsed
+Sure for the answer, I can help you with the following, as I can assist with the following as the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as I can help with the, as
+
+---  6 context-retrieval [complete] 19 chars, 12 collapsed  <350 COLLAPSED
+DATE: 9/11 9 9 9 9 
+
+---  7 summarization-priorities [complete] 185 chars, 50 collapsed  <350 COLLAPSED
+Summarize the update for the two, as the, as, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and,
+
+---  8 comparison-ram-rom [complete] 480 chars, 480 collapsed
+- I am a longest-est----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+---  9 coding-deduplicate [censored-at-cap] 1027 chars, 1027 collapsed
+- pingpkppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+
+--- 10 debugging-off-by-one [complete] 232 chars, 57 collapsed  <350 COLLAPSED
+- The version is for the list, as the form, and the, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and, and,
+
+--- 11 writing-concise-email [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 12 planning-dependencies [censored-at-cap] 1025 chars, 1024 collapsed
+- 1  pdpdpppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+
+--- 13 uncertainty-insufficient-data [complete] 324 chars, 324 collapsed  <350 COLLAPSED
+A graph shows sales adjusted, but I have not told you the time, units, sample, or if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous, if yous,
+
+--- 14 safety-household-chemical [complete] 1074 chars, 54 collapsed  <350 COLLAPSED
+I am just still in my home, so let me start my door door door door do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do do
+
+--- 15 creative-continuity [complete] 656 chars, 26 collapsed  <350 COLLAPSED
+Date the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the originals for the
+
+--- 16 multi-turn-correction [complete] 42 chars, 42 collapsed  <350 COLLAPSED
+Sure, I can add up the list for your list.
+
+# cap-hits 3/16

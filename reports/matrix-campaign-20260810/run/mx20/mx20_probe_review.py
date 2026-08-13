@@ -38,7 +38,13 @@ from typing import Any
 import torch
 
 _HERE = Path(__file__).resolve().parent
-_DEPLOY = _HERE.parents[2]
+#: This file sits at `<deploy>/reports/matrix-campaign-20260810/run/mx20/`, and
+#: `Path.parents[0]` is already one level UP, so the deployment root is
+#: `parents[3]`: run -> matrix-campaign-20260810 -> reports -> <deploy>.  Worth
+#: spelling out, because the protocol seal and the prompt pack are resolved from
+#: it and an off-by-one here is not an import error, it is a review that
+#: authenticates against the wrong tree.
+_DEPLOY = _HERE.parents[3]
 for extra in (_DEPLOY / "src", _DEPLOY / "experiments", str(_HERE)):
     if str(extra) not in sys.path:
         sys.path.insert(0, str(extra))
@@ -48,11 +54,39 @@ import run_lfm2_matrix_cell as cell_runner  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 
 import mx20_build as mx  # noqa: E402
+import mx20_parent_identity as parent_identity  # noqa: E402
+
+
+def mx20_parent_identity_digest(lane: list[dict[str, Any]]) -> str:
+    """The campaign's own parent-lane digest, computed by the campaign's own code.
+
+    `mx20_parent_identity.lane_digest` takes a path; the probe has the lane in
+    memory and must not write a file to hash it, so the payload construction is
+    called out of that module rather than copied.
+    """
+
+    import hashlib
+    import json as _json
+
+    payload = _json.dumps(
+        [[row["id"], row["response_verbatim"]] for row in lane],
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    assert parent_identity is not None
+    return hashlib.sha256(payload).hexdigest()[:24]
 
 SCHEMA = "neural-forge-matrix-wave20-probe-frozen-review-dossier-v1"
 #: The parent's own sixteen frozen-review responses digest to this on every
-#: wave-19 dossier.  A probe run that does not reproduce it is not being read
-#: against the same parent, and the driver says so instead of continuing.
+#: dossier since wave 7.  A probe run that does not reproduce it is not being
+#: read against the same parent, and the driver says so instead of continuing.
+#:
+#: **The recipe is imported, not reinvented, and this file learned why.**  Its
+#: first version digested the per-response `response_sha256` values instead, got
+#: a number that was stable across every dossier in the campaign and equal to
+#: none of the published ones, and reported "PARENT LANE MOVED" on a lane that
+#: was byte-identical to wave 19's.  A calibration constant is only a
+#: calibration against the function that produced it.
 PARENT_LANE_DIGEST = "865f006e3813712ec202cb23"
 
 
@@ -166,9 +200,7 @@ def main() -> int:
         )
         del parent
         torch.cuda.empty_cache()
-        parent_digest = canonical_sha256(
-            {"responses": [r["response_sha256"] for r in parent_records]}
-        )[:24]
+        parent_digest = mx20_parent_identity_digest(parent_records)
         frozen._log(
             f"parent lane digest {parent_digest} "
             f"({'matches' if parent_digest == PARENT_LANE_DIGEST else 'DIFFERS FROM'} "
@@ -182,6 +214,10 @@ def main() -> int:
         "research_only": True,
         "runtime": runtime,
         "probe_receipt": probe_receipt,
+        "protocol": {
+            "protocol_sha256": str(seal["protocol_sha256"]),
+            "prompt_pack_sha256": str(seal["prompt_pack_sha256"]),
+        },
         "protocol_sha256": str(seal["protocol_sha256"]),
         "prompt_pack_sha256": str(seal["prompt_pack_sha256"]),
         "prompt_surface_sha256": surface,

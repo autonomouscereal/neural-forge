@@ -1,0 +1,162 @@
+{
+ "schema": "neural-forge-matrix-wave20-subspace-comparison-v1",
+ "bases": {
+  "E-reader-pca-768": {
+   "sha256": "641788c64a2b719b1fa2cc3ef27502d5f1d1dd81ff215dbd2a9e26f697762bb2",
+   "mode": "reader-pca",
+   "width": 768
+  },
+  "E-evidence-pca-768": {
+   "sha256": "e431de339b234489ee3e0f9374e5ab84376313a04c582e2943b9404014104725",
+   "mode": "evidence-pca",
+   "width": 768
+  },
+  "E-attribution-weighted-b025-768": {
+   "sha256": "f91e40e3ebe24bf3f293253608a6e28b09d590115d178ec59d4c03444b25dfef",
+   "mode": "attribution-weighted",
+   "width": 768
+  },
+  "E-attribution-weighted-b10-768": {
+   "sha256": "c1f577c7a52ff09020388c1176bbce2cebf689fc20d47e2b1726b8f4e680ece9",
+   "mode": "attribution-weighted",
+   "width": 768
+  },
+  "E-reader-generalized-768": {
+   "sha256": "f90c35299f99dc1967bf1166db9fcfe99db94ef9512a4198a9cc8ce9e13c4ed8",
+   "mode": "reader-generalized",
+   "width": 768
+  }
+ },
+ "pairs": {
+  "E-reader-pca-768 vs E-evidence-pca-768": {
+   "width": 768,
+   "subspace_overlap": 0.9331263693600622,
+   "dimensions_exchanged": 51.35894833147222,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 25.859978231072418,
+    "max": 89.53932895532627
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 36
+  },
+  "E-reader-pca-768 vs E-attribution-weighted-b025-768": {
+   "width": 768,
+   "subspace_overlap": 0.9775814332230155,
+   "dimensions_exchanged": 17.2174592847241,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 11.725510615446696,
+    "max": 82.29246239854614
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 7
+  },
+  "E-reader-pca-768 vs E-attribution-weighted-b10-768": {
+   "width": 768,
+   "subspace_overlap": 0.8741374391111463,
+   "dimensions_exchanged": 96.66244676263966,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 46.25958062647766,
+    "max": 89.87708408261994
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 80
+  },
+  "E-reader-pca-768 vs E-reader-generalized-768": {
+   "width": 768,
+   "subspace_overlap": 0.6999047337991051,
+   "dimensions_exchanged": 230.47316444228727,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 84.41818346067188,
+    "max": 89.96897822806773
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 250
+  },
+  "E-evidence-pca-768 vs E-attribution-weighted-b025-768": {
+   "width": 768,
+   "subspace_overlap": 0.9237646826026404,
+   "dimensions_exchanged": 58.54872376117214,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 29.250294980576236,
+    "max": 88.92874315895962
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 42
+  },
+  "E-evidence-pca-768 vs E-attribution-weighted-b10-768": {
+   "width": 768,
+   "subspace_overlap": 0.8489042979664824,
+   "dimensions_exchanged": 116.04149916174154,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 54.880657248874385,
+    "max": 89.90842814199884
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 104
+  },
+  "E-evidence-pca-768 vs E-reader-generalized-768": {
+   "width": 768,
+   "subspace_overlap": 0.6713897812484609,
+   "dimensions_exchanged": 252.372648001182,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 88.51578648567003,
+    "max": 89.99962749932152
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 256
+  },
+  "E-attribution-weighted-b025-768 vs E-attribution-weighted-b10-768": {
+   "width": 768,
+   "subspace_overlap": 0.9087348567911272,
+   "dimensions_exchanged": 70.09162998441431,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 34.35815532472721,
+    "max": 89.7882265594617
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 53
+  },
+  "E-attribution-weighted-b025-768 vs E-reader-generalized-768": {
+   "width": 768,
+   "subspace_overlap": 0.7014759927502748,
+   "dimensions_exchanged": 229.26643756778893,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 84.25464012025947,
+    "max": 89.97563649787232
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 248
+  },
+  "E-attribution-weighted-b10-768 vs E-reader-generalized-768": {
+   "width": 768,
+   "subspace_overlap": 0.7190900105436752,
+   "dimensions_exchanged": 215.73887190245748,
+   "principal_angle_deg": {
+    "min": 0.0,
+    "median": 8.537736462515939e-07,
+    "p90": 82.67663847475983,
+    "max": 89.95916057331412
+   },
+   "directions_beyond_1deg": 256,
+   "directions_beyond_45deg": 231
+  }
+ }
+}
