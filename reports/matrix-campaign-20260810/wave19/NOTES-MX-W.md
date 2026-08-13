@@ -305,9 +305,10 @@ So, stated three ways, with the eligibility rule attached to each:
   wave 15's `ARCH.A552` at 0.552023x. This is the first child in the campaign
   under half the parent.
 
-**Distance to 0.5x** is therefore **31.9M parameters** from the honest frontier
-(0.5x = 114,846,592; `CL896` = 158,141,952 by its sealed ratio) or 51.1M from
-wave 19's own deepest scoring child. The wall `NOTES-MX-V` §5 described — "the
+**Distance to 0.5x** is therefore **43.3M parameters** from the honest frontier
+and 51.1M from wave 19's own deepest scoring child. (0.5x = 114,846,592;
+`CL896` = **158,127,872**, which its sealed ratio and the `intermediate_size`
+axis's own arithmetic agree on to the parameter; `W768` = 165,978,624.) The wall `NOTES-MX-V` §5 described — "the
 tied embedding is 0.2922x and no axis in the R3-standard set touches it" — is
 **gone as an arithmetic obstacle**: one axis touches it, the child loads, the
 loader counts 106,458,368 parameters, and the whole remaining problem is
