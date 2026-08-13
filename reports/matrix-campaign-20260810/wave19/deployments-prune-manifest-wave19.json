@@ -1,0 +1,24 @@
+{
+ "schema": "neural-forge-matrix-wave19-deployments-prune-v1",
+ "policy": "deployments end the wave at current+1: this wave and the last",
+ "kept": [
+  {
+   "deployment": "neural-forge-matrix-b372d47c",
+   "bytes": 125717265,
+   "reason": "wave 18 (current+1)"
+  },
+  {
+   "deployment": "neural-forge-matrix-e7d068da",
+   "bytes": 101916905,
+   "reason": "wave 19 (built and sealed every child)"
+  }
+ ],
+ "pruned": [
+  {
+   "deployment": "neural-forge-matrix-049326e0",
+   "bytes": 99193770,
+   "reason": "wave 17, two waves back"
+  }
+ ],
+ "bytes_freed": 99193770
+}
