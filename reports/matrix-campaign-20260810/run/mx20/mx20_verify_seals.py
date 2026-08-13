@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Verify every seal, with the search roots read against the wave directories.
 
-Wave 18's verifier with `wave20/cells` APPENDED and every earlier root kept.
-Wave 18 wrote the warning and this wave obeys it: forking this file by rewriting
-every `wave18` to `wave20` deletes last wave's root, the audit below catches it,
-and the only correct edit is one added line.  With the one thing wave 15
+Wave 19's verifier with `wave20/cells` APPENDED and every earlier root kept.
+
+**And this wave nearly made the exact mistake the file warns about.**  The
+wave-20 tree was cut from wave 19's by a blanket rename, which rewrote
+`wave19/cells` to `wave20/cells` in the list below and silently deleted last
+wave's root.  The audit function caught it -- `wave19/cells` exists on disk and
+was no longer declared -- which is what the audit is for and why it is not
+optional.  The correct edit is, as it has been since wave 15, ONE ADDED LINE.  With the one thing wave 15
 still hardcoded made an argument: the deployment whose `src` supplies
 `verify_seal`.  A verifier pinned to a previous wave's deployment either breaks
 when that deployment is pruned under the current+1 policy or, worse, verifies
@@ -57,6 +61,7 @@ SEARCH = [
     ROOT / "wave16" / "cells",
     ROOT / "wave17" / "cells",
     ROOT / "wave18" / "cells",
+    ROOT / "wave19" / "cells",
     ROOT / "wave20" / "cells",
 ]
 

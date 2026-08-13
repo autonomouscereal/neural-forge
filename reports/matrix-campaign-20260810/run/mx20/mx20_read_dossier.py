@@ -43,7 +43,13 @@ def main() -> int:
     args = ap.parse_args()
     body = json.loads(args.dossier.read_text())
     records = body[f"{args.which}_responses"]
-    print(f"# {body['cell_id']}  dossier {body['dossier_sha256'][:16]}")
+    # Wave 20's two slate probes are not ledger cells: they carry no `cell_id`
+    # and no dossier seal because there is no ARCH receipt to seal them against.
+    # They are read case by case exactly like a child, so the reader names them
+    # by their probe class instead of refusing them.
+    label = body.get("cell_id") or f"PROBE.{body.get('probe', 'unknown')}"
+    seal = body.get("dossier_sha256") or body.get("prompt_surface_sha256") or ""
+    print(f"# {label}  dossier {seal[:16]}")
     ss = body.get("standard_shape_child")
     if ss:
         print(f"# net_ratio {ss['net_ratio']:.6f}  config_diff "
