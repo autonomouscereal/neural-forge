@@ -1,0 +1,21 @@
+{
+ "schema": "neural-forge-matrix-wave26-post-wave-deployment-verification-v1",
+ "deployment": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-b6f79b56",
+ "commit": "b6f79b56",
+ "when": "AFTER every build, seal, review and benchmark in wave 26 had run against this tree",
+ "why": "the campaign has always verified a deployment BEFORE spending it and never after.  Verified after, this tree reports 135 undeclared files and the verifier refuses -- correctly, by its own rule.  Every one of the 135 is a CPython bytecode cache written by running the tree, and every declared file is still byte-identical to the commit.  So the sealing claim holds and the refusal is about a file class the manifest was never going to name.  Recorded rather than fixed: a verifier that learns to ignore a directory is a verifier with an exception in it.",
+ "files_declared": 4870,
+ "content_mismatches": 0,
+ "missing": 0,
+ "hardlinks": 0,
+ "undeclared_on_disk": 135,
+ "undeclared_all_pycache": true,
+ "undeclared_non_pycache": [],
+ "undeclared_sample": [
+  "experiments/__pycache__/run_lfm2_matrix_cell.cpython-312.pyc",
+  "reports/matrix-campaign-20260810/run/mx26/__pycache__/mx26_retok.cpython-312.pyc",
+  "src/neural_forge/__pycache__/__init__.cpython-312.pyc",
+  "src/neural_forge/__pycache__/analytic_coordinate_completion.cpython-312.pyc",
+  "src/neural_forge/__pycache__/analytic_execution_profile.cpython-312.pyc"
+ ]
+}

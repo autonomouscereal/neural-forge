@@ -103,7 +103,19 @@ does. Two legs of the `V8X13` triple pointed at `$W/children`, which under
 actually live at. A triple that resolves to nothing prices nothing and says so
 in no log.
 
-## 6. Estate
+## 6. One thing nobody had checked in twenty-six waves
+
+Every wave verifies its deployment **before** spending it. Wave 26 verified its
+deployment **after**, and the tree reports **135 undeclared files** and the
+verifier refuses. All 135 are `__pycache__` bytecode written by running the tree;
+content mismatches, missing files and hardlinks are all **zero**, so the bytes
+that sealed nine children are still the commit's bytes. The refusal is correct
+and the deployment is sound, and both facts are now on the record
+(`post-wave-deployment-verification-b6f79b56.json`). It is left unfixed on
+purpose: teaching the verifier to skip a directory is how a completeness check
+starts collecting exceptions.
+
+## 7. Estate
 
 Root filesystem went from **11 GiB** free to **16 GiB** — 5.34 GB reclaimed from
 one wave-24 deployment tree, eight superseded deployment tarballs, and docker's

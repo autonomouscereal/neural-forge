@@ -1,6 +1,13 @@
 # Wave 26 — the thirteen is a shelf, the cliff is 1,024 rows wide, and the base carries a second fold
 
-**Deployment** `neural-forge-matrix-b6f79b56` (4,870 files, 0 discrepancies).
+**Deployment** `neural-forge-matrix-b6f79b56` (4,870 files, 0 discrepancies before
+the wave). **Verified again AFTER the wave** — a thing no wave has done before —
+and the answer is worth having: **0 content mismatches, 0 missing, 0 hardlinks,
+135 undeclared**, and all 135 are `__pycache__` bytecode written by running the
+tree. The declared bytes are still the commit's, so the sealing claim holds; the
+verifier refuses anyway, correctly, by its own rule. Recorded in
+`post-wave-deployment-verification-b6f79b56.json` rather than fixed, because a
+verifier that learns to ignore a directory is a verifier with an exception in it.
 **Ledger** 706 → **724 rows**, sha
 `de12c860276e686eb519dad3161cf115c9d3b07ba149b349599513b2028db49b`.
 Byte-prefix of the pre-wave backup verified, 37,901 bytes appended, no row rewritten.
