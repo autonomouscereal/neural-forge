@@ -63,14 +63,25 @@ def emit(repo: Path, commit: str, out_tar: Path, out_manifest: Path) -> int:
         manifest[path] = blob
     # The blob id is a digest of the CONTENT with a git header, so the manifest
     # carries the content sha256 too: the verifier must not need a git binary.
+    # One `cat-file --batch` for the whole tree -- 3,736 process spawns is
+    # twenty minutes on this workstation and one pipe is twenty seconds.
     content: dict[str, str] = {}
-    for path, blob in manifest.items():
-        body = subprocess.run(
-            ["git", "-C", str(repo), "cat-file", "blob", blob],
-            check=True,
-            capture_output=True,
-        ).stdout
-        content[path] = hashlib.sha256(body).hexdigest()
+    paths = list(manifest)
+    with subprocess.Popen(
+        ["git", "-C", str(repo), "cat-file", "--batch"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    ) as batch:
+        assert batch.stdin is not None and batch.stdout is not None
+        for path in paths:
+            batch.stdin.write(manifest[path].encode("ascii") + b"\n")
+            batch.stdin.flush()
+            header = batch.stdout.readline().decode("ascii").split()
+            size = int(header[2])
+            body = batch.stdout.read(size)
+            batch.stdout.read(1)  # the trailing newline `--batch` writes
+            content[path] = hashlib.sha256(body).hexdigest()
+        batch.stdin.close()
     out_manifest.write_text(
         json.dumps(
             {
@@ -83,14 +94,24 @@ def emit(repo: Path, commit: str, out_tar: Path, out_manifest: Path) -> int:
             indent=1,
         )
     )
+    # The archive is FILTERED to the manifest, not merely accompanied by it: an
+    # excluded blob that ships anyway lands on disk as an undeclared file and
+    # the verifier -- correctly -- refuses the whole deployment for it.
     with subprocess.Popen(
         ["git", "-C", str(repo), "-c", "core.autocrlf=false", "archive", "--format=tar", commit],
         stdout=subprocess.PIPE,
     ) as proc:
         assert proc.stdout is not None
-        with out_tar.open("wb") as handle:
-            while chunk := proc.stdout.read(1 << 20):
-                handle.write(chunk)
+        with tarfile.open(fileobj=proc.stdout, mode="r|") as source, tarfile.open(
+            str(out_tar), "w:gz"
+        ) as sink:
+            for member in source:
+                if member.isfile() and member.name not in manifest:
+                    continue
+                if member.isfile():
+                    sink.addfile(member, source.extractfile(member))
+                else:
+                    sink.addfile(member)
         if proc.wait() != 0:
             raise SystemExit("git archive failed")
     print(f"emitted {out_tar} ({out_tar.stat().st_size} bytes) and {out_manifest}")
