@@ -1,0 +1,11 @@
+{
+ "schema": "neural-forge-matrix-wave25-deployments-prune-v1",
+ "policy": "keep the current wave deployment and the one before it; every earlier tree is reproducible from its commit",
+ "kept": {
+  "neural-forge-matrix-e47600a7": "wave 25 -- sealed all twelve children",
+  "neural-forge-matrix-66fc7beb": "wave 24 -- sealed the child Cyril is scoring"
+ },
+ "deleted": {
+  "neural-forge-matrix-df452ac9": "wave 23; no wave-24 or wave-25 receipt names it, and it is re-cuttable from commit df452ac9"
+ }
+}
