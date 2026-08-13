@@ -876,6 +876,7 @@ def joint_relation_solve(
     k_parents: list[torch.Tensor],
     weights: list[float],
     head_dim: int,
+    anchor: tuple[list[torch.Tensor], torch.Tensor] | None = None,
 ) -> tuple[list[torch.Tensor], torch.Tensor, dict[str, Any]]:
     """T7's joint two-sided evidence-weighted solve for one merged head pair.
 
@@ -909,6 +910,19 @@ def joint_relation_solve(
     to preserve the parents' query/key magnitude ratio in each plane, because
     the shared RMSNorm divides out one length per head and re-weights the planes
     against each other, so the ratio is the part of the split that survives.
+
+    **And the phase must be fixed too, which the first build of this solve found
+    out by losing.**  A rank-one factorisation has a per-plane unit-modulus
+    gauge -- multiply ``û_p`` and ``ŵ_p`` by the same ``c``, ``|c| = 1``, and the
+    relation is unchanged -- and left free it lands wherever the eigenvector
+    routine puts it, which was the REFLECTION of the average-in-gauge merge at
+    every site (post-norm cosine −0.9998).  The ridge below then spends its whole
+    trust region walking a weight to the far side of its own prior, and the
+    recovered head misses.  So ``anchor`` (the average-in-gauge rows) fixes the
+    phase per plane, in closed form, to whatever aligns the solved rows with the
+    merge this solve has to beat.  It changes no relation and no objective value;
+    it decides only which of a circle of identical answers is handed to a solver
+    that has a prior.
     """
 
     slots = len(q_parents)
@@ -983,9 +997,21 @@ def joint_relation_solve(
         ratio = (q_scale / k_scale) if k_scale > 0 else 1.0
         beta = (product / ratio) ** 0.5 if ratio > 0 and product > 0 else 1.0
         beta = max(beta, 1e-30)
-        k_out[:, plane] = w_hat * beta
+        # the per-plane phase: aligned to the anchor, or left as solved.
+        phase = torch.tensor(1.0 + 0.0j, dtype=torch.complex128)
+        if anchor is not None:
+            anchor_q, anchor_k = anchor
+            overlap = (as_planes(anchor_k, head_dim)[:, plane].conj() * w_hat).sum()
+            for j in range(slots):
+                overlap = overlap + (
+                    as_planes(anchor_q[j], head_dim)[:, plane].conj() * u_hats[j]
+                ).sum()
+            magnitude = float(overlap.abs())
+            if magnitude > 0.0:
+                phase = (overlap / magnitude).conj()
+        k_out[:, plane] = w_hat * beta * phase
         for j in range(slots):
-            q_out[j][:, plane] = u_hats[j] / beta
+            q_out[j][:, plane] = u_hats[j] * phase / beta
         for j in range(slots):
             for p in range(parents):
                 err, ref = rank_one_relation_error(
@@ -1072,7 +1098,15 @@ def direction_anchored_solve(
     scale = normed.pow(2).mean(dim=1, keepdim=True).clamp_min(1e-300).rsqrt()
     direction = normed * scale
     width = float(direction.shape[1])
+    # The radius is a length and lengths are not negative.  Left signed, the
+    # fixed point is free to flip INDIVIDUAL rows onto the reflection of their
+    # own target -- which is not a gauge: flipping one query row's sign flips
+    # that row's scores against every key.  A row whose prior points the wrong
+    # way is aimed at zero and re-aimed by the next sweep, and the count of them
+    # rides in the guard.
     radius = ((X @ prior.T) * direction).sum(dim=1, keepdim=True) / width
+    flipped = int((radius < 0).sum())
+    radius = radius.clamp_min(0.0)
     history = []
     solved = prior
     guard: dict[str, Any] = {}
@@ -1084,10 +1118,12 @@ def direction_anchored_solve(
                 torch.nn.functional.cosine_similarity(achieved, direction, dim=1).mean()
             )
         )
-        radius = (achieved * direction).sum(dim=1, keepdim=True) / width
+        radius = ((achieved * direction).sum(dim=1, keepdim=True) / width).clamp_min(0.0)
     post = achieved * achieved.pow(2).mean(dim=1, keepdim=True).add(eps).rsqrt() * gain
     guard = dict(guard)
     guard["direction_cos_sweeps"] = history
+    guard["rows_with_negative_prior_radius"] = flipped
+    guard["rows"] = int(direction.shape[0])
     guard["post_norm_cos_vs_target"] = float(
         torch.nn.functional.cosine_similarity(post, target_rows, dim=1).mean()
     )
@@ -1488,7 +1524,14 @@ def head_count_axis(
         )
         if solve_mode == "joint":
             target_q, target_k, diagnostics = joint_relation_solve(
-                parents_q, parents_k, [wa, wb], head_dim
+                parents_q,
+                parents_k,
+                [wa, wb],
+                head_dim,
+                anchor=(
+                    [post_norm(X @ w.T, gq) for w in average_q],
+                    post_norm(X @ average_k.T, gk),
+                ),
             )
             record["relation_relL2_joint_target"] = diagnostics["relation_relL2"]
             solved_k, guard_k = direction_anchored_solve(
@@ -1502,10 +1545,9 @@ def head_count_axis(
                 )
                 solved_q.append(weight)
                 guards_q.append(guard)
-            merged_k, merged_q = solved_k, solved_q
             record["relation_relL2_joint"] = relation_error_of(
-                [post_norm(X @ w.T, gq) for w in merged_q],
-                post_norm(X @ merged_k.T, gk),
+                [post_norm(X @ w.T, gq) for w in solved_q],
+                post_norm(X @ solved_k.T, gk),
                 parents_q,
                 parents_k,
                 [wa, wb],
@@ -1513,6 +1555,19 @@ def head_count_axis(
             )
             record["key_recovery"] = guard_k
             record["query_recovery"] = guards_q
+            # The target beats the average by construction -- it is the optimum
+            # of the objective the average is one point of.  The RECOVERED head
+            # need not: the target rows are a rank-one combination of two
+            # post-normed row blocks and no linear map followed by an RMS norm
+            # has to be able to produce them.  So the solve keeps its own answer
+            # only when the answer that is actually installable beats the merge
+            # it replaces, on the same objective and the same fit rows.  Both
+            # numbers are in the receipt either way.
+            record["joint_installed"] = bool(
+                record["relation_relL2_joint"] < record["relation_relL2_average"]
+            )
+            if record["joint_installed"]:
+                merged_k, merged_q = solved_k, solved_q
         new_k.append(merged_k)
         for weight in merged_q:
             new_q.append(weight)
