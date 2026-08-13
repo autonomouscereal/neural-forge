@@ -467,6 +467,27 @@ def build(args: argparse.Namespace) -> int:
     if not tokenizer_file.exists():
         tokenizer_file = PARENT / "tokenizer.json"
     vocab = Vocabulary(tokenizer_file)
+    # The source child's own axes, carried VERBATIM out of its own build
+    # receipt rather than re-described here.  A composed child that restates its
+    # parent's provenance in this file's prose is a child whose provenance is
+    # this file's opinion; the sealed receipt is the authority, and its `basis`
+    # block -- digest, retained energies, full spectrum -- travels with it.
+    source_axes: list[dict[str, Any]] = []
+    source_excised: list[int] = [int(x) for x in (args.excised or [])]
+    source_receipts = sorted(source.glob("mx*-build-receipt.json"))
+    if source_receipts:
+        source_build = json.loads(source_receipts[-1].read_text(encoding="utf-8"))
+        source_axes = list(source_build.get("axes", []))
+        source_excised = [int(x) for x in source_build.get("excised", [])] or source_excised
+        log(
+            f"carried {len(source_axes)} axes from {source_receipts[-1].name} "
+            f"(excised {source_excised})"
+        )
+    elif source.resolve() != PARENT.resolve():
+        raise SystemExit(
+            f"{source} carries no mx*-build-receipt.json, so its axes cannot be "
+            "carried and a composed child would seal with incomplete provenance."
+        )
     if int(source_config["vocab_size"]) != 65536:
         raise SystemExit(
             f"--source declares vocab_size {source_config['vocab_size']}; this "
@@ -674,18 +695,59 @@ def build(args: argparse.Namespace) -> int:
         "child_parameters": live,
         "parent_parameters": PARENT_PARAMS,
         "net_stored_ratio": live / PARENT_PARAMS,
-        "excised": [int(x) for x in (args.excised or [])],
-        "axes": list(args.axis or []) + [
+        "excised": source_excised,
+        "axes": source_axes
+        + [
             {
                 "axis": "vocab_size",
-                "parent": 65536,
-                "child": len(order),
-                "mechanism": "verbatim row coreset of the tied token table, "
-                "dense id remap, BPE merge list restricted to the kept closure",
-                "solved": False,
-                "storage": "K x hidden, tied, counted once; the merge table "
-                "SHRINKS and the remap lives in tokenizer.json, which the "
-                "parent's own count never included either",
+                "kind": "token-interface",
+                "sites": ["model.embed_tokens.weight (tied to lm_head)"],
+                "config_fields": [
+                    "vocab_size",
+                    "bos_token_id",
+                    "eos_token_id",
+                    "pad_token_id",
+                ],
+                "selection": (
+                    f"the {len(order)} rows kept by: every added/special token "
+                    "and every one of the 256 ByteLevel alphabet tokens "
+                    "(mandatory -- byte_fallback is false and there is no unk, "
+                    "so those 256 are the only reason an arbitrary byte can "
+                    "still be encoded), the transitive merge-tree closure of "
+                    "everything kept, and then the ranking (-census count, "
+                    "parent token id) until the budget is exactly met.  The "
+                    "census sums two streams over the sealed corpus: the "
+                    "donor-mapped ids the captures ran on and this tokenizer's "
+                    "own canonical segmentation of the same text.  With only "
+                    f"{report['observed_tokens_admitted_by_ranking']} observed "
+                    "tokens admitted beyond the mandatory set, the tie-break -- "
+                    "parent id order, which for a BPE table is its merge order "
+                    "and therefore its training-corpus frequency order -- "
+                    "decides most of this table, and that is stated rather than "
+                    "implied"
+                ),
+                "solve": (
+                    "NONE.  The rows are gathered verbatim; the identity gate is "
+                    "torch.equal against the source table's own bytes, not a "
+                    "tolerance.  The merge list is restricted to the closure (a "
+                    "merge survives iff its product and both operands are kept) "
+                    "and the ids are densely remapped, including the "
+                    "TemplateProcessing special-token ids, which carry hard ids "
+                    "a remap that missed them would silently corrupt"
+                ),
+                "evidence": (
+                    "the sealed corpus, for a token OCCURRENCE census only; no "
+                    "activation, no capture, no forward pass"
+                ),
+                "parameters_removed": (65536 - len(order))
+                * int(source_config["hidden_size"]),
+                "heldout": (
+                    "not applicable: nothing is fitted.  What IS measured out of "
+                    "sample is the segmentation shift -- position agreement "
+                    f"{corpus_agreement['position_agreement']:.4f} on the sealed "
+                    f"corpus and {review_agreement['position_agreement']:.4f} on "
+                    "the frozen review prompts, with tokens-per-byte beside it"
+                ),
             }
         ],
         "vocabulary": {
