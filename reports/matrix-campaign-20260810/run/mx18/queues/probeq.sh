@@ -20,10 +20,11 @@
 # 17's 9.3e-3 is measuring this wave's harness and not last wave's anomaly.
 set -u
 . /home/cereal/nf-mx18/env.sh
+GPU="${1:?gpu}"
 mkdir -p $W/probes $W/logs
 probe () {
   TAG="$1"; shift
-  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=4 $PY $MX18/mx18_build.py \
+  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU $PY $MX18/mx18_build.py \
     --mode build --arm conditioned-local --child $W/probes/$TAG --device cuda:0 \
     --kv-gate-probe $W/probes/$TAG-gate "$@" \
     > $W/logs/probe-$TAG.log 2>&1

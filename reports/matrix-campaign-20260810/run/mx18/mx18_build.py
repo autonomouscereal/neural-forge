@@ -2010,8 +2010,23 @@ def attention_gate_probe(
        of each other is a row where the two arithmetics can disagree completely.
        Both are measured, on the recomputation and on the module's own rows, as
        distributions rather than as means alone.
-    3. **The same gate in bf16.**  If the arithmetic is the whole story, running
-       the recomputation at the module's own precision closes the gate.
+    3. **The logit regression.**  If the probabilities disagree, they disagree
+       either by a SCALE -- the module's logits systematically shrunk, which is a
+       normalisation or a temperature and not a rounding -- or by NOISE at
+       unchanged scale, which is arithmetic.  Softmax fixes logits only up to an
+       additive constant per row, and that is exactly what a per-row centred
+       regression of ``log p_module`` on ``log p_fp64`` is blind to, so the slope
+       and the residual separate the two stories cleanly.  Slope one with a large
+       residual is rounding; slope well below one is not.
+    4. **The same gate with the recomputation's inputs rounded to bf16.**  This
+       leg is kept and is REPORTED AS THE NULL IT IS: the captured input and the
+       stored weights are already bf16, so rounding them changes nothing and the
+       number reproduces leg zero exactly.  It is retained because it is the leg
+       `NOTES-MX-U` §7 asked for, and the honest reading of it is that it cannot
+       test what it was asked to test -- the module's inexactness is in its
+       arithmetic, not in its inputs, and the arithmetic is not reachable from
+       here.  The stream and row magnitudes beside it are what a rounding story
+       has to explain.
     """
 
     weights: list[torch.Tensor] = []
@@ -2075,9 +2090,21 @@ def attention_gate_probe(
             "entropy_median": quantile(entropy, 0.5),
         }
 
+    def centred_logits(P: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+        """``log p`` with each query row's mean removed -- the part softmax keeps."""
+
+        rows = P.clamp_min(1e-12).log()
+        counts = keep.sum(-1, keepdim=True).clamp_min(1)
+        means = (rows * keep).sum(-1, keepdim=True) / counts
+        return (rows - means) * keep
+
     residual64 = reference = residual_module = residual_bf16 = 0.0
     probability_residual = probability_reference = 0.0
     argmax_agree = argmax_rows = 0.0
+    slope_numerator = slope_denominator = 0.0
+    logit_residual = logit_rows = 0.0
+    stream_norm = query_norm = key_norm = 0.0
+    stream_rows = 0.0
     fp64_rows: list[torch.Tensor] = []
     module_rows: list[torch.Tensor] = []
     for (split, X_b), (_, C_b), A_module in zip(batched["attn"], batched["o"], weights):
@@ -2117,6 +2144,28 @@ def attention_gate_probe(
         agree = A.argmax(-1) == A_module.argmax(-1)
         argmax_agree += float(agree.to(torch.float64).sum())
         argmax_rows += float(agree.numel())
+
+        # Where BOTH sides put representable mass, regress the module's centred
+        # logits on the recomputation's.  A scale answers a different question
+        # from a spread and only this separates them.
+        keep = ((A > 1e-6) & (A_module > 1e-6)).to(torch.float64)
+        b = centred_logits(A, keep)
+        a = centred_logits(A_module, keep)
+        slope_numerator += float((a * b).sum())
+        slope_denominator += float((b * b).sum())
+        logit_residual += float((a - b).pow(2).sum())
+        logit_rows += float(keep.sum())
+
+        stream_norm += float(X_b.pow(2).sum())
+        stream_rows += float(X_b.shape[0])
+        for h in range(keep_heads):
+            query_norm += float(
+                (X_b @ wq[h * head_dim : (h + 1) * head_dim].T).pow(2).sum()
+            )
+        for g in range(keep_groups):
+            key_norm += float(
+                (X_b @ wk[g * head_dim : (g + 1) * head_dim].T).pow(2).sum()
+            )
         if split == "fit" and len(fp64_rows) < 2:
             fp64_rows.append(A)
             module_rows.append(A_module)
@@ -2129,9 +2178,15 @@ def attention_gate_probe(
         "gate_bf16_inputs": (residual_bf16 / reference) ** 0.5,
         "probabilities_relL2": (probability_residual / probability_reference) ** 0.5,
         "argmax_agreement": argmax_agree / argmax_rows,
+        "logit_slope_module_on_fp64": slope_numerator / slope_denominator,
+        "logit_residual_rms": (logit_residual / logit_rows) ** 0.5,
+        "logit_scale_fp64_rms": (slope_denominator / logit_rows) ** 0.5,
         "peakedness_fp64": peak(torch.cat(fp64_rows, dim=1)),
         "peakedness_module": peak(torch.cat(module_rows, dim=1)),
         "context_norm": reference**0.5,
+        "stream_row_rms": (stream_norm / stream_rows) ** 0.5,
+        "prenorm_query_row_rms": (query_norm / (stream_rows * keep_heads)) ** 0.5,
+        "prenorm_key_row_rms": (key_norm / (stream_rows * keep_groups)) ** 0.5,
     }
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / f"gate-probe-L{parent_layer:02d}.json").write_text(
@@ -2141,7 +2196,11 @@ def attention_gate_probe(
         f"    gate probe L{parent_layer:02d}: fp64 {row['gate_recomputed_fp64']:.3e} "
         f"module-A {row['gate_module_probabilities']:.3e} bf16-in "
         f"{row['gate_bf16_inputs']:.3e} | A relL2 {row['probabilities_relL2']:.3e} "
-        f"argmax agree {row['argmax_agreement']:.4f}"
+        f"argmax agree {row['argmax_agreement']:.4f} | logit slope "
+        f"{row['logit_slope_module_on_fp64']:.4f} residual rms "
+        f"{row['logit_residual_rms']:.4f} of {row['logit_scale_fp64_rms']:.4f} | "
+        f"stream rms {row['stream_row_rms']:.3f} q rms "
+        f"{row['prenorm_query_row_rms']:.3f}"
     )
     return row
 
