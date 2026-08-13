@@ -1,0 +1,66 @@
+{
+ "schema": "neural-forge-matrix-wave17-standard-shape-child-v1",
+ "arm": "conditioned-local",
+ "keep_ff": null,
+ "keep_head_dim": null,
+ "keep_kv_groups": null,
+ "kv_solve": null,
+ "kv_als_sweeps": null,
+ "excised": [
+  8
+ ],
+ "rope_theta": 1000000.0,
+ "parent_parameters": 229693184,
+ "child_parameters": 218680960,
+ "net_ratio": 0.9520568098355064,
+ "axes": [
+  {
+   "axis": "num_hidden_layers",
+   "kind": "block",
+   "sites": [
+    8
+   ],
+   "config_fields": [
+    "num_hidden_layers",
+    "layer_types"
+   ],
+   "selection": "F-EXCISE: whole blocks deleted",
+   "solve": "absorbed by every downstream conditioned solve",
+   "evidence": "conditioned capture",
+   "parameters_removed": null,
+   "heldout": {
+    "note": "a deleted block has no local write to score"
+   }
+  }
+ ],
+ "passed_through": [
+  "intermediate_size",
+  "head_dim",
+  "num_attention_heads",
+  "hidden_size",
+  "vocab_size",
+  "conv_dim (not a live field: Lfm2ShortConv hardwires hidden_size)"
+ ],
+ "solver_path": "mx15_build.law_abiding_solve (prior-anchored ridge, fp64 CPU)",
+ "ridge_relative": 1e-06,
+ "condition_number": null,
+ "prior_norm": null,
+ "correction_norm": null,
+ "clamp_engaged": false,
+ "requested_clamp_ratio": 0.0,
+ "allowed_clamp_ratio": 1.0,
+ "condition_cap_saturated": false,
+ "worst_site": null,
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "split_authority": "matrix-campaign-capture-manifest",
+  "fit_rows": 4751,
+  "heldout_rows": 1584,
+  "parent_model_forward_calls": 24,
+  "conditioned": true
+ },
+ "export_path": "stock Lfm2ForCausalLM with num_hidden_layers=13; no trust_remote_code, no custom module, no hook",
+ "built_at": "2026-08-12T20:59:12",
+ "wall_time_seconds": 34.8,
+ "child_tensors_sha256": "4c420e93b84f27f46e2a6a2bf31d691fad0862b5b3f7b7d9bf28f5fd71e68f85"
+}

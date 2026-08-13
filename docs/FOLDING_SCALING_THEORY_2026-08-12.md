@@ -629,3 +629,79 @@ other's one) say a drift ranking with R² = 0.62 is not a verdict.
   65,536 × 1024 tied = 0.2922x of a 229.7M-parameter model. Any "standard-export"
   compression target below ~0.35x on such a checkpoint is a claim about the body
   alone and should be written that way.
+
+## Wave-17 additions to the sealed physics — the depth census, closed
+
+Wave 16 opened a behavioural single-block excision census and wave 17 closed it:
+all fourteen blocks of LFM2.5-230M excised one at a time, each with every
+surviving FFN writer re-solved at unchanged width, each read on the same frozen
+16-lane surface. Then eight pairs at one parameter count. **This is the most
+scale-transferable data the campaign has produced, because it is a map of the
+model's own depth redundancy taken at the only level that decides anything.**
+
+* **Depth redundancy is real, large, and unevenly distributed — and the
+  distribution is not "by kind".** Removing one block of fourteen (5.3% of
+  parameters) leaves a model that answers **13 of 15** prompts at one site and
+  **0 of 15** at another. The cheap sites are the middle-to-late interior; the
+  expensive ones are the **first block of each kind** (conv 0 → 0/15, attention 2
+  → 0/15) and the **last attention block** (12 → 0/15). A census that treats
+  "attention blocks" or "conv blocks" as a class gets this wrong in both
+  directions: attention 6/8/10 read 8/7/7, inside the conv band, while conv 0 is
+  the most expensive block in the model.
+* **Rank blocks behaviourally or not at all.** Wave 14's absorbed-fraction census
+  ranked block 5 first and block 13 second; behaviourally they are 6/15 and
+  13/15. Terminal drift does not order the living children either (the 13/15
+  child has the *second worst* drift of the eight). On a larger model, spend the
+  budget on N single-block behavioural excisions before spending it on any
+  activation-space redundancy statistic — the statistic will not survive.
+* **The pair law: cost is set by DISTANCE, not by the components' solo scores.**
+  Eight pairs at one parameter count, four distances, two anchors: distance 2
+  reads 2, 2, 4 of 15; distance 4 reads 6, 6; distance 6 reads 6; distances 10
+  and 12 read 7 and 7. Monotone with no inversions. And the two *best* single
+  blocks (11/15 and 10/15, two apart) compose to **4/15**, while a 13/15 and a
+  9/15 twelve apart compose to 7/15. **Adjacent blocks do related work and the
+  survivors cannot absorb both.** The practical rule for a larger model: if you
+  intend to remove k blocks, spread them as far apart as the depth allows and
+  expect the *pair* interaction to dominate any per-block ranking.
+* **Depth still stops at two, and the second step is fatal in every direction
+  tried.** Two blocks 0.894958x is 2–7 of 15; three blocks is 0/15; two blocks
+  plus a head merge is 0/15; two blocks plus a 40% narrower SwiGLU (0.730614x)
+  echoes the prompt back verbatim. Nothing in seventeen waves has composed two
+  independently-alive standard-shape changes without losing most of the score.
+* **A better objective on an attention component does buy behaviour — once.**
+  Merging 16 → 12 query heads by averaging two heads' weights in the exact
+  per-plane sign gauge reads 5/15; solving the merged pair's *relation* instead
+  (per RoPE plane, one rank-one matrix serving both parents, shared key across
+  the GQA group, closed form through a 2×2 Hermitian generalised eigenproblem)
+  reads **8/15** at the identical parameter count. This is the first component
+  objective in the campaign whose improvement showed up behaviourally. It does
+  not extend: 16 → 8 with the same solve is 0/15.
+* **Two gauge facts that generalise to any RoPE + per-head-RMSNorm model.**
+  (i) The only exact head-alignment gauge is the **per-plane sign** — the shared
+  per-head norm weight is measurably not plane-symmetric, so a continuous plane
+  rotation does not commute with it. (ii) A rank-one relation factorisation has
+  its **own** per-plane unit-modulus gauge, and if it is left free the solver
+  lands anywhere on that circle — here, on the exact reflection of the prior at
+  −0.9998 post-norm cosine, which then destroys a prior-anchored ridge. Fix the
+  factorisation's phase against whatever the ridge is anchored on.
+* **A fit-side improvement is not a generalisation improvement, and on this
+  problem it is anti-correlated.** The value/`out_proj` alternation (exact
+  alternating least squares with the attention probabilities held fixed) improves
+  the fit sum-of-squares by 16–29% at every site, lowers the held-out per-site
+  cosine, and costs five of fifteen behavioural cases. λ chosen by a trust region
+  does not see generalisation. Any two-sided solve on second moments of hidden
+  states needs a validation split of its own.
+* **Ill-conditioning is the default for these operators.** The two-sided Stein
+  normal equations built from a second moment of hidden states and a Gram of
+  `out_proj` columns needed **20,000** unpreconditioned CG iterations to reach
+  the closed form on a *synthetic* problem two orders of magnitude better
+  conditioned. Precondition with the single-term two-`eigh` solve, or a capped
+  solver will silently return the prior.
+* **The two measurement surfaces disagree in both directions, so quote both.**
+  Wave 16 found a child the 15-prompt review ranked above what benchmarks
+  supported; wave 17 found the reverse — one attention block excised
+  (`ARCH.X06`, 4.6M parameters) costs **0.015 arc_easy and 1.6x lambada
+  perplexity** while the child the review ranks five cases higher costs 4.4x, and
+  a pair child reading 7/15 has a lambada perplexity of **2,870** (118x the
+  parent's). A depth-reduction claim on a larger model that quotes only one
+  surface is unfalsifiable in whichever direction it happens to be wrong.

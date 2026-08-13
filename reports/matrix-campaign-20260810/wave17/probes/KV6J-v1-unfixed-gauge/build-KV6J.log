@@ -1,0 +1,27 @@
+Loading weights:   0%|          | 0/132 [00:00<?, ?it/s]Loading weights: 100%|██████████| 132/132 [00:00<00:00, 4501.94it/s]
+[mx16] capturing the parent's own stream (one pass over 24 batches)
+[mx16]   A02 kv-groups 6 (joint) merges [[0, 3], [1, 2]] -> relL2 0.3240 cos 0.9471 (prior-only cos 0.9298)
+[mx16]     pair [3, 0] relation relL2 average 0.4328 -> joint 0.3800 (target 0.3278, post-norm cos k -0.9999 q -0.9998 -0.9998)
+[mx16]     pair [2, 1] relation relL2 average 0.4335 -> joint 0.3665 (target 0.2733, post-norm cos k -0.9998 q -0.9998 -0.9997)
+[mx16]     value/out pair: gate 1.242e-02 sweeps 1 installed True fit SSE +29.3449%
+[mx16]   A04 kv-groups 6 (joint) merges [[2, 6], [0, 4]] -> relL2 0.4512 cos 0.9001 (prior-only cos 0.8603)
+[mx16]     pair [0, 4] relation relL2 average 0.3538 -> joint 0.8293 (target 0.2378, post-norm cos k -0.6842 q -0.9998 -0.9999)
+[mx16]     pair [2, 6] relation relL2 average 0.2638 -> joint 0.5329 (target 0.1559, post-norm cos k -0.8751 q -0.9999 -0.9999)
+[mx16]     value/out pair: gate 9.803e-03 sweeps 1 installed True fit SSE +19.0652%
+[mx16]   A06 kv-groups 6 (joint) merges [[4, 6], [2, 3]] -> relL2 0.6723 cos 0.8096 (prior-only cos 0.6039)
+[mx16]     pair [3, 2] relation relL2 average 0.4795 -> joint 0.8443 (target 0.3523, post-norm cos k -0.6302 q -0.9999 -0.9994)
+[mx16]     pair [4, 6] relation relL2 average 0.4319 -> joint 0.8941 (target 0.3510, post-norm cos k -0.4431 q -0.9999 -0.9999)
+[mx16]     value/out pair: gate 1.130e-02 sweeps 1 installed True fit SSE +16.0393%
+[mx16]   A08 kv-groups 6 (joint) merges [[5, 6], [1, 3]] -> relL2 0.6070 cos 0.8322 (prior-only cos 0.7161)
+[mx16]     pair [3, 1] relation relL2 average 0.4649 -> joint 0.4232 (target 0.3542, post-norm cos k -0.9959 q -0.9998 -0.9999)
+[mx16]     pair [5, 6] relation relL2 average 0.3446 -> joint 0.8735 (target 0.2765, post-norm cos k -0.5735 q -0.9999 -0.9999)
+[mx16]     value/out pair: gate 8.742e-03 sweeps 1 installed True fit SSE +22.3257%
+[mx16]   A10 kv-groups 6 (joint) merges [[4, 7], [2, 5]] -> relL2 0.6621 cos 0.7922 (prior-only cos 0.7126)
+[mx16]     pair [5, 2] relation relL2 average 0.6827 -> joint 0.9126 (target 0.5620, post-norm cos k -0.4838 q -0.9973 -0.9984)
+[mx16]     pair [7, 4] relation relL2 average 0.6652 -> joint 0.9565 (target 0.5137, post-norm cos k -0.5629 q -0.9980 -0.9986)
+[mx16]     value/out pair: gate 1.134e-02 sweeps 1 installed True fit SSE +12.1141%
+[mx16]   A12 kv-groups 6 (joint) merges [[0, 4], [2, 6]] -> relL2 0.4003 cos 0.9274 (prior-only cos 0.9045)
+[mx16]     pair [4, 0] relation relL2 average 0.4868 -> joint 0.3857 (target 0.3662, post-norm cos k -0.9990 q -0.9998 -0.9998)
+[mx16]     pair [6, 2] relation relL2 average 0.5905 -> joint 0.4722 (target 0.4233, post-norm cos k -0.9966 q -0.9969 -0.9979)
+[mx16]     value/out pair: gate 1.310e-02 sweeps 1 installed True fit SSE +24.6038%
+[mx16] child 224,974,592 parameters = 0.979457x -> /mnt/ai_data/neural-forge-matrix/wave17/children/MX17-KV6J  (101s)

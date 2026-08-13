@@ -37,6 +37,26 @@ python experiments/render_matrix_ledger.py \
   --out    reports/matrix-campaign-20260810/LEDGER.md
 ```
 
+## wave17/ — the census closed, the pair distance law, and the merge's first real solve
+
+`wave17/NOTES-MX-U.md` is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave17/wave17-child-index.json` | every wave-17 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict — net ratio, config diff, export class, axes, both ADDENDUM 9 readings, and whether the safety lane was chargeable |
+| `wave17/human-review/` | 148 files: every dossier, every child and parent response rendered verbatim (`READ-*.txt`, `READ-PARENT-*.txt`), every run receipt, verdict receipt, per-case reading and build receipt |
+| `wave17/ledger-merge-report.json` | the exactly-once merge of 53 shard rows into the campaign ledger (525 → 578): 21 run rows, 21 verdict rows and 11 ADDENDUM 14 re-seals of wave-16 verdicts |
+| `wave17/children-retention-manifest-wave17.json` | which of the 22 built children were kept and which were deleted, each with its sealed tensor digest |
+| `wave17/deployments-prune-manifest-wave17.json` | the two deployments pruned to hold current+1 |
+| `wave17/probes/KV6J-v1-unfixed-gauge/` | the build receipt and log of the first joint merge, the one that landed on the reflection of its own prior — kept because the fix is only legible beside it |
+| `run/mx17/` | the wave-17 builder (adds ADDENDUM 14 14.3's joint two-sided solve), its standalone algebra self-test, the drivers, the seal verifier, the ledger merge, the wave-16 re-sealer and the dossier readers |
+
+Wave 17's one-line result: **the cost of removing two blocks is a distance law**
+(2 apart reads 2–4 of 15, twelve apart reads 7, monotone across two anchors), the
+completed census puts **conv block 0 at 0/15** where conv block 13 is 13/15, and
+T7's joint relation solve takes the head merge from **5/15 to 8/15** while the
+value-side alternation it ships with takes it to 3/15.
+
 ## wave16/ — the assembly wave, and the excision census that replaced it
 
 `wave16/NOTES-MX-T.md` is the narrative. The rest is raw:

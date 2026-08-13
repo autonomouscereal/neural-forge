@@ -1,0 +1,24 @@
+{
+ "schema": "neural-forge-matrix-wave17-deployment-prune-v1",
+ "policy": "deployments current+1",
+ "ends_holding": [
+  "neural-forge-matrix-35dfe3a9",
+  "neural-forge-matrix-049326e0"
+ ],
+ "pruned": [
+  {
+   "pruned": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-1c197ed4",
+   "reason": "wave 15 deployment, pruned when this wave landed so the estate held current+1",
+   "files": 1639,
+   "bytes": 89485950,
+   "measured": "at prune time, before removal"
+  },
+  {
+   "pruned": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-df735362",
+   "reason": "wave 17 first deployment, superseded by 049326e0 mid-wave; pruned once its review queues drained",
+   "files": 2347,
+   "bytes": 99183986,
+   "measured": "at prune time, before removal"
+  }
+ ]
+}

@@ -1,0 +1,257 @@
+{
+ "schema": "neural-forge-matrix-wave17-children-retention-v1",
+ "policy": "best five by sealed ADDENDUM 6 score plus the deepest non-zero child",
+ "kept": [
+  "MX17-KV6JQ",
+  "MX17-P1301",
+  "MX17-P1303",
+  "MX17-X06",
+  "MX17-X10",
+  "MX17-X13KV6JQ"
+ ],
+ "freed_bytes": 6833169785,
+ "children": [
+  {
+   "child": "MX17-F1301KV6",
+   "cell_id": "ARCH.F1301KV6",
+   "net_ratio": 0.8744147323065538,
+   "child_tensors_sha256": "90a9e5187feef6780a0503dc0757b97b6b18db0bc441fd5a51f2d8811f170228",
+   "useful_or_partial": 0,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 406530702
+  },
+  {
+   "child": "MX17-F1301KV6Q",
+   "cell_id": "ARCH.F1301KV6Q",
+   "net_ratio": 0.8744147323065538,
+   "child_tensors_sha256": "90a9e5187feef6780a0503dc0757b97b6b18db0bc441fd5a51f2d8811f170228",
+   "useful_or_partial": 0,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 406529129
+  },
+  {
+   "child": "MX17-F1301W1536",
+   "cell_id": "ARCH.F1301W1536",
+   "net_ratio": 0.7306135823342499,
+   "child_tensors_sha256": "eef9deb9d8ef0ed16c59044befbe9fec4d05c773f3e7d7e8ff11edea130127ea",
+   "useful_or_partial": 0,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 340397809
+  },
+  {
+   "child": "MX17-KV4JQ",
+   "cell_id": "ARCH.KV4JQ",
+   "net_ratio": 0.9589139571507703,
+   "child_tensors_sha256": "19eea68d4a11210c990c60bb8c898d10b97f35e9097aa2b46d6c7e16cbf0db7d",
+   "useful_or_partial": 0,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 445368557
+  },
+  {
+   "child": "MX17-KV6A",
+   "cell_id": "ARCH.KV6A",
+   "net_ratio": 0.9794569785753852,
+   "child_tensors_sha256": "e5f2a5d7e303cd73d44f69bbd575bd01117bba47ee9e61b34378d42de5297a20",
+   "useful_or_partial": 5,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 454773162
+  },
+  {
+   "child": "MX17-KV6J",
+   "cell_id": "ARCH.KV6J",
+   "net_ratio": 0.9794569785753852,
+   "child_tensors_sha256": "846a7d17b654e83d9175db0162b74833b050332ba593193bb48c35d3e2b6997a",
+   "useful_or_partial": 3,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 454790615
+  },
+  {
+   "child": "MX17-KV6JQ",
+   "cell_id": "ARCH.KV6JQ",
+   "net_ratio": 0.9794569785753852,
+   "child_tensors_sha256": "3fcdc8c4eddf2d9c10eb9758a581e86c04e1b320c7e9635f68c90f6013a00313",
+   "useful_or_partial": 8,
+   "per_child_verdict": "dead",
+   "kept": true,
+   "reason": "8/15, the joint-solve head merge, three cases above wave 16 average-in-gauge at the same size",
+   "bytes": 454785502
+  },
+  {
+   "child": "MX17-KVID",
+   "cell_id": "ARCH.KVID",
+   "net_ratio": 1.0,
+   "child_tensors_sha256": "49c341a796ba275848e83bfa27766b8dcfe9cb62c1db180202281150baac89ed",
+   "useful_or_partial": null,
+   "per_child_verdict": null,
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 464203215
+  },
+  {
+   "child": "MX17-P0709",
+   "cell_id": "ARCH.P0709",
+   "net_ratio": 0.8949577537311686,
+   "child_tensors_sha256": "ef01a6dd59e46717ef05ef8faea9e77f4348f34582f8b233ffbd819335f86060",
+   "useful_or_partial": 4,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 415886553
+  },
+  {
+   "child": "MX17-P0711",
+   "cell_id": "ARCH.P0711",
+   "net_ratio": 0.8949577537311686,
+   "child_tensors_sha256": "8fd4e1ae2003bb52add17a81f6f70c34a858d80c75f07b8e7467bce51597b6e4",
+   "useful_or_partial": 6,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 415886555
+  },
+  {
+   "child": "MX17-P0911",
+   "cell_id": "ARCH.P0911",
+   "net_ratio": 0.8949577537311686,
+   "child_tensors_sha256": "374b9365e23368e33bf64b81058c7598a451b7d1ca97ffde1b4eaf2fcd141582",
+   "useful_or_partial": 2,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 415886555
+  },
+  {
+   "child": "MX17-P1301",
+   "cell_id": "ARCH.P1301",
+   "net_ratio": 0.8949577537311686,
+   "child_tensors_sha256": "b90c9609e6c88627d56b63be7d90cb31af33ceb51c6f37fae86f104356b2fe53",
+   "useful_or_partial": 7,
+   "per_child_verdict": "dead",
+   "kept": true,
+   "reason": "7/15, the highest-scoring pair (blocks 13 and 1) and the deepest non-zero child of the wave",
+   "bytes": 415886555
+  },
+  {
+   "child": "MX17-P1303",
+   "cell_id": "ARCH.P1303",
+   "net_ratio": 0.8949577537311686,
+   "child_tensors_sha256": "f5d6b61b7d3c185a354e998f75916492f3e0ab1f11c184fb5b3cf08d94d4bc3d",
+   "useful_or_partial": 7,
+   "per_child_verdict": "dead",
+   "kept": true,
+   "reason": "7/15, the second-widest pair, and the distance ladder needs both ends",
+   "bytes": 415886555
+  },
+  {
+   "child": "MX17-P1307",
+   "cell_id": "ARCH.P1307",
+   "net_ratio": 0.8949577537311686,
+   "child_tensors_sha256": "329167100d024d33883235090c6f5e548d70a157c1da64ca9b01c9705a30fba5",
+   "useful_or_partial": 6,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 415886555
+  },
+  {
+   "child": "MX17-X00",
+   "cell_id": "ARCH.X00",
+   "net_ratio": 0.9474788768655843,
+   "child_tensors_sha256": "90e6e81712a9095609a2310afc4502b644ecaf655b43707d0944ce4cca203b1d",
+   "useful_or_partial": 0,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 440014929
+  },
+  {
+   "child": "MX17-X02",
+   "cell_id": "ARCH.X02",
+   "net_ratio": 0.9520568098355064,
+   "child_tensors_sha256": "9f89ad795124ee98cc1877e8aa506b7cb69d6382140aead8307edeb1f30062f0",
+   "useful_or_partial": 0,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 442117599
+  },
+  {
+   "child": "MX17-X04",
+   "cell_id": "ARCH.X04",
+   "net_ratio": 0.9520568098355064,
+   "child_tensors_sha256": "792ac5a1cca5d3b66f51c19c68107ab1cb3461ec241eeaaffad7209a5f002446",
+   "useful_or_partial": 2,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 442117599
+  },
+  {
+   "child": "MX17-X06",
+   "cell_id": "ARCH.X06",
+   "net_ratio": 0.9520568098355064,
+   "child_tensors_sha256": "efab772c330d6ba1d158ed590bddbbe5ff5c9865ef547fe91bd7ee645481e892",
+   "useful_or_partial": 8,
+   "per_child_verdict": "dead",
+   "kept": true,
+   "reason": "8/15, the highest-scoring attention excision and the best benchmark row of any child in the campaign",
+   "bytes": 442117599
+  },
+  {
+   "child": "MX17-X08",
+   "cell_id": "ARCH.X08",
+   "net_ratio": 0.9520568098355064,
+   "child_tensors_sha256": "4c420e93b84f27f46e2a6a2bf31d691fad0862b5b3f7b7d9bf28f5fd71e68f85",
+   "useful_or_partial": 7,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 442117599
+  },
+  {
+   "child": "MX17-X10",
+   "cell_id": "ARCH.X10",
+   "net_ratio": 0.9520568098355064,
+   "child_tensors_sha256": "e789012e0beea55f7a0babfa5aa42773c1280aaa6ab0a1a4c115c4137e39a1c1",
+   "useful_or_partial": 7,
+   "per_child_verdict": "impaired",
+   "kept": true,
+   "reason": "7/15 and the only child of the wave whose per-CHILD verdict is not dead",
+   "bytes": 442117601
+  },
+  {
+   "child": "MX17-X13KV6J",
+   "cell_id": "ARCH.X13KV6J",
+   "net_ratio": 0.9269358554409695,
+   "child_tensors_sha256": "6ee3f276a22eb7ae35a3b6e6f0106f4843da4495a63b6cffca03285400dc51c7",
+   "useful_or_partial": 3,
+   "per_child_verdict": "dead",
+   "kept": false,
+   "reason": "not in the best five and not the deepest non-zero",
+   "bytes": 430662652
+  },
+  {
+   "child": "MX17-X13KV6JQ",
+   "cell_id": "ARCH.X13KV6JQ",
+   "net_ratio": 0.9269358554409695,
+   "child_tensors_sha256": "27cbe229bf53b9c34e1467796af4ccbf0a3ffee8a15cf8b9aec04c4ad8126316",
+   "useful_or_partial": 4,
+   "per_child_verdict": "dead",
+   "kept": true,
+   "reason": "4/15, the deepest child that stacks an excision on the joint merge",
+   "bytes": 430657538
+  }
+ ]
+}
