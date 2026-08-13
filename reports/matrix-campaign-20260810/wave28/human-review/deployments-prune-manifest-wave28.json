@@ -1,0 +1,21 @@
+{
+ "schema": "neural-forge-matrix-wave28-deployments-prune-v1",
+ "policy": "current+1",
+ "kept": {
+  "neural-forge-matrix-18b99225": {
+   "bytes": 265103773,
+   "why": "current: wave 28, named by every wave-28 receipt"
+  },
+  "neural-forge-matrix-49770e9f": {
+   "bytes": 260278973,
+   "why": "current+1: wave 27, named by every wave-27 receipt"
+  }
+ },
+ "deleted": {
+  "neural-forge-matrix-b6f79b56": {
+   "bytes": 258161029,
+   "why": "the wave-26 deployment; no wave-28 artifact names it, and the wave-26 receipts cite the commit, which is in git"
+  }
+ },
+ "applied": true
+}
