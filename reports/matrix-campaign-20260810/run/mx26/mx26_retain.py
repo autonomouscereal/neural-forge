@@ -33,11 +33,78 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave26")
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: worth its bytes.  An empty mapping is not a policy and the script says so.
-KEEP: dict[str, str] = {}
+#:
+#: THE POLICY THIS WAVE APPLIED, stated so the next one can argue with it: keep
+#: every child carrying a SOLVE (a GPU pass at one lambda that nothing else
+#: reproduces), keep the zero-solve control each solve is differenced against at
+#: an identical parameter count, keep the rungs that carry a curve claim, and
+#: keep any child in the top five of the campaign scorecard's depth ranking.
+#: Drop what one CPU pass rebuilds from a retained source and that carries no
+#: row of its own.  Seven kept, three dropped -- best-five plus the two extra
+#: the first clause forces, and the deviation is named rather than assumed.
+KEEP: dict[str, str] = {
+    "MX26-V20X13G03": (
+        "11/15 at 0.746614x -- the DEEPEST ELEVEN in the campaign, 1.6 points "
+        "below the previous one, and a solve: 1,024 diagonal entries at relative "
+        "lambda 0.3 that no other artifact reproduces"
+    ),
+    "MX26-V20X13": (
+        "10/15 at 0.746614x -- the DEEPEST TEN in the campaign by 5.5 points, "
+        "the third child ever to hold coding-deduplicate, and the byte-identical "
+        "zero-solve control the rung above is differenced against.  If any "
+        "checkpoint in this wave is re-opened by somebody who does not believe "
+        "the number, it is this one"
+    ),
+    "MX26-V32X13G03": (
+        "10/15, the lambda 0.3 rung that fills the only hole in the only FLAT "
+        "ladder the campaign has, and the measurement that stops lambda 0.3 "
+        "being called a universal peak"
+    ),
+    "MX26-V18": (
+        "13/15 at 0.790005x -- the lower edge of the plateau, and nine "
+        "thousandths of ratio deeper than the thirteen wave 25 sealed"
+    ),
+    "MX26-V22": (
+        "13/15 at 0.808265x -- the upper edge of the plateau.  With V18 it is "
+        "the whole evidence that wave 25's thirteen is a 4,096-row shelf and "
+        "not one lucky table, which is the claim wave 26 was sent to test"
+    ),
+    "MX26-V9": (
+        "9/15 at 0.748919x -- the checkpoint that locates the death of the "
+        "vocabulary axis to 1,024 rows.  8,192 reads four and this reads nine; "
+        "nothing else in the campaign narrows that window"
+    ),
+    "MX26-V20X13W896": (
+        "2/15 at 0.639307x -- rank three on the campaign scorecard's depth "
+        "ranking and the deepest child ever to answer a lane in FULL"
+    ),
+}
 
 #: Tag -> why this checkpoint is NOT worth its bytes.  Every built child must
 #: appear in exactly one of the two mappings or the script refuses.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX26-X1307": (
+        "not a reviewed child at all: the block 13 + block 7 body, rebuilt in 35 "
+        "seconds as the SOURCE for V20X13X07 and found BIT-IDENTICAL to wave "
+        "17's sealed ARCH.P1307 (child_tensors_sha256 329167100d024d33, "
+        "205,565,696 parameters).  A body that reproduces to the byte from a "
+        "one-line invocation, and that already has a sealed cell somewhere else, "
+        "is the clearest possible case for not storing it twice"
+    ),
+    "MX26-V20W896": (
+        "2/15 at 0.683266x.  One CPU pass off the retained MX19-W896, and its "
+        "finding -- the third sighting of prompt-echo, all three on width "
+        "children -- lives in the sealed verdict and the packaged dossier text, "
+        "which is where the evidence for a text signature actually is.  The "
+        "checkpoint adds nothing the READ- file does not already say"
+    ),
+    "MX26-V20X13X07": (
+        "5/15 at 0.694093x.  One CPU pass off a body that itself rebuilds in 35 "
+        "seconds, and the row it carries -- the third axis is fatal -- is an "
+        "arithmetic statement about three sealed numbers (13, 6, 5) that needs "
+        "no bytes to re-check"
+    ),
+}
 
 
 def main() -> int:

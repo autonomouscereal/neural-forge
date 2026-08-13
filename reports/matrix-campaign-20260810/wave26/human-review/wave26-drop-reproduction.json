@@ -1,0 +1,38 @@
+{
+ "schema": "neural-forge-matrix-wave26-dropped-child-reproduction-v1",
+ "why": "retention ran BEFORE the package on this wave, which removed three children and with them their build receipts.  Each was rebuilt from the same invocation and checked against the SEALED cell receipt that already names its digests, so the drop is demonstrated reversible rather than asserted to be.  The rebuilt receipt FILE differs from the sealed one, and this artifact records exactly which fields differ.",
+ "children": {
+  "X1307": {
+   "child_tensors_sha256": "329167100d024d33883235090c6f5e548d70a157c1da64ca9b01c9705a30fba5",
+   "child_parameters": 205565696,
+   "rebuilt_receipt_sha256": "4cda1014c3545d1fd807884986ac834e1dc78b38f50d7de27d47147fb5ab2c29",
+   "wave17_P1307_child_tensors_sha256": "329167100d024d33883235090c6f5e548d70a157c1da64ca9b01c9705a30fba5",
+   "tensors_match_wave17_sealed_body": true
+  },
+  "V20W896": {
+   "child_tensors_sha256": "af7c8c726de4de490770cf9c8af7980b9ebe37ac10b0873811e56b5b77626cd5",
+   "child_parameters": 156941440,
+   "rebuilt_receipt_sha256": "ab5efa7f22f3fba66ba654e8fae5f4ee132c51b549c279df14c801ad0021e6cb",
+   "sealed_child_tensors_sha256": "af7c8c726de4de490770cf9c8af7980b9ebe37ac10b0873811e56b5b77626cd5",
+   "sealed_build_receipt_sha256": "30241f9cbc684de6ecd9222eebcb186391285edd30ed990736a72350c0a8a4ee",
+   "tensors_match_sealed_cell": true,
+   "receipt_file_digest_matches": false
+  },
+  "V20X13X07": {
+   "child_tensors_sha256": "1fb7b31280986db2309e55e02cf0c253ae0cac0c421d32c4a7097e701a896432",
+   "child_parameters": 159428352,
+   "rebuilt_receipt_sha256": "91ace4b7a0d423021a705ecee770d3f85eb96afd5989af71d99c9efce11cb52c",
+   "sealed_child_tensors_sha256": "1fb7b31280986db2309e55e02cf0c253ae0cac0c421d32c4a7097e701a896432",
+   "sealed_build_receipt_sha256": "dd3318856f4d0cda83aadcbc5bc7efc963af86120f9d35557542795b7461188a",
+   "tensors_match_sealed_cell": true,
+   "receipt_file_digest_matches": false
+  }
+ },
+ "all_tensor_digests_match": true,
+ "nondeterministic_receipt_fields": [
+  "built_at",
+  "child_model",
+  "elapsed_seconds"
+ ],
+ "nondeterminism_measured_by": "two rebuilds of MX26-V20W896 from one invocation, diffed field by field"
+}

@@ -1,0 +1,24 @@
+{
+ "schema": "neural-forge-matrix-wave26-deployments-prune-v1",
+ "policy": "keep the current wave deployment and the one before it; every earlier tree is reproducible from its commit",
+ "kept": {
+  "neural-forge-matrix-b6f79b56": "wave 26 -- built, sealed and reviewed all nine children",
+  "neural-forge-matrix-e47600a7": "wave 25 -- the deployment the V20 base this wave stacks off was sealed with"
+ },
+ "deleted": {
+  "neural-forge-matrix-66fc7beb": "wave 24; no wave-25 or wave-26 receipt names it, and it is re-cuttable from commit 66fc7beb"
+ },
+ "also_deleted_this_wave": {
+  "nf-mx23/nf-{6bd24f4d,916414bc,b462837f,df452ac9,ffaec614}.tar.gz": "five wave-23 deployment tarballs, already extracted or superseded; re-emittable by deploy.py --emit from the commits they name",
+  "nf-mx24/nf-66fc7beb.tar.gz": "the tarball of the deployment deleted above",
+  "nf-mx25/nf-{e47600a7,f9c3e89f}.tar.gz": "wave-25 tarballs; e47600a7 is extracted and kept as a tree, f9c3e89f was superseded inside wave 25",
+  "docker dangling images and build cache": "zero active; reclaimed by docker image prune -f and docker builder prune -f"
+ },
+ "NOT_deleted_and_why": {
+  "nf-mxe/evidence-cache (5.3G), nf-mxd/evidence-cache (743M), nf-round-debug (300M)": "capture caches NAMED by the run scripts of waves 5-9 (run/run-mxe-batch.sh, run/mxh, run/mxi). They are regenerable, and regenerating them costs GPU hours; deleting them to buy 6 GiB on a filesystem that already had enough for this wave would trade the reproducibility of sealed cells for space nothing needed. Recorded as a deliberate decision, not an oversight.",
+  "model-surgery-lab/artifacts (806G)": "the folding project evidence trees, including neural_forge_exact4x_20260730 (219G) and the sealed corpus this campaign reads its census from. Out of this wave scope and not this wave to delete."
+ },
+ "root_filesystem_free_bytes_before": 11811160064,
+ "root_filesystem_free_bytes_after": 17153564672,
+ "root_filesystem_reclaimed_bytes": 5342404608
+}

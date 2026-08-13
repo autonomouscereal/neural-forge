@@ -1,0 +1,63 @@
+{
+ "schema": "neural-forge-matrix-wave26-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave26/children",
+ "built": [
+  "MX26-V18",
+  "MX26-V20W896",
+  "MX26-V20X13",
+  "MX26-V20X13G03",
+  "MX26-V20X13W896",
+  "MX26-V20X13X07",
+  "MX26-V22",
+  "MX26-V32X13G03",
+  "MX26-V9",
+  "MX26-X1307"
+ ],
+ "kept": {
+  "MX26-V18": {
+   "reason": "13/15 at 0.790005x -- the lower edge of the plateau, and nine thousandths of ratio deeper than the thirteen wave 25 sealed",
+   "bytes": 363974602
+  },
+  "MX26-V20X13": {
+   "reason": "10/15 at 0.746614x -- the DEEPEST TEN in the campaign by 5.5 points, the third child ever to hold coding-deduplicate, and the byte-identical zero-solve control the rung above is differenced against.  If any checkpoint in this wave is re-opened by somebody who does not believe the number, it is this one",
+   "bytes": 344153223
+  },
+  "MX26-V20X13G03": {
+   "reason": "11/15 at 0.746614x -- the DEEPEST ELEVEN in the campaign, 1.6 points below the previous one, and a solve: 1,024 diagonal entries at relative lambda 0.3 that no other artifact reproduces",
+   "bytes": 344154924
+  },
+  "MX26-V20X13W896": {
+   "reason": "2/15 at 0.639307x -- rank three on the campaign scorecard's depth ranking and the deepest child ever to answer a lane in FULL",
+   "bytes": 294888917
+  },
+  "MX26-V22": {
+   "reason": "13/15 at 0.808265x -- the upper edge of the plateau.  With V18 it is the whole evidence that wave 25's thirteen is a 4,096-row shelf and not one lucky table, which is the claim wave 26 was sent to test",
+   "bytes": 372588530
+  },
+  "MX26-V32X13G03": {
+   "reason": "10/15, the lambda 0.3 rung that fills the only hole in the only FLAT ladder the campaign has, and the measurement that stops lambda 0.3 being called a universal peak",
+   "bytes": 370001147
+  },
+  "MX26-V9": {
+   "reason": "9/15 at 0.748919x -- the checkpoint that locates the death of the vocabulary axis to 1,024 rows.  8,192 reads four and this reads nine; nothing else in the campaign narrows that window",
+   "bytes": 344607910
+  }
+ },
+ "deleted": {
+  "MX26-V20W896": {
+   "reason": "2/15 at 0.683266x.  One CPU pass off the retained MX19-W896, and its finding -- the third sighting of prompt-echo, all three on width children -- lives in the sealed verdict and the packaged dossier text, which is where the evidence for a text signature actually is.  The checkpoint adds nothing the READ- file does not already say",
+   "bytes": 315084883
+  },
+  "MX26-V20X13X07": {
+   "reason": "5/15 at 0.694093x.  One CPU pass off a body that itself rebuilds in 35 seconds, and the row it carries -- the third axis is fatal -- is an arithmetic statement about three sealed numbers (13, 6, 5) that needs no bytes to re-check",
+   "bytes": 320024847
+  },
+  "MX26-X1307": {
+   "reason": "not a reviewed child at all: the block 13 + block 7 body, rebuilt in 35 seconds as the SOURCE for V20X13X07 and found BIT-IDENTICAL to wave 17's sealed ARCH.P1307 (child_tensors_sha256 329167100d024d33, 205,565,696 parameters).  A body that reproduces to the byte from a one-line invocation, and that already has a sealed cell somewhere else, is the clearest possible case for not storing it twice",
+   "bytes": 415886581
+  }
+ },
+ "bytes_kept": 2434369253,
+ "bytes_deleted": 1050996311,
+ "applied": true
+}

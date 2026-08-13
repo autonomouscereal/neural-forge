@@ -2,24 +2,47 @@
 
 **Date:** 2026-08-13 (consolidated at wave 21, extended at waves 22 and 23).
 **Branch:** `codex/lrc-blank-compression`.
-**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–25,
+**Campaign:** `reports/matrix-campaign-20260810/`, waves 1–26,
 `NOTES-MX-A` … `NOTES-MX-AA`.
-**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **706 rows**, sha
-`cd22df335ab2c503ebcf634da253cef66e8e6c22a52ce23e1085d30672408018`.
+**Ledger:** `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`, **724 rows**, sha
+`de12c860276e686eb519dad3161cf115c9d3b07ba149b349599513b2028db49b`.
 **One-page version for scoring:** `reports/matrix-campaign-20260810/CAMPAIGN_SCORECARD.md`.
 
-**Waves 24 and 25 are NOT merged into §1's prose table and that debt is now two
-waves old, not one.** The table below is generated from
-`wave22/campaign-frontier-table.json`; waves 23, 24 and 25 each wrote their own
-`campaign-frontier-table.json` and none regenerated the prose. The wave-25
-artifact — `reports/matrix-campaign-20260810/wave25/campaign-frontier-table.json`,
-184 reviewed children, 136 scoring at least one case, 85 benchmark rows, 12
-parent benchmark rows all matching the reference — is the current authority, and
-§1 is a stale rendering of a subset of it. The two rows a reader most needs from
-the unmerged part are `ARCH.V20` at **0.799135x, 13/15** and `ARCH.V12` at
-**0.762614x, 11/15**, both wave 25, both zero-solve vocabulary coresets, both
-standard shape. `reports/matrix-campaign-20260810/wave25/human-review/SCORECARD.md`
-is the complete wave-25 table with both readings and every benchmark column.
+**Waves 24, 25 and 26 are NOT merged into §1's prose table and that debt is now
+THREE waves old.** The table below is generated from
+`wave22/campaign-frontier-table.json`; every wave since has written its own
+`campaign-frontier-table.json` and none has regenerated the prose. The wave-26
+artifact — `reports/matrix-campaign-20260810/wave26/human-review/campaign-frontier-table.json`,
+**193 reviewed children, 145 scoring at least one case, 95 benchmark rows, 13
+parent benchmark rows all matching the reference** — is the current authority,
+and §1 is a stale rendering of a subset of it.
+
+**Why wave 26 did not simply regenerate it, stated so the next wave can just do
+it:** `mx26_report_tables.py --table frontier` renders the artifact in one
+command, but `mx26_campaign_table.py` builds that artifact from the ledger rows
+alone, and the ledger row does not carry the ADDENDUM 9 per-lane reading. Every
+one of the 193 children in the current artifact has `per_lane_verdict:
+"unstated"`, including this wave's, whose per-lane readings ARE recorded in
+`wave26/human-review/wave26-child-index.json`. Regenerating §1 today would trade
+a stale table for a complete one with a dead column. The fix is to teach
+`mx*_campaign_table.py` to join the per-wave child indexes; it is one function
+and nobody has spent it.
+
+The rows a reader most needs from the unmerged part:
+
+| child | wave | net | review | what it is |
+|---|---:|---:|---:|---|
+| `ARCH.V20X13G03` | 26 | **0.746614** | **11/15** | deepest eleven in the campaign; 20,480-row coreset on the block-13 excision with one diagonal re-solved at λ = 0.3 |
+| `ARCH.V20X13` | 26 | **0.746614** | **10/15** | deepest ten in the campaign, zero solve on either axis |
+| `ARCH.V18` | 26 | **0.790005** | **13/15** | deepest of the three children that read one case above the parent |
+| `ARCH.V22` | 26 | **0.808265** | **13/15** | the upper edge of the 13/15 plateau |
+| `ARCH.V20` | 25 | **0.799135** | **13/15** | the rung wave 25 sealed and told the campaign to doubt |
+| `ARCH.V12` | 25 | **0.762614** | **11/15** | zero-solve coreset at K = 12,288 |
+
+`reports/matrix-campaign-20260810/wave26/human-review/SCORECARD.md` is the
+complete wave-26 table with both readings and every benchmark column, including
+the tokenizer-independent `bits/byte` column, and
+`reports/matrix-campaign-20260810/wave25/human-review/SCORECARD.md` is wave 25's.
 
 This is the consolidating document of the **fold-only** matrix campaign: what
 closed-form folding, with no gradient step and no distillation, reached on one

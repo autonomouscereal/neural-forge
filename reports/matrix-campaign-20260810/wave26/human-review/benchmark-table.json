@@ -1,0 +1,126 @@
+{
+ "schema": "neural-forge-matrix-wave26-benchmark-table-v1",
+ "invocation": "lm_eval --model hf --model_args pretrained=DIR,dtype=float32,max_length=2048 --tasks arc_easy,hellaswag,piqa,winogrande,lambada_openai,wikitext --limit 200 --batch_size 4 --seed 1234 --device cuda:0 on sm86",
+ "parent_reference": {
+  "arc_easy": 0.545,
+  "hellaswag": 0.505,
+  "piqa": 0.68,
+  "winogrande": 0.55,
+  "lambada": 0.46,
+  "lam_ppl": 24.39,
+  "wiki": 81.8,
+  "bits_per_byte": 1.1882
+ },
+ "rows": {
+  "ARCH.V20X13X07": {
+   "arc_easy": 0.365,
+   "hellaswag": 0.395,
+   "piqa": 0.62,
+   "winogrande": 0.475,
+   "lambada": 0.12,
+   "lam_ppl": 3068.63619645807,
+   "wiki": 1075.1855090918373,
+   "bits_per_byte": 1.8832095073937725,
+   "byte_perplexity": 3.6889481398091113
+  },
+  "ARCH.V20W896": {
+   "arc_easy": 0.295,
+   "hellaswag": 0.415,
+   "piqa": 0.54,
+   "winogrande": 0.505,
+   "lambada": 0.13,
+   "lam_ppl": 1067.8746773953308,
+   "wiki": 1016.0548367883664,
+   "bits_per_byte": 1.867948528300077,
+   "byte_perplexity": 3.650131724408661
+  },
+  "ARCH.V20X13G03": {
+   "arc_easy": 0.385,
+   "hellaswag": 0.415,
+   "piqa": 0.595,
+   "winogrande": 0.525,
+   "lambada": 0.31,
+   "lam_ppl": 201.79051633698705,
+   "wiki": 664.8026129984521,
+   "bits_per_byte": 1.7535051513583098,
+   "byte_perplexity": 3.3717677163894315
+  },
+  "PARENT": {
+   "arc_easy": 0.545,
+   "hellaswag": 0.505,
+   "piqa": 0.68,
+   "winogrande": 0.55,
+   "lambada": 0.46,
+   "lam_ppl": 24.391247934692974,
+   "wiki": 81.79763262054296,
+   "bits_per_byte": 1.1882273653524755,
+   "byte_perplexity": 2.2787258479928685
+  },
+  "ARCH.V18": {
+   "arc_easy": 0.42,
+   "hellaswag": 0.425,
+   "piqa": 0.625,
+   "winogrande": 0.53,
+   "lambada": 0.365,
+   "lam_ppl": 66.2555797403416,
+   "wiki": 200.84195559492787,
+   "bits_per_byte": 1.4305726941075294,
+   "byte_perplexity": 2.695536965254426
+  },
+  "ARCH.V22": {
+   "arc_easy": 0.455,
+   "hellaswag": 0.475,
+   "piqa": 0.625,
+   "winogrande": 0.53,
+   "lambada": 0.38,
+   "lam_ppl": 55.07778172917402,
+   "wiki": 165.6831832119213,
+   "bits_per_byte": 1.378653841649133,
+   "byte_perplexity": 2.600256316160869
+  },
+  "ARCH.V20X13W896": {
+   "arc_easy": 0.31,
+   "hellaswag": 0.415,
+   "piqa": 0.585,
+   "winogrande": 0.525,
+   "lambada": 0.165,
+   "lam_ppl": 1902.9479775933803,
+   "wiki": 2402.804562335232,
+   "bits_per_byte": 2.1001603101742155,
+   "byte_perplexity": 4.287570252245311
+  },
+  "ARCH.V32X13G03": {
+   "arc_easy": 0.46,
+   "hellaswag": 0.435,
+   "piqa": 0.605,
+   "winogrande": 0.53,
+   "lambada": 0.355,
+   "lam_ppl": 117.58452082442591,
+   "wiki": 399.1177317165469,
+   "bits_per_byte": 1.6158485880736655,
+   "byte_perplexity": 3.0649182380681705
+  },
+  "ARCH.V9": {
+   "arc_easy": 0.32,
+   "hellaswag": 0.4,
+   "piqa": 0.56,
+   "winogrande": 0.505,
+   "lambada": 0.28,
+   "lam_ppl": 148.1719534403619,
+   "wiki": 585.3131554244299,
+   "bits_per_byte": 1.7191490889749446,
+   "byte_perplexity": 3.2924216043678167
+  },
+  "ARCH.V20X13": {
+   "arc_easy": 0.385,
+   "hellaswag": 0.4,
+   "piqa": 0.605,
+   "winogrande": 0.515,
+   "lambada": 0.305,
+   "lam_ppl": 269.1304202119087,
+   "wiki": 797.6499818290308,
+   "bits_per_byte": 1.8026556305149561,
+   "byte_perplexity": 3.4886179949780085
+  }
+ }
+}

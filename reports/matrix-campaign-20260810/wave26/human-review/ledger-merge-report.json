@@ -1,0 +1,41 @@
+{
+ "schema": "neural-forge-matrix-wave26-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V18.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V20W896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V20X13G03.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V20X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V20X13W896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V20X13X07.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V22.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V32X13G03.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/arch-V9.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V18.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V20W896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V20X13G03.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V20X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V20X13W896.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V20X13X07.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V22.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V32X13G03.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave26/shards/verdict-V9.jsonl"
+ ],
+ "rows_before": 706,
+ "rows_appended": 18,
+ "rows_after": 724,
+ "superseded_rows_dropped": [],
+ "appended_cells": [
+  "ARCH.V18",
+  "ARCH.V20W896",
+  "ARCH.V20X13",
+  "ARCH.V20X13G03",
+  "ARCH.V20X13W896",
+  "ARCH.V20X13X07",
+  "ARCH.V22",
+  "ARCH.V32X13G03",
+  "ARCH.V9"
+ ],
+ "applied": true,
+ "rows_after_verified": 724
+}
