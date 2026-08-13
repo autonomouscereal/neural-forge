@@ -1,0 +1,12 @@
+{
+ "schema": "neural-forge-matrix-wave16-deployment-prune-v1",
+ "policy": "deployments current+1; wave 16 cut neural-forge-matrix-9a7c391b, so the oldest of three is pruned",
+ "pruned": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-63e95cd8",
+ "file_count": 2667,
+ "total_bytes": 166042082,
+ "kept": [
+  "neural-forge-matrix-1c197ed4 (wave 15)",
+  "neural-forge-matrix-9a7c391b (wave 16)"
+ ],
+ "listing_sha256": "5b0b6057c2b923d3a0e601bde9b7cb2aff0f843383ac46c3853aed61596eda36"
+}

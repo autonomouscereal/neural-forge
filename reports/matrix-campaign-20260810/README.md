@@ -36,3 +36,21 @@ python experiments/render_matrix_ledger.py \
   --ledger reports/matrix-campaign-20260810/ledger.jsonl \
   --out    reports/matrix-campaign-20260810/LEDGER.md
 ```
+
+## wave16/ — the assembly wave, and the excision census that replaced it
+
+`wave16/NOTES-MX-T.md` is the narrative. The rest is raw:
+
+| path | what it is |
+|---|---|
+| `wave16/wave16-child-index.json` | every wave-16 child read off its sealed ARCH receipt and its sealed ADDENDUM 6 verdict — net ratio, config diff, export class, axes, both ADDENDUM 9 readings |
+| `wave16/human-review/` | 147 files: every dossier, every child and parent response rendered verbatim (`READ-*.txt`, `READ-PARENT-*.txt`), every run receipt, verdict receipt, per-case reading and build receipt |
+| `wave16/ledger-merge-report.json` | the exactly-once merge of 42 shard rows into the campaign ledger (483 → 525) |
+| `wave16/children-retention-manifest-wave16.json` | which of the 21 built children were kept and which were deleted, each with its sealed tensor digest |
+| `wave16/deployments-prune-manifest-wave16.json` | the deployment pruned to hold current+1 |
+| `run/mx16/` | the wave-16 builder (adds the head-COUNT merge axis), the drivers, the seal verifier, the ledger merge, the dossier readers and the benchmark driver |
+
+Wave 16's one-line result: the ordered succession ladder is dead at rung 0, and
+the single-block excision census that replaced it found that **block 13 alone
+reads 13/15 where block 5 alone reads 6/15 at the identical parameter count** —
+the ranking wave 14's absorbed-fraction census had inverted.

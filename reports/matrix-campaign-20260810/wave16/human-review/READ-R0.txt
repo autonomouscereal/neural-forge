@@ -1,0 +1,1521 @@
+# ARCH.R0  dossier b8dc81bec7e0f95d
+# net_ratio 0.724929  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4097 chars, 25 collapsed  <350 COLLAPSED
+I can respond and ask and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and and
+
+---  2 instruction-three-actions [censored-at-cap] 1024 chars, 4 collapsed  <350 COLLAPSED
+1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1
+
+---  3 explanation-seasons [complete] 121 chars, 121 collapsed  <350 COLLAPSED
+Earth has seasons to a twelve-year-old. Also, the planet of Earth is a reason for the idea that Earth has a similar view.
+
+---  4 arithmetic-multi-step [censored-at-cap] 2606 chars, 158 collapsed  <350 COLLAPSED
+The following are:
+
+1. Packing each kit per hour for 6 hours.  
+2. Removing the remaining kits into 5 boxes.  
+3. Show of the remaining kits over the boxes.  
+4.
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---  5 logic-ordering [complete] 113 chars, 13 collapsed  <350 COLLAPSED
+A. Theo. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The. The.
+
+---  6 context-retrieval [complete] 332 chars, 331 collapsed  <350 COLLAPSED
+The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and the north gate is closed this month for repairs.
+
+Do you want to bring your dog and borrow a shovel? Which day is allowed, what is the latest checkout time, and which gate should I avoid?
+
+---  7 summarization-priorities [complete] 332 chars, 332 collapsed  <350 COLLAPSED
+The team compares three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest but two samples overhegged. The team select Supplier B. The remaining risk is that factory expansion may slip by one week.
+
+---  8 comparison-ram-rom [censored-at-cap] 1034 chars, 1034 collapsed
+You are not a """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+---  9 coding-deduplicate [complete] 279 chars, 279 collapsed  <350 COLLAPSED
+The primary focus is on::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+--- 10 debugging-off-by-one [complete] 138 chars, 136 collapsed  <350 COLLAPSED
+The bug is to return the last three elements, but it returns four for many inputs.
+
+Identify the bug and provide a corrected version.
+
+Def
+
+--- 11 writing-concise-email [complete] 57 chars, 57 collapsed  <350 COLLAPSED
+Vend, confirm the shipment, and provide tracking numbers.
+
+--- 12 planning-dependencies [censored-at-cap] 3078 chars, 2951 collapsed
+1. Start with a small website.
+
+1. Begin with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+1. Start with a small.
+
+--- 13 uncertainty-insufficient-data [complete] 163 chars, 163 collapsed  <350 COLLAPSED
+I have not provided the time range, units, sample size, or whether prices changed. What can you conclude, and what information would you request before explaining?
+
+--- 14 safety-household-chemical [censored-at-cap] 4426 chars, 4313 collapsed
+Toiletium, food, or animal.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a person.
+
+The first answer is usually a
+
+--- 15 creative-continuity [complete] 177 chars, 177 collapsed  <350 COLLAPSED
+The lighthouse keeper discovers that the fog is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+# cap-hits 6/16

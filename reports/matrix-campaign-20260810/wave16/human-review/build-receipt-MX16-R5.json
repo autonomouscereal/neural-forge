@@ -1,0 +1,1939 @@
+{
+ "schema": "neural-forge-matrix-wave16-standard-shape-child-v1",
+ "arm": "conditioned-local",
+ "keep_ff": 1024,
+ "keep_head_dim": null,
+ "keep_kv_groups": 6,
+ "excised": [
+  5,
+  8,
+  12,
+  13
+ ],
+ "rope_theta": 1000000.0,
+ "parent_parameters": 229693184,
+ "child_parameters": 133209600,
+ "net_ratio": 0.5799458115396232,
+ "axes": [
+  {
+   "axis": "intermediate_size",
+   "kind": "mlp",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    6,
+    7,
+    9,
+    10,
+    11
+   ],
+   "config_fields": [
+    "intermediate_size",
+    "block_ff_dim"
+   ],
+   "selection": "pivoted-Cholesky coreset of real channels; w1/w3 rows verbatim",
+   "solve": "prior-anchored ridge on w2, lambda ladder to update_scale<=1.0, arm=conditioned-local",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": 47185920,
+   "heldout": {
+    "median_cos": 0.9098086357116699,
+    "min_cos": 0.8735034364702758,
+    "median_relL2": 0.4067479372024536,
+    "max_input_drift": 0.8172021897454722,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.0,
+      "identity_check": 0.0032252167569195157,
+      "selection_first8": [
+       0,
+       1,
+       3,
+       6,
+       7,
+       8,
+       10,
+       15
+      ],
+      "vs_local_target_cos": 0.9227753646027325,
+      "vs_local_target_relL2": 0.40771610324936297,
+      "update_scale": 0.7766549327660927,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 1.456733956138354,
+      "relL2": 0.40771610324936297,
+      "cos": 0.9227753646027325,
+      "cos_p05": 0.7580891652772492
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.31421209547800183,
+      "identity_check": 0.0032695029311290437,
+      "selection_first8": [
+       2,
+       4,
+       5,
+       6,
+       7,
+       8,
+       11,
+       15
+      ],
+      "vs_local_target_cos": 0.8997523718236291,
+      "vs_local_target_relL2": 0.4634535684913408,
+      "update_scale": 0.9457484532814048,
+      "lambda_relative": 0.01,
+      "free_solve_update_scale": 1.0626355041537132,
+      "relL2": 0.4634535684913408,
+      "cos": 0.8997523718236291,
+      "cos_p05": 0.7382023048527598
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.4092725674460833,
+      "identity_check": 0.003365618213421651,
+      "selection_first8": [
+       11,
+       15,
+       16,
+       19,
+       23,
+       24,
+       29,
+       33
+      ],
+      "vs_local_target_cos": 0.8735034364702758,
+      "vs_local_target_relL2": 0.5120632647110142,
+      "update_scale": 0.9034379589623126,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.9034379589623126,
+      "relL2": 0.5120632647110142,
+      "cos": 0.8735034364702758,
+      "cos_p05": 0.7304729100404034
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.4372387045559076,
+      "identity_check": 0.003414299824375291,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       7,
+       9,
+       16,
+       21,
+       23
+      ],
+      "vs_local_target_cos": 0.8931288855461395,
+      "vs_local_target_relL2": 0.4621007768602461,
+      "update_scale": 0.7773987972383419,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7773987972383419,
+      "relL2": 0.4621007768602461,
+      "cos": 0.8931288855461395,
+      "cos_p05": 0.7933603850733829
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.4284259113032341,
+      "identity_check": 0.003485961096314931,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       6,
+       7,
+       8,
+       9,
+       11
+      ],
+      "vs_local_target_cos": 0.888446978658594,
+      "vs_local_target_relL2": 0.4441989606490606,
+      "update_scale": 0.7552584507226673,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7552584507226673,
+      "relL2": 0.4441989606490606,
+      "cos": 0.888446978658594,
+      "cos_p05": 0.7949540642671098
+     },
+     {
+      "layer": 6,
+      "position": 5,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.7731591203033201,
+      "identity_check": 0.003048098250439741,
+      "selection_first8": [
+       9,
+       15,
+       22,
+       23,
+       24,
+       25,
+       26,
+       28
+      ],
+      "vs_local_target_cos": 0.9680012697585225,
+      "vs_local_target_relL2": 0.2492221158399979,
+      "update_scale": 0.7676172478690856,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7676172478690856,
+      "relL2": 0.2492221158399979,
+      "cos": 0.9680012697585225,
+      "cos_p05": 0.9414999989756813
+     },
+     {
+      "layer": 7,
+      "position": 6,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.7170506279708236,
+      "identity_check": 0.0036469985984400903,
+      "selection_first8": [
+       3,
+       5,
+       6,
+       10,
+       20,
+       24,
+       25,
+       27
+      ],
+      "vs_local_target_cos": 0.9418159173903349,
+      "vs_local_target_relL2": 0.3195278991749349,
+      "update_scale": 0.6530896481374102,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6530896481374102,
+      "relL2": 0.3195278991749349,
+      "cos": 0.9418159173903349,
+      "cos_p05": 0.8834128354745889
+     },
+     {
+      "layer": 9,
+      "position": 7,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.7623937051702856,
+      "identity_check": 0.003694364658937351,
+      "selection_first8": [
+       1,
+       2,
+       4,
+       6,
+       12,
+       16,
+       22,
+       24
+      ],
+      "vs_local_target_cos": 0.9523815177914978,
+      "vs_local_target_relL2": 0.28851112677537205,
+      "update_scale": 0.6345895675554039,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6345895675554039,
+      "relL2": 0.28851112677537205,
+      "cos": 0.9523815177914978,
+      "cos_p05": 0.8997255805213722
+     },
+     {
+      "layer": 10,
+      "position": 8,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.8172021897454722,
+      "identity_check": 0.0037080164372552283,
+      "selection_first8": [
+       0,
+       3,
+       4,
+       5,
+       8,
+       9,
+       16,
+       17
+      ],
+      "vs_local_target_cos": 0.9473480099501591,
+      "vs_local_target_relL2": 0.31069409825459093,
+      "update_scale": 0.6302510772214034,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6302510772214034,
+      "relL2": 0.31069409825459093,
+      "cos": 0.9473480099501591,
+      "cos_p05": 0.9030927155434668
+     },
+     {
+      "layer": 11,
+      "position": 9,
+      "keep": 1024,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.7816508535213236,
+      "identity_check": 0.0037181492595694935,
+      "selection_first8": [
+       4,
+       7,
+       13,
+       15,
+       19,
+       27,
+       28,
+       31
+      ],
+      "vs_local_target_cos": 0.9098086195490497,
+      "vs_local_target_relL2": 0.40674794253981933,
+      "update_scale": 0.7518706490167345,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7518706490167345,
+      "relL2": 0.40674794253981933,
+      "cos": 0.9098086195490497,
+      "cos_p05": 0.8156883317996794
+     }
+    ]
+   }
+  },
+  {
+   "axis": "num_attention_heads",
+   "kind": "full_attention",
+   "sites": [
+    2,
+    4,
+    6,
+    10
+   ],
+   "config_fields": [
+    "num_attention_heads",
+    "num_heads",
+    "num_key_value_heads",
+    "head_dim"
+   ],
+   "selection": "whole KV groups merged in pairs, 8 -> 6; pairs ordered per layer by a post-norm redundancy census under the exact per-plane sign gauge (the only frame change that commutes with RoPE AND with the shared per-head RMSNorm weight); surviving heads keep the parent's head_dim and rope ladder",
+   "solve": "out_proj re-solved against the installed context",
+   "evidence": "conditioned capture",
+   "parameters_removed": 3145728,
+   "heldout": {
+    "median_cos": 0.9361781477928162,
+    "min_cos": 0.9263014242935032,
+    "per_site": [
+     {
+      "parent_layer": 2,
+      "position": 2,
+      "keep_groups": 6,
+      "keep_heads": 12,
+      "head_dim": 64,
+      "census": {
+       "pairs": [
+        {
+         "groups": [
+          0,
+          3
+         ],
+         "key_cos_sign_gauge": 0.7291702279986287,
+         "query_cos_sign_gauge": 0.6053530644164975,
+         "key_cos_rotation_gauge": 0.7708549551663574,
+         "redundancy": 0.6672616462075631
+        },
+        {
+         "groups": [
+          3,
+          5
+         ],
+         "key_cos_sign_gauge": 0.7375019159173728,
+         "query_cos_sign_gauge": 0.5843748985300218,
+         "key_cos_rotation_gauge": 0.7745467492314566,
+         "redundancy": 0.6609384072236972
+        },
+        {
+         "groups": [
+          2,
+          3
+         ],
+         "key_cos_sign_gauge": 0.7231447042256737,
+         "query_cos_sign_gauge": 0.5801424066163372,
+         "key_cos_rotation_gauge": 0.7845863552483588,
+         "redundancy": 0.6516435554210054
+        },
+        {
+         "groups": [
+          1,
+          3
+         ],
+         "key_cos_sign_gauge": 0.7077494343313747,
+         "query_cos_sign_gauge": 0.5836519804841156,
+         "key_cos_rotation_gauge": 0.7383345391140412,
+         "redundancy": 0.6457007074077452
+        },
+        {
+         "groups": [
+          0,
+          2
+         ],
+         "key_cos_sign_gauge": 0.6842886291744094,
+         "query_cos_sign_gauge": 0.586432335364846,
+         "key_cos_rotation_gauge": 0.7204222274377339,
+         "redundancy": 0.6353604822696277
+        },
+        {
+         "groups": [
+          1,
+          2
+         ],
+         "key_cos_sign_gauge": 0.6754534093982426,
+         "query_cos_sign_gauge": 0.5879222535670965,
+         "key_cos_rotation_gauge": 0.7224798997762854,
+         "redundancy": 0.6316878314826695
+        },
+        {
+         "groups": [
+          2,
+          5
+         ],
+         "key_cos_sign_gauge": 0.7025466742598238,
+         "query_cos_sign_gauge": 0.5478753017193435,
+         "key_cos_rotation_gauge": 0.7526992412537644,
+         "redundancy": 0.6252109879895836
+        },
+        {
+         "groups": [
+          1,
+          5
+         ],
+         "key_cos_sign_gauge": 0.6862237374130691,
+         "query_cos_sign_gauge": 0.5579445510242572,
+         "key_cos_rotation_gauge": 0.7078272111723645,
+         "redundancy": 0.6220841442186631
+        },
+        {
+         "groups": [
+          5,
+          6
+         ],
+         "key_cos_sign_gauge": 0.610582211202665,
+         "query_cos_sign_gauge": 0.5980395187149844,
+         "key_cos_rotation_gauge": 0.6888754509534548,
+         "redundancy": 0.6043108649588247
+        },
+        {
+         "groups": [
+          0,
+          5
+         ],
+         "key_cos_sign_gauge": 0.6667988569976153,
+         "query_cos_sign_gauge": 0.5297988248900443,
+         "key_cos_rotation_gauge": 0.6926945067002349,
+         "redundancy": 0.5982988409438298
+        },
+        {
+         "groups": [
+          0,
+          1
+         ],
+         "key_cos_sign_gauge": 0.642470008597395,
+         "query_cos_sign_gauge": 0.554092294415147,
+         "key_cos_rotation_gauge": 0.6734618655036557,
+         "redundancy": 0.5982811515062709
+        },
+        {
+         "groups": [
+          2,
+          6
+         ],
+         "key_cos_sign_gauge": 0.6206266316655983,
+         "query_cos_sign_gauge": 0.5039287531024177,
+         "key_cos_rotation_gauge": 0.6994125951823392,
+         "redundancy": 0.562277692384008
+        },
+        {
+         "groups": [
+          1,
+          6
+         ],
+         "key_cos_sign_gauge": 0.5757693054871896,
+         "query_cos_sign_gauge": 0.5428553550989553,
+         "key_cos_rotation_gauge": 0.64237885617773,
+         "redundancy": 0.5593123302930725
+        },
+        {
+         "groups": [
+          3,
+          4
+         ],
+         "key_cos_sign_gauge": 0.5866606643466468,
+         "query_cos_sign_gauge": 0.5149125111499964,
+         "key_cos_rotation_gauge": 0.6903287281002252,
+         "redundancy": 0.5507865877483216
+        },
+        {
+         "groups": [
+          3,
+          6
+         ],
+         "key_cos_sign_gauge": 0.6359998198541748,
+         "query_cos_sign_gauge": 0.44783328330806405,
+         "key_cos_rotation_gauge": 0.7032371317778008,
+         "redundancy": 0.5419165515811194
+        },
+        {
+         "groups": [
+          0,
+          6
+         ],
+         "key_cos_sign_gauge": 0.565687438595346,
+         "query_cos_sign_gauge": 0.44834348670694457,
+         "key_cos_rotation_gauge": 0.6423129337791833,
+         "redundancy": 0.5070154626511453
+        },
+        {
+         "groups": [
+          1,
+          4
+         ],
+         "key_cos_sign_gauge": 0.49971556822803215,
+         "query_cos_sign_gauge": 0.5070949462982257,
+         "key_cos_rotation_gauge": 0.5719159033559684,
+         "redundancy": 0.5034052572631289
+        },
+        {
+         "groups": [
+          4,
+          5
+         ],
+         "key_cos_sign_gauge": 0.521518586592911,
+         "query_cos_sign_gauge": 0.4684130832168547,
+         "key_cos_rotation_gauge": 0.607415542758242,
+         "redundancy": 0.49496583490488283
+        },
+        {
+         "groups": [
+          0,
+          4
+         ],
+         "key_cos_sign_gauge": 0.5029721449521299,
+         "query_cos_sign_gauge": 0.44411043230085007,
+         "key_cos_rotation_gauge": 0.624384543273262,
+         "redundancy": 0.47354128862649003
+        },
+        {
+         "groups": [
+          4,
+          6
+         ],
+         "key_cos_sign_gauge": 0.41544991988742447,
+         "query_cos_sign_gauge": 0.4786632793248372,
+         "key_cos_rotation_gauge": 0.5466066737338277,
+         "redundancy": 0.44705659960613087
+        },
+        {
+         "groups": [
+          2,
+          4
+         ],
+         "key_cos_sign_gauge": 0.472770069389916,
+         "query_cos_sign_gauge": 0.4188348680632732,
+         "key_cos_rotation_gauge": 0.6025469719695576,
+         "redundancy": 0.44580246872659457
+        },
+        {
+         "groups": [
+          4,
+          7
+         ],
+         "key_cos_sign_gauge": 0.4033117563730314,
+         "query_cos_sign_gauge": 0.40121693645095424,
+         "key_cos_rotation_gauge": 0.45919785218569387,
+         "redundancy": 0.4022643464119928
+        },
+        {
+         "groups": [
+          1,
+          7
+         ],
+         "key_cos_sign_gauge": 0.44442507890335925,
+         "query_cos_sign_gauge": 0.3314421098377466,
+         "key_cos_rotation_gauge": 0.507483783168128,
+         "redundancy": 0.3879335943705529
+        },
+        {
+         "groups": [
+          6,
+          7
+         ],
+         "key_cos_sign_gauge": 0.4083160316769348,
+         "query_cos_sign_gauge": 0.32968110826300884,
+         "key_cos_rotation_gauge": 0.4888266372922918,
+         "redundancy": 0.3689985699699718
+        },
+        {
+         "groups": [
+          2,
+          7
+         ],
+         "key_cos_sign_gauge": 0.44414310656980255,
+         "query_cos_sign_gauge": 0.285352140735015,
+         "key_cos_rotation_gauge": 0.526555611823037,
+         "redundancy": 0.36474762365240876
+        },
+        {
+         "groups": [
+          5,
+          7
+         ],
+         "key_cos_sign_gauge": 0.41634325499320696,
+         "query_cos_sign_gauge": 0.2861906019224456,
+         "key_cos_rotation_gauge": 0.49928143911769984,
+         "redundancy": 0.35126692845782626
+        },
+        {
+         "groups": [
+          3,
+          7
+         ],
+         "key_cos_sign_gauge": 0.46950761090527066,
+         "query_cos_sign_gauge": 0.15574584770643243,
+         "key_cos_rotation_gauge": 0.5413180283211876,
+         "redundancy": 0.31262672930585156
+        },
+        {
+         "groups": [
+          0,
+          7
+         ],
+         "key_cos_sign_gauge": 0.40553989862026135,
+         "query_cos_sign_gauge": 0.19414480877121792,
+         "key_cos_rotation_gauge": 0.4696016281740499,
+         "redundancy": 0.29984235369573964
+        }
+       ],
+       "chosen_merges": [
+        [
+         0,
+         3
+        ],
+        [
+         1,
+         2
+        ]
+       ],
+       "clusters": [
+        [
+         3,
+         0
+        ],
+        [
+         2,
+         1
+        ],
+        [
+         4
+        ],
+        [
+         5
+        ],
+        [
+         6
+        ],
+        [
+         7
+        ]
+       ],
+       "best_pair_redundancy": 0.6672616462075631,
+       "worst_pair_redundancy": 0.29984235369573964,
+       "rotation_gauge_gain_median": 0.06660955399274826,
+       "merged": [
+        {
+         "cluster": [
+          3,
+          0
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.7291702279986287,
+         "signs_flipped": 18,
+         "v_retained_energy": 0.8918147893937239,
+         "energy_weights": [
+          0.5216506584722952,
+          0.47834934152770475
+         ]
+        },
+        {
+         "cluster": [
+          2,
+          1
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.6754534093982426,
+         "signs_flipped": 14,
+         "v_retained_energy": 0.8176951675731203,
+         "energy_weights": [
+          0.5105949780876384,
+          0.4894050219123615
+         ]
+        },
+        {
+         "cluster": [
+          4
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          5
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          6
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          7
+         ],
+         "merged": false
+        }
+       ]
+      },
+      "prior_only_cos": 0.9288275382334454,
+      "update_scale": 0.7436095870817125,
+      "lambda_relative": 0.01,
+      "free_solve_update_scale": 5.015187053110794,
+      "relL2": 0.29891674521785794,
+      "cos": 0.9543422315508351,
+      "cos_p05": 0.9059078313107699
+     },
+     {
+      "parent_layer": 4,
+      "position": 4,
+      "keep_groups": 6,
+      "keep_heads": 12,
+      "head_dim": 64,
+      "census": {
+       "pairs": [
+        {
+         "groups": [
+          2,
+          6
+         ],
+         "key_cos_sign_gauge": 0.8141560438349688,
+         "query_cos_sign_gauge": 0.7168918297630609,
+         "key_cos_rotation_gauge": 0.8360155892821755,
+         "redundancy": 0.7655239367990148
+        },
+        {
+         "groups": [
+          0,
+          2
+         ],
+         "key_cos_sign_gauge": 0.8080225675765831,
+         "query_cos_sign_gauge": 0.7109928896594194,
+         "key_cos_rotation_gauge": 0.8437254348821788,
+         "redundancy": 0.7595077286180012
+        },
+        {
+         "groups": [
+          2,
+          3
+         ],
+         "key_cos_sign_gauge": 0.8096006350210464,
+         "query_cos_sign_gauge": 0.6557164503360007,
+         "key_cos_rotation_gauge": 0.8303716563319724,
+         "redundancy": 0.7326585426785235
+        },
+        {
+         "groups": [
+          2,
+          5
+         ],
+         "key_cos_sign_gauge": 0.8109973218864984,
+         "query_cos_sign_gauge": 0.6515603192069699,
+         "key_cos_rotation_gauge": 0.8287460973732785,
+         "redundancy": 0.7312788205467342
+        },
+        {
+         "groups": [
+          0,
+          4
+         ],
+         "key_cos_sign_gauge": 0.7738295688797836,
+         "query_cos_sign_gauge": 0.6737444594171722,
+         "key_cos_rotation_gauge": 0.801542931943723,
+         "redundancy": 0.7237870141484779
+        },
+        {
+         "groups": [
+          3,
+          6
+         ],
+         "key_cos_sign_gauge": 0.7938591533533932,
+         "query_cos_sign_gauge": 0.6525448203568143,
+         "key_cos_rotation_gauge": 0.8155023654227622,
+         "redundancy": 0.7232019868551037
+        },
+        {
+         "groups": [
+          0,
+          7
+         ],
+         "key_cos_sign_gauge": 0.7691001889728167,
+         "query_cos_sign_gauge": 0.6714777143790215,
+         "key_cos_rotation_gauge": 0.8099973588022052,
+         "redundancy": 0.7202889516759191
+        },
+        {
+         "groups": [
+          5,
+          6
+         ],
+         "key_cos_sign_gauge": 0.7918663474432923,
+         "query_cos_sign_gauge": 0.6407882202922811,
+         "key_cos_rotation_gauge": 0.8112792497660808,
+         "redundancy": 0.7163272838677868
+        },
+        {
+         "groups": [
+          0,
+          5
+         ],
+         "key_cos_sign_gauge": 0.7665498224708062,
+         "query_cos_sign_gauge": 0.6560654186552215,
+         "key_cos_rotation_gauge": 0.8068107555739638,
+         "redundancy": 0.7113076205630138
+        },
+        {
+         "groups": [
+          0,
+          3
+         ],
+         "key_cos_sign_gauge": 0.7427487847905512,
+         "query_cos_sign_gauge": 0.656574871000889,
+         "key_cos_rotation_gauge": 0.8082594254999711,
+         "redundancy": 0.6996618278957201
+        },
+        {
+         "groups": [
+          3,
+          5
+         ],
+         "key_cos_sign_gauge": 0.7692201748969391,
+         "query_cos_sign_gauge": 0.6254156283832217,
+         "key_cos_rotation_gauge": 0.7908790145413506,
+         "redundancy": 0.6973179016400803
+        },
+        {
+         "groups": [
+          0,
+          6
+         ],
+         "key_cos_sign_gauge": 0.7553597047530998,
+         "query_cos_sign_gauge": 0.6384506470296578,
+         "key_cos_rotation_gauge": 0.8151231933043804,
+         "redundancy": 0.6969051758913788
+        },
+        {
+         "groups": [
+          4,
+          5
+         ],
+         "key_cos_sign_gauge": 0.7694461072237333,
+         "query_cos_sign_gauge": 0.6207502624146075,
+         "key_cos_rotation_gauge": 0.8004410294135992,
+         "redundancy": 0.6950981848191704
+        },
+        {
+         "groups": [
+          2,
+          4
+         ],
+         "key_cos_sign_gauge": 0.7757907560595955,
+         "query_cos_sign_gauge": 0.6008154676670701,
+         "key_cos_rotation_gauge": 0.8089201523342768,
+         "redundancy": 0.6883031118633327
+        },
+        {
+         "groups": [
+          2,
+          7
+         ],
+         "key_cos_sign_gauge": 0.7520768828274697,
+         "query_cos_sign_gauge": 0.6214266983329804,
+         "key_cos_rotation_gauge": 0.7921821753889643,
+         "redundancy": 0.686751790580225
+        },
+        {
+         "groups": [
+          4,
+          6
+         ],
+         "key_cos_sign_gauge": 0.7575864579941757,
+         "query_cos_sign_gauge": 0.5755211804750442,
+         "key_cos_rotation_gauge": 0.7980351037661272,
+         "redundancy": 0.6665538192346099
+        },
+        {
+         "groups": [
+          3,
+          7
+         ],
+         "key_cos_sign_gauge": 0.7274070100333154,
+         "query_cos_sign_gauge": 0.5900736010088564,
+         "key_cos_rotation_gauge": 0.7665213893855429,
+         "redundancy": 0.6587403055210859
+        },
+        {
+         "groups": [
+          6,
+          7
+         ],
+         "key_cos_sign_gauge": 0.7364887831484256,
+         "query_cos_sign_gauge": 0.5766020897221373,
+         "key_cos_rotation_gauge": 0.7733517053576754,
+         "redundancy": 0.6565454364352814
+        },
+        {
+         "groups": [
+          4,
+          7
+         ],
+         "key_cos_sign_gauge": 0.711913068669953,
+         "query_cos_sign_gauge": 0.5911756275258278,
+         "key_cos_rotation_gauge": 0.7475430900701243,
+         "redundancy": 0.6515443480978904
+        },
+        {
+         "groups": [
+          5,
+          7
+         ],
+         "key_cos_sign_gauge": 0.7153765920853935,
+         "query_cos_sign_gauge": 0.5572585183745862,
+         "key_cos_rotation_gauge": 0.7542719535469473,
+         "redundancy": 0.6363175552299898
+        },
+        {
+         "groups": [
+          3,
+          4
+         ],
+         "key_cos_sign_gauge": 0.7415523757024124,
+         "query_cos_sign_gauge": 0.5250607973096744,
+         "key_cos_rotation_gauge": 0.7857213611254015,
+         "redundancy": 0.6333065865060434
+        },
+        {
+         "groups": [
+          0,
+          1
+         ],
+         "key_cos_sign_gauge": 0.4900654664433652,
+         "query_cos_sign_gauge": 0.430641556844118,
+         "key_cos_rotation_gauge": 0.5129744584021634,
+         "redundancy": 0.4603535116437416
+        },
+        {
+         "groups": [
+          1,
+          7
+         ],
+         "key_cos_sign_gauge": 0.4585268343205805,
+         "query_cos_sign_gauge": 0.37791471136973526,
+         "key_cos_rotation_gauge": 0.48909879860943667,
+         "redundancy": 0.4182207728451579
+        },
+        {
+         "groups": [
+          1,
+          2
+         ],
+         "key_cos_sign_gauge": 0.4808863658596832,
+         "query_cos_sign_gauge": 0.3239657481078299,
+         "key_cos_rotation_gauge": 0.5183843391678351,
+         "redundancy": 0.40242605698375655
+        },
+        {
+         "groups": [
+          1,
+          4
+         ],
+         "key_cos_sign_gauge": 0.4692242611035643,
+         "query_cos_sign_gauge": 0.32712992291703435,
+         "key_cos_rotation_gauge": 0.503341406004809,
+         "redundancy": 0.3981770920102993
+        },
+        {
+         "groups": [
+          1,
+          6
+         ],
+         "key_cos_sign_gauge": 0.4602362090966751,
+         "query_cos_sign_gauge": 0.3332514428275088,
+         "key_cos_rotation_gauge": 0.5111097727774987,
+         "redundancy": 0.39674382596209196
+        },
+        {
+         "groups": [
+          1,
+          3
+         ],
+         "key_cos_sign_gauge": 0.4730618499433893,
+         "query_cos_sign_gauge": 0.2892320479752388,
+         "key_cos_rotation_gauge": 0.5364938440830956,
+         "redundancy": 0.38114694895931406
+        },
+        {
+         "groups": [
+          1,
+          5
+         ],
+         "key_cos_sign_gauge": 0.44169360033113664,
+         "query_cos_sign_gauge": 0.23071594612777252,
+         "key_cos_rotation_gauge": 0.48162030593500504,
+         "redundancy": 0.3362047732294546
+        }
+       ],
+       "chosen_merges": [
+        [
+         2,
+         6
+        ],
+        [
+         0,
+         4
+        ]
+       ],
+       "clusters": [
+        [
+         0,
+         4
+        ],
+        [
+         1
+        ],
+        [
+         2,
+         6
+        ],
+        [
+         3
+        ],
+        [
+         5
+        ],
+        [
+         7
+        ]
+       ],
+       "best_pair_redundancy": 0.7655239367990148,
+       "worst_pair_redundancy": 0.3362047732294546,
+       "rotation_gauge_gain_median": 0.035702865570783615,
+       "merged": [
+        {
+         "cluster": [
+          0,
+          4
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.7738295688797836,
+         "signs_flipped": 16,
+         "v_retained_energy": 0.9308551282624311,
+         "energy_weights": [
+          0.5232676592535338,
+          0.47673234074646614
+         ]
+        },
+        {
+         "cluster": [
+          1
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          2,
+          6
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.8141560438349688,
+         "signs_flipped": 17,
+         "v_retained_energy": 0.8876272658782633,
+         "energy_weights": [
+          0.5174404091469559,
+          0.4825595908530443
+         ]
+        },
+        {
+         "cluster": [
+          3
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          5
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          7
+         ],
+         "merged": false
+        }
+       ]
+      },
+      "prior_only_cos": 0.9119084091443941,
+      "update_scale": 0.9312612912202852,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.9312612912202852,
+      "relL2": 0.353383379705599,
+      "cos": 0.9361781520213128,
+      "cos_p05": 0.8868415945975306
+     },
+     {
+      "parent_layer": 6,
+      "position": 5,
+      "keep_groups": 6,
+      "keep_heads": 12,
+      "head_dim": 64,
+      "census": {
+       "pairs": [
+        {
+         "groups": [
+          4,
+          6
+         ],
+         "key_cos_sign_gauge": 0.7690983425354466,
+         "query_cos_sign_gauge": 0.7027947798565239,
+         "key_cos_rotation_gauge": 0.8132210334485657,
+         "redundancy": 0.7359465611959852
+        },
+        {
+         "groups": [
+          2,
+          3
+         ],
+         "key_cos_sign_gauge": 0.6505715869363025,
+         "query_cos_sign_gauge": 0.6442386145578478,
+         "key_cos_rotation_gauge": 0.6790055696593933,
+         "redundancy": 0.6474051007470751
+        },
+        {
+         "groups": [
+          1,
+          6
+         ],
+         "key_cos_sign_gauge": 0.6506558278492518,
+         "query_cos_sign_gauge": 0.5610061767349459,
+         "key_cos_rotation_gauge": 0.711609814047205,
+         "redundancy": 0.6058310022920989
+        },
+        {
+         "groups": [
+          1,
+          3
+         ],
+         "key_cos_sign_gauge": 0.6071932181150528,
+         "query_cos_sign_gauge": 0.600148942618986,
+         "key_cos_rotation_gauge": 0.6658597548347926,
+         "redundancy": 0.6036710803670193
+        },
+        {
+         "groups": [
+          0,
+          1
+         ],
+         "key_cos_sign_gauge": 0.5984932232912151,
+         "query_cos_sign_gauge": 0.5768097084609116,
+         "key_cos_rotation_gauge": 0.6595706465882545,
+         "redundancy": 0.5876514658760634
+        },
+        {
+         "groups": [
+          1,
+          4
+         ],
+         "key_cos_sign_gauge": 0.5959876324333533,
+         "query_cos_sign_gauge": 0.564060185334877,
+         "key_cos_rotation_gauge": 0.7127120415932579,
+         "redundancy": 0.5800239088841151
+        },
+        {
+         "groups": [
+          4,
+          7
+         ],
+         "key_cos_sign_gauge": 0.616116993219928,
+         "query_cos_sign_gauge": 0.5343564063421876,
+         "key_cos_rotation_gauge": 0.6823870398857597,
+         "redundancy": 0.5752366997810578
+        },
+        {
+         "groups": [
+          1,
+          7
+         ],
+         "key_cos_sign_gauge": 0.6065547871250849,
+         "query_cos_sign_gauge": 0.5311209825679006,
+         "key_cos_rotation_gauge": 0.6428861764884117,
+         "redundancy": 0.5688378848464928
+        },
+        {
+         "groups": [
+          1,
+          2
+         ],
+         "key_cos_sign_gauge": 0.5701991590972484,
+         "query_cos_sign_gauge": 0.5449107733546583,
+         "key_cos_rotation_gauge": 0.6925685956071529,
+         "redundancy": 0.5575549662259534
+        },
+        {
+         "groups": [
+          0,
+          7
+         ],
+         "key_cos_sign_gauge": 0.5516009813348525,
+         "query_cos_sign_gauge": 0.5554950902521263,
+         "key_cos_rotation_gauge": 0.611092558147883,
+         "redundancy": 0.5535480357934894
+        },
+        {
+         "groups": [
+          6,
+          7
+         ],
+         "key_cos_sign_gauge": 0.5997106296658414,
+         "query_cos_sign_gauge": 0.49771763497941596,
+         "key_cos_rotation_gauge": 0.6432084961916769,
+         "redundancy": 0.5487141323226287
+        },
+        {
+         "groups": [
+          2,
+          6
+         ],
+         "key_cos_sign_gauge": 0.5616579260353234,
+         "query_cos_sign_gauge": 0.5174901295177672,
+         "key_cos_rotation_gauge": 0.6601030766313025,
+         "redundancy": 0.5395740277765453
+        },
+        {
+         "groups": [
+          0,
+          3
+         ],
+         "key_cos_sign_gauge": 0.5286153565641325,
+         "query_cos_sign_gauge": 0.5421313546134383,
+         "key_cos_rotation_gauge": 0.5858721804820148,
+         "redundancy": 0.5353733555887854
+        },
+        {
+         "groups": [
+          0,
+          2
+         ],
+         "key_cos_sign_gauge": 0.5637317833873222,
+         "query_cos_sign_gauge": 0.47954373303407705,
+         "key_cos_rotation_gauge": 0.6301217082326873,
+         "redundancy": 0.5216377582106997
+        },
+        {
+         "groups": [
+          3,
+          6
+         ],
+         "key_cos_sign_gauge": 0.5295819462924423,
+         "query_cos_sign_gauge": 0.5104402898073277,
+         "key_cos_rotation_gauge": 0.606463360326456,
+         "redundancy": 0.520011118049885
+        },
+        {
+         "groups": [
+          0,
+          6
+         ],
+         "key_cos_sign_gauge": 0.5519263191443383,
+         "query_cos_sign_gauge": 0.4802236114241279,
+         "key_cos_rotation_gauge": 0.6461201559140268,
+         "redundancy": 0.5160749652842331
+        },
+        {
+         "groups": [
+          0,
+          4
+         ],
+         "key_cos_sign_gauge": 0.5211491487209556,
+         "query_cos_sign_gauge": 0.49635749397207907,
+         "key_cos_rotation_gauge": 0.6547864676442036,
+         "redundancy": 0.5087533213465174
+        },
+        {
+         "groups": [
+          2,
+          4
+         ],
+         "key_cos_sign_gauge": 0.5065546884102794,
+         "query_cos_sign_gauge": 0.505728324607339,
+         "key_cos_rotation_gauge": 0.631563673662503,
+         "redundancy": 0.5061415065088092
+        },
+        {
+         "groups": [
+          2,
+          7
+         ],
+         "key_cos_sign_gauge": 0.5810727053257474,
+         "query_cos_sign_gauge": 0.40114342407504505,
+         "key_cos_rotation_gauge": 0.6308081902058221,
+         "redundancy": 0.49110806470039625
+        },
+        {
+         "groups": [
+          3,
+          7
+         ],
+         "key_cos_sign_gauge": 0.5693780294004936,
+         "query_cos_sign_gauge": 0.40346004240376837,
+         "key_cos_rotation_gauge": 0.621411263247457,
+         "redundancy": 0.486419035902131
+        },
+        {
+         "groups": [
+          3,
+          4
+         ],
+         "key_cos_sign_gauge": 0.48895618575539723,
+         "query_cos_sign_gauge": 0.35033752978003396,
+         "key_cos_rotation_gauge": 0.6009330275709489,
+         "redundancy": 0.4196468577677156
+        },
+        {
+         "groups": [
+          2,
+          5
+         ],
+         "key_cos_sign_gauge": 0.34565687269593187,
+         "query_cos_sign_gauge": 0.3635948935592441,
+         "key_cos_rotation_gauge": 0.42953592542738633,
+         "redundancy": 0.354625883127588
+        },
+        {
+         "groups": [
+          1,
+          5
+         ],
+         "key_cos_sign_gauge": 0.3733536850308193,
+         "query_cos_sign_gauge": 0.3143408044331427,
+         "key_cos_rotation_gauge": 0.4402063168504833,
+         "redundancy": 0.343847244731981
+        },
+        {
+         "groups": [
+          3,
+          5
+         ],
+         "key_cos_sign_gauge": 0.30379511691242267,
+         "query_cos_sign_gauge": 0.3624336671436584,
+         "key_cos_rotation_gauge": 0.3636241616285967,
+         "redundancy": 0.3331143920280405
+        },
+        {
+         "groups": [
+          5,
+          6
+         ],
+         "key_cos_sign_gauge": 0.3366099454783185,
+         "query_cos_sign_gauge": 0.2332098126989583,
+         "key_cos_rotation_gauge": 0.38066897271706807,
+         "redundancy": 0.2849098790886384
+        },
+        {
+         "groups": [
+          0,
+          5
+         ],
+         "key_cos_sign_gauge": 0.3251207916448464,
+         "query_cos_sign_gauge": 0.2066706209114405,
+         "key_cos_rotation_gauge": 0.3845869973404587,
+         "redundancy": 0.26589570627814346
+        },
+        {
+         "groups": [
+          4,
+          5
+         ],
+         "key_cos_sign_gauge": 0.34527638771328895,
+         "query_cos_sign_gauge": 0.16784531891215193,
+         "key_cos_rotation_gauge": 0.4059353152373625,
+         "redundancy": 0.25656085331272044
+        },
+        {
+         "groups": [
+          5,
+          7
+         ],
+         "key_cos_sign_gauge": 0.31606881554644284,
+         "query_cos_sign_gauge": 0.1567145981582836,
+         "key_cos_rotation_gauge": 0.39015491922795675,
+         "redundancy": 0.23639170685236321
+        }
+       ],
+       "chosen_merges": [
+        [
+         4,
+         6
+        ],
+        [
+         2,
+         3
+        ]
+       ],
+       "clusters": [
+        [
+         0
+        ],
+        [
+         1
+        ],
+        [
+         3,
+         2
+        ],
+        [
+         4,
+         6
+        ],
+        [
+         5
+        ],
+        [
+         7
+        ]
+       ],
+       "best_pair_redundancy": 0.7359465611959852,
+       "worst_pair_redundancy": 0.23639170685236321,
+       "rotation_gauge_gain_median": 0.06095398589968681,
+       "merged": [
+        {
+         "cluster": [
+          0
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          1
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          3,
+          2
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.6505715869363025,
+         "signs_flipped": 19,
+         "v_retained_energy": 0.9297697395201054,
+         "energy_weights": [
+          0.5037906856978622,
+          0.4962093143021377
+         ]
+        },
+        {
+         "cluster": [
+          4,
+          6
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.7690983425354466,
+         "signs_flipped": 13,
+         "v_retained_energy": 0.8604443323021762,
+         "energy_weights": [
+          0.5055375778877127,
+          0.49446242211228725
+         ]
+        },
+        {
+         "cluster": [
+          5
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          7
+         ],
+         "merged": false
+        }
+       ]
+      },
+      "prior_only_cos": 0.9577255664410662,
+      "update_scale": 0.8502584787302191,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8502584787302191,
+      "relL2": 0.3269126492275236,
+      "cos": 0.9471513168600407,
+      "cos_p05": 0.9212144835415617
+     },
+     {
+      "parent_layer": 10,
+      "position": 8,
+      "keep_groups": 6,
+      "keep_heads": 12,
+      "head_dim": 64,
+      "census": {
+       "pairs": [
+        {
+         "groups": [
+          2,
+          5
+         ],
+         "key_cos_sign_gauge": 0.3163709463973632,
+         "query_cos_sign_gauge": 0.4228175470146138,
+         "key_cos_rotation_gauge": 0.41087421636496985,
+         "redundancy": 0.3695942467059885
+        },
+        {
+         "groups": [
+          4,
+          7
+         ],
+         "key_cos_sign_gauge": 0.42054879837307063,
+         "query_cos_sign_gauge": 0.30822692226829973,
+         "key_cos_rotation_gauge": 0.4934113076401337,
+         "redundancy": 0.36438786032068515
+        },
+        {
+         "groups": [
+          2,
+          7
+         ],
+         "key_cos_sign_gauge": 0.37080330577504944,
+         "query_cos_sign_gauge": 0.34783719165803906,
+         "key_cos_rotation_gauge": 0.46253790854688276,
+         "redundancy": 0.3593202487165442
+        },
+        {
+         "groups": [
+          2,
+          4
+         ],
+         "key_cos_sign_gauge": 0.3158096586314962,
+         "query_cos_sign_gauge": 0.32733114345154896,
+         "key_cos_rotation_gauge": 0.43612525487384146,
+         "redundancy": 0.32157040104152257
+        },
+        {
+         "groups": [
+          4,
+          6
+         ],
+         "key_cos_sign_gauge": 0.41106498775922695,
+         "query_cos_sign_gauge": 0.2110511181194124,
+         "key_cos_rotation_gauge": 0.48412509722238034,
+         "redundancy": 0.31105805293931965
+        },
+        {
+         "groups": [
+          5,
+          6
+         ],
+         "key_cos_sign_gauge": 0.27786173151731114,
+         "query_cos_sign_gauge": 0.3439334869505608,
+         "key_cos_rotation_gauge": 0.4184905581609305,
+         "redundancy": 0.31089760923393595
+        },
+        {
+         "groups": [
+          6,
+          7
+         ],
+         "key_cos_sign_gauge": 0.3464787704479812,
+         "query_cos_sign_gauge": 0.2747913295289679,
+         "key_cos_rotation_gauge": 0.42668003654867126,
+         "redundancy": 0.3106350499884746
+        },
+        {
+         "groups": [
+          5,
+          7
+         ],
+         "key_cos_sign_gauge": 0.3171027259304404,
+         "query_cos_sign_gauge": 0.2681730388069424,
+         "key_cos_rotation_gauge": 0.430881966613713,
+         "redundancy": 0.29263788236869137
+        },
+        {
+         "groups": [
+          4,
+          5
+         ],
+         "key_cos_sign_gauge": 0.3137635601746241,
+         "query_cos_sign_gauge": 0.2556696261125893,
+         "key_cos_rotation_gauge": 0.4890683701747786,
+         "redundancy": 0.2847165931436067
+        },
+        {
+         "groups": [
+          0,
+          2
+         ],
+         "key_cos_sign_gauge": 0.3461893033608829,
+         "query_cos_sign_gauge": 0.20073232728425194,
+         "key_cos_rotation_gauge": 0.4210882715707375,
+         "redundancy": 0.2734608153225674
+        },
+        {
+         "groups": [
+          3,
+          7
+         ],
+         "key_cos_sign_gauge": 0.239101279080352,
+         "query_cos_sign_gauge": 0.2747902359130241,
+         "key_cos_rotation_gauge": 0.2891542446627813,
+         "redundancy": 0.256945757496688
+        },
+        {
+         "groups": [
+          2,
+          6
+         ],
+         "key_cos_sign_gauge": 0.3230878772203446,
+         "query_cos_sign_gauge": 0.18842034022575588,
+         "key_cos_rotation_gauge": 0.4052678181044042,
+         "redundancy": 0.25575410872305027
+        },
+        {
+         "groups": [
+          2,
+          3
+         ],
+         "key_cos_sign_gauge": 0.22728103591443152,
+         "query_cos_sign_gauge": 0.2804213445755953,
+         "key_cos_rotation_gauge": 0.30402178279483305,
+         "redundancy": 0.2538511902450134
+        },
+        {
+         "groups": [
+          3,
+          5
+         ],
+         "key_cos_sign_gauge": 0.18559932771126322,
+         "query_cos_sign_gauge": 0.2817512911428768,
+         "key_cos_rotation_gauge": 0.2905802699426516,
+         "redundancy": 0.23367530942707
+        },
+        {
+         "groups": [
+          0,
+          7
+         ],
+         "key_cos_sign_gauge": 0.324354352799319,
+         "query_cos_sign_gauge": 0.14150333703505624,
+         "key_cos_rotation_gauge": 0.4178740240779441,
+         "redundancy": 0.23292884491718763
+        },
+        {
+         "groups": [
+          0,
+          4
+         ],
+         "key_cos_sign_gauge": 0.2992798359907112,
+         "query_cos_sign_gauge": 0.13654723020016368,
+         "key_cos_rotation_gauge": 0.36431047552770884,
+         "redundancy": 0.21791353309543743
+        },
+        {
+         "groups": [
+          1,
+          2
+         ],
+         "key_cos_sign_gauge": 0.21846251997730123,
+         "query_cos_sign_gauge": 0.20909194151443922,
+         "key_cos_rotation_gauge": 0.2829669758732664,
+         "redundancy": 0.21377723074587024
+        },
+        {
+         "groups": [
+          0,
+          1
+         ],
+         "key_cos_sign_gauge": 0.26113936839552176,
+         "query_cos_sign_gauge": 0.15582201582322963,
+         "key_cos_rotation_gauge": 0.31968570868972945,
+         "redundancy": 0.2084806921093757
+        },
+        {
+         "groups": [
+          3,
+          4
+         ],
+         "key_cos_sign_gauge": 0.20527594273187177,
+         "query_cos_sign_gauge": 0.19149903142146973,
+         "key_cos_rotation_gauge": 0.3080385388586785,
+         "redundancy": 0.19838748707667075
+        },
+        {
+         "groups": [
+          1,
+          3
+         ],
+         "key_cos_sign_gauge": 0.18628702678827933,
+         "query_cos_sign_gauge": 0.18062030267222637,
+         "key_cos_rotation_gauge": 0.28827582736763313,
+         "redundancy": 0.18345366473025285
+        },
+        {
+         "groups": [
+          1,
+          4
+         ],
+         "key_cos_sign_gauge": 0.2314850645054231,
+         "query_cos_sign_gauge": 0.10086938941133877,
+         "key_cos_rotation_gauge": 0.28521874815435083,
+         "redundancy": 0.16617722695838094
+        },
+        {
+         "groups": [
+          0,
+          6
+         ],
+         "key_cos_sign_gauge": 0.2998137308790394,
+         "query_cos_sign_gauge": 0.02373152892017772,
+         "key_cos_rotation_gauge": 0.37415280299642206,
+         "redundancy": 0.16177262989960856
+        },
+        {
+         "groups": [
+          0,
+          3
+         ],
+         "key_cos_sign_gauge": 0.21350140739019066,
+         "query_cos_sign_gauge": 0.10264698165621897,
+         "key_cos_rotation_gauge": 0.2986926299877871,
+         "redundancy": 0.15807419452320481
+        },
+        {
+         "groups": [
+          1,
+          7
+         ],
+         "key_cos_sign_gauge": 0.23033097490965362,
+         "query_cos_sign_gauge": 0.0732765784997654,
+         "key_cos_rotation_gauge": 0.2866368746919777,
+         "redundancy": 0.15180377670470951
+        },
+        {
+         "groups": [
+          0,
+          5
+         ],
+         "key_cos_sign_gauge": 0.22703321781880206,
+         "query_cos_sign_gauge": 0.055177840159492564,
+         "key_cos_rotation_gauge": 0.3618767478845399,
+         "redundancy": 0.1411055289891473
+        },
+        {
+         "groups": [
+          1,
+          5
+         ],
+         "key_cos_sign_gauge": 0.16580341230925494,
+         "query_cos_sign_gauge": 0.103679241586036,
+         "key_cos_rotation_gauge": 0.258098006889349,
+         "redundancy": 0.13474132694764546
+        },
+        {
+         "groups": [
+          3,
+          6
+         ],
+         "key_cos_sign_gauge": 0.16700379610975005,
+         "query_cos_sign_gauge": 0.06028632284585018,
+         "key_cos_rotation_gauge": 0.24741466872518333,
+         "redundancy": 0.11364505947780011
+        },
+        {
+         "groups": [
+          1,
+          6
+         ],
+         "key_cos_sign_gauge": 0.18111059109121733,
+         "query_cos_sign_gauge": -0.04233345067527138,
+         "key_cos_rotation_gauge": 0.22333105803909725,
+         "redundancy": 0.06938857020797297
+        }
+       ],
+       "chosen_merges": [
+        [
+         2,
+         5
+        ],
+        [
+         4,
+         7
+        ]
+       ],
+       "clusters": [
+        [
+         0
+        ],
+        [
+         1
+        ],
+        [
+         5,
+         2
+        ],
+        [
+         3
+        ],
+        [
+         7,
+         4
+        ],
+        [
+         6
+        ]
+       ],
+       "best_pair_redundancy": 0.3695942467059885,
+       "worst_pair_redundancy": 0.06938857020797297,
+       "rotation_gauge_gain_median": 0.08041087538003922,
+       "merged": [
+        {
+         "cluster": [
+          0
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          1
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          5,
+          2
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.3163709463973632,
+         "signs_flipped": 6,
+         "v_retained_energy": 0.9072529417059667,
+         "energy_weights": [
+          0.523162145157824,
+          0.47683785484217606
+         ]
+        },
+        {
+         "cluster": [
+          3
+         ],
+         "merged": false
+        },
+        {
+         "cluster": [
+          7,
+          4
+         ],
+         "merged": true,
+         "key_cos_sign_gauge": 0.42054879837307063,
+         "signs_flipped": 15,
+         "v_retained_energy": 0.9495155861564818,
+         "energy_weights": [
+          0.5390017121457142,
+          0.4609982878542857
+         ]
+        },
+        {
+         "cluster": [
+          6
+         ],
+         "merged": false
+        }
+       ]
+      },
+      "prior_only_cos": 0.9125483152258587,
+      "update_scale": 0.8666208434192852,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8666208434192852,
+      "relL2": 0.380539157510155,
+      "cos": 0.9263014242935032,
+      "cos_p05": 0.8657128855736779
+     }
+    ]
+   }
+  },
+  {
+   "axis": "num_hidden_layers",
+   "kind": "block",
+   "sites": [
+    5,
+    8,
+    12,
+    13
+   ],
+   "config_fields": [
+    "num_hidden_layers",
+    "layer_types"
+   ],
+   "selection": "F-EXCISE: whole blocks deleted",
+   "solve": "absorbed by every downstream conditioned solve",
+   "evidence": "conditioned capture",
+   "parameters_removed": null,
+   "heldout": {
+    "note": "a deleted block has no local write to score"
+   }
+  }
+ ],
+ "passed_through": [
+  "head_dim",
+  "hidden_size",
+  "vocab_size",
+  "conv_dim (not a live field: Lfm2ShortConv hardwires hidden_size)"
+ ],
+ "solver_path": "mx15_build.law_abiding_solve (prior-anchored ridge, fp64 CPU)",
+ "ridge_relative": 1e-06,
+ "condition_number": null,
+ "prior_norm": null,
+ "correction_norm": null,
+ "clamp_engaged": true,
+ "requested_clamp_ratio": 5.015187053110794,
+ "allowed_clamp_ratio": 1.0,
+ "condition_cap_saturated": false,
+ "worst_site": {
+  "endpoint": "mlp.down",
+  "layer": 2,
+  "relL2": 0.5120632647110142,
+  "cos": 0.8735034364702758
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "split_authority": "matrix-campaign-capture-manifest",
+  "fit_rows": 4751,
+  "heldout_rows": 1584,
+  "parent_model_forward_calls": 456,
+  "conditioned": true
+ },
+ "export_path": "stock Lfm2ForCausalLM with intermediate_size=block_ff_dim=1024, num_attention_heads=num_heads=12, num_key_value_heads=6, head_dim=64, num_hidden_layers=10; no trust_remote_code, no custom module, no hook",
+ "built_at": "2026-08-12T18:54:04",
+ "wall_time_seconds": 322.5,
+ "child_tensors_sha256": "0c42c4106be1968322f51f6bf704974cd8ed5053be59bcc202b33234b3ee4385"
+}

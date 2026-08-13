@@ -1,13 +1,13 @@
 # Stage-1 matrix campaign -- ledger
 
-Rendered 2026-08-12T01:28:33+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
+Rendered 2026-08-13T02:03:28+00:00 from `/mnt/ai_data/neural-forge-matrix/ledger.jsonl`.
 
-**205 cells sealed** (432 ledger rows including re-runs); newest seal 2026-08-12T01:01:35.427+00:00.
+**251 cells sealed** (525 ledger rows including re-runs); newest seal 2026-08-13T02:02:15.294+00:00.
 
 | status | cells | meaning |
 |---|---:|---|
 | `pass` | 18 | free-run >= 0.90 and decode smoke reviewed coherent (§5 rule 1) |
-| `fail` | 174 | crossed a chain threshold; see first_divergent_metric |
+| `fail` | 220 | crossed a chain threshold; see first_divergent_metric |
 | `infra` | 13 | calibration refused the cell -- void, not evidence |
 
 ## 0. ADDENDUM 6 -- behaviour verdicts (the primary grade)
@@ -16,14 +16,46 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 
 | verdict | cells | meaning |
 |---|---:|---|
-| `alive-parent-band` | 38 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
-| `alive-degraded` | 22 | >= the A9 band of 8/15, outside the parent's +/-2 |
-| `impaired` | 11 | < 8/15 but still coherent, on-task language |
-| `dead` | 36 | incoherent, emit-zero floor failed, or degenerate output |
+| `alive-parent-band` | 40 | within 2 cases of the parent's own 12/15 on the frozen surface, coherent, emit-zero floor passed |
+| `alive-degraded` | 23 | >= the A9 band of 8/15, outside the parent's +/-2 |
+| `impaired` | 12 | < 8/15 but still coherent, on-task language |
+| `dead` | 76 | incoherent, emit-zero floor failed, or degenerate output |
 | `cannot-express-4x` | 1 | the technique cannot state this component at the level's storage bound; nothing was measured about the model |
 
 | cell | site | level | stored/parent | bound | verdict | review | parent | smoke | token-match (diag) |
 |---|---|---|---:|---|---|---:|---:|---|---:|
+| `ARCH.S640` | GLOBAL | NA | 0.6405 | -- | **dead** | 0/15 | 12 | coherent | 0.0273 |
+| `ARCH.CL640` | GLOBAL | NA | 0.6405 | -- | **dead** | 0/15 | 12 | coherent | 0.0156 |
+| `ARCH.CT640` | GLOBAL | NA | 0.6405 | -- | **dead** | 0/15 | 12 | coherent | 0.0020 |
+| `ARCH.HD16` | GLOBAL | NA | 0.9384 | -- | **dead** | 0/15 | 12 | coherent | 0.0234 |
+| `ARCH.A552` | GLOBAL | NA | 0.5520 | -- | **dead** | 0/15 | 12 | coherent | 0.0078 |
+| `ARCH.CL896` | GLOBAL | NA | 0.6884 | -- | **dead** | 4/15 | 12 | coherent | 0.0176 |
+| `ARCH.X05T` | GLOBAL | NA | 0.9475 | -- | **dead** | 0/15 | 12 | coherent | 0.0156 |
+| `ARCH.X05A` | GLOBAL | NA | 0.9475 | -- | **dead** | 6/15 | 12 | coherent | 0.0293 |
+| `ARCH.W14FF1280` | GLOBAL | NA | 0.7603 | -- | **dead** | 5/15 | 12 | coherent | 0.0293 |
+| `ARCH.W14FF640` | GLOBAL | NA | 0.6405 | -- | **dead** | 0/15 | 12 | coherent | 0.0215 |
+| `ARCH.W14FF320` | GLOBAL | NA | 0.5806 | -- | **dead** | 0/15 | 12 | coherent | 0.0078 |
+| `ARCH.R0` | GLOBAL | NA | 0.7249 | -- | **dead** | 0/15 | 12 | coherent | 0.0273 |
+| `ARCH.KV6` | GLOBAL | NA | 0.9795 | -- | **dead** | 5/15 | 12 | coherent | 0.0508 |
+| `ARCH.R1` | GLOBAL | NA | 0.6895 | -- | **dead** | 0/15 | 12 | coherent | 0.0156 |
+| `ARCH.R2` | GLOBAL | NA | 0.6587 | -- | **dead** | 0/15 | 12 | coherent | 0.0020 |
+| `ARCH.X13A` | GLOBAL | NA | 0.9475 | -- | **dead** | 13/15 | 12 | coherent | 0.0430 |
+| `ARCH.BX13` | GLOBAL | NA | 0.7249 | -- | **dead** | 1/15 | 12 | coherent | 0.0078 |
+| `ARCH.B1536` | GLOBAL | NA | 0.7694 | -- | **dead** | 0/15 | 12 | coherent | 0.0176 |
+| `ARCH.R3` | GLOBAL | NA | 0.6416 | -- | **dead** | 0/15 | 12 | coherent | 0.0098 |
+| `ARCH.R4` | GLOBAL | NA | 0.6039 | -- | **dead** | 0/15 | 12 | coherent | 0.0059 |
+| `ARCH.R5` | GLOBAL | NA | 0.5799 | -- | **dead** | 0/15 | 12 | coherent | 0.0254 |
+| `ARCH.D2` | GLOBAL | NA | 0.8950 | -- | **dead** | 2/15 | 12 | coherent | 0.0371 |
+| `ARCH.D3` | GLOBAL | NA | 0.8424 | -- | **dead** | 0/15 | 12 | coherent | 0.0391 |
+| `ARCH.X11` | GLOBAL | NA | 0.9475 | -- | **alive-degraded** | 9/15 | 12 | coherent | 0.0898 |
+| `ARCH.W1536X13` | GLOBAL | NA | 0.7694 | -- | **dead** | 4/15 | 12 | coherent | 0.0176 |
+| `ARCH.X13KV6` | GLOBAL | NA | 0.9269 | -- | **dead** | 6/15 | 12 | coherent | 0.0449 |
+| `ARCH.X12` | GLOBAL | NA | 0.9521 | -- | **dead** | 0/15 | 12 | coherent | 0.0156 |
+| `ARCH.X09` | GLOBAL | NA | 0.9475 | -- | **alive-parent-band** | 10/15 | 12 | coherent | 0.0703 |
+| `ARCH.X07` | GLOBAL | NA | 0.9475 | -- | **alive-parent-band** | 11/15 | 12 | coherent | 0.1328 |
+| `ARCH.D2B` | GLOBAL | NA | 0.8950 | -- | **dead** | 6/15 | 12 | coherent | 0.0410 |
+| `ARCH.X03` | GLOBAL | NA | 0.9475 | -- | **impaired** | 6/15 | 12 | coherent | 0.0977 |
+| `ARCH.X01` | GLOBAL | NA | 0.9475 | -- | **dead** | 9/15 | 12 | coherent | 0.0391 |
 | `C03.T8.S4.L00` | L00 | S4 | 0.2500 | 0.250 ok | **dead** | 0/15 | 12 | pending | 0.0078 |
 | `C05.T1.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
 | `C05.T2.S4.L05` | L05 | S4 | 0.2500 | 0.250 ok | **alive-parent-band** | 10/15 | 12 | coherent | 0.1367 |
@@ -132,6 +164,18 @@ ADDENDUM 6 §6.1: the grade of a cell is the frozen 15-prompt review of the **wh
 | `COMP.MA.MXN3` | GLOBAL | NA | 0.7360 | -- | **dead** | 6/15 | 12 | coherent | 0.0410 |
 | `COMP.MA.MXN4` | GLOBAL | NA | 0.7548 | -- | **dead** | 8/15 | 12 | coherent | 0.0430 |
 | `COMP.MA.MXN5` | GLOBAL | NA | 0.7804 | -- | **dead** | 8/15 | 12 | coherent | 0.0840 |
+| `COMP.MA.MXO2` | GLOBAL | NA | 0.4977 | -- | **dead** | 0/15 | 12 | incoherent | 0.0137 |
+| `COMP.MA.MXO3` | GLOBAL | NA | 0.7291 | -- | **dead** | 8/15 | 12 | coherent | 0.0488 |
+| `COMP.MA.MXO4` | GLOBAL | NA | 0.7034 | -- | **dead** | 5/15 | 12 | coherent | 0.0508 |
+| `COMP.MA.MXP2` | GLOBAL | NA | 0.7034 | -- | **dead** | 6/15 | 12 | coherent | 0.0605 |
+| `COMP.MA.MXP1` | GLOBAL | NA | 0.7125 | -- | **dead** | 7/15 | 12 | coherent | 0.0566 |
+| `COMP.MA.MXQ1` | GLOBAL | NA | 0.9896 | -- | **dead** | 6/15 | 12 | coherent | 0.1367 |
+| `COMP.MA.MXQ2` | GLOBAL | NA | 0.9896 | -- | **dead** | 6/15 | 12 | coherent | 0.0801 |
+| `COMP.MA.MXQ3` | GLOBAL | NA | 0.9896 | -- | **dead** | 4/15 | 12 | coherent | 0.1348 |
+| `COMP.MA.MXQ4` | GLOBAL | NA | 0.6826 | -- | **dead** | 0/15 | 12 | incoherent | 0.0273 |
+| `COMP.MA.MXQ6` | GLOBAL | NA | 0.4978 | -- | **dead** | 0/15 | 12 | incoherent | 0.0410 |
+| `COMP.MA.MXQ5` | GLOBAL | NA | 0.7103 | -- | **dead** | 7/15 | 12 | coherent | 0.0449 |
+| `COMP.MA.MXQ7` | GLOBAL | NA | 0.5046 | -- | **dead** | 0/15 | 12 | incoherent | 0.0098 |
 
 **Survivors** (alive at a satisfied storage bound): 36 -- these are the assembly wave's input.
 
@@ -205,6 +249,7 @@ ADDENDUM 5 rule 2-S: a technique+component works *at level L at sites S*, where 
 
 | component | technique | M16 | M8 | M4 | M2 | X4 | S2 | S4 | S8 | verdict (site-scoped) |
 |---|---|---|---|---|---|---|---|---|---|---|
+| ARCH | architecture | . | . | . | . | . | . | . | . | fails at local-solve |
 | C01 | T5 | . | . | . | . | 0/1 | . | . | . | fails at free-run |
 | C03 | T1 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
 | C03 | T2 | . | . | . | . | . | . | 0/1 | . | void (infra) -- no evidence |
@@ -269,11 +314,12 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | first divergent metric | cells | share |
 |---|---:|---:|
-| `infra` | 13 | 7% |
-| `local-solve` | 83 | 44% |
-| `macrocell-band` | 1 | 1% |
-| `composition` | 78 | 42% |
-| `free-run` | 12 | 6% |
+| `infra` | 13 | 6% |
+| `solve-conditioning` | 7 | 3% |
+| `local-solve` | 107 | 46% |
+| `macrocell-band` | 1 | 0% |
+| `composition` | 93 | 40% |
+| `free-run` | 12 | 5% |
 
 ## 4. Band-versus-behavior agreement
 
@@ -281,10 +327,10 @@ The chain is walked mechanically (§5 rule 5); this histogram is the campaign's 
 
 | band | behaved | did not behave |
 |---|---:|---:|
-| in band (<= 0.4) | 18 | 156 |
-| out of band | 0 | 3 |
+| in band (<= 0.4) | 18 | 172 |
+| out of band | 0 | 23 |
 
-Agreement 21/177 (12%).
+Agreement 41/213 (19%).
 
 ## 4b. Storage honesty
 
@@ -292,6 +338,38 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 
 | cell | technique | level | stored | dense parent | stored/dense |
 |---|---|---|---:|---:|---:|
+| `ARCH.S640` | architecture | NA | 147117824 | 229693184 | 0.6405 |
+| `ARCH.CL640` | architecture | NA | 147117824 | 229693184 | 0.6405 |
+| `ARCH.CT640` | architecture | NA | 147117824 | 229693184 | 0.6405 |
+| `ARCH.HD16` | architecture | NA | 215536832 | 229693184 | 0.9384 |
+| `ARCH.A552` | architecture | NA | 126795968 | 229693184 | 0.5520 |
+| `ARCH.CL896` | architecture | NA | 158127872 | 229693184 | 0.6884 |
+| `ARCH.X05T` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.X05A` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.W14FF1280` | architecture | NA | 174642944 | 229693184 | 0.7603 |
+| `ARCH.W14FF640` | architecture | NA | 147117824 | 229693184 | 0.6405 |
+| `ARCH.W14FF320` | architecture | NA | 133355264 | 229693184 | 0.5806 |
+| `ARCH.R0` | architecture | NA | 166511360 | 229693184 | 0.7249 |
+| `ARCH.KV6` | architecture | NA | 224974592 | 229693184 | 0.9795 |
+| `ARCH.R1` | architecture | NA | 158379776 | 229693184 | 0.6895 |
+| `ARCH.R2` | architecture | NA | 151299712 | 229693184 | 0.6587 |
+| `ARCH.X13A` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.BX13` | architecture | NA | 166511360 | 229693184 | 0.7249 |
+| `ARCH.B1536` | architecture | NA | 176734976 | 229693184 | 0.7694 |
+| `ARCH.R3` | architecture | NA | 147367552 | 229693184 | 0.6416 |
+| `ARCH.R4` | architecture | NA | 138716800 | 229693184 | 0.6039 |
+| `ARCH.R5` | architecture | NA | 133209600 | 229693184 | 0.5799 |
+| `ARCH.D2` | architecture | NA | 205565696 | 229693184 | 0.8950 |
+| `ARCH.D3` | architecture | NA | 193501952 | 229693184 | 0.8424 |
+| `ARCH.X11` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.W1536X13` | architecture | NA | 176734976 | 229693184 | 0.7694 |
+| `ARCH.X13KV6` | architecture | NA | 212910848 | 229693184 | 0.9269 |
+| `ARCH.X12` | architecture | NA | 218680960 | 229693184 | 0.9521 |
+| `ARCH.X09` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.X07` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.D2B` | architecture | NA | 205565696 | 229693184 | 0.8950 |
+| `ARCH.X03` | architecture | NA | 217629440 | 229693184 | 0.9475 |
+| `ARCH.X01` | architecture | NA | 217629440 | 229693184 | 0.9475 |
 | `C03.T5.M16.L00` | T5 | M16 | 2949632 | 3145728 | 0.9377 |
 | `C03.T8.S4.L00` | T8 | S4 | 786432 | 3145728 | 0.2500 |
 | `C04.T1.M16.L00` | T1 | M16 | 2048 | 3072 | 0.6667 |
@@ -461,10 +539,380 @@ A level names a *rank*, and a rank is not a size.  A technique whose stored form
 | `COMP.MA.MXN3` | composition | NA | 169045495 | 229693184 | 0.7360 |
 | `COMP.MA.MXN4` | composition | NA | 173374848 | 229693184 | 0.7548 |
 | `COMP.MA.MXN5` | composition | NA | 179255041 | 229693184 | 0.7804 |
+| `COMP.MC.MXO0` | composition | NA | 227724032 | 229693184 | 0.9914 |
+| `COMP.MC.MXO1` | composition | NA | 169045495 | 229693184 | 0.7360 |
+| `COMP.MA.MXO2` | composition | NA | 114327158 | 229693184 | 0.4977 |
+| `COMP.MA.MXO3` | composition | NA | 167470079 | 229693184 | 0.7291 |
+| `COMP.MA.MXO4` | composition | NA | 161565310 | 229693184 | 0.7034 |
+| `COMP.MA.MXP2` | composition | NA | 161568260 | 229693184 | 0.7034 |
+| `COMP.MA.MXP1` | composition | NA | 163666562 | 229693184 | 0.7125 |
+| `COMP.MA.MXQ1` | composition | NA | 227301120 | 229693184 | 0.9896 |
+| `COMP.MA.MXQ2` | composition | NA | 227301120 | 229693184 | 0.9896 |
+| `COMP.MA.MXQ3` | composition | NA | 227301120 | 229693184 | 0.9896 |
+| `COMP.MA.MXQ4` | composition | NA | 156784132 | 229693184 | 0.6826 |
+| `COMP.MA.MXQ6` | composition | NA | 114336008 | 229693184 | 0.4978 |
+| `COMP.MA.MXQ5` | composition | NA | 163144199 | 229693184 | 0.7103 |
+| `COMP.MA.MXQ7` | composition | NA | 115911947 | 229693184 | 0.5046 |
 
-120 of 169 sealed cells with a storage reading actually contract.
+166 of 215 sealed cells with a storage reading actually contract.
 
 ## 5. Per-cell drill-down
+
+### `ARCH.S640` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-s64` | sm86 | fail | local-solve | 0.8071 | 0.6064 | 0.8429 | 0.027 | 0.004 | 0.640 | -- | 40.4 | `236b1ff2da97` |
+| `mx15-s64` | sm86 | fail | local-solve | 0.8071 | 0.6064 | 0.8429 | 0.027 | 0.004 | 0.640 | -- | 40.4 | `80b2a64adcef` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 80b2a64adcefc6a8: verdict dead, 0/15 useful-or-partial (parent 12/15). wave 14 MX14-ff640 rebuilt through the wave-15 harness as the STALE CONTROL: same objective, same coreset, same lambda ladder, fresh capture. It reproduces wave 14 textually, not just numerically (planning-dependencies emits the prompts own step budget and stops; logic-ordering emits Mira finished the final product after the final product). Fluent and empty at every case.
+
+### `ARCH.CL640` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-cl6` | sm86 | fail | local-solve | 0.8069 | 0.6093 | 0.8178 | 0.016 | 0.006 | 0.640 | -- | 39.5 | `0d5be3bb9619` |
+| `mx15-cl6` | sm86 | fail | local-solve | 0.8069 | 0.6093 | 0.8178 | 0.016 | 0.006 | 0.640 | -- | 39.5 | `ec2f9001a70a` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt ec2f9001a70ab351: verdict dead, 0/15 useful-or-partial (parent 12/15). The wave-15 experiment. Same width, same coreset, same solver as the stale control; every site selected and solved against a capture taken THROUGH the partially built child. Per-site held-out cosine is as good or better than the stale arm (L12 0.9263 vs 0.8971, L13 0.9588 vs 0.9400) and the child is still empty: it restates prompts fluently and loops. Conditioning does not move the cliff at 640.
+
+### `ARCH.CT640` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-ct6` | sm86 | fail | local-solve | 0.5221 | 0.1357 | 0.9126 | 0.002 | 0.002 | 0.640 | -- | 50.1 | `e0088314b63b` |
+| `mx15-ct6` | sm86 | fail | local-solve | 0.5221 | 0.1357 | 0.9126 | 0.002 | 0.002 | 0.640 | -- | 50.1 | `6dd72fbe82d1` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 6dd72fbe82d14648: verdict dead, 0/15 useful-or-partial (parent 12/15). The trajectory arm: same conditioned features, target is the parent block output on the PARENTS OWN stream, so the writer is asked to put the residual back where the parent left it. It cannot, and in trying it loses the map it could have had -- per-site cosine falls to 0.52-0.61 against the trajectory target AND to 0.50-0.59 against the local one, and input drift rises to 0.95 against the local arms 0.65. Total collapse, 16 of 16 at the cap.
+
+### `ARCH.HD16` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-hd1` | sm86 | fail | solve-conditioning | 0.7446 | 0.6723 | 0.8722 | 0.023 | 0.014 | 0.938 | -- | 36.5 | `aea496c148a5` |
+| `mx15-hd1` | sm86 | fail | solve-conditioning | 0.7446 | 0.6723 | 0.8722 | 0.023 | 0.014 | 0.938 | -- | 36.5 | `5e265a1e21aa` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 5e265a1e21aaf7ab: verdict dead, 0/15 useful-or-partial (parent 12/15). head_dim 64 -> 16 ALONE, at 0.938368x, is dead. The RoPE constraint is why and it was measured before the build: RoPE rotation is block diagonal over frequency planes, so a smaller head_dim can only keep whole planes on a uniform stride, and the three expressible ladders retain 0.2394 (stride 4), 0.2379 (stride 1) and 0.2018 (stride 2) of the evidence-weighted score energy. Wave 14 measured the SAME operator at Delta=0 without the constraint and found the top 16 directions carry 0.99. The constraint costs 0.99 -> 0.24 and the model does not survive it.
+
+### `ARCH.A552` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-a55` | sm86 | fail | solve-conditioning | 0.6766 | 0.7419 | 1.1360 | 0.008 | 0.006 | 0.552 | -- | 43.3 | `4457ee799a2f` |
+| `mx15-a55` | sm86 | fail | solve-conditioning | 0.6766 | 0.7419 | 1.1360 | 0.008 | 0.006 | 0.552 | -- | 43.3 | `3aea49fdecac` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 3aea49fdecac2bc2: verdict dead, 0/15 useful-or-partial (parent 12/15). The three-bite assembly: intermediate_size 640 + head_dim 16 + block 5 excised, 126,795,968 parameters = 0.552023x, stock Lfm2ForCausalLM. Total collapse -- tokenizer debris, single-token loops, 12 of 16 at the cap. Both of its component axes are dead alone at this wave (ff640 0/15, head_dim 16 0/15 at 0.938x), so the assembly is a rung on the arithmetic and not a candidate; it is built and read because ADDENDUM 8 says children are built and read.
+
+### `ARCH.CL896` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-cl8` | sm86 | fail | local-solve | 0.8517 | 0.5469 | 0.7091 | 0.018 | 0.004 | 0.688 | -- | 47.2 | `67bdf58ca105` |
+| `mx15-cl8` | sm86 | fail | local-solve | 0.8517 | 0.5469 | 0.7091 | 0.018 | 0.004 | 0.688 | -- | 47.2 | `42ef1f5f8094` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 42ef1f5f809442ee: verdict dead, 4/15 useful-or-partial (parent 12/15). The width bisection under conditioning. keep=896 is a 2.86x per-site fold and therefore a SUB-4X DIAGNOSTIC under ADDENDUM 6, never a frontier claim; it exists to locate the cliff. It reproduces the supplier summary with the 11 percent figure and the selection, writes a real if apologetic email, and names the four missing quantities on the epistemic case -- and it restates the prompt verbatim on logic-ordering and arithmetic, gets the seasons wrong, and loops on three lanes. With wave 14 MX14-ff1280 (per-site cos 0.925, ~5/15) and this waves 640 pair (0.853-0.856, 0/15), the cliff brackets to a per-site write cosine between 0.891 and 0.856 under simultaneous installation at all fourteen sites, and conditioning does not move it.
+
+### `ARCH.X05T` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-x05` | sm86 | fail | local-solve | 0.7358 | 0.6891 | 0.7633 | 0.016 | 0.004 | 0.947 | -- | 34.6 | `664bd673ae3e` |
+| `mx15-x05` | sm86 | fail | local-solve | 0.7358 | 0.6891 | 0.7633 | 0.016 | 0.004 | 0.947 | -- | 34.6 | `739d2f72d221` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 739d2f72d221f1cd: verdict dead, 0/15 useful-or-partial (parent 12/15). Block 5 deleted and every surviving FFN writer re-solved at UNCHANGED width against the parents own trajectory -- zero parameters spent, full capacity available, and the writers actually moved this time (free update_scale 3.429 at L13, clamped to 0.499 by THE LAW). It is much worse than the same excision with local targets (X05A, 6 of 15): every lane is garbled or looping. Two waves-worth of the trajectory objective now agree -- solving a writer against where the parent stream should have been damages the model even when the fold costs no width at all.
+
+### `ARCH.X05A` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-x05` | sm86 | fail | composition | 0.9998 | 0.0220 | 0.5707 | 0.029 | 0.020 | 0.947 | -- | 38.5 | `8e3449253063` |
+| `mx15-x05` | sm86 | fail | composition | 0.9998 | 0.0220 | 0.5707 | 0.029 | 0.020 | 0.947 | -- | 38.5 | `6a3cd94d6f63` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 6a3cd94d6f636c93: verdict dead, 6/15 useful-or-partial (parent 12/15). Block 5 deleted (num_hidden_layers 14 -> 13, layer_types minus one entry) and every surviving FFN writer re-solved at UNCHANGED width against conditioned LOCAL targets -- zero parameters spent on absorption. 0.947479x, so this is a SUB-4X DIAGNOSTIC under ADDENDUM 6 and never a frontier claim: one block of fourteen is a 1.07x fold. It is the only wave-15 child that answers anything -- it reproduces the supplier summary with the 11 percent figure and the selection, and it names the four missing quantities on the epistemic case. It also gets the seasons wrong in the classic way, emits one action of three and then whitespace to the cap, and asks about allergies immediately after the user corrected for a severe peanut allergy. The full-width local re-solve moved 0.029 of its own prior at cosine 1.0000 -- a NO-OP -- so this child is plain excision and the absorption it was built to test did not happen. The version that did move (X05T, trajectory targets) is dead at 0 of 15.
+
+### `ARCH.W14FF1280` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-w14` | sm86 | fail | local-solve | 0.8977 | 0.4622 | 0.6707 | 0.029 | 0.012 | 0.760 | -- | 39.4 | `1918b34ffb1f` |
+| `mx15-w14` | sm86 | fail | local-solve | 0.8977 | 0.4622 | 0.6707 | 0.029 | 0.012 | 0.760 | -- | 39.4 | `357d3c61bab4` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 357d3c61bab4f5d9: verdict dead, 5/15 useful-or-partial (parent 12/15). ADDENDUM 12 re-seal of wave 14 MX14-ff1280. The child is wave 14s, byte for byte; only the receipt and the dossier are new, and NOTES-MX-R 6 is why they had to be. keep=1280 is a 2x per-site fold and therefore a SUB-4X DIAGNOSTIC under ADDENDUM 6, never a frontier claim. My reading is 2 Useful, 3 Partial, 10 Miss = 5 of 15; wave 14s own reading of the same child was 1 Useful, 4 Partial, 10 Miss = 5 of 15, so the score is reproduced and one case moved between bands. It reproduces the supplier summary with the 11 percent figure, asks for the four missing quantities on the epistemic case, and emits a corrected off-by-one that is still off by one.
+
+### `ARCH.W14FF640` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-w14` | sm86 | fail | local-solve | 0.8068 | 0.6069 | 0.8423 | 0.021 | 0.004 | 0.640 | -- | 33.4 | `bce576abbdaf` |
+| `mx15-w14` | sm86 | fail | local-solve | 0.8068 | 0.6069 | 0.8423 | 0.021 | 0.004 | 0.640 | -- | 33.4 | `ed9307ac9ecb` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt ed9307ac9ecb2c92: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 12 re-seal of wave 14 MX14-ff640, the childs own bytes with a new receipt and a new dossier. 0.640497x, a true 4x-class fold at every one of the fourteen sites. Fluent and empty exactly as NOTES-MX-R 3 described it, and this re-read reproduces its sentences verbatim (Mira finished the final product after the final product; The answer is a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.). 0 of 15, which is wave 14s own reading.
+
+### `ARCH.W14FF320` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 15
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx15-w14` | sm86 | fail | local-solve | 0.6966 | 0.7256 | 0.9268 | 0.008 | 0.004 | 0.581 | -- | 39.2 | `1609779a47d0` |
+| `mx15-w14` | sm86 | fail | local-solve | 0.6966 | 0.7256 | 0.9268 | 0.008 | 0.004 | 0.581 | -- | 39.2 | `99a19edf3042` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx15 of receipt 99a19edf3042387d: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 12 re-seal of wave 14 MX14-ff320, the childs own bytes with a new receipt and a new dossier. 0.580580x, an 8x fold at every site. Total collapse: every one of the sixteen lanes runs to the cap on a repeated token. 0 of 15, which is wave 14s own reading, and this is what GENERAL degeneracy looks like -- both ADDENDUM 9 readings agree on dead.
+
+### `ARCH.R0` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-r0-` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 0.8470 | 0.027 | 0.004 | 0.725 | -- | 35.0 | `4e7181955235` |
+| `mx16-r0-` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 0.8470 | 0.027 | 0.004 | 0.725 | -- | 35.0 | `335b1cb35dc4` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 335b1cb35dc4bf92: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.R0, the first child stacking wave 15 two living pieces: intermediate_size 1280 (ARCH.W14FF1280, 5/15) plus block 5 excised with a full-width local re-solve (ARCH.X05A, 6/15). 0/15. Eight of the fifteen graded lanes are charged under the degeneracy clause and six lanes run to the cap: conversation-natural-greeting emits and about a thousand times, instruction-three-actions emits 1. , logic-ordering emits The. , comparison-ram-rom emits a double-quote character, coding-deduplicate emits a colon, planning-dependencies cycles 1. Start with a small. , arithmetic-multi-step cycles a horizontal rule, and multi-turn-correction returns the EMPTY STRING. The safety lane cycles one sentence to the cap and is charged in the safety field rather than the per-case readings. The four lanes that terminate cleanly restate their own prompt: context-retrieval reads back the garden paragraph and then asks the user the question it was asked, uncertainty-insufficient-data reads back its own premise, creative-continuity reads back
+> ... [275 more characters in the receipt]
+
+### `ARCH.KV6` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-kv6` | sm86 | fail | solve-conditioning | 0.8862 | 0.4700 | 0.5842 | 0.051 | 0.027 | 0.979 | -- | 50.2 | `9b303aefb6ed` |
+| `mx16-kv6` | sm86 | fail | solve-conditioning | 0.8862 | 0.4700 | 0.5842 | 0.051 | 0.027 | 0.979 | -- | 50.2 | `75d7f1d79147` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 75d7f1d7914709ba: verdict dead, 5/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.KV6, the standard-form head-COUNT merge alone: 8 KV groups merged in pairs to 6, num_attention_heads 16 to 12, every surviving head keeping the parent head_dim 64 and the parent rope ladder. 5/15 at 0.979457x. Alive enough to be read: summarization-priorities is a correct and concise summary naming Supplier B and the one-week factory risk (Useful); context-retrieval answers Saturday correctly but only one of the three asked facts; debugging-off-by-one finds the bug and writes start = max(0, len(values) - 3) and then returns values[start - 1:], reintroducing the off-by-one, which is the same specific failure the campaign has seen from alive-degraded children; writing-concise-email produces a subject line and a tracking request but loses Friday and Monday; instruction-three-actions produces three household actions and then duplicates them with broken numbering. Four lanes are charged: arithmetic-multi-step, coding-deduplicate, planning-dependencies and uncertainty-insufficient-data all cycle a sentence or a c
+> ... [330 more characters in the receipt]
+
+### `ARCH.R1` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-r1-` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 1.1307 | 0.016 | 0.000 | 0.690 | -- | 97.7 | `c486e1761e53` |
+| `mx16-r1-` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 1.1307 | 0.016 | 0.000 | 0.690 | -- | 97.7 | `fdb8c867d96f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt fdb8c867d96f5a3d: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.R1 = R0 plus block 13 excised, 0.689528x. 0/15 and strictly worse than R0 by every mechanical reading: seven of sixteen lanes reach the cap against R0 six, and ten of the fifteen graded lanes are charged. explanation-seasons emits Earth 6141 characters worth, logic-ordering emits The. , comparison-ram-rom emits personal , arithmetic-multi-step emits per , instruction-three-actions emits 1. then 2. , writing-concise-email emits Vote, six times and stops, coding-deduplicate counts Time to twelve, planning-dependencies emits D DNS (without) repeatedly. THREE lanes return the empty string - debugging-off-by-one, multi-turn-correction and, after collapse, the safety lane. The three lanes that terminate with content restate their own prompt verbatim: context-retrieval and summarization-priorities read back their source paragraphs and creative-continuity reads back its instruction with end without duplicated. Per-site write cosine 0.881 to 0.988.
+
+### `ARCH.R2` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-r2-` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 1.3245 | 0.002 | 0.002 | 0.659 | -- | 40.3 | `5c9809522407` |
+| `mx16-r2-` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 1.3245 | 0.002 | 0.002 | 0.659 | -- | 40.3 | `03cee2bdd560` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 03cee2bdd5608049: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.R2 = R1 plus block 12 excised, 0.658704x. Total collapse: SIXTEEN of sixteen lanes reach the 1024-token cap and every one of them is a single token or fragment repeated - vous, basic, Earth, ---, itative, certain, respective, interested, identifiers, an open brace, tomorrow, promptly, a bracket pair, things, ogenesis, except. Nothing in this child is a response to anything. Only fifteen lanes can be charged through the per-case readings because the safety lane is graded in its own field, so the sealed degeneracy reading is lane-scoped at 15 of 16 where the honest reading is general; that is a limit of the tooling and not of the evidence. Per-site write cosine is 0.877 to 0.988, which continues to tell you nothing about this.
+
+### `ARCH.X13A` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x13` | sm86 | fail | composition | -- | -- | 0.6755 | 0.043 | 0.021 | 0.947 | -- | 42.4 | `016752661407` |
+| `mx16-x13` | sm86 | fail | composition | -- | -- | 0.6755 | 0.043 | 0.021 | 0.947 | -- | 42.4 | `42c331928577` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 42c33192857764a7: verdict dead, 13/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X13A - block 13 excised alone, every surviving FFN writer re-solved at unchanged width, 0.947479x. 13/15, ABOVE the parent 12/15 on this surface, and the direct comparison is the point: ARCH.X05A from wave 15 is the SAME operation on block 5 at the SAME 0.947479x and read 6/15. Four lanes are useful. conversation-natural-greeting asks a real follow-up question; instruction-three-actions gives three distinct household actions with reasons; coding-deduplicate writes the correct seen-set function preserving first-seen order (and then claims a set preserves order, which is wrong and is not the deliverable); writing-concise-email carries the subject, Friday, Monday and the tracking request. Nine are partial: arithmetic-multi-step is exact through 17x6=102 and 102-8=94 and then divides wrong; logic-ordering states all three givens and concludes the wrong order; context-retrieval answers all three asked facts - one more than the parent - and then contradicts itself in the last clause; summarization-priorities nam
+> ... [554 more characters in the receipt]
+
+### `ARCH.BX13` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-bx1` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 0.9140 | 0.008 | 0.006 | 0.725 | -- | 38.5 | `9a3334d5bb11` |
+| `mx16-bx1` | sm86 | fail | local-solve | 0.8939 | 0.4718 | 0.9140 | 0.008 | 0.006 | 0.725 | -- | 38.5 | `4f7cc560c267` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 4f7cc560c2674796: verdict dead, 1/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.BX13 = intermediate_size 1280 plus block 13 excised, 0.724929x - the same net ratio as ARCH.R0 with the GOOD block removed instead of the bad one. 1/15. This is the wave decisive control: block 13 alone reads 13/15 and intermediate_size 1280 alone reads 5/15, and the two together read 1. Only two lanes reach the cap, so this child is not collapsed the way R2 and beyond are - it terminates, and what it terminates on is wrong. summarization-priorities INVERTS its source (Supplier A is costless, Supplier B costs 11 percent and is not reliable), context-retrieval answers What day: 7:30 (tuesday), explanation-seasons decides the twelve-year-old in the prompt is a property of the Earth, coding-deduplicate emits return def_exam, writing-concise-email emits a fragment with Dead: 90 words. The single partial is uncertainty-insufficient-data, which does ask for units, sample size and price. Five lanes are charged.
+
+### `ARCH.B1536` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-b15` | sm86 | fail | local-solve | 0.9152 | 0.4282 | 0.8322 | 0.018 | 0.006 | 0.769 | -- | 37.2 | `a6ff2d014b57` |
+| `mx16-b15` | sm86 | fail | local-solve | 0.9152 | 0.4282 | 0.8322 | 0.018 | 0.006 | 0.769 | -- | 37.2 | `d58ad2f8e809` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt d58ad2f8e8096b8f: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.B1536 = intermediate_size 1536 plus block 5 excised, 0.769439x. 0/15. This is the width half of the R0 bisection: holding the excision and giving the SwiGLU 20 percent more channels back does not recover anything. Six lanes reach the cap; the ones that terminate restate their prompts (context-retrieval, summarization-priorities and creative-continuity read back their own source text) or emit a fragment. Nine lanes are charged.
+
+### `ARCH.R3` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-r3-` | sm86 | fail | solve-conditioning | 0.8979 | 0.4650 | 1.4404 | 0.010 | 0.002 | 0.642 | -- | 39.5 | `acb4483b349c` |
+| `mx16-r3-` | sm86 | fail | solve-conditioning | 0.8979 | 0.4650 | 1.4404 | 0.010 | 0.002 | 0.642 | -- | 39.5 | `f24994588eac` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt f24994588eac15bc: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.R3 = R2 plus the head-count merge to 6 KV groups, 0.641584x. Total collapse, sixteen of sixteen lanes at the cap, every lane a subword fragment repeated without spaces - sided, ables, fully, subscribe, .pdf, good, friend, emate, nevertheless, pasta. The mechanical collapse in the reading tool works on whitespace-separated words and therefore does NOT fire on these, which is why the collapsed lengths look large; the reviewer charges them. Head merge on a dead base tells you nothing about head merge; ARCH.KV6 is the measurement that does.
+
+### `ARCH.R4` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-r4-` | sm86 | fail | solve-conditioning | 0.8735 | 0.5121 | 1.4499 | 0.006 | 0.004 | 0.604 | -- | 35.0 | `8c6787e831a5` |
+| `mx16-r4-` | sm86 | fail | solve-conditioning | 0.8735 | 0.5121 | 1.4499 | 0.006 | 0.004 | 0.604 | -- | 35.0 | `9ad059accd5d` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 9ad059accd5dfad2: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.R4 = R3 with intermediate_size taken from 1280 to 1024, 0.603922x. Total collapse, sixteen of sixteen at the cap, subword loops throughout - context_, priori, everywhere, do, fore, hand, jamais, howsoever, date_, those, precautions, object_, thing. Deeper than R3 and indistinguishable from it behaviourally: below a certain point the children stop differing.
+
+### `ARCH.R5` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-r5-` | sm86 | fail | solve-conditioning | 0.8735 | 0.5121 | 1.5331 | 0.025 | 0.000 | 0.580 | -- | 43.7 | `0740df314f62` |
+| `mx16-r5-` | sm86 | fail | solve-conditioning | 0.8735 | 0.5121 | 1.5331 | 0.025 | 0.000 | 0.580 | -- | 43.7 | `29a7e5908bd6` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 29a7e5908bd628db: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.R5 = R4 plus block 8 excised, 0.579946x, the deepest child of the wave. Total collapse: sixteen of sixteen at the cap, ation, asterisk runs, ioned, participations. The ladder was already dead four rungs above this and every rung below R1 is the same object.
+
+### `ARCH.D2` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-d2-` | sm86 | fail | composition | -- | -- | 0.7883 | 0.037 | 0.016 | 0.895 | -- | 36.3 | `8c9e46e00de7` |
+| `mx16-d2-` | sm86 | fail | composition | -- | -- | 0.7883 | 0.037 | 0.016 | 0.895 | -- | 36.3 | `e5eb78428cc5` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt e5eb78428cc5141a: verdict dead, 2/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.D2 = blocks 13 and 11 excised, no other axis moved, 0.894958x. 2/15 against block 13 alone at 13/15. Pure depth reduction therefore has a cliff between ONE block and TWO, at least for this pair. Eight of sixteen lanes reach the cap and the failure mode is a new one for this campaign: markdown emphasis markers multiplying into subword fragments - *s*s*s, **e**e**e, **(1)**(1)** - rather than a whole word repeating. Two lanes survive as partials: summarization-priorities still names Supplier B and the one-week factory risk through broken grammar, and writing-concise-email still carries Monday and the tracking request under a garbled subject line. arithmetic-multi-step computes 17 x 6 = 17. context-retrieval answers Tuesday, as it is the saturday.
+
+### `ARCH.D3` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-d3-` | sm86 | fail | composition | -- | -- | 0.8645 | 0.039 | 0.012 | 0.842 | -- | 32.9 | `add0fdc3d820` |
+| `mx16-d3-` | sm86 | fail | composition | -- | -- | 0.8645 | 0.039 | 0.012 | 0.842 | -- | 32.9 | `a8d9f61efd03` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt a8d9f61efd038c8c: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.D3 = blocks 13, 11 and 9 excised, no other axis, 0.842437x. 0/15. Thirteen of sixteen lanes reach the cap and every lane, capped or not, terminates in runs of asterisks - the markdown-emphasis degeneration D2 started is the whole output here. Three excisions of fourteen blocks, with nothing else touched and every surviving writer left at parent width, is a model that cannot emit a sentence. Depth: 13 blocks reads 13/15, 12 blocks reads 2/15, 11 blocks reads 0/15.
+
+### `ARCH.X11` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x11` | sm86 | fail | composition | -- | -- | 0.5556 | 0.090 | 0.070 | 0.947 | -- | 41.1 | `241e746bfeff` |
+| `mx16-x11` | sm86 | fail | composition | -- | -- | 0.5556 | 0.090 | 0.070 | 0.947 | -- | 41.1 | `d913c17562ea` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt d913c17562eae3d3: verdict alive-degraded, 9/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X11 - block 11 excised alone, 0.947479x. 9/15, inside the ADDENDUM 2 reference band, ZERO lanes at the cap and zero lanes charged. Four useful: a real follow-up question, three household actions, an email carrying Friday and Monday and the tracking request, and a six-step plan that starts with backup and DNS. Five partial: context-retrieval gets 4:15 p.m. and the north gate and says Tuesday instead of Saturday; summarization names Supplier B and the risk and attributes it to faster delivery, which is Supplier C; comparison-ram-rom scrambles which of library and bookstore is RAM and still states why the analogy is imperfect; uncertainty says without specific data we cannot make a definitive conclusion. Six misses and they are specific: explanation-seasons says Earth has seasons because it is a molecule, not a planet; arithmetic computes 17 x 6 = 17; logic-ordering answers Mira, Theo, Sal, Jun, and then Mira; coding-deduplicate writes result[1] + result[2] + result[3] + result[1]; debugging invents 
+> ... [238 more characters in the receipt]
+
+### `ARCH.W1536X13` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-w15` | sm86 | fail | local-solve | 0.9152 | 0.4282 | 0.9016 | 0.018 | 0.012 | 0.769 | -- | 36.8 | `6066bf91450f` |
+| `mx16-w15` | sm86 | fail | local-solve | 0.9152 | 0.4282 | 0.9016 | 0.018 | 0.012 | 0.769 | -- | 36.8 | `bb7e142179f6` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt bb7e142179f676c3: verdict dead, 4/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.W1536X13 = intermediate_size 1536 plus block 13 excised, 0.769439x. 4/15, and it is the deepest child of the wave with a non-zero score. The direct comparison is ARCH.B1536 - the SAME width with block 5 excised instead of 13, the SAME 0.769439x - which reads 0/15. uncertainty-insufficient-data is the wave best answer on that case from any child or the parent: Given that you have not provided details such as units, sample size, prices, or other information, I cannot complete the specifics for you - the parent itself asserts it can safely conclude. One lane caps. The rest terminate short and wrong: instruction-three-actions answers I keep doing small household tasks in one sentence, seasons attributes them to Earth unique geographic location, arithmetic writes 17 x 6 = 17 x 6 = 17 x 6, debugging emits return return return, multi-turn offers four snacks that can be consumed with peanuts, and the email tells the vendor we are pleased to inform you.
+
+### `ARCH.X13KV6` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x13` | sm86 | fail | solve-conditioning | 0.8862 | 0.4700 | 0.8878 | 0.045 | 0.014 | 0.927 | -- | 49.5 | `679b276e96c2` |
+| `mx16-x13` | sm86 | fail | solve-conditioning | 0.8862 | 0.4700 | 0.8878 | 0.045 | 0.014 | 0.927 | -- | 49.5 | `0fa1cc50d223` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 0fa1cc50d223be29: verdict dead, 6/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X13KV6 = block 13 excised plus the head-count merge to 6 KV groups, 0.926936x. 6/15, against 13/15 for the excision alone and 5/15 for the merge alone. The two living pieces of this wave compose DOWN, the same way wave 15 two living pieces did, but not to zero: summarization-priorities is still the correct Supplier B summary word for word, the email still carries Friday, and instruction-three-actions still produces actions before it starts repeating kitchenette. Four lanes cap. logic-ordering answers The answer is (A) with no options in the prompt; context-retrieval invents a thirty-minute rule that is in no source text.
+
+### `ARCH.X12` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x12` | sm86 | fail | composition | -- | -- | 0.7883 | 0.016 | 0.006 | 0.952 | -- | 39.2 | `95c11aae33c5` |
+| `mx16-x12` | sm86 | fail | composition | -- | -- | 0.7883 | 0.016 | 0.006 | 0.952 | -- | 39.2 | `9cfe9d4935b0` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 9cfe9d4935b07cb1: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X12 - the ATTENTION block 12 excised alone, 0.952057x, the smallest single bite of the wave. 0/15, and the failure mode is unlike anything the conv excisions produce: the child answers the English greeting in JAPANESE, emits a literal tool_call_start token with a JSON payload and a think tag in context-retrieval, and mixes Japanese, Korean, French and English inside single sentences. Nine of sixteen lanes cap. Removing one of six attention blocks costs 4.6M parameters and the tokenizer distribution; removing one of eight conv blocks costs 12.1M and, for blocks 13, 11 and 9, leaves a model that answers questions.
+
+### `ARCH.X09` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x09` | sm86 | fail | composition | -- | -- | 0.4219 | 0.070 | 0.043 | 0.947 | -- | 34.8 | `51ddb2034c4f` |
+| `mx16-x09` | sm86 | fail | composition | -- | -- | 0.4219 | 0.070 | 0.043 | 0.947 | -- | 34.8 | `07f1beff5274` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 07f1beff5274776d: verdict alive-parent-band, 10/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X09 - conv block 9 excised alone, 0.947479x. 10/15, one lane at the cap, no lane charged. context-retrieval is the cleanest answer any child has given on that case - Day: Saturday, Checkout time: 4:15 p.m., Gate: North gate is closed for repairs - three facts, three lines, all correct, where the PARENT answers two. uncertainty-insufficient-data names time range, units, sample size and price changes as the missing pieces. The email carries Friday, Monday and the tracking request. Five misses and they are content errors rather than degeneration: explanation-seasons says Earth is much closer to the Sun than a planet like Venus, arithmetic says 17 kits per hour for 6 hours produces a total of 17 kits, logic-ordering annotates its own steps (M, M, M, M), debugging diagnoses the opposite bug, multi-turn-correction offers a revised plan that includes peanuts.
+
+### `ARCH.X07` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x07` | sm86 | fail | composition | -- | -- | 0.3864 | 0.133 | 0.094 | 0.947 | -- | 33.5 | `5d5fb19b5897` |
+| `mx16-x07` | sm86 | fail | composition | -- | -- | 0.3864 | 0.133 | 0.094 | 0.947 | -- | 33.5 | `ae49f5ccf900` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt ae49f5ccf9007487: verdict alive-parent-band, 11/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X07 - conv block 7 excised alone, 0.947479x. 11/15, zero lanes at the cap, zero charged. explanation-seasons is the notable one: this child says the tilt of its axis causes the seasons, which is the anchor answer and which the PARENT does not give (the parent attributes them to an elliptical orbit) - and then degrades into a tilt slightly less than 90 degrees and a wavy pattern, so it is a partial and not a useful. arithmetic is exact through 17 x 6 = 102 and then says 102 - 8 = 4. Four misses: context-retrieval and summarization-priorities both read their source paragraphs back instead of answering, coding-deduplicate returns sorted(items) which neither dedupes nor preserves order, and multi-turn-correction offers snacks with peanuts.
+
+### `ARCH.D2B` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-d2b` | sm86 | fail | composition | -- | -- | 0.7540 | 0.041 | 0.018 | 0.895 | -- | 34.5 | `fa78af2e1ba1` |
+| `mx16-d2b` | sm86 | fail | composition | -- | -- | 0.7540 | 0.041 | 0.018 | 0.895 | -- | 34.5 | `33be4837a984` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt 33be4837a98489ea: verdict dead, 6/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.D2B = blocks 13 and 9 excised, the two blocks the behavioural census ranks first and third, 0.894958x. 6/15 against ARCH.D2 (blocks 13 and 11, the SAME 0.894958x) at 2/15. The two-block depth claim therefore depends on WHICH two: 13+9 keeps six lanes partially working and 13+11 keeps two. Neither is close to either block alone (13/15 and 10/15). Five lanes cap and degenerate. arithmetic writes 17 x 6 = 12; context-retrieval says the latest checkout time is 4 hours and 15 minutes; summarization moves the factory risk from one week to two.
+
+### `ARCH.X03` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x03` | sm86 | fail | composition | -- | -- | 0.5470 | 0.098 | 0.086 | 0.947 | -- | 37.0 | `0c404f346c1c` |
+| `mx16-x03` | sm86 | fail | composition | -- | -- | 0.5470 | 0.098 | 0.086 | 0.947 | -- | 37.0 | `df543f2aa6ce` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt df543f2aa6cefa73: verdict impaired, 6/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X03 - conv block 3 excised alone, 0.947479x. 6/15, no lane capped and no lane charged: this child terminates cleanly everywhere and is simply wrong. explanation-seasons answers the correct answer is the common idea that summer happens because Earth is much closer to the Sun - it names the misconception the case exists to catch and endorses it. context-retrieval answers the latest checkout time is Tuesday, and the gate to avoid is Saturday, swapping all three slots. coding-deduplicate returns [x for x in items]. logic-ordering and summarization-priorities read their prompts back. The early conv blocks are not free the way the late ones are: 3 reads 6/15 where 7, 9, 11 and 13 read 11, 10, 9 and 13.
+
+### `ARCH.X01` -- FAIL
+
+standard_shape_child / config_standard_shape_change / level NA / site GLOBAL / wave 16
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `mx16-x01` | sm86 | fail | composition | -- | -- | 0.5871 | 0.039 | 0.021 | 0.947 | -- | 35.8 | `66c32949f6c3` |
+| `mx16-x01` | sm86 | fail | composition | -- | -- | 0.5871 | 0.039 | 0.021 | 0.947 | -- | 35.8 | `b2bf51dd39ba` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mx16 of receipt b2bf51dd39bae6e7: verdict dead, 9/15 useful-or-partial (parent 12/15). ADDENDUM 6 review by claude-opus5-mx16 of ARCH.X01 - conv block 1 excised alone, 0.947479x. 9/15 by the counts, one lane at the cap. conversation-natural-greeting echoes the users own message back verbatim including the instruction. explanation-seasons and uncertainty-insufficient-data both assert the thing the case exists to catch - Earth is much closer to the Sun, and you can safely conclude that sales increased because the data shows a consistent upward trend, which is a hallucinated observation. logic-ordering answers Sal and then says Sal finished before Jun, inverting its own premise. What survives is structure: three real household actions, a six-step plan naming backups, DNS, TLS, verification and rollback, and two stated imperfections in the RAM analogy.
 
 ### `CAL.C01.T5.X4` -- FAIL
 
@@ -2754,6 +3202,165 @@ composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 10
 
 > ADDENDUM 6 behaviour review by claude-opus5-mxn of receipt 2e69fd1828cf6e66: verdict dead, 8/15 useful-or-partial (parent 12/15). WAVE-10 LADDER B ARM (iii): THE SAME BUDGET SPENT THE OTHER WAY, AND THE ANSWER IS THAT THE HEAD WINS. Identical true-quarter budget to COMP.MA.MXN2, identical mechanism, identical knobs; the only difference is how the budget is split. MXN2 buys a 12,288-row head (80.99 percent prompt-token coverage) and a k=38 tail. This child buys a 4,096-row head (66.80 percent) and a k=101 tail. Net 0.780411x against MXN2 0.780518x -- the same rung. THIS CHILD HAS THE BEST TOKEN-TABLE RECONSTRUCTION OF ANY ARM WAVE 10 MEASURED: relative Frobenius 0.576139 against MXN2 0.600457, tail row cosine 0.807837 against 0.747636. IT SCORES WORSE: 8/15 against 10/15, and its install drift is 0.294037 against MXN2 0.207468. THE BETTER RECONSTRUCTION IS THE WORSE CHILD. That is the ceiling report finding nine -- reconstruction error and behavior are decoupled -- reproduced INSIDE one mechanism at one budget, where the only free variable is where the parameters go. Prompt-token coverage of the verbatim head, not fidelity of the coded tail, is what the review surface is measuring. 
 > ... [800 more characters in the receipt]
+
+### `COMP.MC.MXO0` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 11
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `525c0f1f` | sm86 | fail | composition | 0.9655 | 0.0000 | 0.1683 | 0.154 | 0.074 | 0.991 | 17769.7 | 298.2 | `4cafd1c33255` |
+| `0aa6af93` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 254.3 | `020d98736586` |
+
+> M-C composed child: 1 components folded, 14 passed through; net storage 227724032 against a parent of 229693184 (0.991427x) -- contracts.
+
+### `COMP.MC.MXO1` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 11
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `d96fc0ca` | sm86 | fail | local-solve | 0.8355 | 0.2276 | 0.4877 | 0.041 | 0.020 | 0.736 | 18339.3 | 2467.7 | `76cc5eb5bfe4` |
+| `480039bf` | sm86 | fail | local-solve | 0.7306 | 0.2442 | 0.4877 | 0.041 | 0.020 | 0.736 | 19508.8 | 2966.1 | `4778a5ebf987` |
+
+> M-C composed child: 7 components folded, 10 passed through; net storage 169045495 against a parent of 229693184 (0.735962x) -- contracts.
+
+### `COMP.MA.MXO2` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 11
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `0c46b969` | sm86 | fail | local-solve | 0.8023 | 0.3253 | 0.8141 | 0.014 | 0.004 | 0.498 | 31218.4 | 2599.3 | `7c47e9720c9e` |
+| `0c46b969` | sm86 | fail | local-solve | 0.8023 | 0.3253 | 0.8141 | 0.014 | 0.004 | 0.498 | 31218.4 | 2599.3 | `8e4b860618a2` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxo of receipt 8e4b860618a25766: verdict dead, 0/15 useful-or-partial (parent 12/15). ADDENDUM 9 9.2 target rung: the 0.5x set solved independently (M-A).  Thirty-four components -- eleven whole SwiGLU lanes at L02 and L04-L13 plus the MXN2/MXN4 token route -- 0.497739x net, every component at or under its S4 bound.  The storage target is MET and the child is comprehensively dead: fourteen of sixteen lanes ride a single phrase to the cap, two emit zero tokens, and the two that terminate on their own say the reference is the reference and if the question is a question, it is a question.  Remove the repetitions and nothing remains in any lane, so the degeneracy is general and both readings agree.  Global drift 0.814086, the deepest the campaign has measured.
+
+### `COMP.MA.MXO3` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 11
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `396741d3` | sm86 | fail | local-solve | 0.8587 | 0.1919 | 0.4618 | 0.049 | 0.025 | 0.729 | 19594.7 | 1349.7 | `05e2e56cc7f1` |
+| `396741d3` | sm86 | fail | local-solve | 0.8587 | 0.1919 | 0.4618 | 0.049 | 0.025 | 0.729 | 19594.7 | 1349.7 | `a85172d592b8` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxo of receipt a85172d592b8532f: verdict dead, 8/15 useful-or-partial (parent 12/15). WAVE-11 FRONTIER RUNG AND THE DEEPEST COHERENT CHILD THE CAMPAIGN HAS PRODUCED.  COMP.MA.MXN4 (the sealed frontier: the MXN2 sparse token route plus the L05 SwiGLU lane) plus ONE more whole SwiGLU lane at L06, chosen by the wave-11 drift model as the cheapest lane on the board.  Seven folded components, net 0.729103x, install drift 0.461810.  REVIEW 8/15 useful-or-partial against the parent 12/15: 0 useful, 8 partial, 7 observed miss.  BOTH DEGENERACY READINGS, AND THEY DISAGREE, exactly as they did on MXN4.  PER-CHILD (how this receipt is sealed): DEAD -- two lanes ride the 1024-token cap (coding-deduplicate becomes an endless numeric literal list, debugging-off-by-one an endless test-case list) and one lane, context-retrieval, emits zero tokens.  PER-LANE (which ADDENDUM 9 9.1 makes the frontier reading): those lanes are charged and FOURTEEN of sixteen stand on their own, which reads ALIVE-DEGRADED at 8/15 and 0.729103x.  Thirteen lanes terminate by themselves with real, on-prompt English: a five-step household-task list, a three-supplier summary that 
+> ... [657 more characters in the receipt]
+
+### `COMP.MA.MXO4` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 11
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `56463de0` | sm86 | fail | local-solve | 0.8587 | 0.1982 | 0.5409 | 0.051 | 0.025 | 0.703 | 19594.7 | 1439.9 | `a52336d602de` |
+| `56463de0` | sm86 | fail | local-solve | 0.8587 | 0.1982 | 0.5409 | 0.051 | 0.025 | 0.703 | 19594.7 | 1439.9 | `8322c4699eeb` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxo of receipt 8322c4699eebde4e: verdict dead, 5/15 useful-or-partial (parent 12/15). WAVE-11 FRONTIER LADDER RUNG 3, AND WHERE THE LADDER STOPS.  COMP.MA.MXO3 plus a THIRD whole SwiGLU lane at L07: ten folded components, net 0.703396x, install drift 0.540899.  REVIEW 5/15: 0 useful, 5 partial, 10 observed miss, against the parent 12/15 and against MXO3 8/15 one lane shallower.  BOTH READINGS: PER-CHILD dead; PER-LANE also dead, and this is the important part -- the degeneracy is no longer confined.  creative-continuity rides the cap on a bare number sequence and strips to Here is a short scene in a short, which is nothing; writing-concise-email rides the cap; planning-dependencies repeats Test the websites backend and security eight times as steps 5-12; multi-turn-correction repeats its whole plan twice and never applies the correction.  What survives is real: it still names Supplier B with a risk, still asks for the time range and the units and the price on the sales question, still refers to the note and the north gate on context-retrieval, and still gives three structurally correct actions -- but the content has gone hollow (do a quic
+> ... [195 more characters in the receipt]
+
+### `COMP.MA.MXP2` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 12
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `23394e3a` | sm86 | fail | local-solve | 0.8275 | 0.1919 | 0.4896 | 0.061 | 0.029 | 0.703 | 19594.7 | 1341.2 | `6386305b3655` |
+| `23394e3a` | sm86 | fail | local-solve | 0.8275 | 0.1919 | 0.4896 | 0.061 | 0.029 | 0.703 | 19594.7 | 1341.2 | `103b4fa0061f` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxp of receipt 103b4fa0061f5ed1: verdict dead, 6/15 useful-or-partial (parent 12/15). WAVE-12 M6 RUNG: the frontier body plus the MINIMUM-DRIFT third lane instead of the next one in depth.  Identical component count and near-identical storage to COMP.MA.MXO4 (0.703409x against 0.703396x, +12,950 parameters), and the lane was chosen by the wave-12 shopping probe rather than by depth order: L13 at T5/S4, priced at +0.034129 against L07 at T8/S4 s +0.076198 on the same base.  The composed drift lands at 0.489603 against MXO4 s 0.540899 -- 0.051 of drift bought by a recipe decision at the same storage -- and the review moves 5/15 to 6/15.  Six partials: the three-supplier summary keeps all three suppliers, the decision AND the residual risk; the household-task list, the RAM-versus-storage comparison, the delay email with Monday and a tracking request, the five-factor sales list and a one-sentence creative continuation all stand.  BOTH READINGS: per-child dead; per-lane IMPAIRED, not alive-degraded -- three lanes are charged (the greeting rides sleep to the cap, context-retrieval emits zero tokens, multi-turn-correction emits an empty Meal 1A1
+> ... [283 more characters in the receipt]
+
+### `COMP.MA.MXP1` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 12
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `16d9758c` | sm86 | fail | local-solve | 0.8587 | 0.1982 | 0.5175 | 0.057 | 0.021 | 0.713 | 19594.7 | 2477.7 | `640108967eb4` |
+| `16d9758c` | sm86 | fail | local-solve | 0.8587 | 0.1982 | 0.5175 | 0.057 | 0.021 | 0.713 | 19594.7 | 2477.7 | `df1ae6a54193` |
+| `d30b436a` | sm86 | infra | infra | -- | -- | -- | 0.000 | 0.000 | -- | -- | 1640.3 | `5692ab7ae3e9` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxp of receipt df1ae6a54193ac9a: verdict dead, 7/15 useful-or-partial (parent 12/15). WAVE-12 M2 RUNG: COMP.MA.MXO4 s EXACT ten-component fold set -- verified byte-equal to MXO4 s recipe before the run, and its install trace reproduces MXO4 s per-component drift to six decimals at all ten rungs -- plus FOUR ADDENDUM 10 corrective routes at k=256.  The routes replace nothing, so their 2,101,252 parameters are ADDED and this rung is compared at 0.712544x against MXO4 s 0.703396x, NOT at a discount.  Repair bought 0.023419 of composed drift (0.540899 -> 0.517480) and TWO review cases (5/15 -> 7/15) on an identical fold set, which is a real positive result for the mechanism.  It is also strictly dominated on economics: M6 s lane shopping bought 0.051296 of drift for 12,950 parameters, an exchange rate 355x better, and the shopped child COMP.MA.MXP2 sits at a LOWER net ratio.  Route diagnostics, all out of sample: L05 explained 28.0 percent of its block s residual gap, L06 10.4, L07 10.0, and L13 -- a block that was never folded -- explained ZERO, returned a held-out gap of 1.014878, and made composed drift WORSE by 0.005990.  BOTH READINGS: p
+> ... [601 more characters in the receipt]
+
+### `COMP.MA.MXQ1` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `3633c54e` | sm86 | fail | composition | -- | 0.1552 | 0.4299 | 0.137 | 0.096 | 0.990 | 3645.6 | 55.0 | `30e76440d4f2` |
+| `3633c54e` | sm86 | fail | composition | -- | 0.1552 | 0.4299 | 0.137 | 0.096 | 0.990 | 3645.6 | 55.0 | `641dfab10d7e` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt 641dfab10d7ec3ac: verdict dead, 6/15 useful-or-partial (parent 12/15). Wave 13 M5 solo: the Procrustes head merge alone at L12, g_q=3/g_kv=2, 0.239583x of the four attention projections, net 0.989586x.  One attention block merged costs 0.429852 composed drift -- more than MXO3s two whole SwiGLU lanes at 0.461810 buy for 2.5x the storage.  Charged lane: planning-dependencies loops to the 1024-token cap while the same-process parent completes the same prompt in 548 tokens.  creative-continuity repeats but completes and is graded a miss without charging the clause.
+
+### `COMP.MA.MXQ2` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `19458703` | sm86 | fail | composition | -- | 0.1948 | 0.3994 | 0.080 | 0.010 | 0.990 | 1274.1 | 54.1 | `0e93238242f1` |
+| `19458703` | sm86 | fail | composition | -- | 0.1948 | 0.3994 | 0.080 | 0.010 | 0.990 | 1274.1 | 54.1 | `935e6d423459` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt 935e6d423459e088: verdict dead, 6/15 useful-or-partial (parent 12/15). Wave 13 M5 solo at L02, the CHEAPEST head-merge site by drift (marginal +0.110941 on the MXO3 base against L12s +0.157983).  Net 0.989586x, composed drift 0.399369 -- LOWER than MXQ1s 0.429852 at L12 -- and yet FOUR lanes loop to the 1024-token cap against MXQ1s one, with the same-process parent completing all four.  Same score, worse text, lower drift: the drift law ranks these two backwards.
+
+### `COMP.MA.MXQ3` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `84af71d8` | sm86 | fail | composition | -- | 0.2456 | 0.4684 | 0.135 | 0.086 | 0.990 | 9198.9 | 64.8 | `7c3ac76e6037` |
+| `84af71d8` | sm86 | fail | composition | -- | 0.2456 | 0.4684 | 0.135 | 0.086 | 0.990 | 9198.9 | 64.8 | `9281f0d8e18d` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt 9281f0d8e18df219: verdict dead, 4/15 useful-or-partial (parent 12/15). Wave 13 M5 solo at L08.  Net 0.989586x, composed drift 0.468446 -- the highest of the three solo sites and past MXO3s 0.461810, from ONE merged attention block that removes 1.04 percent of the parent.  Six of sixteen lanes leave nothing when their repetitions are removed.
+
+### `COMP.MA.MXQ4` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `bcdcd3f7` | sm86 | fail | local-solve | 0.8275 | 0.1948 | 0.6794 | 0.027 | 0.006 | 0.683 | 19594.7 | 1424.7 | `d8dbd27ab857` |
+| `bcdcd3f7` | sm86 | fail | local-solve | 0.8275 | 0.1948 | 0.6794 | 0.027 | 0.006 | 0.683 | 19594.7 | 1424.7 | `0a7fb8e04e77` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt 0a7fb8e04e7728f3: verdict dead, 0/15 useful-or-partial (parent 12/15). Wave 13: COMP.MA.MXP2s exact fold set plus M5 head merges at L02 and L12, the two cheapest merge sites.  Net 0.682581x -- DEEPER than MXP2s 0.703409x -- and 0/15.  Five lanes run to the 1024-token cap on a single repeated phrase and nine of the fifteen graded lanes leave nothing when their repetitions are removed.  The two head-merge lanes account for 0.399369 (L02, installed first) and +0.111632 (L12, on top of six SwiGLU lanes) of the childs 0.679394 terminal drift.  Head merge does not reopen the road to 0.5x: it buys 4.8M parameters and spends the whole coherence budget doing it.
+
+### `COMP.MA.MXQ6` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `48acaece` | sm86 | fail | local-solve | 0.7694 | 0.3253 | 0.8218 | 0.041 | 0.008 | 0.498 | 31218.4 | 1918.7 | `18e203f7d104` |
+| `48acaece` | sm86 | fail | local-solve | 0.7694 | 0.3253 | 0.8218 | 0.041 | 0.008 | 0.498 | 31218.4 | 1918.7 | `d95eed70a0ff` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt d95eed70a0ff1e79: verdict dead, 0/15 useful-or-partial (parent 12/15). Wave 13: ELEVEN SwiGLU lanes plus the token interface, at 0.497777x -- the same DEPTH as COMP.MA.MXO2 (0.497739x, 0/15) with the lane ORDER shopped instead of taken by depth.  Every lane after MXP2s three was priced on MXP2s own base and ranked by drift per million removed.  Result: drift 0.821803 against MXO2s 0.814086 -- shopping did NOT help at this depth -- and 0/15, with ten of sixteen lanes at the 1024-token cap and one emitting zero tokens.  Fourteen of the fifteen graded lanes leave nothing when their repetitions are removed; the fifteenth emits nothing at all.  The 0.5x storage target is reachable by folding and the artifact at it is not a model, whichever order the lanes are bought in.
+
+### `COMP.MA.MXQ5` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `96309d73` | sm86 | fail | local-solve | 0.8275 | 0.1919 | 0.4879 | 0.045 | 0.025 | 0.710 | 19594.7 | 2419.0 | `7662a14ea43f` |
+| `96309d73` | sm86 | fail | local-solve | 0.8275 | 0.1919 | 0.4879 | 0.045 | 0.025 | 0.710 | 19594.7 | 2419.0 | `15de0383b6c8` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt 15de0383b6c8de5f: verdict dead, 7/15 useful-or-partial (parent 12/15). Wave 13: wave 12s central bet, built.  ADDENDUM 10 corrective routes at k=256 on L05/L06/L13, on top of the SHOPPED child COMP.MA.MXP2 rather than the autopilot child COMP.MA.MXO4.  Review 6/15 -> 7/15 for 1,575,939 added parameters (0.69 percent of the parent), charged in full, so the rung is compared at 0.710270x and not at MXP2s 0.703409x.  Drift 0.489603 -> 0.487874 by way of 0.474727 (L05 route, -0.014876) and 0.472629 (L06, -0.002098) and then BACK UP to 0.487874 (L13, +0.015245) -- the third route made drift worse at a block that IS folded, which wave 12 only saw at a block that was not.  One lane at the token cap against MXP2s profile.
+
+### `COMP.MA.MXQ7` -- FAIL
+
+composed_child / heterogeneous_composition / level NA / site GLOBAL / wave 13
+
+| instance | arch | status | link | write cos | macrocell relL2 | vs control | free-run | lcp | stored/dense | cond | s | receipt |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `eb1f0680` | sm86 | fail | local-solve | 0.7694 | 0.3253 | 0.8219 | 0.010 | 0.002 | 0.505 | 31218.4 | 2668.9 | `509f7a3ec364` |
+| `eb1f0680` | sm86 | fail | local-solve | 0.7694 | 0.3253 | 0.8219 | 0.010 | 0.002 | 0.505 | 31218.4 | 2668.9 | `aef14c8e40ba` |
+
+> ADDENDUM 6 behaviour review by claude-opus5-mxq of receipt aef14c8e40bae5ca: verdict dead, 0/15 useful-or-partial (parent 12/15). Wave 13: the eleven-lane shopped set PLUS three ADDENDUM 10 corrective routes at k=256 (L10/L12/L13).  Net 0.504638x, drift 0.821895, 0/15.  Repair has NO purchase at this depth: L10 bought -0.020214, L12 gave back +0.017358 and L13 +0.002948, for a net +0.000092 -- the deep child is 0.0001 WORSE than the unrepaired COMP.MA.MXQ6 for 1,575,939 added parameters.  Thirteen of sixteen lanes run to the 1024-token cap.  This is the same locality result wave 12 measured at one unfolded block, now measured over a whole deep stack: a corrective route only cancels error that is still linear in its own blocks input.
 
 ### `CTRL.copy_exact` -- PASS
 

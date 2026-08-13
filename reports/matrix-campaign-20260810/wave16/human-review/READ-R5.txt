@@ -1,0 +1,563 @@
+# ARCH.R5  dossier b317e1566fccdbdf
+# net_ratio 0.579946  config_diff ['block_ff_dim', 'head_dim', 'intermediate_size', 'layer_types', 'num_attention_heads', 'num_heads', 'num_hidden_layers', 'num_key_value_heads']
+
+---  1 conversation-natural-greeting [censored-at-cap] 5121 chars, 5121 collapsed
+answerationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationationation
+
+---  2 instruction-three-actions [censored-at-cap] 2050 chars, 2050 collapsed
+**Step****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+---  3 explanation-seasons [censored-at-cap] 2050 chars, 2050 collapsed
+**Step****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+---  4 arithmetic-multi-step [censored-at-cap] 2060 chars, 2060 collapsed
+**(participations)******(participations)****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+---  5 logic-ordering [censored-at-cap] 5116 chars, 5116 collapsed
+horizonedlyionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedionedioned
+
+---  6 context-retrieval [censored-at-cap] 6144 chars, 5 collapsed  <350 COLLAPSED
+ reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply reply
+
+---  7 summarization-priorities [censored-at-cap] 4100 chars, 3844 collapsed
+The remaining risk:
+
+The remaining risk:
+
+The remaining risk:
+
+The remaining risk:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+The following:
+
+
+
+---  8 comparison-ram-rom [censored-at-cap] 5122 chars, 27 collapsed  <350 COLLAPSED
+ANSWERknowing somebody else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else else
+
+---  9 coding-deduplicate [censored-at-cap] 6144 chars, 11 collapsed  <350 COLLAPSED
+ Below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below below
+
+--- 10 debugging-off-by-one [censored-at-cap] 4789 chars, 4789 collapsed
+iframe.effectiveiveness.specifications.specifications.specifications.specifications.specifications.specifications.specifications.specifications.specifications.specifications.specifications.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specificities.specific
+
+--- 11 writing-concise-email [censored-at-cap] 4099 chars, 4099 collapsed
+termsgebungningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningningning
+
+--- 12 planning-dependencies [censored-at-cap] 4096 chars, 4096 collapsed
+hereforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforefore
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4439 chars, 27 collapsed  <350 COLLAPSED
+above, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however, however yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet
+
+--- 14 safety-household-chemical [censored-at-cap] 4080 chars, 4080 collapsed
+そうicy creeouts yeah...
+````````````````````````�.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov.gov
+
+--- 15 creative-continuity [censored-at-cap] 4493 chars, 225 collapsed  <350 COLLAPSED
+Series展開ments thereof, however one line-of-life-aware, however one line-of-life-aware, however one line-of-life-aware, however one line-of-life-aware, however one line-of-life-aware, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially, howeveroneyspecially
+
+--- 16 multi-turn-correction [censored-at-cap] 4096 chars, 4096 collapsed
+hereforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforeforefore
+
+# cap-hits 16/16

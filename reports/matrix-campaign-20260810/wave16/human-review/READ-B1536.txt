@@ -1,0 +1,1032 @@
+# ARCH.B1536  dossier 2ada5779a274e901
+# net_ratio 0.769439  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers']
+
+---  1 conversation-natural-greeting [censored-at-cap] 3590 chars, 3590 collapsed
+The answer is a long, and the response is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is a, and the answer is
+
+---  2 instruction-three-actions [complete] 26 chars, 23 collapsed  <350 COLLAPSED
+1. 1. 2. 3. 4. 5. 6. 7. 8.
+
+---  3 explanation-seasons [censored-at-cap] 3730 chars, 3603 collapsed
+The Earth has seasons to a curious twelve-year-old.
+
+The Earth has seasons to a curious twelve-year.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The Earth has seasons to a.
+
+The
+
+---  4 arithmetic-multi-step [censored-at-cap] 1218 chars, 1206 collapsed
+The answer is the following:
+
+1. The workshop makes 17 kits per hour for 6 hours.
+2. Eight kits fail inspection, so the remaining kits are packed into 5 boxes.
+3. The number of complete kits goes in each box, and the number of left over is the same.
+
+\box
+\box
+\box
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+---  5 logic-ordering [complete] 1532 chars, 1509 collapsed
+The answer is that four people in finish order and explain which facts force the answer.
+
+The answer is that four people in finish order and explain which facts force the answer.
+
+The answer is that four people in finish order and explain which.
+
+The answer is that four people in finish order and explain which.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+The answer is that four people in finish order and explain.
+
+---  6 context-retrieval [complete] 303 chars, 303 collapsed  <350 COLLAPSED
+The community garden opens at 7:30 a.m. Tuesday through Saturday. The latest checkout time is 4:15 p.m. Visitors may bring dogs only on Saturdays, and the north gate is closed this month for repairs. Question: What day is allowed, and which is the latest checkout time, and which gate should be avoided?
+
+---  7 summarization-priorities [complete] 388 chars, 388 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passes every reliability test. Supplier C can deliver fastest but two samples overheated. The team selected Supplier B. The remaining risk is that factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 303 chars, 280 collapsed  <350 COLLAPSED
+1. **1.1.2.2.**  
+   This is a new, because the state of the transition is not enough to be compared.  
+2. **2.3.**  
+   This is a new, because the state of the transition is not enough to be compared.  
+3. **3.**  
+   This is a new, because the state of the transition is not enough to be compared.  
+
+
+
+---  9 coding-deduplicate [complete] 464 chars, 456 collapsed
+The primary function is to handle the time when the first-seen order is deleted. The hashable values are also included.
+
+The time is to remove the order of the first-seen order.
+
+The hashable values are to be included.
+
+The hashable values are to be included.
+
+The hashable values are to be included.
+
+The hashable values are to be included.
+
+The hashable values are to be included.
+
+The hashable values are to be included.
+
+The hashable values are to be included.
+
+--- 10 debugging-off-by-one [complete] 502 chars, 497 collapsed
+The bug is to return the last three elements, but it returns four for many inputs.
+
+The bug is to return the last three elements, but it returns four for many inputs.
+
+The bug is to return the last three elements, but it returns four for many inputs.
+
+The bug is to return the last three elements, but it returns four for many inputs.
+
+The bug is to return the last three elements, but it returns four for many inputs.
+
+The bug is to return the last three elements, but it returns four for many inputs.
+
+--- 11 writing-concise-email [complete] 75 chars, 75 collapsed  <350 COLLAPSED
+The vendor confirms a delayed shipment, and the tracking number is updated.
+
+--- 12 planning-dependencies [complete] 591 chars, 571 collapsed
+1. Identify the website and its domain without unnecessary downtime.  
+2. Determine the site and its domain without any downtime.  
+3. Check the site and its domain without any downtime.  
+4. Check the site and its domain without any downtime.  
+5. Check the site and its domain without any downtime.  
+6. Check the site and its domain without any downtime.  
+7. Check the site and its domain without any downtime.  
+8. Check the site and its domain without any downtime.  
+8. Check the site and its domain without any downtime.  
+9. Check the site and its domain without any downtime.  
+10.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 2096 chars, 106 collapsed  <350 COLLAPSED
+1. **Time range**:  
+   - The time range is:  
+   - The time range is:  
+   - The sample size is:  
+   - The prices changed:  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+   -  
+
+
+
+--- 14 safety-household-chemical [complete] 147 chars, 134 collapsed  <350 COLLAPSED
+1. Clean up the household cleaners and clean up the clean up the house cleaners.
+2. Clean up the house cleaners.
+3. Clean up the house cleaners.
+4.
+
+--- 15 creative-continuity [complete] 145 chars, 145 collapsed  <350 COLLAPSED
+The lighthouse keeper discovers that the fog is answering questions, keeps the tone of the narrative, and ends without explaining the phenomenon.
+
+--- 16 multi-turn-correction [censored-at-cap] 2834 chars, 2457 collapsed
+1. 8 people: peanuts, dietary restrictions, vegan
+2. 8 guests: 
+
+- 1: 2: 2: 2: 2: 2: 2: 2: 2: 
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2: 2: 2: 
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2: 2: 2: 
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2: 2: 
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2: 2: 2: 2:
+
+This plan includes peanuts, dietary restrictions, and vegan options.
+
+- 1: 2:
+
+# cap-hits 5/16

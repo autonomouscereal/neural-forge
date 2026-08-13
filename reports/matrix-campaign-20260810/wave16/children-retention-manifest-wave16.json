@@ -1,0 +1,224 @@
+{
+ "schema": "neural-forge-matrix-wave16-child-retention-v1",
+ "policy": "best-5 by sealed useful-or-partial, plus the deepest child with a non-zero score; every other child is deleted and named here with its sealed tensor digest",
+ "kept": [
+  "MX16-W1536X13",
+  "MX16-X07",
+  "MX16-X09",
+  "MX16-X11",
+  "MX16-X13A"
+ ],
+ "bytes_freed": 5946792172,
+ "children": [
+  {
+   "child": "MX16-B1536",
+   "cell_id": "ARCH.B1536",
+   "bytes": 358235353,
+   "net_ratio": 0.7694393578522556,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "f65b1990434f8175d80645c9d32d8e7a2e60ae0402d0520a42d197ac2d8cc82a",
+   "kept": false
+  },
+  {
+   "child": "MX16-BX13",
+   "cell_id": "ARCH.BX13",
+   "bytes": 337788127,
+   "net_ratio": 0.7249294780989235,
+   "useful_or_partial": 1,
+   "verdict": "dead",
+   "child_tensors_sha256": "2b639ac2438bfc496c46961d83873d38341df6c81fc9f439d60ddbfa98ae32b6",
+   "kept": false
+  },
+  {
+   "child": "MX16-D2",
+   "cell_id": "ARCH.D2",
+   "bytes": 415886514,
+   "net_ratio": 0.8949577537311686,
+   "useful_or_partial": 2,
+   "verdict": "dead",
+   "child_tensors_sha256": "510c5b6c8ed35d7f4f8933a96941d061d9be53c2071d53cbd12aadf57fa6b309",
+   "kept": false
+  },
+  {
+   "child": "MX16-D2B",
+   "cell_id": "ARCH.D2B",
+   "bytes": 415886512,
+   "net_ratio": 0.8949577537311686,
+   "useful_or_partial": 6,
+   "verdict": "dead",
+   "child_tensors_sha256": "628aa71f247e69fa39077b1a407ba978959a85d31f2ce3fb8d68a1e0c6d7fef6",
+   "kept": false
+  },
+  {
+   "child": "MX16-D3",
+   "cell_id": "ARCH.D3",
+   "bytes": 391758130,
+   "net_ratio": 0.8424366305967529,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "d238058d6f780a24cc7fd22876883eae572ded78e1460650dd681fbb508f7e67",
+   "kept": false
+  },
+  {
+   "child": "MX16-KV6",
+   "cell_id": "ARCH.KV6",
+   "bytes": 454766135,
+   "net_ratio": 0.9794569785753852,
+   "useful_or_partial": 5,
+   "verdict": "dead",
+   "child_tensors_sha256": "a888647705f08487cffb55d005e156063329f4e739dabfdb27183dec6f2abf84",
+   "kept": false
+  },
+  {
+   "child": "MX16-R0",
+   "cell_id": "ARCH.R0",
+   "bytes": 337788126,
+   "net_ratio": 0.7249294780989235,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "362cb81dccaeb8be1a5f51b4b2dec94f17e6d0e1beb61c49af1fc1d2c80b8031",
+   "kept": false
+  },
+  {
+   "child": "MX16-R1",
+   "cell_id": "ARCH.R1",
+   "bytes": 321523404,
+   "net_ratio": 0.6895275394850201,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "e29841660cefe5d2d72a78aad41599a1901db4b77f92938464878f972e806243",
+   "kept": false
+  },
+  {
+   "child": "MX16-R2",
+   "cell_id": "ARCH.R2",
+   "bytes": 307361352,
+   "net_ratio": 0.658703533841039,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "f3bb2f207b7e0a18cdd6da9731941854fac116821518b6108e9b32798ecef49f",
+   "kept": false
+  },
+  {
+   "child": "MX16-R3",
+   "cell_id": "ARCH.R3",
+   "bytes": 299547388,
+   "net_ratio": 0.6415843493205267,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "5a85ae9c1f4139626be1fa62d61eccfaad6174d4f0b1d26a97d588a32a6d9deb",
+   "kept": false
+  },
+  {
+   "child": "MX16-R4",
+   "cell_id": "ARCH.R4",
+   "bytes": 282245909,
+   "net_ratio": 0.6039221433753994,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "1e45b330d6037720a015e59b74be4b7f0fc12dba9632af3eb07e4a52454f6786",
+   "kept": false
+  },
+  {
+   "child": "MX16-R5",
+   "cell_id": "ARCH.R5",
+   "bytes": 271219720,
+   "net_ratio": 0.5799458115396232,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "0c42c4106be1968322f51f6bf704974cd8ed5053be59bcc202b33234b3ee4385",
+   "kept": false
+  },
+  {
+   "child": "MX16-W1536X13",
+   "cell_id": "ARCH.W1536X13",
+   "bytes": 358235352,
+   "net_ratio": 0.7694393578522556,
+   "useful_or_partial": 4,
+   "verdict": "dead",
+   "child_tensors_sha256": "aacd9a7fc20e9e3adad13f769c8004715d98e0296a779f980495ae75f0470294",
+   "kept": true
+  },
+  {
+   "child": "MX16-X01",
+   "cell_id": "ARCH.X01",
+   "bytes": 440014886,
+   "net_ratio": 0.9474788768655843,
+   "useful_or_partial": 9,
+   "verdict": "dead",
+   "child_tensors_sha256": "81ac92da843fc47f7d8f2c57ab603f3d67f9e2daa6d3073ba730a49aad838422",
+   "kept": false
+  },
+  {
+   "child": "MX16-X03",
+   "cell_id": "ARCH.X03",
+   "bytes": 440014886,
+   "net_ratio": 0.9474788768655843,
+   "useful_or_partial": 6,
+   "verdict": "impaired",
+   "child_tensors_sha256": "d96a8a7593bb1fb8ac4a962dd71e7ce9571aa58c12a6050e685125b42b39cd1b",
+   "kept": false
+  },
+  {
+   "child": "MX16-X07",
+   "cell_id": "ARCH.X07",
+   "bytes": 440014886,
+   "net_ratio": 0.9474788768655843,
+   "useful_or_partial": 11,
+   "verdict": "alive-parent-band",
+   "child_tensors_sha256": "0ebf615078a7b3987e0ba46b27d5eec1bb28fb9946ef6b4dd9e63b00cb2ca3b0",
+   "kept": true
+  },
+  {
+   "child": "MX16-X09",
+   "cell_id": "ARCH.X09",
+   "bytes": 440014886,
+   "net_ratio": 0.9474788768655843,
+   "useful_or_partial": 10,
+   "verdict": "alive-parent-band",
+   "child_tensors_sha256": "b30ba76961ace8b8c05c02948d31fadad1410beb826d39bda0918cb3570ef393",
+   "kept": true
+  },
+  {
+   "child": "MX16-X11",
+   "cell_id": "ARCH.X11",
+   "bytes": 440014888,
+   "net_ratio": 0.9474788768655843,
+   "useful_or_partial": 9,
+   "verdict": "alive-degraded",
+   "child_tensors_sha256": "a8d7e1f99d02aa64fd677032868ec25513f48948f3a4cf4026e8309586077c5e",
+   "kept": true
+  },
+  {
+   "child": "MX16-X12",
+   "cell_id": "ARCH.X12",
+   "bytes": 442117558,
+   "net_ratio": 0.9520568098355064,
+   "useful_or_partial": 0,
+   "verdict": "dead",
+   "child_tensors_sha256": "ca519daf0781e3730719cdd797e0b69e05a23fbd16828c29624888fef7a3ab93",
+   "kept": false
+  },
+  {
+   "child": "MX16-X13A",
+   "cell_id": "ARCH.X13A",
+   "bytes": 440014888,
+   "net_ratio": 0.9474788768655843,
+   "useful_or_partial": 13,
+   "verdict": "dead",
+   "child_tensors_sha256": "da70dc276bdeca386b5fd25ad3a6081a44295ebb9678a052b14b8e0fb75e9195",
+   "kept": true
+  },
+  {
+   "child": "MX16-X13KV6",
+   "cell_id": "ARCH.X13KV6",
+   "bytes": 430638172,
+   "net_ratio": 0.9269358554409695,
+   "useful_or_partial": 6,
+   "verdict": "dead",
+   "child_tensors_sha256": "5e9f352dacdc73f52586d5f1d6cb28759832a850d3c57c4c7e1b37f01647eba6",
+   "kept": false
+  }
+ ]
+}
