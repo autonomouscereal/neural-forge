@@ -64,6 +64,14 @@ from neural_forge.hf_lfm2_replay_sharding import (
     plan_replay_shards,
     run_replay_shards,
 )
+from neural_forge.hf_lfm2_runtime_semantics_receipt import (
+    LFM2_RUNTIME_SEMANTICS_RECEIPT_SCHEMA,
+    Lfm2RuntimeSemanticsReceiptError,
+    lfm2_runtime_semantics_receipt,
+    lfm2_runtime_semantics_receipt_source_sha256,
+    verify_lfm2_capture_model_runtime,
+    verify_lfm2_runtime_semantics_receipt,
+)
 from neural_forge.numeric_execution_policy import (
     NumericExecutionPolicy,
     NumericExecutionPolicyError,
@@ -187,6 +195,17 @@ class Lfm2CircuitTraceCorruptionError(Lfm2CircuitTraceCacheError):
 
 class Lfm2CircuitTraceConflictError(Lfm2CircuitTraceCacheError):
     """Existing immutable contents conflict with the requested identity."""
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2LegacyCacheRecaptureInputs:
+    """Read-only, non-admissible inputs extracted from one pinned v1 cache."""
+
+    cache_key: str
+    manifest_sha256: str
+    completion_sha256: str
+    implementation_sha256: str
+    batches: tuple[Mapping[str, Any], ...]
 
 
 def _torch() -> Any:
@@ -855,8 +874,18 @@ def implementation_identity() -> dict[str, Any]:
     collector_path = Path(__file__).resolve()
     canonical_path = Path(canonical.__file__).resolve()
     runtime_path = Path(modeling_lfm2.__file__).resolve()
+    try:
+        runtime_semantics_receipt = lfm2_runtime_semantics_receipt()
+        runtime_semantics_receipt_sha256 = verify_lfm2_runtime_semantics_receipt()
+        runtime_semantics_receipt_source_sha256 = (
+            lfm2_runtime_semantics_receipt_source_sha256()
+        )
+    except Lfm2RuntimeSemanticsReceiptError as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "The native LFM2 capture runtime failed source authentication."
+        ) from exc
     body = {
-        "schema": "neural-forge-lfm2-circuit-implementation-v1",
+        "schema": "neural-forge-lfm2-circuit-implementation-v2",
         "collector_source_sha256": _source_file_sha256(collector_path, "collector"),
         "canonical_contract_source_sha256": _source_file_sha256(
             canonical_path, "canonical LFM2 contract"
@@ -867,8 +896,30 @@ def implementation_identity() -> dict[str, Any]:
         "torch_version": _package_version("torch"),
         "transformers_version": _package_version("transformers"),
         "safetensors_version": _package_version("safetensors"),
+        "runtime_semantics_receipt_schema": (LFM2_RUNTIME_SEMANTICS_RECEIPT_SCHEMA),
+        "runtime_semantics_receipt": runtime_semantics_receipt,
+        "runtime_semantics_receipt_sha256": runtime_semantics_receipt_sha256,
+        "runtime_semantics_receipt_source_sha256": (
+            runtime_semantics_receipt_source_sha256
+        ),
     }
     return {**body, "implementation_sha256": _json_sha256(body)}
+
+
+def _verify_capture_runtime_semantics(
+    model: Any,
+    expected_sha256: str,
+    label: str,
+) -> None:
+    try:
+        verify_lfm2_capture_model_runtime(
+            model,
+            expected_sha256=expected_sha256,
+        )
+    except Lfm2RuntimeSemanticsReceiptError as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Native LFM2 runtime authentication failed {label}."
+        ) from exc
 
 
 def _implementation_identity_is_internally_consistent(
@@ -881,8 +932,59 @@ def _implementation_identity_is_internally_consistent(
         or len(implementation_sha256) != _SHA256_LENGTH
     ):
         return False
+    runtime_semantics_receipt = body.get("runtime_semantics_receipt")
+    runtime_semantics_receipt_sha256 = body.get("runtime_semantics_receipt_sha256")
+    runtime_semantics_receipt_source_sha256 = body.get(
+        "runtime_semantics_receipt_source_sha256"
+    )
+    if (
+        body.get("schema") != "neural-forge-lfm2-circuit-implementation-v2"
+        or body.get("runtime_semantics_receipt_schema")
+        != LFM2_RUNTIME_SEMANTICS_RECEIPT_SCHEMA
+        or not isinstance(runtime_semantics_receipt, Mapping)
+        or runtime_semantics_receipt.get("schema")
+        != LFM2_RUNTIME_SEMANTICS_RECEIPT_SCHEMA
+        or not isinstance(runtime_semantics_receipt_sha256, str)
+        or len(runtime_semantics_receipt_sha256) != _SHA256_LENGTH
+        or not isinstance(runtime_semantics_receipt_source_sha256, str)
+        or len(runtime_semantics_receipt_source_sha256) != _SHA256_LENGTH
+    ):
+        return False
     try:
-        return _json_sha256(body) == implementation_sha256
+        return (
+            _json_sha256(dict(runtime_semantics_receipt))
+            == runtime_semantics_receipt_sha256
+            and _json_sha256(body) == implementation_sha256
+        )
+    except Lfm2CircuitTraceCacheError:
+        return False
+
+
+def _legacy_implementation_identity_is_internally_consistent(
+    value: Mapping[str, Any],
+) -> bool:
+    """Validate only the exact receipt-less v1 identity used for recapture."""
+
+    expected_keys = {
+        "schema",
+        "collector_source_sha256",
+        "canonical_contract_source_sha256",
+        "transformers_lfm2_source_sha256",
+        "torch_version",
+        "transformers_version",
+        "safetensors_version",
+        "implementation_sha256",
+    }
+    if set(value) != expected_keys or value.get("schema") != (
+        "neural-forge-lfm2-circuit-implementation-v1"
+    ):
+        return False
+    body = dict(value)
+    claimed = body.pop("implementation_sha256", None)
+    if not isinstance(claimed, str) or len(claimed) != _SHA256_LENGTH:
+        return False
+    try:
+        return _json_sha256(body) == claimed
     except Lfm2CircuitTraceCacheError:
         return False
 
@@ -896,6 +998,16 @@ def _compatible_implementation_identity(
     if not _implementation_identity_is_internally_consistent(
         stored
     ) or not _implementation_identity_is_internally_consistent(current):
+        return False
+    if any(
+        stored.get(name) != current.get(name)
+        for name in (
+            "runtime_semantics_receipt_schema",
+            "runtime_semantics_receipt",
+            "runtime_semantics_receipt_sha256",
+            "runtime_semantics_receipt_source_sha256",
+        )
+    ):
         return False
     if stored.get("implementation_sha256") == current.get("implementation_sha256"):
         return True
@@ -3933,7 +4045,11 @@ def _completion_for(
     return _sealed_document(body, "completion_sha256")
 
 
-def _validate_manifest(value: Mapping[str, Any]) -> None:
+def _validate_manifest(
+    value: Mapping[str, Any],
+    *,
+    legacy_recapture: bool = False,
+) -> None:
     _verify_seal(value, "manifest_sha256", "cache manifest")
     if value.get("schema") != CACHE_SCHEMA:
         raise Lfm2CircuitTraceCorruptionError("Cache manifest schema is unsupported.")
@@ -3956,39 +4072,47 @@ def _validate_manifest(value: Mapping[str, Any]) -> None:
             raise Lfm2CircuitTraceCorruptionError(
                 f"Cache manifest section {section!r} is invalid."
             )
-    implementation_body = dict(value["implementation"])
+    implementation = value["implementation"]
+    implementation_body = dict(implementation)
     implementation_hash = implementation_body.pop("implementation_sha256", None)
-    if _json_sha256(implementation_body) != implementation_hash:
+    implementation_is_valid = (
+        _legacy_implementation_identity_is_internally_consistent(implementation)
+        if legacy_recapture
+        else _implementation_identity_is_internally_consistent(implementation)
+    )
+    if not implementation_is_valid:
         raise Lfm2CircuitTraceCorruptionError(
             "Cache implementation identity is internally inconsistent."
         )
-    current_implementation = implementation_identity()
-    if not _compatible_implementation_identity(
-        value["implementation"],
-        current_implementation,
-    ):
-        raise Lfm2CircuitTraceCorruptionError(
-            "Cache implementation differs from the current collector/runtime "
-            "and is not an explicitly compatible sealed revision."
-        )
+    if not legacy_recapture:
+        current_implementation = implementation_identity()
+        if not _compatible_implementation_identity(
+            implementation,
+            current_implementation,
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                "Cache implementation differs from the current collector/runtime "
+                "and is not an explicitly compatible sealed revision."
+            )
     execution_body = dict(value["execution"])
     execution_hash = execution_body.pop("execution_sha256", None)
     if _json_sha256(execution_body) != execution_hash:
         raise Lfm2CircuitTraceCorruptionError(
             "Cache execution identity is internally inconsistent."
         )
-    try:
-        from transformers.models.lfm2 import modeling_lfm2
-    except ImportError as exc:  # pragma: no cover - optional HF dependency
-        raise Lfm2CircuitTraceCorruptionError(
-            "Current runtime cannot import Transformers LFM2."
-        ) from exc
-    if execution_body.get("fast_short_conv_available") is not bool(
-        getattr(modeling_lfm2, "is_fast_path_available", False)
-    ):
-        raise Lfm2CircuitTraceCorruptionError(
-            "Cache fast short-conv availability differs from the current runtime."
-        )
+    if not legacy_recapture:
+        try:
+            from transformers.models.lfm2 import modeling_lfm2
+        except ImportError as exc:  # pragma: no cover - optional HF dependency
+            raise Lfm2CircuitTraceCorruptionError(
+                "Current runtime cannot import Transformers LFM2."
+            ) from exc
+        if execution_body.get("fast_short_conv_available") is not bool(
+            getattr(modeling_lfm2, "is_fast_path_available", False)
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                "Cache fast short-conv availability differs from the current runtime."
+            )
     corpus_body = dict(value["corpus"])
     corpus_hash = corpus_body.pop("corpus_sha256", None)
     if _json_sha256(corpus_body) != corpus_hash:
@@ -5792,6 +5916,106 @@ class Lfm2CircuitTraceSelectiveAuthenticatedSession:
         traceback: Any,
     ) -> None:
         self.close()
+
+
+def extract_lfm2_legacy_cache_recapture_inputs(
+    path: str | os.PathLike[str],
+    *,
+    expected_cache_key: str,
+    expected_manifest_sha256: str,
+    expected_completion_sha256: str,
+    expected_implementation_sha256: str,
+) -> Lfm2LegacyCacheRecaptureInputs:
+    """Extract only sealed input batches from one exactly pinned v1 cache.
+
+    This migration API never returns an admissible cache handle.  Its output
+    can only be supplied to a fresh v2 capture under the authenticated native
+    runtime receipt.
+    """
+
+    expected = {
+        "cache_key": expected_cache_key,
+        "manifest_sha256": expected_manifest_sha256,
+        "completion_sha256": expected_completion_sha256,
+        "implementation_sha256": expected_implementation_sha256,
+    }
+    if any(
+        not isinstance(value, str) or len(value) != _SHA256_LENGTH
+        for value in expected.values()
+    ):
+        raise Lfm2CircuitTraceCorruptionError(
+            "Legacy recapture requires four exact SHA-256 identities."
+        )
+    cache_path = Path(path).expanduser().absolute()
+    if (
+        not cache_path.is_dir()
+        or cache_path.is_symlink()
+        or cache_path.name != expected_cache_key
+    ):
+        raise Lfm2CircuitTraceCorruptionError(
+            "Legacy recapture path does not match its pinned cache key."
+        )
+    manifest_path = cache_path / MANIFEST_FILENAME
+    completion_path = cache_path / COMPLETION_FILENAME
+    manifest_identity = _path_file_identity(manifest_path)
+    completion_identity = _path_file_identity(completion_path)
+    manifest = _read_canonical_json(manifest_path)
+    completion = _read_canonical_json(completion_path)
+    _validate_manifest(manifest, legacy_recapture=True)
+    entries = _validate_completion(completion, manifest)
+    if (
+        manifest.get("cache_key") != expected_cache_key
+        or manifest.get("manifest_sha256") != expected_manifest_sha256
+        or completion.get("completion_sha256") != expected_completion_sha256
+        or manifest["implementation"].get("implementation_sha256")
+        != expected_implementation_sha256
+    ):
+        raise Lfm2CircuitTraceCorruptionError(
+            "Legacy recapture metadata differs from its pinned identities."
+        )
+    _verify_cache_layout(cache_path, len(entries))
+    batches = []
+    for entry in entries:
+        tensors, _record = _load_verified_batch(cache_path, manifest, entry)
+        required = {
+            "input.input_ids",
+            "input.attention_mask",
+            f"input.{_FORCED_IDS}",
+        }
+        if not required.issubset(tensors):
+            tensors.clear()
+            raise Lfm2CircuitTraceCorruptionError(
+                "Legacy cache does not contain complete recapture inputs."
+            )
+        batch = {
+            "input_ids": tensors["input.input_ids"].detach().clone().contiguous(),
+            "attention_mask": (
+                tensors["input.attention_mask"].detach().clone().contiguous()
+            ),
+            _FORCED_IDS: (
+                tensors[f"input.{_FORCED_IDS}"].detach().clone().contiguous()
+            ),
+        }
+        if "input.position_ids" in tensors:
+            batch["position_ids"] = (
+                tensors["input.position_ids"].detach().clone().contiguous()
+            )
+        tensors.clear()
+        batches.append(MappingProxyType(batch))
+    if (
+        _path_file_identity(manifest_path) != manifest_identity
+        or _path_file_identity(completion_path) != completion_identity
+    ):
+        raise Lfm2CircuitTraceCorruptionError(
+            "Legacy recapture metadata changed during extraction."
+        )
+    return Lfm2LegacyCacheRecaptureInputs(
+        cache_key=expected_cache_key,
+        manifest_sha256=expected_manifest_sha256,
+        completion_sha256=expected_completion_sha256,
+        implementation_sha256=expected_implementation_sha256,
+        batches=tuple(batches),
+    )
 
 
 def open_lfm2_circuit_trace_cache(
@@ -9202,6 +9426,14 @@ def build_lfm2_circuit_trace_cache(
     if compatible_cache is not None:
         return compatible_cache
 
+    capture_runtime_receipt_sha256 = str(
+        implementation["runtime_semantics_receipt_sha256"]
+    )
+    _verify_capture_runtime_semantics(
+        model,
+        capture_runtime_receipt_sha256,
+        "before cache capture",
+    )
     stage = root / f".lfm2-circuit-stage-{uuid.uuid4().hex}"
     stage.mkdir()
     try:
@@ -9210,15 +9442,27 @@ def build_lfm2_circuit_trace_cache(
         batches_path.mkdir()
         entries: list[dict[str, Any]] = []
         for batch in prepared:
-            tensors, capture = _capture_batch(
-                torch,
+            _verify_capture_runtime_semantics(
                 model,
-                layers,
-                contracts,
-                batch,
-                selected,
-                device,
+                capture_runtime_receipt_sha256,
+                f"before batch {batch.index}",
             )
+            try:
+                tensors, capture = _capture_batch(
+                    torch,
+                    model,
+                    layers,
+                    contracts,
+                    batch,
+                    selected,
+                    device,
+                )
+            finally:
+                _verify_capture_runtime_semantics(
+                    model,
+                    capture_runtime_receipt_sha256,
+                    f"after batch {batch.index}",
+                )
             entries.append(
                 _publish_batch(
                     torch,
@@ -9234,10 +9478,20 @@ def build_lfm2_circuit_trace_cache(
             raise Lfm2CircuitTraceCaptureError(
                 "Parent state or configuration changed during cache capture."
             )
+        _verify_capture_runtime_semantics(
+            model,
+            capture_runtime_receipt_sha256,
+            "before cache completion",
+        )
         completion = _completion_for(manifest, entries)
         _write_canonical_json(stage / COMPLETION_FILENAME, completion)
 
         staged = Lfm2CircuitTraceCache.open(stage, verify=True)
+        _verify_capture_runtime_semantics(
+            model,
+            capture_runtime_receipt_sha256,
+            "before cache publication",
+        )
         if destination.exists():
             existing = open_lfm2_circuit_trace_cache(destination, verify=True)
             if existing.manifest != staged.manifest:
@@ -9296,6 +9550,7 @@ __all__ = [
     "Lfm2CircuitTraceCaptureError",
     "Lfm2CircuitTraceConflictError",
     "Lfm2CircuitTraceCorruptionError",
+    "Lfm2LegacyCacheRecaptureInputs",
     "Lfm2CircuitTraceSelectedBatchPayload",
     "Lfm2CircuitTraceSelectiveAuthenticatedSession",
     "Lfm2CircuitTraceSelectiveBatchReference",
@@ -9310,6 +9565,7 @@ __all__ = [
     "capture_lfm2_child_embedding_replay",
     "capture_lfm2_child_replay",
     "capture_lfm2_circuit_trace_cache",
+    "extract_lfm2_legacy_cache_recapture_inputs",
     "fingerprint_lfm2_parent",
     "implementation_identity",
     "open_lfm2_circuit_trace_cache",

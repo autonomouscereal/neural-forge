@@ -87,6 +87,12 @@ from neural_forge.hf_lfm2_sparse_feature_fold_bundle import (
     admit_lfm2_sparse_feature_axis,
     build_lfm2_sparse_feature_fold_bundle,
 )
+from neural_forge.hf_lfm2_t5_sparse_feature_fold_builder import (
+    Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+    _authenticate_live_lfm2_topology,
+    _canonical_runtime_receipt_sha256,
+    _internal_runtime_semantics_sha256,
+)
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
@@ -438,6 +444,8 @@ def _sparse_feature_bundle(
     target_graph=None,
     parent_state_fingerprint: str | None = None,
     evidence_cache_sha256: str | None = None,
+    target_blank_state_fingerprint: str | None = None,
+    target_topology_fingerprint: str | None = None,
 ):
     tokenizer = _tokenizer_fingerprint()
     source_graph = (
@@ -457,6 +465,25 @@ def _sparse_feature_bundle(
     )
     cache_sha = (
         cache.cache_key if evidence_cache_sha256 is None else evidence_cache_sha256
+    )
+    target_blank_state = (
+        target.blank_state_fingerprint
+        if target_blank_state_fingerprint is None
+        else target_blank_state_fingerprint
+    )
+    target_topology = (
+        target.topology_fingerprint
+        if target_topology_fingerprint is None
+        else target_topology_fingerprint
+    )
+    target_live_topology = _authenticate_live_lfm2_topology(
+        model=target.model,
+        graph=target.graph,
+        label="test sparse-feature target",
+    )
+    target_runtime_semantics = _internal_runtime_semantics_sha256(
+        target.model,
+        "test sparse-feature target",
     )
     axes = []
     axis_specs = (
@@ -572,11 +599,22 @@ def _sparse_feature_bundle(
         source_artifact_sha256s={
             "parent_trace_cache": cache_sha,
             "parent_state": parent_state,
+            "target_blank_state": target_blank_state,
+            "target_topology": target_topology,
+            "target_live_layer_topology": target_live_topology[0],
+            "target_live_layer_topology_document": target_live_topology[1],
+            "target_runtime_semantics": target_runtime_semantics,
+            "canonical_runtime_receipt": _canonical_runtime_receipt_sha256(),
         },
     )
 
 
-def _dense_stack_resources(cache, *, sparse_feature_fold_bundle=None):
+def _dense_stack_resources(
+    cache,
+    *,
+    sparse_feature_fold_bundle=None,
+    sparse_feature_fold_bundle_builder=None,
+):
     final_gate = _Accept()
 
     def fresh_gate(_model):
@@ -601,7 +639,56 @@ def _dense_stack_resources(cache, *, sparse_feature_fold_bundle=None):
             run_closed_loop=False,
         ),
         sparse_feature_fold_bundle=sparse_feature_fold_bundle,
+        sparse_feature_fold_bundle_builder=sparse_feature_fold_bundle_builder,
     )
+
+
+def _mock_exact_t5_builder(
+    monkeypatch,
+    *,
+    parent,
+    cache,
+    source_graph,
+    bundle,
+    calls,
+    binding,
+):
+    def verify(self):
+        calls["verify"] += 1
+        return self
+
+    def build(self, selected, target):
+        calls["build"] += 1
+        calls["selected"].append(selected)
+        calls["target"].append(target)
+        return bundle
+
+    monkeypatch.setattr(
+        Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+        "verify",
+        verify,
+    )
+    monkeypatch.setattr(
+        Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+        "__call__",
+        build,
+    )
+    monkeypatch.setattr(
+        Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+        "builder_binding_sha256",
+        property(lambda _self: binding["sha256"]),
+    )
+    builder = object.__new__(Lfm2AuthenticatedT5SparseFeatureFoldBuilder)
+    object.__setattr__(builder, "parent_model", parent)
+    object.__setattr__(builder, "source_graph", source_graph)
+    object.__setattr__(
+        builder,
+        "evidence_authority",
+        SimpleNamespace(cache=cache),
+    )
+    object.__setattr__(builder, "solve_config", SimpleNamespace())
+    object.__setattr__(builder, "_sealed_builder_binding_sha256", binding["sha256"])
+    return builder
 
 
 def test_dynamic_lfm2_system_sparse_feature_bundle_import_is_lazy() -> None:
@@ -614,6 +701,8 @@ def test_dynamic_lfm2_system_sparse_feature_bundle_import_is_lazy() -> None:
             "assert 'neural_forge.hf_lfm2_sparse_feature_fold_bundle' "
             "not in sys.modules\n"
             "assert 'neural_forge.matrix_technique_body_routes' "
+            "not in sys.modules\n"
+            "assert 'neural_forge.hf_lfm2_t5_sparse_feature_fold_builder' "
             "not in sys.modules\n",
         ),
         capture_output=True,
@@ -649,6 +738,248 @@ def test_dense_stack_sparse_feature_bundle_is_typed_and_legacy_empty(
     assert stack.resource_fingerprints == ()
     assert operator.sparse_feature_fold_bundle is None
     assert operator.resource_fingerprint is None
+
+
+def test_dense_stack_target_aware_builder_is_lazy_exactly_once_and_memoized(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-target-aware-builder-memo",
+        blank_seed=22_010,
+    )
+    source_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=_tokenizer_fingerprint(),
+    )
+    bundle = _sparse_feature_bundle(parent, cache, target)
+    calls = {"verify": 0, "build": 0, "selected": [], "target": []}
+    binding = {"sha256": "a" * 64}
+    builder = _mock_exact_t5_builder(
+        monkeypatch,
+        parent=parent,
+        cache=cache,
+        source_graph=source_graph,
+        bundle=bundle,
+        calls=calls,
+        binding=binding,
+    )
+    resources = _dense_stack_resources(
+        cache,
+        sparse_feature_fold_bundle_builder=builder,
+    )
+    adapter = Lfm2DynamicFoldStackAdapter(resources)
+    calls["verify"] = 0
+
+    assert adapter.supports(target)
+    assert calls["build"] == 0
+    assert calls["verify"] > 0
+
+    first = adapter.build(target)
+    second = adapter.build(target)
+    assert calls["build"] == 1
+    assert calls["selected"] == [target.adapter_payload]
+    assert calls["target"] == [target]
+    expected = ((LFM2_SPARSE_FEATURE_FOLD_BUNDLE_RESOURCE_NAME, bundle.bundle_sha256),)
+    assert first.resource_fingerprints == expected
+    assert second.resource_fingerprints == expected
+    assert (
+        first.operators.get(DENSE_BUDGET_MODEL_METHOD).sparse_feature_fold_bundle
+        is bundle
+    )
+
+
+def test_dense_stack_rechecks_builder_exact_type_and_exclusivity_at_resolve(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-target-aware-builder-type",
+        blank_seed=22_011,
+    )
+    source_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=_tokenizer_fingerprint(),
+    )
+    bundle = _sparse_feature_bundle(parent, cache, target)
+    calls = {"verify": 0, "build": 0, "selected": [], "target": []}
+    binding = {"sha256": "b" * 64}
+    builder = _mock_exact_t5_builder(
+        monkeypatch,
+        parent=parent,
+        cache=cache,
+        source_graph=source_graph,
+        bundle=bundle,
+        calls=calls,
+        binding=binding,
+    )
+
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="must be the exact authenticated T5 builder",
+    ):
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle_builder=lambda *_args: bundle,
+        )
+    with pytest.raises(DynamicLfm2AdapterError, match="mutually exclusive"):
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle=bundle,
+            sparse_feature_fold_bundle_builder=builder,
+        )
+
+    resources = _dense_stack_resources(
+        cache,
+        sparse_feature_fold_bundle_builder=builder,
+    )
+    adapter = Lfm2DynamicFoldStackAdapter(resources)
+
+    class Evil:
+        def verify(self):
+            return self
+
+        def __call__(self, *_args):
+            return bundle
+
+    object.__setattr__(resources, "sparse_feature_fold_bundle_builder", Evil())
+    assert not adapter.supports(target)
+    with pytest.raises(DynamicLfm2AdapterError, match="lost its exact type"):
+        adapter.build(target)
+
+    object.__setattr__(resources, "sparse_feature_fold_bundle_builder", builder)
+    object.__setattr__(resources, "sparse_feature_fold_bundle", bundle)
+    assert not adapter.supports(target)
+    with pytest.raises(DynamicLfm2AdapterError, match="mutually exclusive"):
+        adapter.build(target)
+
+
+def test_dense_stack_rejects_same_graph_foreign_blank_binding(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-same-graph-blank-binding",
+        blank_seed=22_012,
+    )
+    same_target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-same-graph-blank-binding",
+        blank_seed=22_013,
+    )
+    # Compiler-owned LFM2 blanks are zeroed, so their authenticated identity is
+    # deliberately seed-invariant for the same graph. Exercise the reachable
+    # attack instead: a bundle that claims that graph but carries a foreign
+    # blank-state lineage artifact.
+    assert target.graph.fingerprint == same_target.graph.fingerprint
+    assert target.blank_state_fingerprint == same_target.blank_state_fingerprint
+    bundle = _sparse_feature_bundle(
+        parent,
+        cache,
+        target,
+        target_blank_state_fingerprint="d" * 64,
+    )
+    adapter = Lfm2DynamicFoldStackAdapter(
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle=bundle,
+        )
+    )
+
+    assert not adapter.supports(target)
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="compiler blank or target topology",
+    ):
+        adapter.build(target)
+
+
+def test_dense_stack_builder_failure_and_live_parent_change_never_reuse_memo(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    parent, cache = sealed_parent
+    target = _synthesize_dense_target(
+        parent,
+        cache,
+        child_name="dense-target-aware-builder-failure",
+        blank_seed=22_014,
+    )
+    source_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=_tokenizer_fingerprint(),
+    )
+    bundle = _sparse_feature_bundle(parent, cache, target)
+    calls = {"verify": 0, "build": 0, "selected": [], "target": []}
+    binding = {"sha256": "c" * 64}
+    builder = _mock_exact_t5_builder(
+        monkeypatch,
+        parent=parent,
+        cache=cache,
+        source_graph=source_graph,
+        bundle=bundle,
+        calls=calls,
+        binding=binding,
+    )
+    adapter = Lfm2DynamicFoldStackAdapter(
+        _dense_stack_resources(
+            cache,
+            sparse_feature_fold_bundle_builder=builder,
+        )
+    )
+    assert adapter.build(target).resource_fingerprints
+    assert calls["build"] == 1
+
+    parent_state = fingerprint_model_state(parent)
+    target_state = fingerprint_model_state(target.model)
+    failed_build_calls = 0
+
+    def fail_build(_self, _selected, _target):
+        nonlocal failed_build_calls
+        failed_build_calls += 1
+        raise RuntimeError("intentional authenticated builder failure")
+
+    binding["sha256"] = "d" * 64
+    monkeypatch.setattr(
+        Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+        "__call__",
+        fail_build,
+    )
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="bundle construction failed",
+    ):
+        adapter.build(target)
+    assert failed_build_calls == 1
+    assert fingerprint_model_state(parent) == parent_state
+    assert fingerprint_model_state(target.model) == target_state
+
+    parameter = next(parent.parameters())
+    original = parameter.detach().clone()
+    try:
+        with torch.no_grad():
+            parameter.add_(1.0)
+        with pytest.raises(
+            DynamicLfm2AdapterError,
+            match="differs from the selected live parent",
+        ):
+            adapter.build(target)
+        assert calls["build"] == 1
+    finally:
+        with torch.no_grad():
+            parameter.copy_(original)
 
 
 def test_dense_stack_threads_sparse_feature_bundle_into_action_identity(

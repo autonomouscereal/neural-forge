@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import textwrap
 from types import MethodType
 
 import pytest
@@ -21,6 +26,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     Lfm2CircuitTraceCaptureError,
     Lfm2CircuitTraceCorruptionError,
     build_lfm2_circuit_trace_cache,
+    extract_lfm2_legacy_cache_recapture_inputs,
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
 )
@@ -57,28 +63,117 @@ def _batch(*, forced=(5, 6)):
     }
 
 
+def _legacy_v1_implementation() -> dict[str, object]:
+    current = trace_cache.implementation_identity()
+    body = {
+        "schema": "neural-forge-lfm2-circuit-implementation-v1",
+        "collector_source_sha256": current["collector_source_sha256"],
+        "canonical_contract_source_sha256": current["canonical_contract_source_sha256"],
+        "transformers_lfm2_source_sha256": current["transformers_lfm2_source_sha256"],
+        "torch_version": current["torch_version"],
+        "transformers_version": current["transformers_version"],
+        "safetensors_version": current["safetensors_version"],
+    }
+    return {
+        **body,
+        "implementation_sha256": trace_cache._json_sha256(body),
+    }
+
+
+def _republish_as_legacy_v1_cache(
+    root: Path,
+    model,
+    batches,
+    config: Lfm2CircuitTraceCaptureConfig,
+    source,
+) -> Path:
+    prepared = trace_cache._prepare_batches(torch, batches, config)
+    _layers, _contracts, topology = trace_cache._layer_topology(model)
+    device = torch.device("cpu")
+    manifest = trace_cache._manifest_for(
+        fingerprint_lfm2_parent(model),
+        trace_cache._corpus_identity(prepared),
+        _legacy_v1_implementation(),
+        topology,
+        config,
+        device,
+        trace_cache._execution_identity(model, device),
+    )
+    cache_path = root / manifest["cache_key"]
+    batches_path = cache_path / "batches"
+    batches_path.mkdir(parents=True)
+    trace_cache._write_canonical_json(
+        cache_path / trace_cache.MANIFEST_FILENAME,
+        manifest,
+    )
+    entries = []
+    for prepared_batch in prepared:
+        source_batch = source.load_batch(prepared_batch.index)
+        entries.append(
+            trace_cache._publish_batch(
+                torch,
+                batches_path / f"batch-{prepared_batch.index:06d}",
+                manifest,
+                prepared_batch,
+                source_batch.tensors,
+                source_batch.record["capture"],
+            )
+        )
+    trace_cache._write_canonical_json(
+        cache_path / trace_cache.COMPLETION_FILENAME,
+        trace_cache._completion_for(manifest, entries),
+    )
+    return cache_path
+
+
+def _reseal_manifest_implementation(cache_path: Path, mutate) -> None:
+    manifest_path = cache_path / trace_cache.MANIFEST_FILENAME
+    manifest = trace_cache._read_canonical_json(manifest_path)
+    implementation = manifest["implementation"]
+    mutate(implementation)
+    receipt = implementation.get("runtime_semantics_receipt")
+    if isinstance(receipt, dict):
+        implementation["runtime_semantics_receipt_sha256"] = trace_cache._json_sha256(
+            receipt
+        )
+    implementation_body = {
+        name: value
+        for name, value in implementation.items()
+        if name != "implementation_sha256"
+    }
+    implementation["implementation_sha256"] = trace_cache._json_sha256(
+        implementation_body
+    )
+    manifest_body = {
+        name: value for name, value in manifest.items() if name != "manifest_sha256"
+    }
+    manifest["manifest_sha256"] = trace_cache._json_sha256(manifest_body)
+    manifest_path.write_bytes(trace_cache._canonical_json(manifest) + b"\n")
+
+
 def _module_modes(model):
     return {name: bool(module.training) for name, module in model.named_modules()}
 
 
-def _instrument_forwards(model):
+def _instrument_forwards(monkeypatch, model):
     calls: list[dict[str, object]] = []
-    original = model.forward
+    original = trace_cache._forward
 
-    def observed(self, *args, **kwargs):
-        input_ids = kwargs.get("input_ids")
-        calls.append(
-            {
-                "use_cache": kwargs.get("use_cache"),
-                "has_past": kwargs.get("past_key_values") is not None,
-                "input_length": int(input_ids.shape[1]),
-                "grad_enabled": torch.is_grad_enabled(),
-                "training": bool(self.training),
-            }
-        )
-        return original(*args, **kwargs)
+    def observed(actual_model, *args, **kwargs):
+        if actual_model is model:
+            input_ids = kwargs.get("input_ids")
+            calls.append(
+                {
+                    "use_cache": kwargs.get("use_cache"),
+                    "has_past": kwargs.get("past_key_values") is not None,
+                    "input_length": int(input_ids.shape[1]),
+                    "grad_enabled": torch.is_grad_enabled(),
+                    "training": bool(actual_model.training),
+                }
+            )
+        return original(actual_model, *args, **kwargs)
 
-    model.forward = MethodType(observed, model)
+    monkeypatch.setattr(trace_cache, "_forward", observed)
     return calls
 
 
@@ -201,10 +296,11 @@ def test_real_selective_preallocation_is_bit_exact_with_legacy_rows(tmp_path) ->
 
 def test_real_lfm2_cache_captures_bcx_attention_mlp_and_forced_decode(
     tmp_path,
+    monkeypatch,
 ) -> None:
     model = _parent()
     assert not hasattr(model.config, "head_dim")
-    calls = _instrument_forwards(model)
+    calls = _instrument_forwards(monkeypatch, model)
     model.train()
     model.model.layers[0].eval()
     modes_before = _module_modes(model)
@@ -641,6 +737,7 @@ def test_causal_circuit_evidence_rejects_noncanonical_trace_mode() -> None:
 
 def test_full_prefix_canonical_mode_never_accepts_cached_logits_and_keeps_paths(
     tmp_path,
+    monkeypatch,
 ) -> None:
     model = _parent(seed=151)
     batch = _batch()
@@ -655,7 +752,7 @@ def test_full_prefix_canonical_mode_never_accepts_cached_logits_and_keeps_paths(
         config=base,
         input_device="cpu",
     )
-    calls = _instrument_forwards(model)
+    calls = _instrument_forwards(monkeypatch, model)
     canonical = build_lfm2_circuit_trace_cache(
         tmp_path / "canonical",
         model,
@@ -711,9 +808,10 @@ def test_full_prefix_canonical_mode_never_accepts_cached_logits_and_keeps_paths(
 
 def test_cache_reuses_without_parent_forward_and_identity_changes_split_paths(
     tmp_path,
+    monkeypatch,
 ) -> None:
     model = _parent(seed=202)
-    calls = _instrument_forwards(model)
+    calls = _instrument_forwards(monkeypatch, model)
     config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
     first = build_lfm2_circuit_trace_cache(
         tmp_path,
@@ -768,6 +866,446 @@ def test_cache_reuses_without_parent_forward_and_identity_changes_split_paths(
     )
     assert changed_parent.path not in {first.path, changed_corpus.path}
     assert changed_parent.parent_fingerprint != first.parent_fingerprint
+
+
+def test_v1_cache_is_migration_only_and_cannot_bridge_v2_reuse(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _parent(seed=1202)
+    batches = (_batch(forced=(7,)), _batch(forced=(8,)))
+    config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
+    source = build_lfm2_circuit_trace_cache(
+        tmp_path / "source-v2",
+        model,
+        batches,
+        config=config,
+        input_device="cpu",
+    )
+    mixed_root = tmp_path / "mixed"
+    legacy_path = _republish_as_legacy_v1_cache(
+        mixed_root,
+        model,
+        batches,
+        config,
+        source,
+    )
+    manifest = trace_cache._read_canonical_json(
+        legacy_path / trace_cache.MANIFEST_FILENAME
+    )
+    completion = trace_cache._read_canonical_json(
+        legacy_path / trace_cache.COMPLETION_FILENAME
+    )
+
+    for verify in (True, False):
+        with pytest.raises(
+            Lfm2CircuitTraceCorruptionError,
+            match="implementation identity",
+        ):
+            open_lfm2_circuit_trace_cache(legacy_path, verify=verify)
+
+    extracted = extract_lfm2_legacy_cache_recapture_inputs(
+        legacy_path,
+        expected_cache_key=manifest["cache_key"],
+        expected_manifest_sha256=manifest["manifest_sha256"],
+        expected_completion_sha256=completion["completion_sha256"],
+        expected_implementation_sha256=manifest["implementation"][
+            "implementation_sha256"
+        ],
+    )
+    assert extracted.cache_key == legacy_path.name
+    assert len(extracted.batches) == len(batches)
+    for actual, expected in zip(extracted.batches, batches):
+        torch.testing.assert_close(actual["input_ids"], expected["input_ids"])
+        torch.testing.assert_close(
+            actual["attention_mask"],
+            expected["attention_mask"],
+        )
+        torch.testing.assert_close(
+            actual["forced_decode_ids"],
+            expected["forced_decode_ids"],
+        )
+    extracted.batches[0]["input_ids"].zero_()
+    repeated = extract_lfm2_legacy_cache_recapture_inputs(
+        legacy_path,
+        expected_cache_key=manifest["cache_key"],
+        expected_manifest_sha256=manifest["manifest_sha256"],
+        expected_completion_sha256=completion["completion_sha256"],
+        expected_implementation_sha256=manifest["implementation"][
+            "implementation_sha256"
+        ],
+    )
+    assert torch.equal(repeated.batches[0]["input_ids"], batches[0]["input_ids"])
+    with pytest.raises(
+        Lfm2CircuitTraceCorruptionError,
+        match="pinned cache key",
+    ):
+        extract_lfm2_legacy_cache_recapture_inputs(
+            legacy_path,
+            expected_cache_key="0" * 64,
+            expected_manifest_sha256=manifest["manifest_sha256"],
+            expected_completion_sha256=completion["completion_sha256"],
+            expected_implementation_sha256=manifest["implementation"][
+                "implementation_sha256"
+            ],
+        )
+
+    calls = _instrument_forwards(monkeypatch, model)
+    current = build_lfm2_circuit_trace_cache(
+        mixed_root,
+        model,
+        batches,
+        config=config,
+        input_device="cpu",
+    )
+    assert current.path != legacy_path
+    assert current.manifest["implementation"]["schema"] == (
+        "neural-forge-lfm2-circuit-implementation-v2"
+    )
+    assert calls
+
+
+def test_v2_cache_binds_full_capture_runtime_receipt_and_verifier_source(
+    tmp_path,
+) -> None:
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        _parent(seed=1203),
+        [_batch(forced=(7,))],
+        config=Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2),
+        input_device="cpu",
+    )
+    implementation = cache.manifest["implementation"]
+    receipt = implementation["runtime_semantics_receipt"]
+    assert implementation["schema"] == ("neural-forge-lfm2-circuit-implementation-v2")
+    assert receipt["schema"] == trace_cache.LFM2_RUNTIME_SEMANTICS_RECEIPT_SCHEMA
+    assert implementation["runtime_semantics_receipt_schema"] == receipt["schema"]
+    assert implementation["runtime_semantics_receipt_sha256"] == (
+        trace_cache._json_sha256(receipt)
+    )
+    assert implementation["runtime_semantics_receipt_source_sha256"] == (
+        trace_cache.lfm2_runtime_semantics_receipt_source_sha256()
+    )
+    assert open_lfm2_circuit_trace_cache(cache.path, verify=False).cache_key == (
+        cache.cache_key
+    )
+    assert open_lfm2_circuit_trace_cache(cache.path, verify=True).cache_key == (
+        cache.cache_key
+    )
+
+
+def test_v2_cache_rejects_self_resealed_runtime_receipt_tamper(tmp_path) -> None:
+    source = build_lfm2_circuit_trace_cache(
+        tmp_path / "source",
+        _parent(seed=1204),
+        [_batch(forced=(7,))],
+        config=Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2),
+        input_device="cpu",
+    )
+
+    def delete_receipt(implementation):
+        implementation.pop("runtime_semantics_receipt")
+
+    def change_receipt(implementation):
+        implementation["runtime_semantics_receipt"]["tampered"] = True
+
+    def inject_implementation_field(implementation):
+        implementation["unrecognized_runtime_authority"] = "injected"
+
+    for name, mutate in (
+        ("delete", delete_receipt),
+        ("change", change_receipt),
+        ("inject", inject_implementation_field),
+    ):
+        candidate = tmp_path / name / source.cache_key
+        candidate.parent.mkdir()
+        shutil.copytree(source.path, candidate)
+        _reseal_manifest_implementation(candidate, mutate)
+        with pytest.raises(Lfm2CircuitTraceCorruptionError):
+            open_lfm2_circuit_trace_cache(candidate, verify=False)
+
+
+def test_capture_receipt_source_identity_moves_key_and_old_identity_refuses(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _parent(seed=1205)
+    batch = _batch(forced=(7,))
+    config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
+    canonical = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [batch],
+        config=config,
+        input_device="cpu",
+    )
+    canonical_implementation = canonical.manifest["implementation"]
+    with monkeypatch.context() as context:
+        context.setattr(
+            trace_cache,
+            "lfm2_runtime_semantics_receipt_source_sha256",
+            lambda: "0" * 64,
+        )
+        changed = build_lfm2_circuit_trace_cache(
+            tmp_path,
+            model,
+            [batch],
+            config=config,
+            input_device="cpu",
+        )
+    changed_implementation = changed.manifest["implementation"]
+    assert changed.cache_key != canonical.cache_key
+    assert (
+        changed_implementation["runtime_semantics_receipt"]
+        == (canonical_implementation["runtime_semantics_receipt"])
+    )
+    assert (
+        changed_implementation["runtime_semantics_receipt_sha256"]
+        == (canonical_implementation["runtime_semantics_receipt_sha256"])
+    )
+    assert changed_implementation["runtime_semantics_receipt_source_sha256"] == (
+        "0" * 64
+    )
+    with pytest.raises(
+        Lfm2CircuitTraceCorruptionError,
+        match="implementation differs",
+    ):
+        open_lfm2_circuit_trace_cache(changed.path, verify=False)
+
+
+def test_capture_rejects_root_instance_call_override_before_forward(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _parent(seed=1206)
+    forward_calls = 0
+
+    def poisoned_root_forward(_self, *_args, **_kwargs):
+        return torch.zeros(1)
+
+    def forbidden_cache_forward(*_args, **_kwargs):
+        nonlocal forward_calls
+        forward_calls += 1
+        raise AssertionError("cache capture reached the parent")
+
+    model.forward = MethodType(poisoned_root_forward, model)
+    monkeypatch.setattr(trace_cache, "_forward", forbidden_cache_forward)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="before cache capture",
+    ):
+        build_lfm2_circuit_trace_cache(
+            tmp_path,
+            model,
+            [_batch(forced=(7,))],
+            input_device="cpu",
+        )
+    assert forward_calls == 0
+
+
+def test_capture_rejects_foreign_same_name_module_model_class_before_forward(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _parent(seed=1207)
+    native_class = type(model.model.layers[0].feed_forward)
+
+    def poisoned_forward(_self, hidden_states):
+        return torch.zeros_like(hidden_states)
+
+    foreign_class = type(
+        native_class.__name__,
+        (native_class,),
+        {
+            "__module__": native_class.__module__,
+            "forward": poisoned_forward,
+        },
+    )
+    foreign = foreign_class(model.config)
+    foreign.load_state_dict(model.model.layers[0].feed_forward.state_dict())
+    model.model.layers[0].feed_forward = foreign
+    forward_calls = 0
+
+    def forbidden_cache_forward(*_args, **_kwargs):
+        nonlocal forward_calls
+        forward_calls += 1
+        raise AssertionError("cache capture reached the parent")
+
+    monkeypatch.setattr(trace_cache, "_forward", forbidden_cache_forward)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="before cache capture",
+    ):
+        build_lfm2_circuit_trace_cache(
+            tmp_path,
+            model,
+            [_batch(forced=(7,))],
+            input_device="cpu",
+        )
+    assert forward_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("boundary", "expected_label"),
+    (
+        ("after_capture", "after batch 0"),
+        ("between_batches", "before batch 1"),
+        ("before_publication", "before cache publication"),
+    ),
+)
+def test_capture_reauthenticates_model_at_every_batch_and_publication_boundary(
+    tmp_path,
+    monkeypatch,
+    boundary,
+    expected_label,
+) -> None:
+    model = _parent(seed=1208)
+    batches = [_batch(forced=(7,)), _batch(forced=(8,))]
+    mutated = False
+
+    def mutate_model_once() -> None:
+        nonlocal mutated
+        if mutated:
+            return
+        mutated = True
+        norm = model.model.layers[0].ffn_norm
+
+        def poisoned_norm_forward(_self, hidden_states):
+            return torch.zeros_like(hidden_states)
+
+        norm.forward = MethodType(poisoned_norm_forward, norm)
+
+    if boundary == "after_capture":
+        original_capture = trace_cache._capture_batch
+
+        def capture_then_mutate(*args, **kwargs):
+            result = original_capture(*args, **kwargs)
+            mutate_model_once()
+            return result
+
+        monkeypatch.setattr(trace_cache, "_capture_batch", capture_then_mutate)
+    elif boundary == "between_batches":
+        original_publish = trace_cache._publish_batch
+
+        def publish_then_mutate(*args, **kwargs):
+            result = original_publish(*args, **kwargs)
+            batch = args[3]
+            if batch.index == 0:
+                mutate_model_once()
+            return result
+
+        monkeypatch.setattr(trace_cache, "_publish_batch", publish_then_mutate)
+    else:
+        original_write = trace_cache._write_canonical_json
+
+        def write_then_mutate(path, value):
+            result = original_write(path, value)
+            if path.name == trace_cache.COMPLETION_FILENAME:
+                mutate_model_once()
+            return result
+
+        monkeypatch.setattr(trace_cache, "_write_canonical_json", write_then_mutate)
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match=expected_label,
+    ):
+        build_lfm2_circuit_trace_cache(
+            tmp_path,
+            model,
+            batches,
+            config=Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2),
+            input_device="cpu",
+        )
+    assert mutated is True
+    assert not any(
+        path.name.startswith(".lfm2-circuit-stage-") for path in tmp_path.iterdir()
+    )
+
+
+def test_fresh_cache_capture_rejects_poisoned_silu_before_any_forward() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script = textwrap.dedent(
+        r"""
+        import tempfile
+        from pathlib import Path
+
+        import torch
+        import transformers
+
+        import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache
+        import neural_forge.hf_lfm2_runtime_semantics_receipt as runtime_receipt
+
+        assert not runtime_receipt._CANONICAL_RECEIPT
+        config = transformers.Lfm2Config(
+            vocab_size=31,
+            hidden_size=8,
+            intermediate_size=12,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            layer_types=["conv", "full_attention"],
+            conv_L_cache=3,
+            conv_bias=False,
+            block_auto_adjust_ff_dim=False,
+            tie_word_embeddings=False,
+        )
+        config._attn_implementation = "eager"
+        parent = transformers.Lfm2ForCausalLM(config)
+        input_ids = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+        batch = {
+            "input_ids": input_ids,
+            "attention_mask": torch.ones_like(input_ids),
+            "forced_decode_ids": torch.tensor([[5]], dtype=torch.long),
+        }
+        forward_calls = 0
+
+        def poisoned_silu(value, *_args, **_kwargs):
+            return torch.zeros_like(value)
+
+        def forbidden_forward(*_args, **_kwargs):
+            global forward_calls
+            forward_calls += 1
+            raise AssertionError("poisoned cache reached parent inference")
+
+        torch.nn.functional.silu = poisoned_silu
+        trace_cache._forward = forbidden_forward
+        with tempfile.TemporaryDirectory() as root:
+            try:
+                trace_cache.build_lfm2_circuit_trace_cache(
+                    root,
+                    parent,
+                    [batch],
+                    input_device="cpu",
+                )
+            except trace_cache.Lfm2CircuitTraceCaptureError as exc:
+                assert "source authentication" in str(exc).lower(), str(exc)
+                print("REJECTED poisoned_silu_before_capture")
+            else:
+                raise AssertionError("poisoned capture runtime was accepted")
+            assert not tuple(Path(root).iterdir())
+        assert forward_calls == 0
+        """
+    )
+    environment = dict(os.environ)
+    path_entries = [str(repo_root / "src"), str(repo_root)]
+    existing = environment.get("PYTHONPATH")
+    if existing:
+        path_entries.append(existing)
+    environment["PYTHONPATH"] = os.pathsep.join(path_entries)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repo_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert completed.returncode == 0, (
+        f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    )
+    assert "REJECTED poisoned_silu_before_capture" in completed.stdout
 
 
 def _sealed_complete_causal_cache_implementation() -> dict[str, str]:
@@ -868,36 +1406,15 @@ def _current_heterogeneous_reader_implementation() -> dict[str, str]:
     ),
     ids=("base-extension-sharded-reader", "ahb-complete-causal-a0003"),
 )
-def test_current_heterogeneous_reader_reuses_sealed_parent_cache_without_parent_forward(
-    tmp_path,
-    monkeypatch,
+def test_receipt_required_reader_refuses_legacy_implementation_compatibility(
     stored_implementation,
 ) -> None:
-    model = _parent(seed=203)
-    calls = _instrument_forwards(model)
     stored = stored_implementation()
-    monkeypatch.setattr(trace_cache, "implementation_identity", lambda: stored)
-    config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
-    first = build_lfm2_circuit_trace_cache(
-        tmp_path,
-        model,
-        [_batch(forced=(7,))],
-        config=config,
-    )
-    first_call_count = len(calls)
+    current = trace_cache.implementation_identity()
 
-    current = _current_heterogeneous_reader_implementation()
-    monkeypatch.setattr(trace_cache, "implementation_identity", lambda: current)
-    reused = build_lfm2_circuit_trace_cache(
-        tmp_path,
-        model,
-        [_batch(forced=(7,))],
-        config=config,
-    )
-
-    assert reused.path == first.path
-    assert len(calls) == first_call_count
-    assert reused.implementation_fingerprint == stored["implementation_sha256"]
+    assert stored["schema"] == "neural-forge-lfm2-circuit-implementation-v1"
+    assert current["schema"] == "neural-forge-lfm2-circuit-implementation-v2"
+    assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
 def test_exact_implementation_identity_remains_compatible() -> None:
@@ -926,38 +1443,29 @@ def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical()
     stored_body = dict(stored)
     stored_sha256 = stored_body.pop("implementation_sha256")
     assert trace_cache._json_sha256(stored_body) == stored_sha256
-    current = _runtime_reader_implementation("2.11.0+cu128")
-    assert current["collector_source_sha256"] == (
-        "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
-    )
-    assert current["canonical_contract_source_sha256"] == (
-        "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
-    )
-    assert current["implementation_sha256"] == (
-        "a53a95365961b1d4d2ba047463390e6b4e68ac5089b72d1f341d548d57205d67"
-    )
+    current = trace_cache.implementation_identity()
 
     assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
-def test_sealed_sharded_cache_allows_authentication_progress_reader() -> None:
+def test_sealed_sharded_cache_cannot_bypass_capture_receipt_requirement() -> None:
     stored = _sealed_sharded_reader_cache_implementation()
-    current = _current_heterogeneous_reader_implementation()
-    assert current["collector_source_sha256"] == (
-        "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
-    )
-    assert current["canonical_contract_source_sha256"] == (
-        "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
-    )
-    assert current["implementation_sha256"] == (
-        "d8af5f9df4a50462faeca9b3b5d41c45d8c6b81afcf604e61106e74de16f4f41"
-    )
+    current = trace_cache.implementation_identity()
 
-    assert trace_cache._compatible_implementation_identity(stored, current)
+    assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
 def test_authentication_progress_reader_matches_exact_a0006_remote_identity() -> None:
-    assert _current_heterogeneous_reader_implementation() == {
+    historical = _rehashed_implementation(
+        _sealed_complete_causal_cache_implementation(),
+        collector_source_sha256=(
+            "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
+        ),
+        canonical_contract_source_sha256=(
+            "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
+        ),
+    )
+    assert historical == {
         "schema": "neural-forge-lfm2-circuit-implementation-v1",
         "collector_source_sha256": (
             "23e47f4cc03091a4b70968ad0849294999e5d97f522462eb41663369f2bfc791"
@@ -1233,9 +1741,12 @@ def test_parent_fingerprint_binds_runtime_buffers_not_loader_path() -> None:
     assert changed.identity_sha256 != before.identity_sha256
 
 
-def test_cache_corruption_fails_closed_and_is_not_recomputed(tmp_path) -> None:
+def test_cache_corruption_fails_closed_and_is_not_recomputed(
+    tmp_path,
+    monkeypatch,
+) -> None:
     model = _parent(seed=303)
-    calls = _instrument_forwards(model)
+    calls = _instrument_forwards(monkeypatch, model)
     config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
     cache = build_lfm2_circuit_trace_cache(
         tmp_path,
@@ -1426,9 +1937,10 @@ def test_authenticated_session_fails_closed_on_tamper_and_noncanonical_read(
 
 def test_mislabeled_short_conv_and_reserved_inputs_fail_before_forward(
     tmp_path,
+    monkeypatch,
 ) -> None:
     model = _parent(seed=404)
-    calls = _instrument_forwards(model)
+    calls = _instrument_forwards(monkeypatch, model)
     model.model.layers[0].is_attention_layer = True
     with pytest.raises(
         Lfm2CircuitTraceCaptureError,
@@ -1442,7 +1954,7 @@ def test_mislabeled_short_conv_and_reserved_inputs_fail_before_forward(
     assert calls == []
 
     clean = _parent(seed=405)
-    clean_calls = _instrument_forwards(clean)
+    clean_calls = _instrument_forwards(monkeypatch, clean)
     with pytest.raises(
         Lfm2CircuitTraceCaptureError,
         match="unsupported or reserved fields",
@@ -1455,7 +1967,7 @@ def test_mislabeled_short_conv_and_reserved_inputs_fail_before_forward(
     assert clean_calls == []
 
     padded = _parent(seed=406)
-    padded_calls = _instrument_forwards(padded)
+    padded_calls = _instrument_forwards(monkeypatch, padded)
     padded_batch = _batch(forced=(5,))
     padded_batch["attention_mask"] = torch.tensor([[1, 1, 1, 0]])
     with pytest.raises(
@@ -1470,7 +1982,7 @@ def test_mislabeled_short_conv_and_reserved_inputs_fail_before_forward(
     assert padded_calls == []
 
     multi = _parent(seed=407)
-    multi_calls = _instrument_forwards(multi)
+    multi_calls = _instrument_forwards(monkeypatch, multi)
     with pytest.raises(
         Lfm2CircuitTraceCaptureError,
         match="exactly one unpadded sequence",
