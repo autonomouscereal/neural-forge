@@ -571,14 +571,23 @@ def build(args: argparse.Namespace) -> int:
         exact = 0
         positions = 0
         agreed = 0
+        dropped = 0
         for text in texts:
             got = child_tok(text, add_special_tokens=False).input_ids
             if child_tok.decode(got, skip_special_tokens=False) == text:
                 lossless += 1
-            expected = [
-                new_of_old[int(t)]
-                for t in parent_tok(text, add_special_tokens=False).input_ids
-            ]
+            # A parent token the coreset dropped has NO image under the remap.
+            # It is scored as a disagreement rather than skipped or crashed on:
+            # that position is exactly where the child splits what the parent
+            # fused, which is the thing being measured.
+            expected: list[int] = []
+            for t in parent_tok(text, add_special_tokens=False).input_ids:
+                image = new_of_old.get(int(t))
+                if image is None:
+                    dropped += 1
+                    expected.append(-1)
+                else:
+                    expected.append(image)
             if list(got) == expected:
                 exact += 1
             positions += len(expected)
@@ -590,6 +599,7 @@ def build(args: argparse.Namespace) -> int:
             "rows_lossless_on_text": lossless,
             "rows_segmented_exactly_as_parent": exact,
             "parent_positions": positions,
+            "parent_positions_whose_token_was_dropped": dropped,
             "positions_agreeing": agreed,
             "position_agreement": agreed / positions if positions else 0.0,
         }
