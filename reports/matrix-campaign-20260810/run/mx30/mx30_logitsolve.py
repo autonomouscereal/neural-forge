@@ -102,7 +102,7 @@ def main() -> int:
     ap.add_argument("--metric", choices=["logit", "identity"], default="logit",
                     help="`identity` is the A/B control and must reproduce the child's own bytes")
     ap.add_argument("--metric-topk", type=int, default=2048)
-    ap.add_argument("--metric-positions", type=int, default=1024)
+    ap.add_argument("--metric-positions", type=int, default=768)
     ap.add_argument("--device", default="cuda:0")
     args = ap.parse_args()
 
@@ -194,47 +194,50 @@ def main() -> int:
         M = torch.eye(hidden, dtype=torch.float64)
         metric_report: dict[str, Any] = {"metric": "identity"}
     else:
-        import torch as _t
-
         model = harness.model
-        head = model.lm_head.weight.data.to(torch.float64)        # [V, H]
-        d = model.model.embedding_norm.weight.data.to(torch.float64)
+        # THE METRIC IS ACCUMULATED IN FLOAT32 AND THE SOLVE STAYS FLOAT64.
+        # `M` is an evidence-derived WEIGHTING over directions, not a weight that
+        # ships; the closed form below consumes it in float64 and the installed
+        # tensor is float64 throughout.  The first draft of this loop built the
+        # metric in float64 on the GPU and moved a 528 MB fp64 unembedding onto
+        # the device once per POSITION -- 1,024 times -- while computing full
+        # 64,400-column logits at the 3090's 1/64 fp64 rate.  That is roughly a
+        # day of arithmetic to represent a weighting whose eigenvectors are
+        # identical in single precision.
+        head32 = model.lm_head.weight.data.to(torch.float32).to(args.device)
+        d32 = model.model.embedding_norm.weight.data.to(torch.float32).to(args.device)
         eps = float(model.config.norm_eps)
-        captured_x: dict[str, _t.Tensor] = {}
+        captured_x: dict[str, Any] = {}
 
         def hook(_m, inputs, _o):
-            captured_x["x"] = inputs[0].detach()[0].to(torch.float64)
+            captured_x["x"] = inputs[0].detach()[0].to(torch.float32)
 
         handle = model.model.embedding_norm.register_forward_hook(hook)
-        M = torch.zeros(hidden, hidden, dtype=torch.float64)
+        Macc = torch.zeros(hidden, hidden, dtype=torch.float32, device=args.device)
         used = 0
         mass = 0.0
         for index, ids in harness.batches:
             if harness.split[index] != "fit":
                 continue
-            model(input_ids=ids.to(args.device), use_cache=False)
+            out = model(input_ids=ids.to(args.device), use_cache=False)
             x = captured_x["x"]
             rms = torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + eps)
-            logits = ((x / rms) * d.to(x.device)) @ head.to(x.device).T
-            probs = torch.softmax(logits, dim=-1)
-            for t in range(x.shape[0]):
+            probs = torch.softmax(out.logits[0].to(torch.float32), dim=-1)
+            for t_i in range(x.shape[0]):
                 if used >= args.metric_positions:
                     break
-                p = probs[t]
-                top = torch.topk(p, args.metric_topk)
+                top = torch.topk(probs[t_i], args.metric_topk)
                 pv = top.values
                 mass += float(pv.sum())
-                Wsub = head.to(x.device)[top.indices]              # [k, H]
-                S = (d.to(x.device) / float(rms[t])).unsqueeze(0)  # [1, H]
-                Ws = Wsub * S                                      # [k, H]
-                # S W^T (diag(p) - p p^T) W S, on the truncated support.
+                Ws = head32[top.indices] * (d32 / rms[t_i]).unsqueeze(0)  # [k, H]
                 wp = Ws * pv.unsqueeze(1)
-                mean = (Ws * pv.unsqueeze(1)).sum(dim=0, keepdim=True)
-                M += (Ws.T @ wp - mean.T @ mean).cpu()
+                mean = wp.sum(dim=0, keepdim=True)
+                Macc += Ws.T @ wp - mean.T @ mean
                 used += 1
             if used >= args.metric_positions:
                 break
         handle.remove()
+        M = Macc.double().cpu()
         M = 0.5 * (M + M.T)
         # Trace-normalised: the metric decides DIRECTIONS, and a free overall
         # scale would silently move where the lambda ladder lands.
