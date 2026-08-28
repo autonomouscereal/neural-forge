@@ -1,0 +1,116 @@
+{
+ "schema": "neural-forge-matrix-wave35-preregistration-v1",
+ "purpose": "Every count this wave will build, predicted BEFORE the build and before any dossier is opened, from the allocator refitted on the 936-row ledger.  Two prediction columns, as wave 34 established: the SEALED frozen-fifteen count and the CANONICAL intelligence count.  A prediction written after a result is not a prediction, so this file is written and committed before the first build is launched.",
+ "written_before": "the first GPU build of wave 35",
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 936,
+  "sha256": "cff07ea4a165683b2a400ecc6a380db7ff707b82aa55d1f180f511c932b9b93f",
+  "identical_in": [
+   "the repository working copy",
+   "the deployment neural-forge-matrix-de749f68"
+  ]
+ },
+ "deployment": {
+  "commit": "de749f68",
+  "root": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-de749f68",
+  "files_declared": 6486,
+  "content_mismatches": 0,
+  "missing": 0,
+  "undeclared_on_disk": 0,
+  "hardlinks": 0
+ },
+ "allocator_refit": {
+  "arithmetic_gate": {"cells_checked": 79, "mismatched": 0},
+  "fitted_pairwise_interference": {"depthxvocab": 4.2742, "mlpxvocab": 0.3062, "depthxmlp": 0.9357},
+  "mean_absolute_error_cases": 2.431,
+  "composed_children_in_fit": 45,
+  "moved_since_wave_34": "depthxmlp 3.1377 -> 0.9357, a 2.20-case move, once wave 34's two CL1792X13 rows entered the fit; mlpxvocab 0.3969 -> 0.3062 and depthxvocab 4.3965 -> 4.2742, both small.  THE PAIR THAT MOVED IS THE PAIR THIS WAVE'S D2 ARM RIDES ON, and it moved in the optimistic direction, which is stated here rather than discovered afterwards.  The allocator's own error bar is +-2.4 cases and it is quoted with every number below."
+ },
+ "axis_deltas_used": {
+  "note": "sealed frozen-fifteen delta against the 12/15 parent, read off the ledger's own SOLO rungs",
+  "vocab_19456": 2, "vocab_18432": 1, "vocab_16384": -3, "vocab_14336": -3,
+  "vocab_12288": -1, "vocab_10240": -2, "vocab_9216": -3, "vocab_8192": -8,
+  "mlp_1792": -5, "mlp_896": -8, "depth_site13": 1
+ },
+ "parameter_arithmetic": {
+  "note": "EXACT, not fitted, and cross-checked against the allocator's own closed form before any number below was written.  A vocabulary fold to K rows removes (65536 - K) * H from the tied table; the ff fold over the 14-block trunk removes 3 * H * 14 * (2560 - F); excising conv site 13 removes 4,199,424 plus that site's own MLP, which is 12,063,744 at the parent's channel count and is exactly the allocator's own conv-block constant.",
+  "validated_on": [
+   "ARCH.V9CL896 = 100,456,192 at 0.437349, the number NOTES-MX-AL section 8 quotes independently",
+   "ARCH.V16CL896, ARCH.V19CL896, ARCH.V8CL896, ARCH.CL1792X13 and ARCH.W896X13 all reproduce to the parameter"
+  ]
+ },
+ "back_tests_of_the_model_on_rows_it_will_not_be_scored_on": [
+  {"cell": "ARCH.V10CL896", "predicted": 1.7, "sealed": 2, "error": 0.3},
+  {"cell": "ARCH.V12CL896", "predicted": 2.7, "sealed": 2, "error": 0.7},
+  {"cell": "ARCH.V19X13CL896", "predicted": 7.4, "sealed": 0, "error": 7.4,
+   "note": "THE MODEL'S WORST MISS IN THE ESTATE AND IT IS THE ONE ROW MOST LIKE THIS WAVE'S D2 ARM.  It is the only sealed depth-plus-mlp-plus-vocab child on the 896 body, all three pair terms fire on it, and the refit's smaller depthxmlp makes the prediction WORSE rather than better.  Every D2 number below is quoted with this row named beside it."},
+  {"cell": "ARCH.V16CL896", "predicted": 0.7, "sealed": 1, "error": 0.3}
+ ],
+ "the_body_specific_prior_that_disagrees_with_the_allocator": "The CL896 family is FLAT at sealed 2 from K=10,240 through K=20,480 -- four waves have now recorded it, over an 8,192-row span -- while the allocator's solo-vocab deltas say K=14,336 and K=9,216 should read a case worse than K=12,288 because ARCH.V14 and ARCH.V9 read 9/15 solo against ARCH.V12's 11/15.  The two priors disagree by about a case on three of this wave's children.  BOTH are recorded per child below and neither is averaged into the other.",
+ "predictions": [
+  {"cell": "ARCH.V10CL896G03", "lane": "D1", "stored_parameters": 101504768, "net_ratio": 0.441915,
+   "predicted_review": 3, "predicted_canonical": 3,
+   "source": "terminal gain lambda 0.3 on the retained MX34-V10CL896, ZERO storage delta.  THE ORDERED QUESTION OF THE WAVE: G03 lifted ARCH.V12CL896 from 2 to 4 -- the first time in eight ladders the arm moved UP by more than one -- and if it lifts V10 the same way the 3/15 and 4/15 rungs move from 0.451045 to 0.441915.  The prediction is +1 rather than +2 because the CL896 body prior is +1 (V19CL896 2->3, V20CL896 2->3) and V12CL896's +2 is a single observation on a single base."},
+  {"cell": "ARCH.V10CL896G01", "lane": "D1", "stored_parameters": 101504768, "net_ratio": 0.441915,
+   "predicted_review": 2, "predicted_canonical": 2,
+   "source": "terminal gain lambda 0.1.  Flat: the source's own count.  Across nine ladders lambda 0.1 has never moved a sealed count up, and on V12CL896 it produced the LARGEST update and the BEST held-out objective while reading the control's two."},
+  {"cell": "ARCH.V10CL896G10", "lane": "D1", "stored_parameters": 101504768, "net_ratio": 0.441915,
+   "predicted_review": 2, "predicted_canonical": 2,
+   "source": "terminal gain lambda 1.0.  Flat, same reasoning; the most aggressive rung has moved nothing on any base since wave 26."},
+  {"cell": "ARCH.V14CL896", "lane": "D1", "stored_parameters": 105699072, "net_ratio": 0.460175,
+   "predicted_review": 2, "predicted_canonical": 2,
+   "allocator_says": 0.7,
+   "source": "vocabulary K=14,336 on the retained MX34-CL896.  THE INTERIOR RUNG between V12CL896's four (with G03) and V16CL896G03's three.  The allocator says 0.7 because ARCH.V14 reads 9/15 solo, two below ARCH.V12; the body prior says 2 because the family is flat.  The registered number is the BODY prior and the allocator's is recorded beside it, because four waves of flatness on this body outweigh one solo rung."},
+  {"cell": "ARCH.V14CL896G03", "lane": "D1", "stored_parameters": 105699072, "net_ratio": 0.460175,
+   "predicted_review": 3, "predicted_canonical": 3,
+   "source": "terminal gain lambda 0.3 on V14CL896.  +1 on the CL896 body prior, which is what the arm is worth at K=16,384, 19,456 and 20,480.  If this reads FOUR it makes V12CL896G03's four a property of the body rather than of K=12,288, which is the open question NOTES-MX-AL section 8 item 2 names."},
+  {"cell": "ARCH.V9CL896", "lane": "D1", "stored_parameters": 100456192, "net_ratio": 0.437349,
+   "predicted_review": 1, "predicted_canonical": 1,
+   "allocator_says": 0.7,
+   "source": "vocabulary K=9,216 on the retained MX34-CL896.  ORDERED BY NOTES-MX-AL SECTION 8 ITEM 1: it halves the 0.0091-wide bracket around the campaign's 0/15 floor, between ARCH.V8CL896's content death at 0.432784 and ARCH.V10CL896's two at 0.441915.  Registered at 1 rather than 2 because it is 4,566 ten-thousandths above a child that is READABLE, FLUENT AND EMPTY, and the whole point of the build is that nobody knows which side of the death it lands on."},
+
+  {"cell": "ARCH.CL896X13", "lane": "D2", "stored_parameters": 151175936, "net_ratio": 0.658165,
+   "predicted_review": 2, "predicted_canonical": 3,
+   "allocator_says": 4.1,
+   "source": "NEW BODY, never sealed by any wave: --ff 896 --excise 13.  The allocator says 4.1 (12 - 8 + 1 - 0.9357).  The body prior says less: ARCH.CL896 seals 4 and the same excision costs THREE sealed cases on the CL1792 body (7 -> 4), so 4 - 3 = 1 to 2 is the honest read and the registered number is 2.  It is built because ARCH.V12CL896X13 needs it and because a triple whose body was never reviewed is a triple nobody can attribute."},
+  {"cell": "ARCH.V12CL896X13", "lane": "D2", "stored_parameters": 96649984, "net_ratio": 0.420779,
+   "predicted_review": 0, "predicted_canonical": 1,
+   "allocator_says": 3.1,
+   "source": "vocabulary K=12,288 on ARCH.CL896X13.  THE DEEPEST CHILD ANY WAVE WILL HAVE BUILT -- 0.420779x, below ARCH.V8CL896's content death at 0.432784 by 0.012 -- and the allocator's 3.1 is not believed, because the one sealed child of exactly this shape (ARCH.V19X13CL896, all three pair terms firing on the 896 body) is the model's 7.4-case miss and it sealed ZERO.  Registered at sealed 0 and canonical 1: the canonical re-read gives V19X13CL896 one lane it was charged for.  BUILD-DO-NOT-PREDICT: nothing has ever been built below 0.4328 and the point is to find out, not to be right."},
+  {"cell": "ARCH.V12CL896G03X13", "lane": "D2", "stored_parameters": 96649984, "net_ratio": 0.420779,
+   "predicted_review": 1, "predicted_canonical": 1,
+   "conditional": "BUILT ONLY IF ARCH.V12CL896X13 shows any signal on either lens.  A terminal-gain arm on a child that collapsed measures the collapse.",
+   "source": "terminal gain lambda 0.3 on V12CL896X13, +1 on the body prior."},
+
+  {"cell": "ARCH.W896 composed with ARCH.CL1792", "lane": "D3", "stored_parameters": 168410240, "net_ratio": 0.733197,
+   "predicted_review": null, "predicted_canonical": null,
+   "source": "NOT BUILDABLE, AND THIS IS RECORDED BEFORE THE ATTEMPT RATHER THAN AFTER IT.  `mx35_build.py` main() REFUSES --hidden-size composed with --ff in one build, on the stated grounds that a width fold has already re-solved every reader and writer against a new residual basis and a second selection would run inside tensors the first one replaced with neither axis's census having seen the other.  The guard was read in the source before this file was written and will be EXERCISED on the server so its exact text is on the record.  It is NOT routed around: wave 27's rule is that a refusal is recorded and not worked around, and the machinery that would compose two bodies sequentially does not exist in this estate.  The arithmetic is registered anyway so a later wave that builds the composition machinery has a number to check itself against: 168,410,240 for the body, 120,700,032 (0.525484x) for K=12,288 on it."}
+ ],
+ "frontier_claims_at_stake_stated_in_advance": [
+  {"rung": "sealed and canonical 1/15 and 2/15", "incumbent": "ARCH.V10CL896 at 0.441915", "moves_if": "ARCH.V9CL896 reads >= 1 or >= 2", "to": 0.437349},
+  {"rung": "sealed and canonical 1/15", "incumbent": "ARCH.V10CL896 at 0.441915", "moves_if": "ARCH.V12CL896X13 reads >= 1", "to": 0.420779},
+  {"rung": "sealed and canonical 3/15 and 4/15", "incumbent": "ARCH.V12CL896G03 at 0.451045", "moves_if": "ARCH.V10CL896G03 reads >= 3 or >= 4", "to": 0.441915},
+  {"rung": "sealed 5/15", "incumbent": "ARCH.GV12L03 at 0.618813", "moves_if": "ARCH.V14CL896 or ARCH.V14CL896G03 seals >= 5", "to": 0.460175},
+  {"rung": "canonical 5/15", "incumbent": "ARCH.V8CL1792 at 0.600552", "moves_if": "ARCH.V14CL896 or ARCH.V14CL896G03 reads >= 5", "to": 0.460175},
+  {"rung": "sealed and canonical 8/15", "incumbent": "ARCH.V16CL1792 / ARCH.GV16L01 at 0.637073", "moves_if": "ARCH.CL896X13 reads >= 8", "to": 0.658165,
+   "note": "this one CANNOT move: 0.658165 is ABOVE the incumbent, so ARCH.CL896X13 is registered as unable to take any rung it might qualify for.  It is listed so the wave cannot later claim one."}
+ ],
+ "what_this_wave_will_NOT_claim": [
+  "A canonical re-read is an ASSESSMENT of a sealed dossier and never becomes a sealed number.  Every child above is sealed on the frozen fifteen under the frozen protocol first, and read a second time under the canonical standard second, and the two counts are carried side by side everywhere.",
+  "THE DECODE-REPAIR GRID IN LANE D4 IS A RUNTIME DIAGNOSTIC.  It changes decode parameters and not a byte of any child, it is never sealed, it never appears in a ledger row, and no fold claim in this wave or any later one rests on it.  Wave 34 priced ONE penalty value; this wave prices four settings, and a grid of diagnostics is still a diagnostic.",
+  "The D3 arithmetic above is a REGISTERED NUMBER FOR A CHILD THAT WILL NOT EXIST.  No frontier row, no ledger row and no claim may cite it."
+ ],
+ "d4_decode_repair_grid_registered_in_advance": {
+  "population": "the same five children wave 34 ran, so the rows are comparable rather than merely similar: V10CL896, V12CL896, V12CL896G03, V16CL896G03, V8CL1792X13.  Two of the five (V16CL896G03, V8CL1792X13) were dropped by wave 34's retention and are rebuilt from retained sources for this purpose.",
+  "settings": [
+   {"penalty": 1.1, "no_repeat_ngram": 0},
+   {"penalty": 1.15, "no_repeat_ngram": 0},
+   {"penalty": 1.0, "no_repeat_ngram": 3},
+   {"penalty": 1.1, "no_repeat_ngram": 3}
+  ],
+  "identity_control": "penalty 1.0 with no_repeat_ngram 0, byte-compared against the sealed dossier, on at least one child per GPU.  The refusal fires on any differing lane.",
+  "prediction": "The mild penalties recover NOTHING and destroy LESS than 1.3 did -- the mechanism wave 34 measured is that a multiplicative penalty rescales every token the context has seen, including the ones a correct answer is made of, and 1.1 rescales them less hard.  The n-gram arm is the one that could genuinely differ, because it leaves a non-repeating token at exactly its sealed logit.  Registered prediction: 0-2 hand-confirmed recoveries across all four settings and all 75 lanes, and the n-gram arm losing FEWER than 13 of the 13 signal lanes.  If any setting recovers a real answer without killing the signal lanes, the artifact clause's remedy is cheaper than wave 34 priced it and this file says so in advance.",
+  "the_screen_never_makes_the_call": "Wave 34R's rule, applied again: a keyed screen aims the reading and every flagged recovery is read at full length by hand before it is counted.  Wave 34's screen flagged seven and all seven were false positives."
+ }
+}
