@@ -323,24 +323,35 @@ rubric is fooled by fluent strings exactly as its docstring says it can be.
 
 ## 10. Estate
 
-Five commits, five deployments, every one verified file by file against the
-commit's own blob digests: **5,714 files, 0 content mismatches, 0 missing, 0
+Eight commits, five deployments, every deployment verified file by file against
+the commit's own blob digests: **5,714 files, 0 content mismatches, 0 missing, 0
 undeclared, 0 hardlinks**, every time, plus a post-wave re-verification of the
 survivor at the same five numbers. Two of the five deployments exist because
 something refused, and both fixes shipped as a commit and a verified deployment
 rather than as an edit to a deployed file — the rule wave 30 broke once and this
-wave did not.
+wave did not. Four bodies were built under `dbf2294e` and two under `830842f1`;
+everything was sealed under `898f227d` or later, and `nf-mx31/env.sh` is the one
+place each new deployment was named.
 
 **The tree cut.** `run/mx31/cut_wave31.py` applies `NOTES-MX-AF` §9's named fix:
 five substitutions, all identifiers, paths and schema strings, **no prose form of
 the wave number**, so no docstring that records what wave 30 measured was
 rewritten. Three files — the seal verifier, the retention script and the builder
 — were copied with **no substitution at all** and hand-edited once each.
-`--audit` reads every file back and refuses a surviving wave-30 name with one
-declared exception at a pinned count. **26 declared seal roots became 27 with
-`wave30/cells` still declared**, and `BASIS_SCHEMAS_ACCEPTED` **gained** wave 30's
-schema instead of losing it. `run/mx31/wave31-tree-cut-manifest.json` is the
-explicit diff, per file, per substitution.
+`--audit` reads every file back and refuses a surviving wave-30 name. **26
+declared seal roots became 27 with `wave30/cells` still declared**, and
+`BASIS_SCHEMAS_ACCEPTED` **gained** wave 30's schema instead of losing it.
+`run/mx31/wave31-tree-cut-manifest.json` is the explicit diff, per file, per
+substitution.
+
+The audit earned itself twice. It passed on the cut, then **refused the tree
+again** the first time it ran after the retention policy was written by hand:
+`mx31_retain.py` had gained seven `MX30-CL1792` references, because every dropped
+vocabulary composite cites the retained wave-30 body it is rebuilt from and that
+is the whole justification for deleting it. Both surviving wave-30 names are now
+declared exceptions **at pinned counts** — a waiver with a count breaks again if
+the file changes, a waiver without one is a hole — and the nineteen KEEP/DROP
+keys were checked separately for an `MX30` tag. There is none.
 
 Ledger: **840 → 878 rows**, 38 appended, 0 superseded. Backup
 `backup/ledger-pre-wave31.jsonl` at the pre-merge digest `e1de3fd9853a6bb2…`,
