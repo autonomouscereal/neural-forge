@@ -1,0 +1,80 @@
+{
+ "schema": "neural-forge-matrix-wave36-deployments-prune-v1",
+ "root": "/home/cereal/model-surgery-lab/deployments",
+ "policy": "current + 1, PLUS every deployment a sealed cell receipt names as code_identity.repo_head, regardless of age",
+ "current": "50bff133",
+ "current_plus_one": "8a81a924",
+ "repo_heads_named_by_sealed_receipts": [
+  "03d39e85",
+  "049326e0",
+  "08999e84",
+  "091c6271",
+  "18b99225",
+  "1c0c7e3a",
+  "1c197ed4",
+  "35dfe3a9",
+  "49770e9f",
+  "4e2c25f0",
+  "4eda4c16",
+  "5e17bb58",
+  "66fc7beb",
+  "71203be5",
+  "898f227d",
+  "b372d47c",
+  "b462837f",
+  "b6f79b56",
+  "bf946174",
+  "c66c38ed",
+  "da2f9e73",
+  "dcfa0c9c",
+  "df452ac9",
+  "df735362",
+  "e2b68f87",
+  "e47600a7",
+  "e7d068da",
+  "e81df916",
+  "f336b04d"
+ ],
+ "present": [
+  "03d39e85",
+  "2ae30d47",
+  "50bff133",
+  "53928360",
+  "8a81a924",
+  "dcfa0c9c",
+  "e81df916"
+ ],
+ "kept": {
+  "03d39e85": {
+   "bytes": 293916406,
+   "reason": "named as code_identity.repo_head by a sealed cell receipt"
+  },
+  "50bff133": {
+   "bytes": 287494802,
+   "reason": "current"
+  },
+  "8a81a924": {
+   "bytes": 300217980,
+   "reason": "current+1"
+  },
+  "dcfa0c9c": {
+   "bytes": 297132032,
+   "reason": "named as code_identity.repo_head by a sealed cell receipt"
+  },
+  "e81df916": {
+   "bytes": 300656934,
+   "reason": "named as code_identity.repo_head by a sealed cell receipt"
+  }
+ },
+ "deleted": {
+  "2ae30d47": {
+   "bytes": 296655035,
+   "reason": "neither current, current+1, nor named by any sealed receipt"
+  },
+  "53928360": {
+   "bytes": 283959271,
+   "reason": "neither current, current+1, nor named by any sealed receipt"
+  }
+ },
+ "bytes_deleted": 580614306
+}

@@ -1,13 +1,21 @@
-ARCH.CL896X13    0.658165 1/15 dead   lanes 16 general
-ARCH.V10CL896G01 0.441915 2/15 dead   lanes 16 general
-ARCH.V10CL896G03 0.441915 3/15 dead   lanes 16 general
-ARCH.V10CL896G10 0.441915 3/15 dead   lanes 16 general
-ARCH.V12CL896X13 0.420779 1/15 dead   lanes 16 general
-ARCH.V14CL896    0.460175 2/15 dead   lanes 16 general
-ARCH.V14CL896G03 0.460175 3/15 dead   lanes 16 general
-ARCH.V9CL896     0.437349 2/15 dead   lanes 16 general
--> /mnt/ai_data/neural-forge-matrix/wave35/wave35-child-index.json
-ote_code": false,
+{
+ "schema": "neural-forge-matrix-wave35-child-index-v1",
+ "parent_parameters": 229693184,
+ "children": [
+  {
+   "cell_id": "ARCH.CL896X13",
+   "cell_instance_id": "mx35-cl896x13-0001",
+   "receipt_sha": "aa8df544e2818ae805f4fcf32a368091895785bfbe6d6781c6280e5f5b62cd93",
+   "child_parameters": 151175936,
+   "net_ratio": 0.6581646584689252,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
    "transformers_version": "5.12.1",
    "child_tensors_sha256": "ef850cdf22a3e61f0b943b28c301aec92d66260b376a724437047969f05cbff7",
    "axes": [
@@ -550,5 +558,6 @@ ote_code": false,
    "verdict_receipt_sha": "70c8fa1ff95dfcd97b9540c3ddd11370377360c8912c047ef366f2833e35385e",
    "dossier_sha256": "593dacc375f88ee837e2b5a915e3238e16afbe91bc752a0e0c62665c513fbbce"
   }
- ]
+ ],
+ "repaired_by": "wave 36.  The file at this path was the SHELL LOG of wave 35 own index run written over the JSON the same run wrote -- redirecting the script stdout into the path the script itself writes truncates the file the script then writes -- so it had not been valid JSON since wave 35 and nothing consumed it until wave 36 campaign table crashed on it.  Regenerated from wave 35 OWN sealed cell receipts and verdict receipts, which were never touched."
 }

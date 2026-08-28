@@ -1,7 +1,7 @@
 # DEEP_RECORD — everything the campaign has built below half the parent
 
-**Written at wave 35, 2026-08-28.** Ledger 952 rows,
-`5517dd9bc388b2dbd42a71b5b8da28419cb5db7af4871c28f5817d27c8a0c9d7`.
+**Written at wave 35, refreshed at wave 36, 2026-08-28.** Ledger 964 rows,
+`a0cb153641df88883becc86c9dcdafa1cbea75d61b0efb18af15d91e30b50632`.
 
 This is one page and it is the whole sub-0.5x record: every child ever built
 below half of `LFM2.5-230M`'s 229,693,184 parameters, read under **both**
@@ -9,7 +9,7 @@ standards, with its benchmark row, its verbatim highlight, and what it cost to
 make. Nothing here is summarised from a summary — every count traces to a sealed
 receipt and a committed dossier.
 
-**Twenty-four children exist below 0.50x. Wave 35 built seven of them.**
+**Twenty-seven children exist below 0.50x. Wave 35 built seven and wave 36 built three.**
 
 ---
 
@@ -24,8 +24,11 @@ artifacts and never count against intelligence; only readable-and-wrong does.
 | child | ratio | stored | sealed | **intel** | art | con | wave |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | **`ARCH.V12CL896X13`** | **0.420779** | 96,649,984 | **1** | **2** | 11 | 2 | **35** |
+| **`ARCH.V12CL896X13G03`** | **0.420779** | 96,649,984 | **1** | **1** | 11 | 3 | **36** |
 | `ARCH.V8CL896` | 0.432784 | 99,407,616 | 0 | **0** | 7 | 8 | 24 |
 | **`ARCH.V9CL896`** | **0.437349** | 100,456,192 | **2** | **2** | 12 | 1 | **35** |
+| **`ARCH.V9CL896G03`** | **0.437349** | 100,456,192 | **3** | **4** | 9 | 2 | **36** |
+| **`ARCH.V9CL896G10`** | **0.437349** | 100,456,192 | **4** | **5** | 8 | 2 | **36** |
 | `ARCH.V10CL896` | 0.441915 | 101,504,768 | 2 | **2** | 11 | 2 | 34 |
 | **`ARCH.V10CL896G01`** | 0.441915 | 101,504,768 | 2 | **3** | 11 | 1 | **35** |
 | **`ARCH.V10CL896G03`** | **0.441915** | 101,504,768 | **3** | **4** | 9 | 2 | **35** |
@@ -55,27 +58,44 @@ about.
 
 ---
 
-## 2. The frontier, and where wave 35 moved it
+## 2. The frontier, and where waves 35 and 36 moved it
 
-| rung | before wave 35 | after wave 35 | Δ stored ratio |
-|---:|---|---|---:|
-| **sealed 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | **0.021136** |
-| **sealed 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V9CL896` 0.437349** | 0.004566 |
-| **sealed 3/15** | `ARCH.V12CL896G03` 0.451045 | **`ARCH.V10CL896G03` 0.441915** | 0.009130 |
-| sealed 4/15 | `ARCH.V12CL896G03` 0.451045 | *unchanged* | — |
-| **canonical 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | **0.021136** |
-| **canonical 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | **0.021136** |
-| **canonical 3/15** | `ARCH.V12CL896G03` 0.451045 | **`ARCH.V10CL896G01` 0.441915** | 0.009130 |
-| **canonical 4/15** | `ARCH.V12CL896G03` 0.451045 | **`ARCH.V10CL896G03` 0.441915** | 0.009130 |
+| rung | before wave 35 | after wave 35 | after wave 36 | total Δ |
+|---:|---|---|---|---:|
+| **sealed 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | **0.021136** |
+| **sealed 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V9CL896` 0.437349** | *unchanged* | 0.004566 |
+| **sealed 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | 0.013696 |
+| **sealed 4/15** | `ARCH.V12CL896G03` 0.451045 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | **0.013696** |
+| **canonical 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | **0.021136** |
+| **canonical 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | **0.021136** |
+| **canonical 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G01` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | 0.013696 |
+| **canonical 4/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | 0.013696 |
+| **canonical 5/15** | `ARCH.V8CL1792` 0.600552 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | **0.163203** |
 
-**Seven rung movements, and the 1/15 move of 0.021136 is the second-largest
-frontier move the campaign has recorded** — behind only wave 34's 0.1495 at the
-four rung.
+**Wave 36 moved five more rungs, and the canonical 5/15 move of 0.163203 is the
+largest single frontier move the campaign has recorded on either ladder** —
+ahead of wave 34's 0.1495 at the sealed four. It also carries the campaign's
+largest caveat: it rests on one rule about `planning-dependencies`, wave 35
+wrote that rule down so it could be declined, and `wave36/canonical-reread-wave36.json`
+states the subtraction. Strike the rule and `ARCH.V9CL896G10` reads four
+canonically and the canonical 5/15 rung stays where it was.
 
-The two ladders still agree at every rung from one to four, which wave 34 was
-the first wave to achieve. They agree on the *ratio*; at the three rung they
-disagree on *which child*, because `ARCH.V10CL896G01` reaches three canonically
-on a lane the frozen protocol seals a miss.
+**Neither the sealed 1/15 nor the sealed 2/15 rung moved, and wave 36 built a
+terminal-gain arm on the child holding each of them.** The arm on
+`ARCH.V12CL896X13` — the campaign floor — tied its control at one by moving a
+lane SIDEWAYS: it repaired the summarisation lane, which the control lost to a
+paraphrase that dropped the decision, and lost the email lane, which the control
+held, to a verbatim prompt echo. That is the first ladder in this campaign where
+the arm neither gained nor lost a case and still changed the child's answer set.
+
+**The +1-at-every-K law now has a floor.** Wave 35 settled that the CL896
+terminal-gain arm is worth +1 at K = 10,240, 14,336, 16,384, 19,456 and 20,480.
+Wave 36 extended it DOWN to K = 9,216 in the strongest form available — the +1
+lane on `ARCH.V9CL896G03` is **byte-identical** to the +1 lane on
+`ARCH.V10CL896G03`, and both children's controls miss that lane with
+byte-identical text too — and then broke it on the excised body at 0.420779x.
+The law holds on the vocabulary axis down to the deepest rung it has and fails
+when an excision is composed under it.
 
 ---
 
@@ -154,20 +174,31 @@ K = 8,192 is a property of that vocabulary rung on that body, not of the ratio.
 ## 6. Benchmarks, standard invocation
 
 `limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090`. **The
-parent row is identical to waves 32 and 34's sealed parent row to every reported
-digit**, which is the check that the harness has not moved.
+parent row is identical to waves 32, 34, 35 and 36's sealed parent rows to every
+reported digit**, which is the check that the harness has not moved.
 
 | model | ratio | arc_e | hella_n | piqa_n | wino | lambada | lam ppl | wiki wppl |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | PARENT | 1.000000 | 0.5450 | 0.5050 | 0.6800 | 0.5500 | 0.4600 | **24.39** | **81.80** |
 | `ARCH.V12CL896X13` | 0.420779 | 0.3550 | 0.3250 | 0.5300 | 0.5000 | 0.1000 | 44244.13 | 6630.61 |
+| `ARCH.V12CL896X13G03` | 0.420779 | 0.3500 | 0.3250 | 0.5150 | 0.4700 | 0.1000 | 24675.04 | 4323.38 |
 | `ARCH.V9CL896` | 0.437349 | 0.2700 | 0.3450 | 0.5100 | 0.4750 | 0.1100 | 7435.32 | 2403.22 |
+| `ARCH.V9CL896G03` | 0.437349 | 0.2700 | 0.3450 | 0.5100 | 0.4850 | 0.0900 | 8072.45 | 2332.36 |
+| `ARCH.V9CL896G10` | 0.437349 | 0.2700 | 0.3500 | 0.5100 | 0.4750 | 0.1000 | 7961.05 | 2370.59 |
 | `ARCH.V10CL896G01` | 0.441915 | 0.2750 | 0.3400 | 0.5000 | 0.4700 | 0.0800 | 8147.68 | 1866.48 |
 | `ARCH.V10CL896G03` | 0.441915 | 0.2850 | 0.3500 | 0.5100 | 0.4750 | 0.0950 | 7970.17 | 1875.21 |
 | `ARCH.V10CL896G10` | 0.441915 | 0.2900 | 0.3450 | 0.5100 | 0.4650 | 0.0950 | 7880.92 | 1904.81 |
 | `ARCH.V14CL896` | 0.460175 | 0.3250 | 0.3600 | 0.4850 | 0.4750 | 0.1100 | 4433.90 | 1194.11 |
 | `ARCH.V14CL896G03` | 0.460175 | 0.3300 | 0.3450 | 0.4900 | 0.4700 | 0.1000 | 4966.26 | 1165.59 |
 | `ARCH.CL896X13` | 0.658165 | 0.3350 | 0.3700 | 0.5550 | 0.4800 | 0.0550 | 36821.04 | 1463.15 |
+
+**WAVE 36 ADDS THE SHARPEST VERSION OF THIS WARNING THE CAMPAIGN HAS.** It also
+benchmarked `ARCH.W896CL1792`, which is not in this table because it is not a
+deep child — it is 0.733197x — and its row is the best of wave 36's six children:
+wikitext word perplexity **781.25**, hellaswag_norm 0.3900, winogrande 0.5250.
+It holds **zero** review cases. `ARCH.V9CL896G10`, three times its perplexity and
+0.30 of stored ratio below it, holds **four**. Same table, same hour, same
+invocation, opposite orderings.
 
 **Read this table as a warning, not as a result.** Every deep child is at or
 below chance on winogrande (0.50) and piqa (0.50), lambada collapses from 0.46

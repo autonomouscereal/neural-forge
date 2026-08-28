@@ -1,0 +1,53 @@
+{
+ "schema": "neural-forge-matrix-wave36-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave36/children",
+ "built": [
+  "MX36-GATE1024",
+  "MX36-V12CL896X13G03",
+  "MX36-V12W896CL1792",
+  "MX36-V16W896CL1792",
+  "MX36-V9CL896G03",
+  "MX36-V9CL896G10",
+  "MX36-W896CL1792",
+  "MX36-W896R"
+ ],
+ "kept": {
+  "MX36-V9CL896G10": {
+   "reason": "0.437349x at 4/15 sealed and 5/15 canonical -- the deepest four the campaign has sealed and the deepest five the canonical lens has read.  It holds the sealed 3/15 and 4/15 rungs and the canonical 3/15, 4/15 and 5/15 rungs, five frontier positions on one checkpoint, and it is the first arm in twelve ladders where lambda 1.0 beat lambda 0.3.  Its distinguishing lane -- context-retrieval -- is shared with neither its control nor the 0.3 arm, so unlike wave 35's tie it is NOT re-derivable from another child's bytes.",
+   "bytes": 201490051
+  },
+  "MX36-W896CL1792": {
+   "reason": "THE NEW BODY, and the only artifact in this wave that cost a conditioned capture: 793 s of GPU over 24 batches on the composed width x MLP path that no builder in this estate could produce until this wave lifted the guard.  It is the ONLY --hidden-size composed with --ff checkpoint in existence, it is the source of both of this wave's composed vocabulary children, and deleting it converts every future child on that composition -- the K = 9,216 and K = 8,192 corners nobody has built, the excised three-axis body this wave registered and did not build -- from a 40-second CPU pass into a 793-second GPU build.  It also carries the fourteen per-site COMPOSED_READER_EXACTNESS measurements in its receipt, which are the numbers the lift's whole argument rests on.",
+   "bytes": 341630369
+  },
+  "MX36-W896R": {
+   "reason": "THE ONLY EXISTING CHECKPOINT OF ARCH.W896, and it is PROVABLY wave 19's bytes: rebuilt by this wave's builder against wave 19's own sealed basis and digesting bfa58964549778222141e01f071e8e7fd63935499ad3f26daf203da1adbb5b82, identical to the sealed body across SEVENTEEN WAVES.  It is the control the entire E1 result is differenced against -- ARCH.W896 reads 4/15 and the composed body reads 0/15, and that subtraction is only attributable because the width path is proven not to have moved.  THIS IS A STATED DEVIATION FROM THE CLAIM RULE: its claim IS re-derivable, in 294 s, from the retained wave-19 basis.  It is kept anyway because it is a bridge to a wave whose children were all deleted, and that bridge cannot be rebuilt at all if the basis artifact is ever lost.",
+   "bytes": 399412939
+  }
+ },
+ "deleted": {
+  "MX36-GATE1024": {
+   "reason": "THE IDENTITY GATE, and it is the cleanest deletion this estate has ever made: its model.safetensors digests f630da86651136c9aee893b04b7542007e90fdd718355358e57e7ecc31517cfd, which is THE PARENT'S OWN FILE DIGEST, so the checkpoint is a second copy of a file that is already on this server.  What it proves -- that the composed width x MLP path is a strict generalisation of the parent, 132 of 132 tensors bit-identical, loader count 229,693,184 -- is a sha256 in a build receipt and does not need 197 MB behind it.  It rebuilds in 196 s from the parent",
+   "bytes": 464193707
+  },
+  "MX36-V12CL896X13G03": {
+   "reason": "terminal gain lambda 0.3 on wave 35's retained MX35-V12CL896X13, ~100 s of GPU.  Its result is a LANE SWAP rather than a count -- it gains the summarisation lane and loses the email lane for a net of zero against its control -- and a lane swap is a statement about two dossiers, both of which are committed, rather than about a checkpoint.  It takes no rung: its ratio's sealed 1/15 rung is held by its own control",
+   "bytes": 194037399
+  },
+  "MX36-V12W896CL1792": {
+   "reason": "K=12,288 on the composed body, one 40-second CPU vocabulary pass on MX36-W896CL1792, which this list KEEPS.  It reads zero on both standards and takes no rung; its one result -- that 120,700,032 is the loader's count and not merely the arithmetic's -- is in its build receipt and its seal",
+   "bytes": 242178611
+  },
+  "MX36-V16W896CL1792": {
+   "reason": "K=16,384 on the composed body, one 40-second CPU vocabulary pass on the same kept body.  Zero on both standards; it was built as the CONTROL for the rung above it and a control that reads zero beside a zero has reported everything it can",
+   "bytes": 249738747
+  },
+  "MX36-V9CL896G03": {
+   "reason": "terminal gain lambda 0.3 on wave 35's retained MX35-V9CL896, ~100 s of GPU.  It seals THREE and holds the sealed 3/15 rung -- but the arm this list KEEPS reads FOUR at the identical ratio on a strict superset of its lanes, so every rung this child takes is also taken by a retained checkpoint.  Both endpoints of the ladder it is the middle of are on disk: its source is retained by wave 35 and its sibling is retained here",
+   "bytes": 201490280
+  }
+ },
+ "bytes_kept": 942533359,
+ "bytes_deleted": 1351638744,
+ "applied": true
+}

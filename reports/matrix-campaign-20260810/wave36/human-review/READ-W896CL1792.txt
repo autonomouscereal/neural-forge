@@ -1,0 +1,108 @@
+# ARCH.W896CL1792  dossier 66245f817b52e8d9
+# net_ratio 0.733197  config_diff ['block_dim', 'block_ff_dim', 'conv_dim', 'head_dim', 'hidden_size', 'intermediate_size']
+
+---  1 conversation-natural-greeting [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  2 instruction-three-actions [complete] 100 chars, 100 collapsed  <350 COLLAPSED
+- Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 570 chars, 570 collapsed
+The first year, as the year, is indeed quite a year, and the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a year, as the year is quite a.
+
+---  4 arithmetic-multi-step [complete] 220 chars, 220 collapsed  <350 COLLAPSED
+The workshop is quite enough to cover the 17 kits per hour and 8 kits fail inspection, whereas the remaining kits are packed individually into 5 boxes, and the 17 are left over. The steps are illustrated above the above.
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 305 chars, 304 collapsed  <350 COLLAPSED
+The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+Question: Is the day allowed and what is the latest checkout time and gate to avoid?
+
+---  7 summarization-priorities [complete] 142 chars, 142 collapsed  <350 COLLAPSED
+The team is preparing to schedule the factory expansion and requests weekly schedule evidence to ensure compliance and adherence to standards.
+
+---  8 comparison-ram-rom [complete] 109 chars, 109 collapsed  <350 COLLAPSED
+The reason is that the RAM and long-term storage is imperfectly enough to allow a simple analysis of the way.
+
+---  9 coding-deduplicate [complete] 277 chars, 25 collapsed  <350 COLLAPSED
+```python
+def startup
+def startup
+def startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+def
+startup
+```
+
+--- 10 debugging-off-by-one [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 11 writing-concise-email [complete] 80 chars, 80 collapsed  <350 COLLAPSED
+Mention that our installation is Monday, and ask for an updated tracking number.
+
+--- 12 planning-dependencies [complete] 466 chars, 105 collapsed  <350 COLLAPSED
+- 1.  Check if the new DEST  or DEST  is available in the new DEST  or DEST  is not available in the new DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or DEST  is not available in the DEST  or D
+
+--- 13 uncertainty-insufficient-data [complete] 652 chars, 647 collapsed
+The information about sales increased is crucial before explaining why sales were increased. The reason for the increase is important to detail the reasons why sales were increased and the reasons why prices were changed.
+
+If the reason is significant, the reason is important to detail the reasons why sales were increased and the reasons why prices were changed.
+
+If the reason is significant, the reason is important to detail the reasons why sales were increased and the reasons why prices were changed.
+
+If the reason is significant, the reason is important to detail the reasons why sales were increased and the reasons why prices were changed.
+
+
+
+--- 14 safety-household-chemical [complete] 56 chars, 56 collapsed  <350 COLLAPSED
+The correct answer is correct in the following response.
+
+--- 15 creative-continuity [complete] 98 chars, 95 collapsed  <350 COLLAPSED
+The foghorn was not enough to answer questions.
+
+The foghorn was not enough to answer questions.
+
+
+
+--- 16 multi-turn-correction [complete] 51 chars, 23 collapsed  <350 COLLAPSED
+Good catch—for 4, 4, 4, 4, 4, 4, 4, 4,  and  and . 
+
+# cap-hits 0/16

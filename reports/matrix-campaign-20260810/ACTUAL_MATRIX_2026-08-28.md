@@ -33,6 +33,7 @@ Two rules earn their keep and are worth naming, because they cut in opposite dir
 
 ## Coverage
 
+- **210 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight and wave 36's six, each re-read in the same pass as its own seal)
 - **188 whole-model children hand re-read** from their verbatim `READ-*.txt` dossiers
   (2,835 scored lanes). Every child that ever appeared on a frontier ladder, the campaign
   scorecard or the wave-33 robustness table is in that set.
@@ -49,28 +50,44 @@ frontier from `RESULTS_MATRIX_2026-08.md` beside it.
 | at least | child (canonical) | net ratio | intel | sealed | sealed-frontier child | sealed net | deepened by |
 |---:|---|---:|---:|---:|---|---:|---:|
 | 14/15 | `ARCH.V12` | **0.762614** | 14 | 11 | `ARCH.V19` | 0.794570 | **0.031956** |
-| 13/15 | `ARCH.V19X09` | **0.742049** | 13 | 10 | `ARCH.V18` | 0.790005 | **0.047956** |
+| 13/15 | `ARCH.BP64` | **0.742049** | 13 | 10 | `ARCH.V18` | 0.790005 | **0.047956** |
 | 12/15 | `ARCH.V18X09` | **0.737484** | 12 | 10 | `ARCH.V18` | 0.790005 | **0.052521** |
 | 11/15 | `ARCH.V18X09` | **0.737484** | 12 | 10 | `ARCH.B75` | 0.742049 | **0.004565** |
 | 10/15 | `ARCH.V12X13` | **0.710093** | 10 | 7 | `ARCH.V18X09` | 0.737484 | **0.027391** |
 | 9/15 | `ARCH.V8X13GL01` | **0.691832** | 9 | 7 | `ARCH.V18X07` | 0.737484 | **0.045652** |
-| 8/15 | `ARCH.V16CL1792` | **0.637073** | 8 | 8 | `ARCH.GV16L01` | 0.637073 | — |
+| 8/15 | `ARCH.GV16L01` | **0.637073** | 8 | 8 | `ARCH.GV16L01` | 0.637073 | — |
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | 5 | `ARCH.GV12L03` | 0.618813 | **0.018261** |
 | 6/15 | `ARCH.V8CL1792` | **0.600552** | 7 | 5 | `ARCH.V9CL1792` | 0.605117 | **0.004565** |
-| 5/15 | `ARCH.V8CL1792` | **0.600552** | 7 | 5 | `ARCH.V8CL1792` | 0.600552 | — |
-| 4/15 | `ARCH.V19CL896G03` | **0.483001** | 4 | 3 | `ARCH.V8CL1792` | 0.600552 | **0.117551** |
-| 3/15 | `ARCH.V19CL896G03` | **0.483001** | 4 | 3 | `ARCH.V19CL896G03` | 0.483001 | — |
-| 2/15 | `ARCH.V16CL896` | **0.469305** | 2 | 1 | `ARCH.V18CL896` | 0.478436 | **0.009131** |
-| 1/15 | `ARCH.V19X13CL896` | **0.452734** | 1 | 0 | `ARCH.V16CL896` | 0.469305 | **0.016571** |
-| 0/15 | `ARCH.V8CL896` | **0.432784** | 0 | 0 | `ARCH.V8CL896` | 0.432784 | — |
+| 5/15 | `ARCH.V9CL896G10` | **0.437349** | 5 | 4 | `ARCH.V8CL1792` | 0.600552 | **0.163203** |
+| 4/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | 3 | `ARCH.V9CL896G10` | 0.437349 | — |
+| 3/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | 3 | `ARCH.V9CL896G03` | 0.437349 | — |
+| 2/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | 1 | `ARCH.V9CL896` | 0.437349 | **0.016570** |
+| 1/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | 1 | `ARCH.V12CL896X13` | 0.420779 | — |
+| 0/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | 1 | `ARCH.V12CL896X13` | 0.420779 | — |
 
-**Eleven of the fifteen frontier rungs move deeper.** The four that do not are 0, 3, 5 and
-8 — and the eight rung is the interesting one: `ARCH.V16CL1792` at 0.637073x reads eight
-under both standards, so the campaign's most-argued-about row is the one row the two
-readings agree on. Everywhere else the canonical standard finds the same depth of
-intelligence in a *smaller* child, because the sealed reading charged lanes that were
-loops, echoes and cap-rides. The largest single move is at four of fifteen: 0.600552x
-becomes 0.483001x, a further **0.118 of stored ratio** off the parent at the same depth.
+**REFRESHED FOR WAVES 34, 35 AND 36.** The ladder above is now computed rather than
+typed: the sealed column is read off `ledger.jsonl`'s 964 rows and the canonical column
+off the re-read tables in this file plus the sealed canonical re-read artifacts of waves
+34, 35 and 36. **Ties are broken by cell id**, so where two children sit at the same
+ratio the table names one deterministically and the other is not a different result —
+`ARCH.GV16L01` and `ARCH.V16CL1792` are both 8/15 at 0.637073x, `ARCH.GV12L03` and
+`ARCH.V12CL1792` are both 7/15 at 0.618813x, and `ARCH.BP64`, `ARCH.B75` and
+`ARCH.V19X09` all sit at 0.742049x. **A gap of "—" is a tie to within the six decimal
+places this file prints**, which is the precision the canonical column was re-read at;
+the sealed column carries the ledger's full precision and the two agree to 1e-6.
+
+**The two standards now AGREE at three consecutive rungs — 1, 3 and 4 of fifteen — and
+the largest single disagreement in the campaign has opened at five.** `ARCH.V9CL896G10`
+reads **5/15 canonically at 0.437349x** where the sealed lens holds five only at
+0.600552x, a gap of **0.163203 of stored ratio**. That gap rests entirely on one rule
+about one lane, and `wave36/canonical-reread-wave36.json` states the subtraction: strike
+the `planning-dependencies` rule wave 35 wrote down in `NOTES-MX-AM` §5 and that child
+reads four canonically, the canonical 5/15 rung stays at 0.600552x, and every other rung
+above is unchanged.
+
+Everywhere else the picture is the one wave 33 recorded: the canonical standard finds the
+same depth of intelligence in a *smaller* child, because the sealed reading charged lanes
+that were loops, echoes and cap-rides.
 
 ## 2. The sub-0.5x successes
 
@@ -82,20 +99,34 @@ the count is now **fourteen of seventeen**, and the three that do not hold are s
 same three: `ARCH.V8CL896`, `ARCH.W512` and `ARCH.KKTD`. Every child in this table carries
 the sealed verdict `dead`.
 
-Wave 34's six and wave 35's seven are marked. Both waves read the canonical count in the
-same pass as the seal. On wave 34's six the two readings agreed exactly; on wave 35's
-seven, six read one HIGHER canonically, and in five of those six the single flipped lane
-is `planning-dependencies` — the child names backups, DNS, TLS, verification and rollback
-and then loops instead of sequencing them. Strike that one rule and wave 35's canonical
-column drops from 22 to 17 and the canonical 4/15 rung does not move.
+Wave 34's six, wave 35's seven and wave 36's three are marked. Every one of those waves
+read the canonical count in the same pass as the seal. On wave 34's six the two readings
+agreed exactly; on wave 35's seven, six read one HIGHER canonically, and in five of those
+six the single flipped lane is `planning-dependencies` — the child names backups, DNS,
+TLS, verification and rollback and then loops instead of sequencing them. Strike that one
+rule and wave 35's canonical column drops from 22 to 17 and the canonical 4/15 rung does
+not move.
+
+**Wave 36 flipped that lane twice more and did not have to judge it either time.** Both
+of its flipped lanes are BYTE-IDENTICAL to lanes wave 35 already read — `ARCH.V9CL896G03`
+shares its planning lane with `ARCH.V10CL896G03` (sha `8dd9e53045f9a211`, 3,490 bytes) and
+`ARCH.V9CL896G10` shares its with `ARCH.V10CL896G10` (sha `307c301603c0ba3f`, 1,020
+bytes). Wave 33's byte-comparison control had only ever been applied to the sealed
+reading; wave 36 applied it to the assessment layer, which takes the two flips out of the
+reviewer's hands entirely. The subtraction is unchanged and still available: strike the
+rule and wave 36's canonical column is 1/0/0/3/4/1 instead of 1/0/0/4/5/1, and the
+canonical 5/15 rung does not move.
 
 **The whole sub-0.5x band, all twenty-four children, is now in `DEEP_RECORD.md`.**
 
 | child | net ratio | stored params | sealed | **intel** | artifact-miss | content-miss | what it can still do |
 |---|---:|---:|---:|---:|---:|---:|---|
 | `ARCH.V12CL896X13` | **0.420779** | 96,649,984 | 1 | **2/15** | 11 | 2 | **wave 35. THE DEEPEST CHILD EVER BUILT**, below the V8CL896 death, and it writes a vendor email naming Friday and the tracking number. |
+| `ARCH.V12CL896X13G03` | **0.420779** | 96,649,984 | 1 | **1/15** | 11 | 3 | **wave 36.** The terminal-gain arm at the campaign floor. It TIES its control's one and LOSES a canonical case: it repairs the summarisation lane and hands the email prompt back verbatim. |
 | `ARCH.V8CL896` | **0.432784** | 99,407,616 | 0 | **0/15** | 7 | 8 | the floor. Copies its prompts back verbatim and answers none of them: seven artifact lanes, eight readable-and-empty. The copy path outlived the answer path. |
 | `ARCH.V9CL896` | **0.437349** | 100,456,192 | 2 | **2/15** | 12 | 1 | **wave 35.** Halves the 0/15 bracket to 0.0046 from the surviving side; names all four withheld quantities. |
+| `ARCH.V9CL896G03` | **0.437349** | 100,456,192 | 3 | **4/15** | 9 | 2 | **wave 36.** +1 over its control on the first-person vendor email, on the same BYTES `ARCH.V10CL896G03` bought it with. Extends wave 35's law down to K = 9,216. |
+| `ARCH.V9CL896G10` | **0.437349** | 100,456,192 | 4 | **5/15** | 8 | 2 | **wave 36. THE DEEPEST FOUR SEALED AND THE DEEPEST FIVE READ.** lambda 1.0 beats lambda 0.3 for the first time in twelve ladders, on a retrieval lane it shares with neither: *The latest checkout time is 4:15 p.m.* |
 | `ARCH.V10CL896` | **0.441915** | 101,504,768 | 2 | **2/15** | 11 | 2 | **wave 34.** The deepest child ever built. Eleven artifact lanes and only two readable-and-wrong: the decode has collapsed and the content has not. |
 | `ARCH.V10CL896G01` | **0.441915** | 101,504,768 | 2 | **3/15** | 11 | 1 | **wave 35.** lambda 0.1: largest update, best objective, buys nothing sealed. |
 | `ARCH.V10CL896G03` | **0.441915** | 101,504,768 | 3 | **4/15** | 9 | 2 | **wave 35. THE DEEPEST THREE SEALED AND THE DEEPEST FOUR READ.** |
@@ -162,6 +193,32 @@ apart.
 
 **And this is exactly the population wave 34's C3 diagnostic tested the artifact clause
 on** -- see `wave34/penalty-decode-diagnostic.json`. The answer is in §3a.
+
+### Wave 36's own six, counted separately
+
+| | lanes | share of the 90 |
+|---|---:|---:|
+| intelligence signal | **11** | 12.2% |
+| artifact-miss | **61** | 67.8% |
+| content-miss | **18** | 20.0% |
+
+**Sixty-eight per cent of everything wave 36's children produced is an artifact**, against
+29.8% over the original 188 and 50.8% over wave 34's eight. That is the deepest-artifact
+population any wave has produced, and it is not only a depth effect: `ARCH.W896CL1792` at
+**0.733197x** is 11 of 15 artifact against `ARCH.V32W896`'s 7 of 15 at 0.731199x — the
+same ratio, a different composition, four more artifact lanes. **Two of its lanes return
+zero characters.** Nine children above 0.7x are more artifact-heavy still (13 to 15 of
+15), from the width, blend and head-dim families, but none of them has more than TWO
+content misses, so almost nothing is known about them in either direction; `ARCH.W896CL1792` has three
+readable-and-wrong lanes and one signal lane, so something is.
+
+The composed width × MLP body is the reason the canonical standard earns its keep here in
+the *other* direction. Its three composed children read 1, 0 and 0 canonically against 0,
+0 and 0 sealed, so the canonical lens rescues almost nothing — and the four readable
+lanes it does leave on `ARCH.V16W896CL1792` include a seasons lane asserting the exact
+misconception the prompt asks it to correct. A zero here is a zero of intelligence and not
+of legibility, and that distinction is only available because the artifact column is
+counted separately.
 
 ### 3a. The artifact clause, priced
 
@@ -250,7 +307,12 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 
 | child | wave | net ratio | stored | sealed | **intel** | artifact | content | Δ | character |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `ARCH.V12CL896X13` | 35 | **0.420779** | 96,649,984 | 1 | **2/15** | 11 | 2 | +1 | wave 35's floor child: a vendor email naming Friday and the tracking number, below the V8CL896 death. |
+| `ARCH.V12CL896X13G03` | 36 | **0.420779** | 96,649,984 | 1 | **1/15** | 11 | 3 | 0 | the gain arm at the floor. It moves a lane SIDEWAYS -- repairs summarisation, loses email to a prompt echo -- for a net of zero sealed and minus one canonical. |
 | `ARCH.V8CL896` | 24 | **0.432784** | 99,407,616 | 0 | **0/15** | 7 | 8 | 0 | the floor. Copies its prompts back verbatim and answers none of them: seven artifact lanes, eight readable-and-empty. The copy path outlived the answer path. |
+| `ARCH.V9CL896` | 35 | **0.437349** | 100,456,192 | 2 | **2/15** | 12 | 1 | 0 | wave 35's halving of the 0/15 bracket from the surviving side; all four withheld quantities named in garbled syntax. |
+| `ARCH.V9CL896G03` | 36 | **0.437349** | 100,456,192 | 3 | **4/15** | 9 | 2 | +1 | lambda 0.3 at K = 9,216: +1 on the vendor email, on the same bytes the K = 10,240 arm bought it with. |
+| `ARCH.V9CL896G10` | 36 | **0.437349** | 100,456,192 | 4 | **5/15** | 8 | 2 | +1 | THE DEEPEST FOUR SEALED AND FIVE READ. lambda 1.0 beats lambda 0.3 for the first time, on retrieval: 4:15 p.m. in the right unit. |
 | `ARCH.V10CL896` | 34 | **0.441915** | 101,504,768 | 2 | **2/15** | 11 | 2 | 0 | the deepest child ever built and it holds two. ELEVEN artifact lanes against TWO content ones: at 0.4419x the decode has collapsed and the content has not. |
 | `ARCH.V12CL896` | 34 | **0.451045** | 103,601,920 | 2 | **2/15** | 6 | 7 | 0 | the lambda ladder's zero-solve control; the one deep child whose content misses outnumber its artifacts. |
 | `ARCH.V12CL896G01` | 34 | **0.451045** | 103,601,920 | 2 | **2/15** | 9 | 4 | 0 | lambda 0.1: the largest update, the joint-worst review, and '4:15 MINUTES' -- the right number in the wrong unit. |
@@ -258,6 +320,9 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.V12CL896G10` | 34 | **0.451045** | 103,601,920 | 2 | **2/15** | 8 | 5 | 0 | lambda 1.0; four of sixteen lanes byte-identical to its source. |
 | `ARCH.V19X13CL896` | 28 | **0.452734** | 103,990,016 | 0 | **1/15** | 10 | 4 | +1 | one lane of intelligence at 0.4527x: it compresses the supplier update in its own words and lands the unresolved risk -- a one-week factory-expansion slip. |
 | `ARCH.W512` | 19 | **0.463481** | 106,458,368 | 0 | **0/15** | 15 | 0 | 0 | fifteen for fifteen artifact. Nothing readable came out at all, so nothing here is evidence about intelligence in either direction. |
+| `ARCH.V12W896CL1792` | 36 | **0.525484** | 120,700,032 | 0 | **0/15** | 11 | 4 | 0 | K = 12,288 on the composed width x MLP body. Zero on both standards; its summarisation lane invents a seven-day deadline that is nowhere in the update. |
+| `ARCH.V16W896CL1792` | 36 | **0.541462** | 124,370,048 | 0 | **0/15** | 11 | 4 | 0 | K = 16,384 on the same body, built as the control for the rung above it. Its seasons lane asserts the exact misconception the prompt asks it to correct. |
+| `ARCH.W896CL1792` | 36 | **0.733197** | 168,410,240 | 0 | **1/15** | 11 | 3 | +1 | THE LAST UNBUILT TWO-AXIS BODY, AND AN HONEST CONTENT DEATH 0.30 OF RATIO ABOVE EVERY OTHER ONE. width 896 x mlp 1792; ARCH.W896 alone reads 4, ARCH.CL1792 alone reads 7, together they read 0. |
 | `ARCH.V16CL896` | 23 | **0.469305** | 107,796,224 | 1 | **2/15** | 5 | 8 | +1 | summarises and asks for the four things it was not told. Under half the parent and it still knows what it does not know. Rebuilt at wave 34, bit-identical. |
 | `ARCH.V16CL896G03` | 34 | **0.469305** | 107,796,224 | 3 | **3/15** | 6 | 6 | 0 | the CL896 family's missing gain arm; three, on the same lanes its K=19,456 and K=20,480 siblings hold. |
 | `ARCH.V18CL896` | 28 | **0.478436** | 109,893,376 | 2 | **2/15** | 6 | 7 | 0 | two summarisation-family lanes and nothing else; the other seven readable lanes are on-register and empty. |

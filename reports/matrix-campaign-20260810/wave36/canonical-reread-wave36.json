@@ -1,0 +1,226 @@
+{
+ "schema": "neural-forge-matrix-wave36-canonical-reread-v1",
+ "purpose": "The canonical re-read of wave 36's six new children, done in the same pass as the sealed reading and against the same verbatim dossiers.  It is an ASSESSMENT LAYER: no sealed artifact was modified, no ledger row carries any number in this file, and every sealed count is preserved beside every canonical count.",
+ "standard": {
+  "intelligence_signal": "sealed Useful or Partial, OR a sealed miss whose text carries at least one correct, specific, usable element of what the lane asked, in the child's own words",
+  "artifact_miss": "empty, pure loop, cap-ride with no unique content, indiscriminate prompt copy, or token salad -- never counts against intelligence",
+  "content_miss": "readable, on-register output that is wrong, vacuous, deflecting or a restatement with no answer -- the only miss that is about intelligence",
+  "note_on_the_echo": "unchanged from waves 34 and 35: a sealed Partial is signal by the rule above even when the lane is a whole-prompt echo, because the SEAL is what the canonical standard reads against",
+  "THE_RULE_WAVE_35_STATED_AND_THIS_WAVE_DID_NOT_HAVE_TO_JUDGE": "PLANNING-DEPENDENCIES IS AGAIN THE LANE WHERE THE TWO STANDARDS SEPARATE, and this wave it separates them twice -- but not by a judgement.  Both flipped lanes are BYTE-IDENTICAL to lanes wave 35 already read: ARCH.V9CL896G03's planning lane is sha 8dd9e53045f9a211, the same 3,490 bytes as ARCH.V10CL896G03's, and ARCH.V9CL896G10's is sha 307c301603c0ba3f, the same 1,020 bytes as ARCH.V10CL896G10's.  Wave 33's byte-comparison control has until now only ever been applied to the SEALED reading; this is the first wave to apply it to the assessment layer, and it removes the two flips from the reviewer's discretion entirely.",
+  "THE_SUBTRACTION_THIS_WAVE_OWES_ITS_READER": "Strike the planning rule and wave 36's canonical column becomes 1 / 0 / 0 / 3 / 4 / 1 instead of 1 / 0 / 0 / 4 / 5 / 1.  The canonical 5/15 rung then does NOT move from ARCH.V8CL1792 at 0.600552x, and the canonical 4/15 and 3/15 rungs still move to 0.437349x on ARCH.V9CL896G10 and ARCH.V9CL896G03.  The single largest claim in this wave's canonical column rests on one rule about one lane, and it is stated here so a reader can decline it."
+ },
+ "children": [
+  {
+   "cell_id": "ARCH.W896CL1792",
+   "wave": 36,
+   "net_ratio": 0.733197,
+   "stored_parameters": 168410240,
+   "sealed_useful_or_partial": 0,
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss",
+    "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss",
+    "arithmetic-multi-step": "content-miss",
+    "logic-ordering": "artifact-miss",
+    "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal",
+    "comparison-ram-rom": "content-miss",
+    "coding-deduplicate": "artifact-miss",
+    "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "artifact-miss",
+    "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "artifact-miss",
+    "creative-continuity": "content-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "lanes_flipped_by_the_re_read": [
+    "summarization-priorities"
+   ],
+   "character": "THE COMPOSED WIDTH x MLP BODY, and the only lane the canonical standard rescues on it is the summarisation paraphrase -- The team is preparing to schedule the factory expansion and requests weekly schedule evidence -- which keeps the mitigation and drops the decision.  Wave 35 read EXACTLY that shape as signal on ARCH.V12CL896X13 and the rule is applied here unchanged.  Everything else is empty, looped or echoed: two lanes return ZERO CHARACTERS, its retrieval lane reproduces the whole garden context including 4:15 p.m. and the closed north gate and then echoes the QUESTION, and its email lane is one sentence of the prompt.  Eleven of fifteen lanes are compression artifacts on a 0.733197x child, which is the highest artifact fraction ever recorded above 0.7x.",
+   "canonical_intel": 1,
+   "artifact_miss": 11,
+   "content_miss": 3,
+   "delta": 1
+  },
+  {
+   "cell_id": "ARCH.V12W896CL1792",
+   "wave": 36,
+   "net_ratio": 0.525484,
+   "stored_parameters": 120700032,
+   "sealed_useful_or_partial": 0,
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss",
+    "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "content-miss",
+    "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss",
+    "context-retrieval": "artifact-miss",
+    "summarization-priorities": "content-miss",
+    "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss",
+    "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "artifact-miss",
+    "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "artifact-miss",
+    "creative-continuity": "content-miss",
+    "multi-turn-correction": "content-miss"
+   },
+   "lanes_flipped_by_the_re_read": [],
+   "character": "K=12,288 on the composed body.  ZERO on BOTH standards, and the canonical standard is the one that makes that statement mean something: four of its lanes are readable and on-register and every one of them is wrong.  Its summarisation lane invents a seven-day deadline that appears nowhere in the update; its multi-turn lane says The original answer is correct, but the original is wrong.  There is no lane whose text a reader could use.",
+   "canonical_intel": 0,
+   "artifact_miss": 11,
+   "content_miss": 4,
+   "delta": 0
+  },
+  {
+   "cell_id": "ARCH.V16W896CL1792",
+   "wave": 36,
+   "net_ratio": 0.541462,
+   "stored_parameters": 124370048,
+   "sealed_useful_or_partial": 0,
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss",
+    "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "content-miss",
+    "arithmetic-multi-step": "content-miss",
+    "logic-ordering": "artifact-miss",
+    "context-retrieval": "artifact-miss",
+    "summarization-priorities": "content-miss",
+    "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss",
+    "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "artifact-miss",
+    "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "artifact-miss",
+    "creative-continuity": "content-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "lanes_flipped_by_the_re_read": [],
+   "character": "K=16,384 on the composed body, the CONTROL for the rung above it.  ZERO on both standards.  ITS SEASONS LANE ASSERTS THE EXACT MISCONCEPTION THE PROMPT ASKS IT TO CORRECT -- the reason for the summer season is indeed quite close to the Sun -- which is the cleanest content miss in the wave and the clearest demonstration that a zero here is a zero of INTELLIGENCE and not of legibility.",
+   "canonical_intel": 0,
+   "artifact_miss": 11,
+   "content_miss": 4,
+   "delta": 0
+  },
+  {
+   "cell_id": "ARCH.V9CL896G03",
+   "wave": 36,
+   "net_ratio": 0.437349,
+   "stored_parameters": 100456192,
+   "sealed_useful_or_partial": 3,
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss",
+    "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss",
+    "arithmetic-multi-step": "content-miss",
+    "logic-ordering": "artifact-miss",
+    "context-retrieval": "content-miss",
+    "summarization-priorities": "signal",
+    "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss",
+    "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "signal",
+    "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal",
+    "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "lanes_flipped_by_the_re_read": [
+    "planning-dependencies"
+   ],
+   "character": "FOUR CANONICALLY AT 0.437349x.  The flipped lane is planning-dependencies and THE FLIP IS NOT A JUDGEMENT THIS WAVE MADE: that lane is BYTE-IDENTICAL to ARCH.V10CL896G03's (sha 8dd9e53045f9a211, 3,490 characters), which wave 35 read as canonical signal under the rule its NOTES-MX-AM section 5 states in full.  The same bytes get the same reading; that is the byte-comparison control applied to the ASSESSMENT layer for the first time.",
+   "canonical_intel": 4,
+   "artifact_miss": 9,
+   "content_miss": 2,
+   "delta": 1
+  },
+  {
+   "cell_id": "ARCH.V9CL896G10",
+   "wave": 36,
+   "net_ratio": 0.437349,
+   "stored_parameters": 100456192,
+   "sealed_useful_or_partial": 4,
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss",
+    "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss",
+    "arithmetic-multi-step": "content-miss",
+    "logic-ordering": "artifact-miss",
+    "context-retrieval": "signal",
+    "summarization-priorities": "signal",
+    "comparison-ram-rom": "content-miss",
+    "coding-deduplicate": "artifact-miss",
+    "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "signal",
+    "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal",
+    "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "lanes_flipped_by_the_re_read": [
+    "planning-dependencies"
+   ],
+   "character": "FIVE CANONICALLY AT 0.437349x -- THE DEEPEST FIVE THE CANONICAL LENS HAS EVER READ, and it moves that rung from ARCH.V8CL1792 at 0.600552x by 0.163 of stored ratio, the largest canonical frontier move in the campaign.  Its planning lane is BYTE-IDENTICAL to ARCH.V10CL896G10's (sha 307c301603c0ba3f, 1,020 characters), so the flip is wave 35's reading of the same bytes rather than a new one.  THE SUBTRACTION IS STATED SO A READER CAN MAKE IT: strike the planning rule and this child reads FOUR canonically, the canonical 5/15 rung does not move at all, and the canonical 4/15 rung still moves to 0.437349x.",
+   "canonical_intel": 5,
+   "artifact_miss": 8,
+   "content_miss": 2,
+   "delta": 1
+  },
+  {
+   "cell_id": "ARCH.V12CL896X13G03",
+   "wave": 36,
+   "net_ratio": 0.420779,
+   "stored_parameters": 96649984,
+   "sealed_useful_or_partial": 1,
+   "per_lane": {
+    "conversation-natural-greeting": "content-miss",
+    "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss",
+    "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss",
+    "context-retrieval": "content-miss",
+    "summarization-priorities": "signal",
+    "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss",
+    "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "artifact-miss",
+    "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "content-miss",
+    "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "lanes_flipped_by_the_re_read": [],
+   "character": "ONE canonically, against its control's TWO, so the terminal-gain arm at the campaign floor LOSES a canonical case while tying the sealed count.  The control held writing-concise-email in its own garbled prose; this arm hands the instruction back verbatim, and a prompt echo carries no evidence under either standard.  It gains the summarisation lane instead, which the control also held canonically, so the canonical net is minus one.",
+   "canonical_intel": 1,
+   "artifact_miss": 11,
+   "content_miss": 3,
+   "delta": 0
+  }
+ ],
+ "totals": {
+  "children": 6,
+  "lanes": 90,
+  "sealed_useful_or_partial": 8,
+  "canonical_intel": 11,
+  "artifact_miss": 61,
+  "content_miss": 18,
+  "artifact_fraction": 0.6778,
+  "campaign_wide_artifact_fraction_for_comparison": 0.298
+ },
+ "cross_wave_byte_identity_measured_here_for_the_first_time": {
+  "what": "Wave 33's byte-comparison control has always compared an arm with its OWN source.  This wave compared two DIFFERENT CHILDREN at two different vocabulary rungs -- K=9,216 and K=10,240 on the same ARCH.CL896 body -- at all three rungs of the terminal-gain ladder.",
+  "result": {
+   "V9CL896 vs V10CL896 (controls)": 6,
+   "V9CL896G03 vs V10CL896G03": 6,
+   "V9CL896G10 vs V10CL896G10": 6,
+   "lanes_identical_at_all_three_rungs": [
+    "instruction-three-actions",
+    "logic-ordering",
+    "writing-concise-email",
+    "planning-dependencies",
+    "safety-household-chemical"
+   ]
+  },
+  "why_it_matters": "ARCH.V9CL896G03's writing-concise-email lane -- the +1 lane -- is not merely the same SHAPE as ARCH.V10CL896G03's, it is the same BYTES, and both controls' email lanes are also the same bytes as each other and both miss.  So wave 35's +1-at-every-K law extends to K=9,216 in the strongest form available: identical input text, identical output text, and the arm is the only thing that differs."
+ }
+}

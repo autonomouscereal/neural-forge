@@ -1,17 +1,25 @@
-# CAMPAIGN_SCORECARD — wave 35, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 36, under the canonical standard and the sealed one
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Rows regenerated at wave 33 from `wave33/campaign-frontier-table.json`, with wave 34's
-and wave 35's children added from `wave35/wave35-child-index.json` and
-`wave35/canonical-reread-wave35.json`.
-306 reviewed whole-model children,
-253 holding at least one case,
-214 benchmark rows, and every parent benchmark row
-matching the sealed reference — wave 35's parent row is identical to waves 32 and 34's to
-every reported digit.
+Rows regenerated at wave 36 from `wave36/campaign-frontier-table.json`, with the
+canonical column read off `wave34/`, `wave35/` and `wave36/canonical-reread-*.json`.
+312 reviewed whole-model children,
+256 holding at least one case,
+221 benchmark rows, and every parent benchmark row
+matching the sealed reference — wave 36's parent row is identical to waves 32, 34 and 35's
+to every reported digit: arc 0.5450, hellaswag_norm 0.5050, piqa_norm 0.6800, winogrande
+0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **964 ledger rows,
+960 verifying, 0 failing.**
+
+**A wave-35 artifact was found corrupt and repaired here rather than worked around.**
+`wave35/wave35-child-index.json` was the shell log of wave 35's own index run written over
+the JSON that run wrote, so it had not been parseable since wave 35 and nothing consumed
+it until wave 36's campaign table crashed on it. It was regenerated from wave 35's own
+sealed cell and verdict receipts, which were never touched, and the corrupt bytes are kept
+at `backup/wave35-child-index.json.corrupt-found-by-wave36`.
 
 **The sub-0.5x band now has its own one-page record: `DEEP_RECORD.md`.** Twenty-four
 children, both lenses, benchmarks, verbatim highlights and build costs, written at wave
@@ -42,34 +50,55 @@ compression artifact carrying no evidence about intelligence in either direction
 | at least | canonical child | net | intel | sealed-frontier child | sealed net |
 |---:|---|---:|---:|---|---:|
 | 14/15 | `ARCH.V12` | **0.762614** | 14 | `ARCH.V19` | 0.794570 |
-| 13/15 | `ARCH.V19X09` | **0.742049** | 13 | `ARCH.V18` | 0.790005 |
+| 13/15 | `ARCH.BP64` | **0.742049** | 13 | `ARCH.V18` | 0.790005 |
 | 11/15 | `ARCH.V18X09` | **0.737484** | 12 | `ARCH.B75` | 0.742049 |
 | 10/15 | `ARCH.V12X13` | **0.710093** | 10 | `ARCH.V18X09` | 0.737484 |
-| 8/15 | `ARCH.V16CL1792` | **0.637073** | 8 | `ARCH.GV16L01` | 0.637073 |
+| 8/15 | `ARCH.GV16L01` | **0.637073** | 8 | `ARCH.GV16L01` | 0.637073 |
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | `ARCH.GV12L03` | 0.618813 |
-| 4/15 | `ARCH.V10CL896G03` | **0.441915** | 4 | `ARCH.V12CL896G03` | **0.451045** |
-| 3/15 | `ARCH.V10CL896G01` | **0.441915** | 3 | `ARCH.V10CL896G03` | **0.441915** |
+| 5/15 | `ARCH.V9CL896G10` | **0.437349** | 5 | `ARCH.V8CL1792` | **0.600552** |
+| 4/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | `ARCH.V9CL896G10` | **0.437349** |
+| 3/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | `ARCH.V9CL896G03` | **0.437349** |
 | 2/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V9CL896` | **0.437349** |
 | 1/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V12CL896X13` | **0.420779** |
 
-**Wave 35 moved seven of those rungs and the two ladders still agree at the bottom on
-RATIO.** Sealed 1/15 and canonical 1/15 and 2/15 all land on `ARCH.V12CL896X13` at
-0.420779x — 42.1 per cent of the parent, and *below* the `ARCH.V8CL896` content death at
-0.432784x. Sealed 2/15 moves to `ARCH.V9CL896` at 0.437349x, which halves the campaign's
-0/15 bracket to 0.004565 of stored ratio — 1,024 vocabulary rows between a child that
-answers nothing and a child that summarises an update and lists four missing quantities.
-Sealed 3/15 moves to `ARCH.V10CL896G03` at 0.441915x. The sealed 4/15 rung does not move:
-`ARCH.V12CL896G03` at 0.451045x keeps it.
+**Wave 36 moved two SEALED rungs and three CANONICAL ones, and one of the canonical moves
+is the largest in the campaign's record.** `ARCH.V9CL896G10` — the terminal-gain arm at
+lambda 1.0 on K = 9,216 — seals **4/15 at 0.437349x** against an incumbent at 0.451045x,
+and reads **5/15 canonically** against an incumbent at 0.600552x. That canonical move is
+**0.163203 of stored ratio**, and it rests on one rule about one lane; the subtraction is
+stated in `wave36/canonical-reread-wave36.json` and in `ACTUAL_MATRIX` §1.
 
-At the three rung the two ladders now name DIFFERENT CHILDREN at the same ratio, because
-`ARCH.V10CL896G01` reaches three canonically on a lane the frozen protocol seals a miss.
-That is the first time the ladders have diverged on identity while agreeing on depth.
+It is also the first time in twelve terminal-gain ladders that **lambda 1.0 has beaten
+lambda 0.3**, and the lane it beats it on is context-retrieval, which it shares
+byte-identically with neither its control nor the 0.3 arm. Its objective is the WORST of
+the ladder's two arms — held-out logit relSSE 0.1844 → 0.1785 against 0.1769 — which is
+the seventh time this campaign has recorded an objective ordering arms in the opposite
+direction to the review.
+
+**The sealed 1/15 and 2/15 rungs did NOT move.** `ARCH.V12CL896X13` at 0.420779x and
+`ARCH.V9CL896` at 0.437349x both survived a wave that built a gain arm on each of them:
+the arm on the floor child tied its control at one by moving a lane sideways, and the arm
+on `ARCH.V9CL896` moved the rungs ABOVE it instead.
+
+**Wave 36 also opened the last unbuilt two-axis body region, and it is a content death.**
+`ARCH.W896CL1792` — `--hidden-size 896` composed with `--ff 1792`, a build no builder in
+this estate could produce until this wave lifted a guard — reads **0/15 sealed and 1/15
+canonically at 0.733197x**. `ARCH.W896` alone reads 4/15 and `ARCH.CL1792` alone reads
+7/15. That is the shallowest honest content death in the campaign by **0.300 of stored
+ratio**, and it is attributable to the composition rather than to the tool: this wave's
+builder rebuilt `ARCH.W896` bit-identically to wave 19's sealed body, and the composed
+path at trivial settings exports the parent's own file digest.
+
+**And its benchmark row is the best of the wave.** `ARCH.W896CL1792` scores wikitext word
+perplexity 781 and hellaswag_norm 0.3900 while holding zero review cases;
+`ARCH.V9CL896G10` scores 2,371 and 0.3500 while holding four. The two orderings are
+opposite, on the same seven-row table, measured in the same hour.
 
 The eight rung is the only interior rung the two readings agree on:
 `ARCH.V16CL1792` at 0.637073x reads eight either way.
 
-**Twenty of the twenty-four children ever built below half the parent hold at least one
-case on at least one standard**, and `DEEP_RECORD.md` lists all twenty-four.
+**Twenty-two of the twenty-seven children ever built below half the parent hold at least
+one case on at least one standard**, and `DEEP_RECORD.md` lists all twenty-four.
 `ARCH.V19CL896G03` and `ARCH.V20CL896G03` hold **four of fifteen at 0.483x and 0.488x** —
 the supplier summary, the vendor email, the missing-quantities request, and 4:15 p.m.
 pulled off the note. `ARCH.V19X13CL896` and `ARCH.KKTS`, both sealed at **zero**, are not

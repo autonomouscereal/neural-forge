@@ -1,0 +1,190 @@
+{
+ "schema": "neural-forge-matrix-wave36-preregistration-v1",
+ "purpose": "Every count this wave will build, predicted BEFORE the build and before any dossier is read.  Wave 36 opens the last unbuilt two-axis body region -- width x MLP -- which required LIFTING A BUILD GUARD, so this file registers the guard-lift's own acceptance criterion first and the children second.",
+ "written_before": "the first GPU run of wave 36, including the identity gate",
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 952,
+  "sha256": "5517dd9bc388b2dbd42a71b5b8da28419cb5db7af4871c28f5817d27c8a0c9d7",
+  "identical_in": [
+   "the repository",
+   "the share"
+  ]
+ },
+ "deployment": {
+  "commit": "6dc334d5",
+  "note": "the tree cut, the guard lift and the sealer's four accept strings, in ONE commit"
+ },
+ "the_guard_lift_and_its_acceptance_criterion": {
+  "what_was_refused": "NOTES-MX-AM 3.5: mx35_build.py main() refuses --hidden-size composed with --ff in one build, on the grounds that a second selection would run inside tensors the first fold replaced, with neither axis's census having seen the other.",
+  "what_wave_36_claims": "The refusal was HALF right.  The residual basis E acts on the hidden index and the MLP coreset S acts on the intermediate index; on w2 they act on opposite sides (E^T (w2 S) = (E^T w2) S) and on w1/w3 they act on opposite sides too, so the two folds COMMUTE EXACTLY on the weights and the composed prior is the same object in either build order.  What does not commute is the CENSUS, because the coreset is ranked on the gated intermediate, which is data.  Wave 36 moves the census into the narrowed space and runs the sweep in forward order.  --head-dim keeps its refusal in the same words.",
+  "acceptance_criterion_registered_in_advance": [
+   "IDENTITY GATE, strict.  --hidden-size 1024 --basis identity --ff 2560 --no-fold-solve --no-head-gain --identity-gate strict must report passed=true with every exported tensor BIT-IDENTICAL to the parent's, and the loader must count exactly 229,693,184 parameters.  A single differing byte refuses.  THIS GATE HAS NEVER BEEN RUN ON THE WIDTH AXIS BY ANY WAVE; if it fails for a reason that predates wave 36, that is a finding about the width axis and it will be reported as one rather than patched around.",
+   "COMPOSED_READER_EXACTNESS at every one of the fourteen composed sites: the child's own gated intermediate against the parent's at the lifted row, refused above 5e-2.  Registered expectation: bf16 floor, 1e-3 to 5e-3, the same order the existing identity precondition measures.",
+   "Wave 14 3's identity precondition, re-checked ON THE CHILD at every composed site, refused above 5e-2.",
+   "The loader's own parameter count must equal predicted_parameters(), which is the same closed form every width child has been checked against, with one keyword threaded through it."
+  ],
+  "what_this_lift_does_NOT_claim": [
+   "The residual BASIS still does not see the MLP narrowing.  It is computed once from the parent's 29 residual endpoints before any fold, exactly as it is for the sealed width builds that compose --excise and --kv-groups, whose bases do not see those axes either.  Every SOLVE sees every earlier decision; the basis is the one object that does not, and that is stated here so no later wave has to rediscover it.",
+   "This is a ONE-BUILD composition, not the sequential composition machinery NOTES-MX-AM 8.5 called for.  It is cheaper and it is sound for THIS pair because the two axes are orthogonal coordinates of one fold.  It is not a general tool for composing arbitrary bodies."
+  ]
+ },
+ "parameter_arithmetic": {
+  "note": "EXACT, not fitted.  Derived closed-form before any build from the parent's own config (14 blocks: 6 full_attention, 8 conv; heads 16, kv 8, head_dim 64, vocab 65,536, intermediate 2,560, hidden 1,024) and cross-checked against the parent's own 229,693,184.",
+  "cross_check": "The composed body's 168,410,240 and the K=12,288 fold's 120,700,032 REPRODUCE the two numbers NOTES-MX-AM 3.5 registered for a child that could not be built.  That registration was an unverified prediction and this wave was told not to cite it as a result; it is cited here only as a prediction this wave's loader will now either confirm or refute.",
+  "validated_on": [
+   "the parent itself (1.000000x)",
+   "the identity-gate build, which must return the parent's count exactly"
+  ]
+ },
+ "axis_deltas_used": {
+  "note": "sealed frozen-fifteen delta against the 12/15 parent, read off the ledger's own rows",
+  "width_896": -8,
+  "mlp_1792": -5,
+  "mlp_896": -8,
+  "vocab_12288": -1,
+  "vocab_16384": -3,
+  "vocab_9216": -3,
+  "depth_site13_solo": 1
+ },
+ "the_two_priors_that_disagree_about_the_composed_body": {
+  "the_allocator_additive_model": "12 - 8 (width at 896) - 5 (mlp at 1792) = -1, i.e. ZERO OR BELOW.  Both axes are already PAST their measured transition at the mildest rung anyone has sealed, which is the allocator's own docstring's finding.  AND THE MODEL CANNOT DO BETTER THAN ADDITIVE HERE: mx36_allocator.py's interference fit skips every cell with hidden != 1024, so there is no widthxmlp constant and there never has been.  Wave 36's children are the first observations that could fit one -- and the model's own gate would still exclude them.",
+  "the_body_prior": "Composing a SECOND STRUCTURAL AXIS onto ARCH.W896 has been measured twice and it costs 2 to 3 cases: W896 4/15 -> W896X13 1/15 (block 13, -3, which is a THIRD point on wave 35's two-body block-13 law and it is already in the ledger) and W896 4/15 -> W896KV6JS 2/15 (-2).  Composing a VOCABULARY fold onto W896 costs exactly 1 and then stays flat: V16W896, V18W896, V20W896 and V32W896 all read 3/15 from 0.6673x down to 0.7312x.  MLP is a structural axis, not a vocabulary fold, so the nearest precedent is W896X13 at ONE.",
+  "which_one_this_wave_registers": "THE BODY PRIOR, at ONE, because it is the only prior with a same-body measurement behind it.  Wave 34 and wave 35 both recorded the body prior beating the allocator on this campaign and this wave does not pretend otherwise.  The bracket is [0, 3] and the allocator's own MAE is 2.385 cases, so a reading anywhere in that bracket is inside both models' noise; what would be a RESULT is 4 or more, which no prior here supports."
+ },
+ "predictions": [
+  {
+   "cell": "ARCH.W896CL1792",
+   "lane": "E1",
+   "stored_parameters": 168410240,
+   "net_ratio": 0.733197,
+   "predicted_review": 1,
+   "predicted_canonical": 2,
+   "source": "THE LAST UNBUILT TWO-AXIS BODY REGION.  --hidden-size 896 --ff 1792, built against wave 19's OWN SEALED BASIS (E-reader-pca-896.safetensors, sha d054349102f2621e...), so this child is a controlled delta from ARCH.W896: same width, same E bytes, same arm, and the only difference is the MLP coreset.  Registered at ONE on the W896X13 precedent (a second structural axis costs 3 on this body).  Canonical +1 because the width family reads +1 canonically at four of its six rows."
+  },
+  {
+   "cell": "ARCH.V12W896CL1792",
+   "lane": "E1",
+   "stored_parameters": 120700032,
+   "net_ratio": 0.525484,
+   "predicted_review": 1,
+   "predicted_canonical": 1,
+   "source": "K=12,288 on the composed body -- one CPU vocabulary pass, zero GPU.  FLAT against its body, on the strongest flat-family law in this campaign: the vocabulary fold is flat on the W896 body (four children at 3/15 across 0.064 of ratio), flat on the CL1792 body (eight children at 7/15 across 0.081) and flat on the CL896 body (eleven thousand rows at 2/15).  It has never been flat on a body it had not been measured on before, so this is a prediction and not a deduction."
+  },
+  {
+   "cell": "ARCH.V16W896CL1792",
+   "lane": "E1",
+   "stored_parameters": 124370048,
+   "net_ratio": 0.541462,
+   "predicted_review": 1,
+   "predicted_canonical": 1,
+   "source": "K=16,384 on the composed body, same reasoning, and it is the CONTROL for the K=12,288 rung rather than a second bet: V16 reads ONE ABOVE V12 on the CL1792 body (8 vs 7) and TIES it on the CL896 body (2 and 2), so if the composed body reproduces either ordering that is information about which constituent body dominates the composition."
+  },
+  {
+   "cell": "ARCH.V9CL896G03",
+   "lane": "E2",
+   "stored_parameters": 100456192,
+   "net_ratio": 0.437349,
+   "predicted_review": 3,
+   "predicted_canonical": 3,
+   "source": "TERMINAL GAIN lambda 0.3 on the RETAINED MX35-V9CL896, zero storage delta.  THE ORDERED TEST OF WAVE 35's +1-AT-EVERY-K LAW BELOW ITS MEASURED RANGE: the law was settled on K = 10,240 / 14,336 / 16,384 / 19,456 / 20,480 and K=9,216 is 1,024 rows below its bottom.  Control reads 2, so +1 predicts 3, and the lane it should buy is writing-concise-email -- the same first-person restatement the arm has bought every single time."
+  },
+  {
+   "cell": "ARCH.V12CL896X13G03",
+   "lane": "E2",
+   "stored_parameters": 96649984,
+   "net_ratio": 0.420779,
+   "predicted_review": 2,
+   "predicted_canonical": 3,
+   "source": "TERMINAL GAIN lambda 0.3 on the RETAINED MX35-V12CL896X13, the deepest child the campaign has ever built, zero storage delta.  DOES +1 HOLD BELOW 0.43x, AND DOES IT HOLD ON AN EXCISED BODY?  Two unknowns at once and the prediction takes the law at face value: control 1, predict 2.  The arm's lane is writing-concise-email and this child ALREADY HOLDS THAT LANE, so if +1 arrives it must arrive somewhere the arm has never bought before -- which is a reason to expect it not to.  Registered at 2 anyway, because registering the number the law predicts is what makes the law falsifiable."
+  },
+  {
+   "cell": "ARCH.V9CL896G10",
+   "lane": "E2",
+   "stored_parameters": 100456192,
+   "net_ratio": 0.437349,
+   "predicted_review": 2,
+   "predicted_canonical": 3,
+   "conditional": "built only if ARCH.V9CL896G03 reads >= 3",
+   "source": "TERMINAL GAIN lambda 1.0 on the same retained source.  Flat: across eleven ladders the most aggressive rung has moved a sealed count up exactly ONCE (ARCH.V10CL896G10, wave 35), and wave 35's byte comparison showed that arm shared ten of sixteen lanes with the 0.3 arm INCLUDING the +1 lane.  If that repeats here it is a second observation of the same mechanism; if it does not, the wave-35 tie was the base's."
+  },
+  {
+   "cell": "ARCH.X13W896CL1792",
+   "lane": "E3",
+   "stored_parameters": 160377600,
+   "net_ratio": 0.698225,
+   "predicted_review": 0,
+   "predicted_canonical": 0,
+   "conditional": "CONDITIONAL AND EXPECTED NOT TO FIRE.  Built only if ARCH.V12W896CL1792 reads >= 3/15, which this file registers at 1.  The condition was set by the wave order and is recorded here so that not building it is a recorded outcome rather than an omission.",
+   "source": "The three-axis body: width 896 x mlp 1792 x block 13 excised.  Block 13 costs three sealed cases on every body it has been measured on -- CL1792 7->4, CL896 4->1, W896 4->1 -- so on a body registered at 1 it predicts 0, and a child registered at 0 is not worth a GPU unless the condition above says the body was stronger than registered.  Its K=12,288 fold would be 112667392 parameters, 0.490513x, which would be the deepest child in the campaign by 0.030 of ratio -- and that is a NUMBER FOR A CHILD THAT WILL NOT EXIST unless the condition fires."
+  }
+ ],
+ "frontier_claims_at_stake_stated_in_advance": [
+  {
+   "rung": "sealed 3/15",
+   "incumbent": "ARCH.V10CL896G03 at 0.441915",
+   "moves_if": "ARCH.V9CL896G03 seals >= 3",
+   "to": 0.437349,
+   "note": "this is wave 36's PRIMARY frontier claim and it is a 0.004566 move"
+  },
+  {
+   "rung": "canonical 3/15 and 4/15",
+   "incumbent": "ARCH.V10CL896G01 / ARCH.V10CL896G03 at 0.441915",
+   "moves_if": "ARCH.V9CL896G03 reads >= 3 / >= 4 canonically",
+   "to": 0.437349
+  },
+  {
+   "rung": "sealed 2/15",
+   "incumbent": "ARCH.V9CL896 at 0.437349",
+   "moves_if": "ARCH.V12CL896X13G03 seals >= 2",
+   "to": 0.420779,
+   "note": "0.016570 of stored ratio, and it would put the sealed 2/15 rung ON the campaign floor"
+  },
+  {
+   "rung": "canonical 2/15",
+   "incumbent": "ARCH.V12CL896X13 at 0.420779",
+   "moves_if": "nothing in this wave",
+   "to": null,
+   "note": "ARCH.V12CL896X13G03 is at the SAME ratio, so it can tie this rung and cannot take it"
+  },
+  {
+   "rung": "sealed 5/15",
+   "incumbent": "ARCH.GV12L03 at 0.618813",
+   "moves_if": "ARCH.V12W896CL1792 or ARCH.V16W896CL1792 seals >= 5",
+   "to": 0.525484,
+   "note": "registered at 1, so this is registered as NOT EXPECTED; it is listed so the wave cannot claim it retrospectively"
+  },
+  {
+   "rung": "canonical 5/15, 6/15 and 7/15",
+   "incumbent": "ARCH.V8CL1792 at 0.600552",
+   "moves_if": "a composed child reads >= 5 / >= 6 / >= 7 canonically",
+   "to": 0.525484,
+   "note": "same: registered at 1, listed so it cannot be claimed after the fact"
+  },
+  {
+   "rung": "sealed 9/15 and 10/15",
+   "incumbent": "ARCH.V18X07 / ARCH.V18X09 at 0.737484",
+   "moves_if": "ARCH.W896CL1792 seals >= 9",
+   "to": 0.733197,
+   "note": "0.733197 IS below 0.737484, so the body qualifies by ratio; it is registered at 1 and this rung is registered as unreachable"
+  },
+  {
+   "rung": "canonical 11/15 and 12/15",
+   "incumbent": "ARCH.V18X09 at 0.737484",
+   "moves_if": "ARCH.W896CL1792 reads >= 11 canonically",
+   "to": 0.733197,
+   "note": "same, and listed for the same reason"
+  }
+ ],
+ "what_this_wave_will_NOT_claim": [
+  "A canonical re-read is an ASSESSMENT of a sealed dossier and never becomes a sealed number.  Every child above is sealed on the frozen fifteen under the frozen protocol first, and read a second time under the canonical standard second, and the two counts are carried side by side everywhere.",
+  "THE IDENTITY GATE IS NOT A CELL.  MX36-GATE1024 is a build at trivial settings whose only output is a pass/fail on bytes.  It is never sealed, it never enters the ledger, it takes no rung, and its parameter count (which is the parent's) may not be quoted as a compression result.",
+  "NOTES-MX-AM 3.5's registered arithmetic for the unbuilt child is a PREDICTION, not a result, and it stays that way until this wave's loader counts the built child.  If the loader disagrees with 168,410,240 the registration was wrong and this file will say so.",
+  "The composed build is not evidence that width composes with head_dim.  That half of the refusal stands and this wave did not test it."
+ ],
+ "back_tests_of_the_priors_on_rows_they_will_not_be_scored_on": [
+  "The block-13 law now has THREE bodies in the ledger, not two: CL1792 7->4, CL896 4->1 and W896 4->1.  Wave 35 called it a two-point law; the third point was already sealed in wave 19/23 and nobody had put it beside the other two.",
+  "The 'vocabulary is flat on any body' law has three bodies and twenty-three children: W896 flat at 3 (four children), CL1792 flat at 7 (eight children, with V16CL1792 one ABOVE at 8), CL896 flat at 2 (eleven children from K=9,216 to K=20,480).  Wave 36's V12/V16 rungs are its first test on a TWO-AXIS body.",
+  "The allocator's additive model predicts -1 for the composed body.  Its own MAE on 49 composed children is 2.385 cases and its worst miss in the estate is 7.4 predicted against 0 sealed."
+ ]
+}

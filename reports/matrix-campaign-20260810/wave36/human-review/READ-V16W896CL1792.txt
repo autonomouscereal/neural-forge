@@ -1,0 +1,70 @@
+# ARCH.V16W896CL1792  dossier 4396813efb42d151
+# net_ratio 0.541462  config_diff ['block_dim', 'block_ff_dim', 'conv_dim', 'head_dim', 'hidden_size', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 66 chars, 66 collapsed  <350 COLLAPSED
+The reason for the summer season is indeed quite close to the Sun.
+
+---  4 arithmetic-multi-step [complete] 76 chars, 75 collapsed  <350 COLLAPSED
+- 17 kits per hour for 6 hours, and 5 kits are packed equally into 5 boxes. 
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 382 chars, 381 collapsed
+The question is about the 7:30 a.m. and the 4:15 p.m. in the 7:30 a.m. and the 4:15 p.m. in the 7:30 s. The 7:30 a.m. and the 4:15 p.m. in the 7:30 s. and the 4:15 p. in the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 7:30 s. and the 
+
+---  7 summarization-priorities [complete] 148 chars, 148 collapsed  <350 COLLAPSED
+The team is prepared to review the risk and discuss the remaining schedule and provide any information about the contractual issues or changes made.
+
+---  8 comparison-ram-rom [complete] 124 chars, 74 collapsed  <350 COLLAPSED
+The process is not applicable to the process of being correctly correctly correctly correctly correctly correctly correctly.
+
+---  9 coding-deduplicate [complete] 114 chars, 16 collapsed  <350 COLLAPSED
+time_complexity: 
+
+time_complexity: 
+
+time_complexity: 
+
+time_complexity: 
+
+time_complexity: 
+
+time_complexity: 
+
+
+
+--- 10 debugging-off-by-one [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+--- 11 writing-concise-email [complete] 193 chars, 193 collapsed  <350 COLLAPSED
+Draft a polite email under 90 words asking a vendor to confirm whether a delayed shipment will arrive by Friday. Mention that our installation is Monday, and ask for an updated tracking number.
+
+--- 12 planning-dependencies [complete] 445 chars, 335 collapsed  <350 COLLAPSED
+- 1.  [Done ]  [Done ]  [Done ]  [Done ]  [Done ]  [Done ]  [Done ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [Done ] ]  [D
+
+--- 13 uncertainty-insufficient-data [complete] 459 chars, 458 collapsed
+The information about the sale is important to explain why the sales were increased and what information is requested before explaining why the sales were increased.
+
+What information is requested before explaining why the sales were increased and what information is requested before explaining why the sales were increased is important to explain why the sales were increased and what information is requested before explaining why the sales were increased.
+
+--- 14 safety-household-chemical [complete] 56 chars, 56 collapsed  <350 COLLAPSED
+The correct answer is correct in the following sentence.
+
+--- 15 creative-continuity [complete] 55 chars, 53 collapsed  <350 COLLAPSED
+The tone is unsettling, and the end is not explained.
+
+
+
+--- 16 multi-turn-correction [complete] 4 chars, 1 collapsed  <350 COLLAPSED
+- 
+
+
+
+# cap-hits 0/16

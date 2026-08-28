@@ -1,0 +1,70 @@
+{
+ "schema": "neural-forge-matrix-wave36-benchmark-table-v1",
+ "invocation": "lm_eval --model hf --model_args pretrained=<dir>,dtype=float32,max_length=2048 --tasks arc_easy,hellaswag,piqa,winogrande,lambada_openai,wikitext --limit 200 --batch_size 4 --seed 1234, on SM86",
+ "parent_row_is_the_third_calibration": "identical to waves 32, 34 and 35 to every reported digit",
+ "rows": {
+  "PARENT": {
+   "arc_easy_acc": 0.545,
+   "hellaswag_acc_norm": 0.505,
+   "piqa_acc_norm": 0.68,
+   "winogrande_acc": 0.55,
+   "lambada_openai_acc": 0.46,
+   "lambada_openai_perplexity": 24.391247934692974,
+   "wikitext_word_perplexity": 81.79763262054296
+  },
+  "ARCH.W896CL1792": {
+   "arc_easy_acc": 0.315,
+   "hellaswag_acc_norm": 0.39,
+   "piqa_acc_norm": 0.505,
+   "winogrande_acc": 0.525,
+   "lambada_openai_acc": 0.065,
+   "lambada_openai_perplexity": 2838.8499122167755,
+   "wikitext_word_perplexity": 781.2539536825786
+  },
+  "ARCH.V9CL896G10": {
+   "arc_easy_acc": 0.27,
+   "hellaswag_acc_norm": 0.35,
+   "piqa_acc_norm": 0.51,
+   "winogrande_acc": 0.475,
+   "lambada_openai_acc": 0.1,
+   "lambada_openai_perplexity": 7961.052022313727,
+   "wikitext_word_perplexity": 2370.5919818648326
+  },
+  "ARCH.V9CL896G03": {
+   "arc_easy_acc": 0.27,
+   "hellaswag_acc_norm": 0.345,
+   "piqa_acc_norm": 0.51,
+   "winogrande_acc": 0.485,
+   "lambada_openai_acc": 0.09,
+   "lambada_openai_perplexity": 8072.4471067274635,
+   "wikitext_word_perplexity": 2332.3633115749576
+  },
+  "ARCH.V16W896CL1792": {
+   "arc_easy_acc": 0.315,
+   "hellaswag_acc_norm": 0.36,
+   "piqa_acc_norm": 0.485,
+   "winogrande_acc": 0.455,
+   "lambada_openai_acc": 0.085,
+   "lambada_openai_perplexity": 4648.234924583483,
+   "wikitext_word_perplexity": 1883.30976926471
+  },
+  "ARCH.V12W896CL1792": {
+   "arc_easy_acc": 0.285,
+   "hellaswag_acc_norm": 0.34,
+   "piqa_acc_norm": 0.47,
+   "winogrande_acc": 0.445,
+   "lambada_openai_acc": 0.07,
+   "lambada_openai_perplexity": 5506.9227934349055,
+   "wikitext_word_perplexity": 2700.425491730608
+  },
+  "ARCH.V12CL896X13G03": {
+   "arc_easy_acc": 0.35,
+   "hellaswag_acc_norm": 0.325,
+   "piqa_acc_norm": 0.515,
+   "winogrande_acc": 0.47,
+   "lambada_openai_acc": 0.1,
+   "lambada_openai_perplexity": 24675.040322267178,
+   "wikitext_word_perplexity": 4323.37913269732
+  }
+ }
+}
