@@ -2,8 +2,15 @@
 
 Wave 33 was sent to repair an instrument, do forensics on a composition failure,
 and try two untried arms at the robust frontier. It moved **no frontier row at
-any of the fifteen thresholds** — the sixth consecutive wave that has not — and
-that is the second headline rather than the first.
+any of the fifteen thresholds**: the deepest stored ratio at every one of the
+fifteen is the number wave 32's table already carried, and wave 32 moved none
+either. That is the second headline rather than the first.
+
+*(The seal commit for this note says "the sixth consecutive wave that has not."
+That count is not supported by the record — only wave 32's note states it
+explicitly for itself — and the sentence above is the claim this file stands
+behind. The commit message is immutable and the correction lives here, which is
+the campaign's standing practice for a number that moved after it was written.)*
 
 The first is that two of this wave's measurements say the campaign has been
 reading two of its own numbers wrong.

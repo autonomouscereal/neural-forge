@@ -40,7 +40,8 @@ second cell to it: `ARCH.GV16L01` ties that 8/15 exactly, holding the same eight
 lanes including the same `creative-continuity` case that fails all three
 restatements. **The campaign's honest deep frontier remains `ARCH.V12CL1792` at
 7/15, 0.618813x**, and wave 33 moved no frontier row at any of the fifteen
-thresholds — the sixth consecutive wave that has not.
+thresholds: the deepest stored ratio at every one of them is the number wave 32's
+table already carried.
 
 **The second review surface, bounded.** ADDENDUM 16.1's 30-prompt extension bank
 prices and orders; it grades nothing, and wave 33 measured what it can price.
