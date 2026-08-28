@@ -167,6 +167,25 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave33-blend-build-receipt-v1",
     "neural-forge-matrix-wave33-logit-metric-writer-v1",
     "neural-forge-matrix-wave33-body-blend-build-receipt-v1",
+    # Wave 34 adds NO builder class either.  Its four strings are wave 33's four
+    # renamed by `run/mx34/cut_wave34.py`, byte-identical in behaviour to the
+    # lines above them.  This wave builds through `mx34_build.py` (two bodies),
+    # `mx34_vocab.py` (five vocabulary folds) and `mx34_termgain.py` (four
+    # terminal-gain arms), and all three write the standard-shape string; the
+    # other three are appended with it for wave 33's stated reason -- the rename
+    # produces them whether or not this wave calls them, and a string that exists
+    # in the tree and not in this list is a refusal waiting for the wave that
+    # does call it.
+    #
+    # THIS LIST REFUSED WAVE 34's FIRST FOUR REVIEWS, correctly, before any
+    # receipt was written.  It is the second append-only accept list to fire in
+    # this wave; `BASIS_SCHEMAS_ACCEPTED` in the builder is the first, and it was
+    # appended by hand at the tree cut.  A wave that has to be refused twice by
+    # its own guards to get its schema strings right is a wave whose guards work.
+    "neural-forge-matrix-wave34-standard-shape-child-v1",
+    "neural-forge-matrix-wave34-blend-build-receipt-v1",
+    "neural-forge-matrix-wave34-logit-metric-writer-v1",
+    "neural-forge-matrix-wave34-body-blend-build-receipt-v1",
 )
 
 
