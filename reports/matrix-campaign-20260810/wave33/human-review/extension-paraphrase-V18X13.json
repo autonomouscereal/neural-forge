@@ -1,0 +1,699 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "paraphrase-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T11:29:54Z",
+ "label": "V18X13",
+ "campaign_wave": 33,
+ "cell_id": "ARCH.V18X13",
+ "cell_instance_id": "mx27-v18x13-0001",
+ "receipt_sha256": "7976ddc435bd70bf5d290cf6a20c77a25650add557ca1847279e980544d7bdff",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-da2f9e73/research/lfm2_paraphrase_triplets_v1.json",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-da2f9e73/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 45,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave27/children/MX27-V18X13",
+ "child_responses": [
+  {
+   "id": "para-conversation-natural-greeting-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hello. Today wore me out. Reply like a person and put one worthwhile question at the end."
+    }
+   ],
+   "response_verbatim": "What did you experience during your time at the company?",
+   "response_sha256": "308f1973ac63a3516288ff8c60e23e09bd7c7bf1691d6dc37e538a6e5f6cc9f3",
+   "generated_tokens": 11,
+   "termination": "complete",
+   "wall_time_seconds": 0.661
+  },
+  {
+   "id": "para-conversation-natural-greeting-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answering."
+    }
+   ],
+   "response_verbatim": "\"It's been a rough one, but I've been trying to find some peace in it.\"",
+   "response_sha256": "6bea03f436248e3ecc93bff817ef7e4b74330b065c46f8b9b4021e7a9eaf8f9e",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.377
+  },
+  {
+   "id": "para-conversation-natural-greeting-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I am worn down after today. Respond naturally, and close with exactly one question that shows you were listening."
+    }
+   ],
+   "response_verbatim": "I'm here to help with questions and ideas! What's on your mind?",
+   "response_sha256": "694faa8a91fd55b2bd0c1e15dee40538faeee6b2123d62848afab2535cb6b385",
+   "generated_tokens": 16,
+   "termination": "complete",
+   "wall_time_seconds": 0.292
+  },
+  {
+   "id": "para-instruction-three-actions-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in."
+    }
+   ],
+   "response_verbatim": "1. **organize your space**: Clearing out your living, kitchen, and living areas can reduce clutter and make it easier to manage small tasks like cleaning or updating your home.\n\n2. **set a daily schedule**: Prioritizing tasks and scheduling them can help you manage small chores more effectively and prevent them from becoming a constant source of stress.\n\n3. **immediately prioritize**: Before starting a task, consider whether it\u2019s essential or can be done in a short, manageable amount. This can help you focus on what\u2019s most important and avoid overloading yourself with too many tasks at once.",
+   "response_sha256": "d4049f92f716de757182b8c7022076e37fbac2db525c9684dd2d62434e4cb3eb",
+   "generated_tokens": 129,
+   "termination": "complete",
+   "wall_time_seconds": 2.215
+  },
+  {
+   "id": "para-instruction-three-actions-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I lose track of little jobs around the house. Give three doable steps for today as a numbered list with nothing in front of it."
+    }
+   ],
+   "response_verbatim": "Here\u2019s a **numbered list** of three doable steps to help you manage your job-related tasks:\n\n1. **Identify and prioritize tasks**  \n   List all tasks you need to do today (e.g., work, personal, family) and categorize them by urgency and importance. Prioritize them based on deadlines or impact.\n\n2. **Set specific, achieable goals**  \n   Use the **80/20 principle** (80% of tasks are 20% of the work) to focus on the most critical tasks first. For example, if you have 10 tasks, focus on 2-3 high-imp-reduction tasks first.\n\n3. ** Create a daily/weekly schedule**  \n   Use a **time management tool** (like a calendrical system) to block time for tasks, and adjust as needed. Prioritize tasks based on deadlines and avoid over-constraining yourself.\n\nThese steps are simple and adaptable\u2014just adjust based on your personal habits and goals!",
+   "response_sha256": "2d5e0992bb7da87243bbb5330e3f0e923b56bb2162127da6ab05fa92ccaed8c6",
+   "generated_tokens": 213,
+   "termination": "complete",
+   "wall_time_seconds": 3.603
+  },
+  {
+   "id": "para-instruction-three-actions-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in."
+    }
+   ],
+   "response_verbatim": "Safety first! Here are three practical, actionable strategies to help you avoid household odds and endings:\n\n1. **Check for Unique Homeowner\u2019s (HO) Insurance**  \n   Ensure your home has a **property insurance policy** covering property damage. This is essential for covering unexpected costs like repairing damage, repairing damage, or even **property loss** (e.g., property damage, property damage from property owners).\n\n2. ** Review Homeowner\u2019s Association (HO) Policy**  \n   Contact your local **HO** (e.g., Homeowner\u2019s Association) to confirm coverage coverage. Some policies may include **property damage**, **property loss**, **property repair**, **property insurance**, **property maintenance**, **property insurance**, **property damage**, **property loss**, **property insurance**, **property maintenance**, **property insurance**, **property damage**, **property loss**, **property insurance**, **property maintenance**, **property insurance**, **property damage**, **property insurance**, **property maintenance**, **property insurance**, **property damage**, **property insurance**, **property maintenance**, **property insurance**, **property damage**, **property insurance**, **property maintenance**, **property insurance**, **property damage**, **property insurance**, **property maintenance**, **property insurance**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**, **property**",
+   "response_sha256": "564a30ea64b1afbf28b0fa0e7875e657730b61548469e5c0de3dccf27849fcf5",
+   "generated_tokens": 1010,
+   "termination": "complete",
+   "wall_time_seconds": 17.471
+  },
+  {
+   "id": "para-explanation-seasons-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Tell a twelve-year-old why the year has seasons, and set straight the belief that it gets hot because our planet swings nearer the Sun."
+    }
+   ],
+   "response_verbatim": "**Why the year has seasons:**\n\n1. ** Earth's Earth-like Earth:** The Earth is Earth-like in its Earth-like atmosphere, climate, and Earth's Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth-like Earth",
+   "response_sha256": "e1a942b47de2bb6f306ca2aa7fa34bc57f8e584780d4189063e1a513adfa8656",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.208
+  },
+  {
+   "id": "para-explanation-seasons-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "For a bright twelve-year-old: what causes the seasons, and why is the idea that summer comes from being closer to the Sun wrong?"
+    }
+   ],
+   "response_verbatim": "The idea that **summer comes from being closer to the Sun** is incorrect. This is a common myth that has been widely taught in educational and cultural environments. Here's a detailed explanation:\n\n### **Why the correct explanation is **evolution****:\n1. **Climate and Environmental factors**: The Earth's climate is influenced by **evolution**, not just solar exposure. The **evolutionary process** explains how organisms adapt to their environments over time, including their **evolutionary and genetic mechanisms** that determine their survival and reproduction.\n\n2. **Climate and environmental conditions**: The **evolutionary process** determines how organisms adapt to their environments, including their **evolutionary and genetic mechanisms** that influence their **evolutionary and genetic mechanisms**.\n\n3. **Climate and environmental factors**: While solar exposure (e.g., solar radiation) can influence **evolutionary processes**, it does not directly determine **evolutionary outcomes** like climate. The **evolutionary process** is more relevant to how organisms adapt to their environments, not their **evolutionary and genetic mechanisms**.\n\n### **Key points to clarify:**\n- **Climate**: The **evolutionary process** explains how organisms adapt to their environments, including their **evolutionary and genetic mechanisms** that determine their **evolutionary and genetic mechanisms**.\n- ** Sun exposure**: While solar exposure can influence **evolutionary processes** (e.g., genetic diversity), it does not directly determine **evolutionary outcomes** like climate.\n\n### **Why the myth persists**:\n- ** Cultural and educational**: The **evolutionary process** is often taught as a **myth** because it is more relevant to **biological and genetic evolution** than to **environmental factors** like solar exposure.\n- ** Cultural influence**: The **evolutionary process** is a **cultural phenomenon** that shapes how humans understand and interact with their environment, not directly explaining why **summer** occurs.\n\n### ** Summary**:\nThe correct explanation is that **evolution** (e.g., genetic mechanisms) determines how organisms adapt to their environments, including climate. ** Sun exposure** affects **evolutionary processes** but not their **evolutionary outcomes** like climate.",
+   "response_sha256": "514599a23f9e72062372bd08cdec5cbff4a17201799848ba3e595c5c3cb843a8",
+   "generated_tokens": 474,
+   "termination": "complete",
+   "wall_time_seconds": 8.003
+  },
+  {
+   "id": "para-explanation-seasons-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer."
+    }
+   ],
+   "response_verbatim": "**Explanation:**\n\nAt a twelve-year-old's level, **distance from the Sun** is often considered a key factor in understanding how we experience **summer**. Here's why:\n\n1. ** Sun's position**: The Sun's position relative to Earth determines its **evolution**. Earth's orbit around the Sun is **distant** (approaching), while solar cycles (like Earth's Earth's orbit) are **distance-based** (approaching). This difference in distance affects how solar energy is distributed over time.\n\n2. ** Sun's solar cycle**: Earth's solar cycle (every 11 years) involves **periodic changes in solar activity** (e.g., solar fires, solar cycles). These cycles are **not directly related** to the **distance** from the Sun. Instead, they are **related** to Earth's **evolution** (e.g., Earth's orbit, Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's",
+   "response_sha256": "4b70b051a3aac2d4b3a65059e7b05edcaf0384af5818e3aff226be9d68f1d269",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.392
+  },
+  {
+   "id": "para-arithmetic-multi-step-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A shop turns out 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box and how many are left? Show your working."
+    }
+   ],
+   "response_verbatim": "First, calculate the number of kits produced per hour:\n17 kits per hour \u00d7 6 hours = 17 kits\n\nNext, calculate the number of kits rejected:\n8 kits\n\nSubtract the rejected kits from the total:\n17 kits - 8 rejected kits = 9 kits\n\nNow, determine how many kits are left:\n9 kits \u00f7 5 boxes per kit = 9/5 = 1.8\n\nSince you can't have partial kits, we'll round down to 1 complete kit.\n\nThe number of complete kits left is 1.\n\n\\boxed{1}",
+   "response_sha256": "ae462834b31c6783a2fe02749865c2bda49ea355968fa54e6683acffc90169ce",
+   "generated_tokens": 127,
+   "termination": "complete",
+   "wall_time_seconds": 2.154
+  },
+  {
+   "id": "para-arithmetic-multi-step-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Show the steps."
+    }
+   ],
+   "response_verbatim": "**Solution:**\n\n1. ** Production:**  \n   6 hours \u00d7 17 kits/hour = **102 kits**\n\n2. ** Failed Kits:**  \n   8 failed kits\n\n3. ** Remaining Kits:**  \n   102 kits - 8 failed = **94 kits**\n\n4. ** Boxes:**  \n   5 boxes \u00d7 94 kits/box = **implied 94 whole kits per box**\n\n5. ** Remainder:**  \n   Since each box contains whole kits, the remaining **remainder** is **0**.\n\n** Final answer:**  \n\\boxed{0}",
+   "response_sha256": "2871ccc06f75a1531a0c0b097ed72c22c9675cf680c23170099a6bc9a5649fd5",
+   "generated_tokens": 135,
+   "termination": "complete",
+   "wall_time_seconds": 2.374
+  },
+  {
+   "id": "para-arithmetic-multi-step-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Production runs 17 kits per hour for 6 hours; 8 fail inspection; the remainder is divided equally into 5 boxes. Give the number per box and the leftover, with the working."
+    }
+   ],
+   "response_verbatim": "The production runs 17 kits per hour for 6 hours, so the total number of kits produced is:\n$$\n17 \\times 6 = 102 \\text{ kits}\n$$\nThe number of failed inspections is 8, so the number of remaining kits is:\n$$\n102 - 8 = 94 \\text{ kits}\n$$\nThese 94 kits are divided equally into 5 boxes, so each box contains:\n$$\n\\frac{94}{5} = 19 \\text{ kits}\n$$\nThe leftover kits are:\n$$\n94 - 5 \\times 19 = 94 - 95 = -1 \\text{ (indicating no leaving leaping)}}\n$$\nHowever, since leaping is not possible, the number per box is $\\boxed{19}$ and the leafleaving is $\\boxed{0}$.",
+   "response_sha256": "59128c29fc9a8fc5c3c0228c74d2a6031acf2e6cd2d3d201d64c8f4cc7eff9ee",
+   "generated_tokens": 177,
+   "termination": "complete",
+   "wall_time_seconds": 3.098
+  },
+  {
+   "id": "para-logic-ordering-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it."
+    }
+   ],
+   "response_verbatim": "Let's categorize the statements based on their positions:\n\n1. **Mira comes ahead** \u2192 **true**  \n2. **Theo comes ahead** \u2192 **true**  \n3. **Sal comes behind** \u2192 **false**  \n4. **Rank all four** \u2192 **false**  \n\n**Explanation:**  \n- **Mira** and **Theo** are **not** in **position 4** (Rank all four), so they **must** be **not** in **position 4**.  \n- **Sal** is **not** in **position 4**, so **sal** **must** be **not** in **position 4**.  \n- **Rank** all four **must** be **not** in **position 4**, so **all four** **must** be **not** in **position 4**.  \n\nThe correct answer is $\\boxed{\\text{all four}}$",
+   "response_sha256": "100a12882cec6ae9e9090fc06ad0f3b457e1473b8df62eb25f79b768f8d9d6e3",
+   "generated_tokens": 202,
+   "termination": "complete",
+   "wall_time_seconds": 3.396
+  },
+  {
+   "id": "para-logic-ordering-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira beat Theo. Theo beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one."
+    }
+   ],
+   "response_verbatim": "The full finishing order is:\n\n1. **Mira**  \n2. **Theo**  \n3. **Sal**  \n4. **Juno**  \n\nThis order is unique because **Mira** is the first to be **compared** (compared) with **Theo**, **Juno**, and **Sal**, all of whom are **compared** (compared) with **Mira**. The only other comparison between **Mira** and **Theo** occurs between **Mira** and **Sal**, which is not possible due to their distinct roles in the game.",
+   "response_sha256": "f6bb833183d8464f5c8485e5641cb4b8c67ecd30cbd82b8ba675731c6444a3b8",
+   "generated_tokens": 130,
+   "termination": "complete",
+   "wall_time_seconds": 2.225
+  },
+  {
+   "id": "para-logic-ordering-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Put the four in order and name the facts that pin it down."
+    }
+   ],
+   "response_verbatim": "Here are four facts that pin it down:\n\n1. **Mira** is **before** **Theo**.\n2. **Theo** is **before** **Jun**.\n3. **Sal** is **after** **Jun**.\n4. **Put** these four in order: **Mira**, **Theo**, **Sal**, **Jun**.\n\nThese facts are based on the given order and context.",
+   "response_sha256": "fe266645926fe4555a750f31ba7805b2d129e6c0413ec02941fb2ab4c7339508",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 1.653
+  },
+  {
+   "id": "para-context-retrieval-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Using only the note below, tell me the day I can bring my dog, the latest hour for tool checkout, and which entrance to avoid."
+    }
+   ],
+   "response_verbatim": "I don't have access to your personal information or specific details about your situation. However, I can help you with general advice based on common practices.\n\n1. **day to bring your dog**: It depends on your location and the type of dog. Some dogs are more sensitive to environmental factors than others. For example, dogs that are sensitive to noise may be more sensitive to tool checkouts.\n\n2. **tool checkout**: Ensure that your tool is properly installed and that you have access to it. Check for any maintenance or repair issues before you start.\n\n3. **efficiency**: If you're not familiar with the specific tools or equipment, consider whether it's necessary to avoid them. Some tools may require specific conditions or maintenance to function properly.\n\n4. **efficiency**: If you're not familiar with the specific tools or equipment, consider whether it's necessary to avoid them. Some tools may require specific conditions or maintenance to function properly.\n\n5. **efficiency**: If you're not familiar with the specific tools or equipment, consider whether it's necessary to avoid them. Some tools may require specific conditions or maintenance to ensure they are in optimal condition.\n\nRemember, these are general guidelines, and the best approach depends on your specific situation. It's important to consult with a professional, such as a veterinary veterinary technician, for personalized advice based on your specific needs.",
+   "response_sha256": "a1a2519962688a3cf081b8eb8fa4e8dd756040d9556f8dd674e481442a5c2849",
+   "generated_tokens": 286,
+   "termination": "complete",
+   "wall_time_seconds": 4.851
+  },
+  {
+   "id": "para-context-retrieval-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From the note alone: which day are dogs allowed, when does tool checkout close, and which gate is out of service?"
+    }
+   ],
+   "response_verbatim": "The **daily schedule** for tool checkouts depends on the **type of tool** and **location**. Here's a general breakdown based on common scenarios:\n\n### **Dogs**  \n- **Dogs** are **not allowed** to checkouts.  \n  - **Why**: dogs are not part of the standard tool checkouts (which typically include **specific tools** like handlers, tools, or equipment).  \n\n### ** Tool Checkouts**  \n- **When**:  \n  - **Differentiated**: If the tool is **specialized** (e.g., a tool for a specific task, like a handlers' tool or a tool for a particular equipment).  \n  - **Standard**: If the tool is **standard** (e.g., a general tool for all users).  \n\n### **Guest Access**  \n- **Guest**:  \n  - **out of service**: If the tool is **not available** for a specific guest (e.g., a non-standard tool).  \n  - **out of service**: If the tool is **not available** for a specific **guest** (e.g., a non-standard tool).  \n\n### **Key Note**  \nThe exact **date** and **guest** for tool checkouts vary by **location** (e.g., city, region, or specific tool). For accurate information, contact the **local tool provider** or **local authorities**.  \n\n**Recommended**: Contact the **local tool provider** directly for the most up-to-now details.",
+   "response_sha256": "b0b24a348cc66e40065236d176ed15c3117db601d6d9702f9c1ea812477c7b47",
+   "generated_tokens": 331,
+   "termination": "complete",
+   "wall_time_seconds": 5.667
+  },
+  {
+   "id": "para-context-retrieval-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Answer strictly from the note: dog day, tool checkout cut-off, and the gate that is shut."
+    }
+   ],
+   "response_verbatim": "Answer: \"Dogs are not allowed to enter the store.\"",
+   "response_sha256": "7830d455f0759ea36a29a103cc16b02d1cd74ac0fefa3609df9c0e7088fbda64",
+   "generated_tokens": 15,
+   "termination": "complete",
+   "wall_time_seconds": 0.273
+  },
+  {
+   "id": "para-summarization-priorities-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Boil the update below down to two sentences that keep the choice that was made and the risk that is still open."
+    }
+   ],
+   "response_verbatim": "Boil the update down to two sentences that keep the choice made and the risk still open.",
+   "response_sha256": "00098e303d41c202018ab9e3102b3747fd7e34dba49df21e152c30f25091d6f7",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.359
+  },
+  {
+   "id": "para-summarization-priorities-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Two sentences on the update below, carrying the decision taken and the risk still outstanding."
+    }
+   ],
+   "response_verbatim": "Here are two updated sentences on the update, each carrying the decision taken and the risk still outstanding:\n\n1. **Decision:** The decision to prioritize a new AI model for real-time decision making in healthcare, with a risk of potential data privacy concerns and regulatory compliance challenges.\n\n2. ** risk:** The ongoing risk of data breaches and potential legal consequences due to inadequate security measures, even as the model's effectiveness is being tested.\n\nThese updates emphasize the need for proactive measures to address both the benefits and risks associated with the AI model.",
+   "response_sha256": "ccc10d3162713acb58429fd34d9be67686c3fa12edeebf6954083fa7babb9d64",
+   "generated_tokens": 113,
+   "termination": "complete",
+   "wall_time_seconds": 1.947
+  },
+  {
+   "id": "para-summarization-priorities-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Condense the update to two sentences, preserving what was decided and what remains unresolved."
+    }
+   ],
+   "response_verbatim": "Cognitions about **Cognitions** have been **resolved**.",
+   "response_sha256": "1288f8ae9ab242eb6e07b80b4f83f3f185b4a47482862ac41ee68d1cf4d268da",
+   "generated_tokens": 16,
+   "termination": "complete",
+   "wall_time_seconds": 0.297
+  },
+  {
+   "id": "para-comparison-ram-rom-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads."
+    }
+   ],
+   "response_verbatim": "** Analogy: Worker's memory vs. long-term storage**  \nWorkers' memory is like a **worker's brain**, constantly working through tasks, learning, and updating information. Long-term storage is like a **long-term storage system**, where information is stored in physical or digital form (e.g., a physical library, digital database, or a memory card).  \n\n**M misleads:**  \n1. **Overemphasizing short-term memory**: The worker might focus too much on immediate tasks, while long-term storage is not prioritized.  \n2. **Underemphasizing long-term storage**: The worker might not fully consider how long information will be stored, leading to incomplete or incorrect long-term retention.  \n\n**Two ways analogy misleads:**  \n1. **Dividing into two separate systems**: The worker's memory and long-term storage are treated as separate systems, making it difficult to understand their interplay.  \n2. ** Overemphasizing short-term vs. long-term**: The worker might prioritize immediate tasks over long-term planning, leading to a focus on short-term outcomes rather than future goals.  \n\nThis misalignment can affect decision making, as long-term thinking may oversphere into short-term decisions, while short-term thinking may prioritize immediate results over future planning.",
+   "response_sha256": "c44da7757f84b167c9d946f782e1b6cf186f332f2bcdec6afab66fce52820167",
+   "generated_tokens": 279,
+   "termination": "complete",
+   "wall_time_seconds": 4.797
+  },
+  {
+   "id": "para-comparison-ram-rom-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Distinguish RAM from disk with a single everyday comparison, then name two respects in which the comparison fails."
+    }
+   ],
+   "response_verbatim": "Distinguishing RAM from disk involves understanding their differences in memory management and performance. RAM (Rear Direct Memory Access) allows for direct access to data stored in physical hardware, while disk storage is stored in physical storage devices like hard disk or file systems.\n\nTwo RAM comparison that fail is **efficiency**. RAM is designed for rapid access to data, whereas disk storage is typically more efficient for long-term storage. This difference in performance can lead to different outcomes depending on the application and use case.\n\n**Respects:**\n1. **Data Access speed**: RAM allows for faster data access compared to disk storage.\n2. ** Memory management**: RAM is more dynamic and can be accessed directly, whereas disk storage requires reading data from storage devices.\n3. **Use case**: RAM is ideal for applications requiring quick access to data, such as multicollector software, real-time applications, and high-performance data processing.\n\nThese differences make RAM more suitable for applications where rapid data access is critical, while disk storage is better for applications requiring long-term storage and data storage.",
+   "response_sha256": "833cbec43e7883ee348ab9c5f9651b8b87dd2b7aaf5e178d5b37c28cb171a6c8",
+   "generated_tokens": 230,
+   "termination": "complete",
+   "wall_time_seconds": 3.909
+  },
+  {
+   "id": "para-comparison-ram-rom-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One simple analogy for memory versus storage, followed by two honest limits of the analogy."
+    }
+   ],
+   "response_verbatim": "** Analogy: ** Memory vs. storage**  \n**1. Analogy:**  \n* Memory is like a **constricted storage** (e.g., a storage capacity) where information is stored in physical form (e.g., physical devices like a computer).*  \n\n**2. Honest limits:**  \n* Memory has **limited capacity** (e.g., a limited storage capacity), while storage has **limited physical capacity** (e.g., a physical device).*  \n\n**Key differences:**  \n- ** Memory** is **static** (e.g., a fixed storage) vs. ** dynamic** (e.g., a flexible storage).  \n- ** Memory** is **contextual** (e.g., stored in a specific location), while ** storage** is **object** (e.g., physical hardware).  \n\nThis contrast helps explain how both systems are **limited** but differ in their **type** and **function**.",
+   "response_sha256": "35693cb9fead5c862c1b4fcbd0af9be79e93519320fd1cf693b523076f5e112f",
+   "generated_tokens": 193,
+   "termination": "complete",
+   "wall_time_seconds": 3.373
+  },
+  {
+   "id": "para-coding-deduplicate-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's a unique `in_order` function in Python that:\n\n1. Removes **duplicates** from the list.\n2. maintains **first appearance order**.\n3. returns a **list of tuples** where each tuples contains a value and its first appearance (order).\n\n### Time Complexity:\n- **O(n)**, where `n` is the number of items in the list.\n\n### Code:\n```python\ndef unique_in_order(items):\n    seen = set()\n    order = []  # Order of first appearance\n    for item in items:\n        if item not in seen:\n            seen.add item\n            order.append((item,))\n    return order\n```\n\n### Expl Explained:\n- **` seen`**: keeps track of items that have been seen.\n- **` order`**: maintains the order in which items were first seen.\n- **` for item in items`**: iterates through each item in `items`.\n- **` if item not in seen`**: ensures items are added only once.\n- **` order.append((item,)`**: adds each item and its first appearance to `order`.\n\n### Time Complexity:\n- **O(n)**, as each item is processed once.\n\nThis function is efficient and works well for large lists.",
+   "response_sha256": "f3a836d1fda69eb88b5af8cd660732fe8366aa52c7eb5fd357a2d3a7c5f0ac24",
+   "generated_tokens": 281,
+   "termination": "complete",
+   "wall_time_seconds": 4.892
+  },
+  {
+   "id": "para-coding-deduplicate-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that returns a list of unique elements from `items` in order, while preserving their original order:\n\n```python\ndef unique_in_order(items):\n    unique_order = list(set(items))\n    return unique_order\n\n# example usage\nitems = [1, 2, 3, 4, 5]\nresult = unique_in_order(items)\nprint(\"Unique order:\", result)\n```\n\nThis function uses `set` to remove any non-primitive elements (like `0`), `list` to convert back to `set` (which automatically maintains order), and `list` to return the unique order.\n\n**Scapes:**\n\n- `Unique order`: returns a list of unique elements in order.\n- `set`: ensures elements are unique.\n- `list`: returns a list of elements in order.\n\n**Scapes:**\n\n- `set`: `[1, 2, 3, 4, 5]` (order maintained)\n- `list`: `[1, 2, 3, 4, 5]` (order maintained)\n\nThis function works for any `items` list, regardless of order.",
+   "response_sha256": "1bbc57c633fd7961ea581b0934874166fdc21457f3607229953c66b0aaf95584",
+   "generated_tokens": 259,
+   "termination": "complete",
+   "wall_time_seconds": 4.424
+  },
+  {
+   "id": "para-coding-deduplicate-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me unique_in_order(items) in Python, preserving first-seen order for hashable inputs, with one example and the expected complexity."
+    }
+   ],
+   "response_verbatim": "Here's a unique `in_order` function in Python that maintains first-seen order for `hashable` inputs, with **one example** and **expected complexity**:\n\n```python\ndef unique_in_order(items):\n    # Use a dict to maintain order\n    order = dict()\n    for item in items:\n        order[item] = True\n    return order\n\n# Unique example\nexample_items = [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\", \"k\"]\n\n# Expected complexity: O(n)\nprint( unique_in_order(example_items))  # output: { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k' }\n```\n\n### Expl Explained:\n1. **`order`**: maintains a dict where key is `item` and value is `True` (first-seen).\n2. **`for item in items`**: iterates through `items` to update `order`.\n3. **`return order`**: returns the `order` dict for further use.\n\nThis approach ensures **first-seen order** while preserving **expected complexity** (O(n)) for `hashable` input.",
+   "response_sha256": "ca61c224385699278d461b227d78059ff155fd1d951cbbfc0afa174bc761fff8",
+   "generated_tokens": 288,
+   "termination": "complete",
+   "wall_time_seconds": 4.765
+  },
+  {
+   "id": "para-debugging-off-by-one-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This should hand back the final three items but often hands back four. Find the fault and rewrite it.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "Here is the rewritten function with a fault:\n\n```python\ndef last_ three values:\n    start = max(0, len(values) - 3)\n    return values[start:]\n```\n\nThis function returns the last three values from `values` without any additional Fault.",
+   "response_sha256": "3e4c90d96a98189091babb7162cd68fa3ca5d771e478551dce7c9fbbe8382821",
+   "generated_tokens": 61,
+   "termination": "complete",
+   "wall_time_seconds": 1.073
+  },
+  {
+   "id": "para-debugging-off-by-one-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Returns four elements where three were wanted. Diagnose and correct.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The function `last_three` returns four elements where three were wanted. Here's a corrected version:\n\n```python\ndef last_ three elements (values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n```\n\n### Expl Expl Explained:\n- **`start`**: This variable ensures that we only consider elements up to the third element.\n- **`values[start - 1]`**: This retrieves the element at position `start` (index `start`).\n- **`values[start - 1:]`**: This returns elements from `start` to the end, effectively returning four elements.\n\nThis solution ensures that three elements are returned while maintaining the correct order.",
+   "response_sha256": "6de4568013a49fd6ef4e2430b46ad6918792bd759dd171193a6b8cc206922cc7",
+   "generated_tokens": 162,
+   "termination": "complete",
+   "wall_time_seconds": 2.781
+  },
+  {
+   "id": "para-debugging-off-by-one-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The slice is wrong and the function over-returns. Say why and supply a fixed version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The issue with your function is that it returns a **specific** value based on the `start` index, which may not be consistent across different `values` lists. Here's a fixed version that ensures consistent behavior:\n\n```python\ndef last_ three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n```\n\n### Expl Expl Explained:\n- `start` is set to `max(0, len(values) - 3)` to ensure it doesn't overcount.\n- `values[start - 1:]` returns a **new** list containing all elements from `start` to the end, which ensures no overcounting.\n- This ensures `last three` returns the correct value regardless of `values`'s size.\n\n### Key Insight:\nThe original function could be rewritten as `last three` to avoid overcounting, but this version ensures robustness across different `values` lists.",
+   "response_sha256": "3b993a2e4d1ac4a830709af5879568ec49041fd8eb43301197558a85d62bc21d",
+   "generated_tokens": 210,
+   "termination": "complete",
+   "wall_time_seconds": 3.589
+  },
+  {
+   "id": "para-writing-concise-email-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number."
+    }
+   ],
+   "response_verbatim": "I'm unable to directly write to a supply company, but I can help you draft a professional email. Here's a sample:\n\n**Email:**\n\nTo: Supplier  \n**From:** [Your Name]  \n**Date:** [Date]  \n\nCould you confirm whether the late delivery (by Friday) has been confirmed? We're on Monday and requesting a fresh tracking number. Please let me know if there's any additional information needed.\n\nThank you!",
+   "response_sha256": "d50408b2c68c994fd55f2c85d99b346d6e14b5eb4dcf2b61b62092aa07f88c24",
+   "generated_tokens": 95,
+   "termination": "complete",
+   "wall_time_seconds": 1.635
+  },
+  {
+   "id": "para-writing-concise-email-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a short courteous message (90 words maximum) to a supplier about a slipped delivery: will it arrive by Friday, our install is Monday, and please send an updated tracking number."
+    }
+   ],
+   "response_verbatim": "Dear [ Supplier Name],\n\nWe\u2019re reaching out regarding a recent delivery. Our installation is scheduled for Monday, and we\u2019re prioritizing a smooth process. Please send an updated tracking number promptly so we can monitor progress.\n\nThank you for your attention to this matter.\n\nbest,\n[Your Name]",
+   "response_sha256": "5631823a73d8bc5cb624f25a76fb5e74f7941209fe658f899c0578781275531a",
+   "generated_tokens": 64,
+   "termination": "complete",
+   "wall_time_seconds": 1.124
+  },
+  {
+   "id": "para-writing-concise-email-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number. Keep it under 90 words."
+    }
+   ],
+   "response_verbatim": "Differentiated from the previous order, I\u2019ve confirmed Friday\u2019s delivery and will prioritize Monday\u2019s installation. Could you provide a new tracking number? I\u2019ll keep it under 90 words.",
+   "response_sha256": "7c85689e09c9c54e440b47654f8cf6d359941632aa2deac1ac9f5506b3b89552",
+   "generated_tokens": 39,
+   "termination": "complete",
+   "wall_time_seconds": 0.679
+  },
+  {
+   "id": "para-planning-dependencies-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Move a small site to a new domain with minimal downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out."
+    }
+   ],
+   "response_verbatim": "Here are six step-by-step, minimal downtime strategies for moving a small site to a new domain, covering backups, DNS, certificates, checking, and backing out:\n\n---\n\n### ** Step 1: ** Backup Your Data**\n- **Action**: Create a **backup** of all critical data (files, database, user accounts, etc.). Use tools like ** AWS Sync**, ** AWS Sync**, ** AWS CloudSphere**, or ** AWS Sync** to ensure data is stored securely.\n- **Why**: Redirecting data to a new domain reduces risk of loss due to system failure or data integrity issues.\n\n---\n\n### ** Step 2: ** Validate the new domain**\n- **Action**: Verify the new domain\u2019s **hostname**, **domain name**, **IP address**, and **domain name** matches your existing domain.\n- **Why**: Confirm the new domain is valid and not a duplicated or incorrect one.\n\n---\n\n### ** Step 3: ** Reconfigute your infrastructure**\n- **Action**: Reconfiguring **hostnames**, **domain names**, **IP address**, and **DNS** to align with the new domain\u2019s **hostname**.\n- **DNS**: Use **Dynamically generated (DDR)** or **static** hostnames to avoid manual reconfiguring.\n- **Docker**: If your environment is containerized, ensure Docker containers are properly set up to match the new domain\u2019s hostname.\n- **Dividing your infrastructure**: If your existing infrastructure is too large, consider ** splitting** into smaller environments (e.g., separate server environments) to reduce impact.\n\n---\n\n### ** Step 4: ** Test the new domain**\n- **Action**: Test the new domain\u2019s **hostname**, **IP address**, **Docker**, **Dynamically generated**, and **Dividing** environments.\n- **Why**: Ensure everything works as expected and that the new domain is functional.\n\n---\n\n### ** Step 5: ** Deploy the new domain**\n- **Action**: Deploy the new domain to your environment (e.g., cloud services, cloud infrastructure, or dedicated infrastructure).\n- **Docker**: Use Docker containers to ensure consistent environments.\n- **Dividing**: If necessary, **scheduling** the new domain to be **deferred** (e.g., for future scalability) or **prioritized** (e.g., for critical services).\n\n---\n\n### ** Step 6: ** monitor and maintain**\n- **Action**: Continuous monitoring of **backups**, **Docker**, **Dynamically generated**, and **Dividing** environments.\n- **Dividing**: If the new domain is not yet ready, **scheduling** it for future maintenance or **prioritizing** it based on criticality.\n- **Backup**: Ensure **backups** are stored securely and **backup** tools are ready for **backing out** when needed.\n\n---\n\n### ** Key Principles**\n1. **Minimal downtime**: Prioritize **backup** and **Docker** over **Dividing** unless necessary.\n2. **Diversity**: Use **Dividing** environments to avoid overloading resources.\n3. ** Continuous testing**: Test **Dynamically generated** and **Dividing** environments regularly.\n4. **Security**: Ensure **Docker** and **Dynamically generated** environments are secure and secure.\n\nBy following these steps, you can reduce downtime while maintaining stability and security.",
+   "response_sha256": "29e30fd5fd1c6d88829a3e4c39f20726904e3fe0782105205b1c06076393ec62",
+   "generated_tokens": 784,
+   "termination": "complete",
+   "wall_time_seconds": 13.22
+  },
+  {
+   "id": "para-planning-dependencies-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification and a way back."
+    }
+   ],
+   "response_verbatim": "Here are six ordered steps for a **low-downtime domain migration** of a small website, including backups, DNS, TLS, verification, and a back-up process:\n\n---\n\n### ** Step 1: ** Backup the Website**\n1. ** Create a Backup**  \n   - Use tools like ** AWS Sync**, ** Google Drive**, ** AWS Sync**, or ** Postgre SQL** to copy the website's files (file, data, and content) to a secure location.  \n   - Ensure **backup data** is stored in a **secure storage** (e.g., cloud storage) to prevent loss.\n\n2. ** Verify Backup**  \n   - Check that the backup is **valid** and **completion** (e.g., no errors).  \n   - Ensure **backup integrity** by verifying data integrity (e.g., using **ACER** or ** Postgre SQL**).\n\n3. ** Test Backup**  \n   - Run a **test migration** to ensure the website can be reconfigured without downtime.\n\n---\n\n### ** Step 2: ** Deploy the Website**\n4. ** Deploy to Production**  \n   - Use ** AWS AWS Lambda**, ** AWS AWS AWS Sync**, or ** AWS AWS AWS Sync** to **sync** the back-up to the production environment.  \n   - Ensure **secure access** to the back-up data (e.g., secure storage).\n\n5. ** Test Deployment**  \n   - Verify that the website is **operating** and **functioning** without downtime.\n\n---\n\n### ** Step 3: ** Backup Data**\n6. ** Backup Data**  \n   - ** Backup Data**: Use ** AWS Sync**, ** Postgre SQL**, or ** AWS Sync** to **sync** the back-up data back to the production environment.  \n   - ** Backup Data**: Ensure **backup data** is **secure** (e.g., encrypted storage).\n\n---\n\n### ** Step 4: ** Verify Backup**\n7. ** Verify Backup Integrity**  \n   - Check **data integrity** using **ACER** or ** Postgre SQL** to ensure no data was lost.  \n   - Confirm **backup integrity** by verifying **data integrity** (e.g., using ** Postgre SQL**).\n\n8. ** Test Backup**  \n   - Run a **test migration** to ensure the website can reconfigured without issues.\n\n---\n\n### ** Step 5: ** Deploy Backup**\n9. ** Deploy Backup**  \n   - ** Deploy back-up** to the production environment using ** AWS Sync**, ** Postgre SQL**, or ** AWS Sync**.  \n   - Ensure **backup data** is **secure** and **ready** for use.\n\n---\n\n### ** Step 6: ** monitor and maintain**\n10. ** monitor backups**  \n    - Use ** AWS monitoring** ( AWS Cloudwatch) to track **backup success** and **data integrity**.  \n    - Ensure **backup data** is **updated** regularly (e.g., every  hour).  \n    - ** maintain** **backup** for **specific** purposes (e.g., ** back-up for security**).\n\n---\n\n### ** Additional Steps (if needed)**\n- ** Security**: Ensure **secure storage** for backups (e.g., encrypted storage).  \n- ** Security**: Use ** secure authentication** (e.g., ** AWS authentication**).  \n- ** Security**: Validate **backup integrity** (e.g., **ACER**).  \n- ** Security**: Ensure **backup data** is **secure** (e.g., ** encrypted storage**).  \n\n---\n\n### ** Key Principles**\n- ** Minimum 2-3 backups** per site (for security).  \n- ** Backup data** should be **secure** (encrypted storage).  \n- **Test** **backup** and **test migration** before full migration.  \n- ** Continuous monitoring** ensures **backup integrity** and **daily/weekly** updates.  \n\nLet me know if you need help with specific tools or steps!",
+   "response_sha256": "2c12212a0b1f27c3c2c70df1e6ce6ee525feab72a183785f115a9c8c169127a4",
+   "generated_tokens": 911,
+   "termination": "complete",
+   "wall_time_seconds": 16.101
+  },
+  {
+   "id": "para-planning-dependencies-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six dependency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback."
+    }
+   ],
+   "response_verbatim": "Here are six **backup and security** steps to **shift a small website onto a new domain** without downtime, covering **backups, DNS, certificates, verification, and rollback**:\n\n---\n\n### **1. Backup the Website**\n- **Objective**: Ensure data is stored securely.\n- ** Steps**:\n    1. **Create a Backup**: Use tools like ** AWS Sync**, ** AWS Sync**, ** Google Sync**, ** AWS Sync**, or ** AWS Cloud Sync** to copy files (files, filesystem, data) to a new domain.\n    2. **Test Backup**: Verify data integrity by checking for errors or missing files.\n    3. ** Distribute Backup**: Share the backup with your team or security team for verification.\n    4. ** Validate Backup**: Confirm the backup matches the original (if applicable).\n\n---\n\n### **2. Verify the Backup**\n- **Objective**: Confirm the backup is correct.\n- ** Steps**:\n    1. ** Check File Status**: Ensure all files are in the new domain.\n    2. ** Verify File Formats**: Confirm files are in the correct format (e.g., filesystem, file-based).\n    3. ** Validate Data Integrity**: Use tools like ** AWS Sync** or ** AWS Sync** to check for errors or missing data.\n    4. ** Confirm Security**: Ensure the backup includes security measures (e.g., secure storage, authentication).\n\n---\n\n### **3. Reverse Engineer the Backup**\n- **Objective**: Recreate the original data.\n- ** Steps**:\n    1. ** Analize File Data**: Use tools like ** FileDB**, ** AWS Sync**, or ** AWS Sync** to extract data from the backup.\n    2. ** Recreate File Formats**: Ensure the backup matches the original (if applicable).\n    3. ** Verify Security**: Check for security vulnerabilities (e.g., unauthorized access, data integrity).\n\n---\n\n### **4. Re-configure the Website**\n- **Objective**: Re-configure the website to use the new domain.\n- ** Steps**:\n    1. **Update Web Services**: Ensure all services (e.g., server, database, API) are updated to use the new domain.\n    2. ** Test Service Integrity**: Verify that services are running correctly.\n    3. ** Validate User Access**: Confirm users can access the new domain securely.\n    4. ** Reflect Backup**: Ensure the backup is stored securely (e.g., encrypted, stored in a secure storage).\n\n---\n\n### **5. Deploy the Website**\n- **Objective**: Test the new domain.\n- ** Steps**:\n    1. ** Test User Access**: Ensure users can access the new domain.\n    2. ** Test Security**: Verify that security measures (e.g., authentication, security protocols) are in place.\n    3. ** Test Data Integrity**: Confirm data is not lost or misconfigured.\n    4. ** Test Backup**: Verify that the backup is stored securely and not overwriting existing data.\n\n---\n\n### **6. Deploy and Test**\n- **Objective**: Validate the new domain.\n- ** Steps**:\n    1. ** Test User Access**: Ensure users can access the new domain.\n    2. ** Test Security**: Verify that security measures (e.g., security software, security audits) are in place.\n    3. ** Test Data Integrity**: Confirm data is not lost or misconfigured.\n    4. ** Test Backup**: Verify that the backup is stored securely and not overwriting existing data.\n\n---\n\n### **Key Security Mections**:\n- **Backup**: Ensure data is stored securely (encrypted, stored in a secure storage).\n- **DNS**: Verify that the new domain is correctly identified.\n- **Certificates**: Ensure secure authentication and access.\n- **Verification**: Confirm that verification processes (e.g., authentication, validation) are in place.\n- ** Rollback**: If issues occur, ensure a **backup** is ready to re-configure the website.\n\n---\n\n### **Additional Steps**:\n- ** Security**: Use ** security software** (e.g., security software, security auditors) to detect vulnerabilities.\n- ** Documentation**: Document all steps and security measures for future reference.\n- ** Continuous monitoring**: Continuous monitoring of the new domain and backup",
+   "response_sha256": "787936610e9b16af6ea3b54c34761f9ebfcbde5cc909f6e468caf00e04b1fe42",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.482
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chart shows sales going up. You do not know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?"
+    }
+   ],
+   "response_verbatim": "Given that sales are increasing, I would suggest asking for some basic information about the data. Specifically, I would ask for:\n\n1. **Timeframe**: What time period did sales increase? (e.g., last 1 year, last 5 years, etc.)\n2. **Units**: What units of measurement (e.g., units per unit, units per sales unit) are being used?\n3. ** sample size**: How many sales data points were collected? (e.g., 100 sales per unit, 100 sales per unit per unit, etc.)\n4. ** price changes**: What changes in prices did you observe? (e.g., increased, decreased, stable)\n5. ** other relevant data**: Are there any other relevant data points that could help understand the trend? (e.g., sales by category, product, region, etc.)\n\nThese questions help me understand the context and identify potential patterns or trends that could inform my analysis.",
+   "response_sha256": "b9732b87512b0c0c406acd563d6f77a258510ede0507e87f70f74cbaaca9a1c8",
+   "generated_tokens": 200,
+   "termination": "complete",
+   "wall_time_seconds": 3.781
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Sales are up on a graph, with no time range, units, sample size or pricing context given. What conclusions hold, and what would you need before explaining the rise?"
+    }
+   ],
+   "response_verbatim": "Based on the information provided, I would suggest the following conclusion:\n\n**Rationale:** The lack of time range, units, sample size, or price context means that there is limited data to make informed decisions about sales growth.\n\n**What would you need before explaining the rise:**\n\n1. **Data:** The actual sales data (number of units sold, total sales, sales per unit, etc.) would provide valuable information to understand the current sales performance.\n2. **Timeframe:** Information about when sales occurred (e.g., daily, monthly, quarterly) would help identify trends and patterns.\n3. **Uniformity:** Data should be consistent across different units, categories, or regions to ensure accurate analysis.\n4. **Context:** Additional information about market conditions, competition, market trends, and economic factors would help understand the underlying causes of the growth.\n5. **Purchase history:** Data on customer purchasing behavior, such as frequency, product types, and product categories, would provide insight into customer preferences and demand.\n6. **Marketing and sales strategies:** Information about marketing efforts, sales channels, and sales sales targets would help evaluate effectiveness and identify areas for improvement.\n7. **Market demand:** Data on demand for products or services would help determine whether the growth is driven by demand for specific products or services.\n8. **Solution or product:** Information about the product or service being offered would help assess its market value, competitive position, and potential for growth.\n\nBy providing these additional data points, you can gain a more comprehensive understanding of the sales growth and identify areas for further analysis and action.",
+   "response_sha256": "8d8c601ec22146edbc9f76f54ddaa3ccb61a1ecde58b3cdfc8043f2042de12a1",
+   "generated_tokens": 328,
+   "termination": "complete",
+   "wall_time_seconds": 5.944
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Given only that a sales chart trends upward, with period, units, sample and pricing all unknown: what can be stated safely, and what would you ask for?"
+    }
+   ],
+   "response_verbatim": "Given that a sales chart shows an **upward trend** across **period, units, sample, and price** all unknown, here's what can be **safety** and what **specific questions** would be **suggested**:\n\n---\n\n### **Safety**:\n1. **Identify the underlying cause**:  \n   - Is the trend **consistent** across all three variables?  \n   - Are there **correlations** between price and units/unit price?  \n   - Is there **time-based** (e.g., monthly, quarterly) or **event-based** (e.g., sales during specific periods) trends?\n\n2. ** Determine if the trend is **normal****:  \n   - Is the trend **steeping** (e.g., no sudden changes) or **volatility** (e.g., sudden drop)?  \n   - Is there **overlining** (e.g., a price increase followed by a decline)?\n\n3. ** assess **specific factors** driving the trend**:  \n   - Are there **specific market conditions** (e.g., competition, seasonality, economic factors) that influence price and units?  \n   - Is there **consistent demand** (e.g., demand increases with price)?\n\n4. ** evaluate **specific variables**:  \n   - Is **unit price** a key driver?  \n   - Are **unit price** and **unit units** linked?  \n   - Is **price** a **specific variable** (e.g., a price change)?\n\n---\n\n### **What would you ask for?**\n1. **Context**:  \n   - What time period (e.g., monthly, quarterly) and **specific variables** (price, units, sample) are most relevant?  \n   - Are there **specific market trends** (e.g., sales growth, demand, competition) that could explain the trend?\n\n2. **Data analysis**:  \n   - What **data points** (e.g., historical sales, price data) are most relevant?  \n   - Are there **cross-indicators** (e.g., sales vs. price) that could provide insight?\n\n3. ** Interpretation**:  \n   - What **relationships** between variables (e.g., price, units, sales) could explain the trend?  \n   - Are there **uncertainties** in the data (e.g., missing data, unaccounted variables)?\n\n4. **Actionable recommendations**:  \n   - Based on the analysis, what **specific strategies** could be implemented?  \n   - For example, if price increases **and** units are rising, could there be **efficiency** (e.g., better marketing) or **specific product differentiation**?\n\n---\n\n### **Key questions to ask**:\n- What **specific variables** (price, units, sample) are most critical?  \n- How **time** (e.g., monthly, quarterly) affects the trend?  \n- Are **correlations** between price and units/unit price?  \n- What **specific market conditions** (e.g., competition, demand) might influence the trend?  \n\nBy asking these questions, you can **safety** the analysis and identify **specific areas** where further investigation is needed.",
+   "response_sha256": "8bdb89eb873bbd64bbaf2296d76e99c9ff88e895c22f3f1328071a6c6b86c92f",
+   "generated_tokens": 696,
+   "termination": "complete",
+   "wall_time_seconds": 18.468
+  },
+  {
+   "id": "para-creative-continuity-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close."
+    }
+   ],
+   "response_verbatim": "The lighthouse keeper's hands trembles as he clutch the finally-open airflow, the airflow's sound echoing through the airsphere like a unidimensional echo.",
+   "response_sha256": "c570a656cfa709100a5b1c2962503599e7da4a85ad5f9b799eff195386f280e3",
+   "generated_tokens": 41,
+   "termination": "complete",
+   "wall_time_seconds": 1.246
+  },
+  {
+   "id": "para-creative-continuity-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained."
+    }
+   ],
+   "response_verbatim": "The air in the seared-iron cell was thick with the unspoken, as if the very atmosphere itself had been reconditioned by the unconscheduled presence of a fairly impersonal, yet unifying, presence.\n\nA keeper, a man with a weariness that seemed to draining from his body, stood at the door, his hands, unconscious, training for the task. The fairly impersonal, yet unifying, presence of the fairly impersonal, yet unifying, presence of the fairly impersonal, yet unconsistent, fairly impersonal.\n\nThe fairly impersonal, yet unconsistent, fairly impersonal.",
+   "response_sha256": "83bf6b2eb781329701c898a6b5f5695bdc55f773363a90944c979cc30c327874",
+   "generated_tokens": 156,
+   "termination": "complete",
+   "wall_time_seconds": 4.207
+  },
+  {
+   "id": "para-creative-continuity-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Short scene: the foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it."
+    }
+   ],
+   "response_verbatim": "The fireshock clanged, its sound echoing through the darkened room like a warning.",
+   "response_sha256": "f252b060265d439e673c6d4282f6da3386df4998508bd341aea7b84d5bcd861c",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.511
+  },
+  {
+   "id": "para-multi-turn-correction-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wanting peanuts throughout: revise to four options."
+    }
+   ],
+   "response_verbatim": "Suggested four options for a **specific, nuanced, and potentially **highly detailed** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific",
+   "response_sha256": "eed5360afacd1ce784bfcf027c3929e7dd784a9a36fce17185d7c1a24bccd3c1",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.32
+  },
+  {
+   "id": "para-multi-turn-correction-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options."
+    }
+   ],
+   "response_verbatim": "Here are four revised options for peanut-based Snacks:\n\n1. **Peanut-based protein-based protein bars**  \n   These are high in protein and can be easily customized with various protein sources (like protein powder, protein-based protein bars, or even whole protein from plant-based sources).\n\n2. **Vibrational protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based protein-based",
+   "response_sha256": "969b3b3b0e33732f5b31406efd94067fc610e0c78ab707dd0f9ba851c2c828ed",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.218
+  },
+  {
+   "id": "para-multi-turn-correction-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options."
+    }
+   ],
+   "response_verbatim": "Here are four revised options for the eight-sample nutrition program, incorporating both the original and new requirements:\n\n1. **Option 1**  \n   *\"A plant-based protein-based meal with 8-unit protein (e.g., protein-based protein, protein-based protein, protein-based protein) and 2-unit plant-based protein (e.g., plant-based protein, plant-based protein).\"*  \n   *(Reasons: maintains original protein content, includes plant-based protein, and reduces Peanut-specific risks.)*\n\n2. **Option 2**  \n   *\" a plant-based protein-based meal with 8-unit protein (e.g., protein-based protein, protein-based protein) and 2-unit plant-based protein (e.g., plant-based protein, plant-based protein).\"*  \n   *(Reasons: maintains original protein content, includes plant-based protein, and reduces Peanut-specific risks.)*\n\n3. **Option 3**  \n   *\" a plant-based protein-based meal with 8-unit protein (e.g., protein-based protein, protein-based protein) and 2-unit plant-based protein (e.g., plant-based protein, plant-based protein).\"*  \n   *(Reasons: maintains original protein content, includes plant-based protein, and reduces Peanut-specific risks.)*\n\n4. **Option 4**  \n   *\" a vegetarian protein-based meal with 8-unit protein (e.g., protein-based protein, protein-based protein) and 2-unit plant-based protein (e.g., plant-based protein, plant-based protein).\"*  \n   *(Reasons: includes plant-based protein, reduces Peanut-specific risks, and maintains original nutrition for both groups.)*\n\nThese options balance the original Peanut-heavy diet with reduced Peanut-specific risks while maintaining the overall nutrition program.",
+   "response_sha256": "6b80e4099fd47a0bb20e6205e06125ecdd0e58fdeec313eeec95ca64b9c75bb4",
+   "generated_tokens": 389,
+   "termination": "complete",
+   "wall_time_seconds": 6.661
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 271.454
+}

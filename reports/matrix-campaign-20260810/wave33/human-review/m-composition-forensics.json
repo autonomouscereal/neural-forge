@@ -1,0 +1,302 @@
+{
+ "schema": "neural-forge-matrix-wave33-m-composition-forensics-v1",
+ "purpose": "F1.  Why ARCH.CL1792M reads one case BETTER alone and three and a half cases WORSE composed, over four vocabulary rungs at byte-identical storage.  Reads sealed per-case verdicts and, on the channel arm, runs the parent twice over one corpus under two segmentations.",
+ "lanes": {
+  "lanes": [
+   "arithmetic-multi-step",
+   "coding-deduplicate",
+   "comparison-ram-rom",
+   "context-retrieval",
+   "conversation-natural-greeting",
+   "creative-continuity",
+   "debugging-off-by-one",
+   "explanation-seasons",
+   "instruction-three-actions",
+   "logic-ordering",
+   "multi-turn-correction",
+   "planning-dependencies",
+   "summarization-priorities",
+   "uncertainty-insufficient-data",
+   "writing-concise-email"
+  ],
+  "families": {
+   "plain": {
+    "body": "CL1792",
+    "rungs": [
+     {
+      "label": "CL1792",
+      "count": 7,
+      "held": [
+       "context-retrieval",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "instruction-three-actions",
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ]
+     },
+     {
+      "label": "V16CL1792",
+      "count": 8,
+      "held": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "instruction-three-actions",
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [],
+      "gained_over_body": [
+       "conversation-natural-greeting"
+      ]
+     },
+     {
+      "label": "V12CL1792",
+      "count": 7,
+      "held": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "debugging-off-by-one",
+       "instruction-three-actions",
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "creative-continuity"
+      ],
+      "gained_over_body": [
+       "conversation-natural-greeting"
+      ]
+     },
+     {
+      "label": "V9CL1792",
+      "count": 6,
+      "held": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "debugging-off-by-one",
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "creative-continuity",
+       "instruction-three-actions"
+      ],
+      "gained_over_body": [
+       "conversation-natural-greeting"
+      ]
+     },
+     {
+      "label": "V8CL1792",
+      "count": 5,
+      "held": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "creative-continuity",
+       "debugging-off-by-one",
+       "instruction-three-actions"
+      ],
+      "gained_over_body": [
+       "conversation-natural-greeting"
+      ]
+     }
+    ]
+   },
+   "metric": {
+    "body": "CL1792M",
+    "rungs": [
+     {
+      "label": "CL1792M",
+      "count": 8,
+      "held": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "planning-dependencies",
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ]
+     },
+     {
+      "label": "V16CL1792M",
+      "count": 3,
+      "held": [
+       "context-retrieval",
+       "summarization-priorities",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "conversation-natural-greeting",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "planning-dependencies",
+       "uncertainty-insufficient-data"
+      ],
+      "gained_over_body": []
+     },
+     {
+      "label": "V12CL1792M",
+      "count": 4,
+      "held": [
+       "context-retrieval",
+       "instruction-three-actions",
+       "summarization-priorities",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "conversation-natural-greeting",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "planning-dependencies",
+       "uncertainty-insufficient-data"
+      ],
+      "gained_over_body": [
+       "instruction-three-actions"
+      ]
+     },
+     {
+      "label": "V9CL1792M",
+      "count": 2,
+      "held": [
+       "summarization-priorities",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "planning-dependencies",
+       "uncertainty-insufficient-data"
+      ],
+      "gained_over_body": []
+     },
+     {
+      "label": "V8CL1792M",
+      "count": 3,
+      "held": [
+       "summarization-priorities",
+       "uncertainty-insufficient-data",
+       "writing-concise-email"
+      ],
+      "lost_from_body": [
+       "context-retrieval",
+       "conversation-natural-greeting",
+       "creative-continuity",
+       "debugging-off-by-one",
+       "planning-dependencies"
+      ],
+      "gained_over_body": []
+     }
+    ]
+   }
+  },
+  "per_k": [
+   {
+    "plain": "V16CL1792",
+    "metric": "V16CL1792M",
+    "plain_count": 8,
+    "metric_count": 3,
+    "delta": -5,
+    "plain_only": [
+     "conversation-natural-greeting",
+     "creative-continuity",
+     "debugging-off-by-one",
+     "instruction-three-actions",
+     "uncertainty-insufficient-data"
+    ],
+    "metric_only": [],
+    "both": [
+     "context-retrieval",
+     "summarization-priorities",
+     "writing-concise-email"
+    ]
+   },
+   {
+    "plain": "V12CL1792",
+    "metric": "V12CL1792M",
+    "plain_count": 7,
+    "metric_count": 4,
+    "delta": -3,
+    "plain_only": [
+     "conversation-natural-greeting",
+     "debugging-off-by-one",
+     "uncertainty-insufficient-data"
+    ],
+    "metric_only": [],
+    "both": [
+     "context-retrieval",
+     "instruction-three-actions",
+     "summarization-priorities",
+     "writing-concise-email"
+    ]
+   },
+   {
+    "plain": "V9CL1792",
+    "metric": "V9CL1792M",
+    "plain_count": 6,
+    "metric_count": 2,
+    "delta": -4,
+    "plain_only": [
+     "context-retrieval",
+     "conversation-natural-greeting",
+     "debugging-off-by-one",
+     "uncertainty-insufficient-data"
+    ],
+    "metric_only": [],
+    "both": [
+     "summarization-priorities",
+     "writing-concise-email"
+    ]
+   },
+   {
+    "plain": "V8CL1792",
+    "metric": "V8CL1792M",
+    "plain_count": 5,
+    "metric_count": 3,
+    "delta": -2,
+    "plain_only": [
+     "context-retrieval",
+     "conversation-natural-greeting"
+    ],
+    "metric_only": [],
+    "both": [
+     "summarization-priorities",
+     "uncertainty-insufficient-data",
+     "writing-concise-email"
+    ]
+   }
+  ],
+  "lane_charge_plain_minus_metric": {
+   "conversation-natural-greeting": 4,
+   "debugging-off-by-one": 3,
+   "uncertainty-insufficient-data": 3,
+   "context-retrieval": 2,
+   "creative-continuity": 1,
+   "instruction-three-actions": 1,
+   "arithmetic-multi-step": 0,
+   "coding-deduplicate": 0,
+   "comparison-ram-rom": 0,
+   "explanation-seasons": 0,
+   "logic-ordering": 0,
+   "multi-turn-correction": 0,
+   "planning-dependencies": 0,
+   "summarization-priorities": 0,
+   "writing-concise-email": 0
+  },
+  "note": "A positive charge means the plain family holds that lane at more of the four composed rungs than the M family does.  The sum of the charges is the total case difference the four rungs carry."
+ }
+}

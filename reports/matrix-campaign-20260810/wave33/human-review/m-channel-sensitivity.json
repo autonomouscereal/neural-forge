@@ -1,0 +1,274 @@
+{
+ "schema": "neural-forge-matrix-wave33-m-composition-forensics-v1",
+ "purpose": "F1.  Why ARCH.CL1792M reads one case BETTER alone and three and a half cases WORSE composed, over four vocabulary rungs at byte-identical storage.  Reads sealed per-case verdicts and, on the channel arm, runs the parent twice over one corpus under two segmentations.",
+ "channels": {
+  "retok": {
+   "child": "/mnt/ai_data/neural-forge-matrix/wave31/children/MX31-V16CL1792",
+   "batches": 16384,
+   "sequence_length_ratio": 0.6599842146803473
+  },
+  "bodies": {
+   "plain": "/mnt/ai_data/neural-forge-matrix/wave30/children/MX30-CL1792",
+   "metric": "/mnt/ai_data/neural-forge-matrix/wave30/children/MX30-CL1792M"
+  },
+  "sites": 14,
+  "positions": {
+   "parent_segmentation": 6335,
+   "child_segmentation": 4181
+  },
+  "sensitivity_by_group": {
+   "shared": {
+    "n": 23015,
+    "median": 0.272004,
+    "mean": 0.320793,
+    "p90": 0.632784
+   },
+   "plain_only": {
+    "n": 2073,
+    "median": 0.337737,
+    "mean": 0.368822,
+    "p90": 0.688099
+   },
+   "metric_only": {
+    "n": 2073,
+    "median": 0.298054,
+    "mean": 0.329084,
+    "p90": 0.628554
+   }
+  },
+  "logit_leverage": {
+   "available": true,
+   "head_rows": 65536,
+   "kept_rows": 16384,
+   "groups": {
+    "shared": {
+     "logit_per_stream": {
+      "n": 23015,
+      "median": 52.470518,
+      "mean": 53.849828,
+      "p90": 59.440981
+     },
+     "restriction_ratio": {
+      "n": 23015,
+      "median": 0.259007,
+      "mean": 0.258366,
+      "p90": 0.269499
+     }
+    },
+    "plain_only": {
+     "logit_per_stream": {
+      "n": 2073,
+      "median": 52.839217,
+      "mean": 53.317278,
+      "p90": 57.761675
+     },
+     "restriction_ratio": {
+      "n": 2073,
+      "median": 0.256196,
+      "mean": 0.255542,
+      "p90": 0.265395
+     }
+    },
+    "metric_only": {
+     "logit_per_stream": {
+      "n": 2073,
+      "median": 53.102498,
+      "mean": 54.318548,
+      "p90": 60.381113
+     },
+     "restriction_ratio": {
+      "n": 2073,
+      "median": 0.258473,
+      "mean": 0.256729,
+      "p90": 0.268445
+     }
+    }
+   }
+  },
+  "per_site": [
+   {
+    "site": "model.layers.0.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1559,
+    "plain_only": 233,
+    "metric_only": 233,
+    "median_sensitivity": {
+     "shared": 0.28251,
+     "plain_only": 0.356653,
+     "metric_only": 0.324873
+    }
+   },
+   {
+    "site": "model.layers.1.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1661,
+    "plain_only": 131,
+    "metric_only": 131,
+    "median_sensitivity": {
+     "shared": 0.327442,
+     "plain_only": 0.369138,
+     "metric_only": 0.37582
+    }
+   },
+   {
+    "site": "model.layers.2.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1626,
+    "plain_only": 166,
+    "metric_only": 166,
+    "median_sensitivity": {
+     "shared": 0.130115,
+     "plain_only": 0.11224,
+     "metric_only": 0.137855
+    }
+   },
+   {
+    "site": "model.layers.3.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1681,
+    "plain_only": 111,
+    "metric_only": 111,
+    "median_sensitivity": {
+     "shared": 0.137149,
+     "plain_only": 0.193599,
+     "metric_only": 0.197607
+    }
+   },
+   {
+    "site": "model.layers.4.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1685,
+    "plain_only": 107,
+    "metric_only": 107,
+    "median_sensitivity": {
+     "shared": 0.330344,
+     "plain_only": 0.547757,
+     "metric_only": 0.447893
+    }
+   },
+   {
+    "site": "model.layers.5.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1669,
+    "plain_only": 123,
+    "metric_only": 123,
+    "median_sensitivity": {
+     "shared": 0.345261,
+     "plain_only": 0.474928,
+     "metric_only": 0.411685
+    }
+   },
+   {
+    "site": "model.layers.6.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1656,
+    "plain_only": 136,
+    "metric_only": 136,
+    "median_sensitivity": {
+     "shared": 0.311796,
+     "plain_only": 0.486687,
+     "metric_only": 0.513134
+    }
+   },
+   {
+    "site": "model.layers.7.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1673,
+    "plain_only": 119,
+    "metric_only": 119,
+    "median_sensitivity": {
+     "shared": 0.311346,
+     "plain_only": 0.4142,
+     "metric_only": 0.316434
+    }
+   },
+   {
+    "site": "model.layers.8.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1648,
+    "plain_only": 144,
+    "metric_only": 144,
+    "median_sensitivity": {
+     "shared": 0.280361,
+     "plain_only": 0.462766,
+     "metric_only": 0.383337
+    }
+   },
+   {
+    "site": "model.layers.9.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1640,
+    "plain_only": 152,
+    "metric_only": 152,
+    "median_sensitivity": {
+     "shared": 0.329646,
+     "plain_only": 0.41658,
+     "metric_only": 0.435974
+    }
+   },
+   {
+    "site": "model.layers.10.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1631,
+    "plain_only": 161,
+    "metric_only": 161,
+    "median_sensitivity": {
+     "shared": 0.307638,
+     "plain_only": 0.286924,
+     "metric_only": 0.270734
+    }
+   },
+   {
+    "site": "model.layers.11.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1606,
+    "plain_only": 186,
+    "metric_only": 186,
+    "median_sensitivity": {
+     "shared": 0.272234,
+     "plain_only": 0.311165,
+     "metric_only": 0.207043
+    }
+   },
+   {
+    "site": "model.layers.12.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1658,
+    "plain_only": 134,
+    "metric_only": 134,
+    "median_sensitivity": {
+     "shared": 0.241734,
+     "plain_only": 0.248874,
+     "metric_only": 0.188299
+    }
+   },
+   {
+    "site": "model.layers.13.",
+    "kept_plain": 1792,
+    "kept_metric": 1792,
+    "shared": 1622,
+    "plain_only": 170,
+    "metric_only": 170,
+    "median_sensitivity": {
+     "shared": 0.237527,
+     "plain_only": 0.186568,
+     "metric_only": 0.155318
+    }
+   }
+  ],
+  "verdict": "M-unique channels are 0.883x as retokenization-sensitive as plain-unique channels (median).  HYPOTHESIS FALSIFIED: the M selection is NOT more exposed to retokenization, so the composition penalty is not a property of which channels were chosen"
+ }
+}

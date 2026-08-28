@@ -52,11 +52,52 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave33")
 #: next wave may argue with: keep the rows carrying a CLAIM no other artifact
 #: re-derives, drop what one CPU pass rebuilds from a retained source, and state
 #: the deviation whenever the count is not best-five.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX33-GV16L01": (
+        "8/15 at 0.637073x, the only child in the wave to reach eight and the only "
+        "one that ties its source.  It is kept because the tie is the wave's result "
+        "and the result is a claim about these bytes: the eighth case is "
+        "creative-continuity, which wave 32's paraphrase triplets already retired on "
+        "the same source, so somebody who wants to argue that the terminal gain "
+        "recovered a real case should be able to do it against a checkpoint rather "
+        "than against a dossier.  It is also the only wave-33 child sitting on a "
+        "campaign frontier row"
+    ),
+    "MX33-GV12L01": (
+        "6/15 at 0.618813x, and the ONLY rung of six that moved at all.  It moved "
+        "DOWN, and the mechanism is the interesting part: instruction-three-actions "
+        "is its source's only Useful lane and here it hits the generation cap after "
+        "eighteen repetitions, so the lambda ladder's most aggressive rung buys its "
+        "loss with degeneracy rather than with content.  Three cap hits against zero "
+        "on the other two rungs on the same source.  A future wave arguing about the "
+        "atlas needs the checkpoint where the ladder breaks, not the five where it "
+        "does nothing"
+    ),
+}
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: NOT worth its bytes, naming what rebuilds it and from which retained source.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX33-GV12L10": (
+        "7/15 at 0.618813x, flat at its source.  One gainq.sh invocation from the "
+        "retained MX31-V12CL1792 at --lambda-relative 1.0; dossier, receipt, "
+        "per-case verdicts and build receipt are all packaged"
+    ),
+    "MX33-GV12L03": (
+        "7/15 at 0.618813x, flat at its source.  One gainq.sh invocation from the "
+        "retained MX31-V12CL1792 at --lambda-relative 0.3"
+    ),
+    "MX33-GV16L10": (
+        "7/15 at 0.637073x, one below its source.  One gainq.sh invocation from the "
+        "retained MX31-V16CL1792 at --lambda-relative 1.0"
+    ),
+    "MX33-GV16L03": (
+        "7/15 at 0.637073x, holding the identical seven lanes as GV16L10 a factor of "
+        "three away in lambda.  One gainq.sh invocation from the retained "
+        "MX31-V16CL1792 at --lambda-relative 0.3.  The pair's agreement is the "
+        "finding and it is readable off two packaged dossiers"
+    ),
+}
 
 
 def main() -> int:

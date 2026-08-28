@@ -1,0 +1,8 @@
+{
+ "ARCH.GV12L10": "terminal-gain lambda 1.0 on the robust deep frontier: flat at the source",
+ "ARCH.GV12L03": "terminal-gain lambda 0.3: flat at the source",
+ "ARCH.GV12L01": "terminal-gain lambda 0.1: one case lost to a cap hit, not to content",
+ "ARCH.GV16L10": "terminal-gain lambda 1.0: one case lost, conversation-natural-greeting",
+ "ARCH.GV16L03": "terminal-gain lambda 0.3: identical seven lanes to lambda 1.0",
+ "ARCH.GV16L01": "terminal-gain lambda 0.1: ties the source at eight on a non-robust case"
+}

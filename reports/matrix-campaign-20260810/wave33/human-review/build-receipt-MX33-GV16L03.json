@@ -1,0 +1,588 @@
+{
+ "schema": "neural-forge-matrix-wave33-standard-shape-child-v1",
+ "built_at": "2026-08-28T11:19:35Z",
+ "builder": "mx33_termgain.py",
+ "tag": "GV16L03",
+ "arm": "terminal-read re-solve on the child's own token distribution",
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave31/children/MX31-V16CL1792",
+ "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave31/cells/ARCH.V16CL1792/cell-receipt.json",
+ "source_tensors_sha256": "625274f61ab393edb056e0426283df7743bef21fd37a1b237c08628fd5cd87c4",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave33/children/MX33-GV16L03",
+ "child_tensors_sha256": "6b4e9b890a2b8ea4936cf54f86e67179b98ed8a7b4ce851c83a9f59ad62ae831",
+ "child_parameters": 146331392,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.6370732881651378,
+ "excised": [],
+ "residual_basis": null,
+ "terminal_gain_mask": null,
+ "reader_metric_note": "The head's metric is C_head = embed^T embed, so this solve already minimises the LOGIT-space residual against W_head times the parent's hidden state -- not a hidden-state MSE.  ADDENDUM 16.6's third adopted finding (LFQ, ICML 2026) prescribes exactly this form, and it has been the form since wave 24; the arm is recorded as already-run rather than built a second time.",
+ "axes": [
+  {
+   "axis": "intermediate_size",
+   "kind": "mlp",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "intermediate_size",
+    "block_ff_dim"
+   ],
+   "selection": "pivoted-Cholesky coreset of real channels; w1/w3 rows verbatim",
+   "solve": "prior-anchored ridge on w2, lambda ladder to update_scale<=1.0, arm=conditioned-local",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": 33030144,
+   "heldout": {
+    "median_cos": 0.9582231044769287,
+    "min_cos": 0.9360348056122593,
+    "median_relL2": 0.28296446800231934,
+    "max_input_drift": 0.17475781467857043,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.0,
+      "identity_check": 0.0032252167569195157,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       6,
+       7,
+       8,
+       10
+      ],
+      "vs_local_target_cos": 0.9630869143265894,
+      "vs_local_target_relL2": 0.3023502434414848,
+      "update_scale": 0.7382624185929734,
+      "lambda_relative": 0.01,
+      "free_solve_update_scale": 1.2093501132054756,
+      "relL2": 0.3023502434414848,
+      "cos": 0.9630869143265894,
+      "cos_p05": 0.8499747741440918
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.08862225728811066,
+      "identity_check": 0.0032652205076230015,
+      "selection_first8": [
+       0,
+       2,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9444707663201528,
+      "vs_local_target_relL2": 0.3736184918694537,
+      "update_scale": 0.8600204396493648,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8600204396493648,
+      "relL2": 0.3736184918694537,
+      "cos": 0.9444707663201528,
+      "cos_p05": 0.8240106523001354
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.12430879016299058,
+      "identity_check": 0.0033978476228621146,
+      "selection_first8": [
+       1,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       11
+      ],
+      "vs_local_target_cos": 0.9360348056122593,
+      "vs_local_target_relL2": 0.37354987856204996,
+      "update_scale": 0.646915908896803,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.646915908896803,
+      "relL2": 0.37354987856204996,
+      "cos": 0.9360348056122593,
+      "cos_p05": 0.8581703764265163
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15697758634783468,
+      "identity_check": 0.003440086511989987,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       6,
+       7,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9523977513133128,
+      "vs_local_target_relL2": 0.3121821357235078,
+      "update_scale": 0.5727132289414649,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5727132289414649,
+      "relL2": 0.3121821357235078,
+      "cos": 0.9523977513133128,
+      "cos_p05": 0.9023648855322852
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.1619365183365697,
+      "identity_check": 0.0033976944772100654,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       6,
+       7,
+       8,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9514407879440318,
+      "vs_local_target_relL2": 0.2959638656470435,
+      "update_scale": 0.5379841926537466,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5379841926537466,
+      "relL2": 0.2959638656470435,
+      "cos": 0.9514407879440318,
+      "cos_p05": 0.9070706282292337
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.17454087290992953,
+      "identity_check": 0.004502925712574129,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9561847072409777,
+      "vs_local_target_relL2": 0.04473952397202133,
+      "update_scale": 0.515864148389157,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.515864148389157,
+      "relL2": 0.04473952397202133,
+      "cos": 0.9561847072409777,
+      "cos_p05": 0.9147158553470159
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.16607268513885093,
+      "identity_check": 0.003614111886644426,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "vs_local_target_cos": 0.9596202787955841,
+      "vs_local_target_relL2": 0.28296447568228683,
+      "update_scale": 0.5234243685525949,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5234243685525949,
+      "relL2": 0.28296447568228683,
+      "cos": 0.9596202787955841,
+      "cos_p05": 0.9280764593929859
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.16724374466111402,
+      "identity_check": 0.0036700770605359733,
+      "selection_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.967209302207731,
+      "vs_local_target_relL2": 0.24160905470896726,
+      "update_scale": 0.4894500787991883,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.4894500787991883,
+      "relL2": 0.24160905470896726,
+      "cos": 0.967209302207731,
+      "cos_p05": 0.9320433564360971
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15941658034360115,
+      "identity_check": 0.003729906368246703,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "vs_local_target_cos": 0.9582231031631449,
+      "vs_local_target_relL2": 0.2892192601441225,
+      "update_scale": 0.5318612312921284,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5318612312921284,
+      "relL2": 0.2892192601441225,
+      "cos": 0.9582231031631449,
+      "cos_p05": 0.9246156161506065
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15124089538133048,
+      "identity_check": 0.003695882850791961,
+      "selection_first8": [
+       1,
+       2,
+       4,
+       5,
+       6,
+       7,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9646434153783678,
+      "vs_local_target_relL2": 0.2541423346480276,
+      "update_scale": 0.5043880041381468,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5043880041381468,
+      "relL2": 0.2541423346480276,
+      "cos": 0.9646434153783678,
+      "cos_p05": 0.9266856261186406
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.14692023675289448,
+      "identity_check": 0.0037226060045609222,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       8
+      ],
+      "vs_local_target_cos": 0.9682399335634949,
+      "vs_local_target_relL2": 0.2374762983211257,
+      "update_scale": 0.5117259768577571,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5117259768577571,
+      "relL2": 0.2374762983211257,
+      "cos": 0.9682399335634949,
+      "cos_p05": 0.9343952954999517
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15147240294137673,
+      "identity_check": 0.0037376662359462636,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       7,
+       10,
+       13
+      ],
+      "vs_local_target_cos": 0.9417477698545659,
+      "vs_local_target_relL2": 0.32924544764587327,
+      "update_scale": 0.5790888910935872,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5790888910935872,
+      "relL2": 0.32924544764587327,
+      "cos": 0.9417477698545659,
+      "cos_p05": 0.8692240512470739
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15890811383573417,
+      "identity_check": 0.0036362407918850014,
+      "selection_first8": [
+       1,
+       2,
+       4,
+       5,
+       8,
+       9,
+       10,
+       11
+      ],
+      "vs_local_target_cos": 0.9682431441737314,
+      "vs_local_target_relL2": 0.25261435762434103,
+      "update_scale": 0.5779339583072781,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5779339583072781,
+      "relL2": 0.25261435762434103,
+      "cos": 0.9682431441737314,
+      "cos_p05": 0.9128342499004157
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.17475781467857043,
+      "identity_check": 0.0031596311642200663,
+      "selection_first8": [
+       2,
+       3,
+       5,
+       6,
+       12,
+       14,
+       16,
+       17
+      ],
+      "vs_local_target_cos": 0.9808749163628742,
+      "vs_local_target_relL2": 0.20031048404973442,
+      "update_scale": 0.6281255993628987,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6281255993628987,
+      "relL2": 0.20031048404973442,
+      "cos": 0.9808749163628742,
+      "cos_p05": 0.9470962792753732
+     }
+    ]
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 16384 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 50331648,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.1460 on the frozen review prompts, with tokens-per-byte beside it"
+  },
+  {
+   "axis": "rms_norm_gain",
+   "kind": "terminal-read",
+   "sites": [
+    "model.embedding_norm"
+   ],
+   "config_fields": [],
+   "selection": "no selection: the diagonals that already exist are overwritten in place, so the parameter count, every tensor shape and config.json are unchanged",
+   "solve": "prior-anchored ridge on the diagonal, closed form.  min_d ||Z diag(d) E^T - N diag(g) E^T||_F^2 + lambda ||d - g||^2 with Z the CHILD's RMS-normalised terminal residual on its OWN segmentation, N the PARENT's on the position-aligned injection of that same segmentation, E the child's tied table and g the parent's gain (also the prior).  Normal equations [(E^T E) o (Z^T Z)] d = [(E^T E) o (Z^T N)] g, one 1024x1024 SPD solve, no K-column target ever formed.  lambda on the internal fit split (wave-18 law), THE LAW a veto on update scale.  Identity gate: at Z = N the solve returns the prior exactly, asserted synthetically every run",
+   "evidence": "the campaign's 24 captured batches, RE-TOKENIZED into the child's own vocabulary; the parent is run on the injection of that same segmentation, so the two streams are position-aligned over identical text.  No new corpus, no new prompt",
+   "parameters_removed": 0,
+   "parameters_overwritten": 1024,
+   "heldout": {
+    "final_gain_relative_logit_sse": {
+     "prior": 0.122448089189019,
+     "solved": 0.11939504193676616
+    },
+    "block_gains": []
+   }
+  }
+ ],
+ "pair_kkt_finding": "S4 asks for one convex quadratic over BOTH folds' free tensors.  On this pair there are none: mx33_vocab.py's base arm is a gather and MX16-X13A's build receipt carries keep_ff null, so the excision took the per-site loop's `continue` branch and re-solved nothing either.  The free set had to be CREATED, and the only set that is already counted, exportable in a stock config and coupled to both folds is the RMSNorm diagonals -- the excision decides the residual that arrives at the head, the coreset decides the table it is read through, and one system carries both.",
+ "final_gain": {
+  "lambda_relative": 0.3,
+  "lambda_rule": "FORCED by --lambda-relative 0.3 (atlas rung, OFF the fixed selection ladder)",
+  "update_scale": 0.041863958441945785,
+  "identity_gate_max_abs_error": 6.266098750984384e-13,
+  "prior_relative_sse_fit": 0.11064825412413287,
+  "solved_relative_sse_fit": 0.10757697560025549,
+  "prior_relative_sse_heldout": 0.122448089189019,
+  "solved_relative_sse_heldout": 0.11939504193676616,
+  "rows_fit": 3145,
+  "rows_check": 1055,
+  "rows_heldout": 1036,
+  "ladder": [
+   {
+    "lambda_relative": 1e-06,
+    "off_ladder": false,
+    "update_scale": 0.07600731069850232,
+    "check_relative_sse": 0.10663689134488835,
+    "heldout_relative_sse": 0.11914457925406481
+   },
+   {
+    "lambda_relative": 1e-05,
+    "off_ladder": false,
+    "update_scale": 0.0760051869423352,
+    "check_relative_sse": 0.10663684757411912,
+    "heldout_relative_sse": 0.1191445726154184
+   },
+   {
+    "lambda_relative": 0.0001,
+    "off_ladder": false,
+    "update_scale": 0.07598395751132055,
+    "check_relative_sse": 0.10663641046948487,
+    "heldout_relative_sse": 0.11914450639091044
+   },
+   {
+    "lambda_relative": 0.001,
+    "off_ladder": false,
+    "update_scale": 0.07577247274765972,
+    "check_relative_sse": 0.10663209919210098,
+    "heldout_relative_sse": 0.11914386023425826
+   },
+   {
+    "lambda_relative": 0.01,
+    "off_ladder": false,
+    "update_scale": 0.07373521733459447,
+    "check_relative_sse": 0.10659446785628633,
+    "heldout_relative_sse": 0.11913890619513828
+   },
+   {
+    "lambda_relative": 0.1,
+    "off_ladder": false,
+    "update_scale": 0.05881726891853691,
+    "check_relative_sse": 0.10649782113131367,
+    "heldout_relative_sse": 0.11917638524360458
+   },
+   {
+    "lambda_relative": 0.3,
+    "off_ladder": true,
+    "update_scale": 0.041863958441945785,
+    "check_relative_sse": 0.10667272117490835,
+    "heldout_relative_sse": 0.11939504193676616
+   },
+   {
+    "lambda_relative": 1.0,
+    "off_ladder": false,
+    "update_scale": 0.022222593632363275,
+    "check_relative_sse": 0.1071539572700999,
+    "heldout_relative_sse": 0.119938151392824
+   },
+   {
+    "lambda_relative": 10.0,
+    "off_ladder": false,
+    "update_scale": 0.004425211259672783,
+    "check_relative_sse": 0.1078621539891581,
+    "heldout_relative_sse": 0.1208622908990955
+   },
+   {
+    "lambda_relative": 100.0,
+    "off_ladder": false,
+    "update_scale": 0.0015662461500449672,
+    "check_relative_sse": 0.10826414019171832,
+    "heldout_relative_sse": 0.12130119789397795
+   }
+  ]
+ },
+ "block_gains": [],
+ "retokenized_evidence": {
+  "schema": "neural-forge-matrix-wave33-retokenized-evidence-v1",
+  "child_model": "/mnt/ai_data/neural-forge-matrix/wave31/children/MX31-V16CL1792",
+  "parent_model": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+  "trace": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "identity_gate": {
+   "assertion": "torch.equal(child_embed, parent_embed[injection])",
+   "passed": true,
+   "child_rows": 16384,
+   "hidden": 1024
+  },
+  "batches": 24,
+  "utf8_bytes": 17045,
+  "parent_stream_positions": 6335,
+  "child_stream_positions": 4181,
+  "sequence_length_ratio": 0.6599842146803473,
+  "fit_positions": 3145,
+  "heldout_positions": 1036,
+  "note": "the parent runs on `parent_ids` and the child on `child_ids`; the two are the SAME segmentation of the same text named in the two tables, so position n is the same prefix in both streams and a target taken from the parent at n is a target for the child at n"
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 3145,
+  "heldout_rows": 1036,
+  "internal_check_rows": 1055,
+  "parent_model_forward_calls": 48,
+  "split_authority": "matrix-campaign-capture-manifest",
+  "conditioned": true
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "Hadamard normal equations, one SPD Cholesky per diagonal"
+ },
+ "identity_gate": {
+  "kind": "algebraic",
+  "assertion": "at Z = N the prior-anchored solve returns the prior",
+  "max_abs_error": 6.266098750984384e-13,
+  "tolerance": 1e-08,
+  "passed": true
+ },
+ "elapsed_seconds": 34.348005081061274
+}

@@ -1,0 +1,227 @@
+{
+ "schema": "neural-forge-matrix-wave33-robustness-frontier-v1",
+ "purpose": "The frontier's top rows with a ROBUSTNESS column: for each sealed-held lane, whether the child still answers it under any of three restatements of that lane's own ask.  Scored by mx33_pararubric.py.  It is not a grade and it retires nothing on its own; it says which sealed cases are prompt-specific.",
+ "provenance": "net_ratio and the sealed count are READ from campaign-frontier-table.json and the sealed count is asserted against the child's own per-case.json; neither is typed into this file.",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "parent_reference": {
+  "sealed_15": 12,
+  "restatements_held": 12,
+  "restatements_of": 39,
+  "robust_lanes": 6,
+  "unscorable": 2,
+  "note": "the ceiling: the PARENT holds 6 of its 10 scorable sealed lanes under rewording, so a child at 0-3 is not being measured by an impossible rubric"
+ },
+ "bank_defect": {
+  "lanes": [
+   "context-retrieval",
+   "summarization-priorities"
+  ],
+  "why": "all six restatements say 'the note below' / 'the update' and carry neither; the sealed prompts supply both inline",
+  "prompts_lost": 6,
+  "of": 45
+ },
+ "rows": [
+  {
+   "label": "B75",
+   "wave": 29,
+   "net_ratio": 0.7420486626194358,
+   "sealed_15": 11,
+   "restatements_held": 7,
+   "restatements_of": 39,
+   "robust_lanes": 2,
+   "robust": [
+    "instruction-three-actions",
+    "writing-concise-email"
+   ],
+   "absent_under_rewording": [
+    "arithmetic-multi-step",
+    "comparison-ram-rom",
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "planning-dependencies",
+    "uncertainty-insufficient-data"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V19X13G03",
+   "wave": 28,
+   "net_ratio": 0.7420486626194358,
+   "sealed_15": 11,
+   "restatements_held": 6,
+   "restatements_of": 39,
+   "robust_lanes": 2,
+   "robust": [
+    "instruction-three-actions",
+    "writing-concise-email"
+   ],
+   "absent_under_rewording": [
+    "arithmetic-multi-step",
+    "comparison-ram-rom",
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "planning-dependencies",
+    "uncertainty-insufficient-data"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V18X13",
+   "wave": 27,
+   "net_ratio": 0.7374835467472992,
+   "sealed_15": 10,
+   "restatements_held": 5,
+   "restatements_of": 39,
+   "robust_lanes": 3,
+   "robust": [
+    "coding-deduplicate",
+    "comparison-ram-rom",
+    "instruction-three-actions"
+   ],
+   "absent_under_rewording": [
+    "arithmetic-multi-step",
+    "conversation-natural-greeting",
+    "debugging-off-by-one",
+    "planning-dependencies",
+    "uncertainty-insufficient-data"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V16CL1792",
+   "wave": 31,
+   "net_ratio": 0.6370732881651378,
+   "sealed_15": 8,
+   "restatements_held": 3,
+   "restatements_of": 39,
+   "robust_lanes": 2,
+   "robust": [
+    "instruction-three-actions",
+    "uncertainty-insufficient-data"
+   ],
+   "absent_under_rewording": [
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "writing-concise-email"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "CL1792M",
+   "wave": 30,
+   "net_ratio": 0.856198850027696,
+   "sealed_15": 8,
+   "restatements_held": 2,
+   "restatements_of": 39,
+   "robust_lanes": 0,
+   "robust": [],
+   "absent_under_rewording": [
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "planning-dependencies",
+    "uncertainty-insufficient-data",
+    "writing-concise-email"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V12CL1792",
+   "wave": 31,
+   "net_ratio": 0.6188128246765912,
+   "sealed_15": 7,
+   "restatements_held": 2,
+   "restatements_of": 39,
+   "robust_lanes": 1,
+   "robust": [
+    "instruction-three-actions"
+   ],
+   "absent_under_rewording": [
+    "conversation-natural-greeting",
+    "debugging-off-by-one",
+    "uncertainty-insufficient-data",
+    "writing-concise-email"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V9CL1792",
+   "wave": 31,
+   "net_ratio": 0.6051174770601813,
+   "sealed_15": 6,
+   "restatements_held": 2,
+   "restatements_of": 39,
+   "robust_lanes": 1,
+   "robust": [
+    "uncertainty-insufficient-data"
+   ],
+   "absent_under_rewording": [
+    "conversation-natural-greeting",
+    "debugging-off-by-one",
+    "writing-concise-email"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V8CL1792",
+   "wave": 31,
+   "net_ratio": 0.6005523611880447,
+   "sealed_15": 5,
+   "restatements_held": 3,
+   "restatements_of": 39,
+   "robust_lanes": 2,
+   "robust": [
+    "uncertainty-insufficient-data",
+    "writing-concise-email"
+   ],
+   "absent_under_rewording": [
+    "conversation-natural-greeting"
+   ],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "label": "V6CL1792",
+   "wave": 32,
+   "net_ratio": 0.5914221294437714,
+   "sealed_15": 3,
+   "restatements_held": 2,
+   "restatements_of": 39,
+   "robust_lanes": 1,
+   "robust": [
+    "instruction-three-actions"
+   ],
+   "absent_under_rewording": [],
+   "unscorable_bank_defect": [
+    "context-retrieval",
+    "summarization-priorities"
+   ]
+  }
+ ]
+}
