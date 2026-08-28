@@ -257,10 +257,11 @@ def main() -> int:
     log("capturing the parent's final residual on the aligned stream")
     parent_capture = capture_writers(streams, parent, {},
                                      parent.model.embedding_norm, "parent_ids")
-    masks = streams.masks({"rows": child_capture["rows"], "splits": child_capture["splits"]}) \
-        if hasattr(streams, "masks") else None
-    if masks is None:
-        raise SystemExit("REFUSED: Streams.masks is unavailable")
+    # The capture dict goes to `masks` WHOLE.  Handing it a hand-assembled
+    # subset is what dropped the batch indices and lengths, and the wave-18
+    # internal check split has to be the same split the single-diagonal solves
+    # use or a KKT rung is not comparable to the rung it is meant to beat.
+    masks = streams.masks(child_capture)
 
     H = child_capture["rows"]["final"]
     N = parent_capture["rows"]["final"]
