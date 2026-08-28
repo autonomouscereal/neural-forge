@@ -1,0 +1,62 @@
+{
+ "schema": "neural-forge-matrix-wave31-preregistration-v1",
+ "purpose": "Every count this wave will build, predicted BEFORE the build, from the allocator refitted on the 840-row ledger and from wave 30's coverage law.  A prediction written after a result is not a prediction, so this file is written and committed before the first review is opened.",
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 840,
+  "sha256": "e1de3fd9853a6bb2c91f9f532e6d9e796728c003260df84f8eba4cb2cc393496",
+  "identical_in": [
+   "the repository working copy",
+   "the deployment neural-forge-matrix-dbf2294e"
+  ]
+ },
+ "allocator_refit": {
+  "arithmetic_gate": {"cells_checked": 58, "mismatched": 0},
+  "fitted_pairwise_interference": {"depthxvocab": 4.4444, "mlpxvocab": 1.75, "depthxmlp": 0.8056},
+  "mean_absolute_error_cases": 2.126,
+  "composed_children_in_fit": 27,
+  "moved_since_wave_30": "wave 30's own five composed rows entered the fit: mlpxvocab 1.17 -> 1.75, depthxmlp 1.39 -> 0.81, depthxvocab 4.44 unchanged.  The pair the whole build list rides on got WORSE by 0.58 cases when the rows that motivated it were included."
+ },
+ "predictions": [
+  {"cell": "ARCH.CL1664", "lane": "L1", "stored_parameters": 191158016, "net_ratio": 0.832232,
+   "predicted_review": 6.25, "source": "allocator, mlp ladder interpolated between 1792 (5 deficit) and 1280 (8)"},
+  {"cell": "ARCH.CL1536", "lane": "L1", "stored_parameters": 185652992, "net_ratio": 0.808265,
+   "predicted_review": 5.5, "source": "allocator"},
+  {"cell": "ARCH.CL1408", "lane": "L1", "stored_parameters": 180147968, "net_ratio": 0.784298,
+   "predicted_review": 4.75, "source": "allocator"},
+  {"cell": "ARCH.V19CL1664", "lane": "L1", "stored_parameters": 143972096, "net_ratio": 0.626802,
+   "predicted_review": 6.5, "source": "allocator, minus mlpxvocab 1.75"},
+  {"cell": "ARCH.V19CL1536", "lane": "L1", "stored_parameters": 138467072, "net_ratio": 0.602835,
+   "predicted_review": 5.75, "source": "allocator"},
+  {"cell": "ARCH.V19CL1408", "lane": "L1", "stored_parameters": 132962048, "net_ratio": 0.578868,
+   "predicted_review": 5.0, "source": "allocator"},
+  {"cell": "ARCH.CL1792ME", "lane": "L2", "stored_parameters": 196663040, "net_ratio": 0.856199,
+   "predicted_review": null,
+   "source": "UNPRICEABLE.  The allocator models axis LEVELS, and this child moves neither an axis level nor a parameter: it is ARCH.CL1792M's split at byte-identical storage, re-solved against wave 30's sealed retokenized evidence stream.  The honest prior is the twin's own reading, 8/15."},
+  {"cell": "ARCH.V19CL1792ME", "lane": "L2", "stored_parameters": 149477120, "net_ratio": 0.650769,
+   "predicted_review": null,
+   "source": "UNPRICEABLE for the same reason.  The question is whether it clears 7/15, which is what ARCH.V19CL1792M failed to do at 6/15 while its solo twin read 8/15."},
+  {"cell": "ARCH.CL1792X13", "lane": "L3", "stored_parameters": 186958592, "net_ratio": 0.813949,
+   "predicted_review": 7.19, "source": "allocator, depth site 13 deficit -1, minus depthxmlp 0.8056"},
+  {"cell": "ARCH.V19CL1792X13", "lane": "L3", "stored_parameters": 139772672, "net_ratio": 0.608519,
+   "predicted_review": 3.0,
+   "source": "allocator.  All three pair terms fire: 4.4444 + 1.75 + 0.8056 = 7.0 cases of interference against an additive 10.0.  The build is ordered anyway because the allocator's own error bar is +-2 cases and it has never seen a triple; the gate is 5/15."},
+  {"cell": "ARCH.V24CL1792", "lane": "L4", "stored_parameters": 154720000, "net_ratio": 0.673594,
+   "predicted_review": 5.85,
+   "source": "the allocator REFUSED this split -- its vocabulary grid contains only rungs the campaign has sealed, and K=24,576 is not one.  5.85 is its own interpolation rule applied by hand: deficit -0.6 between ARCH.V32 (32,768, +1) and ARCH.V22 (22,528, -1), minus mlp deficit 5 at 1792, minus mlpxvocab 1.75."},
+  {"cell": "ARCH.V26CL1792", "lane": "L4", "stored_parameters": 156817152, "net_ratio": 0.682724,
+   "predicted_review": 5.45,
+   "source": "same hand application; deficit -0.2 at K=26,624."}
+ ],
+ "coverage_law": {
+  "statement": "Wave 30 located the vocabulary review cliff exactly at the 0.81 token-coverage crossing (ARCH.V9 0.81402 -> 9/15, ARCH.V8 0.80049 -> 4/15) and proposed it as a GPU-free gate on vocabulary K.",
+  "measured_this_wave_before_grading": [
+   {"cell": "V26", "keep_rows": 26622, "token_coverage": 0.92592, "type_coverage": 0.85417, "sealed_review": null},
+   {"cell": "V24", "keep_rows": 24574, "token_coverage": 0.91915, "type_coverage": 0.83929, "sealed_review": null},
+   {"cell": "V19", "keep_rows": 19454, "token_coverage": 0.90563, "type_coverage": 0.80258, "sealed_review": 14}
+  ],
+  "what_it_predicts": "Both new rungs clear the 0.81 crossing by nine to eleven points, so the coverage gate is NOT binding anywhere on this probe and it predicts no emission-side collapse at either K.  It does not predict a GAIN: coverage is monotone in K and the sealed solo ladder is not (V32 0.940 -> 11/15, V22 0.915 -> 13/15, V19 0.906 -> 14/15).  So L4 is a test of whether the composed child follows COVERAGE or follows the SOLO LADDER, and the two disagree in sign at these two rungs.",
+  "falsifier": "If V24CL1792 or V26CL1792 reads at or above ARCH.V19CL1792's 7/15, more rows bought cases on the composed child and the solo ladder's summit does not transfer through composition.  If both read below 7, the summit transfers and coverage above the crossing buys nothing."
+ },
+ "standing_caution": "Wave 30's allocator was 2.14 cases optimistic at 0.65x and 5.68 cases optimistic at 0.55x, where it carried its own EXTRAPOLATES-INTO-THE-GAP flag.  Every mlp prediction in this file carries that flag, because 1664, 1536 and 1408 all sit inside the interval the flag names.  The fit's MAE is 2.126 cases and its worst residual is larger; a one-case agreement between prediction and observation here is not a confirmation of anything."
+}

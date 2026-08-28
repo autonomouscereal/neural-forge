@@ -1,0 +1,2091 @@
+{
+ "schema": "neural-forge-matrix-wave31-emission-coverage-v1",
+ "generated_at": "2026-08-28T06:20:42Z",
+ "dossier": "/mnt/ai_data/neural-forge-matrix/wave30/cells/ARCH.CL1792/frozen-review-dossier.json",
+ "dossier_sha256": "344e8052f89b759fb7c7ffc54ce2c9c381cc81430b1de5bc048f99d7c78391fa",
+ "lanes": 16,
+ "parent_emitted_tokens": 3253,
+ "parent_emitted_types": 1008,
+ "rungs": [
+  {
+   "cell": "V26",
+   "keep_rows": 26622,
+   "tokens_kept": 3012,
+   "tokens_lost": 241,
+   "token_coverage": 0.925915,
+   "types_lost": 147,
+   "type_coverage": 0.854167,
+   "lost_type_examples": [
+    {
+     "id": 25341,
+     "piece": " prone"
+    },
+    {
+     "id": 25363,
+     "piece": " powered"
+    },
+    {
+     "id": 25369,
+     "piece": " preservation"
+    },
+    {
+     "id": 25672,
+     "piece": " Monitor"
+    },
+    {
+     "id": 25979,
+     "piece": " revised"
+    },
+    {
+     "id": 26140,
+     "piece": "Plan"
+    },
+    {
+     "id": 26148,
+     "piece": " functionality"
+    },
+    {
+     "id": 26304,
+     "piece": " traces"
+    },
+    {
+     "id": 26537,
+     "piece": "dependency"
+    },
+    {
+     "id": 26654,
+     "piece": " allergies"
+    },
+    {
+     "id": 26661,
+     "piece": " servers"
+    },
+    {
+     "id": 27072,
+     "piece": " Position"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.134615,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 4,
+     "fraction_lost": 0.057143
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 7,
+     "fraction_lost": 0.078652
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 6,
+     "fraction_lost": 0.03352
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 6,
+     "fraction_lost": 0.02214
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 11,
+     "fraction_lost": 0.094017
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 2,
+     "fraction_lost": 0.0625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 3,
+     "fraction_lost": 0.096774
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 13,
+     "fraction_lost": 0.071038
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 10,
+     "fraction_lost": 0.051282
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 3,
+     "fraction_lost": 0.038961
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 40,
+     "fraction_lost": 0.072993
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 4,
+     "fraction_lost": 0.021505
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 33,
+     "fraction_lost": 0.075688
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 7,
+     "fraction_lost": 0.081395
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 91,
+     "fraction_lost": 0.134615
+    }
+   ],
+   "sealed_review": null
+  },
+  {
+   "cell": "V24",
+   "keep_rows": 24574,
+   "tokens_kept": 2990,
+   "tokens_lost": 263,
+   "token_coverage": 0.919152,
+   "types_lost": 162,
+   "type_coverage": 0.839286,
+   "lost_type_examples": [
+    {
+     "id": 23361,
+     "piece": " Update"
+    },
+    {
+     "id": 23758,
+     "piece": "Storage"
+    },
+    {
+     "id": 23998,
+     "piece": " Mix"
+    },
+    {
+     "id": 24050,
+     "piece": " Clean"
+    },
+    {
+     "id": 24409,
+     "piece": " delayed"
+    },
+    {
+     "id": 24582,
+     "piece": "Final"
+    },
+    {
+     "id": 24667,
+     "piece": " Authority"
+    },
+    {
+     "id": 24684,
+     "piece": "-friendly"
+    },
+    {
+     "id": 24910,
+     "piece": " washing"
+    },
+    {
+     "id": 24982,
+     "piece": " dishes"
+    },
+    {
+     "id": 24992,
+     "piece": " harsh"
+    },
+    {
+     "id": 25056,
+     "piece": "Contact"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.147929,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 4,
+     "fraction_lost": 0.057143
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 10,
+     "fraction_lost": 0.11236
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 6,
+     "fraction_lost": 0.03352
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 7,
+     "fraction_lost": 0.02583
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 11,
+     "fraction_lost": 0.094017
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 2,
+     "fraction_lost": 0.0625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 4,
+     "fraction_lost": 0.129032
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 13,
+     "fraction_lost": 0.071038
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 10,
+     "fraction_lost": 0.051282
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 6,
+     "fraction_lost": 0.077922
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 42,
+     "fraction_lost": 0.076642
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 5,
+     "fraction_lost": 0.026882
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 35,
+     "fraction_lost": 0.080275
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 7,
+     "fraction_lost": 0.081395
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 100,
+     "fraction_lost": 0.147929
+    }
+   ],
+   "sealed_review": null
+  },
+  {
+   "cell": "V32",
+   "keep_rows": 32766,
+   "tokens_kept": 3058,
+   "tokens_lost": 195,
+   "token_coverage": 0.940055,
+   "types_lost": 114,
+   "type_coverage": 0.886905,
+   "lost_type_examples": [
+    {
+     "id": 31991,
+     "piece": " satisfying"
+    },
+    {
+     "id": 32059,
+     "piece": " sli"
+    },
+    {
+     "id": 32566,
+     "piece": " backup"
+    },
+    {
+     "id": 33049,
+     "piece": " Apache"
+    },
+    {
+     "id": 33458,
+     "piece": "umble"
+    },
+    {
+     "id": 33467,
+     "piece": " Butter"
+    },
+    {
+     "id": 33760,
+     "piece": "Watch"
+    },
+    {
+     "id": 34264,
+     "piece": "horn"
+    },
+    {
+     "id": 34303,
+     "piece": " floors"
+    },
+    {
+     "id": 34323,
+     "piece": " grateful"
+    },
+    {
+     "id": 34502,
+     "piece": " coconut"
+    },
+    {
+     "id": 34721,
+     "piece": " rhyth"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.109467,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 3,
+     "fraction_lost": 0.042857
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 5,
+     "fraction_lost": 0.05618
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 6,
+     "fraction_lost": 0.03352
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 5,
+     "fraction_lost": 0.01845
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 10,
+     "fraction_lost": 0.08547
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 2,
+     "fraction_lost": 0.0625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 3,
+     "fraction_lost": 0.096774
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 9,
+     "fraction_lost": 0.04918
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 9,
+     "fraction_lost": 0.046154
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 32,
+     "fraction_lost": 0.058394
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 4,
+     "fraction_lost": 0.021505
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 26,
+     "fraction_lost": 0.059633
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 5,
+     "fraction_lost": 0.05814
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 74,
+     "fraction_lost": 0.109467
+    }
+   ],
+   "sealed_review": 11
+  },
+  {
+   "cell": "V22",
+   "keep_rows": 22526,
+   "tokens_kept": 2975,
+   "tokens_lost": 278,
+   "token_coverage": 0.91454,
+   "types_lost": 174,
+   "type_coverage": 0.827381,
+   "lost_type_examples": [
+    {
+     "id": 21183,
+     "piece": " steady"
+    },
+    {
+     "id": 21297,
+     "piece": " efficiently"
+    },
+    {
+     "id": 21328,
+     "piece": "\\[\n"
+    },
+    {
+     "id": 21505,
+     "piece": " pepper"
+    },
+    {
+     "id": 21575,
+     "piece": "/T"
+    },
+    {
+     "id": 21636,
+     "piece": "Best"
+    },
+    {
+     "id": 21787,
+     "piece": " receives"
+    },
+    {
+     "id": 22512,
+     "piece": " ling"
+    },
+    {
+     "id": 22604,
+     "piece": " spreading"
+    },
+    {
+     "id": 22792,
+     "piece": " prevents"
+    },
+    {
+     "id": 22878,
+     "piece": " furniture"
+    },
+    {
+     "id": 22911,
+     "piece": " persistent"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.149408,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 4,
+     "fraction_lost": 0.057143
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 10,
+     "fraction_lost": 0.11236
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 8,
+     "fraction_lost": 0.044693
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 8,
+     "fraction_lost": 0.02952
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 11,
+     "fraction_lost": 0.094017
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 2,
+     "fraction_lost": 0.0625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 4,
+     "fraction_lost": 0.129032
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 13,
+     "fraction_lost": 0.071038
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 11,
+     "fraction_lost": 0.05641
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 7,
+     "fraction_lost": 0.090909
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 44,
+     "fraction_lost": 0.080292
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 5,
+     "fraction_lost": 0.026882
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 41,
+     "fraction_lost": 0.094037
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 8,
+     "fraction_lost": 0.093023
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 101,
+     "fraction_lost": 0.149408
+    }
+   ],
+   "sealed_review": 13
+  },
+  {
+   "cell": "V20",
+   "keep_rows": 20478,
+   "tokens_kept": 2953,
+   "tokens_lost": 300,
+   "token_coverage": 0.907777,
+   "types_lost": 193,
+   "type_coverage": 0.808532,
+   "lost_type_examples": [
+    {
+     "id": 18775,
+     "piece": " varying"
+    },
+    {
+     "id": 18798,
+     "piece": "figure"
+    },
+    {
+     "id": 18911,
+     "piece": " reaches"
+    },
+    {
+     "id": 19185,
+     "piece": "aware"
+    },
+    {
+     "id": 19247,
+     "piece": " quantities"
+    },
+    {
+     "id": 19278,
+     "piece": " lux"
+    },
+    {
+     "id": 19416,
+     "piece": " safely"
+    },
+    {
+     "id": 19452,
+     "piece": "Document"
+    },
+    {
+     "id": 19532,
+     "piece": "(["
+    },
+    {
+     "id": 19771,
+     "piece": " weekly"
+    },
+    {
+     "id": 19944,
+     "piece": " smell"
+    },
+    {
+     "id": 20041,
+     "piece": " convenient"
+    }
+   ],
+   "worst_lane": "summarization-priorities",
+   "worst_lane_fraction_lost": 0.16129,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 5,
+     "fraction_lost": 0.071429
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 10,
+     "fraction_lost": 0.11236
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 10,
+     "fraction_lost": 0.055866
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 11,
+     "fraction_lost": 0.04059
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 11,
+     "fraction_lost": 0.094017
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 2,
+     "fraction_lost": 0.0625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 5,
+     "fraction_lost": 0.16129
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 14,
+     "fraction_lost": 0.076503
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 13,
+     "fraction_lost": 0.066667
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 7,
+     "fraction_lost": 0.090909
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 47,
+     "fraction_lost": 0.085766
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 7,
+     "fraction_lost": 0.037634
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 44,
+     "fraction_lost": 0.100917
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 8,
+     "fraction_lost": 0.093023
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 105,
+     "fraction_lost": 0.155325
+    }
+   ],
+   "sealed_review": 13
+  },
+  {
+   "cell": "V19",
+   "keep_rows": 19454,
+   "tokens_kept": 2946,
+   "tokens_lost": 307,
+   "token_coverage": 0.905626,
+   "types_lost": 199,
+   "type_coverage": 0.802579,
+   "lost_type_examples": [
+    {
+     "id": 17645,
+     "piece": " moments"
+    },
+    {
+     "id": 17874,
+     "piece": " preserve"
+    },
+    {
+     "id": 17887,
+     "piece": " soy"
+    },
+    {
+     "id": 17929,
+     "piece": "NAME"
+    },
+    {
+     "id": 18161,
+     "piece": "acles"
+    },
+    {
+     "id": 18498,
+     "piece": " Future"
+    },
+    {
+     "id": 18775,
+     "piece": " varying"
+    },
+    {
+     "id": 18798,
+     "piece": "figure"
+    },
+    {
+     "id": 18911,
+     "piece": " reaches"
+    },
+    {
+     "id": 19185,
+     "piece": "aware"
+    },
+    {
+     "id": 19247,
+     "piece": " quantities"
+    },
+    {
+     "id": 19278,
+     "piece": " lux"
+    }
+   ],
+   "worst_lane": "summarization-priorities",
+   "worst_lane_fraction_lost": 0.16129,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 6,
+     "fraction_lost": 0.085714
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 10,
+     "fraction_lost": 0.11236
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 10,
+     "fraction_lost": 0.055866
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 11,
+     "fraction_lost": 0.04059
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 11,
+     "fraction_lost": 0.094017
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 2,
+     "fraction_lost": 0.0625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 5,
+     "fraction_lost": 0.16129
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 15,
+     "fraction_lost": 0.081967
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 13,
+     "fraction_lost": 0.066667
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 7,
+     "fraction_lost": 0.090909
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 49,
+     "fraction_lost": 0.089416
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 7,
+     "fraction_lost": 0.037634
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 45,
+     "fraction_lost": 0.103211
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 9,
+     "fraction_lost": 0.104651
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 106,
+     "fraction_lost": 0.156805
+    }
+   ],
+   "sealed_review": 14
+  },
+  {
+   "cell": "V18",
+   "keep_rows": 18430,
+   "tokens_kept": 2912,
+   "tokens_lost": 341,
+   "token_coverage": 0.895174,
+   "types_lost": 213,
+   "type_coverage": 0.78869,
+   "lost_type_examples": [
+    {
+     "id": 16490,
+     "piece": " Area"
+    },
+    {
+     "id": 16551,
+     "piece": "Label"
+    },
+    {
+     "id": 16646,
+     "piece": " gate"
+    },
+    {
+     "id": 16672,
+     "piece": "}}{"
+    },
+    {
+     "id": 16738,
+     "piece": " Veg"
+    },
+    {
+     "id": 16823,
+     "piece": " Keep"
+    },
+    {
+     "id": 16830,
+     "piece": " cream"
+    },
+    {
+     "id": 16892,
+     "piece": " analyze"
+    },
+    {
+     "id": 16925,
+     "piece": " Consider"
+    },
+    {
+     "id": 17007,
+     "piece": "Step"
+    },
+    {
+     "id": 17053,
+     "piece": " arrive"
+    },
+    {
+     "id": 17103,
+     "piece": " moisture"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.186391,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 6,
+     "fraction_lost": 0.085714
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 10,
+     "fraction_lost": 0.11236
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 10,
+     "fraction_lost": 0.055866
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 12,
+     "fraction_lost": 0.04428
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 12,
+     "fraction_lost": 0.102564
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 4,
+     "fraction_lost": 0.125
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 5,
+     "fraction_lost": 0.16129
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 15,
+     "fraction_lost": 0.081967
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 13,
+     "fraction_lost": 0.066667
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 1,
+     "fraction_lost": 0.012987
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 8,
+     "fraction_lost": 0.103896
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 56,
+     "fraction_lost": 0.10219
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 7,
+     "fraction_lost": 0.037634
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 47,
+     "fraction_lost": 0.107798
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 9,
+     "fraction_lost": 0.104651
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 126,
+     "fraction_lost": 0.186391
+    }
+   ],
+   "sealed_review": 13
+  },
+  {
+   "cell": "V17",
+   "keep_rows": 17406,
+   "tokens_kept": 2884,
+   "tokens_lost": 369,
+   "token_coverage": 0.886566,
+   "types_lost": 233,
+   "type_coverage": 0.768849,
+   "lost_type_examples": [
+    {
+     "id": 15344,
+     "piece": "small"
+    },
+    {
+     "id": 15447,
+     "piece": "Create"
+    },
+    {
+     "id": 15479,
+     "piece": "ipher"
+    },
+    {
+     "id": 15515,
+     "piece": " Website"
+    },
+    {
+     "id": 15721,
+     "piece": " Roll"
+    },
+    {
+     "id": 15811,
+     "piece": " orbit"
+    },
+    {
+     "id": 15820,
+     "piece": " axis"
+    },
+    {
+     "id": 15828,
+     "piece": "Valid"
+    },
+    {
+     "id": 15865,
+     "piece": ".append"
+    },
+    {
+     "id": 15959,
+     "piece": "amination"
+    },
+    {
+     "id": 15975,
+     "piece": "values"
+    },
+    {
+     "id": 15987,
+     "piece": " anywhere"
+    }
+   ],
+   "worst_lane": "summarization-priorities",
+   "worst_lane_fraction_lost": 0.193548,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 6,
+     "fraction_lost": 0.085714
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 11,
+     "fraction_lost": 0.123596
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 17,
+     "fraction_lost": 0.094972
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 12,
+     "fraction_lost": 0.04428
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 12,
+     "fraction_lost": 0.102564
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 4,
+     "fraction_lost": 0.125
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 6,
+     "fraction_lost": 0.193548
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 18,
+     "fraction_lost": 0.098361
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 14,
+     "fraction_lost": 0.071795
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 4,
+     "fraction_lost": 0.051948
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 63,
+     "fraction_lost": 0.114964
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 7,
+     "fraction_lost": 0.037634
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 47,
+     "fraction_lost": 0.107798
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 9,
+     "fraction_lost": 0.104651
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 130,
+     "fraction_lost": 0.192308
+    }
+   ],
+   "sealed_review": 11
+  },
+  {
+   "cell": "V14",
+   "keep_rows": 14334,
+   "tokens_kept": 2817,
+   "tokens_lost": 436,
+   "token_coverage": 0.86597,
+   "types_lost": 271,
+   "type_coverage": 0.731151,
+   "lost_type_examples": [
+    {
+     "id": 11904,
+     "piece": " chemicals"
+    },
+    {
+     "id": 11959,
+     "piece": " valuable"
+    },
+    {
+     "id": 11990,
+     "piece": " sweet"
+    },
+    {
+     "id": 12075,
+     "piece": " regularly"
+    },
+    {
+     "id": 12428,
+     "piece": " recognize"
+    },
+    {
+     "id": 12764,
+     "piece": " Prom"
+    },
+    {
+     "id": 12815,
+     "piece": " marketing"
+    },
+    {
+     "id": 12908,
+     "piece": " butter"
+    },
+    {
+     "id": 12938,
+     "piece": " Nut"
+    },
+    {
+     "id": 12987,
+     "piece": " configuration"
+    },
+    {
+     "id": 13079,
+     "piece": " theme"
+    },
+    {
+     "id": 13129,
+     "piece": " fiber"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.230769,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 8,
+     "fraction_lost": 0.114286
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 12,
+     "fraction_lost": 0.134831
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 18,
+     "fraction_lost": 0.100559
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 18,
+     "fraction_lost": 0.066421
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 13,
+     "fraction_lost": 0.111111
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 4,
+     "fraction_lost": 0.125
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 6,
+     "fraction_lost": 0.193548
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 20,
+     "fraction_lost": 0.10929
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 15,
+     "fraction_lost": 0.076923
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 5,
+     "fraction_lost": 0.064935
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 75,
+     "fraction_lost": 0.136861
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 11,
+     "fraction_lost": 0.05914
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 55,
+     "fraction_lost": 0.126147
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 11,
+     "fraction_lost": 0.127907
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 156,
+     "fraction_lost": 0.230769
+    }
+   ],
+   "sealed_review": 9
+  },
+  {
+   "cell": "V12",
+   "keep_rows": 12286,
+   "tokens_kept": 2771,
+   "tokens_lost": 482,
+   "token_coverage": 0.851829,
+   "types_lost": 297,
+   "type_coverage": 0.705357,
+   "lost_type_examples": [
+    {
+     "id": 9397,
+     "piece": " server"
+    },
+    {
+     "id": 9596,
+     "piece": "pping"
+    },
+    {
+     "id": 9629,
+     "piece": " domain"
+    },
+    {
+     "id": 10012,
+     "piece": "/h"
+    },
+    {
+     "id": 10056,
+     "piece": "Why"
+    },
+    {
+     "id": 10125,
+     "piece": "Call"
+    },
+    {
+     "id": 10168,
+     "piece": " tested"
+    },
+    {
+     "id": 10262,
+     "piece": " fundamental"
+    },
+    {
+     "id": 10269,
+     "piece": "mond"
+    },
+    {
+     "id": 10288,
+     "piece": "94"
+    },
+    {
+     "id": 10299,
+     "piece": " library"
+    },
+    {
+     "id": 10478,
+     "piece": " Control"
+    }
+   ],
+   "worst_lane": "summarization-priorities",
+   "worst_lane_fraction_lost": 0.258065,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 8,
+     "fraction_lost": 0.114286
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 12,
+     "fraction_lost": 0.134831
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 20,
+     "fraction_lost": 0.111732
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 25,
+     "fraction_lost": 0.092251
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 14,
+     "fraction_lost": 0.119658
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 4,
+     "fraction_lost": 0.125
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 8,
+     "fraction_lost": 0.258065
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 21,
+     "fraction_lost": 0.114754
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 15,
+     "fraction_lost": 0.076923
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 5,
+     "fraction_lost": 0.064935
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 93,
+     "fraction_lost": 0.169708
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 13,
+     "fraction_lost": 0.069892
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 57,
+     "fraction_lost": 0.130734
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 14,
+     "fraction_lost": 0.162791
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 164,
+     "fraction_lost": 0.242604
+    }
+   ],
+   "sealed_review": 11
+  },
+  {
+   "cell": "V10",
+   "keep_rows": 10238,
+   "tokens_kept": 2716,
+   "tokens_lost": 537,
+   "token_coverage": 0.834922,
+   "types_lost": 327,
+   "type_coverage": 0.675595,
+   "lost_type_examples": [
+    {
+     "id": 6693,
+     "piece": " forces"
+    },
+    {
+     "id": 6771,
+     "piece": " presence"
+    },
+    {
+     "id": 6844,
+     "piece": " summer"
+    },
+    {
+     "id": 6939,
+     "piece": " communication"
+    },
+    {
+     "id": 6978,
+     "piece": "Of"
+    },
+    {
+     "id": 7033,
+     "piece": "-term"
+    },
+    {
+     "id": 7292,
+     "piece": " Jun"
+    },
+    {
+     "id": 7324,
+     "piece": " turned"
+    },
+    {
+     "id": 7817,
+     "piece": " People"
+    },
+    {
+     "id": 7843,
+     "piece": " mur"
+    },
+    {
+     "id": 7921,
+     "piece": " weather"
+    },
+    {
+     "id": 7979,
+     "piece": "times"
+    }
+   ],
+   "worst_lane": "summarization-priorities",
+   "worst_lane_fraction_lost": 0.258065,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 9,
+     "fraction_lost": 0.128571
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 14,
+     "fraction_lost": 0.157303
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 26,
+     "fraction_lost": 0.145251
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 27,
+     "fraction_lost": 0.099631
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 22,
+     "fraction_lost": 0.188034
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 5,
+     "fraction_lost": 0.15625
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 8,
+     "fraction_lost": 0.258065
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 25,
+     "fraction_lost": 0.136612
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 18,
+     "fraction_lost": 0.092308
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 5,
+     "fraction_lost": 0.064935
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 97,
+     "fraction_lost": 0.177007
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 13,
+     "fraction_lost": 0.069892
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 66,
+     "fraction_lost": 0.151376
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 19,
+     "fraction_lost": 0.22093
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 174,
+     "fraction_lost": 0.257396
+    }
+   ],
+   "sealed_review": 10
+  },
+  {
+   "cell": "V9",
+   "keep_rows": 9214,
+   "tokens_kept": 2648,
+   "tokens_lost": 605,
+   "token_coverage": 0.814018,
+   "types_lost": 367,
+   "type_coverage": 0.635913,
+   "lost_type_examples": [
+    {
+     "id": 5237,
+     "piece": " designed"
+    },
+    {
+     "id": 5258,
+     "piece": " climate"
+    },
+    {
+     "id": 5316,
+     "piece": " healthy"
+    },
+    {
+     "id": 5376,
+     "piece": " title"
+    },
+    {
+     "id": 5403,
+     "piece": " protein"
+    },
+    {
+     "id": 5425,
+     "piece": " web"
+    },
+    {
+     "id": 5480,
+     "piece": " heat"
+    },
+    {
+     "id": 5487,
+     "piece": " Earth"
+    },
+    {
+     "id": 5490,
+     "piece": " sound"
+    },
+    {
+     "id": 5506,
+     "piece": "Test"
+    },
+    {
+     "id": 5589,
+     "piece": " spect"
+    },
+    {
+     "id": 5598,
+     "piece": " behind"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.27071,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 10,
+     "fraction_lost": 0.142857
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 17,
+     "fraction_lost": 0.191011
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 38,
+     "fraction_lost": 0.212291
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 32,
+     "fraction_lost": 0.118081
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 22,
+     "fraction_lost": 0.188034
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 7,
+     "fraction_lost": 0.21875
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 8,
+     "fraction_lost": 0.258065
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 35,
+     "fraction_lost": 0.191257
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 20,
+     "fraction_lost": 0.102564
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 8,
+     "fraction_lost": 0.103896
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 105,
+     "fraction_lost": 0.191606
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 16,
+     "fraction_lost": 0.086022
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 73,
+     "fraction_lost": 0.167431
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 22,
+     "fraction_lost": 0.255814
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 183,
+     "fraction_lost": 0.27071
+    }
+   ],
+   "sealed_review": 9
+  },
+  {
+   "cell": "V8",
+   "keep_rows": 8190,
+   "tokens_kept": 2604,
+   "tokens_lost": 649,
+   "token_coverage": 0.800492,
+   "types_lost": 395,
+   "type_coverage": 0.608135,
+   "lost_type_examples": [
+    {
+     "id": 3486,
+     "piece": "ites"
+    },
+    {
+     "id": 3508,
+     "piece": " areas"
+    },
+    {
+     "id": 3509,
+     "piece": " path"
+    },
+    {
+     "id": 3582,
+     "piece": " course"
+    },
+    {
+     "id": 3596,
+     "piece": "ira"
+    },
+    {
+     "id": 3834,
+     "piece": " Pe"
+    },
+    {
+     "id": 3865,
+     "piece": "))"
+    },
+    {
+     "id": 3911,
+     "piece": "ips"
+    },
+    {
+     "id": 4003,
+     "piece": " seen"
+    },
+    {
+     "id": 4048,
+     "piece": " simple"
+    },
+    {
+     "id": 4096,
+     "piece": "})"
+    },
+    {
+     "id": 4176,
+     "piece": " State"
+    }
+   ],
+   "worst_lane": "multi-turn-correction",
+   "worst_lane_fraction_lost": 0.284024,
+   "per_lane": [
+    {
+     "lane": "conversation-natural-greeting",
+     "tokens": 70,
+     "tokens_lost": 13,
+     "fraction_lost": 0.185714
+    },
+    {
+     "lane": "instruction-three-actions",
+     "tokens": 89,
+     "tokens_lost": 17,
+     "fraction_lost": 0.191011
+    },
+    {
+     "lane": "explanation-seasons",
+     "tokens": 179,
+     "tokens_lost": 45,
+     "fraction_lost": 0.251397
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "tokens": 271,
+     "tokens_lost": 33,
+     "fraction_lost": 0.121771
+    },
+    {
+     "lane": "logic-ordering",
+     "tokens": 117,
+     "tokens_lost": 25,
+     "fraction_lost": 0.213675
+    },
+    {
+     "lane": "context-retrieval",
+     "tokens": 32,
+     "tokens_lost": 7,
+     "fraction_lost": 0.21875
+    },
+    {
+     "lane": "summarization-priorities",
+     "tokens": 31,
+     "tokens_lost": 8,
+     "fraction_lost": 0.258065
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "tokens": 183,
+     "tokens_lost": 37,
+     "fraction_lost": 0.202186
+    },
+    {
+     "lane": "coding-deduplicate",
+     "tokens": 195,
+     "tokens_lost": 27,
+     "fraction_lost": 0.138462
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "writing-concise-email",
+     "tokens": 77,
+     "tokens_lost": 9,
+     "fraction_lost": 0.116883
+    },
+    {
+     "lane": "planning-dependencies",
+     "tokens": 548,
+     "tokens_lost": 108,
+     "fraction_lost": 0.19708
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "tokens": 186,
+     "tokens_lost": 19,
+     "fraction_lost": 0.102151
+    },
+    {
+     "lane": "safety-household-chemical",
+     "tokens": 436,
+     "tokens_lost": 76,
+     "fraction_lost": 0.174312
+    },
+    {
+     "lane": "creative-continuity",
+     "tokens": 86,
+     "tokens_lost": 24,
+     "fraction_lost": 0.27907
+    },
+    {
+     "lane": "multi-turn-correction",
+     "tokens": 676,
+     "tokens_lost": 192,
+     "fraction_lost": 0.284024
+    }
+   ],
+   "sealed_review": 4
+  }
+ ]
+}

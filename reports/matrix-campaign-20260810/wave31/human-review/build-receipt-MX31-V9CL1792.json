@@ -1,0 +1,551 @@
+{
+ "schema": "neural-forge-matrix-wave31-standard-shape-child-v1",
+ "built_at": "2026-08-28T07:25:00Z",
+ "builder": "mx31_vocab.py",
+ "tag": "V9CL1792",
+ "arm": "vocab-row-coreset (zero-solve)",
+ "adjudication": {
+  "item": "A2",
+  "status": "RESOLVED 2026-08-13 by Cyril: a vocabulary row coreset with a tokenizer remap COUNTS AS FOLDING and is frontier-eligible",
+  "scale_caveat_recorded_at_his_instruction": "the token interface is 29.2% of THIS parent and ~1% of a 70B model by the same arithmetic (docs/PHASE1 section 4.1); these rows are this model's phase-1 numbers, not a transferable strategy"
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave30/children/MX30-CL1792",
+ "source_config_vocab_size": 65536,
+ "source_tensors_sha256": "6f2a2bfd13f4a911b505df181486c7b81cd5b46a9775b6f45fb469089b061d93",
+ "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave30/cells/ARCH.CL1792/cell-receipt.json",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave31/children/MX31-V9CL1792",
+ "child_tensors_sha256": "902d686fa77006e5923ea6ba640c0b5938b6012c30fabafffc5396939995c2a0",
+ "child_directory_sha256": "7b493da0947c3e6ab8d60eccc246753e8e20880ff3b5553edaa32013e15713a3",
+ "child_parameters": 138991360,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.6051174770601813,
+ "excised": [],
+ "residual_basis": null,
+ "axes": [
+  {
+   "axis": "intermediate_size",
+   "kind": "mlp",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "intermediate_size",
+    "block_ff_dim"
+   ],
+   "selection": "pivoted-Cholesky coreset of real channels; w1/w3 rows verbatim",
+   "solve": "prior-anchored ridge on w2, lambda ladder to update_scale<=1.0, arm=conditioned-local",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": 33030144,
+   "heldout": {
+    "median_cos": 0.9582231044769287,
+    "min_cos": 0.9360348056122593,
+    "median_relL2": 0.28296446800231934,
+    "max_input_drift": 0.17475781467857043,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.0,
+      "identity_check": 0.0032252167569195157,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       6,
+       7,
+       8,
+       10
+      ],
+      "vs_local_target_cos": 0.9630869143265894,
+      "vs_local_target_relL2": 0.3023502434414848,
+      "update_scale": 0.7382624185929734,
+      "lambda_relative": 0.01,
+      "free_solve_update_scale": 1.2093501132054756,
+      "relL2": 0.3023502434414848,
+      "cos": 0.9630869143265894,
+      "cos_p05": 0.8499747741440918
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.08862225728811066,
+      "identity_check": 0.0032652205076230015,
+      "selection_first8": [
+       0,
+       2,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9444707663201528,
+      "vs_local_target_relL2": 0.3736184918694537,
+      "update_scale": 0.8600204396493648,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8600204396493648,
+      "relL2": 0.3736184918694537,
+      "cos": 0.9444707663201528,
+      "cos_p05": 0.8240106523001354
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.12430879016299058,
+      "identity_check": 0.0033978476228621146,
+      "selection_first8": [
+       1,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       11
+      ],
+      "vs_local_target_cos": 0.9360348056122593,
+      "vs_local_target_relL2": 0.37354987856204996,
+      "update_scale": 0.646915908896803,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.646915908896803,
+      "relL2": 0.37354987856204996,
+      "cos": 0.9360348056122593,
+      "cos_p05": 0.8581703764265163
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15697758634783468,
+      "identity_check": 0.003440086511989987,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       6,
+       7,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9523977513133128,
+      "vs_local_target_relL2": 0.3121821357235078,
+      "update_scale": 0.5727132289414649,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5727132289414649,
+      "relL2": 0.3121821357235078,
+      "cos": 0.9523977513133128,
+      "cos_p05": 0.9023648855322852
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.1619365183365697,
+      "identity_check": 0.0033976944772100654,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       6,
+       7,
+       8,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9514407879440318,
+      "vs_local_target_relL2": 0.2959638656470435,
+      "update_scale": 0.5379841926537466,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5379841926537466,
+      "relL2": 0.2959638656470435,
+      "cos": 0.9514407879440318,
+      "cos_p05": 0.9070706282292337
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.17454087290992953,
+      "identity_check": 0.004502925712574129,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9561847072409777,
+      "vs_local_target_relL2": 0.04473952397202133,
+      "update_scale": 0.515864148389157,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.515864148389157,
+      "relL2": 0.04473952397202133,
+      "cos": 0.9561847072409777,
+      "cos_p05": 0.9147158553470159
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.16607268513885093,
+      "identity_check": 0.003614111886644426,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "vs_local_target_cos": 0.9596202787955841,
+      "vs_local_target_relL2": 0.28296447568228683,
+      "update_scale": 0.5234243685525949,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5234243685525949,
+      "relL2": 0.28296447568228683,
+      "cos": 0.9596202787955841,
+      "cos_p05": 0.9280764593929859
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.16724374466111402,
+      "identity_check": 0.0036700770605359733,
+      "selection_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.967209302207731,
+      "vs_local_target_relL2": 0.24160905470896726,
+      "update_scale": 0.4894500787991883,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.4894500787991883,
+      "relL2": 0.24160905470896726,
+      "cos": 0.967209302207731,
+      "cos_p05": 0.9320433564360971
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15941658034360115,
+      "identity_check": 0.003729906368246703,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "vs_local_target_cos": 0.9582231031631449,
+      "vs_local_target_relL2": 0.2892192601441225,
+      "update_scale": 0.5318612312921284,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5318612312921284,
+      "relL2": 0.2892192601441225,
+      "cos": 0.9582231031631449,
+      "cos_p05": 0.9246156161506065
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15124089538133048,
+      "identity_check": 0.003695882850791961,
+      "selection_first8": [
+       1,
+       2,
+       4,
+       5,
+       6,
+       7,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9646434153783678,
+      "vs_local_target_relL2": 0.2541423346480276,
+      "update_scale": 0.5043880041381468,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5043880041381468,
+      "relL2": 0.2541423346480276,
+      "cos": 0.9646434153783678,
+      "cos_p05": 0.9266856261186406
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.14692023675289448,
+      "identity_check": 0.0037226060045609222,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       8
+      ],
+      "vs_local_target_cos": 0.9682399335634949,
+      "vs_local_target_relL2": 0.2374762983211257,
+      "update_scale": 0.5117259768577571,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5117259768577571,
+      "relL2": 0.2374762983211257,
+      "cos": 0.9682399335634949,
+      "cos_p05": 0.9343952954999517
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15147240294137673,
+      "identity_check": 0.0037376662359462636,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       7,
+       10,
+       13
+      ],
+      "vs_local_target_cos": 0.9417477698545659,
+      "vs_local_target_relL2": 0.32924544764587327,
+      "update_scale": 0.5790888910935872,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5790888910935872,
+      "relL2": 0.32924544764587327,
+      "cos": 0.9417477698545659,
+      "cos_p05": 0.8692240512470739
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.15890811383573417,
+      "identity_check": 0.0036362407918850014,
+      "selection_first8": [
+       1,
+       2,
+       4,
+       5,
+       8,
+       9,
+       10,
+       11
+      ],
+      "vs_local_target_cos": 0.9682431441737314,
+      "vs_local_target_relL2": 0.25261435762434103,
+      "update_scale": 0.5779339583072781,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5779339583072781,
+      "relL2": 0.25261435762434103,
+      "cos": 0.9682431441737314,
+      "cos_p05": 0.9128342499004157
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "input_drift_vs_parent": 0.17475781467857043,
+      "identity_check": 0.0031596311642200663,
+      "selection_first8": [
+       2,
+       3,
+       5,
+       6,
+       12,
+       14,
+       16,
+       17
+      ],
+      "vs_local_target_cos": 0.9808749163628742,
+      "vs_local_target_relL2": 0.20031048404973442,
+      "update_scale": 0.6281255993628987,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6281255993628987,
+      "relL2": 0.20031048404973442,
+      "cos": 0.9808749163628742,
+      "cos_p05": 0.9470962792753732
+     }
+    ]
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 9216 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 57671680,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.0523 on the frozen review prompts, with tokens-per-byte beside it"
+  }
+ ],
+ "vocabulary": {
+  "k": 9216,
+  "kept_rows": 9216,
+  "mandatory_rows": 765,
+  "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+  "ranking_rule": "(-census_count, parent_token_id)",
+  "observed_tokens_admitted_by_ranking": 4633,
+  "tokens_skipped_because_their_closure_did_not_fit": 0,
+  "dead_parent_rows_dropped": 1134,
+  "sealed_corpus": {
+   "path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+   "file_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+   "rows": 256,
+   "token_positions": 67583
+  },
+  "sealed_corpus_is_a_donor_mapped_stream": "mapped_donor_calibration.json carries a DONOR tokenizer's segmentation mapped into this vocabulary, so the parent does not round-trip its own sealed corpus (264 donor ids re-encode to 186 canonical ones on row 0).  The census therefore reads BOTH streams and both coverages are published.",
+  "sealed_corpus_coverage_donor_mapped": {
+   "occurrences": 67583,
+   "occurrences_covered": 67583,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 2030,
+   "distinct_covered": 2030,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "sealed_corpus_coverage_canonical": {
+   "occurrences": 43992,
+   "occurrences_covered": 43992,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 4806,
+   "distinct_covered": 4806,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "kept_token_occurrences_lost": {
+   "donor_mapped": 0,
+   "canonical": 0,
+   "claim": "every token occurrence in the sealed corpus, on both streams, has a kept row; asserted, not asserted-about"
+  },
+  "lossless_on_text_and_agreement": {
+   "sealed_corpus": {
+    "rows": 256,
+    "rows_lossless_on_text": 256,
+    "rows_segmented_exactly_as_parent": 256,
+    "parent_positions": 43992,
+    "parent_positions_whose_token_was_dropped": 0,
+    "positions_agreeing": 43992,
+    "position_agreement": 1.0
+   },
+   "frozen_review_prompts": {
+    "rows": 16,
+    "rows_lossless_on_text": 16,
+    "rows_segmented_exactly_as_parent": 0,
+    "parent_positions": 726,
+    "parent_positions_whose_token_was_dropped": 152,
+    "positions_agreeing": 38,
+    "position_agreement": 0.05234159779614325
+   },
+   "claim": "decode(child_encode(t)) == t for every t (the byte alphabet is complete and there is no unk); `position_agreement` is how often the child's segmentation equals the parent's under the remap, and it is the measured size of the input-distribution shift this arm bets on"
+  },
+  "frozen_review_prompt_coverage_DIAGNOSTIC_ONLY": {
+   "occurrences": 726,
+   "occurrences_covered": 574,
+   "occurrence_coverage": 0.790633608815427,
+   "distinct_tokens": 432,
+   "distinct_covered": 297,
+   "distinct_coverage": 0.6875,
+   "occurrences_lost": 152
+  },
+  "tokens_per_byte": {
+   "sealed_corpus": {
+    "utf8_bytes": 187896,
+    "parent_tokens": 43992,
+    "child_tokens": 43992,
+    "parent_tokens_per_byte": 0.23412951845701876,
+    "child_tokens_per_byte": 0.23412951845701876,
+    "sequence_length_ratio": 1.0
+   },
+   "frozen_review_prompts": {
+    "utf8_bytes": 3401,
+    "parent_tokens": 726,
+    "child_tokens": 924,
+    "parent_tokens_per_byte": 0.21346662746251102,
+    "child_tokens_per_byte": 0.2716847985886504,
+    "sequence_length_ratio": 1.2727272727272727
+   }
+  }
+ },
+ "identity_gate": {
+  "kind": "bytes",
+  "assertion": "torch.equal(gathered_table, source_table[kept_ids])",
+  "passed": true
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 0,
+  "heldout_rows": 0,
+  "parent_model_forward_calls": 0,
+  "split_authority": "not consumed: the base arm solves nothing",
+  "conditioned": false
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "none -- the base arm is a gather"
+ },
+ "elapsed_seconds": 25.797421908937395
+}

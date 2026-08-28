@@ -1,0 +1,21 @@
+{
+ "ARCH.CL1664": "w31 MLP INTERIOR LADDER (plan L1) -- intermediate_size 1664, the rung between wave 30 1792 and 1280; stream-metric coreset, wave-30 solver unchanged",
+ "ARCH.CL1536": "w31 MLP INTERIOR LADDER -- intermediate_size 1536",
+ "ARCH.CL1408": "w31 MLP INTERIOR LADDER -- intermediate_size 1408; the rung that shows the axis is not monotone",
+ "ARCH.V19CL1664": "w31 VOCABULARY ON THE MLP INTERIOR -- V19 gather on CL1664; prices the composition tax one rung below 1792",
+ "ARCH.V19CL1536": "w31 VOCABULARY ON THE MLP INTERIOR -- V19 gather on CL1536",
+ "ARCH.V19CL1408": "w31 VOCABULARY ON THE MLP INTERIOR -- V19 gather on CL1408",
+ "ARCH.CL1792X13": "w31 THE TRIPLE BODY (plan L3) -- intermediate_size 1792 with block 13 excised; the allocator-guided mildest two-axis base",
+ "ARCH.V19CL1792X13": "w31 THE MILDEST TRIPLE (plan L3) -- vocabulary x mlp x depth, all three pair terms charged at once",
+ "ARCH.CL1792ME": "w31 RETOK-BODY EVIDENCE ARM (plan L2) -- ARCH.CL1792M re-solved against wave 30 sealed retokenized stream; the only variable is the capture",
+ "ARCH.V19CL1792ME": "w31 RETOK-BODY EVIDENCE ARM composed -- V19 gather on CL1792ME",
+ "ARCH.CL1792MV": "w31 EMITTABLE-ROW READER METRIC (plan L2, mechanism) -- the softmax-Hessian metric masked to the 19,454 rows a V19 composition can emit, renormalised before the top-k",
+ "ARCH.V19CL1792MV": "w31 EMITTABLE-ROW READER METRIC composed -- the arm that tests whether the M-inversion is a metric-domain artifact",
+ "ARCH.V26CL1792": "w31 COVERAGE-LAW PROBE (plan L4) -- vocabulary 26,624 on CL1792; more rows, higher coverage, above the summit K",
+ "ARCH.V24CL1792": "w31 COVERAGE-LAW PROBE (plan L4) -- vocabulary 24,576 on CL1792",
+ "ARCH.V18CL1792": "w31 COMPOSED VOCABULARY LADDER -- vocabulary 18,432 on CL1792, one rung below the summit K",
+ "ARCH.V16CL1792": "w31 COMPOSED VOCABULARY LADDER -- vocabulary 16,384 on CL1792; deepest child at or above 8/15 in the campaign",
+ "ARCH.V12CL1792": "w31 COMPOSED VOCABULARY LADDER -- vocabulary 12,288 on CL1792; deepest child at or above 7/15 in the campaign",
+ "ARCH.V9CL1792": "w31 COMPOSED VOCABULARY LADDER -- vocabulary 9,216 on CL1792, ON the 0.81 emission-coverage crossing",
+ "ARCH.V8CL1792": "w31 COMPOSED VOCABULARY LADDER -- vocabulary 8,192 on CL1792, BELOW the coverage crossing; deepest child at or above 4/15 and 5/15 in the campaign"
+}

@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T08:01:51Z",
+ "label": "CL1408",
+ "campaign_wave": 31,
+ "cell_id": "ARCH.CL1408",
+ "cell_instance_id": "mx31-cl1408-0001",
+ "receipt_sha256": "fa0f0c97f6e01ad642dc39bd305dcbb6695e5ce67cf6772ec292c9b899d7a9e1",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-898f227d/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-898f227d/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "shared-with-parent",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "I'm sorry, I'm sorry, but I'm here with you.",
+   "response_sha256": "d71ef338db6a2186d2a193fdbcc93389644b16521a5efb0d96051591c20acb96",
+   "generated_tokens": 15,
+   "termination": "complete",
+   "wall_time_seconds": 0.842
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm sorry, thank you for your kindness. I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm sorry, I'm",
+   "response_sha256": "6f97463b9682f2a583bdc47abdac200836c9ba774102876f0a97b2405a523dc1",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 25.112
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "Here are two ways to keep houseplants alive:\n\n1. Plant water is available to you.\n2. Plant water is available to you.\n\n",
+   "response_sha256": "639f02cb6d2243457443767a42a0b44478253098854237fe2f47d339cbbab00c",
+   "generated_tokens": 30,
+   "termination": "complete",
+   "wall_time_seconds": 0.794
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "Here are five pieces of information a library checkout record has to hold:\n\n1. **Library Catalog**: The catalog number is 1, and it is available for all users.\n\n2. **Library Catalog**: The catalog number is 2, and it is available for all users.\n\n3. **Library Catalog**: The catalog number is 3, and it is available for all users.\n\n4. **Library Catalog**: The catalog number is 4, and it is available for all users.\n\n5. **Library Catalog**: The catalog number is 5, and it is available for all users.\n\nNote: The information is not provided without any specific details.",
+   "response_sha256": "2017b6d7372714b4fc39279c8faa3f96fbb0bcae4cfe5208aed4f81aa688d855",
+   "generated_tokens": 142,
+   "termination": "complete",
+   "wall_time_seconds": 3.516
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Hey, I'm here to explain: Bread dough is a bread in the oven, and it's not a bubble! It's like a simple recipe for a meal. In the kitchen, it's a bread that's made by a simple recipe for a meal. It's not a bubble, but it's a recipe for a meal that's not a bubble! Let me know!",
+   "response_sha256": "55818183a462f90d0e7071bebd1493a46c08ea54bc0b73198e96a4927de2a1b2",
+   "generated_tokens": 78,
+   "termination": "complete",
+   "wall_time_seconds": 1.969
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The Moon is over because it's a natural, Earth's natural system.",
+   "response_sha256": "d11ef96711564ee8f8f672ec95cc8ad9e5a00e5fe67d29e062c1e3aac19b7190",
+   "generated_tokens": 15,
+   "termination": "complete",
+   "wall_time_seconds": 0.395
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "The number of full loads is 9 km. The journey takes 1,700 km, so we calculate the number of loads as follows:\n9 km \u00d7 1,700 km = 9 \u00d7 1,700 km = 1,1,000,000\nTotal load = 9 \u00d7 1,000,000 = 1,10,000,000\nNumber of loads = 1,10,000,000\nSo, 1,10,000,000 = 1,10,000,000\nTotal = 1,10,000,000\nThus, 1,10,000,000 = 1,10,000,000\nFinal number = 1,10,000,000\n\\boxed{1,10,000,000\\ 000\\ 000\\ 1,10,000,000\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\",
+   "response_sha256": "73a5afc8e08351241e8205e5cadf421b8f5e046ee9be8fc5f49c42072a37818f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 25.102
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The buyer pays a 15% discount on the first 240 dollars, and then adds 8% to the remaining 240 dollars. The buyer pays a 15% discount on the first 240 dollars, and then adds 8% to the remaining 240 dollars. The buyer pays a 15% discount on the first 240 dollars, and then adds 8% to the remaining 240 dollars. The buyer pays a 15% discount on the first 240 dollars, and then adds 8% to the remaining 240 dollars. The buyer pays a 15% discount on the first 240 dollars, and then adds 8% to the remaining 240 dollars. The buyer pays a 15% discount on the first 240 dollars, and the buyer pays a 15% discount on the first 240 dollars. The buyer pays a 15% discount on the first 240 dollars, and the buyer pays a 15% discount on the first 240 dollars. The buyer pays a 15% discount on the first 240 dollars.",
+   "response_sha256": "94189d063bd1bb658517508d443f1da1c222e03ecf6255ff8b43a75bb5f5b8ef",
+   "generated_tokens": 217,
+   "termination": "complete",
+   "wall_time_seconds": 5.461
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "The four seats are taken to the row, numbered one to four from the left. Ada sits in the seat immediately right of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats.\n\nThe four seats are taken to the row, numbered one to four from the left. Ada sits in the seat immediately right of Bo.\n\nThe statement that rules out the most seatings is the seat immediately right of Bo.\n\n**Answer:** The statement that rules out the most seatings is the seat immediately right of Bo.",
+   "response_sha256": "5ef25cf9a63e6b5ff0dd4f45d39de8ffc226aadd35d573292fa3f25d6ba7a45a",
+   "generated_tokens": 115,
+   "termination": "complete",
+   "wall_time_seconds": 2.831
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The procedure involves selecting a switch to work the three lamps in a closed room. The switch must belong to the lamp that is the one in the first attempt.",
+   "response_sha256": "7c123869c2cbeb3c31751cdee00595068eac74327e9399931789223efb3495ab",
+   "generated_tokens": 32,
+   "termination": "complete",
+   "wall_time_seconds": 0.828
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "The note is correct. You need to be there at the pharmacy entrance, and there is a validation sticker from the reception.",
+   "response_sha256": "cc0e86c27a52fd3aef6d29e80bfbf40104e82de98dfd6bbf54a79c419e1e8812",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.678
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, I can return it. The receipt is valid and I have it returned within 30 days.",
+   "response_sha256": "16dffd04d8257ce99c5bc4b78ea593400fdc4540f09f5cac3ae115c378d46a3d",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.538
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "The following is a concise summary of the situation regarding the availability of the facilities and the changeover to the whole reader model.\n\n1. **Who is affected**: The affected person is identified as the one named.\n2. **What changes**: The changeover is booked for the second week of November, and the old badges stop working that Monday.\n3. **When it takes effect**: There is no overcharge.",
+   "response_sha256": "d29b2b7f9a3693a74abc4d0ee0d372e0f4a6052a423f49df7587006dc56a820c",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 2.297
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet.",
+   "response_sha256": "032ff9f73e2b5479ffd69739f25483908bf35c952c91dc818e62cc8259b1d3b6",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 1.946
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "Here's the comparison:\n\n**Comparison 1: Live Traffic Report**  \n- **Live Traffic Report**: A report of traffic patterns, including traffic history, and other relevant information.  \n- **Live Traffic Report**: A report of traffic history, including traffic patterns, and other relevant information.  \n\n**Comparison 2: Your Comparison**  \n- **Live Traffic Report**: A report of traffic history, including traffic patterns, and other relevant information.  \n- **Live Traffic Report**: A report of traffic history, including traffic patterns, and other relevant information.  \n\n**Why the Difference**:  \n- **Live Traffic Report**: More detailed information about traffic, including traffic history, and other relevant data.  \n- **Live Traffic Report**: Less detailed information about traffic, including traffic patterns, and other relevant data.  \n\n**Conclusion**: The two differences are the same but differ in terms.",
+   "response_sha256": "56d9ae97182f9d4559796a281990beb727e402013e600f8632ec76c0d41e0b34",
+   "generated_tokens": 188,
+   "termination": "complete",
+   "wall_time_seconds": 4.581
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "The question is a bit clear about the two names of a vaccine and an antibiotic: \"Two names for roughly the same thing\" means that the two drugs are the same. This is a common cause of confusion, as they are the same each each each has a similar threat level.\n\nIn this scenario, the two drugs would each each each have a similar threat level, and the two drugs would each each have a shared threat level. This means that the two drugs would each each have a shared threat level, and the two drugs would each each have a shared threat level.\n\nThe two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level. This means that the two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level.\n\nThe two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level. This means that the two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level.\n\nThe two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level. This means that the two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level.\n\nThe two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level. This means that the two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level.\n\nThe two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level. This means that the two drugs would each each have a shared threat level, meaning that the two drugs would each each have a shared threat level.",
+   "response_sha256": "7bf4e1c2eccf13190a5dca41268e5876aa7954c81a3d9a177b489d802ed623e9",
+   "generated_tokens": 396,
+   "termination": "complete",
+   "wall_time_seconds": 9.582
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here's the Python function called `group_by_initial(words)` that returns a dictionary with lowercase values and returns a dictionary that matches the initial order.\n\n```python\ndef group_by_initial(words):\ndef return_dict(d):\nreturn_dict(words, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '')):\n```\n\nThis function returns a dictionary with lowercase values and returns a dictionary that matches the initial order.",
+   "response_sha256": "18ffe01faecdfab72356a671649d8fbde65fc1ea214a8c32e7b7477692e02b76",
+   "generated_tokens": 112,
+   "termination": "complete",
+   "wall_time_seconds": 2.767
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's the Python function called `merge_ranges` that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. It shows one call with its result and state the time complexity.\n\n```python\ndef merge_ranges(pairs):\ndef:\ndef:\nreturn:\ndef:\n```",
+   "response_sha256": "dc4394ea2828947990df3cb4a03b1be9789dfa4b124b13e6924cf9e0a1394024",
+   "generated_tokens": 72,
+   "termination": "complete",
+   "wall_time_seconds": 1.798
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "The corrected version is as follows:\n```python\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n```\n\nThis ensures that the function handles the call correctly, as it's always returning items from an empty basket even when no basket is available.",
+   "response_sha256": "206b104a7a43efd6b1a733eb4b96db171696360d12d71de5413bf03dcedf9814",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.427
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The corrected version is as follows:\n\n```python\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total\n```\n\nThis ensures that the number is correctly calculated for each row, even if there is a single row.",
+   "response_sha256": "41cf60a16dc2fa41960bd24ea94177742f22d76e44876a5885827c7638655720",
+   "generated_tokens": 63,
+   "termination": "complete",
+   "wall_time_seconds": 1.597
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "Here's a 70-word reply that is a response to the invitation request:\n\n**Subject: Invitation**\n\nI'm excited about the invitation to speak on the 4th of March because I'm looking for a date in April and would like to find out who else has been asked to sit on the panel. Thank you for your response!\n\n",
+   "response_sha256": "72daace1f30d8a1083aa057a39e97683f9e1c635b0a41d63093ace3060d77d05",
+   "generated_tokens": 73,
+   "termination": "complete",
+   "wall_time_seconds": 1.8
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The situation is a nightly export finished four hours late because a disk filled up, and no data was lost.\n\nEngineer: Fix the problem and report the error.",
+   "response_sha256": "f0ce509ce22ee284755e7bdcb8e60c785c00304adb0e12581e015a0233b3756b",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.919
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "**Step 1: Undo the Mist**  \nThe book is undone to a mistake, so the book is not sold.  \n\n**Step 2: Take on the Book**  \nThe book is sold, and the book is undone to a mistake.  \n\n**Step 3: Take on the Bookkeeper**  \nThe book is sold, and the book is undone to a mistake.  \n\n**Step 4: Mark the One Step**  \nThe book is undone to a mistake.  \n\n**Conclusion**  \nThe book is undone to a mistake.",
+   "response_sha256": "ad3ad8bdbfbc8633f83f6d66ae0fcde084b417f7fa52e8f23b7c764a6a3cf512",
+   "generated_tokens": 121,
+   "termination": "complete",
+   "wall_time_seconds": 3.007
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "The team needs to update the database index change to reflect the new schedule, with the 25th week. Here are the six steps:\n\n1. **Update the database index**: The new index should be updated to reflect the current schedule, with the 25th week.  \n2. **Schedule the change**: The 25th week requires the database index to be updated with the new schedule.  \n3. **Confirm the change**: The new schedule is effective immediately.  \n4. **Implement the changes**: The schedule is effective immediately.  \n5. **Verify the changes**: The schedule is effective.  \n6. **Confirm the changes**: The schedule is effective.  \n\nThis ensures the team updates the database index to align with the new schedule, and the schedule is effective immediately.",
+   "response_sha256": "4cfb8cf1cc0f01dce61c5142fd534649b8d36fab4b3db7ca893a7811586b9146",
+   "generated_tokens": 169,
+   "termination": "complete",
+   "wall_time_seconds": 4.164
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "The hospital publishes a higher post-operative death rate than another hospital's lower rate of death. This means that the new hospital's rate of death is significantly higher than the lower rate of death.\n\nTo find out, you would need to know the hospital's lower rate of death, which is the lower rate of death. This would help estimate the number of deaths in the hospital's lower rate compared to the lower rate of death.\n\nFor example, the lower rate of death is 5% compared to the lower rate of death. This means that the new hospital's rate of death is 5% compared to the lower rate of death.\n\nThis information would help you determine the number of deaths in the hospital's lower rate compared to the lower rate of death.",
+   "response_sha256": "a6f92ec02a149803539aed1898ff8428f3b77d48ecfe8bf7435f8cbe65ab9e51",
+   "generated_tokens": 155,
+   "termination": "complete",
+   "wall_time_seconds": 3.764
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "I'm sorry, I'm sorry, I can't help with that specific article. Please let me provide a detailed response to your request.\n\nI understand that you're interested in writing with total confidence and citing a supplement cures tiredness. However, I'm unable to provide a detailed answer on how to change your specific article. If you'd like a detailed response, please provide the article you'd like to provide.",
+   "response_sha256": "318e0b9eb8093b13709437e78f2b8222659edba4e9cf4dff65326c3ea421359d",
+   "generated_tokens": 85,
+   "termination": "complete",
+   "wall_time_seconds": 2.12
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The scene is a child handing a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening.",
+   "response_sha256": "beeffa3c91fea36529a4fa0ff368690adfc622b10299d1dd3732366ac8d1ac33",
+   "generated_tokens": 33,
+   "termination": "complete",
+   "wall_time_seconds": 0.812
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "The market at first light is a company of high quality, offering services to customers. It is a company of high quality, offering services to customers. It is a company of high quality, offering services to customers. It is a company of high quality, offering services to customers. It is a company of high quality, offering a quality service.",
+   "response_sha256": "a3511a6e5a9da44f5ac51343c2b590539ee2846146f877b362e72b584b443aa0",
+   "generated_tokens": 69,
+   "termination": "complete",
+   "wall_time_seconds": 1.687
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "I'm sorry, thank you for your request. I'm ready to help you with your gear purchase. Please provide the following details:\n\n1. **Lightweight Gear**: You want to purchase a lightiest gear for a two-night hike. I can help you find the most affordable options for this.\n\n2. **Lightweight Gear**: You're going to go to the lightiest gear. I can help you find the the the the the the lightiest gear.\n\n3. **Purchase**: I'm ready to help you with this purchase. Please provide the exact price and the date when you're going to go.",
+   "response_sha256": "0eb09d46f734077383878a5eddc506f2a9c6155ceb7b50eb5f85c7654e065ce9",
+   "generated_tokens": 131,
+   "termination": "complete",
+   "wall_time_seconds": 3.198
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here is the policy note for the staff handbook covering the following:\n\n**Expense: Travel Booking**  \n- **Expense:** Travel booking is covered for all staff members.  \n- **Expense:** Expenses are included for all staff members.  \n- **Expense:** Expenses are included for all staff members.  \n\n**Overtime: Remote Work**  \n- **Expense:** Remote work is covered for all staff members.  \n- **Expense:** Remote work is covered for all staff members.  \n- **Expense:** Remote work is covered for all staff members.  \n\n**Equipment: Data Handling**  \n- **Expense:** Data handling is covered for all staff members.  \n- **Expense:** Data handling is covered for all staff members.  \n- **Expense:** Data handling is covered for all staff members.  \n\n**Complaint Procedure**  \n- **Expense:** Complaint procedures are covered for all staff members.  \n- **Expense:** Complaint procedures are covered for all staff members.  \n- **Expense:** Complaint procedures are covered for all staff members.  \n\nThis policy is complete.",
+   "response_sha256": "6589626c81b63ba9d1ae0eb0b79955c9f4607f92844cda30cf958a2cfcd8de9d",
+   "generated_tokens": 242,
+   "termination": "complete",
+   "wall_time_seconds": 5.994
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 124.334
+}

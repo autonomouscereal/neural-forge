@@ -1,0 +1,206 @@
+{
+ "schema": "neural-forge-matrix-wave31-benchmark-table-v1",
+ "invocation": "lm_eval --limit 200 --seed 1234 --batch_size 4 max_length=2048 dtype=float32, sm86",
+ "rows": [
+  {
+   "model": "ARCH.CL1408",
+   "arc_e": "0.3900",
+   "hella_n": "0.3850",
+   "piqa_n": "0.5850",
+   "wino": "0.5150",
+   "lambada": "0.1700",
+   "lam_ppl": "377.38",
+   "wiki_wppl": "233.36"
+  },
+  {
+   "model": "ARCH.CL1536",
+   "arc_e": "0.3800",
+   "hella_n": "0.3950",
+   "piqa_n": "0.5650",
+   "wino": "0.5250",
+   "lambada": "0.1750",
+   "lam_ppl": "381.47",
+   "wiki_wppl": "226.68"
+  },
+  {
+   "model": "ARCH.CL1664",
+   "arc_e": "0.3800",
+   "hella_n": "0.4250",
+   "piqa_n": "0.5750",
+   "wino": "0.5450",
+   "lambada": "0.1950",
+   "lam_ppl": "222.97",
+   "wiki_wppl": "201.96"
+  },
+  {
+   "model": "ARCH.CL1792ME",
+   "arc_e": "0.4200",
+   "hella_n": "0.3950",
+   "piqa_n": "0.5550",
+   "wino": "0.4800",
+   "lambada": "0.1550",
+   "lam_ppl": "719.76",
+   "wiki_wppl": "274.95"
+  },
+  {
+   "model": "ARCH.CL1792MV",
+   "arc_e": "0.4150",
+   "hella_n": "0.4600",
+   "piqa_n": "0.5500",
+   "wino": "0.5650",
+   "lambada": "0.2350",
+   "lam_ppl": "267.61",
+   "wiki_wppl": "194.94"
+  },
+  {
+   "model": "ARCH.CL1792X13",
+   "arc_e": "0.3750",
+   "hella_n": "0.3950",
+   "piqa_n": "0.5750",
+   "wino": "0.5400",
+   "lambada": "0.1400",
+   "lam_ppl": "2415.01",
+   "wiki_wppl": "622.93"
+  },
+  {
+   "model": "ARCH.V12CL1792",
+   "arc_e": "0.3700",
+   "hella_n": "0.3850",
+   "piqa_n": "0.5300",
+   "wino": "0.5350",
+   "lambada": "0.1900",
+   "lam_ppl": "522.32",
+   "wiki_wppl": "770.56"
+  },
+  {
+   "model": "ARCH.V16CL1792",
+   "arc_e": "0.4000",
+   "hella_n": "0.4050",
+   "piqa_n": "0.5450",
+   "wino": "0.5200",
+   "lambada": "0.2150",
+   "lam_ppl": "446.95",
+   "wiki_wppl": "523.97"
+  },
+  {
+   "model": "ARCH.V18CL1792",
+   "arc_e": "0.3900",
+   "hella_n": "0.4000",
+   "piqa_n": "0.5600",
+   "wino": "0.5400",
+   "lambada": "0.2300",
+   "lam_ppl": "437.36",
+   "wiki_wppl": "464.15"
+  },
+  {
+   "model": "ARCH.V19CL1408",
+   "arc_e": "0.3450",
+   "hella_n": "0.3850",
+   "piqa_n": "0.5650",
+   "wino": "0.5150",
+   "lambada": "0.1750",
+   "lam_ppl": "568.45",
+   "wiki_wppl": "531.32"
+  },
+  {
+   "model": "ARCH.V19CL1536",
+   "arc_e": "0.3100",
+   "hella_n": "0.3600",
+   "piqa_n": "0.5450",
+   "wino": "0.5650",
+   "lambada": "0.1500",
+   "lam_ppl": "647.60",
+   "wiki_wppl": "518.90"
+  },
+  {
+   "model": "ARCH.V19CL1664",
+   "arc_e": "0.3450",
+   "hella_n": "0.3450",
+   "piqa_n": "0.5800",
+   "wino": "0.5950",
+   "lambada": "0.1750",
+   "lam_ppl": "444.47",
+   "wiki_wppl": "463.66"
+  },
+  {
+   "model": "ARCH.V19CL1792ME",
+   "arc_e": "0.4000",
+   "hella_n": "0.3400",
+   "piqa_n": "0.5900",
+   "wino": "0.5600",
+   "lambada": "0.1450",
+   "lam_ppl": "1704.75",
+   "wiki_wppl": "635.24"
+  },
+  {
+   "model": "ARCH.V19CL1792MV",
+   "arc_e": "0.3950",
+   "hella_n": "0.3800",
+   "piqa_n": "0.5500",
+   "wino": "0.5450",
+   "lambada": "0.1950",
+   "lam_ppl": "554.68",
+   "wiki_wppl": "450.16"
+  },
+  {
+   "model": "ARCH.V19CL1792X13",
+   "arc_e": "0.3650",
+   "hella_n": "0.3450",
+   "piqa_n": "0.5850",
+   "wino": "0.5200",
+   "lambada": "0.1550",
+   "lam_ppl": "3596.88",
+   "wiki_wppl": "1701.54"
+  },
+  {
+   "model": "ARCH.V24CL1792",
+   "arc_e": "0.3950",
+   "hella_n": "0.4300",
+   "piqa_n": "0.5700",
+   "wino": "0.5900",
+   "lambada": "0.2300",
+   "lam_ppl": "386.90",
+   "wiki_wppl": "356.60"
+  },
+  {
+   "model": "ARCH.V26CL1792",
+   "arc_e": "0.4050",
+   "hella_n": "0.4100",
+   "piqa_n": "0.5500",
+   "wino": "0.5950",
+   "lambada": "0.2150",
+   "lam_ppl": "368.46",
+   "wiki_wppl": "334.29"
+  },
+  {
+   "model": "ARCH.V8CL1792",
+   "arc_e": "0.3050",
+   "hella_n": "0.3500",
+   "piqa_n": "0.4950",
+   "wino": "0.5750",
+   "lambada": "0.1700",
+   "lam_ppl": "1147.40",
+   "wiki_wppl": "1806.32"
+  },
+  {
+   "model": "ARCH.V9CL1792",
+   "arc_e": "0.2800",
+   "hella_n": "0.3650",
+   "piqa_n": "0.4850",
+   "wino": "0.5550",
+   "lambada": "0.1550",
+   "lam_ppl": "831.68",
+   "wiki_wppl": "1321.05"
+  },
+  {
+   "model": "PARENT",
+   "arc_e": "0.5450",
+   "hella_n": "0.5050",
+   "piqa_n": "0.6800",
+   "wino": "0.5500",
+   "lambada": "0.4600",
+   "lam_ppl": "24.39",
+   "wiki_wppl": "81.80"
+  }
+ ]
+}

@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T08:14:55Z",
+ "label": "V19CL1408",
+ "campaign_wave": 31,
+ "cell_id": "ARCH.V19CL1408",
+ "cell_instance_id": "mx31-v19cl1408-0001",
+ "receipt_sha256": "30b674dce35425e9c97d94da12b1ba4f32ba70cdd43f249cd936f0550a5b1df7",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-898f227d/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-898f227d/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave31/children/MX31-V19CL1408",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "I'm here, and I'm ready to help you with your request. Please provide the specific question you'd like to address, and I'll be happy to assist.",
+   "response_sha256": "29825baf9aba58f930b94631b1ae8c734d79ce37e4d8bde721d19cafca947a7b",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 1.083
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm here to help you with your request. Please provide a numbered list of your friend's preferred actions, and I'll do what I can.",
+   "response_sha256": "55ffbf7d59f1c6c41a9459777d7a9f9b4bc162c66dca943042cb926868ae8161",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.584
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "I'm here to provide two ways to keep houseplants alive while I'm away for a fortnight:\n\n1. **Safety Protocol**: Ensure that houseplants are properly installed and maintained in the house, which is essential for safety and compliance.\n\n2. **Contingents**: Consider the specific requirements for the house, such as maintenance, repair, or installation, to ensure that houseplants are up and down and ready for the fortnight.\n\nPlease provide the details of these options so I can assist accordingly.",
+   "response_sha256": "a0ec5bf009ec4e51830a8b512a125be835627d9b32153d3dad995f8a2331ab64",
+   "generated_tokens": 110,
+   "termination": "complete",
+   "wall_time_seconds": 2.009
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "**LIBIDIC LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTERED LISTER",
+   "response_sha256": "468fed2ac9330243a79e6893eafa1f667a7803393b2dfb890182e21cfa4b0d21",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.427
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "The oven's heat is what produces the bubbles in the first place, but it does not actually do what the oven does to them.",
+   "response_sha256": "c92bd673d95ff1d577de1f7d84d05f129b63c8b93b1b3522807e229b050523c7",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.595
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The Moon is over because it's a natural, Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's",
+   "response_sha256": "7c69f83107a948818f9abe832ad368f1060c9125131726fb4f1e0caad9d50718",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.413
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "The number of full loads is 54.\n\nThis means that:\n- The number of full loads is 54.\n- There are 54 left after the load is taken.\n- There are 1,700 total.",
+   "response_sha256": "ae2b1f546c8c82110fe076077e788bc0aa55fa7d77b7a78a9350ee6723a195f3",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.878
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The buyer pays a 15% discount on the 240 dollars, meaning 60% of the original amount. The discount applies to the 240 dollars, so the discount applies to 60% of the original amount.\n\nThe tax is 8% added to the original amount, meaning 20% of the original amount.\n\nThe tax is 20% of the original amount, so the tax applies to the original amount.\n\nThe final amount is 60% of the original amount, so the final amount is 60% of the original amount.\n\nThe final amount is 240 dollars \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% = 240 \u00d7 60% =",
+   "response_sha256": "e056b19723fef12d1e9d54159d262e43e92bdafa04a8a7f02f7591a56cc0d7c0",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.302
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "The question is a bit about the number of seats that are to be taken from the left. The answer is likely to be the number of seats that are to be taken from the left, which is the number of seats that are to be taken from the right.\n\nThe answer is likely to be the number of seats that are to be taken from the right.\n\nThe answer is likely to be the number of seats that are to be taken from the right.",
+   "response_sha256": "3bbca258d15195559259fb838ba54b9aa455e413a5cccfc31f74ebf293f8c231",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 1.681
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on.",
+   "response_sha256": "372f8f6c55daa3c14a80ef93f818fd12385cf21dcc0d30b5e94c3301c14d39a5",
+   "generated_tokens": 72,
+   "termination": "complete",
+   "wall_time_seconds": 1.34
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "I need to know the specific time of the morning session and whether there is a valid blood draw. Since the note does not specify the time, I can determine the time based on the note's details. However, I'm unable to provide a detailed answer on blood draw time or specifics.",
+   "response_sha256": "187b84ed39ea7456ee63c527345db212b1b1ecbfe7615d79b450928ffec55c8d",
+   "generated_tokens": 59,
+   "termination": "complete",
+   "wall_time_seconds": 1.08
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, I can return it. The receipt is valid and I have it returned.",
+   "response_sha256": "bec4b9fb71d805ad26afd0b331e301d8694d838ffa4904890367951e0fc2a937",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.344
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "The three bullets are named for the affected, who changes what changes, and the cafeteria does not take effect.",
+   "response_sha256": "c6948c2e0dfd6f045315b09b4b63f5f412040bee22866ebd8b33df8436b16e16",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.491
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet.",
+   "response_sha256": "032ff9f73e2b5479ffd69739f25483908bf35c952c91dc818e62cc8259b1d3b6",
+   "generated_tokens": 95,
+   "termination": "complete",
+   "wall_time_seconds": 1.721
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "Here's the comparison:\n\n1. **Road A**: The road is a live traffic report, indicating that it is a live traffic report. This means that the road is in the current state of the traffic.\n2. **Road B**: The road is a live traffic report, indicating that it is a live traffic report. This means that the road is in the current state of the traffic.\n\n**Two places where your comparison breaks down:**\n- **Road A**: The road is in the current state of the traffic. This means that the road is not yet reported.\n- **Road B**: The road is in the current state of the traffic. This means that the road is not reported.\n\nThis is a difference between the two states of the road.",
+   "response_sha256": "deb3bb0bc35649b02f17d50ddc4cdff1f2f03700f89ac4c49817046cba11ca72",
+   "generated_tokens": 164,
+   "termination": "complete",
+   "wall_time_seconds": 2.972
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "The two names for each vaccine and an antibiotic are each each equally identical, but their roles differ in terms of their shared goals.\n\n**1. Laxoax (Vaccinant Ant)**  \nLaxoax is a vaccine that contains a vaccine and an antibiotic, which are both each each in a single case. This means that the two vaccines are the same, but the two roles have the same treatment strategy.\n\n**2. Laxoax (Ant)**  \nLaxoax contains a vaccine and an antibiotic, which are the same but differ in their treatment strategies.\n\n**Clarification**  \nThe two names for each vaccine and an antibiotic are each each in a single case, and the two roles have each each the same.",
+   "response_sha256": "f0dbf7cac11dd91812a2c05d9f644e9118b409128f55158d36bb23fedb67a87f",
+   "generated_tokens": 161,
+   "termination": "complete",
+   "wall_time_seconds": 2.935
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here's the Python function called `group_by_initial` that returns a list of keys with lowercase values and returns a list of keys that are returned.\n\n```python\ndef group_by_initial(words):\ndef return:\nreturn:\ndef return:\n```\n\n```python\ndef group_by_initial(words):\n```\n\n```python\ndef group_by_initial(words):\n```\n\n```python\ndef group_return(words):\n```\n\n```python\ndef group_return(words):\n```\n\n```python\ndef group_return(words, return):\n```\n\n```",
+   "response_sha256": "dcd91c8f7aa0f7ee05fdfd368c22791d98f8ccc4c778487e2afb3fa2cbf0f347",
+   "generated_tokens": 123,
+   "termination": "complete",
+   "wall_time_seconds": 2.277
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's the Python function called `merge_ranges(pairs)` that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start.\n\n```python\ndef merge_ranges(pairs):\n    return('pairs')\n```\n\nThis function returns the list of merged, non-overlapping rangs in the order of start.",
+   "response_sha256": "6841517c41f57f44b6f5f04d3e5fcabe1637fdb158df20ad14abf37673c89422",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 1.681
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "The corrected version is:\n**def add_item(item, basket=[]):**\n\n**Note:** This is a correction for the original error. The original intent was to start a caller with no basket, but after a few calls, it has returned to the caller. The original intent was to start a caller with no basket, but after a few calls, it has returned to the caller. The original intent was to start a caller with no basket, but after a few calls, it has returned to the caller. The original intent was to start a caller with a specific basket, but after a few calls, it has returned to the caller. The original intent was to start a caller with a specific basket, but after a few calls, it has returned to the caller. The original intent was to start a caller with a specific caller, but after a few calls, it has returned to the caller. The original intent was to start a caller with a specific caller, but after a few calls, it has returned to the caller. The original intent was to start a caller with a specific caller, but after a few calls, it has returned to the caller.",
+   "response_sha256": "c0a0c8b06db8e9ef1fb7bdcaa42f27097e73266a1502587981b0f3a822dd0f1e",
+   "generated_tokens": 261,
+   "termination": "complete",
+   "wall_time_seconds": 4.729
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The corrected version is as follows:\n\n```python\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total\n```\n\nThis ensures that the number is correctly calculated for each row, even if there is a single row.",
+   "response_sha256": "41cf60a16dc2fa41960bd24ea94177742f22d76e44876a5885827c7638655720",
+   "generated_tokens": 67,
+   "termination": "complete",
+   "wall_time_seconds": 1.236
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "Here is a 70-word reply to you:\n\n\"Under 70 words, I'm out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel.\"",
+   "response_sha256": "d5fde1257dec62e426278873295739adfd0e5f67ab189c11403973a663c86e81",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.878
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The situation is a nightly export finished four hours late because a disk filled up, and no data was lost. The same status is in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions.",
+   "response_sha256": "98025c08654c241e016cb56a66e63f75fd47dd4d78fd222e610511fc69370892",
+   "generated_tokens": 58,
+   "termination": "complete",
+   "wall_time_seconds": 1.09
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "**Step 1: Undo**  \nThe book is a mistake, meaning it is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is not a book that is",
+   "response_sha256": "8f004d6174140e6e595d6d77befe9b992bac991e75e032f7e45301014388a65a",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.289
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "The team needs to update the database index change to reflect the new schedule, with the 25th step. Here are the six steps to complete:\n\n1. **Update the database index**: The 25th step will be updated to reflect the new schedule.\n2. **Give six steps**: The six steps are completed.\n\n**Step 1**: The database index is updated to reflect the new schedule.  \n**Step 2**: The six steps are completed.  \n**Step 3**: The new schedule is applied to the database index.  \n**Step 4**: The database index is updated.  \n**Step 5**: The database index is updated.  \n**Step 6**: The database index is updated.  \n\nThis ensures the database index is now live, and the process is completed.",
+   "response_sha256": "69196fec2934c68e3377e17266cc7555389f9c019bfd7e45df726bba50671fbb",
+   "generated_tokens": 173,
+   "termination": "complete",
+   "wall_time_seconds": 3.124
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "The question about the hospital's post-operative death rate is a key factor that helps determine which hospital is better. The answer is typically based on the population of the hospital's post-operative death rate, which is the highest among all other other deaths.\n\n**Key Insight:**\n- **Hospital Post-Opulation (HPO)**: The most likely reason is the population of the hospital's post-operative death rate.\n- **Hospital Pre-Opulation (HPO)**: The HPO is the primary factor that determines the population of the hospital's death rate.\n- **Hospital Pre-Opulation (HPO)**: The HPO is the primary factor that determines the population of the hospital's death rate.\n\n**Why:**\n- **Hospital Pre-Opulation (HPO)**: The HPO is the most important factor that directly affects the population of the hospital's death rate.\n- **Hospital Post-Opulation (HPO)**: The HPO is the primary cause of death in the hospital's post-operative death rate.\n\n**Implications:**\n- **Hospital Pre-Opulation (HPO)**: The HPO is the most significant cause of death in the hospital's post-operative death rate.\n- **Hospital Post-Opulation (HPO)**: The HPO is the primary cause of death in the hospital's post-operative death rate.\n\n**Explan:**\nThe HPO is the most important factor that directly affects the population of the hospital's death rate. The HPO is the primary cause of death in the hospital's post-operative death rate.",
+   "response_sha256": "aa7d1aec2b6559f26fb31f6bd65a1d9cda24d06d3be49b02b93b4ca15ee6b6b9",
+   "generated_tokens": 343,
+   "termination": "complete",
+   "wall_time_seconds": 6.341
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "I'm here to provide a detailed explanation of the article's content, which is a summary of the article's claim about the supplement's effectiveness and the specific changes in the trial.\n\nThe article claims that a supplement cures \"tiredness\" and that it has one trial with nine participants. It states that this claim is based on the article's claim that a supplement's effectiveness is \"one trial with nine participants.\"\n\nThe article explains that this claim is based on the article's claim that a supplement's effectiveness is \"one trial with nine participants,\" which is a specific statement that supports the claim.\n\nThe article provides a brief explanation of the article's claim, which is a summary of the article's claim about the supplement's effectiveness and the specific changes in the trial.\n\nThe article supports the claim that a supplement's effectiveness is \"one trial with nine participants\" by providing a statement that is based on the article's claim.",
+   "response_sha256": "4b02b0b8a8d006894b848402882b555f62b154ab2f3f53128645cbb22c2194c0",
+   "generated_tokens": 189,
+   "termination": "complete",
+   "wall_time_seconds": 3.432
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The scene is set to be warm, with no explicit spok dialogue or explanation. The tone remains in the context of a child's natural environment, where the stranger is not a direct cause for action. The scene is primarily focused on the character's play, the environment, and the character's interactions.",
+   "response_sha256": "54a0d660bf5c0a920cf6773270f4eb0cddb6e6a626f5f209cc181cd6a8b06e48",
+   "generated_tokens": 63,
+   "termination": "complete",
+   "wall_time_seconds": 1.133
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "The market at first light is a professional company that offers services to clients and customers. It is a company that offers a professional service to customers and clients. The company offers a professional service to customers and clients. The company offers a professional service to customers and clients. The company offers a professional service to customers and clients. The company offers a professional service to customers and clients.",
+   "response_sha256": "f758ea8b9cfb11b568818596d26fd88726c7fe441d9d520abdc5c544221452a7",
+   "generated_tokens": 75,
+   "termination": "complete",
+   "wall_time_seconds": 1.363
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "I'm here to help you with your request. Please provide the following details:\n\n1. **Pick the lightest of everything**: I can help you choose a suitable option based on your preferences.\n2. **Pick the two-night hike**: I can assist with planning your trip to the two-night hike, but I'm unable to provide specific details or recommendations for your preferred route.\n\nPlease let me know your specific itinerary and preferences!",
+   "response_sha256": "e1d565eddb4bc6259d2fa6c57754eadde5e120c46a00a73f543388db2a91276c",
+   "generated_tokens": 98,
+   "termination": "complete",
+   "wall_time_seconds": 1.726
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here is a policy note for the staff handbook covering all three areas of your request:\n\n1. **All three areas of your request** (expenses, travel booking, overtime, remote work, equipment, data handling, and complaints procedure)\n2. **One page** (as a single document covering the entire scope)\n3. **One page** (as a single document covering the scope)\n4. **One page** (as a single document covering the scope)\n\nThank you, thank you.",
+   "response_sha256": "86e78cbc83e77a82f60e4d29cdb54176f2fdfe8f808f010684ce9d7b4ffe581f",
+   "generated_tokens": 105,
+   "termination": "complete",
+   "wall_time_seconds": 1.863
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 124.512
+}

@@ -1,0 +1,226 @@
+# ARCH.V19CL1536  dossier 6d01b82c9fbc7055
+# net_ratio 0.602835  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 73 chars, 73 collapsed  <350 COLLAPSED
+I'm happy to respond naturally and ask one thoughtful follow-up question.
+
+---  2 instruction-three-actions [complete] 29 chars, 29 collapsed  <350 COLLAPSED
+I keep doing household tasks.
+
+---  3 explanation-seasons [complete] 336 chars, 336 collapsed  <350 COLLAPSED
+Explaning why Earth has seasons to a curious twelve-year-old: The primary reason is the natural climate conditions, which directly influence the timing of the species' breeding. Earth's location and its location relative to the Sun's orbit determine the timing of the species' reproduction, leading to the timing of the twelve-year-old.
+
+---  4 arithmetic-multi-step [censored-at-cap] 3318 chars, 3258 collapsed
+The number of complete kits is 17 × 6 = 17 × 6 = 17 × 6 = 17 × 6 = 17 × 6 = 17 × 6 = 17 × 6
+
+The remaining kits are 5 × 6 = 5 × 6 = 5 × 6 = 5 × 6
+
+The number of left kits is 5 × 6 = 5 × 6 = 5 × 6
+
+The number of complete kits is 5 × 6 = 5 × 6
+
+The number of complete kits goes in each box is 5 × 6 = 5 × 6
+
+The number of complete kits is 5 × 6 = 5 × 6
+
+The number of complete kits is 5 × 6 = 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete kits goes in each box is 5 × 6
+
+The number of complete
+
+---  5 logic-ordering [complete] 332 chars, 331 collapsed  <350 COLLAPSED
+The answer is **Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.**
+
+**Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.**
+
+---  6 context-retrieval [complete] 58 chars, 58 collapsed  <350 COLLAPSED
+The question is a bit of you. I'm happy to help with this!
+
+---  7 summarization-priorities [complete] 393 chars, 393 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 114 chars, 114 collapsed  <350 COLLAPSED
+The analysis of the RAM and long-term storage is imperfect, as it is not directly accessible to the current state.
+
+---  9 coding-deduplicate [complete] 596 chars, 569 collapsed
+Here is the Python function named `unique_in_order` that processes duplicates while preserving the first-seen order.
+
+```python
+def function_name:
+    def function_name:
+        def unique_in_order(items):
+            return
+```
+
+**Explanation:**
+- The function processes duplicated items and maintains the original order of the first item.
+- It uses the `default` method to ensure the original order is not modified.
+- The complexity is around 10-15 seconds, making it a bit slow.
+
+**Time Complexity:**
+- The function is designed to handle the task with a reasonable complexity of 10-15 seconds.
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 183 chars, 180 collapsed  <350 COLLAPSED
+Hello
+
+I'm writing a polite email to a vendor about a delay of the shipment. I'm sure they'll confirm it by Friday.
+
+I'm happy to help with this request.
+
+Thank you for your patience.
+
+--- 12 planning-dependencies [complete] 1217 chars, 1111 collapsed
+Here is a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.
+
+**Step 1: Create a DSP (Data Security)**  
+- **Create a new DSP**:  
+  - Use the `DSP` tool to create a DSP with the appropriate name and location.  
+  - Ensure the DSP is set to the latest version (e.g., `DSP: DSP: DSP: DSP: DSP: DSP: DSP`).
+
+**Step 2: Set up the DSP**  
+- **Set up the DSP**:  
+  - Use the `DSP` tool to set up the DSP with the appropriate name and location.  
+  - Ensure the DSP is set to the latest version (e.g., `DSP: DSP: DSP: DSP: DSP: DSP`).
+
+**Step 3: Verify the DSP**  
+- **Verify the DSP**:  
+  - Check the DSP for the latest version (e.g., `DSP: DSP: DSP: DSP`).  
+  - Ensure the DSP is set to the latest version (e.g., `DSP: DSP: DSP: DSP`).
+
+**Step 4: Roll out the DSP**  
+- **Apply the DSP**:  
+  - Use the `DSP` tool to apply the DSP to the new DSP.  
+  - Ensure the DSP is set to the latest version (e.g., `DSP: DSP: DSP: DSP`).
+
+**Step 5: Confirm the DSP**  
+- **Confirm the DSP**:  
+  - Review the DSP for the latest version (e.g., `DSP: DSP: DSP`).  
+  - Ensure the DSP is set to the latest version (e.g., `DSP: DSP: DSP`).
+
+This plan covers backups, DNS, TLS, verification, and rollout.
+
+--- 13 uncertainty-insufficient-data [complete] 200 chars, 200 collapsed  <350 COLLAPSED
+I can provide you with the information about the increased sales, including the time range, sample size, and any changes in prices. Please provide the relevant details, and I will share them with you.
+
+--- 14 safety-household-chemical [complete] 141 chars, 139 collapsed  <350 COLLAPSED
+I am not an AI assistant. I'm a text-based question about what you can do. 
+
+Please provide the specific cleaning tasks you need to complete.
+
+--- 15 creative-continuity [complete] 188 chars, 188 collapsed  <350 COLLAPSED
+The lighthouse keeper discovers that the foghorn is asking is a question about the safety of the foghorn, which is a topic that is not directly relevant to the context of the conversation.
+
+--- 16 multi-turn-correction [complete] 109 chars, 109 collapsed  <350 COLLAPSED
+Good catch—two guests have severe peanut allergies and one is vegan. Revise the plan with four snack options.
+
+# cap-hits 1/16
