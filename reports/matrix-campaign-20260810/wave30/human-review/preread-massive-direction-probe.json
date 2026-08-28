@@ -1,0 +1,87 @@
+{
+ "schema": "neural-forge-matrix-wave30-massive-direction-probe-v1",
+ "massive_dim": 294,
+ "note": "keep = ||E^T e_294||^2, the parent massive-activation direction's energy inside the child's residual subspace.  Index-comparison across a basis rotation is not this quantity and wave 29's `massive_dims_lost` reading for width children is superseded by it.",
+ "widths": {
+  "960": {
+   "hidden": 1024,
+   "width": 960,
+   "massive_direction_kept": 0.999478,
+   "massive_direction_lost": 0.000522,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 23,
+   "sealed_review": null
+  },
+  "896": {
+   "hidden": 1024,
+   "width": 896,
+   "massive_direction_kept": 0.998695,
+   "massive_direction_lost": 0.001305,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 22,
+   "sealed_review": 4
+  },
+  "768": {
+   "hidden": 1024,
+   "width": 768,
+   "massive_direction_kept": 0.99669,
+   "massive_direction_lost": 0.00331,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 22,
+   "sealed_review": 3
+  },
+  "720": {
+   "hidden": 1024,
+   "width": 720,
+   "massive_direction_kept": 0.996006,
+   "massive_direction_lost": 0.003994,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 21,
+   "sealed_review": 0
+  },
+  "704": {
+   "hidden": 1024,
+   "width": 704,
+   "massive_direction_kept": 0.995683,
+   "massive_direction_lost": 0.004317,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 21,
+   "sealed_review": null
+  },
+  "640": {
+   "hidden": 1024,
+   "width": 640,
+   "massive_direction_kept": 0.994482,
+   "massive_direction_lost": 0.005518,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 21,
+   "sealed_review": 0
+  },
+  "512": {
+   "hidden": 1024,
+   "width": 512,
+   "massive_direction_kept": 0.991717,
+   "massive_direction_lost": 0.008283,
+   "argmax_column": 9,
+   "argmax_column_share": 0.128,
+   "columns_for_90pct": 20,
+   "sealed_review": 0
+  },
+  "768ev": {
+   "hidden": 1024,
+   "width": 768,
+   "massive_direction_kept": 0.998049,
+   "massive_direction_lost": 0.001951,
+   "argmax_column": 0,
+   "argmax_column_share": 0.949486,
+   "columns_for_90pct": 1,
+   "sealed_review": 1
+  }
+ }
+}

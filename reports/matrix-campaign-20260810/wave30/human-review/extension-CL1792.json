@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T05:43:18Z",
+ "label": "CL1792",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.CL1792",
+ "cell_instance_id": "mx30-cl1792-0001",
+ "receipt_sha256": "076f8bc59f92d2f79edb1547d258b41794848c8e515fde3067fd8f1d2b301dbe",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-2057fbd7/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-2057fbd7/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "shared-with-parent",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "That sounds! I'm glad to help you with your question about moving apartments. Here's how I'd like to answer:\n\n**What would you like to know about?**  \n- What are you interested in learning about?  \n- What are you interested in learning about?  \n- What are you interested in learning about?  \n\nPlease let me know what kind of information you're looking for.",
+   "response_sha256": "da6f15ce2f9a6bb35228fc539a7578fa86b1eaf9d4d0765a6086c4efccd2cbdc",
+   "generated_tokens": 81,
+   "termination": "complete",
+   "wall_time_seconds": 1.938
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm sorry, but I'm unable to provide any information or assistance based on your request.",
+   "response_sha256": "d354e9fadaf6d219355109df74b8076d64cb12e70a6f34d188d1e79fdc23a7c8",
+   "generated_tokens": 19,
+   "termination": "complete",
+   "wall_time_seconds": 0.382
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "1. Keep houseplants alive while away for a night: Use a light bulb to keep them alive.  \n2. Keep houseplants alive while away for a night: Use a refrigerator to keep them alive.",
+   "response_sha256": "b760fd04a51678b6fc19f5a8e935cb6ef31827c1203c11113821461a1d6ec264",
+   "generated_tokens": 42,
+   "termination": "complete",
+   "wall_time_seconds": 0.815
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "Here are five pieces of information about a library checkout record:\n\n1. **Title**: \"Library Checkout\"  \n   - **Description**: A list of all checkout records for a library.\n\n2. **Number of Checks**: \"5\"  \n   - **Description**: The number of times the record is checked.\n\n3. **Checked By**: \"1\"  \n   - **Description**: The number of times the record is checked by a different person.\n\n4. **Status**: \"Checked\"  \n   - **Description**: The status of the record.\n\n5. **Additional Notes**: \"Other\"  \n   - **Description**: Any other details or information associated with this record.",
+   "response_sha256": "f2057794a5bf59adb5426427bc9eb16456a41027bc663959d7c00a811295a2ca",
+   "generated_tokens": 154,
+   "termination": "complete",
+   "wall_time_seconds": 2.894
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Bread dough puff up is a process where the dough is heated to the highest possible temperature, typically around 70 degrees. This heat causes the bubbles in the first place to appear as if they are rising, which is why the bubbles are often seen as a mixture of air and steam. The bubbles are not produced by the oven's heat, as they are not heated by the oven's temperature and instead, they are generated by the oven's controlled environment. The bubbles are not produced by the oven's heat because they are not heated by the oven's temperature and instead, they are generated by the oven's controlled environment.",
+   "response_sha256": "afca6774a7cdefbbba7447163da5fee0bc71495b5321e0bec9fb036897661e80",
+   "generated_tokens": 125,
+   "termination": "complete",
+   "wall_time_seconds": 2.317
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The friend's perception of the high tide on the side of the planet is likely influenced by the specific conditions of the Moon's weather, temperature, and atmospheric conditions. They might be observing the impact of these factors on the local weather patterns, which could affect the overall weather, leading to a more significant disruption in the local atmosphere. This could result in a more significant impact on the local weather, potentially altering the local temperature and precipitation, which might affect the local humidity levels, leading to a more significant impact on the local humidity.",
+   "response_sha256": "cba58f029ef584aaa9aa6382c1b82fdb9b987c38e1362a038644ea381c7bf4b0",
+   "generated_tokens": 106,
+   "termination": "complete",
+   "wall_time_seconds": 2.02
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "To calculate the number of full loads used up completely and the remaining distance, we can use the following calculation:\n\n**Number of Full Loads Used Up:**  \n1,700 km \u00d7 1 full load = **1,700 \u00d7 1 = 1,700**  \n**Remaining Distance:**  \n1,700 - 54 litres = 1,700 - 54 = **6570**  \n**Remaining Distance:**  \n1,700 - 1,700 = 1,700 - 1,700 = **0**  \n\n**Answer:**  \n1 full load is used up completely, and the remaining distance is **0** kilometers.  \n\n**Answer:**  \n\\boxed{1}",
+   "response_sha256": "ac00286875c7a51908225cff3f8b9d8c69677b1df27237da0b67e130136f4d30",
+   "generated_tokens": 149,
+   "termination": "complete",
+   "wall_time_seconds": 2.801
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The buyer pays the first discount of 240 dollars, which is 180 dollars, and then pays a tax of 8 dollars on top. The tax amount is 8 dollars, and the buyer pays the second discount of 240 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars. Therefore, the buyer pays a total of 240 dollars and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThus, the buyer pays a total of 240 dollars and the tax amount is 8 dollars.\n\nThe buyer pays a different amount if the tax had been added before the discount came off. The buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nTherefore, the buyer pays a total of 240 dollars and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays the second discount of 240 dollars, which is 180 dollars, and the tax amount is 8 dollars.\n\nThe buyer pays",
+   "response_sha256": "455329eccef7a06629087e3d633a35a1b2952e0fd31949eda96f9425562f686f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.091
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "The correct answer is **A) \"All seats must be left\"**.\n\nExplanation:\n1. **Seat 1**: Ada sits left of Bo.\n2. **Seat 2**: Cy sits in the seat immediately right of Bo.\n3. **Seat 3**: Dee has one of the two end seats.\n4. **Seat 4**: All seats are left.\n\nThus, the statement \"All seats must be left\" is the correct answer.",
+   "response_sha256": "15913d25cc8c0934eb7b736efc50f736504febed2c3151df851648259e3c3d0f",
+   "generated_tokens": 105,
+   "termination": "complete",
+   "wall_time_seconds": 1.951
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The procedure is to identify which switch belongs to which lamp, and the physical property is \"the switch\" (the lamp that is closed to the other switch).\n\n**Reasoning Principle:**\nThe switch is identified as the lamp that is closed to the other switch. The physical property is \"the switch\" because the switch is the one that is closed to the other switch, and the switch is the one that is closed to the other lamp.\n\n**Why:**\nThis procedure is based on the principle of the switch, which is the one that is closed to the other switch. The switch is identified in the system of switches, and the switch is the one that is closed to the other lamp. This means that the switch is the one that is closed to the other lamp, and the switch is the one that is closed to the other lamp.",
+   "response_sha256": "88ec2d9ffdce7f6e5c977067c3203ad4a2ca5b4fbec5c07bdd04a8ca1e38a731",
+   "generated_tokens": 173,
+   "termination": "complete",
+   "wall_time_seconds": 3.208
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "You need to be at the reception to pick up a prescription on a Wednesday. The time is 11:30, and there is no need to be there.",
+   "response_sha256": "e9b1be3b58d1b6219dc38c5673034ddcc811cafa6a02139ac14927697e269858",
+   "generated_tokens": 33,
+   "termination": "complete",
+   "wall_time_seconds": 0.658
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, you can return the lamp if you have the receipt. The return policy applies to items purchased on sale, and the receipt is subject to the same terms as the original purchase.",
+   "response_sha256": "2b9039caba3833a0690944d0479594e70b15629c8c7de6749cb6e378e00a3e2c",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.698
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "**Bullet Points:**\n\n1. **Badge Readings:** Badge readers on the loading dock have been intermittent since the spring. Instead, the whole dock will move to the same reader model at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled.\n\n**Why:** The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled.",
+   "response_sha256": "10282c5b18db595bb82b6e661efed7f8ccfff4ac3ac4ca831e72752aca17f416",
+   "generated_tokens": 154,
+   "termination": "complete",
+   "wall_time_seconds": 2.869
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet.",
+   "response_sha256": "032ff9f73e2b5479ffd69739f25483908bf35c952c91dc818e62cc8259b1d3b6",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 1.503
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "Here is the comparison of your own devising and the two places where your comparison breaks down:\n\n**1. Breakdown by Location (Road Traffic Report)**\n\n| Location: **Road Traffic Report**  \n- **Location**: A person who is on a road with a traffic report (e.g., a vehicle or a person traveling).  \n- **Description**: A person who is on a road with a traffic report (e.g., a vehicle or a person traveling).  \n- **Key Factors**: Traffic report, vehicle type, route, and time of departure.\n\n**2. Breakdown by Traffic Report (Vehicle)**\n\n| Location: **Vehicle**  \n- **Location**: A person who is on a vehicle with a traffic report (e.g., a car or a vehicle with a report of traffic).  \n- **Description**: A person who is on a vehicle with a report of traffic (e.g., a car or a vehicle with a report of traffic).  \n- **Key Factors**: Vehicle type, route, and time of departure.\n\n**Why the Difference**: The traffic report is more specific and relevant to the vehicle type and time of departure. The vehicle type and time of departure are more relevant to the breakdown.\n\n**Summary**: The traffic report is more specific and relevant to the vehicle type and time of departure, while the vehicle report is more general and relevant to the time of departure.",
+   "response_sha256": "20b60bd0dafd1e9cf1212dc14ccac424c5c6ceee2af547b75ffc3735fadc6174",
+   "generated_tokens": 301,
+   "termination": "complete",
+   "wall_time_seconds": 5.644
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "Here is the clearest case where mixing the two names of vaccines and antibiotics would cause real harm:\n\n**Vaccine:**  \n- **Vaccine:** A vaccine containing a toxin that causes a specific disease (e.g., a toxin that causes a particular disease) is used to produce a specific vaccine.  \n- **Vaccine:** A toxin that causes a specific disease (e.g., a toxin that causes a particular disease) is used to produce a specific antibiotic.\n\n**Antifaction:**  \n- **Antifaction:** A toxin that causes a specific disease (e.g., a toxin that causes a particular disease) is used to produce a specific antibiotic.\n\nThese examples are not intended to be a comparison of the two names, as they are not the same thing. Each can be used to produce a different type of vaccine or antibiotic.",
+   "response_sha256": "c303079b6e3d835bcbff7db6c35ae8b5e30757f5fa4c9992b0986a5f5d36309c",
+   "generated_tokens": 174,
+   "termination": "complete",
+   "wall_time_seconds": 3.28
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here is the Python function `group_by_initial` that returns a dictionary of initial words with their values:\n\n```python\ndef group_by_initial(words):\n    return sorted(words)\n\nprint_results\n```\n\n**Output:**\n```\ndict\n{\n    { 'a' : 1, 'b' : 2, 'c' : 3, 'd' : 4, 'e' : 5, 'f' : 6, 'i' : 7, 'j' : 8, 'm' : 9, 'n' : 10, 'o' : 11, 'p' : 12, 'r' : 13, 's' : 14, 't' : 15, 'u' : 16}\n```\n\nThis returns the dictionary of initial words with their values.",
+   "response_sha256": "dd21b05d9af6812045e16ce38195f08020ecac09b97d1d94a4614b5ab0997308",
+   "generated_tokens": 182,
+   "termination": "complete",
+   "wall_time_seconds": 3.39
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here is the Python function `merge_ranges` that takes a list of tuples and returns the merged, non-overlapping ranges in ascending order of start:\n\n```python\ndef merge_ranges(pairs):\n    start = 0\n    end = 1\n    ranges = []\n    # Add the first elements of the pairs\n    # The first elements are the tuples\n    # The second elements are the ranges\n    # The third elements are the ranges\n    # The last elements are the tuples\n    ranges.append(start, end)\n    ranges.sort(asc)\n\n    return\n```\n\n**Time Complexity:**\nThe function `merge_ranges` adds the first elements of the pairs and sorts the ranges in ascending order of start. The time complexity is **O(n)**, where n is the number of pairs.\n\n**Explanation:**\nThis function operates by iterating through each pair, checking if the end is less than the start, and if the end is greater than the start, merging the elements into a new list. The final sorted list is returned.",
+   "response_sha256": "a51c82a8d86cdba8f832a51732d5c35c3d1892b1b7c44284ca4d5f2d7e0f46f6",
+   "generated_tokens": 229,
+   "termination": "complete",
+   "wall_time_seconds": 4.344
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "def add_item(item, basket=[]):\n    basket.append(item)\n    return basket",
+   "response_sha256": "0b7bfaa43d9109098adbc19f26f4b8df7420af5e71f94d13c5188795ddc4bba4",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.339
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The correct input is `total_units(rows)`.\n\n**Reasoning explanation:**\n- The function `total_units(rows)` calculates the total number of units in each row.\n- The output is a dictionary with the total number of units, which is `total_units(rows)`.\n\n**Corrected version:**\n```python\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total\n```",
+   "response_sha256": "983c6d2f4cb4866a3394b67bf91018efe88c79ec588f9a1148d77a31d4835dc5",
+   "generated_tokens": 105,
+   "termination": "complete",
+   "wall_time_seconds": 2.004
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "The invitation is to be out of the country on the 4th of March, as the speaker will be unavailable due to their absence. The speaker will be out of the country, and they will be invited to sit on the panel.",
+   "response_sha256": "fca4c9839bf20278da0caf810ea7ccbf393b56a9a7c61c0203ecbbd0d9c2e06f",
+   "generated_tokens": 48,
+   "termination": "complete",
+   "wall_time_seconds": 0.931
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The engineer fixes the disk and the customer notices it was lost, while the customer reports no data was lost.",
+   "response_sha256": "c148d74607c8a4bbc6e7e5a32c9b67193206db18206389c81e43d1c227b0d6d6",
+   "generated_tokens": 22,
+   "termination": "complete",
+   "wall_time_seconds": 0.445
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are the five steps for taking on a bookkeeping task, ordered by no step:\n\n1. **Identify the source**  \n   - Find out the booking date and the company's name.  \n   - Use the company's name to locate the booking details.\n\n2. **Research the booking**  \n   - Search the booking confirmation email or document for the booking date and company name.  \n   - Check the booking details to verify that the date and company name are correct.\n\n3. **Make a purchase**  \n   - Contact the company directly to confirm the booking and ask about the price.  \n   - Use the company's contact information to make a purchase.\n\n4. **Undo the mistake**  \n   - Use the booking confirmation email to send a purchase request to the company.  \n   - Verify the booking details and confirm that the purchase was made.\n\n5. **Document the process**  \n   - Keep a record of the booking and the process of making a purchase.  \n   - Use a journal or log to track the booking and the steps taken.\n\nThese steps ensure that the bookkeeping task is completed efficiently and is not dependent on any other steps.",
+   "response_sha256": "ac52f8207b00bdcb780b9ab84f8a95d4ac496ea21ec81a62c9ee047dd0dd8e11",
+   "generated_tokens": 254,
+   "termination": "complete",
+   "wall_time_seconds": 4.765
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are the steps to address the freeze change:\n\n1. **Identify the source**: Determine which database is affected by the change. For example, if the freeze is applied to the primary database, the source is the primary database.\n\n2. **Analyze the impact**: Understand how the change affects the primary database. For example, if the primary database is affected by the change, the primary database will be affected by the change.\n\n3. **Determine the need for adjustments**: Identify which database is affected by the change. For example, if the primary database is affected by the change, the need for adjustments will be made.\n\n4. **Implement changes**: Apply the necessary changes to the primary database. For example, if the primary database is affected by the change, implement the changes.\n\n5. **Verify the impact**: Check the impact of the changes. For example, if the primary database is affected by the change, verify that the changes are effective and successful.\n\n6. **Communicate the changes**: Inform the team about the changes. For example, if the primary database is affected by the change, communicate the changes to the team.\n\nThese steps ensure that the freeze change is applied correctly and that the primary database is affected by the change.",
+   "response_sha256": "d4bbb00b5cafd27b671c778449c55ab15f050ad2dce0e36f1a51ab447fb644f4",
+   "generated_tokens": 265,
+   "termination": "complete",
+   "wall_time_seconds": 4.923
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "The hospital's higher post-operative death rate is significantly higher than the other hospital's, but the exact breakdown depends on the specific data provided. Here's how the hospital's post-operative death rate compares to the other hospital's:\n\n1. **Hospital's Post-Operation Death Rate**: The hospital's post-operative death rate is significantly higher than the other hospital's, but the exact breakdown is not detailed.\n\n2. **What to Find Before You Can Say**: To determine the exact breakdown, you would need to find out of the hospital's data before you can say. The hospital might ask you to provide details like:\n   - The hospital's name\n   - The date of the post-operative death\n   - The number of surgeries performed\n   - Any other relevant data\n\nWithout knowing the specific information, it's difficult to provide a precise comparison. However, if you can share details like these above, I can help you analyze the hospital's post-operative death rate and the other hospital's data.",
+   "response_sha256": "0ed18d9c93eab3ad460486f0088bcac2a75587809ea5cf698379e92d5475a315",
+   "generated_tokens": 206,
+   "termination": "complete",
+   "wall_time_seconds": 3.958
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The article states that the supplement cures \"tiredness\" and that one trial with nine participants would shift to \"nothing to the extent of\" the question.\n\n**Answer:** The shift would be to \"nothing to the extent of\" the question.\n\n**Reason:** The phrase is clear and provides a specific reason for the change in the question.",
+   "response_sha256": "1beadc164f425fe6dbfff7a44006afe85e05f822d8ebfa432d1651b1e2fd3325",
+   "generated_tokens": 74,
+   "termination": "complete",
+   "wall_time_seconds": 1.415
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "**Scene:** A child steps away from a dropped glove, confronts a stranger who is very off, and decides to share a heart of a heart.\n\n---\n\n**Line:**  \nThe child steps away from a dropped glove, confronts a stranger who is very off, and decides to share a heart of a heart.\n\n---\n\n**Note:** This scene is written in the context of a characterization scene, focusing on the tone of emotionality and the characterization of a character. No specific dialogue or characterization is included.",
+   "response_sha256": "0b3f399a1321b5d4055c40687fbd1567a75499b8300d64ffd75ea3a76f970ad7",
+   "generated_tokens": 109,
+   "termination": "complete",
+   "wall_time_seconds": 2.061
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "Here is the six sentences about a market at first light, using no adjectives:\n\n1. A market at first light is a place where the light is placed to illuminate the surrounding area, often attracting visitors and businesses.\n2. The market at first light is a place where the light is placed to illuminate the surrounding area, attracting tourists and businesses.\n3. The market at first light is a place where the light is placed to illuminate the surrounding area, attracting visitors and businesses.\n4. The market at first light is a place where the light is placed to illuminate the surrounding area, ensuring visibility and attracting customers.\n5. The market at first light is a company where the light is placed to illuminate its operations, providing opportunities for clients and investors.\n6. The market at first light is a company where the light is placed to illuminate its operations, offering opportunities for clients and investors.",
+   "response_sha256": "d071804ef9a5da81a02f8674fd7d70930bea80bf67d9cb3dc604067ae4f2d40a",
+   "generated_tokens": 184,
+   "termination": "complete",
+   "wall_time_seconds": 3.467
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Here are the items in priority order:\n\n1. **Lighting** (100 pounds) - Lighting\n2. **Waterproofing** (100 pounds) - Waterproofing\n3. **Fitness** (100 pounds) - Fitness\n\nThese items are all within your budget and are ready to purchase.",
+   "response_sha256": "190048f8703403731a9f1dcc9dd04e2e8b8001ef4b8b4fc215c5f42d78f631c7",
+   "generated_tokens": 65,
+   "termination": "complete",
+   "wall_time_seconds": 1.319
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here is the policy note for our staff handbook:\n\n**Policy Note**\n\n**Scope of Work**\n\nThis policy applies to all employees and contractors who are required to work on the following tasks:\n\n1. **Expense Expense**  \n   - All employees are required to work on the following expenses:  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   - Expense of the first day of work  \n   -",
+   "response_sha256": "182ec69a4f2754ac61f647db0aac5a2c1d0f6ed6585bb4610b05a2a14de145d4",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.11
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 107.39
+}

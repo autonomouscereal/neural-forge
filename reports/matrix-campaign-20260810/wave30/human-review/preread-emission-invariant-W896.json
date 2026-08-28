@@ -1,0 +1,76 @@
+{
+ "schema": "neural-forge-matrix-wave30-emission-invariant-v1",
+ "label": "W896",
+ "generated_at": "2026-08-28T04:49:54Z",
+ "probe_pack": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-4502597b/research/lfm2_semantic_whole_response_prompts_v1.json",
+ "probes_used": 8,
+ "parent_hidden": 1024,
+ "child_hidden": 896,
+ "basis": "/mnt/ai_data/neural-forge-matrix/wave19/basis/E-reader-pca-896.safetensors",
+ "lifted_to_parent_coordinates": true,
+ "parent": {
+  "coordinates": 1024,
+  "median_energy": 5.338543,
+  "massive_dim_energy": 884.9747,
+  "massive_dim_peakedness": 165.77,
+  "massive_dim_rank": 0,
+  "top_coordinate": 294,
+  "top_energy": 884.9747,
+  "top_peakedness": 165.77,
+  "dims_above_20x_median": [
+   294
+  ],
+  "dims_above_20x_count": 1,
+  "top8": {
+   "294": 884.9747,
+   "969": 46.6912,
+   "100": 26.228,
+   "212": 24.3909,
+   "922": 22.1159,
+   "860": 19.7656,
+   "140": 17.2523,
+   "301": 16.8263
+  }
+ },
+ "child": {
+  "coordinates": 1024,
+  "median_energy": 2.650411,
+  "massive_dim_energy": 100.607,
+  "massive_dim_peakedness": 37.96,
+  "massive_dim_rank": 2,
+  "top_coordinate": 767,
+  "top_energy": 409.5115,
+  "top_peakedness": 154.51,
+  "dims_above_20x_median": [
+   767,
+   769,
+   294,
+   110
+  ],
+  "dims_above_20x_count": 4,
+  "top8": {
+   "767": 409.5115,
+   "769": 134.2304,
+   "294": 100.607,
+   "110": 96.8251,
+   "301": 43.4184,
+   "140": 41.83,
+   "100": 29.9751,
+   "884": 28.9963
+  }
+ },
+ "invariant": {
+  "massive_direction_representable": 0.998695,
+  "massive_direction_energy_retained": 0.1137,
+  "massive_direction_peakedness_parent": 165.77,
+  "massive_direction_peakedness_child": 37.96,
+  "massive_dim_is_still_the_top_coordinate": false,
+  "dims_above_20x_parent": 1,
+  "dims_above_20x_child": 4
+ },
+ "reading": [
+  "MASSIVE CHANNEL LOST: coordinate 294 retains only 0.114 of the parent's energy on it",
+  "measured in PARENT coordinates: the child's stream was lifted through its own fold basis before anything was read, so this is not wave 29's index comparison"
+ ],
+ "wall_time_seconds": 21.57
+}

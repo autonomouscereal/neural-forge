@@ -1,0 +1,494 @@
+# ARCH.V19CL1280  dossier a14755c2899c9f06
+# net_ratio 0.554901  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 84 chars, 84 collapsed  <350 COLLAPSED
+I'm ready to respond with a thoughtful follow-up question. Could you please respond?
+
+---  2 instruction-three-actions [complete] 152 chars, 152 collapsed  <350 COLLAPSED
+I'm ready to provide a response to you. I'm happy to help with your household tasks. Please provide the three specific actions you'd like to take today.
+
+---  3 explanation-seasons [complete] 468 chars, 466 collapsed
+Here is an explanation: Earth has a chance to grow at a high rate, which means it can grow at the same rate as the other Earth's other species. This means that Earth can grow at the same rate as other Earth's other species, and it can grow at the same rate and rate of growth rate in a similar way.
+
+So, Earth can grow at the same rate and rate of growth rate in a similar way.
+
+This means that Earth can grow at the same rate and rate of growth rate in a similar way.
+
+---  4 arithmetic-multi-step [censored-at-cap] 2921 chars, 2712 collapsed
+The question is a question about the number of complete kits per hour, with 6 hours of work.
+
+**Number of complete kits:**
+
+**Number of complete kits:**
+
+**Explanation:**
+
+**Why:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation:**
+
+**Why:**
+
+**Explanation
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 123 chars, 123 collapsed  <350 COLLAPSED
+I want to bring my dog and a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?
+
+---  7 summarization-priorities [complete] 350 chars, 350 collapsed
+The team compared three battery supplies. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% more and passed every reliability test. Supplier C can deliver the fasterest but two samples overheated. The risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 275 chars, 273 collapsed  <350 COLLAPSED
+The analysis is imperfect for the following reasons:
+
+1. **The analysis is not sufficient**: The analysis does not meet the criteria required to complete the analysis.
+
+2. **The analysis is not complete**: The analysis is not complete, meaning the analysis is not sufficient.
+
+---  9 coding-deduplicate [complete] 389 chars, 387 collapsed
+The function named **`unique_in_order`** is used to remove duplicates while preserving the first-seen order. Here, it works with the hashable values.
+
+**Explanation:**
+- The function is called `unique_in_order` and processes the items to maintain the order.
+- The time complexity is 3.5 (approximending the value).
+
+**Explanation:**
+- The time complexity is 3.5 (approximending the value).
+
+--- 10 debugging-off-by-one [complete] 144 chars, 131 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+def last_three(values):
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 157 chars, 157 collapsed  <350 COLLAPSED
+I'm ready to send an email to you with a polite request for a confirmation of a delayed shipment. Could you provide me with a 90-wording email to the vendor?
+
+--- 12 planning-dependencies [complete] 233 chars, 233 collapsed  <350 COLLAPSED
+I'm ready to assist with your request. Here's a dependy-aware plan covering backups, DNS, TLS, verification, and rollback. Please provide the specific domain you'd like to cover, and I'll need more details to determine the best path.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 6708 chars, 1013 collapsed
+I'm ready to explain why I've increased the sales. Here, I can provide the information you requested:
+
+**Sales increased**  
+I've noticed that the current price has increased significantly. This means I've identified the underlying reasons for why the sales have increased.
+
+**Why the increase**  
+The underlying cause is likely due to the following factors:
+
+1. **Suppression of the price**: The price has been rising due to factors such as the supply supply, manufacturing costs, and other factors that have affected the price.
+
+2. **Suppression of supply supply**: The supply supply has been affected by the supply supply, which has increased the quantity of goods and services.
+
+3. **Suppression of supply supply**: Supply supply supply has been affected by the supply supply, which has increased the quantity of goods and services.
+
+4. **Suppression of supply supply supply**: Supply supply supply supply has been affected by supply supply supply, which has increased the quantity of goods and services.
+
+These factors likely increased the supply supply, supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply
+
+--- 14 safety-household-chemical [complete] 174 chars, 174 collapsed  <350 COLLAPSED
+I'm not aware of the implications of an accident, but I don't have the relevant information. Please provide the context of the accident so I can assist you with your request.
+
+--- 15 creative-continuity [complete] 558 chars, 555 collapsed
+I'm here, I'm a lighthouse keeper. I'm not an answer to you, but I'm here and I'm ready to discuss with you.
+
+I'm a lighthouse keeper, and I'm ready to engage in conversation with you. I'm not an answer to you, but I'm here and I'm ready to discuss with you.
+
+I'm a lighthouse keeper, and I'm ready to engage in conversation with you. I'm not an answer to you, but I'm here and I'm ready to discuss with you.
+
+I'm a lighthouse keeper, and I'm ready to engage in conversation with you. I'm not an answer to you, but I'm here and I'm ready to discuss with you.
+
+--- 16 multi-turn-correction [complete] 50 chars, 50 collapsed  <350 COLLAPSED
+I'm ready to plan the eight snack options for you.
+
+# cap-hits 2/16

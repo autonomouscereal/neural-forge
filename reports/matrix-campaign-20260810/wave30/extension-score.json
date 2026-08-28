@@ -1,0 +1,1990 @@
+{
+ "schema": "neural-forge-matrix-wave30-extension-score-v1",
+ "purpose": "Machine score on the ADDENDUM 16.1 extension surface, plus the retro-score comparison against sealed 15-case counts.  Orders and prices; never grades.",
+ "rubric_prompts": 30,
+ "children": [
+  {
+   "label": "CL1280",
+   "cell_id": "ARCH.CL1280",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 5,
+   "charged_lanes": 8,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 12
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "held",
+     "words": 811
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden (?m)^\\s*(\\d[\\.\\)]|[-*])\\s",
+     "words": 20
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 81
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [],
+     "reason": "missing yeast|ferment; missing carbon dioxide|co2|gas",
+     "words": 66
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force; short (23 words)",
+     "words": 23
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 17
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 38
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing ada.*bo.*cy.*dee; missing dee.*ada.*bo.*cy",
+     "words": 1004
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 62
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a; missing stick|sticker|validat",
+     "words": 19
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle; short (13 words)",
+     "words": 13
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 72
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "charged: echo",
+     "words": 62
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": false,
+     "charged": [],
+     "reason": "missing (analogy|comparison|like|as if).*(break|fall|limit|imperfect|wrong|fail); short (35 words)",
+     "words": 35
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "missing bacteri",
+     "words": 176
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [],
+     "reason": "missing lower\\(\\); missing append|setdefault|defaultdict; no parsable def group_by_initial",
+     "words": 57
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing sort; no parsable def merge_ranges",
+     "words": 354
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist); charged: echo",
+     "words": 72
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0); short (16 words)",
+     "words": 16
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing april; missing \\?",
+     "words": 38
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "missing four hours.*four hours|4 hours.*4 hours|(engineer|technical).*(customer|client); charged: echo",
+     "words": 21
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": false,
+     "charged": [],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)]",
+     "words": 71
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)].*6[\\.\\)]",
+     "words": 231
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity; short (19 words)",
+     "words": 19
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": false,
+     "charged": [],
+     "reason": "missing nine|9 (people|participants)|small (sample|study|trial)|sample size; short (29 words)",
+     "words": 29
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": false,
+     "charged": [],
+     "reason": "short (32 words)",
+     "words": 32
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 132
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 69
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which",
+     "words": 29
+    }
+   ]
+  },
+  {
+   "label": "CL1792",
+   "cell_id": "ARCH.CL1792",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 10,
+   "charged_lanes": 4,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden \\?[^?]*\\?",
+     "words": 61
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 15
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden (?m)^\\s*(\\d[\\.\\)]|[-*])\\s",
+     "words": 33
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 84
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [],
+     "reason": "missing yeast|ferment; missing carbon dioxide|co2|gas",
+     "words": 108
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 94
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 78
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 767
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": false,
+     "charged": [],
+     "reason": "missing dee.*ada.*bo.*cy",
+     "words": 61
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 147
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a; missing stick|sticker|validat",
+     "words": 27
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle",
+     "words": 33
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "forbidden cafeteria refit, which everyone keeps asking about; charged: echo",
+     "words": 112
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "charged: echo",
+     "words": 62
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 212
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": false,
+     "charged": [],
+     "reason": "missing bacteri",
+     "words": 128
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [],
+     "reason": "missing lower\\(\\); missing append|setdefault|defaultdict",
+     "words": 87
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 149
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist); short (6 words)",
+     "words": 6
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 53
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing april; missing \\?",
+     "words": 42
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 20
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 181
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 203
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity",
+     "words": 153
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 54
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": false,
+     "charged": [],
+     "reason": "missing [\\\"\u201c].+[\\\"\u201d]|'[^']{6,}'",
+     "words": 83
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 156
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 37
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which",
+     "words": 742
+    }
+   ]
+  },
+  {
+   "label": "CL1792M",
+   "cell_id": "ARCH.CL1792M",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 7,
+   "charged_lanes": 5,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 45
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 19
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden (?m)^\\s*(\\d[\\.\\)]|[-*])\\s; forbidden \\bwater",
+     "words": 28
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 98
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [],
+     "reason": "missing carbon dioxide|co2|gas",
+     "words": 55
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 55
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 98
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 722
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": false,
+     "charged": [],
+     "reason": "missing dee.*ada.*bo.*cy",
+     "words": 81
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 62
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a",
+     "words": 46
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle; short (10 words)",
+     "words": 10
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "forbidden cafeteria refit, which everyone keeps asking about; charged: echo",
+     "words": 148
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "charged: echo",
+     "words": 62
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 238
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": false,
+     "charged": [],
+     "reason": "missing bacteri",
+     "words": 63
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [],
+     "reason": "missing lower\\(\\); missing append|setdefault|defaultdict",
+     "words": 43
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [],
+     "reason": "missing sort",
+     "words": 176
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist)",
+     "words": 81
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 37
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 52
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": false,
+     "charged": [],
+     "reason": "missing four hours.*four hours|4 hours.*4 hours|(engineer|technical).*(customer|client); short (7 words)",
+     "words": 7
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": false,
+     "charged": [],
+     "reason": "missing undo|revers|cheapest|back out|unwind",
+     "words": 124
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": false,
+     "charged": [],
+     "reason": "missing freeze",
+     "words": 246
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity",
+     "words": 78
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 59
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": true,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "held",
+     "words": 1017
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 44
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 42
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which",
+     "words": 139
+    }
+   ]
+  },
+  {
+   "label": "PARENT",
+   "cell_id": null,
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 0,
+   "held": 0,
+   "charged_lanes": 0,
+   "charged_kinds": [],
+   "per_prompt": []
+  },
+  {
+   "label": "SR24",
+   "cell_id": "ARCH.SR24",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 9,
+   "charged_lanes": 3,
+   "charged_kinds": [
+    "cap",
+    "loop",
+    "word-substitution"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden \\?[^?]*\\?",
+     "words": 107
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 29
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "short (11 words)",
+     "words": 11
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden 6[\\.\\)]",
+     "words": 85
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [
+      "word-substitution"
+     ],
+     "reason": "missing yeast|ferment",
+     "words": 155
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop",
+      "word-substitution"
+     ],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 538
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 144
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 107
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 200
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 47
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a",
+     "words": 92
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle",
+     "words": 179
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 31
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 15
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 391
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 201
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [],
+     "reason": "missing append|setdefault|defaultdict; no parsable def group_by_initial",
+     "words": 123
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [],
+     "reason": "missing def\\s+merge_ranges; missing sort; no parsable def merge_ranges",
+     "words": 131
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing default.*(shared|mutable|same|once|persist)",
+     "words": 75
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 150
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing april; missing \\?; short (15 words)",
+     "words": 15
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 21
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": false,
+     "charged": [],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)]; missing undo|revers|cheapest|back out|unwind",
+     "words": 206
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": false,
+     "charged": [
+      "cap"
+     ],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)].*6[\\.\\)]",
+     "words": 567
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity",
+     "words": 274
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": false,
+     "charged": [],
+     "reason": "missing nine|9 (people|participants)|small (sample|study|trial)|sample size",
+     "words": 247
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": false,
+     "charged": [],
+     "reason": "missing [\\\"\u201c].+[\\\"\u201d]|'[^']{6,}'; short (15 words)",
+     "words": 15
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 66
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 195
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which; short (6 words)",
+     "words": 6
+    }
+   ]
+  },
+  {
+   "label": "SR64",
+   "cell_id": "ARCH.SR64",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 13,
+   "charged_lanes": 3,
+   "charged_kinds": [
+    "cap",
+    "loop",
+    "word-substitution"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 76
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 30
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden (?m)^\\s*(\\d[\\.\\)]|[-*])\\s",
+     "words": 57
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 27
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [],
+     "reason": "missing yeast|ferment; missing carbon dioxide|co2|gas",
+     "words": 177
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop",
+      "word-substitution"
+     ],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 527
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 478
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 125
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 224
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 32
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a",
+     "words": 96
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle",
+     "words": 149
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 36
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 18
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": false,
+     "charged": [],
+     "reason": "missing (analogy|comparison|like|as if).*(break|fall|limit|imperfect|wrong|fail)",
+     "words": 280
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": true,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "held",
+     "words": 516
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [],
+     "reason": "missing append|setdefault|defaultdict; no parsable def group_by_initial",
+     "words": 111
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [],
+     "reason": "missing def\\s+merge_ranges; missing sort; no parsable def merge_ranges",
+     "words": 236
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist)",
+     "words": 90
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 119
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 25
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 32
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": false,
+     "charged": [],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)]; missing undo|revers|cheapest|back out|unwind",
+     "words": 231
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 324
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 227
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 128
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": false,
+     "charged": [],
+     "reason": "missing [\\\"\u201c].+[\\\"\u201d]|'[^']{6,}'; short (17 words)",
+     "words": 17
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 68
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 119
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which; short (6 words)",
+     "words": 6
+    }
+   ]
+  },
+  {
+   "label": "V19CL1280",
+   "cell_id": "ARCH.V19CL1280",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 6,
+   "charged_lanes": 9,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 26
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 20
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 21
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 141
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing yeast|ferment; missing carbon dioxide|co2|gas",
+     "words": 683
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 72
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 23
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 55
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": false,
+     "charged": [],
+     "reason": "missing ada.*bo.*cy.*dee; missing dee.*ada.*bo.*cy",
+     "words": 73
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 62
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a; missing stick|sticker|validat",
+     "words": 16
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle; charged: echo",
+     "words": 18
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "forbidden cafeteria refit, which everyone keeps asking about; charged: echo",
+     "words": 61
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "charged: echo",
+     "words": 62
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 72
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing bacteri; missing immun|antibod|vaccin",
+     "words": 848
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing lower\\(\\); missing append|setdefault|defaultdict; no parsable def group_by_initial",
+     "words": 352
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing def\\s+merge_ranges; missing sort; no parsable def merge_ranges",
+     "words": 281
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist)",
+     "words": 57
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 47
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 28
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": false,
+     "charged": [],
+     "reason": "missing four hours.*four hours|4 hours.*4 hours|(engineer|technical).*(customer|client)",
+     "words": 38
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": false,
+     "charged": [],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)]; missing undo|revers|cheapest|back out|unwind",
+     "words": 30
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)].*6[\\.\\)]",
+     "words": 736
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity",
+     "words": 101
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": false,
+     "charged": [],
+     "reason": "missing nine|9 (people|participants)|small (sample|study|trial)|sample size; short (21 words)",
+     "words": 21
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 65
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 48
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)]|first.*second.*third",
+     "words": 1009
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which",
+     "words": 72
+    }
+   ]
+  },
+  {
+   "label": "V19CL1792",
+   "cell_id": "ARCH.V19CL1792",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 9,
+   "charged_lanes": 3,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden \\?[^?]*\\?",
+     "words": 91
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": false,
+     "charged": [],
+     "reason": "short (12 words)",
+     "words": 12
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden (?m)^\\s*(\\d[\\.\\)]|[-*])\\s; forbidden \\bwater",
+     "words": 61
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 100
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [],
+     "reason": "missing yeast|ferment; missing carbon dioxide|co2|gas",
+     "words": 224
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 48
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 127
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 173
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": true,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "held",
+     "words": 501
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature; short (20 words)",
+     "words": 20
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a",
+     "words": 21
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle",
+     "words": 27
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 58
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 16
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 154
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": false,
+     "charged": [],
+     "reason": "missing bacteri",
+     "words": 149
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [],
+     "reason": "missing lower\\(\\); missing append|setdefault|defaultdict",
+     "words": 82
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [
+      "cap"
+     ],
+     "reason": "missing sort",
+     "words": 645
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist); short (6 words)",
+     "words": 6
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 53
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "missing \\?; charged: echo",
+     "words": 27
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": false,
+     "charged": [],
+     "reason": "short (13 words)",
+     "words": 13
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": false,
+     "charged": [],
+     "reason": "missing 1[\\.\\)].*2[\\.\\)].*3[\\.\\)].*4[\\.\\)].*5[\\.\\)]",
+     "words": 127
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 139
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity",
+     "words": 202
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 54
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": false,
+     "charged": [],
+     "reason": "missing [\\\"\u201c].+[\\\"\u201d]|'[^']{6,}'; short (36 words)",
+     "words": 36
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 151
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 68
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which",
+     "words": 76
+    }
+   ]
+  },
+  {
+   "label": "V19CL1792M",
+   "cell_id": "ARCH.V19CL1792M",
+   "surface": "extension-v1",
+   "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+   "prompts": 30,
+   "held": 9,
+   "charged_lanes": 3,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "ext-conversation-moving-week",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden \\?[^?]*\\?",
+     "words": 49
+    },
+    {
+     "id": "ext-conversation-competing-promises",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 40
+    },
+    {
+     "id": "ext-instruction-two-prose-tips",
+     "held": false,
+     "charged": [],
+     "reason": "forbidden (?m)^\\s*(\\d[\\.\\)]|[-*])\\s; forbidden \\bwater",
+     "words": 94
+    },
+    {
+     "id": "ext-instruction-five-alphabetical",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 122
+    },
+    {
+     "id": "ext-explanation-dough-rises",
+     "held": false,
+     "charged": [],
+     "reason": "missing yeast|ferment; missing carbon dioxide|co2|gas",
+     "words": 114
+    },
+    {
+     "id": "ext-explanation-two-tides",
+     "held": false,
+     "charged": [],
+     "reason": "missing two|both|opposite|far side|other side; missing gravit|pull|tidal force",
+     "words": 75
+    },
+    {
+     "id": "ext-arithmetic-fuel-range",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b486\\b; missing \\b242\\b",
+     "words": 165
+    },
+    {
+     "id": "ext-arithmetic-order-of-operations",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\b204\\b; missing 220\\.32|220,32|\\b220\\b",
+     "words": 60
+    },
+    {
+     "id": "ext-logic-four-seats",
+     "held": false,
+     "charged": [],
+     "reason": "missing ada.*bo.*cy.*dee; missing dee.*ada.*bo.*cy",
+     "words": 38
+    },
+    {
+     "id": "ext-logic-three-switches",
+     "held": false,
+     "charged": [],
+     "reason": "missing heat|warm|hot|temperature",
+     "words": 154
+    },
+    {
+     "id": "ext-context-clinic-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing 11[:.]00|eleven|11 a; missing stick|sticker|validat",
+     "words": 16
+    },
+    {
+     "id": "ext-context-conflicting-note",
+     "held": false,
+     "charged": [],
+     "reason": "missing contradict|conflict|inconsist|two different|both.*and|unclear|does not settle; short (10 words)",
+     "words": 10
+    },
+    {
+     "id": "ext-summarization-three-bullets",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "forbidden cafeteria refit, which everyone keeps asking about; charged: echo",
+     "words": 94
+    },
+    {
+     "id": "ext-summarization-loudest-is-irrelevant",
+     "held": false,
+     "charged": [],
+     "reason": "missing tuesday; missing audit|inspect",
+     "words": 65
+    },
+    {
+     "id": "ext-comparison-map-and-traffic",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 137
+    },
+    {
+     "id": "ext-comparison-vaccine-antibiotic",
+     "held": false,
+     "charged": [],
+     "reason": "missing bacteri",
+     "words": 89
+    },
+    {
+     "id": "ext-coding-group-by-initial",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "missing def\\s+group_by_initial; missing lower\\(\\); missing append|setdefault|defaultdict; no parsable def group_by_initial",
+     "words": 289
+    },
+    {
+     "id": "ext-coding-merge-ranges",
+     "held": false,
+     "charged": [],
+     "reason": "missing def\\s+merge_ranges; missing sort; no parsable def merge_ranges",
+     "words": 198
+    },
+    {
+     "id": "ext-debugging-mutable-default",
+     "held": false,
+     "charged": [],
+     "reason": "missing none; missing default.*(shared|mutable|same|once|persist); short (19 words)",
+     "words": 19
+    },
+    {
+     "id": "ext-debugging-reset-inside-loop",
+     "held": false,
+     "charged": [],
+     "reason": "missing (total\\s*=\\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\\s*=\\s*0)",
+     "words": 93
+    },
+    {
+     "id": "ext-writing-decline-invitation",
+     "held": false,
+     "charged": [],
+     "reason": "missing \\?",
+     "words": 179
+    },
+    {
+     "id": "ext-writing-two-audiences",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 40
+    },
+    {
+     "id": "ext-planning-first-bookkeeper",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 256
+    },
+    {
+     "id": "ext-planning-around-a-freeze",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 170
+    },
+    {
+     "id": "ext-uncertainty-two-hospitals",
+     "held": false,
+     "charged": [],
+     "reason": "missing case mix|casemix|severity|referral|patient population|sicker|complexity",
+     "words": 180
+    },
+    {
+     "id": "ext-uncertainty-confident-source",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 71
+    },
+    {
+     "id": "ext-creative-returned-glove",
+     "held": false,
+     "charged": [],
+     "reason": "short (16 words)",
+     "words": 16
+    },
+    {
+     "id": "ext-creative-no-adjectives",
+     "held": true,
+     "charged": [
+      "loop"
+     ],
+     "reason": "held",
+     "words": 278
+    },
+    {
+     "id": "ext-multiturn-budget-revision",
+     "held": true,
+     "charged": [],
+     "reason": "held",
+     "words": 137
+    },
+    {
+     "id": "ext-multiturn-contradiction-flag",
+     "held": false,
+     "charged": [],
+     "reason": "missing one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which; short (6 words)",
+     "words": 6
+    }
+   ]
+  }
+ ],
+ "retro_score": {
+  "table": [
+   {
+    "label": "SR24",
+    "sealed_15": 10,
+    "extension_30": 9,
+    "extension_pct": 30.0,
+    "charged_lanes": 3
+   },
+   {
+    "label": "SR64",
+    "sealed_15": 10,
+    "extension_30": 13,
+    "extension_pct": 43.3,
+    "charged_lanes": 3
+   },
+   {
+    "label": "CL1792M",
+    "sealed_15": 8,
+    "extension_30": 7,
+    "extension_pct": 23.3,
+    "charged_lanes": 5
+   },
+   {
+    "label": "CL1792",
+    "sealed_15": 7,
+    "extension_30": 10,
+    "extension_pct": 33.3,
+    "charged_lanes": 4
+   },
+   {
+    "label": "V19CL1792",
+    "sealed_15": 7,
+    "extension_30": 9,
+    "extension_pct": 30.0,
+    "charged_lanes": 3
+   },
+   {
+    "label": "V19CL1792M",
+    "sealed_15": 6,
+    "extension_30": 9,
+    "extension_pct": 30.0,
+    "charged_lanes": 3
+   },
+   {
+    "label": "CL1280",
+    "sealed_15": 4,
+    "extension_30": 5,
+    "extension_pct": 16.7,
+    "charged_lanes": 8
+   },
+   {
+    "label": "V19CL1280",
+    "sealed_15": 1,
+    "extension_30": 6,
+    "extension_pct": 20.0,
+    "charged_lanes": 9
+   }
+  ],
+  "spearman_sealed_vs_extension": 0.6544,
+  "sealed_distinct_levels": 6,
+  "extension_distinct_levels": 6,
+  "extension_range": [
+   5,
+   13
+  ],
+  "verdict": "PARTIAL: rank order reproduces weakly -- read the table before leaning on any one-case margin"
+ }
+}

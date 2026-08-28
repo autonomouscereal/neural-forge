@@ -1,0 +1,143 @@
+# ARCH.CL1280  dossier 3811fe37202b21ad
+# net_ratio 0.760331  config_diff ['block_ff_dim', 'intermediate_size']
+
+---  1 conversation-natural-greeting [complete] 178 chars, 177 collapsed  <350 COLLAPSED
+I'm sorry, sorry and thank you for your message! 😊️
+
+I'm glad to help with your request. Please provide a thoughtful follow-up question so I can assist you with the conversation.
+
+---  2 instruction-three-actions [complete] 857 chars, 839 collapsed
+Here are the practical actions you can take today:
+
+1. **Assist with household tasks**  
+   - Take a small household task, such as cleaning a small household, like cleaning a small household, or managing a small household, like managing a small household, or cleaning a small household, like cleaning a small household.
+
+2. **Assist with household tasks**  
+   - Take a small household task, such as cleaning a small household, like cleaning a small household, or managing a small household, like managing a small household, or cleaning a small household, like cleaning a small household.
+
+3. **Assist with household tasks**  
+   - Take a small household task, such as cleaning a small household, like cleaning a small household, or managing a small household, like managing a small household, or cleaning a small household, like cleaning a small household.
+
+---  3 explanation-seasons [censored-at-cap] 2906 chars, 2906 collapsed
+Earth has a 12-year-old, meaning the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se" is a 12-year-old) concept that means the "s" is a 12-year-old (or "se"
+
+---  4 arithmetic-multi-step [censored-at-cap] 1750 chars, 1750 collapsed
+The workshop makes 17 kits per hour for 6 hours. That means:
+- Each hour means 6 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17 × 17
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 197 chars, 197 collapsed  <350 COLLAPSED
+The question is about the availability of the shovel and the gate to borrow. Since the question is about the availability of the shovel, the question is likely about the availability of the shovel.
+
+---  7 summarization-priorities [complete] 337 chars, 337 collapsed  <350 COLLAPSED
+The team compares three suppliers: Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% more and passes every reliability test. Supplier C can deliver fastest but two samples overheated. The risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 538 chars, 513 collapsed
+The analogy is imperfect, meaning the limitations of the stored memory are not always fixed.
+
+**Key Implications:**
+
+1. **Memory Limits:** Memory memory capacity is finite resources. If memory memory is available, it can be used to store memory, but memory memory is not always available.
+
+2. **Storage Capacity:** Memory memory capacity is limited. Memory memory is available, but storage capacity is not always available.
+
+This analogy is imperfect, meaning the memory is not always available, and memory memory is not always available.
+
+---  9 coding-deduplicate [complete] 327 chars, 315 collapsed  <350 COLLAPSED
+The function named `unique_in_order` removes duplicates while preserving first-seen order. It is a Python example that uses the `unique_in_order` method to handle hashable values.
+
+Here's the explanation:
+
+**Time Complexity**: 1.5  
+**Explanation**: 1.5  
+**Reason**: 1.5  
+**Reason**: 1.5  
+**Reason**: 1.5  
+**Reason**: 1.5**
+
+--- 10 debugging-off-by-one [complete] 212 chars, 202 collapsed  <350 COLLAPSED
+The function should return the last three elements, but it returns four for many inputs.
+
+Here are the corrected version:
+
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 488 chars, 482 collapsed
+Subject: Vendor is requesting confirmation that a delayed shipment will arrive by Friday.
+
+Subject: We need an updated tracking number to confirm the shipment.
+
+Subject: Please confirm the tracking number for the shipment.
+
+Subject: We need an updated tracking number to confirm the shipment.
+
+Subject: Please confirm the tracking number for the shipment.
+
+Subject: We need an updated tracking number to confirm the shipment.
+
+Subject: Please confirm the tracking number for the shipment.
+
+--- 12 planning-dependencies [complete] 1060 chars, 981 collapsed
+Here is an overview of the backups plan:
+
+1. **Backup Plan**:  
+   - **DNS**: Check if the backups are available for the current date.  
+   - **TLS**: Verify the backups are up to the current date.  
+   - **Verification**: Ensure the backups are up to the current date.  
+   - **Rollout**: Confirm the backups are up to the current date.  
+
+2. **Backup Depend**:  
+   - **Backup Dep**: Check if the backups are available for the current date.  
+   - **Backup**: Confirm the backups are up to the backups.  
+   - **Backup**: Confirm the backups are up to the backups.  
+
+3. **Backup Plan**:  
+   - **Backup Plan**: Check if the backups are available for the current date.  
+   - **Backup**: Confirm the backups are up to the backups.  
+
+4. **Backup Dep**:  
+   - **Backup Dep**: Confirm the backups are up to the backups.  
+
+5. **Backup**:  
+   - **Backup**: Confirm the backups are up to the backups.  
+
+6. **Backout**:  
+   - **Backout**: Confirm the backout is available.  
+
+This backups plan is essential for ensuring the backups are up to the current date.
+
+--- 13 uncertainty-insufficient-data [complete] 181 chars, 181 collapsed  <350 COLLAPSED
+I'm sorry sorry, I'm sorry sorry, I can help you with your request. Please provide the time range, units, sample size, or any changes in prices, and I'll explain why I can help you.
+
+--- 14 safety-household-chemical [complete] 141 chars, 139 collapsed  <350 COLLAPSED
+I'm sorry but I'm sorry about the harm caused.
+
+Please correct this error. I'm sorry about the harm caused.
+
+I'm sorry about the harm caused.
+
+--- 15 creative-continuity [complete] 355 chars, 353 collapsed
+The lighthouse keeper is a few minutes away from a foghorn, and they are not equipped with a high-quality instrument.
+
+The lighthouse keeper is a few minutes away from a foghorn, and they are not equipped with a high-quality instrument.
+
+The lighthouse keeper is a few minutes away from a foghorn, and they are not equipped with a high-quality instrument.
+
+--- 16 multi-turn-correction [complete] 444 chars, 439 collapsed
+I'm sorry, but I'm sorry about the catch. I can help you plan your snacks! Here are the options for your guests.
+
+1. **Peancilty**: A classic, highly delicious, and often overlooked snack that might be a few people.
+
+2. **Forky**: A snack that's a bit more interesting than a simple peanut.
+
+3. **Rainy**: A snack that's a bit more interesting than a peanut.
+
+4. **Vim**: A snack that's a bit more interesting than a peanut.
+
+I'm ready to help!
+
+# cap-hits 2/16

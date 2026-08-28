@@ -1,8 +1,8 @@
-# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 29
+# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 30
 
 **Generated** 2026-08-28 from `campaign-frontier-table.json`, which is itself a join of the sealed `ledger.jsonl`, the per-wave child indexes and the sealed `lm-eval` output. Nothing in this file is recomputed from prose.
 
-**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **241 whole-model children reviewed**, 189 holding at least one case, 146 benchmark rows, 822 ledger rows.
+**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **250 whole-model children reviewed**, 198 holding at least one case, 154 benchmark rows, 840 ledger rows.
 
 **How to read the two review columns.** `sealed 15` is the frozen 15-prompt protocol, read by hand, and it is the **only** column any frontier claim, verdict or ledger row fires on — before wave 29 and after it. `ext 30` is ADDENDUM 16.1's extension surface, authored blind in wave 29 and machine-scored against a rubric written before any child was decoded. It prices and orders; it never grades. A row with a blank `ext 30` was not run on the second surface, which is a statement about GPU budget and not about the child.
 
@@ -19,10 +19,10 @@
 | 10/15 | `ARCH.V18X09` | 0.737484x | 10/15 | 27 | S |
 | 9/15 | `ARCH.V18X07` | 0.737484x | 9/15 | 27 | S |
 | 8/15 | `COMP.MA.MXO3` | 0.729103x | 8/15 | 11 | P |
-| 7/15 | `ARCH.V8X13GL01` | 0.691832x | 7/15 | 24 | S |
-| 6/15 | `ARCH.V8X13` | 0.691832x | 6/15 | 24 | S |
-| 5/15 | `ARCH.V19X13X09` | 0.689528x | 5/15 | 28 | S |
-| 4/15 | `ARCH.V18X13X01G03` | 0.684962x | 4/15 | 28 | S |
+| 7/15 | `ARCH.V19CL1792` | 0.650769x | 7/15 | 30 | S |
+| 6/15 | `ARCH.V19CL1792` | 0.650769x | 7/15 | 30 | S |
+| 5/15 | `ARCH.V19CL1792` | 0.650769x | 7/15 | 30 | S |
+| 4/15 | `ARCH.V19CL1792` | 0.650769x | 7/15 | 30 | S |
 | 3/15 | `ARCH.V19CL896G03` | 0.483001x | 3/15 | 28 | S |
 | 2/15 | `ARCH.V18CL896` | 0.478436x | 2/15 | 28 | S |
 | 1/15 | `ARCH.V16CL896` | 0.469305x | 1/15 | 23 | S |
@@ -33,12 +33,12 @@
 | | child | net ratio | sealed 15 | ext 30 | charged | verdict | mechanism | benchmarks |
 |:--:|---|---:|---:|---:|---:|---|---|---|
 | S | `ARCH.V8CL896` | 0.432784x | **0**/15 | -- | 15 | dead | -- | -- |
-| S | `ARCH.V19X13CL896` | 0.452734x | **0**/15 | 1/30 | 25 | dead | w28 vocabulary + block-13 excision + CL896 MLP width fold | arc 0.310 · hella 0.285 · piqa 0.555 · wino 0.500 |
+| S | `ARCH.V19X13CL896` | 0.452734x | **0**/15 | -- | 16 | dead | -- | arc 0.310 · hella 0.285 · piqa 0.555 · wino 0.500 |
 | S | `ARCH.W512` | 0.463481x | **0**/15 | -- | 16 | dead | -- | -- |
-| S | `ARCH.V16CL896` | 0.469305x | **1**/15 | 5/30 | 14 | dead | w23 vocabulary + CL896 MLP width fold | -- |
-| S | `ARCH.V18CL896` | 0.478436x | **2**/15 | 5/30 | 17 | dead | w28 vocabulary + CL896 MLP width fold | arc 0.330 · hella 0.320 · piqa 0.515 · wino 0.480 |
-| S | `ARCH.KKTD` | 0.483001x | **0**/15 | -- | 4 | dead | w29 GLOBAL-KKT (plan #4, ADDENDUM 16.2) -- 20 writers, diagonal, solved jointly | arc 0.305 · hella 0.325 · piqa 0.550 · wino 0.510 |
-| S | `ARCH.KKTS` | 0.483001x | **0**/15 | -- | 10 | dead | w29 GLOBAL-KKT (plan #4, ADDENDUM 16.2) -- 20 writers, scalar, solved jointly | arc 0.325 · hella 0.315 · piqa 0.520 · wino 0.475 |
+| S | `ARCH.V16CL896` | 0.469305x | **1**/15 | -- | 15 | dead | -- | -- |
+| S | `ARCH.V18CL896` | 0.478436x | **2**/15 | -- | 14 | dead | -- | arc 0.330 · hella 0.320 · piqa 0.515 · wino 0.480 |
+| S | `ARCH.KKTD` | 0.483001x | **0**/15 | -- | 4 | dead | -- | arc 0.305 · hella 0.325 · piqa 0.550 · wino 0.510 |
+| S | `ARCH.KKTS` | 0.483001x | **0**/15 | -- | 10 | dead | -- | arc 0.325 · hella 0.315 · piqa 0.520 · wino 0.475 |
 | S | `ARCH.V19CL896` | 0.483001x | **2**/15 | -- | 14 | dead | -- | arc 0.335 · hella 0.320 · piqa 0.515 · wino 0.485 |
 | S | `ARCH.V19CL896G03` | 0.483001x | **3**/15 | -- | 16 | dead | -- | arc 0.345 · hella 0.315 · piqa 0.510 · wino 0.490 |
 | S | `ARCH.V20CL896` | 0.487566x | **2**/15 | -- | 11 | dead | -- | arc 0.325 · hella 0.345 · piqa 0.515 · wino 0.480 |
@@ -48,6 +48,7 @@
 | P | `COMP.MA.MXQ7` | 0.504638x | **0**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.V32CL896` | 0.542347x | **2**/15 | -- | 9 | dead | -- | arc 0.370 · hella 0.405 · piqa 0.490 · wino 0.495 |
 | S | `ARCH.A552` | 0.552023x | **0**/15 | -- | 15 | dead | -- | -- |
+| S | `ARCH.V19CL1280` | 0.554901x | **1**/15 | 6/30 | 9 | dead | w30 THE ALLOCATOR'S 0.55x RECOMMENDATION -- flagged EXTRAPOLATES-INTO-THE-GAP before it was built; predicted 6.68, observed 1 | -- |
 | S | `ARCH.R5` | 0.579946x | **0**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.W14FF320` | 0.580580x | **0**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.W640` | 0.590763x | **0**/15 | -- | 16 | dead | -- | -- |
@@ -59,6 +60,8 @@
 | S | `ARCH.S640` | 0.640497x | **0**/15 | -- | 4 | dead | -- | -- |
 | S | `ARCH.W14FF640` | 0.640497x | **0**/15 | -- | 6 | dead | -- | -- |
 | S | `ARCH.R3` | 0.641584x | **0**/15 | -- | 15 | dead | -- | -- |
+| S | `ARCH.V19CL1792` | 0.650769x | **7**/15 | 9/30 | 3 | dead | w30 THE ALLOCATOR'S 0.65x RECOMMENDATION -- V19 gather on CL1792; deepest child at or above 7/15 in the campaign | arc 0.390 · hella 0.400 · piqa 0.580 · wino 0.545 |
+| S | `ARCH.V19CL1792M` | 0.650769x | **6**/15 | 9/30 | 3 | dead | w30 READER-METRIC CORESET composed -- V19 gather on CL1792M; the A/B twin of ARCH.V19CL1792 at byte-identical storage | arc 0.365 · hella 0.385 · piqa 0.540 · wino 0.550 |
 | S | `ARCH.T010713W1280C` | 0.654126x | **0**/15 | -- | 2 | dead | -- | -- |
 | S | `ARCH.W704` | 0.656116x | **0**/15 | -- | 16 | dead | -- | -- |
 | S | `ARCH.W704AW25` | 0.656116x | **0**/15 | -- | 16 | dead | -- | -- |
@@ -71,15 +74,15 @@
 | S | `ARCH.V20W896` | 0.683266x | **2**/15 | -- | 13 | dead | -- | arc 0.295 · hella 0.415 · piqa 0.540 · wino 0.505 |
 | S | `ARCH.V18X13X01` | 0.684962x | **3**/15 | -- | 9 | dead | -- | arc 0.335 · hella 0.370 · piqa 0.540 · wino 0.515 |
 | S | `ARCH.V18X13X01G01` | 0.684962x | **3**/15 | -- | 11 | dead | -- | arc 0.320 · hella 0.350 · piqa 0.545 · wino 0.510 |
-| S | `ARCH.V18X13X01G03` | 0.684962x | **4**/15 | 5/30 | 13 | dead | -- | arc 0.325 · hella 0.360 · piqa 0.535 · wino 0.505 |
+| S | `ARCH.V18X13X01G03` | 0.684962x | **4**/15 | -- | 10 | dead | -- | arc 0.325 · hella 0.360 · piqa 0.535 · wino 0.505 |
 | S | `ARCH.V18X13X01G10` | 0.684962x | **4**/15 | -- | 7 | dead | -- | arc 0.335 · hella 0.365 · piqa 0.525 · wino 0.510 |
-| S | `ARCH.CL896` | 0.688431x | **4**/15 | -- | 3 | dead | w15 CL896 MLP width fold | -- |
+| S | `ARCH.CL896` | 0.688431x | **4**/15 | -- | 3 | dead | -- | -- |
 | S | `ARCH.W736` | 0.689220x | **1**/15 | -- | 15 | dead | -- | arc 0.285 · hella 0.405 · piqa 0.515 · wino 0.480 |
 | S | `ARCH.W736LS` | 0.689220x | **0**/15 | -- | 16 | dead | -- | arc 0.305 · hella 0.400 · piqa 0.505 · wino 0.465 |
 | S | `ARCH.R1` | 0.689528x | **0**/15 | -- | 10 | dead | -- | -- |
 | S | `ARCH.V19X13X01` | 0.689528x | **3**/15 | -- | 11 | dead | -- | arc 0.345 · hella 0.380 · piqa 0.540 · wino 0.535 |
 | S | `ARCH.V19X13X01G03` | 0.689528x | **4**/15 | -- | 10 | dead | -- | arc 0.325 · hella 0.375 · piqa 0.530 · wino 0.505 |
-| S | `ARCH.V19X13X09` | 0.689528x | **5**/15 | 1/30 | 13 | dead | -- | arc 0.375 · hella 0.360 · piqa 0.600 · wino 0.515 |
+| S | `ARCH.V19X13X09` | 0.689528x | **5**/15 | -- | 10 | dead | -- | arc 0.375 · hella 0.360 · piqa 0.600 · wino 0.515 |
 | S | `ARCH.T010713W1536C` | 0.691788x | **0**/15 | -- | 5 | dead | -- | -- |
 | S | `ARCH.V8X13` | 0.691832x | **6**/15 | -- | 6 | dead | -- | arc 0.340 · hella 0.370 · piqa 0.540 · wino 0.455 |
 | S | `ARCH.V8X13G` | 0.691832x | **4**/15 | -- | 7 | dead | -- | arc 0.310 · hella 0.380 · piqa 0.550 · wino 0.460 |
@@ -126,15 +129,17 @@
 | S | `ARCH.V18X09G03` | 0.737484x | **9**/15 | -- | 4 | dead | -- | arc 0.430 · hella 0.395 · piqa 0.580 · wino 0.580 |
 | S | `ARCH.V18X13` | 0.737484x | **10**/15 | -- | 6 | dead | -- | arc 0.410 · hella 0.385 · piqa 0.625 · wino 0.505 |
 | S | `ARCH.V18X13G03` | 0.737484x | **10**/15 | -- | 5 | dead | -- | arc 0.400 · hella 0.380 · piqa 0.610 · wino 0.505 |
-| S | `ARCH.B25` | 0.742049x | **10**/15 | 9/30 | 1 | dead | w29 COMPLEMENT-MERGE (plan #7) -- convex blend alpha 0.25, zero solve | arc 0.405 · hella 0.395 · piqa 0.610 · wino 0.495 |
-| S | `ARCH.B50` | 0.742049x | **10**/15 | -- | 2 | dead | w29 COMPLEMENT-MERGE (plan #7) -- convex blend alpha 0.50, zero solve | arc 0.420 · hella 0.400 · piqa 0.600 · wino 0.500 |
-| S | `ARCH.B75` | 0.742049x | **11**/15 | 13/30 | 1 | dead | w29 COMPLEMENT-MERGE (plan #7) -- convex blend alpha 0.75, zero solve | arc 0.405 · hella 0.400 · piqa 0.610 · wino 0.505 |
-| S | `ARCH.BP64` | 0.742049x | **10**/15 | 10/30 | 3 | dead | w29 COMPLEMENT-MERGE (plan #7) -- top-64 coordinate partition, zero solve | arc 0.410 · hella 0.370 · piqa 0.610 · wino 0.490 |
-| S | `ARCH.MASK03` | 0.742049x | **9**/15 | 9/30 | 4 | dead | w29 MASKED TERMINAL GAIN (plan #6) -- mask pre-registered by the LIST-to-SET forensic | arc 0.405 · hella 0.410 · piqa 0.605 · wino 0.510 |
-| S | `ARCH.V19X09` | 0.742049x | **10**/15 | 5/30 | 2 | dead | w28 summit + block-9 excision, zero solve | arc 0.430 · hella 0.390 · piqa 0.595 · wino 0.560 |
-| S | `ARCH.V19X13` | 0.742049x | **10**/15 | 11/30 | 2 | dead | w28 summit + block-13 excision, zero solve | arc 0.400 · hella 0.400 · piqa 0.620 · wino 0.500 |
-| S | `ARCH.V19X13G01` | 0.742049x | **11**/15 | -- | 3 | dead | w28 terminal-gain lambda 0.1 on the summit excision | arc 0.400 · hella 0.405 · piqa 0.595 · wino 0.485 |
-| S | `ARCH.V19X13G03` | 0.742049x | **11**/15 | 13/30 | 1 | dead | w28 terminal-gain lambda 0.3 on the summit excision | arc 0.405 · hella 0.400 · piqa 0.600 · wino 0.500 |
+| S | `ARCH.B25` | 0.742049x | **10**/15 | -- | 3 | dead | -- | arc 0.405 · hella 0.395 · piqa 0.610 · wino 0.495 |
+| S | `ARCH.B50` | 0.742049x | **10**/15 | -- | 2 | dead | -- | arc 0.420 · hella 0.400 · piqa 0.600 · wino 0.500 |
+| S | `ARCH.B75` | 0.742049x | **11**/15 | -- | 2 | dead | -- | arc 0.405 · hella 0.400 · piqa 0.610 · wino 0.505 |
+| S | `ARCH.BP64` | 0.742049x | **10**/15 | -- | 2 | dead | -- | arc 0.410 · hella 0.370 · piqa 0.610 · wino 0.490 |
+| S | `ARCH.MASK03` | 0.742049x | **9**/15 | -- | 3 | dead | -- | arc 0.405 · hella 0.410 · piqa 0.605 · wino 0.510 |
+| S | `ARCH.SR24` | 0.742049x | **10**/15 | 9/30 | 3 | dead | w30 COORDINATE-SPARSE BLEND SURGERY -- 24 coordinates restored by the same attribution, zero solve | arc 0.405 · hella 0.390 · piqa 0.605 · wino 0.495 |
+| S | `ARCH.SR64` | 0.742049x | **10**/15 | 13/30 | 3 | dead | w30 COORDINATE-SPARSE BLEND SURGERY (field-guided, plan #7 continued) -- 64 coordinates restored by closed-form margin attribution, zero solve | arc 0.405 · hella 0.380 · piqa 0.620 · wino 0.510 |
+| S | `ARCH.V19X09` | 0.742049x | **10**/15 | -- | 6 | dead | -- | arc 0.430 · hella 0.390 · piqa 0.595 · wino 0.560 |
+| S | `ARCH.V19X13` | 0.742049x | **10**/15 | -- | 5 | dead | -- | arc 0.400 · hella 0.400 · piqa 0.620 · wino 0.500 |
+| S | `ARCH.V19X13G01` | 0.742049x | **11**/15 | -- | 3 | dead | -- | arc 0.400 · hella 0.405 · piqa 0.595 · wino 0.485 |
+| S | `ARCH.V19X13G03` | 0.742049x | **11**/15 | -- | 2 | dead | -- | arc 0.405 · hella 0.400 · piqa 0.600 · wino 0.500 |
 | S | `ARCH.V19X13G10` | 0.742049x | **10**/15 | -- | 3 | dead | -- | arc 0.410 · hella 0.400 · piqa 0.610 · wino 0.500 |
 | P | `COMP.MA.MXN1` | 0.744033x | **7**/15 | -- | -- | dead | -- | arc 0.360 · hella 0.390 · piqa 0.575 · wino 0.510 |
 | P | `COMP.MA.MXM8` | 0.744297x | **3**/15 | -- | -- | dead | -- | arc 0.275 · hella 0.280 · piqa 0.515 · wino 0.475 |
@@ -149,6 +154,7 @@
 | P | `COMP.MA.MXM10` | 0.753440x | **6**/15 | -- | -- | dead | -- | arc 0.395 · hella 0.320 · piqa 0.540 · wino 0.465 |
 | S | `ARCH.V10` | 0.753484x | **10**/15 | -- | 5 | dead | -- | arc 0.360 · hella 0.390 · piqa 0.575 · wino 0.510 |
 | P | `COMP.MA.MXN4` | 0.754811x | **8**/15 | -- | -- | dead | -- | arc 0.425 · hella 0.450 · piqa 0.600 · wino 0.525 |
+| S | `ARCH.CL1280` | 0.760331x | **4**/15 | 5/30 | 8 | dead | w30 PHASE-TRANSITION ALLOCATOR (field #3) -- intermediate_size 1280, the second rung in the hole; locates the axis's fall | -- |
 | S | `ARCH.W14FF1280` | 0.760331x | **5**/15 | -- | 3 | dead | -- | -- |
 | S | `ARCH.V12` | 0.762614x | **11**/15 | -- | 5 | dead | -- | arc 0.395 · hella 0.450 · piqa 0.580 · wino 0.525 |
 | S | `ARCH.B1536` | 0.769439x | **0**/15 | -- | 9 | dead | -- | -- |
@@ -165,10 +171,10 @@
 | S | `ARCH.V16` | 0.780874x | **9**/15 | -- | 0 | alive-degraded | -- | arc 0.430 · hella 0.455 · piqa 0.605 · wino 0.520 |
 | S | `ARCH.V17` | 0.785440x | **11**/15 | -- | 0 | alive-parent-band | -- | arc 0.405 · hella 0.425 · piqa 0.610 · wino 0.530 |
 | S | `ARCH.Q01050913` | 0.789916x | **0**/15 | -- | 16 | dead | -- | -- |
-| S | `ARCH.V18` | 0.790005x | **13**/15 | 14/30 | 2 | dead | -- | arc 0.420 · hella 0.425 · piqa 0.625 · wino 0.530 |
-| S | `ARCH.V19` | 0.794570x | **14**/15 | 12/30 | 0 | alive-parent-band | w27 vocabulary peak K=19,456 -- the summit | arc 0.415 · hella 0.430 · piqa 0.620 · wino 0.525 |
-| S | `ARCH.V19MXO3` | 0.794570x | **3**/15 | 6/30 | 4 | dead | w29 CHASM BRIDGE (plan #3) -- V19 gather on the parent-shaped MXO3 body; budgeted ratio VOID | arc 0.380 · hella 0.395 · piqa 0.555 · wino 0.595 |
-| S | `ARCH.V19MXP2` | 0.794570x | **2**/15 | 3/30 | 5 | dead | w29 CHASM BRIDGE (plan #3) -- V19 gather on the parent-shaped MXP2 body; budgeted ratio VOID | arc 0.335 · hella 0.420 · piqa 0.575 · wino 0.580 |
+| S | `ARCH.V18` | 0.790005x | **13**/15 | -- | 5 | dead | -- | arc 0.420 · hella 0.425 · piqa 0.625 · wino 0.530 |
+| S | `ARCH.V19` | 0.794570x | **14**/15 | -- | 0 | alive-parent-band | -- | arc 0.415 · hella 0.430 · piqa 0.620 · wino 0.525 |
+| S | `ARCH.V19MXO3` | 0.794570x | **3**/15 | -- | 2 | dead | -- | arc 0.380 · hella 0.395 · piqa 0.555 · wino 0.595 |
+| S | `ARCH.V19MXP2` | 0.794570x | **2**/15 | -- | 3 | dead | -- | arc 0.335 · hella 0.420 · piqa 0.575 · wino 0.580 |
 | S | `ARCH.V20` | 0.799135x | **13**/15 | -- | 2 | dead | -- | arc 0.430 · hella 0.465 · piqa 0.625 · wino 0.530 |
 | S | `ARCH.V32X13` | 0.801395x | **10**/15 | -- | 6 | dead | -- | arc 0.465 · hella 0.400 · piqa 0.615 · wino 0.510 |
 | S | `ARCH.V32X13G` | 0.801395x | **10**/15 | -- | 4 | dead | -- | arc 0.465 · hella 0.430 · piqa 0.615 · wino 0.530 |
@@ -187,6 +193,9 @@
 | S | `ARCH.T030713` | 0.842437x | **0**/15 | -- | 8 | dead | -- | -- |
 | S | `ARCH.T030913` | 0.842437x | **2**/15 | -- | 4 | dead | -- | -- |
 | S | `ARCH.V32` | 0.853916x | **11**/15 | -- | 0 | alive-parent-band | -- | arc 0.485 · hella 0.485 · piqa 0.640 · wino 0.525 |
+| S | `ARCH.CL1792` | 0.856199x | **7**/15 | 10/30 | 4 | dead | w30 PHASE-TRANSITION ALLOCATOR (field #3) -- intermediate_size 1792, the first rung ever built inside the MLP axis's 2560-to-896 hole; stream-metric coreset | arc 0.385 · hella 0.420 · piqa 0.580 · wino 0.570 |
+| S | `ARCH.CL1792LG` | 0.856199x | **7**/15 | -- | 3 | dead | w30 LOGIT-SPACE FINAL-BLOCK SOLVE (field #6 LFQ) -- last block w2 re-solved in the reader's softmax-Hessian metric by Sylvester ridge; text byte-identical to ARCH.CL1792 | arc 0.385 · hella 0.420 · piqa 0.580 · wino 0.570 |
+| S | `ARCH.CL1792M` | 0.856199x | **8**/15 | 7/30 | 5 | dead | w30 READER-METRIC CORESET (field #5 EoRA / #6 IO-SVD, moved to the selection) -- channels ranked by w2[:,j]^T M w2[:,j], solve unchanged | arc 0.435 · hella 0.460 · piqa 0.535 · wino 0.560 |
 | S | `ARCH.MM896` | 0.859023x | **2**/15 | -- | 16 | dead | -- | arc 0.320 · hella 0.435 · piqa 0.555 · wino 0.505 |
 | S | `ARCH.W896` | 0.859023x | **4**/15 | -- | 9 | dead | -- | arc 0.355 · hella 0.400 · piqa 0.565 · wino 0.490 |
 | S | `ARCH.W896LS` | 0.859023x | **3**/15 | -- | 13 | dead | -- | arc 0.365 · hella 0.405 · piqa 0.565 · wino 0.510 |
@@ -276,28 +285,20 @@
 
 ## 3. The retro-score — does the sealed map survive a second instrument?
 
-**Verdict: VALIDATED: the sealed rank order reproduces on the extension surface**
+**Verdict: PARTIAL: rank order reproduces weakly -- read the table before leaning on any one-case margin**
 
-Spearman(sealed 15, extension 30) = **0.8517** over 16 sealed checkpoints spanning 14/15 down to 0/15. The sealed surface separates them into 11 distinct levels; the extension surface separates them into 10.
+Spearman(sealed 15, extension 30) = **0.6544** over 8 sealed checkpoints spanning 10/15 down to 1/15. The sealed surface separates them into 6 distinct levels; the extension surface separates them into 6.
 
 | child | sealed 15 | extension 30 | extension % | charged |
 |---|---:|---:|---:|---:|
-| `V19` | 14/15 | 12/30 | 40.0% | 0 |
-| `V18` | 13/15 | 14/30 | 46.7% | 2 |
-| `B75` | 11/15 | 13/30 | 43.3% | 1 |
-| `V19X13G03` | 11/15 | 13/30 | 43.3% | 1 |
-| `B25` | 10/15 | 9/30 | 30.0% | 1 |
-| `BP64` | 10/15 | 10/30 | 33.3% | 3 |
-| `V19X09` | 10/15 | 5/30 | 16.7% | 2 |
-| `V19X13` | 10/15 | 11/30 | 36.7% | 2 |
-| `MASK03` | 9/15 | 9/30 | 30.0% | 4 |
-| `V19X13X09` | 5/15 | 1/30 | 3.3% | 13 |
-| `V18X13X01G03` | 4/15 | 5/30 | 16.7% | 13 |
-| `V19MXO3` | 3/15 | 6/30 | 20.0% | 4 |
-| `V18CL896` | 2/15 | 5/30 | 16.7% | 17 |
-| `V19MXP2` | 2/15 | 3/30 | 10.0% | 5 |
-| `V16CL896` | 1/15 | 5/30 | 16.7% | 14 |
-| `V19X13CL896` | 0/15 | 1/30 | 3.3% | 25 |
+| `SR24` | 10/15 | 9/30 | 30.0% | 3 |
+| `SR64` | 10/15 | 13/30 | 43.3% | 3 |
+| `CL1792M` | 8/15 | 7/30 | 23.3% | 5 |
+| `CL1792` | 7/15 | 10/30 | 33.3% | 4 |
+| `V19CL1792` | 7/15 | 9/30 | 30.0% | 3 |
+| `V19CL1792M` | 6/15 | 9/30 | 30.0% | 3 |
+| `CL1280` | 4/15 | 5/30 | 16.7% | 8 |
+| `V19CL1280` | 1/15 | 6/30 | 20.0% | 9 |
 
 ## 4. What this matrix does not say
 

@@ -1,0 +1,11 @@
+{
+ "ARCH.CL1792": "w30 PHASE-TRANSITION ALLOCATOR (field #3) -- intermediate_size 1792, the first rung ever built inside the MLP axis's 2560-to-896 hole; stream-metric coreset",
+ "ARCH.CL1280": "w30 PHASE-TRANSITION ALLOCATOR (field #3) -- intermediate_size 1280, the second rung in the hole; locates the axis's fall",
+ "ARCH.CL1792M": "w30 READER-METRIC CORESET (field #5 EoRA / #6 IO-SVD, moved to the selection) -- channels ranked by w2[:,j]^T M w2[:,j], solve unchanged",
+ "ARCH.CL1792LG": "w30 LOGIT-SPACE FINAL-BLOCK SOLVE (field #6 LFQ) -- last block w2 re-solved in the reader's softmax-Hessian metric by Sylvester ridge; text byte-identical to ARCH.CL1792",
+ "ARCH.V19CL1792": "w30 THE ALLOCATOR'S 0.65x RECOMMENDATION -- V19 gather on CL1792; deepest child at or above 7/15 in the campaign",
+ "ARCH.V19CL1792M": "w30 READER-METRIC CORESET composed -- V19 gather on CL1792M; the A/B twin of ARCH.V19CL1792 at byte-identical storage",
+ "ARCH.V19CL1280": "w30 THE ALLOCATOR'S 0.55x RECOMMENDATION -- flagged EXTRAPOLATES-INTO-THE-GAP before it was built; predicted 6.68, observed 1",
+ "ARCH.SR64": "w30 COORDINATE-SPARSE BLEND SURGERY (field-guided, plan #7 continued) -- 64 coordinates restored by closed-form margin attribution, zero solve",
+ "ARCH.SR24": "w30 COORDINATE-SPARSE BLEND SURGERY -- 24 coordinates restored by the same attribution, zero solve"
+}

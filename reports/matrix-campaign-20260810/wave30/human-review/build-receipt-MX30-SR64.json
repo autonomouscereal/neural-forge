@@ -1,0 +1,146 @@
+{
+ "schema": "neural-forge-matrix-wave30-blend-build-receipt-v1",
+ "built_at": "2026-08-28T04:44:03Z",
+ "builder": "mx30_blend.py",
+ "tag": "SR64",
+ "arm": "COMPLEMENT-MERGE sibling diagonal blend at identical storage: surgical restore, 64 coordinates of the source returned into the sibling's diagonal",
+ "blend": {
+  "restore_k": 64,
+  "coordinates": [
+   7,
+   29,
+   36,
+   88,
+   113,
+   121,
+   171,
+   195,
+   230,
+   235,
+   236,
+   246,
+   282,
+   288,
+   306,
+   308,
+   314,
+   318,
+   332,
+   348,
+   379,
+   430,
+   440,
+   443,
+   452,
+   453,
+   454,
+   463,
+   483,
+   486,
+   492,
+   514,
+   515,
+   517,
+   558,
+   563,
+   581,
+   587,
+   606,
+   611,
+   655,
+   664,
+   665,
+   673,
+   675,
+   716,
+   717,
+   767,
+   785,
+   815,
+   828,
+   834,
+   843,
+   859,
+   890,
+   896,
+   908,
+   921,
+   945,
+   978,
+   988,
+   1000,
+   1005,
+   1010
+  ],
+  "artifact": "/mnt/ai_data/neural-forge-matrix/wave30/prereads/coordinate-attribution-V19X13.json",
+  "protected_lanes": [
+   "coding-deduplicate"
+  ],
+  "gain_lanes": [
+   "writing-concise-email",
+   "creative-continuity",
+   "uncertainty-insufficient-data"
+  ],
+  "reconstruction_gate_worst_relative": 5.5e-07,
+  "selection": "coordinates whose A->B move costs the protected lane's own margin and does not pay any gain lane's, ranked by the net"
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13",
+ "other_model": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13G01",
+ "source_cell_receipt": "",
+ "other_cell_receipt": "",
+ "source_tensors_sha256": "e296d0681a5f7927503fda5d6289efb3ec5b123f61ea81e20ef86a084f9dc93c",
+ "other_tensors_sha256": "1896a320d5d9b777c7c011a9b7bf2e9ac570c16c2d87327e84f1948b7c33c761",
+ "differing_tensors_between_sources": [
+  "model.embedding_norm.weight"
+ ],
+ "coordinates_changed_from_source": 953,
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave30/children/MX30-SR64",
+ "child_tensors_sha256": "7ea17f7b79a3ce0d39cabb52f3324629c0740af8ce0683a329839eb839b929e7",
+ "child_parameters": 170443520,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.7420486626194358,
+ "parameters_added": 0,
+ "excised": [
+  13
+ ],
+ "residual_basis": null,
+ "axes": [
+  {
+   "axis": "num_hidden_layers",
+   "kind": "block",
+   "sites": [
+    13
+   ],
+   "config_fields": [
+    "num_hidden_layers",
+    "layer_types"
+   ],
+   "selection": "F-EXCISE: whole blocks deleted",
+   "solve": "absorbed by every downstream conditioned solve",
+   "evidence": "conditioned capture",
+   "parameters_removed": null,
+   "heldout": {
+    "note": "a deleted block has no local write to score"
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 19456 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 47185920,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.1736 on the frozen review prompts, with tokens-per-byte beside it"
+  }
+ ],
+ "note": "A convex combination of two sealed children's terminal diagonals.  No capture, no solve, no gradient, no added parameter: one CPU pass over 1,024 numbers, at byte-identical storage to both endpoints."
+}
