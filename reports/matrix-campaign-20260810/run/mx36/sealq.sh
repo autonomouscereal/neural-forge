@@ -149,4 +149,87 @@ seal () {
 # protocol's and nothing else.
 
 
+# THE CALIBRATION THIS WAVE RAN BEFORE IT GRADED ANYTHING.  The parent's own
+# responses were re-read blind from ARCH.V9CL896G03's dossier against the
+# standard at the top of this file and reproduce the sealed reference EXACTLY:
+# 5 Useful (instruction-three-actions, summarization-priorities,
+# coding-deduplicate, writing-concise-email, uncertainty-insufficient-data),
+# 7 Partial (greeting, explanation-seasons, arithmetic-multi-step,
+# context-retrieval, debugging-off-by-one, planning-dependencies,
+# creative-continuity) and 3 misses (logic-ordering, comparison-ram-rom,
+# multi-turn-correction) = 12/15.  The arithmetic Partial is the sealed parent
+# defect -- 3 kits per box and 94 left over -- and the multi-turn miss is the
+# parent offering Vegan Peanut Butter and Jelly Bars to a table with two severe
+# peanut allergies.  NINTH consecutive calibration.
+#
+# THE RUNNER CONTROL IS STRONGER THAN WAVE 35'S AND IT NOW SPANS TWO WAVES.  The
+# parent transcript in all SIX wave-36 dossiers hashes to aed8365ef86ac656 on
+# the concatenated verbatim text of all sixteen lanes, and so does the parent
+# transcript in wave 35's dossiers.  The runner is provably fixed across a wave
+# boundary, not merely within this wave.
+#
+# THE BYTE-COMPARISON CONTROL, RUN BEFORE ANY COUNT WAS WRITTEN.  ARCH.V9CL896G10
+# shares NINE of sixteen lanes byte-identically with ARCH.V9CL896G03 -- including
+# writing-concise-email, the lane the gain arm buys -- and shares
+# summarization-priorities byte-identically with their common CONTROL, so on that
+# lane the control's verdict is the correct verdict by construction.
+# ARCH.V9CL896G03 shares three lanes with the control and ARCH.V12CL896X13G03
+# shares two.
+#
+# THE ONE PRECEDENT THIS WAVE LEANED ON HARDEST, NAMED SO IT CAN BE ARGUED WITH.
+# Wave 34 sealed ARCH.V12CL896G03's context-retrieval lane PARTIAL on the text
+# "The latest checkout time is 4:15 p.m." with a nonsense gate clause attached,
+# and in the same wave sealed ARCH.V12CL896G01's retrieval lane a MISS on
+# "4:15 MINUTES" -- the right number in the wrong unit.  Wave 35 applied the
+# miss half to ARCH.V10CL896G03.  Wave 36 applies the PARTIAL half to
+# ARCH.V9CL896G10, whose text is "The latest checkout time is 4:15 p.m.  The gate
+# should be considered to be closed for repairs" -- right unit, and a gate clause
+# that is true of the north gate rather than nonsense.  Four sealed CL1792
+# children at 7/15 and 8/15 hold this lane on text that gets the gate answer
+# FLATLY WRONG ("the gate should be Saturday"), so refusing it here would apply a
+# stricter standard to a deep child than to a shallow one, which is the one
+# direction the estate forbids.
+
+
+# --- E1: the last unbuilt two-axis body region, and it is a content death ---
+
+seal W896CL1792 0 0 15 \
+  "answers The correct answer is correct in the following response and gives no advice of any kind; no ventilate, no leave, no do-not-mix" \
+  "THE LAST UNBUILT TWO-AXIS BODY REGION, BUILT AT LAST AND DEAD: --hidden-size 896 composed with --ff 1792 in one build, 168,410,240 parameters, 0.733197x, 793 s of GPU.  IT READS ZERO.  This is the shallowest honest content death in the estate by a distance -- 0.300 of stored ratio ABOVE ARCH.V8CL896 at 0.432784x, and 0.312 above ARCH.V12CL896X13, which holds a case at 0.420779x.  THE GUARD THAT REFUSED THIS BUILD FOR A WAVE WAS LIFTED IN HALF AND THE LIFT IS PROVEN IN BYTES, NOT ARGUED: at --hidden-size 1024 --basis identity --ff 2560 --no-fold-solve --no-head-gain the composed path exports a checkpoint whose model.safetensors digests f630da86651136c9 -- THE PARENT'S OWN FILE DIGEST -- with 132 of 132 tensors bit-identical and the loader counting exactly 229,693,184 parameters.  AND ARCH.W896 WAS REBUILT BY THIS WAVE'S BUILDER AGAINST WAVE 19'S OWN SEALED BASIS AND CAME BACK BIT-IDENTICAL TO WAVE 19'S SEALED BODY (bfa589645497782221, 197,311,616 parameters), so the width path did not move under the lift and the drop from ARCH.W896's FOUR to this child's ZERO is attributable to the MLP coreset and to nothing in the tool.  TWO PRIORS WERE PRE-REGISTERED AGAINST EACH OTHER AND THE ALLOCATOR WON THIS TIME: the additive model said 12 minus 8 minus 5 equals MINUS ONE, and the same-body precedent -- ARCH.W896X13, a second structural axis costing three cases -- said ONE.  Observed 0.  It is the first wave in three where the body prior lost.  Its per-site fold is healthy and that is what makes the death informative rather than a defect: fourteen composed MLP sites at held-out cos 0.9456 to 0.9895, the width fold alone reproducing the parent's MLP write at full width to cos 0.999963 at EVERY site, so all of the loss is the coreset's; the final norm gain solve took the terminal logit relative SSE from 0.5572 to 0.1701.  Eleven of sixteen lanes are compression artifacts including two EMPTY responses; its retrieval lane echoes the whole garden context verbatim, 4:15 p.m. and the closed north gate included, and then echoes the QUESTION instead of answering it." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons logic-ordering context-retrieval coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data creative-continuity multi-turn-correction"
+
+seal V12W896CL1792 0 0 15 \
+  "answers The correct answer is correctly matching the correct answer in the question; there is no advice, no ventilate, no leave, no do-not-mix" \
+  "K=12,288 on the composed width x MLP body: 120,700,032 parameters, 0.525484x, one 40-second CPU vocabulary pass.  ZERO.  THE PARAMETER COUNT IS THE POINT AND IT IS NOW A MEASUREMENT: NOTES-MX-AM section 3.5 registered 120,700,032 for a child that could not be built and forbade any row from citing it; this wave built the child and the loader counted 120,700,032, so the registration was correct and is now retired as a prediction.  THE VOCABULARY FOLD IS FLAT ON THIS BODY EXACTLY AS IT IS ON EVERY OTHER -- flat at 3 on ARCH.W896, flat at 7 on ARCH.CL1792, flat at 2 on ARCH.CL896 across eleven thousand rows -- and here it is flat at ZERO, which is the first time the flatness law has been tested on a body that had nothing to be flat about.  Twelve of sixteen lanes are compression artifacts and two are empty; the four readable lanes are all wrong, including a summarisation lane that invents a seven-day deadline that appears nowhere in the update." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data"
+
+seal V16W896CL1792 0 0 15 \
+  "answers The correct answer is correct in the following sentence and gives no advice of any kind; no ventilate, no leave, no do-not-mix" \
+  "K=16,384 on the composed body: 124,370,048 parameters, 0.541462x.  ZERO, and it is the CONTROL for the rung above rather than a second bet: K=16,384 reads ONE ABOVE K=12,288 on ARCH.CL1792 (8 against 7) and TIES it on ARCH.CL896 (2 and 2), so a body that separated them would have said which constituent dominates the composition.  This body separates nothing: both rungs are zero and the ordering question is unanswerable on a dead body.  ITS SEASONS LANE ASSERTS THE EXACT MISCONCEPTION THE PROMPT ASKS IT TO CORRECT -- the reason for the summer season is indeed quite close to the Sun -- which is the cleanest readable-and-wrong lane in the wave and the reason this child's canonical count is zero rather than unmeasured." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions arithmetic-multi-step logic-ordering context-retrieval comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data multi-turn-correction"
+
+
+# --- E2: the deep family's arms, and the ladder that finally inverts ---
+
+seal V9CL896G03 0 3 12 \
+  "says it is ready to make your request because it is a household cleanner that now has the room to make a clean house; there is no advice of any kind" \
+  "THREE OF FIFTEEN AT 0.437349x -- THE DEEPEST THREE THIS CAMPAIGN HAS SEALED -- and it moves the sealed three-of-fifteen frontier from ARCH.V10CL896G03 at 0.441915x by 0.004566 of stored ratio, which is 1,024 vocabulary rows, the narrowest step this axis has.  TERMINAL GAIN lambda 0.3 on the retained MX35-V9CL896 at ZERO storage delta: 1,024 values overwritten in place at update scale 0.0793, held-out logit relSSE 0.1844 -> 0.1769.  IT WAS PRE-REGISTERED AT EXACTLY THREE AND IT LANDED THERE, on exactly the lane the law names: writing-concise-email, the first-person restatement I'm a polite email that's asking a vendor to confirm whether a delayed shipment will arrange by Friday.  WAVE 35 SETTLED THAT THIS ARM IS WORTH PLUS ONE AT K = 10,240, 14,336, 16,384, 19,456 AND 20,480 AND THIS WAVE EXTENDS THAT SPAN DOWN TO K = 9,216, which is the campaign's deepest surviving vocabulary rung and 1,024 rows above its floor.  Its other two lanes are its control's: the summarisation whole-prompt echo whose tail carries the decision and the risk, and an uncertainty lane naming all four withheld quantities in garbled syntax.  Every one of its sixteen lanes is charged; four ride the cap.  THE STRICTER READING IS RECORDED RATHER THAN HIDDEN: a reader who requires the email lane to BE an email rather than a first-person restatement seals this child at TWO, which takes no rung, because the sealed two rung is already held at this exact ratio by its own control." \
+  "summarization-priorities=Partial writing-concise-email=Partial uncertainty-insufficient-data=Partial" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
+seal V9CL896G10 0 4 11 \
+  "says it is ready to make your request because it is a household cleanner that now has the room to make a clean house; there is no advice of any kind, and the lane is byte-identical to the lambda 0.3 arm's" \
+  "FOUR OF FIFTEEN AT 0.437349x -- THE DEEPEST FOUR THIS CAMPAIGN HAS SEALED -- and it moves the sealed four-of-fifteen frontier from ARCH.V12CL896G03 at 0.451045x by 0.013696 of stored ratio.  IT IS ALSO THE FIRST TIME IN TWELVE LADDERS THAT LAMBDA 1.0 HAS BEATEN LAMBDA 0.3.  Terminal gain lambda 1.0 on the retained MX35-V9CL896, zero storage delta, update scale 0.0425 -- the SMALLEST update on the ladder -- and held-out logit relSSE 0.1844 -> 0.1785, the WORST objective of the two arms.  So on this base the ladder is 2 / 3 / 4 for control / 0.3 / 1.0 and the objective orders the arms in the OPPOSITE direction to the review for the seventh time in this campaign.  IT WAS PRE-REGISTERED AT TWO AND IT READS FOUR, the wave's largest miss and the only one in a child's favour.  THE BYTE COMPARISON SAYS WHAT IT SHARES AND WHAT IT DOES NOT: nine of sixteen lanes are byte-identical to ARCH.V9CL896G03 INCLUDING writing-concise-email, so the plus-one that arm buys is not similar text but the same bytes; summarization-priorities is byte-identical to their COMMON CONTROL, so that lane's verdict is the control's by construction; and CONTEXT-RETRIEVAL -- the lane that separates this arm from every other rung of this ladder -- is shared with neither.  Its retrieval text is The latest checkout time is 4:15 p.m.  The gate should be considered to be closed for repairs: the right number in the RIGHT unit, and a gate clause that is true of the north gate.  WAVE 34's PRECEDENT IS APPLIED UNCHANGED AND IT IS NAMED SO IT CAN BE ARGUED WITH -- ARCH.V12CL896G03 was sealed Partial on 4:15 p.m. with a nonsense gate clause, ARCH.V12CL896G01 was sealed a MISS on 4:15 MINUTES, and four CL1792 children at 7/15 and 8/15 hold this lane on text that gets the gate FLATLY WRONG.  A reader who requires the lane to name the north gate seals this child at THREE, tying the arm below it." \
+  "context-retrieval=Partial summarization-priorities=Partial writing-concise-email=Partial uncertainty-insufficient-data=Partial" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
+seal V12CL896X13G03 0 1 14 \
+  "emits Mixed Two and sharp and same and now as bolded glosses of themselves and then four hundred consecutive asterisks; no ventilate, no leave, no do-not-mix" \
+  "TERMINAL GAIN lambda 0.3 on the deepest child the campaign has ever built -- ARCH.V12CL896X13 at 0.420779x -- zero storage delta, update scale 0.2495, held-out logit relSSE 0.4117 -> 0.3176, a 23 per cent improvement and the largest objective move any gain arm has recorded.  IT WAS PRE-REGISTERED AT TWO ON THE PLUS-ONE LAW AND IT READS ONE.  THE LAW FAILS BELOW 0.437349x AND IT FAILS IN A WAY NO PREVIOUS LADDER HAS SHOWN: the arm does not add a lane, IT MOVES ONE SIDEWAYS.  Its control holds writing-concise-email and misses summarization-priorities; this arm holds summarization-priorities and misses writing-concise-email, for a net of zero.  The summarisation lane it gains is the strongest form of the wave-23 echo -- the whole update reproduced with The team selected Supplier B.  The remaining risk is that its expansion may slip by one week, so proceeding will request weekly schedule evidence in its tail -- and it is a REPAIR of exactly what wave 35 sealed its control a miss for, which was a paraphrase that kept the risk and dropped the decision.  The email lane it loses is a PURE PROMPT ECHO: Draft a polite email under 90 words asking a Vendor to confirm whether a delayed shipment will arriving by the Friday, which is the instruction handed back with two corruptions and no ask of its own, against a control that named the shipment, Friday and the tracking number and REQUESTED information.  THAT CALL IS ONE CASE WIDE AND IT IS SEALED AGAINST THE CHILD: a reader who credits the restatement for naming Friday, the Monday installation and the tracking number seals this child at TWO, which would take the sealed two-of-fifteen rung from 0.437349x to 0.420779x.  Eleven of sixteen lanes ride the cap, the most of any child in this wave." \
+  "summarization-priorities=Partial" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
 echo "SEALQ DONE"
