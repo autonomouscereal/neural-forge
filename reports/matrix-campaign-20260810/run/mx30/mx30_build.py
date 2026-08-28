@@ -894,6 +894,111 @@ def pivoted_columns(F: torch.Tensor, k: int) -> torch.Tensor:
     return torch.tensor(sorted(chosen), dtype=torch.long)
 
 
+#: The parent's reader metric, when ``--select-metric logit`` is running, and
+#: ``None`` otherwise.  Built once from the parent before any site is folded.
+READER_METRIC: torch.Tensor | None = None
+
+
+def reader_metric(harness: "Harness", positions: int, topk: int) -> tuple[torch.Tensor, dict[str, Any]]:
+    """``M = S W_head^T (diag(p) - p p^T) W_head S``, ``S = diag(d / rms)``.
+
+    The cross-entropy cost of a residual perturbation at the reader's own input,
+    to first order at fixed RMS -- IO-SVD's ``C = E[J^T H J]`` built forward-only
+    from the actual reader weights, which is the form field synthesis #6 says to
+    use and the only form that needs no Jacobian.
+
+    Accumulated in float32 from the model's own logits and consumed in float64;
+    it is a weighting over directions, not a weight that ships.
+    """
+
+    model = harness.model
+    head = model.lm_head.weight.data.to(torch.float32).to(harness.device)
+    gain = model.model.embedding_norm.weight.data.to(torch.float32).to(harness.device)
+    eps = float(model.config.norm_eps)
+    hidden = int(model.config.hidden_size)
+    grabbed: dict[str, torch.Tensor] = {}
+
+    def hook(_m, inputs, _o):
+        grabbed["x"] = inputs[0].detach()[0].to(torch.float32)
+
+    handle = model.model.embedding_norm.register_forward_hook(hook)
+    acc = torch.zeros(hidden, hidden, dtype=torch.float32, device=harness.device)
+    used, mass = 0, 0.0
+    with torch.no_grad():
+        for index, ids in harness.batches:
+            if harness.split[index] != "fit":
+                continue
+            out = model(input_ids=ids.to(harness.device), use_cache=False)
+            x = grabbed["x"]
+            rms = torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + eps)
+            probs = torch.softmax(out.logits[0].to(torch.float32), dim=-1)
+            for row in range(x.shape[0]):
+                if used >= positions:
+                    break
+                top = torch.topk(probs[row], topk)
+                scaled = head[top.indices] * (gain / rms[row]).unsqueeze(0)
+                weighted = scaled * top.values.unsqueeze(1)
+                mean = weighted.sum(dim=0, keepdim=True)
+                acc += scaled.T @ weighted - mean.T @ mean
+                mass += float(top.values.sum())
+                used += 1
+            if used >= positions:
+                break
+    handle.remove()
+    M = acc.double().cpu()
+    M = 0.5 * (M + M.T)
+    M = M * (hidden / float(torch.diagonal(M).sum()))
+    eigs = torch.linalg.eigvalsh(M)
+    if float(eigs.min()) < -1e-9:
+        raise SystemExit(
+            f"the reader metric has eigenvalue {float(eigs.min()):.3e}; the softmax "
+            "Hessian is PSD and this one is not"
+        )
+    M = M + max(0.0, -float(eigs.min())) * torch.eye(hidden, dtype=torch.float64)
+    return M, {
+        "positions_used": used,
+        "topk": topk,
+        "mean_probability_mass_on_topk": round(mass / max(used, 1), 6),
+        "eigenvalue_min": round(float(eigs.min()), 8),
+        "eigenvalue_max": round(float(eigs.max()), 6),
+        "condition_number": round(float(eigs.max() / max(float(eigs.min()), 1e-30)), 3),
+    }
+
+
+def metric_column_scales(w2: torch.Tensor, M: torch.Tensor) -> torch.Tensor:
+    """``s_j = sqrt(w2[:, j]^T M w2[:, j])`` -- what dropping channel j costs the READER.
+
+    Wave 30 measured the logit-space objective as a **no-op on this campaign's
+    writer solves** and the reason is algebraic, not empirical: for a
+    full-column-rank design and a vanishing anchor, ``argmin ||X W^T - Y||^2_M``
+    is ``(X^T X)^-1 X^T Y`` for EVERY positive-definite ``M``.  The metric
+    cancels.  ``mx30_logitsolve.py`` re-solved a last-block writer in the reader
+    metric and moved the weight by 0.34% -- the whole of which is the ridge
+    anchor, which is in the Frobenius norm and not in ``M``.
+
+    Where the metric CANNOT cancel is the rank-constrained step, and on this axis
+    that step is the coreset SELECTION.  Dropping channel ``j`` without repair
+    puts ``phi[:, j] w2[:, j]^T`` into the block's output, whose squared cost in
+    the reader metric factorises exactly into ``||phi[:, j]||^2`` times
+    ``w2[:, j]^T M w2[:, j]``.  So the reader-aware selection is the ordinary
+    pivoted Cholesky run on columns rescaled by ``s_j`` -- one scalar per
+    channel, closed form, and the solve afterwards is the sealed solve on the
+    unscaled columns.
+
+    **The honest caveat, stated because it is the difference between this and
+    wave 29's dead KKT.**  ``M`` is exact at the LAST block, whose writer feeds
+    the final norm directly.  At earlier blocks the residual is transformed by
+    the blocks above before the reader sees it, and this uses the reader's metric
+    anyway.  That is an approximation, but it is an approximation in a
+    SELECTION CRITERION -- a differently-weighted coreset is still a valid
+    coreset, and the ridge that follows is exact against the local target either
+    way.  Wave 29's null was a linear RESPONSE used to predict a repair's effect;
+    a wrong response is a wrong answer, a wrong weighting is a worse ranking.
+    """
+
+    return torch.sqrt(((w2.T @ M) * w2.T).sum(dim=1).clamp_min(0.0))
+
+
 def swiglu(X: torch.Tensor, w1: torch.Tensor, w3: torch.Tensor) -> torch.Tensor:
     return torch.nn.functional.silu(X @ w1.T) * (X @ w3.T)
 
@@ -5200,6 +5305,19 @@ def build(args: argparse.Namespace) -> int:
     log("capturing the parent's own stream (one pass over 24 batches)")
     parent_rows = harness.capture({**mlp_modules, **attn_modules}, pristine=pristine)
 
+    global READER_METRIC
+    metric_census: dict[str, Any] | None = None
+    if getattr(args, "select_metric", "stream") == "logit":
+        # From the PARENT, and before any site is folded: the metric is a
+        # property of the target, and a metric read off a half-built child would
+        # be a different object at every site.
+        READER_METRIC, metric_census = reader_metric(
+            harness, int(args.select_metric_positions), int(args.select_metric_topk)
+        )
+        log(f"reader metric: {json.dumps(metric_census)}")
+    else:
+        READER_METRIC = None
+
     # The RoPE ladder is decided ONCE, before any attention block is folded, and
     # from every attention site pooled: `head_dim` and `rope_theta` are one config
     # field each, so a per-site choice is not expressible in a stock child.
@@ -5424,7 +5542,26 @@ def build(args: argparse.Namespace) -> int:
         drift = float(
             (X - parent_rows[name]["fit"]).norm() / parent_rows[name]["fit"].norm()
         )
-        sel = pivoted_columns(phi, keep_ff)
+        if READER_METRIC is None:
+            sel = pivoted_columns(phi, keep_ff)
+            selection_scales = None
+        else:
+            # The selection sees the reader; the solve does not, and must not --
+            # it is the sealed solve on the unscaled columns, so any delta this
+            # arm reads is attributable to WHICH channels survived and to nothing
+            # else.
+            scales = metric_column_scales(w2, READER_METRIC)
+            sel = pivoted_columns(phi * scales[None, :], keep_ff)
+            plain = pivoted_columns(phi, keep_ff)
+            selection_scales = {
+                "scale_min": round(float(scales.min()), 8),
+                "scale_max": round(float(scales.max()), 6),
+                "scale_median": round(float(scales.median()), 6),
+                "channels_agreeing_with_plain_selection": int(
+                    len(set(sel.tolist()) & set(plain.tolist()))
+                ),
+                "of": int(keep_ff),
+            }
         w2p, guard = law_abiding_solve(phi[:, sel], Y, w2[:, sel])
         scores = write_scores(phi_h[:, sel] @ w2p.T, Y_h)
         # What the same solve looks like against the LOCAL target, always, so a
@@ -5437,6 +5574,10 @@ def build(args: argparse.Namespace) -> int:
                 "position": position,
                 "keep": keep_ff,
                 "arm": arm,
+                "selection_metric": (
+                    None if selection_scales is None else "reader (softmax-Hessian)"
+                ),
+                "selection_scales": selection_scales,
                 "input_drift_vs_parent": drift,
                 "identity_check": identity,
                 "selection_first8": [int(x) for x in sel[:8]],
@@ -5462,7 +5603,13 @@ def build(args: argparse.Namespace) -> int:
                 "kind": "mlp",
                 "sites": [r["layer"] for r in per_site],
                 "config_fields": ["intermediate_size", "block_ff_dim"],
-                "selection": "pivoted-Cholesky coreset of real channels; w1/w3 rows verbatim",
+                "selection": (
+                    "pivoted-Cholesky coreset of real channels; w1/w3 rows verbatim"
+                    if READER_METRIC is None else
+                    "pivoted-Cholesky coreset on reader-metric-rescaled channels "
+                    "(s_j = sqrt(w2[:,j]^T M w2[:,j])); w1/w3 rows verbatim"
+                ),
+                "selection_metric_census": metric_census,
                 "solve": (
                     f"prior-anchored ridge on w2, lambda ladder to update_scale<=1.0, arm={arm}"
                 ),
@@ -6230,6 +6377,22 @@ def main() -> int:
             "is provably the identity; `strict` refuses on any difference"
         ),
     )
+    ap.add_argument(
+        "--select-metric",
+        choices=["stream", "logit"],
+        default="stream",
+        help=(
+            "which metric the MLP CORESET SELECTION is ranked in.  `stream` is "
+            "every sealed cell on this axis: pivoted Cholesky on the gated "
+            "intermediate's own Gram.  `logit` rescales each channel by what "
+            "dropping it costs the READER -- sqrt(w2[:,j]^T M w2[:,j]) with M "
+            "the softmax-Hessian reader metric -- and then runs the identical "
+            "pivot.  The SOLVE is unchanged in both arms, so a delta is the "
+            "selection's"
+        ),
+    )
+    ap.add_argument("--select-metric-positions", type=int, default=768)
+    ap.add_argument("--select-metric-topk", type=int, default=2048)
     ap.add_argument("--excise", type=int, action="append")
     ap.add_argument(
         "--evidence",
