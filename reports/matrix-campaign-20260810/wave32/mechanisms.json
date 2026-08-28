@@ -1,0 +1,17 @@
+{
+ "ARCH.BM25": "w32 BODY BLEND (plan W1) -- aligned convex blend, 0.75 ARCH.CL1792 + 0.25 ARCH.CL1792M on CL1792's channel selection; zero solve, byte-identical storage",
+ "ARCH.BM50": "w32 BODY BLEND -- the midpoint of the same segment, alpha 0.50",
+ "ARCH.BM75": "w32 BODY BLEND -- alpha 0.75, wave 29 ARCH.B75's own alpha applied to a whole body instead of a 1,024-number diagonal",
+ "ARCH.BMS75": "w32 BODY BLEND, SOURCE-SWAP CONTROL -- the same convex point as BM25 built on ARCH.CL1792M's selection and w1/w3; isolates the selection from the coefficients",
+ "ARCH.BV50": "w32 BODY BLEND -- alpha 0.50 against the OTHER sibling, ARCH.CL1792MV; the second midpoint",
+ "ARCH.BMV3": "w32 BODY BLEND, THREE-WAY SIMPLEX BARYCENTRE -- one third each of CL1792, CL1792M and CL1792MV; the best blend in the wave and a tie with the plain body",
+ "ARCH.BM50N": "w32 BODY BLEND, NAIVE ARM (--align none) -- the same convex weights as BM50 with NO channel alignment; built to measure a prediction the builder's own docstring made before the build",
+ "ARCH.V16CL1792M": "w32 COMPOSED ON THE READER-METRIC BODY (plan W2) -- K=16,384 gather on ARCH.CL1792M; tests flatness against the M-inversion",
+ "ARCH.V12CL1792M": "w32 COMPOSED ON THE READER-METRIC BODY -- K=12,288",
+ "ARCH.V9CL1792M": "w32 COMPOSED ON THE READER-METRIC BODY -- K=9,216, on wave 30's 0.81402 emission-coverage crossing",
+ "ARCH.V8CL1792M": "w32 COMPOSED ON THE READER-METRIC BODY -- K=8,192, below the crossing",
+ "ARCH.V16BMV3": "w32 COMPOSED ON A BLEND BODY -- K=16,384 gather on ARCH.BMV3; the flatness law's cheapest test on a body class it has never seen",
+ "ARCH.V6CL1792": "w32 BELOW THE CENSUS FLOOR (plan W3) -- K=6,144, 1,069 rows under the measured floor of 7,213; the coverage half of wave 25's gate released with --below-floor, the merge-closure half asserted",
+ "ARCH.V4CL1792": "w32 BELOW THE CENSUS FLOOR -- K=4,096, 3,117 rows under the floor; tokens-per-byte 0.3164 against the parent's 0.2135",
+ "ARCH.CL1792S": "w32 B4's CONTROLLED EVIDENCE PAIR (plan W4), three waves late -- ARCH.CL1792 solved with --arm stale; the only variable is whether each site's evidence is captured through the partially built child or read off the unfolded parent"
+}

@@ -125,6 +125,18 @@ ALLOWED_HISTORICAL = {
         "the wave-32 header names `mx31_build.py` as the file it states its diff "
         "against; it resolves no path",
     ),
+    ("mx32_retain.py", "MX31-"): (
+        2,
+        "two reasons cite a retained wave-31 checkpoint as the thing the wave-32 "
+        "child is measured against: `MX31-CL1792MV` is a source ARCH.BV50 is "
+        "blended from, and `MX31-CL1408` is the checkpoint `MX32-CL1408R` is "
+        "BIT-IDENTICAL to, which is the entire justification for deleting the "
+        "rebuild.  Both appear only inside prose, never in KEEP, never in a DROP "
+        "key, and never in a path this script resolves.  The audit caught them on "
+        "the first run after the retention policy was written, which is the "
+        "mechanism working -- and the count is PINNED rather than waived, because "
+        "a waiver without a count is a hole",
+    ),
 }
 
 
