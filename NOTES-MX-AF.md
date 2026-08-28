@@ -447,10 +447,11 @@ Stated plainly rather than folded into a summary.
 
 ## 9. Estate
 
-Eight commits, eight deployments, every one verified file by file against the
-commit's own blob digests: 5,544 files at the first and 5,548 at the rest, **0
-content mismatches, 0 missing, 0 undeclared, 0 hardlinks** every time. Six of the
-eight exist because something refused or something was found wrong, and the
+Ten commits, eight deployments, every one verified file by file against the
+commit's own blob digests: 5,544 files at the first, 5,548 through the middle
+and 5,666 at the last two once the wave's own artifacts were committed, **0
+content mismatches, 0 missing, 0 undeclared, 0 hardlinks** every time. Five of
+the eight exist because something refused or something was found wrong, and the
 estate's rule is that the fix ships as a commit and a verified deployment rather
 than as an edit to a deployed file — a rule this wave broke once, by uploading a
 census script directly into deployment `fb2c3768`. It was removed, the file
@@ -485,4 +486,14 @@ calibration and the reason the child rows above are comparable to waves 8–29's
 Both sm86 3090s ran the wave. No ComfyUI contention: wave 29 restarted the two
 H3 containers and they were still free-standing at 288 MiB and 279 MiB, so
 nothing had to be checked, waited on, killed or restarted. `/mnt/ai_data` at
-1.7 TB free, 64% used, unchanged across the wave.
+1.7 TB free, 64% used, unchanged across the wave, and both cards free-standing
+at 288 MiB and 279 MiB with nothing running when it closed.
+
+Retention ran **after** the package, `--plan` read before `--apply`, as the
+ordering rule requires: **four children deleted (1.27 GiB), five kept.**
+`MX30-CL1792LG` is dropped precisely because it is not a second measurement —
+all sixteen of its response digests equal `MX30-CL1792`'s — and the two surgical
+blends are dropped because the coordinate sets that define them are written out
+in full in the packaged attribution artifact and `mx30_blend.py --restore`
+rebuilds either exactly. Deployments pruned from ten to two (current+1), and the
+survivor re-verified **after** the wave at 5,666 files with the same four zeros.
