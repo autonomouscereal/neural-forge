@@ -39,9 +39,11 @@ child was graded.
 | `V16CL896` | 1 | 5 | 14 |
 | `V19X13CL896` | 0 | 1 | 25 |
 
-Spearman **0.8023**. The sealed ordering reproduces on a second instrument
-authored without access to a single one of the 232 sealed readings. The map this
-campaign navigates by is not an artifact of its own fifteen prompts.
+Spearman **0.8023** on those ten. With wave 29's own six graded children folded
+in — sixteen checkpoints, same span — it rises to **0.8517**. The sealed ordering
+reproduces on a second instrument authored without access to a single one of the
+232 sealed readings. The map this campaign navigates by is not an artifact of its
+own fifteen prompts.
 
 **Two things the second surface says that the first cannot.**
 
@@ -236,6 +238,22 @@ free set at the 0.5x band.
 The λ→∞ rung was **built, not asserted**: `ARCH`-less `MX29-KKTINF` digests
 `0fa5175dda6d58ec…`, byte-identical to its source.
 
+**Then both children were reviewed, and both read 0/15.** `ARCH.V19CL896`, the
+control at the identical 110,941,952 parameters, reads 2/15. So each arm *lost
+both cases its base had* while improving its own held-out objective — and the two
+arms fail differently, which is the part worth keeping:
+
+* `ARCH.KKTD` (20,480 unknowns) produces **filler**: every lane is a variant of
+  "Please provide any information about the following request."
+* `ARCH.KKTS` (20 unknowns, total update norm **0.336** — about seven percent per
+  writer) produces **echo**: ten of sixteen lanes return the prompt, one of them
+  word for word.
+
+Three orders of magnitude apart in degrees of freedom, both improving their
+objective, both zero. That is the objective/review inversion for the seventh and
+eighth time, and for the first time with a measured account of the mechanism
+rather than an observation of the correlation.
+
 **The objective improves by ten percent and the frozen-gate prediction of what
 that improvement does is wrong by more than the improvement itself.** On both
 arms. So the wave-29 KKT null is a specific, load-bearing one:
@@ -285,3 +303,63 @@ Seven refusals fired during the wave and every one of them was correct:
   merge**. Those seven receipts and shards were deleted and the pass re-run, so
   no superseded row reaches the ledger. `seal ()` now refuses a call that does
   not pass exactly eight arguments.
+
+## 9. The spectrum, and the frontier delta
+
+Wave 29 moved **one** rung of the coherence frontier, and it moved it with a
+mechanism that costs nothing:
+
+| rung | before wave 29 | after wave 29 |
+|---|---|---|
+| ≥ 11/15 | `V19X13G03` / `V19X13G01` 0.742049x | **`B75` 0.742049x, by convex blend, zero solve** |
+| every other rung | — | unchanged |
+
+That is the honest headline. Three of the retention plan's four mechanism bets
+returned nulls; the fourth — the instrument — validated. The ladder is otherwise
+exactly where wave 28 left it.
+
+Campaign totals: **241** reviewed whole-model children, **189** holding at least
+one case, **146** benchmark rows, **16** parent rows all matching the sealed
+reference (0.5450 / 0.5050 / 0.6800 / 0.5500 / 0.4600, lambada ppl 24.39,
+wikitext word ppl 81.80).
+
+**What wave 30 should not repeat.** Do not budget a vocabulary gather onto a
+parent-shaped body without reading the base's per-component storage first. Do not
+spend a review on an interior blend of the terminal diagonal. Do not evaluate a
+terminal objective through frozen gates below ~0.5x without running the rung-0
+discriminator first — it costs one forward pass and it would have saved this wave
+two builds and two reviews. And do not lean on any deep-zone one-case separation:
+both instruments now say that band is unresolved.
+
+**What wave 29 leaves genuinely open.** `PLAN_GAPS_2026-08-14.md` GAP 1's
+residual-corrected sequential family, which is cheaper than the KKT and does not
+rest on frozen gates. GAP 2's attention mass, still unpriced. The plan's #2
+RETOK-BODY, **not executed** — re-solving the CL896 body on the retokenized
+stream needs the evidence path inside a 6,181-line builder parameterised, and
+this wave did not do it; the retokenized stream machinery it depends on is live
+and was used by every solve in the wave, so the remaining work is the builder,
+not the evidence. And the sink/massive-activation repair the emission pre-read
+just aimed: the target is now named and measured, and nothing has been built
+against it.
+
+## 10. Estate, continued
+
+Ledger **804 → 822 rows** (9 ARCH + 9 verdict, no superseded rows), backed up
+with sha + `cmp` first (`445ff68e6c08c99d…`, matching the wave-28 handoff
+exactly), byte-prefix verified after, and **committed**. Merged sha
+`0d6ce61ff5dca9c5a2bc10b2ee951699a45255ddf595728dcbd9c5f758d04892`, identical on
+the server, in the working copy and in the git object. **25** cell roots audited,
+0 undeclared, `wave28/cells` still declared and `wave29/cells` appended as one
+line. 818 of 822 rows resolve and verify; the 4 that do not are the three
+`CAL.C01.T5.X4` rows and the one `COMP.MC.MXO0` row wave 27 identified.
+
+Package built **before** retention: **106 files, 2.7 MiB** — every dossier, every
+child and parent response verbatim, every receipt, verdict, per-case reading and
+build receipt, plus this wave's four new classes: the extension surface with its
+digest-pinned bank, the prereads, the pre-registered mask, and the two reports.
+
+Retention applied after the package, dry run read first: **six kept (2.2 GiB),
+five dropped (1.9 GiB)** with reasons, plus **1.4 GiB** of materialized
+parent-shaped bases deleted as re-derivable — and this wave has the evidence that
+they are, because MXO3 rematerialized **byte-identically** to the copy wave 11
+wrote fifteen waves earlier.
