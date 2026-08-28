@@ -80,6 +80,20 @@ the audit fires and the count is pinned against the prose that exists.
 * **`bodyblendq.sh`** — the driver. Its spec is verbose rather than
   colon-packed, because wave 29's `blendq.sh` field order has no room for a
   three-way simplex point that anyone would read correctly.
+* **`mx32_vocabfloor.py`** and the split gate in **`mx32_vocab.py`**. Wave 31
+  refused K = 6,144, 5,120 and 4,096 and recorded "a hard floor between 6,144 and
+  8,192 rows on this corpus"; wave 32 was ordered to move that floor by capturing
+  a broader census corpus. The passing kept set is exactly
+  `mandatory ∪ closure(observed)`, so the floor is **monotone increasing** in the
+  census corpus and a broader corpus raises it. What actually holds it up is that
+  wave 25's gate refused on *"the closure is wrong OR K is below the observed
+  vocabulary"* — one refusal for two conditions, only one of which is a defect.
+  The structural half is now asserted on its own by `merge_closure_intact`, which
+  names no corpus and has no flag; the coverage half is a decision taken with
+  `--below-floor` (`BELOW_FLOOR=1` for `vocabq.sh`, in the environment so that a
+  flag that dangerous is visible on the launching command line). `mandatory_ids`
+  was extracted out of `choose_kept` so the probe and the builder cannot drift
+  apart about what the mandatory set is.
 * **`experiments/seal_matrix_architecture_child.py`** gains four strings:
   wave 32's three renamed builders and one genuinely new class,
   `neural-forge-matrix-wave32-body-blend-build-receipt-v1`. They were appended

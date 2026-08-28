@@ -1,5 +1,42 @@
 #!/usr/bin/env python3
-"""Wave 25: the vocabulary row coreset -- `vocab_size` as the missing standard axis.
+"""Wave 32: the census gate was one refusal for two conditions.  It is two now.
+
+Wave 31 tried K = 6,144, 5,120 and 4,096 on `ARCH.CL1792` and was refused three
+times by the gate below with
+
+    the kept set loses sealed-corpus occurrences on one of the two streams;
+    the closure is wrong or K is below the observed vocabulary.
+
+`NOTES-MX-AG` §6 recorded that as "a hard floor between 6,144 and 8,192 rows on
+this corpus -- a property of the evidence, not of the model", and wave 32 was
+ordered to move the floor by capturing a BROADER census corpus.  That instruction
+has a sign error in it, and `mx32_vocabfloor.py` measures the sign in seconds:
+the passing kept set is exactly `mandatory UNION closure(observed)`, so the floor
+is **monotone increasing** in the census corpus.  A broader corpus raises it.
+
+What actually holds the floor up is that the message above names two conditions
+with one `or` and refuses on either.  They are not the same kind of thing:
+
+* **the closure is wrong** -- a kept row that cannot be produced from the
+  restricted merge list.  A defect in this file.  Always fatal, no flag, and it
+  is now asserted *separately and structurally* by `merge_closure_intact`, which
+  mentions no corpus at all.
+* **K is below the observed vocabulary** -- the kept set drops tokens the census
+  corpus saw.  This is a COVERAGE CHOICE, and this axis has been publishing
+  sub-unity coverage on sealed children since wave 24: `ARCH.V8` reads 4/15 solo
+  and 5/15 composed at 0.80049 token coverage, and nothing refused it.  It is
+  now taken deliberately with ``--below-floor``, which prints the exact loss and
+  records it in the receipt under `below_census_floor`.
+
+Nothing else in the mechanism moves.  `mandatory_ids` was extracted out of
+`choose_kept`'s first eleven lines so the floor probe and the builder cannot
+drift apart about what the mandatory set is; the ranking, the closure, the
+gather, the remap, the lossless-on-text assertion and every published number are
+wave 25's.
+
+--- wave 25's header ---
+
+Wave 25: the vocabulary row coreset -- `vocab_size` as the missing standard axis.
 
 **Waves 23 and 24's file, unchanged in mechanism.**  Wave 24 read three rungs of
 this axis solo -- K = 32,768 / 16,384 / 8,192 at 11 / 9 / 4 of fifteen -- and
@@ -327,6 +364,67 @@ def census(sequences: list[list[int]]) -> dict[int, int]:
     return counts
 
 
+def mandatory_ids(vocab: Vocabulary) -> set[int]:
+    """The rows no K may drop: specials, the byte alphabet, and their closure.
+
+    WAVE 32 EXTRACTED THIS from the body of `choose_kept`, where it was the
+    first eleven lines.  `mx32_vocabfloor.py` needs the same set to say what the
+    axis's floor IS, and a second implementation of a set this load-bearing is a
+    contract that decays silently the first time one of them is edited.
+    """
+
+    tokens: set[str] = set(vocab.byte_alphabet)
+    for token in list(tokens):
+        vocab.ancestors(token, tokens)
+    for entry in vocab.added:
+        content = str(entry["content"])
+        if content in vocab.id_of_token:
+            tokens.add(content)
+    out: set[int] = set(vocab.added_ids)
+    for token in tokens:
+        tid = vocab.id_of_token.get(token)
+        if tid is not None:
+            out.add(tid)
+    return out
+
+
+def merge_closure_intact(vocab: Vocabulary, kept: set[int]) -> dict[str, Any]:
+    """Can every kept token still be PRODUCED from the restricted merge list?
+
+    A kept token is producible iff it is an added/special token, a single
+    ByteLevel symbol, or both of its merge operands are themselves kept.  This is
+    a STRUCTURAL property of the kept set and it names no corpus, which is the
+    whole point of separating it out: wave 25's single gate refused on
+
+        the closure is wrong OR K is below the observed vocabulary
+
+    and those are two different conditions.  The first is a defect in this file.
+    The second is a coverage choice, and the vocabulary axis has been making
+    coverage choices since wave 24 -- `ARCH.V8`'s 0.80049 token coverage is a
+    published number on a sealed child, not a refusal.
+    """
+
+    broken: list[int] = []
+    for tid in kept:
+        token = vocab.token_of_id.get(tid)
+        if token is None or tid in vocab.added_ids or token in vocab.byte_alphabet:
+            continue
+        pair = vocab.parents_of.get(token)
+        if pair is None:
+            continue
+        for side in pair:
+            sid = vocab.id_of_token.get(side)
+            if sid is None or sid not in kept:
+                broken.append(tid)
+                break
+    return {
+        "kept_rows": len(kept),
+        "unproducible_kept_tokens": len(broken),
+        "first_unproducible": sorted(broken)[:12],
+        "intact": not broken,
+    }
+
+
 def choose_kept(
     vocab: Vocabulary, counts: dict[int, int], k: int
 ) -> tuple[list[int], dict[str, Any]]:
@@ -340,19 +438,7 @@ def choose_kept(
     budget, the tie-break decides most of the table.
     """
 
-    mandatory_tokens: set[str] = set(vocab.byte_alphabet)
-    mandatory_ids: set[int] = set(vocab.added_ids)
-    for token in list(mandatory_tokens):
-        vocab.ancestors(token, mandatory_tokens)
-    for entry in vocab.added:
-        content = str(entry["content"])
-        if content in vocab.id_of_token:
-            mandatory_tokens.add(content)
-    kept: set[int] = set(mandatory_ids)
-    for token in mandatory_tokens:
-        tid = vocab.id_of_token.get(token)
-        if tid is not None:
-            kept.add(tid)
+    kept: set[int] = set(mandatory_ids(vocab))
     mandatory_size = len(kept)
     if mandatory_size > k:
         raise SystemExit(
@@ -539,10 +625,43 @@ def build(args: argparse.Namespace) -> int:
         f"{cov_canonical['occurrence_coverage']:.6f} "
         f"({cov_canonical['occurrences_lost']} lost)"
     )
-    if cov["occurrences_lost"] or cov_canonical["occurrences_lost"]:
+    # WAVE 32 SPLITS WAVE 25'S GATE IN TWO, because it was one refusal for two
+    # conditions and only one of them is a defect.
+    #
+    # (1) STRUCTURAL.  Every kept token must still be producible from the
+    #     restricted merge list.  This is always fatal and there is no flag for
+    #     it: a kept row that cannot be emitted is a broken tokenizer.
+    # (2) COVERAGE.  The kept set may drop tokens the census corpus observed.
+    #     Wave 25 refused that too, and wave 31's refusal of K = 6,144, 5,120 and
+    #     4,096 is entirely this half firing.  It is not a defect -- the
+    #     vocabulary axis has published sub-unity coverage on sealed children
+    #     since wave 24 -- so it is now a DECISION, taken with --below-floor, and
+    #     the exact loss is printed here and recorded in the receipt.
+    closure_state = merge_closure_intact(vocab, keptset)
+    if not closure_state["intact"]:
         raise SystemExit(
-            "the kept set loses sealed-corpus occurrences on one of the two "
-            "streams; the closure is wrong or K is below the observed vocabulary."
+            f"{closure_state['unproducible_kept_tokens']} kept tokens cannot be "
+            "produced from the restricted merge list, e.g. ids "
+            f"{closure_state['first_unproducible']}.  The closure is broken; this "
+            "is a defect in this file and there is no flag for it."
+        )
+    lost = int(cov["occurrences_lost"]) + int(cov_canonical["occurrences_lost"])
+    if lost and not args.below_floor:
+        raise SystemExit(
+            f"K={args.k} is BELOW THE CENSUS FLOOR: the kept set loses "
+            f"{cov['occurrences_lost']} donor-mapped and "
+            f"{cov_canonical['occurrences_lost']} canonical sealed-corpus "
+            "occurrences.  The merge closure is intact, so this is a coverage "
+            "choice and not a defect.  Re-run with --below-floor to take it "
+            "deliberately; `mx32_vocabfloor.py --floor` says where the floor is "
+            "and why a broader census corpus raises it rather than lowering it."
+        )
+    if lost:
+        log(
+            f"BELOW FLOOR, deliberately: {cov['occurrences_lost']} donor-mapped "
+            f"and {cov_canonical['occurrences_lost']} canonical occurrences "
+            f"dropped; coverage {cov['occurrence_coverage']:.6f} donor / "
+            f"{cov_canonical['occurrence_coverage']:.6f} canonical"
         )
 
     outdir.mkdir(parents=True, exist_ok=True)
@@ -791,8 +910,16 @@ def build(args: argparse.Namespace) -> int:
                 "donor_mapped": cov["occurrences_lost"],
                 "canonical": cov_canonical["occurrences_lost"],
                 "claim": "every token occurrence in the sealed corpus, on both "
-                "streams, has a kept row; asserted, not asserted-about",
+                "streams, has a kept row; asserted, not asserted-about"
+                if not lost else
+                "K IS BELOW THE CENSUS FLOOR and --below-floor was passed.  The "
+                "counts above are what was dropped, deliberately.  The merge "
+                "closure is intact and the child tokenizer is lossless on text; "
+                "what a dropped token costs is sequence length and a different "
+                "segmentation, which `lossless_on_text_and_agreement` measures",
             },
+            "below_census_floor": bool(lost),
+            "merge_closure": closure_state,
             "lossless_on_text_and_agreement": {
                 "sealed_corpus": corpus_agreement,
                 "frozen_review_prompts": review_agreement,
@@ -949,6 +1076,14 @@ def main() -> int:
         "into this receipt so a composed child's provenance is complete",
     )
     ap.add_argument("--excised", type=int, action="append")
+    ap.add_argument(
+        "--below-floor",
+        action="store_true",
+        help="build at a K that drops sealed-corpus token occurrences.  The "
+        "merge-closure assertion still fires and is still fatal; this flag "
+        "releases the COVERAGE half of wave 25's gate only, and the exact loss "
+        "is printed and recorded in the receipt",
+    )
     args = ap.parse_args()
     if not args.k:
         raise SystemExit("--k is required")

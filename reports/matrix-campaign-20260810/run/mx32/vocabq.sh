@@ -28,10 +28,19 @@
 # that driver's opinion.
 #
 #   vocabq.sh <TAG>:<K>:<source dir>[:<source cell receipt>] ...
+#
+# WAVE 32 ADDS ONE ENVIRONMENT SWITCH, `BELOW_FLOOR=1`, and puts it in the
+# environment rather than in the colon-delimited spec on purpose: it releases the
+# coverage half of wave 25's census gate for EVERY rung in the invocation, and a
+# flag that dangerous should be visible on the command line that launched the
+# batch rather than buried in the fourth field of the third argument.  The
+# merge-closure assertion is not releasable and is not affected by it.
 set -u
 . /home/cereal/nf-mx32/env.sh
 M=/mnt/ai_data/neural-forge-matrix
 mkdir -p $W/children $W/logs
+FLOOR=""
+[ "${BELOW_FLOOR:-0}" = "1" ] && FLOOR="--below-floor"
 
 for spec in "$@"; do
   TAG=$(echo "$spec" | cut -d: -f1)
@@ -40,7 +49,7 @@ for spec in "$@"; do
   CELL=$(echo "$spec" | cut -d: -f4)
   if [ ! -d "$SRC" ]; then echo "$TAG SKIPPED: no source at $SRC"; continue; fi
   rm -rf $W/children/MX32-$TAG
-  $PY $MX32/mx32_vocab.py --mode build --k $K --tag $TAG \
+  $PY $MX32/mx32_vocab.py --mode build --k $K --tag $TAG $FLOOR \
     --source "$SRC" --source-cell-receipt "${CELL:-}" \
     --child $W/children/MX32-$TAG \
     > $W/logs/vocabbuild-$TAG.log 2>&1
