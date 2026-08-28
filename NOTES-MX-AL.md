@@ -3,8 +3,8 @@
 **2026-08-28.** Branch `codex/lrc-blank-compression`. Eight children built, sealed
 and read twice. Ledger 920 → **936** rows,
 `cff07ea4a165683b2a400ecc6a380db7ff707b82aa55d1f180f511c932b9b93f`, byte-prefix
-verified against the pre-wave backup. Four deployments, three of them forced by a
-guard refusing correctly.
+verified against the pre-wave backup. **Five deployments, three of them forced by
+a guard refusing correctly.**
 
 ---
 
@@ -350,6 +350,8 @@ attempt, and it is a different wave's work.
 | `03d39e85` | append wave 34 to the sealer's accept list, after it refused four reviews |
 | `0ed36347` | the eight seals and the calibration that decides six of their lanes |
 | `710af305` | the measurement: four sealed rungs move, and the artifact clause is priced |
+| `fa635517` | the retention policy, written from this wave's verdicts, and this note |
+| `720f475d` | package, retain and prune, in that order, with every deletion named |
 
 **Deployments**, each verified file-by-file against its commit's blob digests:
 
@@ -359,9 +361,27 @@ attempt, and it is a different wave's work.
 | `082409cb` | 6329 | 0 | 0 | 0 | 0 |
 | `03d39e85` | 6329 | 0 | 0 | 0 | 0 |
 | `0ed36347` | 6329 | 0 | 0 | 0 | 0 |
+| `fa635517` | 6359 | 0 | 0 | 0 | 0 |
 
-Four deployments for one wave is three more than the ideal and every extra one was
-bought by a guard refusing correctly. That is the trade this estate has chosen.
+`fa635517` was **re-verified after the wave's work finished** — 6,359 files, all
+five zeros again — which is the check that nothing wrote into a deployment while
+it was being read from.
+
+Five deployments for one wave is four more than the ideal and three of the four
+extras were bought by a guard refusing correctly: the receipt-filename defect, the
+sealer's accept list, and the seal calls themselves. That is the trade this estate
+has chosen.
+
+**Package, then retention, then prune.** The bundle is 91 files and 2.1 MB; the
+repository carries 80 of them, the eleven it does not being copies of files that
+already live elsewhere in the repo. Retention kept five children and deleted six
+(1.37 GB), each deletion naming what rebuilds it and from which retained source,
+after a dry run that was printed and read. The deployment prune kept three and
+deleted four (1.14 GB) under current+1 **plus every deployment a sealed receipt
+names as its `repo_head`** — all sixteen wave-34 receipts name `03d39e85`, so that
+one is kept regardless of age. Nothing pruned is lost: `deploy.py --emit`
+reproduces any of them byte-for-byte from its commit, and no receipt in this
+estate names a deployment *path*.
 
 **Ledger.** Backed up to
 `/mnt/ai_data/neural-forge-matrix/ledger.jsonl.pre-wave34-20260828T153018Z` and
@@ -380,7 +400,8 @@ a hold worth taking a peer's container down for, the fold builds peaked at 1.4 G
 and nothing in this wave came close to memory pressure. The Quadro RTX 8000 was at
 100% on a peer benchmark for the whole wave and was never touched.
 
-**Disk.** `/mnt/ai_data` at 64% (1.7 TB free) before and after.
+**Disk.** `/mnt/ai_data` at 64% (1.7 TB free) before and after; `/home` 63% with
+650 GB free after the prune, deployments down from 2.3 GB to 1.2 GB.
 
 **The Codex lane was not touched.** Nothing outside the explicit paths in §7 was
 staged.
