@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
-"""Wave 31: the MLP interior ladder, and nothing else new in this file.
+"""Wave 31: the MLP interior ladder, and ONE new argument.
 
-**This builder adds nothing.**  It is in `cut_wave31.py`'s HAND_EDIT set, so the
-tree cut copied it byte for byte and the whole of wave 31's diff against
-`mx30_build.py` is four schema strings, seven identifier references, the log tag
-and ONE APPENDED LINE in `BASIS_SCHEMAS_ACCEPTED` -- wave 30's own basis schema,
-which a blanket rename would have deleted from the accept list exactly as wave
-22's rename did to wave 21's and wave 30's did to wave 29's.  The solver, the
-census, the basis objectives, both lambda splits, the conv coreset, the
-head-gain solve, the excision path, the merge, the export, `--select-metric` and
-`--evidence` are unchanged, because wave 31's rungs at `intermediate_size` 1664,
-1536 and 1408 are only comparable to wave 30's 1792 and 1280 if the same code
-writes them.
+**Everything the ladder needs was already here.**  This file is in
+`cut_wave31.py`'s HAND_EDIT set, so the tree cut copied it byte for byte, and
+the mechanical half of wave 31's diff against `mx30_build.py` is four schema
+strings, seven identifier references, the log tag and ONE APPENDED LINE in
+`BASIS_SCHEMAS_ACCEPTED` -- wave 30's own basis schema, which a blanket rename
+would have deleted from the accept list exactly as wave 22's rename did to wave
+21's and wave 30's did to wave 29's.  The solver, the census, the basis
+objectives, both lambda splits, the conv coreset, the head-gain solve, the
+excision path, the merge, the export and `--evidence` are untouched, because
+wave 31's rungs at `intermediate_size` 1664, 1536 and 1408 are only comparable
+to wave 30's 1792 and 1280 if the same code writes them.
 
-What wave 31 asks of it is a list of `--ff` values and one composition
-(`--ff 1792 --excise 13`), plus one `--select-metric logit --evidence` arm to
-close wave 30 section 5's M-inversion.  No new mechanism, and the header below
-is kept because the machinery below it is still that machinery.
+**The one addition is `--select-metric-rows`, and it exists to explain a result
+rather than to add a knob.**  Wave 30 measured the reader-metric coreset at
+8/15 solo (`ARCH.CL1792M`) and 6/15 composed (`ARCH.V19CL1792M`) -- one below
+the stream-selected twin, an inversion its own section 5 could describe and not
+account for.  `reader_metric` builds ``M`` from the PARENT's 65,536-row head,
+and a composed child cannot emit 46,080 of those rows at all, because the
+vocabulary fold deletes them from a tied table on the output side too.  So the
+selection was ranked against a reader that will not exist.  The flag masks the
+probabilities to the composed child's own keep-set and renormalises before the
+top-k; **when every row is kept the flag is REFUSED rather than applied, so the
+unmasked arm is the same code path and not a second spelling of it.**
+
+What wave 31 asks of the rest of the file is a list of `--ff` values, one
+composition (`--ff 1792 --excise 13`), and two `--select-metric logit` arms.
+The header below is kept because the machinery below it is still that
+machinery.
 
 --- wave 25's header ---
 
@@ -921,7 +933,34 @@ def pivoted_columns(F: torch.Tensor, k: int) -> torch.Tensor:
 READER_METRIC: torch.Tensor | None = None
 
 
-def reader_metric(harness: "Harness", positions: int, topk: int) -> tuple[torch.Tensor, dict[str, Any]]:
+def emittable_parent_ids(child_dir: Path) -> set[int]:
+    """The parent ids a vocabulary child's table still carries, resolved by STRING.
+
+    The same resolution `mx31_emitcoverage.py` uses, and for the same reason: a
+    vocabulary fold renames rows, so comparing two id spaces compares the
+    renaming.  A token in the child's table that is not in the parent's is a
+    refusal, not a warning.
+    """
+
+    parent = json.loads((PARENT / "tokenizer.json").read_text(encoding="utf-8"))
+    child = json.loads((Path(child_dir) / "tokenizer.json").read_text(encoding="utf-8"))
+    p_vocab = parent["model"]["vocab"]
+    out: set[int] = set()
+    for token in child["model"]["vocab"]:
+        if token not in p_vocab:
+            raise SystemExit(
+                f"{child_dir}: kept token {token!r} is not in the parent's table"
+            )
+        out.add(int(p_vocab[token]))
+    return out
+
+
+def reader_metric(
+    harness: "Harness",
+    positions: int,
+    topk: int,
+    emittable: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, dict[str, Any]]:
     """``M = S W_head^T (diag(p) - p p^T) W_head S``, ``S = diag(d / rms)``.
 
     The cross-entropy cost of a residual perturbation at the reader's own input,
@@ -931,6 +970,22 @@ def reader_metric(harness: "Harness", positions: int, topk: int) -> tuple[torch.
 
     Accumulated in float32 from the model's own logits and consumed in float64;
     it is a weighting over directions, not a weight that ships.
+
+    ``emittable`` is wave 31's one addition and it exists to answer a question
+    wave 30 left open.  ``ARCH.CL1792M`` -- this metric's own selection -- reads
+    8/15 solo and its composition ``ARCH.V19CL1792M`` reads 6/15, one BELOW the
+    stream-selected twin, so the advantage inverts under composition.  The
+    metric above is built from the PARENT's 65,536-row head, and a composed
+    child cannot emit 46,080 of those rows at all: the vocabulary fold deletes
+    them from a tied table, output side included.  So the selection is optimised
+    against the reader of a model that will not exist.  With ``emittable`` set to
+    the composed child's own keep-set, the probabilities are restricted to the
+    rows that survive and renormalised, and the metric is the reader's that WILL
+    exist.
+
+    **When every row is emittable this argument is a no-op and the code path is
+    byte-for-byte the unmasked one** -- there is no `if` to get wrong, because
+    the caller refuses a full mask rather than passing it.
     """
 
     model = harness.model
@@ -946,6 +1001,8 @@ def reader_metric(harness: "Harness", positions: int, topk: int) -> tuple[torch.
     handle = model.model.embedding_norm.register_forward_hook(hook)
     acc = torch.zeros(hidden, hidden, dtype=torch.float32, device=harness.device)
     used, mass = 0, 0.0
+    emittable_mass = 0.0
+    mask = None if emittable is None else emittable.to(harness.device)
     with torch.no_grad():
         for index, ids in harness.batches:
             if harness.split[index] != "fit":
@@ -954,6 +1011,15 @@ def reader_metric(harness: "Harness", positions: int, topk: int) -> tuple[torch.
             x = grabbed["x"]
             rms = torch.sqrt((x ** 2).mean(dim=-1, keepdim=True) + eps)
             probs = torch.softmax(out.logits[0].to(torch.float32), dim=-1)
+            if mask is not None:
+                # The mass the composed child cannot place is measured BEFORE it
+                # is removed, because it is the number this arm exists to expose.
+                kept = probs * mask
+                retained = kept.sum(dim=-1, keepdim=True)
+                emittable_mass += float(
+                    retained[: max(0, min(x.shape[0], positions - used))].sum()
+                )
+                probs = kept / retained.clamp_min(1e-30)
             for row in range(x.shape[0]):
                 if used >= positions:
                     break
@@ -984,6 +1050,10 @@ def reader_metric(harness: "Harness", positions: int, topk: int) -> tuple[torch.
         "eigenvalue_min": round(float(eigs.min()), 8),
         "eigenvalue_max": round(float(eigs.max()), 6),
         "condition_number": round(float(eigs.max() / max(float(eigs.min()), 1e-30)), 3),
+        "emittable_rows": None if emittable is None else int(emittable.sum()),
+        "mean_parent_mass_on_emittable_rows": (
+            None if emittable is None else round(emittable_mass / max(used, 1), 6)
+        ),
     }
 
 
@@ -5333,9 +5403,32 @@ def build(args: argparse.Namespace) -> int:
         # From the PARENT, and before any site is folded: the metric is a
         # property of the target, and a metric read off a half-built child would
         # be a different object at every site.
+        emittable = None
+        rows_source = getattr(args, "select_metric_rows", None)
+        if rows_source is not None:
+            kept = emittable_parent_ids(rows_source)
+            total = int(harness.model.config.vocab_size)
+            if len(kept) >= total:
+                raise SystemExit(
+                    f"--select-metric-rows {rows_source} keeps all {total} rows, "
+                    "which is the UNMASKED metric with an extra argument.  Run "
+                    "the unmasked arm by omitting the flag, so the two arms are "
+                    "the same code path and not two spellings of it"
+                )
+            emittable = torch.zeros(total, dtype=torch.float32)
+            emittable[sorted(kept)] = 1.0
+            log(
+                f"reader metric restricted to {len(kept)} of {total} emittable "
+                f"rows, from {rows_source}"
+            )
         READER_METRIC, metric_census = reader_metric(
-            harness, int(args.select_metric_positions), int(args.select_metric_topk)
+            harness,
+            int(args.select_metric_positions),
+            int(args.select_metric_topk),
+            emittable,
         )
+        if metric_census is not None and rows_source is not None:
+            metric_census["emittable_source"] = str(rows_source)
         log(f"reader metric: {json.dumps(metric_census)}")
     else:
         READER_METRIC = None
@@ -6415,6 +6508,22 @@ def main() -> int:
     )
     ap.add_argument("--select-metric-positions", type=int, default=768)
     ap.add_argument("--select-metric-topk", type=int, default=2048)
+    ap.add_argument(
+        "--select-metric-rows",
+        type=Path,
+        help=(
+            "restrict the reader metric to the rows THIS model directory's "
+            "tokenizer still carries, resolved by token string.  Wave 30's "
+            "reader-metric coreset read 8/15 solo and 6/15 composed onto a "
+            "vocabulary fold; the metric it optimised is the parent's 65,536-row "
+            "head, and the composed child cannot emit 46,080 of those rows at "
+            "all, so the selection was ranked against a reader that will not "
+            "exist.  With this flag the probabilities are masked to the "
+            "composed child's own keep-set and renormalised before the top-k, "
+            "and the metric is the reader that WILL exist.  Refused when the "
+            "directory keeps every row: that arm is the flag's absence"
+        ),
+    )
     ap.add_argument("--excise", type=int, action="append")
     ap.add_argument(
         "--evidence",
