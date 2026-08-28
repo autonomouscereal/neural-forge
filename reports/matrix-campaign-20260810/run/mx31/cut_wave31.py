@@ -87,6 +87,15 @@ ALLOWED_HISTORICAL = {
         "the wave-31 header names `mx30_build.py` as the file it states its diff "
         "against; it resolves no path",
     ),
+    ("mx31_retain.py", "MX30-"): (
+        7,
+        "seven DROP reasons cite `MX30-CL1792` as the retained wave-30 source the "
+        "dropped child is rebuilt from.  That is the whole justification for "
+        "deleting them, so the name has to be there -- and it appears only inside "
+        "prose, never in KEEP, never in DROP's keys, and never in a path this "
+        "script resolves.  The audit caught it on the first run after the "
+        "retention policy was written, which is the mechanism working",
+    ),
 }
 
 
