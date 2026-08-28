@@ -374,8 +374,12 @@ storage, and this is the eleventh wave to say so.
 
 ## 9. Estate
 
-**Four commits, four deployments**, every one verified file by file against the
-commit's own blob digests: **5,951 / 5,952 / 5,953 / 5,955 files, 0 content
+**Eight commits, four deployments** — the tree cut, the census-gate split, the
+pre-registration, the `sealq.sh` fix, the retention policy, the wave seal, the
+scorecard refresh and this note's own verification correction; four of the eight
+carried run-path code and each of those four became a deployment. Every
+deployment was verified file by file against the commit's own blob digests:
+**5,951 / 5,952 / 5,953 / 5,955 files, 0 content
 mismatches, 0 missing, 0 undeclared, 0 hardlinks**, every time, plus a post-wave
 re-verification of the survivor at 5,955 and the same four zeros. The sealer's
 four new schema strings — three renamed builders and the genuinely new
