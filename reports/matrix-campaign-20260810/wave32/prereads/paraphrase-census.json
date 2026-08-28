@@ -1,0 +1,427 @@
+{
+ "schema": "neural-forge-matrix-wave32-paraphrase-census-v1",
+ "surface": "paraphrase-v1",
+ "prompts": 45,
+ "children": [
+  {
+   "label": "V16CL1792",
+   "responses": 45,
+   "cap_hits": 3,
+   "empty_responses": 0,
+   "median_length_spread_within_triplet": 0.6308,
+   "lanes": {
+    "arithmetic-multi-step": [
+     377,
+     371,
+     344
+    ],
+    "coding-deduplicate": [
+     736,
+     950,
+     811
+    ],
+    "comparison-ram-rom": [
+     1072,
+     495,
+     3249
+    ],
+    "context-retrieval": [
+     466,
+     620,
+     190
+    ],
+    "conversation-natural-greeting": [
+     258,
+     118,
+     75
+    ],
+    "creative-continuity": [
+     186,
+     72,
+     219
+    ],
+    "debugging-off-by-one": [
+     369,
+     751,
+     726
+    ],
+    "explanation-seasons": [
+     213,
+     709,
+     283
+    ],
+    "instruction-three-actions": [
+     582,
+     415,
+     731
+    ],
+    "logic-ordering": [
+     237,
+     349,
+     440
+    ],
+    "multi-turn-correction": [
+     683,
+     1774,
+     655
+    ],
+    "planning-dependencies": [
+     2982,
+     1153,
+     1525
+    ],
+    "summarization-priorities": [
+     261,
+     1287,
+     627
+    ],
+    "uncertainty-insufficient-data": [
+     255,
+     1086,
+     620
+    ],
+    "writing-concise-email": [
+     284,
+     113,
+     269
+    ]
+   }
+  },
+  {
+   "label": "V12CL1792",
+   "responses": 45,
+   "cap_hits": 2,
+   "empty_responses": 0,
+   "median_length_spread_within_triplet": 0.5311,
+   "lanes": {
+    "arithmetic-multi-step": [
+     522,
+     427,
+     331
+    ],
+    "coding-deduplicate": [
+     636,
+     4333,
+     798
+    ],
+    "comparison-ram-rom": [
+     782,
+     564,
+     1505
+    ],
+    "context-retrieval": [
+     465,
+     569,
+     190
+    ],
+    "conversation-natural-greeting": [
+     199,
+     119,
+     102
+    ],
+    "creative-continuity": [
+     101,
+     87,
+     193
+    ],
+    "debugging-off-by-one": [
+     369,
+     504,
+     525
+    ],
+    "explanation-seasons": [
+     382,
+     381,
+     287
+    ],
+    "instruction-three-actions": [
+     733,
+     824,
+     820
+    ],
+    "logic-ordering": [
+     237,
+     349,
+     340
+    ],
+    "multi-turn-correction": [
+     356,
+     2657,
+     732
+    ],
+    "planning-dependencies": [
+     1503,
+     1282,
+     1062
+    ],
+    "summarization-priorities": [
+     354,
+     1050,
+     627
+    ],
+    "uncertainty-insufficient-data": [
+     227,
+     1086,
+     291
+    ],
+    "writing-concise-email": [
+     241,
+     113,
+     220
+    ]
+   }
+  },
+  {
+   "label": "V9CL1792",
+   "responses": 45,
+   "cap_hits": 4,
+   "empty_responses": 0,
+   "median_length_spread_within_triplet": 0.7924,
+   "lanes": {
+    "arithmetic-multi-step": [
+     562,
+     403,
+     239
+    ],
+    "coding-deduplicate": [
+     4564,
+     744,
+     1134
+    ],
+    "comparison-ram-rom": [
+     1253,
+     913,
+     987
+    ],
+    "context-retrieval": [
+     655,
+     391,
+     136
+    ],
+    "conversation-natural-greeting": [
+     116,
+     102,
+     102
+    ],
+    "creative-continuity": [
+     132,
+     230,
+     650
+    ],
+    "debugging-off-by-one": [
+     161,
+     2750,
+     684
+    ],
+    "explanation-seasons": [
+     244,
+     832,
+     270
+    ],
+    "instruction-three-actions": [
+     1086,
+     454,
+     80
+    ],
+    "logic-ordering": [
+     621,
+     138,
+     786
+    ],
+    "multi-turn-correction": [
+     1268,
+     661,
+     1036
+    ],
+    "planning-dependencies": [
+     2386,
+     2086,
+     2525
+    ],
+    "summarization-priorities": [
+     609,
+     84,
+     302
+    ],
+    "uncertainty-insufficient-data": [
+     444,
+     404,
+     4093
+    ],
+    "writing-concise-email": [
+     169,
+     128,
+     180
+    ]
+   }
+  },
+  {
+   "label": "V8CL1792",
+   "responses": 45,
+   "cap_hits": 8,
+   "empty_responses": 0,
+   "median_length_spread_within_triplet": 0.5537,
+   "lanes": {
+    "arithmetic-multi-step": [
+     407,
+     418,
+     396
+    ],
+    "coding-deduplicate": [
+     2745,
+     3069,
+     3403
+    ],
+    "comparison-ram-rom": [
+     1099,
+     768,
+     583
+    ],
+    "context-retrieval": [
+     729,
+     808,
+     168
+    ],
+    "conversation-natural-greeting": [
+     131,
+     102,
+     127
+    ],
+    "creative-continuity": [
+     133,
+     134,
+     298
+    ],
+    "debugging-off-by-one": [
+     2626,
+     2555,
+     666
+    ],
+    "explanation-seasons": [
+     226,
+     875,
+     1305
+    ],
+    "instruction-three-actions": [
+     878,
+     534,
+     80
+    ],
+    "logic-ordering": [
+     3564,
+     335,
+     327
+    ],
+    "multi-turn-correction": [
+     814,
+     928,
+     1036
+    ],
+    "planning-dependencies": [
+     3464,
+     1795,
+     1669
+    ],
+    "summarization-priorities": [
+     478,
+     84,
+     534
+    ],
+    "uncertainty-insufficient-data": [
+     347,
+     1496,
+     4093
+    ],
+    "writing-concise-email": [
+     169,
+     124,
+     238
+    ]
+   }
+  },
+  {
+   "label": "V6CL1792",
+   "responses": 45,
+   "cap_hits": 6,
+   "empty_responses": 0,
+   "median_length_spread_within_triplet": 0.7262,
+   "lanes": {
+    "arithmetic-multi-step": [
+     304,
+     864,
+     287
+    ],
+    "coding-deduplicate": [
+     3374,
+     878,
+     1059
+    ],
+    "comparison-ram-rom": [
+     682,
+     462,
+     505
+    ],
+    "context-retrieval": [
+     428,
+     341,
+     168
+    ],
+    "conversation-natural-greeting": [
+     72,
+     263,
+     189
+    ],
+    "creative-continuity": [
+     241,
+     337,
+     316
+    ],
+    "debugging-off-by-one": [
+     180,
+     2555,
+     174
+    ],
+    "explanation-seasons": [
+     181,
+     866,
+     318
+    ],
+    "instruction-three-actions": [
+     1003,
+     466,
+     819
+    ],
+    "logic-ordering": [
+     589,
+     341,
+     312
+    ],
+    "multi-turn-correction": [
+     818,
+     4581,
+     1232
+    ],
+    "planning-dependencies": [
+     2722,
+     1544,
+     3480
+    ],
+    "summarization-priorities": [
+     280,
+     413,
+     3982
+    ],
+    "uncertainty-insufficient-data": [
+     439,
+     1318,
+     3982
+    ],
+    "writing-concise-email": [
+     169,
+     63,
+     504
+    ]
+   }
+  }
+ ]
+}

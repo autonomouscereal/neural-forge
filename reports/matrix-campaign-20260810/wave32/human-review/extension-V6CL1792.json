@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T09:58:24Z",
+ "label": "V6CL1792",
+ "campaign_wave": 32,
+ "cell_id": "ARCH.V6CL1792",
+ "cell_instance_id": "mx32-v6cl1792-0001",
+ "receipt_sha256": "1645a2d808f2554d0844fadee6f6ab68e1e23721aae96cf0ca609517748a09db",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-d26e4481/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-d26e4481/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave32/children/MX32-V6CL1792",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "I'm ready to help you with your question! Here's how I can assist:\n\n1. **What would you like to know about?** (e.g., specific details about the move, relocation, or other issues)\n2. **What's the best question?** (e.g., \"What's the best question about the move?\" or \"What's the best question about relocation?\")\n3. **What's the most helpful?** (e.g., \"I'm ready to help with this\")\n\nLet me clarify the scope of your request so I can provide the most relevant information.",
+   "response_sha256": "ab94301820f13d99d65d5431c112790351883b8b26d5d7622946e9b0d6e1b25a",
+   "generated_tokens": 124,
+   "termination": "complete",
+   "wall_time_seconds": 2.62
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm not sure what to choose, but I'm happy to help with any questions you might have.",
+   "response_sha256": "cb0be09142b39f6f142aa8cec5f19ad75b731e3eb45b96f8104f2a4c2a3581fe",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.394
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "You can keep houseplants alive by:\n\n1. **Maintain a consistent supply supply** through the supply of food items, including the supply of water or other resources.  \n2. **Maintain a supply supply supply** through the supply of food items, including the supply of water or other resources.  \n\nThis approach will ensure that the supply of food items is maintained, and the supply of water or other resources is maintained.",
+   "response_sha256": "60099663147fcbb905aae4d914c8da5a43d744d37130141fbb9585a3108923cb",
+   "generated_tokens": 91,
+   "termination": "complete",
+   "wall_time_seconds": 1.631
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "The five pieces of information are:\n\n1. **Pieces of Information**:  \n   - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **Pieces of Information**:  \n     - **P",
+   "response_sha256": "dc5d721cfb4f500b56e893555f46ded9fc2189176ff58a08eb395bd5fd0b7a7f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.248
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "The bread dough puff up is a well-balanced, unprocessed meal that includes a significant amount of ingredients like the ingredients of the first place, and the oven's heat is the key to the process. Here's the bib:\n\n1. **What is the oven's heat?** The oven's heat is the key to the process, as it is a source of the ingredients and the source of the oo. It is a source of the ingredients and the source of the oo.\n\n2. **What does the oven do to them?** The oven does not directly affect the ingredients, as it is a source of the ingredients and the source of the oo. It is a source of the ingredients and the source of the oo.\n\nIn summary, the oven's heat is the key to the process, and it is the source of the ingredients and the source of the oo.",
+   "response_sha256": "cb1d1a776399a4d04effe1ce7ddadea69aa006e48ba924e1d3cd0aa1d3541970",
+   "generated_tokens": 200,
+   "termination": "complete",
+   "wall_time_seconds": 3.595
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The friend is **over** the planet, specifically the **Moon**, and is **over** the **high tide** situation. Here's what he's **over**:\n\n- **Morningly** (a daily routine)\n- **Morningly** (a morning routine)\n- **Morningly** (a morning routine)\n- **Morningly** (a morning routine)\n\nThis is a **high tide** situation, as the friend is likely experiencing a significant disruption in his daily routine, which may be due to his **high tide** or **over** planet.",
+   "response_sha256": "5c8d2440d52db09f744ecfdc1d986ea49f24a4a9abff6c991d7d96cde843d899",
+   "generated_tokens": 128,
+   "termination": "complete",
+   "wall_time_seconds": 2.258
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "The correct answer is **A) Full load is used up completely**.\n\n**Explanation:**\n\n1. **Work through the full load:** The question is \"How far does one full load take it?\" This is a direct answer to the question.\n\n2. **How far does one full load take it?** The answer is **A) Full load is used up completely**.\n\n3. **How far does one full load take it?** The answer is **A) Full load is used up completely**.\n\n4. **How far does one full load leave after those?** The answer is **A) Full load is left after those**.\n\n**Explanation:**  \nThe correct answer is **A) Full load is left after those**.",
+   "response_sha256": "5572bba9d15743edf47a762361f357a3503c8af2cb8e63c81498ee0d92e1b3bb",
+   "generated_tokens": 160,
+   "termination": "complete",
+   "wall_time_seconds": 2.867
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The buyer of the 240 dollars is paid for the discount of 15% and the tax of 8% on the remaining amount. The original amount is 240 dollars.\n\nFirst, calculate the discount on the original amount:\n$240 * 15% = $240 * 0.15 = 36 dollars\n\nNow, add the tax on the remaining amount:\n$36 + 8% of 36 = $36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 = 36 + 36 * 8 =",
+   "response_sha256": "0ac9f4458eb76cf2899536d047d61c390bc244d17766f059a6f428dc5117003f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.257
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "The correct statements are:\n\n1. **First statement**: \"Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings.\"\n\n2. **Second statement**: \"Say which statement rules out the most seatings.\"\n\n3. **Explanation**: \"Say which statement rules out the most seatings.\"\n\n4. **Note**: The answer is \"Yes\" to the second statement.\n\n**Explanation**: The second statement is correct because it directly states that the statement rules out the most seatings, which is the most seatings.",
+   "response_sha256": "c171cf43f06569ad5c2a993e0b67c62025b487bc66a11b7f8862bf025ca3213c",
+   "generated_tokens": 187,
+   "termination": "complete",
+   "wall_time_seconds": 3.413
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The procedure is to select the switch that is the one that is to be switted, and name the physical property the switch is linked to.",
+   "response_sha256": "e6a02baf771e49a31816718c363a43b348c4ccfebdc5b53cca86bb89436b565c",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.543
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "To assist, I need more details about your specific situation. Could you provide more information about your medical history, medication list, or any other relevant details?",
+   "response_sha256": "dfb3a5a7743d0a1bcd55128a3e8b8322a387e5fa5a0fb6226e1caa0acbbd9cf9",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.579
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, you can return the bought if you have the receipt. The return policy applies to items that are not returnable.",
+   "response_sha256": "90eaabc2bd20a6e7b985a578630a5560850c435c9a78fefd9fa20f0d972ac870",
+   "generated_tokens": 27,
+   "termination": "complete",
+   "wall_time_seconds": 0.493
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "**Reduce the Bullet**\n\nThe bullets are a key change in the current situation. The original loaders are intermetted, and the whole dock will move to the same as the main entrance. Contractors and night-shift staff are the ones who use this change. The old badges are no longer scheduled, and the cafeteria refit is not involved.",
+   "response_sha256": "32a199c131c6ca5acbebe488cdc842d9b4a1a51bd6f7cd1d683b45f8b17ba9b1",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 1.64
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I'm ready to help. Here's the message:\n\nThe operative has been misled by the fact that the inspection has been misled from Thursday to Tuesday, and the third-party audit has been misled by the third-party audit.\n\nAnyway, the reason I am writing is that the inspection has been misled from Thursday to Tuesday and the third-party audit has been misled by the third-party audit.",
+   "response_sha256": "b068bfd7e2afe664515ffa364008b2b27402d16ff5eae80594902cb8ce366046",
+   "generated_tokens": 94,
+   "termination": "complete",
+   "wall_time_seconds": 1.715
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "**Comarison of Your own Deptive**\n\nI'd like to create a comparison that aligns with your own deptive and break the current one. Here's the example:\n\n**Comarison:**\n\n```json\n{\n  \"deptive\": {\n    \"name\": \"Safety\",\n    \"dept\": \"Safety\"\n  }\n}\n```\n\n**Name 1: Safety**\n\n*Safety* is a deptive that aligns with your own deptive.\n\n**Name 2: Safety**\n\n*Safety* is a deptive that is not currently in use.\n\n**Comarison:**\n\n```json\n{\n  \"dept\": \"Safety\"\n}\n```\n\nThis comparison aligns with your own deptive and break the current one.",
+   "response_sha256": "fe45fab9b000fe2473f2d85d6494d179b6e3b2dfbce1c9a792062b77b109e175",
+   "generated_tokens": 179,
+   "termination": "complete",
+   "wall_time_seconds": 3.23
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "The two namen are **\"Vaccine\"** and **\"Antibiotic\"**, both of the same type. Here's the single clearest case where they both work:\n\n**Vaccine**  \n- **What it does**: A mildly hummed, unshack in the purest of the day, a small, unshack in the purest of the day. It's a small, unshack in the purest of the day, a small, unshack in the purest of the day. This is a small, unshack in the purest of the day, a small, unshack in the purest of the day.\n\n**Antibiotic**  \n- **What it does**: A small, unshack in the purest of the day, a small, unshack in the purest of the day. This is a small, unshack in the purest of the day, a small, unshack in the purest of the day.\n\n**Clarification**: The two namen are **\"Vaccine\"** and **\"Antibiotic\"**, both of the same type. This is a clear and specific example of the two namen, which are both the same type.",
+   "response_sha256": "2336dc480f2cadd35c2862640137e19aa195adf184a9f3d398f5f8c55a1485ef",
+   "generated_tokens": 276,
+   "termination": "complete",
+   "wall_time_seconds": 4.957
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "The call is a Pylieph call that returns a dictionary with a list of lowercase first letters and values starting with that letter.\n\n**Pylieph**\n\n```python\ndef n_pylieph(words) {\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n```\n\nThis call returns a dictionary of lowercase first letters and values starting with that letter, each value keeping the order of the letters and values.",
+   "response_sha256": "69a1c06b012eaed928d1112abf24bbc7dba2994b679cdbf9e31fab4ddff193b7",
+   "generated_tokens": 117,
+   "termination": "complete",
+   "wall_time_seconds": 2.063
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "To address the task of creating a Pylogicranges call in the provided description, I'll use the following example:\n\n**Pylogicranges**\n\n```python\ndef merseg(primes, endpoints, ranges, ranges_overlapping)\n\ndef call(primes, endpoints, ranges, ranges_overlapping)\n\ndef call(primes, endpoints, ranges, ranges_overlapping)\n\ndef call(primes, endpoints, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n\ndef call(primes, start, end, ranges, ranges_overlapping)\n```\n\n**Time Complexity**: The complexity of the call depends on the number of primes and endpoints, as well as the number of ranges and overlapping. The answer is a single call, which is the `calls` method.\n\n**Time Complexity**: The time complexity is `O(O)` (O) for the given parameters. The answer is `O(1)` for the given parameters.",
+   "response_sha256": "c0f6a7c33b5a4b2cbe04aebd344e7370683394ede134f38f6b9b2ce5c6bbfb5c",
+   "generated_tokens": 443,
+   "termination": "complete",
+   "wall_time_seconds": 7.762
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "def add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n",
+   "response_sha256": "ce94a0ebecd16874ec99233ae0aaf22978b2797b8ae61d9432d2c6fce36eaa8b",
+   "generated_tokens": 30,
+   "termination": "complete",
+   "wall_time_seconds": 0.554
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "To correct the original code, we can modify the original code to handle the case where each row has more than one row. Here's the corrected version:\n\n```python\ndef total_units(rows) {\n    for row in rows:\n        total = 0\n        total += row['units'] + 1\n    return total\n}\n```\n\nThis checks for each row and updates the total by adding one row's units. The original code would have been:\n\n```python\ndef total_units(rows) {\n    for row in rows:\n        total = 0\n        total += row['units'] + 1\n    return total\n}\n```\n\nThis checks for each row and updates the total by adding one row's units. The original code would have been:\n\n```python\ndef total_units(rows) {\n    for row in rows:\n        total = 0\n        total += row['units'] + 1\n    return total\n}\n```\n\nThis checks for each row and updates the total by adding one row's units. The original code would have been:\n\n```python\ndef total_units(rows) {\n    for row in rows:\n        total = 0\n        total += row['units'] + 1\n```\n\nThis checks for each row and updates the total by adding one row's units. The original code would have been:\n\n```python\ndef total_units(row)\n```\n\nThis checks for each row and updates the total by adding a row's units.",
+   "response_sha256": "37439957af4aef68bc5401a6df8cdd2ce756c10f6b46a5d9f188088c27d4a6a6",
+   "generated_tokens": 344,
+   "termination": "complete",
+   "wall_time_seconds": 6.077
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "The response is correct. Here's the answer:\n\n**Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the pannel.**\n\nThis is a clear and appropriate response that aligns with the original's request.",
+   "response_sha256": "a08342d3207fbb29932a77780b636ef9053f0b7fbae4229d031b39365883906b",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 1.622
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The situation is that the engineer has been unable to resolve the data issue, and the customer has not received the necessary information. The fact is that the data was not available in the two versions, and the customer has not been able to access the required information.",
+   "response_sha256": "a8d3144b2afcd5cb104159f610c928c5616e041c843bce4126f22ff9b82219ba",
+   "generated_tokens": 52,
+   "termination": "complete",
+   "wall_time_seconds": 0.948
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "The five steps for taking on a bookkeeper are:\n\n1. **Prep and prepare**: Gather the necessary documents and plan your trip to the bookkeeper.\n\n2. **Tick into the bookkeeper**: Start your bookkeeper by ticking into the bookkeeper.\n\n3. **Check the bookkeeper**: Review the bookkeeper and ensure it is up to date and has all the necessary documents.\n\n4. **Tick out of the bookkeeper**: If the bookkeeper does not have any documents, you can leave it out of the bookkeeper.\n\n5. **Tick out of the bookkeeper**: If the bookkeeper is still available, you can leave it out of the bookkeeper.\n\nThe one step that would be the most cheapest to undo is **tick out of the bookkeeper**.",
+   "response_sha256": "0a8479b4130d751930eabeadcfb01bca5c4cca91373f1f78fb36306126b63526",
+   "generated_tokens": 205,
+   "termination": "complete",
+   "wall_time_seconds": 3.688
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "**Solution 1: Review the database's current state and identify the change**  \n- **Check the current database status**: Verify whether the database is running in the \"foreign\" or \"external\" state.  \n- **Confirm the change**: Ensure the change is live by the 25th.  \n- **Verify the change**: Confirm the change to ensure it is applied correctly.  \n\n**Solution 2: Determine the impact on the database**  \n- **Check the impact on the database**: Review how the change affects the database's structure, data, or performance.  \n- **Verify the impact**: Confirm the effect of the change on the database's current state.  \n\n**Solution 3: Assess the implications of the change**  \n- **Either a week**: If the change is extended by a week, consider its implications on the database.  \n- **Say what you would do**: Provide specific actions to implement the change, such as updating data, creating new versions, or testing the impact.  \n\n**Solution 4: Ensure compliance with the change**  \n- **Check compliance requirements**: Verify that the change aligns with existing policies or standards.  \n- **Say what you would do**: Provide specific actions to meet compliance requirements.  \n\n**Solution 5: Verify the change**  \n- **Confirm the change**: Ensure the change is applied correctly.  \n- **Say what you would do**: Confirm the change to avoid confusion or errors.  \n\n**Solution 6: Review the changes**  \n- **Say what you would do**: Discuss the final steps to implement the change.  \n\nThis approach aligns with the steps outlined above.",
+   "response_sha256": "de639bac0861aa46f6134a767ebd68a7b004384bc52de13aecf65c95bfacdd8b",
+   "generated_tokens": 373,
+   "termination": "complete",
+   "wall_time_seconds": 6.511
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "The hospital that has the better post-operative rate is **One**, which is better than **Pb**. Here's why:\n\n1. **One** has significantly more time to be reviewed and the more time to be scheduled for the procedure.\n2. **Pb** has more time to be scheduled for the procedure.\n3. **One** is more likely to be scheduled for the procedure, as it has more time to be reviewed and the more time to be scheduled for the procedure.\n\n**Recommended steps to find the hospital**:\n- **Review the patient's records** (e.g., pre- and post-operatory reports, etc.)\n- **Check the patient's medical history** (e.g., prior to surgery, etc.)\n- **Review the patient's equipment and any prior procedures** (e.g., pre- and post-operatory tests, etc.)\n\nWould you need to find out before you would be willing to schedule?",
+   "response_sha256": "6166f8f97f44ad581d951c10fd177496e0381ee186862257bc4201c3d4c03e27",
+   "generated_tokens": 201,
+   "termination": "complete",
+   "wall_time_seconds": 3.52
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The article states that the supplement cures are tiredness, and it cits one trial with nine participants. The specific change would be the trial's participation in the nth trial.\n\n**Explanation:** The article is clear that the supplement cures are tiredness, and it specifically requests participation in the nth trial.",
+   "response_sha256": "8f108748836abdc8373f116aef5078f98c7f9956777e507567ec0ff53ba28cd0",
+   "generated_tokens": 77,
+   "termination": "complete",
+   "wall_time_seconds": 1.377
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The appropriate response is to include one of the following lines:\n\n1. **\"The tone is to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off.\"**\n\nThis response is appropriate because it provides a clear and direct explanation of the situation.",
+   "response_sha256": "dcb6b2736dfa8b4423933a717de991a6d6f65b6a2a06eb7ffb73b009df506022",
+   "generated_tokens": 77,
+   "termination": "complete",
+   "wall_time_seconds": 1.385
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "The market is a place where the value of the currency is determined by the price of the exchange. The price of the exchange is the value of the currency, and it is determined by the price of the exchange. The price of the exchange is the value of the currency, and it is determined by the price of the exchange. The price of the exchange is the value of the currency, and it is determined by the price of the exchange.",
+   "response_sha256": "a321b2c7fe71bc26b50ef6b7907c993a95f4e0c73ed977e26bd1583ba23501e4",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 1.585
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Based on your budget and priority order, here are three items in priority order:\n\n1. **Gear** (most important): **Gear** (lighting)  \n   - **Gear 1** (lighting)  \n   - **Gear 2** (lighting)  \n   - **Gear 3** (lighting)\n\n2. **Rain** (other): **Rain** (lighting)  \n   - **Rain 1** (lighting)  \n   - **Rain 2** (lighting)\n\n3. **Gear** (other): **Gear** (lighting)\n\nThis order prioritises the most important items first.",
+   "response_sha256": "49f796dbf1eb06d5553a9873c761e1bd5a13151bab74dcf5f971f652a5921287",
+   "generated_tokens": 147,
+   "termination": "complete",
+   "wall_time_seconds": 2.612
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Ung und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und und",
+   "response_sha256": "32d3e50239d4ee6c28e2bc225f0be564121a1a5fea882799d62c246b3481e12c",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.944
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 126.593
+}

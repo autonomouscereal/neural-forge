@@ -1,0 +1,1591 @@
+{
+ "schema": "neural-forge-matrix-wave32-extension-score-v1",
+ "purpose": "Machine score on the ADDENDUM 16.1 extension surface, plus the retro-score comparison against sealed 15-case counts.  Orders and prices; never grades.",
+ "rubric_prompts": 30,
+ "children": [
+  {
+   "label": "PARENT",
+   "cell_id": null,
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 0,
+   "held": 0,
+   "charged_lanes": 0,
+   "charged_kinds": [],
+   "per_prompt": []
+  },
+  {
+   "label": "V12CL1792",
+   "cell_id": "ARCH.V12CL1792",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "held": 0,
+   "charged_lanes": 5,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    }
+   ]
+  },
+  {
+   "label": "V16CL1792",
+   "cell_id": "ARCH.V16CL1792",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "held": 0,
+   "charged_lanes": 5,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    }
+   ]
+  },
+  {
+   "label": "V6CL1792",
+   "cell_id": "ARCH.V6CL1792",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "held": 0,
+   "charged_lanes": 10,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop",
+    "word-substitution"
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "held": false,
+     "charged": [
+      "word-substitution"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    }
+   ]
+  },
+  {
+   "label": "V8CL1792",
+   "cell_id": "ARCH.V8CL1792",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "held": 0,
+   "charged_lanes": 15,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    }
+   ]
+  },
+  {
+   "label": "V9CL1792",
+   "cell_id": "ARCH.V9CL1792",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "held": 0,
+   "charged_lanes": 8,
+   "charged_kinds": [
+    "cap",
+    "echo",
+    "loop"
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "held": false,
+     "charged": [],
+     "reason": "no rubric"
+    }
+   ]
+  }
+ ],
+ "retro_score": {
+  "table": [
+   {
+    "label": "V16CL1792",
+    "sealed_15": 8,
+    "extension_30": 0,
+    "extension_pct": 0.0,
+    "charged_lanes": 5
+   },
+   {
+    "label": "V12CL1792",
+    "sealed_15": 7,
+    "extension_30": 0,
+    "extension_pct": 0.0,
+    "charged_lanes": 5
+   },
+   {
+    "label": "V6CL1792",
+    "sealed_15": 3,
+    "extension_30": 0,
+    "extension_pct": 0.0,
+    "charged_lanes": 10
+   }
+  ],
+  "spearman_sealed_vs_extension": null,
+  "sealed_distinct_levels": 3,
+  "extension_distinct_levels": 1,
+  "extension_range": [
+   0,
+   0
+  ],
+  "verdict": "SCRAMBLED: the sealed ordering does NOT reproduce.  Under the plan's pre-registered go/no-go every one-case play pauses and this goes to Cyril."
+ }
+}

@@ -1,0 +1,699 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "paraphrase-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T10:01:40Z",
+ "label": "V12CL1792",
+ "campaign_wave": 32,
+ "cell_id": "ARCH.V12CL1792",
+ "cell_instance_id": "mx31-v12cl1792-0001",
+ "receipt_sha256": "1cdf11ba3f9e55ec5c849f9fe12241b08342298ac741c4e05555221ee024b5e0",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-d26e4481/research/lfm2_paraphrase_triplets_v1.json",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-d26e4481/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 45,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave31/children/MX31-V12CL1792",
+ "child_responses": [
+  {
+   "id": "para-conversation-natural-greeting-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hello. Today wore me out. Reply like a person and put one worthwhile question at the end."
+    }
+   ],
+   "response_verbatim": "Here is your message:\n\n\"Hello, I'm so excited to help you!\"\n\nI'm here to answer a question about a topic you might be interested in. Please provide the topic you're asking about, and I'll do my best.",
+   "response_sha256": "e5e9740c081780572ced96de013be32886b239afa3a7d47709c1eaa43d16065b",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 1.398
+  },
+  {
+   "id": "para-conversation-natural-greeting-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answering."
+    }
+   ],
+   "response_verbatim": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answending.",
+   "response_sha256": "13ca23eb96a642b975dbbbf9cae655aedce2e43feba48b02f024ce4a5a9ee55a",
+   "generated_tokens": 30,
+   "termination": "complete",
+   "wall_time_seconds": 0.58
+  },
+  {
+   "id": "para-conversation-natural-greeting-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I am worn down after today. Respond naturally, and close with exactly one question that shows you were listening."
+    }
+   ],
+   "response_verbatim": "I'm ready to help. Could you please provide the context of your situation so I can assist effectively?",
+   "response_sha256": "6cb9e444c40566abd39ee40753ee041df336964b09eae0a1fd894db34ebbf7c3",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.396
+  },
+  {
+   "id": "para-instruction-three-actions-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in."
+    }
+   ],
+   "response_verbatim": "Here are three things you could do before tonight to start straight:\n\n1. **Prep a list of tasks** (e.g., \"I'll start tonight tomorrow\" or \"I'll start tonight tomorrow\")  \n   - Create a list of tasks that you can plan for the day.  \n   - Use a task manager to schedule them.\n\n2. **Set a goal** (e.g., \"I'll start tonight tomorrow\" or \"I'll start tonight tomorrow\")  \n   - Set a target time or deadline for each task.  \n   - Use a deadline to avoid stressing yourself.\n\n3. **Check for a break** (e.g., \"I'll start tonight tomorrow\" or \"I'll stop tonight tomorrow\")  \n   - Review your schedule and adjust if needed.  \n   - Use a break to remind yourself why it\u2019s time to start.\n\nThese are the three options you can use to plan your day.",
+   "response_sha256": "fccb7c9b36ffaeb4397be85fe2d0c23b8c8c888d756551c1ae0950822a5c9fad",
+   "generated_tokens": 205,
+   "termination": "complete",
+   "wall_time_seconds": 3.709
+  },
+  {
+   "id": "para-instruction-three-actions-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I lose track of little jobs around the house. Give three doable steps for today as a numbered list with nothing in front of it."
+    }
+   ],
+   "response_verbatim": "Here are the three doable steps to manage the \"Lose track of little job\" in a way that can be done in a few minutes:\n\n1. **Set up your goals**: Start by setting a specific goal for the track, such as \"I want to focus on the least number of times I can manage the track\" or \"I want to focus on the least number of times I can manage the track.\"\n\n2. **Craft a list of tasks**: Create a list of tasks that can be done in a few minutes, such as \"Manage the track\" or \"Manage the least number of times I can manage the track.\"\n\n3. **Work your time**: Work your time by setting a specific time limit for the track, such as \"I want to work my time\" or \"I want to work my time for the least number of times I can manage the track.\"\n\nThese steps are simple and can be done in a few minutes, making them a quick approach to your task.",
+   "response_sha256": "64dd462dc3daf4eb1649e97d0166f2ca1c05ede0e57ff2a73e5ff1fd88be1b1a",
+   "generated_tokens": 211,
+   "termination": "complete",
+   "wall_time_seconds": 3.766
+  },
+  {
+   "id": "para-instruction-three-actions-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in."
+    }
+   ],
+   "response_verbatim": "Hope to the end of the day, but I'm happy to help you with your situation. Let's ensure you have all the necessary information and resources.\n\n1. **Check the End of the Day**: I'll need to verify if the end of the day is a good day for you. Could you please provide the date and time when the end of the day is expected to occur?\n\n2. **Review Your Needs**: I'll need to review your specific needs and preferences. What are you looking for? Are there any specific tasks or activities you're interested in?\n\n3. **Get the Best**: I'll need to get the best possible for you. What are you currently experiencing and what are you looking for?\n\n4. **Get the Best**: I'll need to get the best possible for you. What are you currently experiencing and what are you looking for?\n\nPlease provide these details, and I'll do my best.",
+   "response_sha256": "18255b0ac4e0993fec89859cfa44146f66a809b3ec358426199a9f1ae6d4a67a",
+   "generated_tokens": 196,
+   "termination": "complete",
+   "wall_time_seconds": 3.463
+  },
+  {
+   "id": "para-explanation-seasons-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Tell a twelve-year-old why the year has seasons, and set straight the belief that it gets hot because our planet swings nearer the Sun."
+    }
+   ],
+   "response_verbatim": "The year has changed due to the Sun's influence, and the weather patterns have become more extreme. The heat and humidity can lead to a more severe climate, which may affect the local weather and the way of the year. However, the weather can also provide a sense of how the year has changed, and the belief can offer a sense of how the year has been affected by the Sun's influence.",
+   "response_sha256": "ab775c65fc307f932db786c4c7ce307528e289428f196cefc16c147c523b30f6",
+   "generated_tokens": 82,
+   "termination": "complete",
+   "wall_time_seconds": 1.484
+  },
+  {
+   "id": "para-explanation-seasons-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "For a bright twelve-year-old: what causes the seasons, and why is the idea that summer comes from being closer to the Sun wrong?"
+    }
+   ],
+   "response_verbatim": "The seasons are caused by the weather, not by the sun. The weather determines the timing of the season, and the actual temperature and duration of the season is determined by the actual weather conditions. The idea that summer comes from being closer to the Sun is incorrect because the actual temperature and duration of the season are determined by the actual weather conditions.",
+   "response_sha256": "549b7fe3bda0969f45413ed7d1595ca5c427480175955263a51e075ecf954fda",
+   "generated_tokens": 70,
+   "termination": "complete",
+   "wall_time_seconds": 1.291
+  },
+  {
+   "id": "para-explanation-seasons-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer."
+    }
+   ],
+   "response_verbatim": "Explan the season at a twelve-year old's level, and deal directly with the common belief that distance from the Sun is what makes summer.\n\nThis is a common belief that is affected by the weather conditions, such as the temperature and humidity of the region, and the location of the sun.",
+   "response_sha256": "5f229cd6a4481da769f114a40422886df56cf386b02557f2e983714a68f68b0c",
+   "generated_tokens": 64,
+   "termination": "complete",
+   "wall_time_seconds": 1.149
+  },
+  {
+   "id": "para-arithmetic-multi-step-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A shop turns out 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box and how many are left? Show your working."
+    }
+   ],
+   "response_verbatim": "The shop turns 17 kits per hour for 6 hours, which totals to 34 kits, so the number of kits is 17 + 34 = 51 kits.\n\nEight are rejected, and the rest go into five boxes. The remaining kits are 5 - 8 = 2.\n\nThe number of complete kits is 51 / 5 = 51 / 5 = 51.\n\nSo, the number of complete kits is 51 and the number of remaining kits is 2.\n\n**Kits per box = 51 / 5 = 51 / 5 = 51**\n\n**Kits per box = 2**\n\n**Kits per box = 51 / 5 = 51**\n\nThe shop turns are left, and the remaining kits are 51.\n\n**Kits left = 51**\n\n\\box{shop turn}",
+   "response_sha256": "09e045ff5ca055dea0c686b3c61a643b563007f0636ef4fda181dbd59d34d815",
+   "generated_tokens": 193,
+   "termination": "complete",
+   "wall_time_seconds": 3.468
+  },
+  {
+   "id": "para-arithmetic-multi-step-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Show the steps."
+    }
+   ],
+   "response_verbatim": "Here is the steps:\n\n1. **Six hours of production at 17 kits per hour**:\n   - **Six hours**: 17 kits\n   - **Minus failure**: 8 kits\n   - **Split evenly across 5 boxes**:\n     - **Kits per box**: 5\n     - **Remainder**: 5 - 8 = 2\n\n**Steps**:\n1. **Six hours**: 17 kits\n2. **Minus failure**: 8 kits\n3. **Split evenly across 5 boxes**:\n   - **Kits per box**: 5\n   - **Remainder**: 5 - 8 = 2\n\n**Note**: The remaining number is **2**.",
+   "response_sha256": "0af590b08a61dab9bd1cb976fdff465bb55e865c634800ca18ba9803e3b262b1",
+   "generated_tokens": 175,
+   "termination": "complete",
+   "wall_time_seconds": 3.13
+  },
+  {
+   "id": "para-arithmetic-multi-step-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Production runs 17 kits per hour for 6 hours; 8 fail inspection; the remainder is divided equally into 5 boxes. Give the number per box and the leftover, with the working."
+    }
+   ],
+   "response_verbatim": "The number per box is **5**.\n\n**Explanation:**  \nThe remaining is 5, and the work is 8, so the remaining is $5 + 8 = 3$. Since the remaining is div by 5, the box is a box with a leftover of **3**.\n\n**Note:** The remaining is a box, and the work is a total of 8. The remaining is a box, so the box is a box with a leftover of **3**.",
+   "response_sha256": "055342ed7764b14a747fc3012d171be28c1890bd386487d70cced24a8fcbbf47",
+   "generated_tokens": 110,
+   "termination": "complete",
+   "wall_time_seconds": 1.92
+  },
+  {
+   "id": "para-logic-ordering-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it."
+    }
+   ],
+   "response_verbatim": "Mira's statement is true because she is the one who is in front of Theo and the other two who are in front of Jun. Sal's statement is true because he is the one who is in the background of Jun and the other two who are in the same place.",
+   "response_sha256": "d3f9bda55deab96416b6f5333e3619266f951f81f34cece2e3a92b6484a51a89",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.005
+  },
+  {
+   "id": "para-logic-ordering-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira beat Theo. Theo beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one."
+    }
+   ],
+   "response_verbatim": "The only reason for the \"Theo beat\" is that the original letter is a specific word, and the \"beat\" is a combination of the original and the second letter. This combination makes it the only one because the original letter is a specific word, and the second letter is a combination of the original and the second letter, making it the only exception.",
+   "response_sha256": "63922b287803f8a445d7c7e76008e59c284e8a9c2e71abf3c4915e2c884be670",
+   "generated_tokens": 75,
+   "termination": "complete",
+   "wall_time_seconds": 1.32
+  },
+  {
+   "id": "para-logic-ordering-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Put the four in order and name the facts that pin it down."
+    }
+   ],
+   "response_verbatim": "Here are the correct statements:\n\n1. **Mira before Theo, Theo before Jun, Sal after Jun**  \n   - *Mira* is the one who is before Theo, and *Theo* is the one who is before Jun.  \n   - *Sal* is after Jun, and *Put the four in order* is the correct action.\n\n**Note:** The correct answer is **Mira before Theo, Theo before Jun, Sal after Jun**.",
+   "response_sha256": "d44157ddaee9c274d939d00451bfcd3490512c30a00dd0ca4281a8fcdbc44735",
+   "generated_tokens": 103,
+   "termination": "complete",
+   "wall_time_seconds": 1.819
+  },
+  {
+   "id": "para-context-retrieval-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Using only the note below, tell me the day I can bring my dog, the latest hour for tool checkout, and which entrance to avoid."
+    }
+   ],
+   "response_verbatim": "Here is the day you can bring your dog, the latest hour for tool checkout, and which entrance to avoid:\n\n**Dogging Day**  \n- **Dogging Day**: 10:00 AM (or 10:00 AM)  \n- **Dogging Time**: 10:00 AM (or 10:00 AM)  \n- **Dogging Time**: 10:00 AM (or 10:00 AM)  \n\n**What to avoid**:  \n- **Dogging (Dogging Day)**: Use a dog leashy to avoid dog leashy use.  \n- **Dogging (Dogging Time)**: Use a dog leashy to avoid dog leashy use.  \n\nLet me explain how to use these tools!",
+   "response_sha256": "9780d12a6d37e258bea8d8a4524c42ce13a52f1f771f8644b0844ef104cf3d8e",
+   "generated_tokens": 173,
+   "termination": "complete",
+   "wall_time_seconds": 3.161
+  },
+  {
+   "id": "para-context-retrieval-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From the note alone: which day are dogs allowed, when does tool checkout close, and which gate is out of service?"
+    }
+   ],
+   "response_verbatim": "The tool checkout is **not** dog-related, as it is a tool designed to check out the remaining days of the dog's life.\n\n**What is the tool checkout for?**\n- The dog's life\n- The remaining days of the dog's life\n\n**What is the tool checkout for?**\n- The dog's life\n\n**What is the tool checkout for?**\n- The dog's remaining days of life\n\n**Which day are dogs allowed?**\n- The dog's life\n- The remaining days of the dog's life\n\n**Which gate is out of service?**\n- The dog's life\n\nThis tool checkout is not relevant to the dog's life or the remaining days of the dog's life.",
+   "response_sha256": "2d3f61076ca6a9125ae9aff1f94e0c5a8c55cef62c616dba903614eda4390dd3",
+   "generated_tokens": 154,
+   "termination": "complete",
+   "wall_time_seconds": 2.769
+  },
+  {
+   "id": "para-context-retrieval-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Answer strictly from the note: dog day, tool checkout cut-off, and the gate that is shut."
+    }
+   ],
+   "response_verbatim": "The note provided is not applicable to the specific context of the question. Here is no relevant information or guidance on the topic. Please provide a response or explanation for the topic.",
+   "response_sha256": "e52c2d76ab3507de654849844305c87f6c6f5e0dc12f598aac361ba5acf30f5b",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.733
+  },
+  {
+   "id": "para-summarization-priorities-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Boil the update below down to two sentences that keep the choice that was made and the risk that is still open."
+    }
+   ],
+   "response_verbatim": "Here is the update below:\n\n**Bin 1: The new update**\n\nThe new update includes a **safety check** that is still open, and it is designed to help maintain the choice that was made and the risk that is still open.\n\n---\n\n**Bin 2: The risk that is still open**\n\nThe risk that is still open is a **safety check** that is currently in the context of the update.",
+   "response_sha256": "6c993d7e6b6d5f2c01bd65aa23bac44b9af4374d9d860da19470e4fdcc1e8ea1",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 1.708
+  },
+  {
+   "id": "para-summarization-priorities-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Two sentences on the update below, carrying the decision taken and the risk still outstanding."
+    }
+   ],
+   "response_verbatim": "Here are the three sentences on the update below, and I will carry the decision and risk still outstand.\n\n1. **Safety and Compliance**  \n   - **Action Required**: Review the updated document and ensure all necessary information is included.  \n   - **Action Required**: Verify that the update includes all required fields and compliance requirements.  \n   - **Action Required**: Confirm the update with the appropriate authority or team.\n\n2. **Data Security and Integrity**  \n   - **Action Required**: Confirm the update with the appropriate data security and integrity protocols.  \n   - **Action Required**: Verify that the update includes data integrity standards and compliance requirements.\n\n3. **Legitical and Legal Compliance**  \n   - **Action Required**: Confirm the update with the legal and regulatory authority.  \n   - **Action Required**: Ensure all updates comply with existing legal and regulatory guidelines.\n\nThese actions ensure that the update meets the specified requirements and is in compliance with legal and regulatory standards.",
+   "response_sha256": "3b58a9da2ff6ecebf08eeae517ec3c520b884f069d38f06240373a80d1ed6ae9",
+   "generated_tokens": 216,
+   "termination": "complete",
+   "wall_time_seconds": 3.853
+  },
+  {
+   "id": "para-summarization-priorities-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Condense the update to two sentences, preserving what was decided and what remains unresolved."
+    }
+   ],
+   "response_verbatim": "The update to two sentences has been made to address the following issues:\n\n1. **Resolved Issue**: The current update is not resolving the existing problem with the new system. The new system is not fully operational, and the current update is not resolving the existing problem.\n\n2. **Unresolved Issue**: The new system is not fully operational, and the current update is not resolving the existing problem.\n\n3. **Additional Information**: The new system is not fully operational, and the current update is not resolving the existing problem.\n\nPlease note that these updates are not applicable to any specific system or issue.",
+   "response_sha256": "26b7962f2b1eae384f599c20b9d5587ab7dfddfdf92fbf7f2d6ad7baf954e8bd",
+   "generated_tokens": 129,
+   "termination": "complete",
+   "wall_time_seconds": 2.313
+  },
+  {
+   "id": "para-comparison-ram-rom-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads."
+    }
+   ],
+   "response_verbatim": "Here is the two ways to mislead the analysis:\n\n**1. Analogy 1: Analogy 1.1 (Work Memory)**  \n- **Madeed**: The analysis is a memory of the work memory, which is a type of data stored in the system.  \n- **Mislead**: The analysis is a temporary memory, meaning the work memory is not stored permanently and can be deleted or lost.\n\n**2. Analogy 2: Analogy 2.1 (Work Memory)**  \n- **Madeed**: The analysis is a temporary memory, meaning the work memory is not stored permanently and can be deleted or lost.\n\n**Key points**:  \n- **Temporal nature**: The analysis is a temporary memory, not a long-term one.  \n- **Data storage**: The analysis is a temporary data structure, not a long-term one.  \n\nThese are the two ways to mislead the analysis, as they are the two types of work memory.",
+   "response_sha256": "49be6b2183bee9f42cbe6afb749433502091be08eb9dba3876a79c3461e1e95f",
+   "generated_tokens": 214,
+   "termination": "complete",
+   "wall_time_seconds": 3.889
+  },
+  {
+   "id": "para-comparison-ram-rom-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Distinguish RAM from disk with a single everyday comparison, then name two respects in which the comparison fails."
+    }
+   ],
+   "response_verbatim": "The two compares that fail the RAM-based comparator are:\n\n1. **Discreader (D)**: The comparator uses the Discreader (D) to measure its own performance, which is a measure of its ability to meet the RAM requirement.\n\n2. **Discreader (D)**: The comparator uses the Discreader (D) to measure its own performance, which is a measure of its ability to meet the RAM requirement.\n\nThese compares are the ones that fail the RAM-based comparator because they are used to measure the actual performance of the comparator in terms for its ability to meet the RAM requirement.",
+   "response_sha256": "67ae2515f02843be3189b44e33317f668efcea4c72326ace131a5b941738181c",
+   "generated_tokens": 140,
+   "termination": "complete",
+   "wall_time_seconds": 2.536
+  },
+  {
+   "id": "para-comparison-ram-rom-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One simple analogy for memory versus storage, followed by two honest limits of the analogy."
+    }
+   ],
+   "response_verbatim": "Here is the simple analysis of memory versus storage, followed by two honest limits of the analysis.\n\n**1. Memory vs. Voludeous Memory**\n\n**A. Memory vs. Voludeous Memory**\n\n1. **What is the question about?**  \n   Memory is a storage capacity that holds data for a specific memory. Voludeous memory is a storage capacity that holds data for a specific voludeous memory.\n\n2. **What is the question about?**  \n   Voludeous memory is a storage capacity that holds data for a voludeous memory.\n\n3. **What is the question about?**  \n   Voludeous memory is a storage capacity that holds data for a voludeous memory.\n\n4. **What is the question about?**  \n   Voludeous memory is a storage capacity that holds data for a voludeous memory.\n\n5. **What is the question about?**  \n   Voludeous memory is a storage capacity that holds data for a voludeous memory.\n\n**2. Memory vs. Voludeous Memory**\n\n**A. What is the question about?**  \nThe question about is Voludeous memory.\n\n**B. What is the question about?**  \nThe question about is Voludeous memory.\n\n**3. What is the question about?**  \nThe question about is Voludeous memory.\n\n**4. What is the question about?**  \nThe question about is Voludeous memory.\n\n**5. What is the answer?**  \nThe answer is Voludeous memory.\n\n**6. How to answer the question?**  \nThe answer is Voludeous memory.\n\n**7. How to find the answer?**  \nThe answer is Voludeous memory.\n\n**Note:** This is a simple analysis of memory versus storage, followed by two honest limits of the analysis.",
+   "response_sha256": "679e09ac9b8925a8572954d624f8b92717126c82db7f8062357428276effe8ad",
+   "generated_tokens": 394,
+   "termination": "complete",
+   "wall_time_seconds": 6.902
+  },
+  {
+   "id": "para-coding-deduplicate-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity."
+    }
+   ],
+   "response_verbatim": "Here is the unique_in_order operation in Python:\n\n```python\ndef unique_in_order(items):\n    return\n    return\n```\n\nThis function returns the unique elements of the original order, while keeping the first element in the order of the remaining elements.\n\n**Time Complexity:**\nThe function call is efficient and only takes a single line of execution, which is the complexity of the operation.\n\n**Explanation:**\nThis operation is performed to maintain the order of the remaining elements in the original order. The primary element is the first element, and the rest of the remaining elements are processed to be handled by the next element.",
+   "response_sha256": "5f2e15af4935a43846978de4b9f00fb4cca34c639e774d0af830c031726dadf0",
+   "generated_tokens": 133,
+   "termination": "complete",
+   "wall_time_seconds": 2.311
+  },
+  {
+   "id": "para-coding-deduplicate-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales."
+    }
+   ],
+   "response_verbatim": "Here is the Python code to implement the unique_in_order function using Python's `iterally` function:\n\n```python\nimport arg\nimport arg\n\ndef unique_in_order(items):\n    return\n    return\n```\n\n**Explanation:**\n\nThe `iterally` function returns a unique in order list, which includes the items in the order of `items` and `items` in the order of `items` (to maintain the original order).\n\n**How to use this function:**\n\n1. **Unique In Order**: The `iterally` function returns a unique in order list, which includes the items in the original order and the items in the order of `iterally` (to maintain the original order).\n\n2. **Unique In Order**: The unique in order list is a new list, which may include the items in the original and the items in the order of `iterally` (to maintain the new order).\n\n**Key Steps:**\n\n- **Unique In Order**: The function returns a unique in order list, which includes the original items and the original order.\n- **Unique In Order**: The unique in order list is a new list, which may include the original items and the original order.\n\n**Scales:**\n\nThe original order is `items` and `items` in the original order. The new order is `items` and `items` in the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Python Explanation:**\n\nThe `iterally` function returns a unique in order list, which includes the original items and the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Key Steps:**\n\n1. **Unique In Order**: The function returns a unique in order list, which includes the original items and the original order.\n2. **Unique In Order**: The unique in order list is a new list, which may include the original items and the original order.\n\n**Scales:**\n\nThe original order is `items` and `items` in the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Python Explanation:**\n\nThe `iterally` function returns a unique in order list, which includes the original items and the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Key Steps:**\n\n1. **Unique In Order**: The function returns a unique in order list, which includes the original items and the original order.\n2. **Unique In Order**: The unique in order list is a new list, which may include the original items and the original order.\n\n**Scales:**\n\nThe original order is `items` and `items` in the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Python Explanation:**\n\nThe `iterally` function returns a unique in order list, which includes the original items and the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Key Steps:**\n\n1. **Unique In Order**: The function returns a unique in order list, which includes the original items and the original order.\n2. **Unique In Order**: The unique in order list is a new list, which may include the original items and the original order.\n\n**Scales:**\n\nThe original order is `items` and `items` in the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Python Explanation:**\n\nThe `iterally` function returns a unique in order list, which includes the original items and the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Key Steps:**\n\n1. **Unique In Order**: The function returns a unique in order list, which includes the original items and the original order.\n2. **Unique In Order**: The unique in order list is a new list, which may include the original items and the original order.\n\n**Scales:**\n\nThe original order is `items` and `items` in the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Python Explanation:**\n\nThe `iterally` function returns a unique in order list, which includes the original items and the original order. The unique in order list is a new list, which may include the original items and the original order.\n\n**Key Steps:**\n\n1. **Unique",
+   "response_sha256": "def2dfee04377e4d0d215326677722da41cb2b939f602b5edd410e023f9a199f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.099
+  },
+  {
+   "id": "para-coding-deduplicate-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me unique_in_order(items) in Python, preserving first-seen order for hashable inputs, with one example and the expected complexity."
+    }
+   ],
+   "response_verbatim": "Here is the unique_in_order function in Python that uses the `Order` object to maintain the first-seen order for inputs:\n\n```python\nimport import_order\n\ndef unique_in_order(items, order):\n    order = Order(items=items, order=order)\n```\n\n**Explanation:**\n\nThis function calculates the unique order based on the input sequence, preserving the first-seen order for each input. The output order is returned as a list of tuples, with the first item in the original order and the rest of the remaining items in the new order.\n\n**Note:**\n\nThis function is designed to ensure that the input sequence is processed correctly and the order of items is maintained. The output order is returned as a list of tuples, with the first item in the original order and the rest of the remaining items in the new order.",
+   "response_sha256": "f55cfef7946a67e12ba458ce6d837fc3eb59ce27b1b06fa1a3b09b1d5a9026bb",
+   "generated_tokens": 181,
+   "termination": "complete",
+   "wall_time_seconds": 3.294
+  },
+  {
+   "id": "para-debugging-off-by-one-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This should hand back the final three items but often hands back four. Find the fault and rewrite it.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "def last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n\nThis should handle the last three items and rewrite the final three elements back.\n\n```python\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n\n```\n\nThis ensures that the last three elements are rewritten and stored in the original list.",
+   "response_sha256": "63bddf8179fe6a093ddd92731bdbcdb649eae7079fdb88e506c20962604af70b",
+   "generated_tokens": 116,
+   "termination": "complete",
+   "wall_time_seconds": 2.123
+  },
+  {
+   "id": "para-debugging-off-by-one-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Returns four elements where three were wanted. Diagnose and correct.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The function `last_three` processes the last element in a list of values, which is three elements, and corrects the order of the remaining elements. Here's the correct answer:\n\n```python\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n```\n\n**Explanation:**\n- The function calculates the maximum value of the first element.\n- The remaining elements are processed to determine the order of the last elements.\n- The maximum value is stored in the `last_three` list.",
+   "response_sha256": "15f0e5deb94158450730985fcd4fb6f2ad3c6c70a727d0261551313fe951504c",
+   "generated_tokens": 132,
+   "termination": "complete",
+   "wall_time_seconds": 2.363
+  },
+  {
+   "id": "para-debugging-off-by-one-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The slice is wrong and the function over-returns. Say why and supply a fixed version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "def last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n\nThis function returns the last element in the list of values, which is the last element in the list.\n\n**Explanation:** The function calculates the last element in the list by checking if the value is greater than 3, and if it is, it returns the first element. If not, it returns the second element.\n\n**Formal explanation:** The function is used to determine the last element in a list of values, which is the last element in the list.",
+   "response_sha256": "70243a831db3c6d00c9aaef420f08ea683011074b5fc2b34af3a5e6a2aab3ab6",
+   "generated_tokens": 136,
+   "termination": "complete",
+   "wall_time_seconds": 2.45
+  },
+  {
+   "id": "para-writing-concise-email-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number."
+    }
+   ],
+   "response_verbatim": "Under 90 words:\n\nUnder 90 words:\n\nYou're in the process of confirming whether the late delivery lands by Friday. We install on Monday and request a fresh tracking number. Please confirm your delivery and let us know if the land is confirmed.",
+   "response_sha256": "f07305c93a7c2c658846e85c53c4d7a9f1bdb64687bddbeca6605eea913c4263",
+   "generated_tokens": 56,
+   "termination": "complete",
+   "wall_time_seconds": 1.039
+  },
+  {
+   "id": "para-writing-concise-email-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a short courteous message (90 words maximum) to a supplier about a slipped delivery: will it arrive by Friday, our install is Monday, and please send an updated tracking number."
+    }
+   ],
+   "response_verbatim": "The message is clear and will be sent to a friend by Monday. Let's make sure they get an updated tracking number!",
+   "response_sha256": "1d5613d75cea2b3837bbaf8c81405706e00684317ced9dbd6b347ad3f10309cc",
+   "generated_tokens": 25,
+   "termination": "complete",
+   "wall_time_seconds": 0.46
+  },
+  {
+   "id": "para-writing-concise-email-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number. Keep it under 90 words."
+    }
+   ],
+   "response_verbatim": "Here is the brief note for a delayed order:\n\n1. Confirm the April 1st delivery and mention the Monday installation.  \n2. Request a new tracking number.  \n3. Ask for a confirmation of the order.  \n\nThis is under 90 words.",
+   "response_sha256": "15fa9135c84d4a15863e53a9b8e4e92d14d115fe51b318d8d5df2f232cce5e0e",
+   "generated_tokens": 58,
+   "termination": "complete",
+   "wall_time_seconds": 1.05
+  },
+  {
+   "id": "para-planning-dependencies-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Move a small site to a new domain with minimal downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out."
+    }
+   ],
+   "response_verbatim": "Here is the small site to a new domain with a **minimal downtime**.\n\n**Steps:**\n\n1. **Minimal Duration**  \n   - **Minimal Duration**: A site that minimizes downtime is a site that has a **very few** downtime (e.g., a site with a **very few** downtime).\n\n2. **DNS**  \n   - **DNS** is a **DNS** (Dynamic) tool that provides a **DNS** (Dynamic) analysis of the site.\n\n3. **Certificates**  \n   - **Certificates** are the **certificates** of the site.\n\n4. **Checking**  \n   - **Checking** is the **checking** process to verify the site's **minimal downtime**.\n\n5. **Drokingal**  \n   - **Drokingal** is the **drokingal** (minimal) downtime.\n\n---\n\n**Key Steps:**\n\n1. **Minimal Duration**  \n   - **Minimal Duration**: A site that minimizes downtime is a site that has a **very few** downtime.\n\n2. **DNS**  \n   - **DNS** is a **DNS** (Dynamic) tool that provides a **DNS** (Dynamic) analysis of the site.\n\n3. **Certificates**  \n   - **Certificates** are the **certificates** of the site.\n\n4. **Checking**  \n   - **Checking** is the **checking** process to verify the site's **minimal downtime**.\n\n5. **Drokingal**  \n   - **Drokingal** is the **drokingal** (minimal) downtime.\n\n---\n\n**Notes:**\n\n- The site must be **very few** downtime to ensure a **minimal downtime**.\n- The site must be **dynamic** (DNS) to provide accurate analysis.\n- The site must be **certified** (Drokingal) to ensure compliance.\n\nLet me clarify that **Drokingal** is the **minimal downtime**, and **DNS** is the **Dynamic** analysis tool.",
+   "response_sha256": "9853dd270840a697c1eddc5bedc3380e99c4e745f3cd3c85c84ee80e98c4a1d7",
+   "generated_tokens": 496,
+   "termination": "complete",
+   "wall_time_seconds": 8.948
+  },
+  {
+   "id": "para-planning-dependencies-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification and a way back."
+    }
+   ],
+   "response_verbatim": "Here are the six ordered steps for a low-downtime domain (migration) of a small website:\n\n1. **Define the target**  \n   - Create a target (e.g. `<<>`) that matches the target's name and size.  \n   - Use `<<>` to ensure the target matches the target's name and size.\n\n2. **Define the target**  \n   - Create a target (e.g. `<<>`) that matches the target's name and size.  \n   - Use `<<>` to ensure the target matches the target's name and size.\n\n3. **Define the target**  \n   - Create a target (e.g. `<<>`) that matches the target's name and size.  \n   - Use `<<>` to ensure the target matches the target's name and size.\n\n4. **Define the target**  \n   - Create a target (e.g. `<<>`) that matches the target's name and size.  \n   - Use `<<>` to ensure the target matches the target's name and size.\n\n5. **Define the target**  \n   - Create a target (e.g. `<<>`) that matches the target's name and size.  \n   - Use `<<>` to ensure the target matches the target's name and size.\n\n6. **Define the target**  \n   - Create a target (e.g. `<<>`) that matches the target's name and size.  \n   - Use `<<>` to ensure the target matches the target's name and size.\n\nThese steps ensure a low-downtime, low-maintenance, and low-traffic website with a target that matches the target's name and size.",
+   "response_sha256": "42a601df39ba1d0a898ae0e1b67fc9065b1f0502a8d60580db85a19b1544c4db",
+   "generated_tokens": 389,
+   "termination": "complete",
+   "wall_time_seconds": 7.164
+  },
+  {
+   "id": "para-planning-dependencies-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six dependency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback."
+    }
+   ],
+   "response_verbatim": "Here is the step-by-step process to shift a small website to a new DNS without downtime:\n\n1. **Define DNS**:\n   `DNS` should be `DNS` and `DNS` should be `DNS` to ensure DNS is correctly applied to the new DNS.\n\n2. **Set DNS**:\n   `DNS` should be `DNS` and `DNS` should be `DNS` to ensure DNS is correctly applied to the new DNS.\n\n3. **Configure DOC**:\n   `DOC` should be `DOC` and `DOC` should be `DOC` to ensure DOC is correctly applied to the new DOC.\n\n4. **Add DOC**:\n   `DOC` should be `DOC` and `DOC` should be `DOC` to ensure DOC is correctly applied to the new DOC.\n\n5. **Add DX**:\n   `DX` should be `DX` and `DX` should be `DX` to ensure DX is correctly applied to the new DX.\n\n6. **Add DXD**:\n   `DXD` should be `DXD` and `DXD` should be `DXD` to ensure DX is correctly applied to the new DX.\n\n7. **Add DXD**:\n   `DXD` should be `DXD` and `DXD` should be `DXD` to ensure DX is correctly applied to the new DX.\n\n**Note**: These steps ensure DNS and DOC are correctly applied to the new DNS and DOC, and DXD and DXD are also correctly applied to the DXD.",
+   "response_sha256": "fe4b126ef8e44733bbe610d354d3cda894fda931f6237139ee1af81f0ecc22a9",
+   "generated_tokens": 384,
+   "termination": "complete",
+   "wall_time_seconds": 7.124
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chart shows sales going up. You do not know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?"
+    }
+   ],
+   "response_verbatim": "The chart would say that the price of the items is safe to say, as it is not known to the customer. However, if you want to know more details about the period, units, sample, or other specifics, please provide more information.",
+   "response_sha256": "88fa79e4563f89efadc55e8b53aa59f6df0fffd2e2ef3c26c3c4c4a912b0610a",
+   "generated_tokens": 52,
+   "termination": "complete",
+   "wall_time_seconds": 0.977
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Sales are up on a graph, with no time range, units, sample size or pricing context given. What conclusions hold, and what would you need before explaining the rise?"
+    }
+   ],
+   "response_verbatim": "Here are the conclusion points for the sales graph:\n\n1. **What is the most relevant information?**  \n   - *Sales* are up on a graph with no time range, units, sample size, or price context.\n\n2. **What is the most relevant information?**  \n   - *Sales* are up on a graph with no time range, sample size, or price context.\n\n3. **What is the most relevant information about?**  \n   - *Sales* are up on a graph with no time range, sample size, and price context.\n\n4. **What is the most relevant information about?**  \n   - *Sales* are up on a graph with no time range, sample size, and price context.\n\n5. **What is the most relevant information about?**  \n   - *Sales* are up on a graph with no time range, sample size, and price context.\n\n6. **What is the most relevant information about?**  \n   - *Sales* are up on a graph with no time range, sample size, and price context.\n\n7. **What is the most relevant information about?**  \n   - *Sales* are up on a graph with no time range, sample size, and price context.\n\nThese are the key points for understanding the context of the sales graph.",
+   "response_sha256": "fd35ce1220f1c5a32bf0f1f2167e2f20daa1be90e38b271ac78046e7db6bd564",
+   "generated_tokens": 285,
+   "termination": "complete",
+   "wall_time_seconds": 5.315
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Given only that a sales chart trends upward, with period, units, sample and pricing all unknown: what can be stated safely, and what would you ask for?"
+    }
+   ],
+   "response_verbatim": "The statement is that a sales chart trends upward, with period, units, sample, and price information, but no specific details about the chart's price or timing are provided. To determine what can be stated and what would be asked, I would need more context about the chart's price or timing.",
+   "response_sha256": "65a2216bdb159a5739592fc35f2046f80b78a3c3ce8d7974d2d0989eb25c3a2f",
+   "generated_tokens": 65,
+   "termination": "complete",
+   "wall_time_seconds": 1.253
+  },
+  {
+   "id": "para-creative-continuity-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close."
+    }
+   ],
+   "response_verbatim": "The lighthouse keeper is indeed facing the foghorn, which is a significant concern for its occupants.",
+   "response_sha256": "80523fbef97af489a29abc3f279cb9ffad3e0830d868b49950e63375f3ef5cde",
+   "generated_tokens": 24,
+   "termination": "complete",
+   "wall_time_seconds": 0.468
+  },
+  {
+   "id": "para-creative-continuity-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained."
+    }
+   ],
+   "response_verbatim": "The keeper is indeed aware of the foghorn and has been unable to leave it unexplanable.",
+   "response_sha256": "c112436a5836bb984bbb082b8d98ff77a4bfc3b0cd658f6ec53662ab6441f036",
+   "generated_tokens": 24,
+   "termination": "complete",
+   "wall_time_seconds": 0.47
+  },
+  {
+   "id": "para-creative-continuity-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Short scene: the foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it."
+    }
+   ],
+   "response_verbatim": "The foghorn's response is a brief, but not quite urgent, conversation. It's just a polite, non-urgent discussion. Let's keep things a bit warm, but not the one that's ever the topic of concern.",
+   "response_sha256": "42913a1c8f2e52852344488a1cf5ee9b373abdfeed942906d312e98aec3b487b",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 0.939
+  },
+  {
+   "id": "para-multi-turn-correction-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wanting peanuts throughout: revise to four options."
+    }
+   ],
+   "response_verbatim": "Here are the options you can consider:\n\n1. **Allergies**:  \n   - **Peanut**: 3 (as a \"release\" option)  \n   - **Vegan**: 1 (as a \"release\" option)  \n\n2. **Additional options**:  \n   - **Noise**: 4 (to be considered if you want to avoid peanuts)  \n\nThese are the most flexible options. Let me explain how to choose the best choice based on your preferences!",
+   "response_sha256": "07dab970117ffa49cc5671db0652ff09f1687b54d31b9f1451f8d471ca41d715",
+   "generated_tokens": 111,
+   "termination": "complete",
+   "wall_time_seconds": 2.064
+  },
+  {
+   "id": "para-multi-turn-correction-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options."
+    }
+   ],
+   "response_verbatim": "Here are the revised options for peanut-based snack:\n\n1. **Peanut Allergies**  \n   - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     - **Peanut Allergies**:  \n     -",
+   "response_sha256": "2962ea91d2596246f3d9a0d548510165d3d41a7b8dfcb457cdc00fa73a2389e3",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.881
+  },
+  {
+   "id": "para-multi-turn-correction-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options."
+    }
+   ],
+   "response_verbatim": "Here are the four revised options for the user:\n\n1. **Replace the original**: Replace the original with a different ingredient (e.g., a different type of food like a different type of food or a different type of food).\n\n2. **Add a new ingredient**: Add a new ingredient (e.g., a different type of food like a different type of food or a new type of food).\n\n3. **Add a guest**: Add a guest to the existing guest (e.g., a different type of food or a new type of food).\n\n4. **Modify the existing guest**: Modify the existing guest (e.g., a different type of food or a different type of food).\n\nThese options allow the user to adjust the original and the original guest, and the user can make adjustments to the new ingredient or guest.",
+   "response_sha256": "b6ed37992356f41fb50f37fc6ce0d4a077f9c1137f76661099e574df010b0be8",
+   "generated_tokens": 179,
+   "termination": "complete",
+   "wall_time_seconds": 3.3
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 150.653
+}

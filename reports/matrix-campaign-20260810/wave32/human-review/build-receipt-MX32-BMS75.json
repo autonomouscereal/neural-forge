@@ -1,0 +1,568 @@
+{
+ "schema": "neural-forge-matrix-wave32-body-blend-build-receipt-v1",
+ "built_at": "2026-08-28T08:53:13Z",
+ "builder": "mx32_blend_body.py",
+ "tag": "BMS75",
+ "arm": "BODY-BLEND convex combination of sealed sibling bodies at identical storage, alignment=channel",
+ "blend": {
+  "align": "channel",
+  "weights": {
+   "source": 0.25,
+   "MX30-CL1792": 0.75
+  },
+  "w2_columns_blended": 23015,
+  "w2_columns_source_only": 2073,
+  "w1_w3_kept_from_source": true,
+  "alignment_census": {
+   "MX30-CL1792": {
+    "shared_channels_min": 1559,
+    "shared_channels_max": 1685,
+    "shared_channels_total": 23015,
+    "same_channel_at_same_row_min": 12,
+    "same_channel_at_same_row_max": 447,
+    "same_channel_at_same_row_total": 2053,
+    "rows_total": 25088
+   }
+  }
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave30/children/MX30-CL1792M",
+ "other_models": [
+  "/mnt/ai_data/neural-forge-matrix/wave30/children/MX30-CL1792"
+ ],
+ "source_tensors_sha256": "58d706e36e453a707684ff36244003a26951f37fd7061bfdc1e66e8afaf31e1f",
+ "other_tensors_sha256": [
+  "6f2a2bfd13f4a911b505df181486c7b81cd5b46a9775b6f45fb469089b061d93"
+ ],
+ "coordinates_changed_from_source": 23459039,
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave32/children/MX32-BMS75",
+ "child_tensors_sha256": "d3e99552c29d761679e981d72ff3c1449fc8171b562d4d44f34972b4a64a428b",
+ "child_parameters": 196663040,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.856198850027696,
+ "parameters_added": 0,
+ "excised": [],
+ "residual_basis": null,
+ "axes": [
+  {
+   "axis": "intermediate_size",
+   "kind": "mlp",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "intermediate_size",
+    "block_ff_dim"
+   ],
+   "selection": "pivoted-Cholesky coreset on reader-metric-rescaled channels (s_j = sqrt(w2[:,j]^T M w2[:,j])); w1/w3 rows verbatim",
+   "selection_metric_census": {
+    "positions_used": 768,
+    "topk": 2048,
+    "mean_probability_mass_on_topk": 0.970873,
+    "eigenvalue_min": 0.0002255,
+    "eigenvalue_max": 51.747768,
+    "condition_number": 229479.958
+   },
+   "solve": "prior-anchored ridge on w2, lambda ladder to update_scale<=1.0, arm=conditioned-local",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": 33030144,
+   "heldout": {
+    "median_cos": 0.9579510688781738,
+    "min_cos": 0.9348285971992916,
+    "median_relL2": 0.28788089752197266,
+    "max_input_drift": 0.1766848325833549,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.41858353,
+       "scale_max": 1.401823,
+       "scale_median": 0.748056,
+       "channels_agreeing_with_plain_selection": 1559,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.0,
+      "identity_check": 0.0032252167569195157,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       6,
+       7,
+       8,
+       10
+      ],
+      "vs_local_target_cos": 0.9638464437136238,
+      "vs_local_target_relL2": 0.2991698794744196,
+      "update_scale": 0.7297208097703084,
+      "lambda_relative": 0.01,
+      "free_solve_update_scale": 1.209443035043085,
+      "relL2": 0.2991698794744196,
+      "cos": 0.9638464437136238,
+      "cos_p05": 0.8540912232594082
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.48458092,
+       "scale_max": 0.995102,
+       "scale_median": 0.680282,
+       "channels_agreeing_with_plain_selection": 1660,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.08893127653227449,
+      "identity_check": 0.003264829985696192,
+      "selection_first8": [
+       0,
+       2,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9436352673482828,
+      "vs_local_target_relL2": 0.37666474888179813,
+      "update_scale": 0.8696457711569322,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8696457711569322,
+      "relL2": 0.37666474888179813,
+      "cos": 0.9436352673482828,
+      "cos_p05": 0.8229430016760696
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.43796126,
+       "scale_max": 0.818931,
+       "scale_median": 0.639924,
+       "channels_agreeing_with_plain_selection": 1630,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.12511407917155729,
+      "identity_check": 0.0033970994285337603,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       6,
+       7,
+       8
+      ],
+      "vs_local_target_cos": 0.9348285971992916,
+      "vs_local_target_relL2": 0.37737084547031524,
+      "update_scale": 0.6569938687171187,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6569938687171187,
+      "relL2": 0.37737084547031524,
+      "cos": 0.9348285971992916,
+      "cos_p05": 0.8538434247256225
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.39510244,
+       "scale_max": 0.898924,
+       "scale_median": 0.616235,
+       "channels_agreeing_with_plain_selection": 1679,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.15856955718572066,
+      "identity_check": 0.0034270562451821597,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       6,
+       7,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9520549858213627,
+      "vs_local_target_relL2": 0.31377807997759866,
+      "update_scale": 0.5754089050226436,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5754089050226436,
+      "relL2": 0.31377807997759866,
+      "cos": 0.9520549858213627,
+      "cos_p05": 0.8992741501416779
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.34054181,
+       "scale_max": 0.993365,
+       "scale_median": 0.602529,
+       "channels_agreeing_with_plain_selection": 1686,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.16411917206976595,
+      "identity_check": 0.0033940794887600935,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       6,
+       7,
+       8,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9502361611129323,
+      "vs_local_target_relL2": 0.2998453696895622,
+      "update_scale": 0.541572580588802,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.541572580588802,
+      "relL2": 0.2998453696895622,
+      "cos": 0.9502361611129323,
+      "cos_p05": 0.9052412813940999
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.39952311,
+       "scale_max": 1.190722,
+       "scale_median": 0.620672,
+       "channels_agreeing_with_plain_selection": 1672,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.1766848325833549,
+      "identity_check": 0.0007673615587888469,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9552218828967011,
+      "vs_local_target_relL2": 0.04597160253464794,
+      "update_scale": 0.5183848516547549,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5183848516547549,
+      "relL2": 0.04597160253464794,
+      "cos": 0.9552218828967011,
+      "cos_p05": 0.9135536168865379
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.39053728,
+       "scale_max": 0.872479,
+       "scale_median": 0.619409,
+       "channels_agreeing_with_plain_selection": 1659,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.16928855746357568,
+      "identity_check": 0.003613668268018629,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       7,
+       8,
+       9
+      ],
+      "vs_local_target_cos": 0.9582398013202919,
+      "vs_local_target_relL2": 0.2878808839350509,
+      "update_scale": 0.5274066910489488,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5274066910489488,
+      "relL2": 0.2878808839350509,
+      "cos": 0.9582398013202919,
+      "cos_p05": 0.9254302394773843
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.30733398,
+       "scale_max": 1.102709,
+       "scale_median": 0.618507,
+       "channels_agreeing_with_plain_selection": 1679,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.1701287610470896,
+      "identity_check": 0.003682868998599118,
+      "selection_first8": [
+       0,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       9
+      ],
+      "vs_local_target_cos": 0.9663580121228121,
+      "vs_local_target_relL2": 0.2448547174172537,
+      "update_scale": 0.49071771379172585,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.49071771379172585,
+      "relL2": 0.2448547174172537,
+      "cos": 0.9663580121228121,
+      "cos_p05": 0.9307042872537874
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.40657894,
+       "scale_max": 1.10335,
+       "scale_median": 0.634607,
+       "channels_agreeing_with_plain_selection": 1653,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.1627085421061295,
+      "identity_check": 0.0037231640711984457,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "vs_local_target_cos": 0.9579510647645861,
+      "vs_local_target_relL2": 0.2902188722744579,
+      "update_scale": 0.5332709583787879,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5332709583787879,
+      "relL2": 0.2902188722744579,
+      "cos": 0.9579510647645861,
+      "cos_p05": 0.921748149276165
+     },
+     {
+      "layer": 9,
+      "position": 9,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.27885001,
+       "scale_max": 1.164478,
+       "scale_median": 0.633729,
+       "channels_agreeing_with_plain_selection": 1641,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.15364330002212626,
+      "identity_check": 0.003699399640968436,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       4,
+       5,
+       6,
+       7,
+       9
+      ],
+      "vs_local_target_cos": 0.964550523399241,
+      "vs_local_target_relL2": 0.2536851043863788,
+      "update_scale": 0.5079998507272432,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5079998507272432,
+      "relL2": 0.2536851043863788,
+      "cos": 0.964550523399241,
+      "cos_p05": 0.9265172284325429
+     },
+     {
+      "layer": 10,
+      "position": 10,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.37534736,
+       "scale_max": 1.780566,
+       "scale_median": 0.633828,
+       "channels_agreeing_with_plain_selection": 1627,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.14917807376594935,
+      "identity_check": 0.00369740645060543,
+      "selection_first8": [
+       0,
+       3,
+       8,
+       9,
+       10,
+       11,
+       12,
+       16
+      ],
+      "vs_local_target_cos": 0.9679196790797867,
+      "vs_local_target_relL2": 0.23880734445440988,
+      "update_scale": 0.5222192771939892,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5222192771939892,
+      "relL2": 0.23880734445440988,
+      "cos": 0.9679196790797867,
+      "cos_p05": 0.9329243332389539
+     },
+     {
+      "layer": 11,
+      "position": 11,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.23679985,
+       "scale_max": 1.848029,
+       "scale_median": 0.689389,
+       "channels_agreeing_with_plain_selection": 1605,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.1534097244424364,
+      "identity_check": 0.0037506019590664284,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       7,
+       10,
+       11
+      ],
+      "vs_local_target_cos": 0.9424256039532524,
+      "vs_local_target_relL2": 0.3269631473184125,
+      "update_scale": 0.5846063014029836,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5846063014029836,
+      "relL2": 0.3269631473184125,
+      "cos": 0.9424256039532524,
+      "cos_p05": 0.8697966715539538
+     },
+     {
+      "layer": 12,
+      "position": 12,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.25166925,
+       "scale_max": 2.217273,
+       "scale_median": 0.669267,
+       "channels_agreeing_with_plain_selection": 1660,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.16103943202223045,
+      "identity_check": 0.0036288649874670763,
+      "selection_first8": [
+       1,
+       2,
+       4,
+       5,
+       6,
+       8,
+       9,
+       10
+      ],
+      "vs_local_target_cos": 0.9686430903061651,
+      "vs_local_target_relL2": 0.25033483168678133,
+      "update_scale": 0.5793843265084054,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.5793843265084054,
+      "relL2": 0.25033483168678133,
+      "cos": 0.9686430903061651,
+      "cos_p05": 0.9133265149260306
+     },
+     {
+      "layer": 13,
+      "position": 13,
+      "keep": 1792,
+      "arm": "conditioned-local",
+      "selection_metric": "reader (softmax-Hessian)",
+      "selection_scales": {
+       "scale_min": 0.08084319,
+       "scale_max": 2.516808,
+       "scale_median": 0.677907,
+       "channels_agreeing_with_plain_selection": 1621,
+       "of": 1792
+      },
+      "input_drift_vs_parent": 0.17657966303223693,
+      "identity_check": 0.0031900463970516743,
+      "selection_first8": [
+       0,
+       2,
+       3,
+       6,
+       12,
+       14,
+       16,
+       17
+      ],
+      "vs_local_target_cos": 0.9805633838602872,
+      "vs_local_target_relL2": 0.19854848589618185,
+      "update_scale": 0.6375558712685035,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6375558712685035,
+      "relL2": 0.19854848589618185,
+      "cos": 0.9805633838602872,
+      "cos_p05": 0.9470068101477552
+     }
+    ]
+   }
+  }
+ ],
+ "note": "A convex combination of sealed sibling BODIES.  No capture, no solve, no gradient, no added parameter: one CPU pass, at byte-identical storage to every endpoint.  Under align=channel the w1/w3 rows are the source's verbatim parent rows and only the solved w2 columns are mixed, on the recovered channel intersection."
+}

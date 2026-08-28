@@ -1,0 +1,699 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "paraphrase-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T10:09:29Z",
+ "label": "V8CL1792",
+ "campaign_wave": 32,
+ "cell_id": "ARCH.V8CL1792",
+ "cell_instance_id": "mx31-v8cl1792-0001",
+ "receipt_sha256": "030bb07854b274de7a3efc66e01b686bb95f881dcacac4ddea92c823c81271ba",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-d26e4481/research/lfm2_paraphrase_triplets_v1.json",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-d26e4481/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 45,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave32/children/MX32-V8CL1792R",
+ "child_responses": [
+  {
+   "id": "para-conversation-natural-greeting-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hello. Today wore me out. Reply like a person and put one worthwhile question at the end."
+    }
+   ],
+   "response_verbatim": "Sure, I'm here to help with your request. Please provide the specific question or prompt you'd like to answer, and I'll do my best.",
+   "response_sha256": "62b9c92e48e1bab2e53d89069bb6e761cbc18c3999a68398488234dd09fce6c6",
+   "generated_tokens": 32,
+   "termination": "complete",
+   "wall_time_seconds": 1.078
+  },
+  {
+   "id": "para-conversation-natural-greeting-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answering."
+    }
+   ],
+   "response_verbatim": "It has been a rough one. Say something back that a human would say, and finish with a single question.",
+   "response_sha256": "1bfef4059c5e11d48df303cdac910c64bfbcf976e71e9ecc6c108ba8a30f4f73",
+   "generated_tokens": 27,
+   "termination": "complete",
+   "wall_time_seconds": 0.5
+  },
+  {
+   "id": "para-conversation-natural-greeting-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I am worn down after today. Respond naturally, and close with exactly one question that shows you were listening."
+    }
+   ],
+   "response_verbatim": "The question is correct. I am ready to provide a detailed response on the nature and reasons why I was unable to resolve today.",
+   "response_sha256": "c1c5a89e621b832bf246c6eba180833b469e817b7f020057629f8373c84c4af4",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.503
+  },
+  {
+   "id": "para-instruction-three-actions-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in."
+    }
+   ],
+   "response_verbatim": "**Small Chores**\n\nYou can use three or more things to keep your mind:\n\n1. **Do the same**: Do the same things you do to avoid clunking your mind. For example, if you don't do the same, you might not do the same.\n2. **Do not do the same**: Do not do the same as you do the same. For example, if you don't do the same, you might not do the same.\n3. **Do not do the same**: Do not do the same as you do the same. For example, if you don't do the same, you might not do the same.\n\n**How to do this**\n\nYou can use these three things to keep your mind:\n\n1. **Do the same**: Do the same things you do to avoid clunking your mind.\n2. **Do not do the same**: Do not do the same as you do the same.\n3. **Do not do the same**: Do not do the same as you do the same.\n\n**Note**: These are just suggestions to help you keep your mind. They are not a direct method to avoid clunking your mind.",
+   "response_sha256": "8ab0ce2d59b126d99f16e3bf134427f9a56c295de3c1ceb18844fa64fc3a104b",
+   "generated_tokens": 252,
+   "termination": "complete",
+   "wall_time_seconds": 4.562
+  },
+  {
+   "id": "para-instruction-three-actions-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I lose track of little jobs around the house. Give three doable steps for today as a numbered list with nothing in front of it."
+    }
+   ],
+   "response_verbatim": "Sure, here are three doable steps to manage your track of little job by the following methods:\n\n1. **Craft a list**: Create a list of job items to track, and use it to prioritize tasks based on their deadlines.\n\n2. **Craft a list of tasks**: Create a list of tasks to prioritize based on deadlines, and assign them to your work.\n\n3. **Craft a list of deadlines**: Create a list of deadlines to ensure you have enough time to plan and schedule your work effectively.\n\nWould you like me to help you create a list of job items and tasks?",
+   "response_sha256": "4e6315742a8f08b5ff9afde6f663cbd7db44bb6206a54f830dc14ee07b5667c4",
+   "generated_tokens": 133,
+   "termination": "complete",
+   "wall_time_seconds": 2.393
+  },
+  {
+   "id": "para-instruction-three-actions-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in."
+    }
+   ],
+   "response_verbatim": "Hope to the end of the day, but I'm happy to help with your needs. Please don't.",
+   "response_sha256": "9912665ef5d78513fc432980c06afe516980c7a879c435fdf55714fda90a15c6",
+   "generated_tokens": 23,
+   "termination": "complete",
+   "wall_time_seconds": 0.43
+  },
+  {
+   "id": "para-explanation-seasons-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Tell a twelve-year-old why the year has seasons, and set straight the belief that it gets hot because our planet swings nearer the Sun."
+    }
+   ],
+   "response_verbatim": "The year has seasons, and the year has been hot because our planet swings nearer the Sun. This is because our planet is in the area of the Sun, and it's a natural alignment with the current time and the location of the year's.",
+   "response_sha256": "c3dc70cdcacca4ba626257361fb4c96c993282cbdf5fb50aa6b862d33e94798c",
+   "generated_tokens": 55,
+   "termination": "complete",
+   "wall_time_seconds": 1.029
+  },
+  {
+   "id": "para-explanation-seasons-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "For a bright twelve-year-old: what causes the seasons, and why is the idea that summer comes from being closer to the Sun wrong?"
+    }
+   ],
+   "response_verbatim": "The concept of \"soumer comes from being closer to the Sun\" is likely a misphrening of the original concept. Here's the correct explanation:\n\n1. **Cause the Seasons**: The idea that summer's comes from being closer to the Sun is likely a misphrening of the original concept. The original term \"soumer comes\" is likely a typo or a misspelling of the concept.\n\n2. **Cause the Sun**: The original term \"soumer\" is likely a typo or a misspelling of the original concept. The original term \"soumer\" is likely a misspelling of the concept.\n\n3. **Cause the Sun Wrist**: The original term \"soumer\" is likely a typo or a misspelling of the original concept. The original term \"soumer\" is likely a misspelling of the concept.\n\nIn this way, the original term \"soumer\" is likely a misphrening of the concept, and the original term \"soumer\" is likely a misspelling of the original concept.",
+   "response_sha256": "1d7769eda7758a244c3cd11dda4413f78894e74b4e05b25f9dd39e7684c68573",
+   "generated_tokens": 243,
+   "termination": "complete",
+   "wall_time_seconds": 4.354
+  },
+  {
+   "id": "para-explanation-seasons-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer."
+    }
+   ],
+   "response_verbatim": "Explan the seasons at a twelve-year-old's level, and deal directly with the common belief that distain from the Sun is what makes summer.\n\nThe Sun is a key element of the seasons, as it provides the necessary conditions for the seasons to be properly placed and to be properly used. The Sun's location and type of sunlight affect the seasons' placement and the availability of the materials needed for their use.\n\nThe Sun's location and type of sunlight also impact the seasons' availability and the quality of the materials they require. For example, a sun that provides the right sunlight, such as a clear and dry air, can be used to create the seasons, while a sun that provides a different type of sunlight, such as a cloud or a specific type of air, may not be as used.\n\nThe Sun's type of sunlight also affects the seasons' quality and the availability of the materials they require. For example, a sun that provides a different type of air, such as a specific type of air, may not be as used as a standard air, but it may still be used in the seasons.\n\nIn summary, the Sun's location and type of sunlight significantly impact the seasons' placement and the availability of the materials needed for their use, and the Sun's type of sunlight also affects the quality and availability of the materials.",
+   "response_sha256": "d77f224daf4557c0cec98d63fd6c06f1eb5aacff43f13ca5b337165f1bc60194",
+   "generated_tokens": 286,
+   "termination": "complete",
+   "wall_time_seconds": 5.067
+  },
+  {
+   "id": "para-arithmetic-multi-step-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A shop turns out 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box and how many are left? Show your working."
+    }
+   ],
+   "response_verbatim": "The shop turns 17 kits per hour for 6 hours, which totals to 34 kits. Since there are 8 kits left, the number of kits per box is 34 / 8 = 17.\n\nThe rest go evenly into five boxes, which is 17 kits. Since each kit is rejected, the number of kits per box is 17 / 5 = 17 / 5 = 17.\n\nThe number of complete kits is 17, and the remaining kits are 17 - 8 = 9.\n\n**Shown:**\n\n- 17 kits are rejected.\n- 9 kits are left.",
+   "response_sha256": "a0195f4527b20ea12e557dc75de1f697c3b48f73d98d9a3f3c9136c2cfbffc00",
+   "generated_tokens": 141,
+   "termination": "complete",
+   "wall_time_seconds": 2.55
+  },
+  {
+   "id": "para-arithmetic-multi-step-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Show the steps."
+    }
+   ],
+   "response_verbatim": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes:\n\n1. **Six hours**: 17 kits per hour (17 kits/hr) = 17 x 8 = 34 kits (minus 8 fail) = 34 kits (six hours)\n\n2. **Splitting**: 5 boxes x 34 kits/box = 2,70 boxes (six hours + 5 x 34) = 2,70 + 140 = 2,70 + 140 = 2,70\n\n3. **Remainder**: 2,70 kits (six hours) \u00f7 5 boxes = 2,70 \u00f7 5 = 36 kits (remainder)\n\n**Remainder**: 36 kits.",
+   "response_sha256": "8ae830148c77bc3e278f752d0660567733cfc72d578dd08bde67341f12b296fe",
+   "generated_tokens": 192,
+   "termination": "complete",
+   "wall_time_seconds": 3.446
+  },
+  {
+   "id": "para-arithmetic-multi-step-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Production runs 17 kits per hour for 6 hours; 8 fail inspection; the remainder is divided equally into 5 boxes. Give the number per box and the leftover, with the working."
+    }
+   ],
+   "response_verbatim": "The number per box is **5**.\n\n**Explanation:**  \nThe remaining is **divided into 5 boxes**, which is the number of kits remaining after the initial 17 kits are allocated. The remaining kits are **5**.\n\n**Note:**  \nThe remaining kits are allocated, and the number of each box is determined by the initial number of kits. The remaining kits are the number of kits left after the initial allocation.",
+   "response_sha256": "3f3fad33a0f25167cb113b9ef7f0ff4e2de783084d8cb05e51466273eedf2b76",
+   "generated_tokens": 97,
+   "termination": "complete",
+   "wall_time_seconds": 1.691
+  },
+  {
+   "id": "para-logic-ordering-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it."
+    }
+   ],
+   "response_verbatim": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it.\n\n**Explanation:**\n\n1. **Marae in the first place (A)**: The first place is a statement that is not yet to be found in the book. For example, \"The first place\" is a statement that is not yet to be found in the book.\n\n2. **Marae in the second place (B)**: The second place is a statement that is found in the book. For example, \"Marae in the second place\" is a statement that is found in the book.\n\n3. **Marae in the third place (C)**: The third place is a statement that is found in the book. For example, \"Marae in the third place\" is a statement that is found in the book.\n\n4. **All four statements (A, B, C, D)**: The four statements are all four and must be true.\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A**: \"The first place\" is a statement that is not yet to be found in the book.\n- **B**: \"Marae in the second place\" is a statement that is found in the book.\n- **C**: \"Marae in the third place\" is a statement that is found in the book.\n- **D**: \"All four statements\" are all four and must be true.\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"The first place\" is a statement that is not yet to be found in the book.\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements\" are all four and must be true.\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"The first place is a statement that is not yet to be found in the book.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are true and must be found in the book.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and must be true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and must be true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **A, B, C, D**: \"All four statements are found in the book and all four are true and all four are true and all four are true.\"\n\n**Solution:**\n\nThe statements that force it are all four are:\n\n- **",
+   "response_sha256": "16906d7ab4b3f30300deb9d9f11120acbf4e576e320b436802a817dd5c611463",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.432
+  },
+  {
+   "id": "para-logic-ordering-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira beat Theo. Theo beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one."
+    }
+   ],
+   "response_verbatim": "The only one is the Jun Jun Jal. This is a key event in the history of the Jun Jal, where the Jun Jal is a significant event that occurs in the Jun Jal. The Jun Jal is a major event that occurs in the Jun Jal. The Jun Jal is a significant event that occurs in the Jun Jal. The Jun Jal is a significant event that occurs in the Jun Jal.",
+   "response_sha256": "9bb289afaa8c6c45e3b30163fe28478262be5768cfece5e0d2b7bdcd794b41f9",
+   "generated_tokens": 100,
+   "termination": "complete",
+   "wall_time_seconds": 1.799
+  },
+  {
+   "id": "para-logic-ordering-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Put the four in order and name the facts that pin it down."
+    }
+   ],
+   "response_verbatim": "The correct answer is:\n\n1. **Mira** before Theo, **Theo** before Jun, **Sal** after Jun, **Put the four in order** and **name the facts** that ping it down.\n\n**Explanation:**  \nThe correct answer is **Mira** before Theo, **Theo** before Jun, **Sal** after Jun, and **Put the four in order**. This matches the question provided.",
+   "response_sha256": "7905d474c57a9f167328746b578c94cbb3179f8102aa9d5cb21d66f447b3c759",
+   "generated_tokens": 106,
+   "termination": "complete",
+   "wall_time_seconds": 1.959
+  },
+  {
+   "id": "para-context-retrieval-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Using only the note below, tell me the day I can bring my dog, the latest hour for tool checkout, and which entrance to avoid."
+    }
+   ],
+   "response_verbatim": "The day you can bring your dog is **\"The Day I Can Bite\"**, a humyful note that includes:\n\n- **\"The latest hour for tool checkout\"** \u2013 a time of 10:00 AM (or 10:00 AM in the same time zone).\n- **\"Which entrance to avoid\"** \u2013 **\"Never\"** (a question that is not explicitly stated in the provided text).\n\nLet me clarify the options:\n\n1. **\"Never\"** \u2013 This is a question that is not directly addressed in the text.\n2. **\"Never\"** \u2013 This is a question that is not directly addressed in the text.\n\nIf you want to avoid the question, you might consider a different option (e.g., \"Never\" is a question that is not directly addressed). However, the most accurate answer is **\"Never\"**, as it is a question that is not directly addressed.",
+   "response_sha256": "89f53e405895ee81880d5b68639ffe74a5115f8b2e4a2df22e22dd163f8b56cb",
+   "generated_tokens": 197,
+   "termination": "complete",
+   "wall_time_seconds": 3.565
+  },
+  {
+   "id": "para-context-retrieval-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From the note alone: which day are dogs allowed, when does tool checkout close, and which gate is out of service?"
+    }
+   ],
+   "response_verbatim": "The tool checkout closure is **out of service** for the dog because the dog's current status is **out of service**. Here's why:\n\n1. **Dog's Current Status**: The dog's dog is out of service because the dog's current status is **out of service**. This means the dog's current status is **out of service** for the dog's current status.\n\n2. **Checkout Clos**: The dog's checkout is **clo** (clo is a tool used to check out the dog's status). This tool is used to determine the dog's current status and determine if it's out of service.\n\n3. **Out of Service**: The dog's current status is **out of service**.\n\n4. **Gate Out of Service**: The dog's gate is out of service because the dog's gate is **out of service**.\n\nIn summary, the dog's current status is **out of service**, and the dog's checkout is **clo**.",
+   "response_sha256": "faf4780eb49a6e1e57dc453452d1adc15dcb58633c71aad0cf074fc9987d521f",
+   "generated_tokens": 220,
+   "termination": "complete",
+   "wall_time_seconds": 3.932
+  },
+  {
+   "id": "para-context-retrieval-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Answer strictly from the note: dog day, tool checkout cut-off, and the gate that is shut."
+    }
+   ],
+   "response_verbatim": "The note provided is not applicable to the specific information you're asking. Please provide a more detailed description of your request or any other relevant details.",
+   "response_sha256": "e6b566a012bec84d919dea90686277ce2bb593d8e1bc58f13dea8ee86c1fa6a9",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.523
+  },
+  {
+   "id": "para-summarization-priorities-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Boil the update below down to two sentences that keep the choice that was made and the risk that is still open."
+    }
+   ],
+   "response_verbatim": "The update below is to be sent to two sentences that keep the choice that was made and the risk that is still open.\n\nThe update will be sent to the following two sentences:\n\n1. **Sender A (1)**: The update will be sent to the first two sentences, which are the original and the original senders.\n\n2. **Sender B (2)**: The update will be sent to the second sentence, which is the original senders.\n\nThe update will be sent to the original senders, which are the original senders.",
+   "response_sha256": "6ec3f6f6c0f7a701980fe2528d6471a3b6f32794fdbbab2dd8436c7f4a4a582f",
+   "generated_tokens": 123,
+   "termination": "complete",
+   "wall_time_seconds": 2.262
+  },
+  {
+   "id": "para-summarization-priorities-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Two sentences on the update below, carrying the decision taken and the risk still outstanding."
+    }
+   ],
+   "response_verbatim": "The decision taken is to continue to monitor the risk, and the risk still outstands.",
+   "response_sha256": "b4ae8ad21ce8896e3b86328ce7ee5a40a853076d6366066f3df32a7ab9ccca4a",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.383
+  },
+  {
+   "id": "para-summarization-priorities-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Condense the update to two sentences, preserving what was decided and what remains unresolved."
+    }
+   ],
+   "response_verbatim": "The update to two sentences has been deacted and is now being processed by the appropriate team. The current state of the update is that the new version of the update is being applied to the existing version, and the new version is being applied to the original version. The original version is not being updated, and the new version is being applied to the original version. The current state of the update is that the new version of the update is being applied to the original version, and the original version is not being updated.",
+   "response_sha256": "666d896037eae1a43ee88ec3dccd47964fdb750e5b66ef7640397dbd79b2ec90",
+   "generated_tokens": 106,
+   "termination": "complete",
+   "wall_time_seconds": 1.926
+  },
+  {
+   "id": "para-comparison-ram-rom-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads."
+    }
+   ],
+   "response_verbatim": "**Use one plain analogy to separate working memory from long-term storage**\n\n**Ways to mislead:**\n\n1. **Disregulations**  \n   - *Disregulations* are the reasons for which memory is stored, often a specific memory type or type of data.  \n   - *Disregulations* are the reasons for which memory is stored, often a specific memory type or type of data.\n\n**Ways to mislead:**\n\n1. **Disregulations**  \n   - *Disregulations* are the reasons for which memory is stored, often a specific memory type or type of data.  \n   - *Disregulations* are the reasons for which memory is stored, often a specific memory type or type of data.\n\n**Additional suggestions:**\n\n1. **Disregulations**  \n   - *Disregulations* are the reasons for which memory is stored, often a specific memory type or type of data.  \n   - *Disregulations* are the reasons for which memory is stored, often a specific memory type or type of data.\n\n**Note:** These are not meant to be used as a guide for the actual implementation of the analysis. They are just to provide information about the types of data and memory types that are misleaded.",
+   "response_sha256": "7474e82a60cfadf6b70128e474cd3618e19e2656bfec03b8da5a9df13362eb60",
+   "generated_tokens": 272,
+   "termination": "complete",
+   "wall_time_seconds": 4.797
+  },
+  {
+   "id": "para-comparison-ram-rom-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Distinguish RAM from disk with a single everyday comparison, then name two respects in which the comparison fails."
+    }
+   ],
+   "response_verbatim": "The two resis in this situation are **disparations** and **disparations**.\n\n**Disparations** are those that are not directly relevant to the current market or economy, and they are not in the same place as the other disparations. They are often a cause of the disparations, and they are not in the same place as the other disparations.\n\n**Disparations** are those that are not directly relevant to the current market or economy, and they are not in the same place as the other disparations. They are often a cause of the disparations, and they are not in the same place as the other disparations.\n\nIn this case, the disparations are the ones that are not directly relevant to the current market or economy, and they are not in the same place as the other disparations.",
+   "response_sha256": "45dbd1c581f25f2355253a55d6d71b7baf78a95ffc9161e044d058c247fd900d",
+   "generated_tokens": 181,
+   "termination": "complete",
+   "wall_time_seconds": 3.292
+  },
+  {
+   "id": "para-comparison-ram-rom-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One simple analogy for memory versus storage, followed by two honest limits of the analogy."
+    }
+   ],
+   "response_verbatim": "One simple analogy for memory versus storage, followed by two hondles of the analogy.\n\n**Holdings:**\n1. **Data Type**: The data type is \"mixed\" (i) and \"mixed\" (m) for the \"mixed\" version.\n2. **Holdings**:\n   - **Data Type**: \"mixed\" (i) and \"mixed\" (m) for the \"mixed\" version.\n   - **Holdings**:\n     - **Data Type**: \"mixed\" (i) and \"mixed\" (m) for the \"mixed\" version.\n     - **Holdings**: \"mixed\" (i) and \"mixed\" (m) for the \"mixed\" version.\n\nThis analysis provides a comprehensive understanding of the available data types and their corresponding holds for the \"mixed\" version.",
+   "response_sha256": "f349f850c9ab70fa58fe1d7af1d47ed726e527eb2fc312755e5b93f5af0581a2",
+   "generated_tokens": 197,
+   "termination": "complete",
+   "wall_time_seconds": 3.746
+  },
+  {
+   "id": "para-coding-deduplicate-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity."
+    }
+   ],
+   "response_verbatim": "To address the unique_in_order operation in Python, we'll focus on the `duplicates` and `first` operations. Here's a short example and the time complexity:\n\n**Time Complexity:**\nThe `duplicates` operation involves processing items and potentially modifying them, while the `first` operation retrieves the order of items by checking for the first item.\n\n**Python Code:**\n```python\nimport duplicates\nimport first\n\ndef unique_in_order(items, first, duplicates, first_order=0, second_order=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_items=0, order_",
+   "response_sha256": "cd6bf94e93a12e4f1f814ad95afb7dd06c236321a83d92733b2df8af45a2a4da",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.332
+  },
+  {
+   "id": "para-coding-deduplicate-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales."
+    }
+   ],
+   "response_verbatim": "The Python function `unique_in_order` that retrieves items by their unique order is `in_order` and it applies the order of items by their unique order. Here's how it works:\n\n```python\nimport import_order\n\ndef unique_in_order(items, order_items=order_items, unique_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items, order_items=order_items, unique_items=order_items\n```\n\nThis function returns the items in the order of `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` and `order_items` by `order_items` by `order_items` and `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order_items` by `order",
+   "response_sha256": "11b8b2da646cd77b494a6fd78e732b36a3b8bb547e5e17d9a5c5f0b779603d66",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.173
+  },
+  {
+   "id": "para-coding-deduplicate-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me unique_in_order(items) in Python, preserving first-seen order for hashable inputs, with one example and the expected complexity."
+    }
+   ],
+   "response_verbatim": "To handle the `in_order` operation in Python, we'll use Python's `Order` and `Order` operations to retrieve the first item in the order list. Here's the expected complexity:\n\n1. **Order**: The `Order` object will return the first item in the order list.\n2. **Order**: The `Order` object will return the second item in the order list.\n\n### Python Code Explanation\n\n```python\nimport Order\n\ndef order_example(order, first, second, item, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order_items, order",
+   "response_sha256": "82cb88876e9dacc00cc510e90617e530fa154d08b31bf003ea9a5392c786398e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.151
+  },
+  {
+   "id": "para-debugging-off-by-one-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This should hand back the final three items but often hands back four. Find the fault and rewrite it.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "def last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n\ndef last_three(values):\n    return values[start - 1:]\n\ndef last_three(values):\n    return values[start + 1:]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start + 1]\n\ndef last_three(values):\n    return values[start +",
+   "response_sha256": "472b262ca9f792f82244d06db7684aad927f118f91e9523ad58c33d2dc5163fa",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.203
+  },
+  {
+   "id": "para-debugging-off-by-one-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Returns four elements where three were wanted. Diagnose and correct.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "def last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n\ndef last_three(values):\n    return values[start - 1:]\n\ndef last_three(values) is a:\n    return values[start - 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_three(values) is a:\n    return values[start + 1:]\n\ndef last_",
+   "response_sha256": "3b586d0159dab3779d59218c4259337a9f965af6c7288f95dad6a92e22baf3be",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.136
+  },
+  {
+   "id": "para-debugging-off-by-one-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The slice is wrong and the function over-returns. Say why and supply a fixed version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "def last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]\n\nThis function returns the last element in the list of values, and it applies the maximum value to the first element.\n\n**Explanation:**\n\nThe function `last_three` calculates the maximum value of the first element in the list of values, and then applies the maximum value to the first element. The original function `last_three` does not return the same value, and the new function applies the maximum value to the first element.\n\n**Note:**\n\nThe original function `last_three` does not return the same value, and the new function applies the maximum value to the first element.",
+   "response_sha256": "3cedadc11ca4c204cfd81c174c1cd813382852971a078e3e88ce0d0f7a749de5",
+   "generated_tokens": 166,
+   "termination": "complete",
+   "wall_time_seconds": 2.916
+  },
+  {
+   "id": "para-writing-concise-email-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number."
+    }
+   ],
+   "response_verbatim": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number.",
+   "response_sha256": "a00947eb19a11db4bdb0d45490b17b1c14225be1a765afd2cf85d17e29aa594a",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.806
+  },
+  {
+   "id": "para-writing-concise-email-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a short courteous message (90 words maximum) to a supplier about a slipped delivery: will it arrive by Friday, our install is Monday, and please send an updated tracking number."
+    }
+   ],
+   "response_verbatim": "The delivery will be sent by **Frid**, with an updated tracking number **#123456789**. Please confirm your tracking details.",
+   "response_sha256": "d15ccbf711fb786a59da99e682b6ea16b58a98daf5c082e7813a255ac94e6250",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.513
+  },
+  {
+   "id": "para-writing-concise-email-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number. Keep it under 90 words."
+    }
+   ],
+   "response_verbatim": "The following note is sent to a supplier chasing a delayed order:\n\n1. Confirm Friday's arrival, mention the Monday installation, and ask for a new tracking number.  \n2. Please provide a new tracking number.  \n3. Thank you for your prompt.",
+   "response_sha256": "4f8c41ed48a73fc4a3d6a0ea329363d47976212a2771b50a22bf974c150864cd",
+   "generated_tokens": 63,
+   "termination": "complete",
+   "wall_time_seconds": 1.101
+  },
+  {
+   "id": "para-planning-dependencies-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Move a small site to a new domain with minimal downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out."
+    }
+   ],
+   "response_verbatim": "**Six Steps, DNS, Certs, Checking, and Out**\n\n**Pickup: Minimal downtime**\n\n1. **Minimal downtime**\n\n   - **Pickup**: Minimal downtime is a process that minimises the number of downtime events that occur on a system. It is a low-payload, low-load, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability**\n\n   - **Pickup**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Certificates**\n\n   - **Certificates**: These are used to verify the correctness of the system and to ensure that the system meets the requirements.\n\n**Checking**\n\n   - **Checking**: This is a low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Out**\n\n   - **Out**: This is a low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickup**\n\n   - **Pickup**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickup**\n\n   - **Pickup**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickup**\n\n   - **Pickup**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickup**\n\n   - **Pickup**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickout**\n\n   - **Pickout**: This is a low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Out**\n\n   - **Out**: This is a low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickup**\n\n   - **Pickup**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability, low-availability**\n\n**Pickout**\n\n   - **Pickout**: This process is used to identify the minimum number of downtime events that occur on a system.\n\n**DNS**\n\n   - **DNS**: This is a low-availability, low-availability, low-availability, low-availability**\n\n**Pickout**\n\n   - **Pickout**: This process is used to identify the",
+   "response_sha256": "6467e2c8f33f4f921fa89ce7370c3351ddef06529d594b5f9e01686a775b7990",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.824
+  },
+  {
+   "id": "para-planning-dependencies-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification and a way back."
+    }
+   ],
+   "response_verbatim": "**Ordered Steps for a Dishowtime MIGration of a Weak**\n\n**1. Create a Dishowtime Done (DNS)**\n- **Done**: Create a Done with Dishowtime Done (DNS) and a Done with Dishowtime Done (DIS).\n- **Done**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n- **DIS**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n- **DIS**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n\n**2. Create a Done with Dishowtime Done (DIS)**\n- **Done**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n- **DIS**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n\n**3. Create a Done with Dishowtime Done (DIS)**\n- **Done**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n- **DIS**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n\n**4. Create a Done with Dishowtime Done (DIS)**\n- **Done**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n- **DIS**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n\n**5. Create a Done with Dishowtime Done (DIS)**\n- **Done**: Create a Done with Dishowtime Done (DIS) and a Done with Dishowtime Done (DIS).\n\n**6. Verify Dishowtime Done Done D**\n\n**7. Verify Dishowtime Done D**\n\n**Additional Steps:**\n- **Dishowtime Done D**: Verify Dishowtime Done D to ensure the Done D is accurate and to maintain the Done D.\n- **Dishowtime Done D**: Verify Dishowtime Done D to ensure the Done D is accurate and to maintain the Done D.\n\n**Note**: These steps are for a Dishowtime MIGration of a small website. Please note that these steps are not intended to be used as a guide for a Dishowtime MIGration of a website.",
+   "response_sha256": "43f9ddfea836ad191da662a633b06a743d267b0eaef919d2c30f97794ac5e665",
+   "generated_tokens": 668,
+   "termination": "complete",
+   "wall_time_seconds": 11.717
+  },
+  {
+   "id": "para-planning-dependencies-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six dependency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback."
+    }
+   ],
+   "response_verbatim": "Six dependsency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback.\n\n**Six dependsency-aware steps**\n\n1. **Six**: Install the `six` package on your system to install the `six` package. Install `six` on your system to ensure that the `six` package is installed and to install the `six` package.\n\n2. **DNS**: Install the `dn` package on your system to install the `dn` package. Install `dn` on your system to ensure that the `dn` package is installed and to install the `dn` package.\n\n3. **Certificates**: Install the `certificates` package on your system to install the `certificates` package. Install `certificates` on your system to ensure that the `certificates` package is installed and to install the `certificates` package.\n\n4. **Verification and rollback**: Install the `verification` and `rollback` package on your system to install the `verification` and `rollback` package. Install `verification` and `rollback` on your system to ensure that the `verification` and `rollback` package are installed and to install the `rollback` package.\n\nAdditional steps to install these package types:\n\n- Install `six` and `dn` on your system to install the `six` package.\n- Install `certificates` and `certificates` on your system to install the `certificates` package.\n- Install `verification` and `verification` on your system to install the `verification` package.\n- Install `rollback` and `rollback` on your system to install the `rollback` package.\n\nNote: These steps are intended to ensure that the `six` package is installed and to install the `six` package on your system.",
+   "response_sha256": "1fcbf528a18f4db06bc1461bc69548d854841b0ca8b5cfd6e8f6d1e3928b15d1",
+   "generated_tokens": 452,
+   "termination": "complete",
+   "wall_time_seconds": 7.986
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chart shows sales going up. You do not know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?"
+    }
+   ],
+   "response_verbatim": "The chart shows sales going up, but you don't know the period, units, or whether prices were paid. To get the most accurate information, you might ask:\n1. What is the price for the items?\n2. What is the time of sale?\n3. What is the price for the items?\n4. What is the amount of money you paid?\n\nPlease provide the details so I can help you better.",
+   "response_sha256": "16a52b0daaa3ebf3419d069da10c2527ce47e31a195762532efbb6c3fcf01b1d",
+   "generated_tokens": 88,
+   "termination": "complete",
+   "wall_time_seconds": 1.575
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Sales are up on a graph, with no time range, units, sample size or pricing context given. What conclusions hold, and what would you need before explaining the rise?"
+    }
+   ],
+   "response_verbatim": "Sales are up on a graph, with no time range, units, sample size, or pricing contexts. Here are the relevant conclusions to explain:\n\n1. **What is the most relevant information?**  \n   - *Explanation:* The most relevant information includes the current market price, available supply, available resources, and other relevant details.\n\n2. **What is the most important?**  \n   - *Explanation:* The most important information includes the supply availability, available resources, and other relevant details.\n\n3. **What is the most important?**  \n   - *Explanation:* The most important information includes the supply availability, available resources, and other relevant details.\n\n4. **What is the most important for you?**  \n   - *Explanation:* The most important information is the supply availability, available resources, and other relevant details.\n\n5. **What is the most important for your analysis?**  \n   - *Explanation:* The most important information is the supply availability, available resources, and other relevant details.\n\n6. **What is the most important for your analysis?**  \n   - *Explanation:* The most important information is the supply availability, available resources, and other relevant details.\n\n7. **What is the most important for your analysis?**  \n   - *Explanation:* The most important information is the supply availability, available resources, and other relevant details.\n\nWould you need to provide more details about the specific information you are interested in?",
+   "response_sha256": "ad6ea7b7f02a91313db1483c5478a8ff48e093330f387666ccffe4d3c24bdd01",
+   "generated_tokens": 329,
+   "termination": "complete",
+   "wall_time_seconds": 5.909
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Given only that a sales chart trends upward, with period, units, sample and pricing all unknown: what can be stated safely, and what would you ask for?"
+    }
+   ],
+   "response_verbatim": "The statement is that a sales chart trends upward, with period, units, sample, and price information, but it is not explicitly stated that the chart is unskel, and the question is likely to be about the specifics of the chart's price and timing.\n\nIf you are interested in understanding the price and timing of the chart, you might ask:\n1. What is the price range for the chart?\n2. What is the chart's period (e.g., month, year, etc.)?\n3. What are the units (e.g., days, weeks, months) and units (e.g., days, weeks, months) for the chart?\n\nIf you are interested in understanding the chart's timing, you might ask:\n1. What is the chart's schedule (e.g., day, week, month, etc.)?\n2. What are the units (e.g., days, weeks, months) for the chart?\n\nIf you are interested in understanding the chart's price and timing, you might ask:\n1. What is the chart's price and how it is calculated?\n2. What is the chart's period (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's schedule, you might ask:\n1. What is the chart's schedule (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's price and timing, you might ask:\n1. What is the chart's price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall structure, you might ask:\n1. What is the chart's overall structure (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall structure, you might ask:\n1. What is the chart's overall structure (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall structure, you might ask:\n1. What is the chart's overall structure (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's overall structure, you might ask:\n1. What is the chart's overall structure (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall price and timing, you might ask:\n1. What is the chart's overall price and how it is calculated in terms for the chart?\n\nIf you are interested in understanding the chart's overall structure, you might ask:\n1. What is the chart's overall structure (e.g., day, week, month, etc.)?\n\nIf you are interested in understanding the chart's overall price and timing, you",
+   "response_sha256": "9dc65390a985f1b136bab7226e79fa00b2dc04693bd9400529d450f1630cde6a",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.777
+  },
+  {
+   "id": "para-creative-continuity-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close."
+    }
+   ],
+   "response_verbatim": "The lighthouse keeper is indeed facing the foghorn, which is a response to the scene, and no explanation is being made at the closer.",
+   "response_sha256": "d7caa05e1a8d5f41694f36d579394dc63eb21012286f830de369a848fdbf1d2e",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.623
+  },
+  {
+   "id": "para-creative-continuity-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained."
+    }
+   ],
+   "response_verbatim": "The situation is likely a **fogged** or **unexplained** scene, as the keeper is noticing the foghorn and cannot explain the situation.",
+   "response_sha256": "c4f98a65a156ea0f0d613b31528cf37b059e54ce1df5c785b368ef968dd8eafe",
+   "generated_tokens": 38,
+   "termination": "complete",
+   "wall_time_seconds": 0.717
+  },
+  {
+   "id": "para-creative-continuity-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Short scene: the foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it."
+    }
+   ],
+   "response_verbatim": "The foghorn responds to the keeper's questions are as per the provided text. Here is the response:\n\nThe foghorn responds to the keeper's questions are as per the provided text. Here is the response:\n\nThe foghorn responds to the keeper's questions are as per the provided text. Here is the response.",
+   "response_sha256": "8a302afae9f80554ff26a822191660ee5d2bb3c21887c0aa41fff0e6577d90fc",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 1.468
+  },
+  {
+   "id": "para-multi-turn-correction-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wanting peanuts throughout: revise to four options."
+    }
+   ],
+   "response_verbatim": "The user has three options to reconfig the SNAP conversation in a situation where the user has disclosed two severe peanut allergies and one vegan guest. Here are the options:\n\n1. **Replace the original conversation with the user's original SNAP**  \n   - Replace the current SNAP with the user's original conversation.\n\n2. **Replace the original SNAP with a different option**  \n   - Replace the original SNAP with another option that is not currently available.\n\n3. **Replace the original SNAP with a different SNAP**  \n   - Replace the original SNAP with another SNAP that is not currently accessible.\n\n4. **Replace the original SNAP with a different SNAP**  \n   - Replace the original SNAP with a different SNAP that is not currently accessible.\n\nThe user's original SNAP is not provided, so no action is taken.",
+   "response_sha256": "d40f75694c6af81386fb781592fa44ce523a62c14f7d3925e4d4c96e0335a88e",
+   "generated_tokens": 208,
+   "termination": "complete",
+   "wall_time_seconds": 3.663
+  },
+  {
+   "id": "para-multi-turn-correction-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options."
+    }
+   ],
+   "response_verbatim": "The four peanut-based options are:\n\n1. **Peanut Allergens** (revealed on pean, pean, and other ingredients):  \n   - **Peanut** (revealed on pean, pean, and other ingredients)  \n   - **Peanut** (revealed on pean, pean, and other ingredients)  \n   - **Peanut** (revealed on pean, pean, and other ingredients)  \n   - **Peanut** (revealed on pean, pean, and other ingredients)  \n\n2. **Vegas** (revealed on pean, pean, and other ingredients):  \n   - **Pean** (revealed on pean, pean, and other ingredients)  \n   - **Pean** (revealed on pean, pean, and other ingredients)  \n   - **Pean** (revealed on pean, pean, and other ingredients)  \n\n3. **Allergy-Free** (revealed on pean, pean, and other ingredients):  \n   - **Pean** (revealed on pean, pean, and other ingredients)  \n\n4. **Vegas** (revealed on pean, pean, and other ingredients)  \n\nNote: The options are provided in the original format, but the rephrere is the original format.",
+   "response_sha256": "dbaa40499ffb923a2e00d3ea565e975c43b26bf02b9c5eaaf229d3049ac76071",
+   "generated_tokens": 312,
+   "termination": "complete",
+   "wall_time_seconds": 5.514
+  },
+  {
+   "id": "para-multi-turn-correction-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options."
+    }
+   ],
+   "response_verbatim": "**Revision:**\n\n1. **Replace the originals with a new source**  \n   - Replace the originals with a new source that is not the same as before.  \n   - *(Replace with a new source that is not the same as before)*\n\n2. **Replace the originals with a different source**  \n   - Replace the originals with a different source that is not the same as before.  \n   - *(Replace with a different source that is not the same as before)*\n\n3. **Replace the originals with a different method**  \n   - Replace the originals with a different method that is not the same as before.  \n   - *(Replace with a different method that is not the same as before)*\n\n4. **Replace the originals with a different reason**  \n   - Replace the originals with a different reason that is not the same as before.  \n   - *(Replace with a different reason that is not the same as before)*\n\n**Note:** These options are provided as a list of revised options. Please note that these are not intended to be used as a list of options for a specific reason or a particular situation.",
+   "response_sha256": "525b4decc14061158b017cfe645b61e9b5e6ac553b6e166d82be7556d68609f2",
+   "generated_tokens": 261,
+   "termination": "complete",
+   "wall_time_seconds": 4.711
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 253.709
+}

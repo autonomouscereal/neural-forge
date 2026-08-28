@@ -1,0 +1,141 @@
+{
+ "schema": "neural-forge-matrix-wave32-benchmark-table-v1",
+ "invocation": "limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090",
+ "models": {
+  "ARCH.V8CL1792M": {
+   "arc_easy": 0.31,
+   "hellaswag_acc_norm": 0.355,
+   "piqa_acc_norm": 0.515,
+   "winogrande": 0.505,
+   "lambada_acc": 0.175,
+   "lambada_perplexity": 1406.9333050741898,
+   "wikitext_word_perplexity": 1782.4825933078155
+  },
+  "PARENT": {
+   "arc_easy": 0.545,
+   "hellaswag_acc_norm": 0.505,
+   "piqa_acc_norm": 0.68,
+   "winogrande": 0.55,
+   "lambada_acc": 0.46,
+   "lambada_perplexity": 24.391247934692974,
+   "wikitext_word_perplexity": 81.79763262054296
+  },
+  "ARCH.BV50": {
+   "arc_easy": 0.4,
+   "hellaswag_acc_norm": 0.46,
+   "piqa_acc_norm": 0.59,
+   "winogrande": 0.55,
+   "lambada_acc": 0.245,
+   "lambada_perplexity": 216.52898316684542,
+   "wikitext_word_perplexity": 181.5989865686884
+  },
+  "ARCH.BM25": {
+   "arc_easy": 0.405,
+   "hellaswag_acc_norm": 0.45,
+   "piqa_acc_norm": 0.59,
+   "winogrande": 0.54,
+   "lambada_acc": 0.265,
+   "lambada_perplexity": 192.1264541648508,
+   "wikitext_word_perplexity": 181.76286559865113
+  },
+  "ARCH.V16BMV3": {
+   "arc_easy": 0.355,
+   "hellaswag_acc_norm": 0.435,
+   "piqa_acc_norm": 0.505,
+   "winogrande": 0.565,
+   "lambada_acc": 0.15,
+   "lambada_perplexity": 663.3364053425128,
+   "wikitext_word_perplexity": 507.6172809264682
+  },
+  "ARCH.V4CL1792": {
+   "arc_easy": 0.325,
+   "hellaswag_acc_norm": 0.34,
+   "piqa_acc_norm": 0.52,
+   "winogrande": 0.485,
+   "lambada_acc": 0.115,
+   "lambada_perplexity": 4480.438230966454,
+   "wikitext_word_perplexity": 5163.125362850544
+  },
+  "ARCH.BM50": {
+   "arc_easy": 0.405,
+   "hellaswag_acc_norm": 0.445,
+   "piqa_acc_norm": 0.58,
+   "winogrande": 0.55,
+   "lambada_acc": 0.235,
+   "lambada_perplexity": 217.7066625723712,
+   "wikitext_word_perplexity": 180.99694505489717
+  },
+  "ARCH.V16CL1792M": {
+   "arc_easy": 0.36,
+   "hellaswag_acc_norm": 0.39,
+   "piqa_acc_norm": 0.515,
+   "winogrande": 0.565,
+   "lambada_acc": 0.2,
+   "lambada_perplexity": 639.7126322960455,
+   "wikitext_word_perplexity": 521.5918960411537
+  },
+  "ARCH.BMS75": {
+   "arc_easy": 0.41,
+   "hellaswag_acc_norm": 0.43,
+   "piqa_acc_norm": 0.54,
+   "winogrande": 0.575,
+   "lambada_acc": 0.25,
+   "lambada_perplexity": 171.7552249152047,
+   "wikitext_word_perplexity": 193.74084740520607
+  },
+  "ARCH.V6CL1792": {
+   "arc_easy": 0.305,
+   "hellaswag_acc_norm": 0.315,
+   "piqa_acc_norm": 0.495,
+   "winogrande": 0.53,
+   "lambada_acc": 0.15,
+   "lambada_perplexity": 2029.0371978891262,
+   "wikitext_word_perplexity": 2836.6208121931772
+  },
+  "ARCH.V9CL1792M": {
+   "arc_easy": 0.29,
+   "hellaswag_acc_norm": 0.365,
+   "piqa_acc_norm": 0.505,
+   "winogrande": 0.545,
+   "lambada_acc": 0.18,
+   "lambada_perplexity": 1036.551569200917,
+   "wikitext_word_perplexity": 1301.089756601776
+  },
+  "ARCH.V12CL1792M": {
+   "arc_easy": 0.365,
+   "hellaswag_acc_norm": 0.36,
+   "piqa_acc_norm": 0.505,
+   "winogrande": 0.575,
+   "lambada_acc": 0.19,
+   "lambada_perplexity": 740.2722145428751,
+   "wikitext_word_perplexity": 759.4647256848114
+  },
+  "ARCH.CL1792S": {
+   "arc_easy": 0.375,
+   "hellaswag_acc_norm": 0.43,
+   "piqa_acc_norm": 0.59,
+   "winogrande": 0.545,
+   "lambada_acc": 0.255,
+   "lambada_perplexity": 196.3629142193691,
+   "wikitext_word_perplexity": 196.82080371577712
+  },
+  "ARCH.BMV3": {
+   "arc_easy": 0.405,
+   "hellaswag_acc_norm": 0.455,
+   "piqa_acc_norm": 0.565,
+   "winogrande": 0.555,
+   "lambada_acc": 0.235,
+   "lambada_perplexity": 252.3368873194852,
+   "wikitext_word_perplexity": 185.06846120329678
+  },
+  "ARCH.BM75": {
+   "arc_easy": 0.405,
+   "hellaswag_acc_norm": 0.46,
+   "piqa_acc_norm": 0.57,
+   "winogrande": 0.59,
+   "lambada_acc": 0.205,
+   "lambada_perplexity": 294.162431096992,
+   "wikitext_word_perplexity": 190.87953797456436
+  }
+ }
+}

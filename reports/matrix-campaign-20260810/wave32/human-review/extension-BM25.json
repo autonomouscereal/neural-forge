@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T09:38:17Z",
+ "label": "BM25",
+ "campaign_wave": 32,
+ "cell_id": "ARCH.BM25",
+ "cell_instance_id": "mx32-bm25-0001",
+ "receipt_sha256": "960deda65949b2dbb0b2565a1a1b16426848f998bc9da809576f53ad2334431c",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-4e2c25f0/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-4e2c25f0/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "shared-with-parent",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "That sounds! I'm glad to help you with your question. Here's how I'd like to respond:\n\n**What would you like to know?**  \n- What is the topic of the question?  \n- What is the answer?  \n- What is the answer?  \n\nI'll provide a detailed response based on your preferences.",
+   "response_sha256": "b3fb46f463db7246326d9c1b6db6a4759bcb2b83bd6c128f69abd56f83373678",
+   "generated_tokens": 69,
+   "termination": "complete",
+   "wall_time_seconds": 1.822
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm sorry, but I'm unable to provide any information or assistance based on your request. Please let me know what you need.",
+   "response_sha256": "3c68e051a3c9a4a762f5cb0a65574c094d95d0b0e38d8882c30d3322ebf01dd1",
+   "generated_tokens": 27,
+   "termination": "complete",
+   "wall_time_seconds": 0.557
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "1. Keep plants alive by watering them with fresh air or using a humid air condition.  \n2. Use a humid air condition to keep plants alive.",
+   "response_sha256": "b37797663413eb53f88f25a2e585f034dfeae4185cdba38f9aeb9b87935e48b4",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.619
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "Here are five pieces of information about a library checkout record:\n\n1. **Name**: \"Library Checkout\"  \n   - **Description**: A list of items to be checked out.\n\n2. **Item 1**: \"Book\"  \n   - **Description**: A book to be checked out.\n\n3. **Item 2**: \"Book\"  \n   - **Description**: Another book to be checked out.\n\n4. **Item 3**: \"Book\"  \n   - **Description**: Another book to be checked out.\n\n5. **Item 4**: \"Book\"  \n   - **Description**: A book to be checked out in a specific order (by name).",
+   "response_sha256": "33f2214f5fb03de76b252ac7ce4e9d9dc177c4abba800983ad947d984133501a",
+   "generated_tokens": 151,
+   "termination": "complete",
+   "wall_time_seconds": 2.992
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Bread dough puff up is a process where the dough is heated to the highest possible temperature, often referred to as the \"heat\" or \"oven\" setting. This heat is typically achieved by baking or roasting at the oven, which can produce bubbles in the first place. The primary purpose of this is to achieve the desired texture and flavor profile, as the bubbles are essential for the final product to be properly cooked. Without the heat, the bubbles may not be formed, and the product may not be fully cooked. The oven's heat can also affect the moisture in the dough, which can cause the bubbles to be formed and the final product to be unsalceded.",
+   "response_sha256": "660bfb83d13c85aa4a3eaa8428c1d17344c009a8dbfefc8ae8538fb99dda2158",
+   "generated_tokens": 137,
+   "termination": "complete",
+   "wall_time_seconds": 2.686
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The friend's picture of the Moon's high tide is likely to reveal a significant change in the planet's weather patterns, such as a sudden storm or a more frequent occurrence. This would indicate that the current weather patterns are disrupted, leading to a more frequent occurrence of the Moon's high-tide events.",
+   "response_sha256": "3fe4cb96a3ed976091f49383bf15d5c4d48c632e9367459e85835109566d32d0",
+   "generated_tokens": 61,
+   "termination": "complete",
+   "wall_time_seconds": 1.205
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "The van's fuel consumption rate is 9 km per litre, and it carries 54 litres.\n\nTotal fuel consumption = 9 km \u00d7 54 litres = 648 litres.\n\nNumber of full loads = 648 \u00f7 1,700 km = 648 \u00f7 1,700 = 648 \u00f7 1,700 = 648 \u00f7 1,700 = 648 \u00f7 1,700 = 648 \u00f7 1,700 = 648 \u00f7 1,700 = 648.\n\nThe number of full loads is 648.\n\nNumber of kilometres left = 648 \u00f7 1,700 km = 648 \u00f7 1,700 km = 648 \u00f7 1,700 km = 648 \u00f7 1,700 km = 648 \u00f7 1,700 km = 648.\n\nThus, one full load is used up completely, and there are 648 kilometres left.\n\n\\boxed{648}",
+   "response_sha256": "44963f292da03a7b732946879065895ca3b4ad2e3d049eb43899c5dba4a3dceb",
+   "generated_tokens": 209,
+   "termination": "complete",
+   "wall_time_seconds": 4.122
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The buyer pays the first discount of 240 dollars, which is 180 dollars, and then pays an additional tax of 8% on the remaining 80 dollars. The tax amount is 80 dollars.\n\nThe buyer pays the first discount, which is 180 dollars, and the tax is 80 dollars. Therefore, the buyer pays a total of 180 + 80 = 200 dollars.\n\nThe buyer pays a different amount if the tax had been added before the discount came off. Since the tax is added before the discount, the buyer pays the same amount as the original price, which is 200 dollars.\n\nThus, the buyer pays a different amount if the tax had been added before the discount came off.\n\n**Answer:** The buyer pays a different amount if the tax had been added before the discount came off.",
+   "response_sha256": "17b4172c02eaf6a2f3382299a39072e56b8a1499ea5c10cafda34452af65503b",
+   "generated_tokens": 170,
+   "termination": "complete",
+   "wall_time_seconds": 3.37
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "The statement that rules out the most seatings is **Bo sits in the seat immediately right of Bo**, as he is the only seat.\n\nHere's why:\n\n1. **Bo sits in the seat immediately right of Bo** (statement 1).\n2. **Cy sits in the seat immediately right of Bo** (statement 2).\n3. **Dee has one of the two end seats** (statement 3).\n4. **All three statements are satisfied** (statement 4).\n\nThus, the statement that rules out the most seatings is **Bo sits in the seat immediately right of Bo**.",
+   "response_sha256": "4062f715330ff659960f31d2118fd43c1b89294d44dc31b9924aac56bbe90bee",
+   "generated_tokens": 128,
+   "termination": "complete",
+   "wall_time_seconds": 2.507
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The procedure is to **\"Find the property\"** (which is the physical property the switch belongs to), and the physical property is **\"Lighting\"** (the lamp that the switch belongs to).\n\n**Why the procedure is \"Lighting\"**:\n1. **Identify the switch**: You can determine which switch belongs to by checking which lamp is the one that matches the switch.\n2. **Select the lamp**: Once you have identified the switch, you can choose which lamp to perform the lighting check.\n3. **Name the property**: The procedure is \"Lighting\" because the switch is the one that the lamp belongs to, and the physical property is \"Lighting\".\n\nThis procedure is useful because it helps you to determine which switch is connected to which lamp, and it can be useful for scheduling or troubleshooting issues.",
+   "response_sha256": "0cf5db52264ffdc9e450e5010705a69b1dd5f0b88fb5a4289ce9d6277c0d3c2a",
+   "generated_tokens": 176,
+   "termination": "complete",
+   "wall_time_seconds": 3.45
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "You need to be at the reception with a valid time of 11:30 on Wednesday. Since the blood draw stop is 30 minutes before the morning session ends, you should be at the reception with a valid time of 11:30 on Wednesday. You should sort out at the reception to ensure you have a valid time for picking up a prescription.",
+   "response_sha256": "dc40edcdfee16794ad107523ddbedd7edbc02ecd0b71dcc46ed72ea02bb77947",
+   "generated_tokens": 72,
+   "termination": "complete",
+   "wall_time_seconds": 1.499
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, you can return the lamp if you have the receipt. The return policy applies to items purchased on sale, and the receipt is subject to the same terms as the original purchase.",
+   "response_sha256": "2b9039caba3833a0690944d0479594e70b15629c8c7de6749cb6e378e00a3e2c",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.76
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "**Bullet Point:**  \n- **Affected:** Badge readers on the loading dock (interpreted).  \n- **What Changes:** All personnel will replace piecemeal loaders with whole reader models at main entrance.  \n- **Effect:** Cafeteria refit is unrelated to scheduled.",
+   "response_sha256": "b8a34641f6086e7112b8959b768d2f6818988b444af5f3197f903118251f6861",
+   "generated_tokens": 60,
+   "termination": "complete",
+   "wall_time_seconds": 1.22
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet.",
+   "response_sha256": "032ff9f73e2b5479ffd69739f25483908bf35c952c91dc818e62cc8259b1d3b6",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 1.616
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "Here is the comparison of your own devising and the two places where your comparison breaks down:\n\n**1. Comparison of Your Devising (Your own devising):**\n\n- **Location 1:** The location where your devising is located (e.g., a city, country, or specific region).\n- **Location 2:** The location where your devising is located (e.g., a city, country, or specific region).\n- **Location 3:** The location where your devising is not located (e.g., a city, country, or specific region outside of your own location).\n- **Location 4:** The location where your devising is not relevant to your own devising (e.g., a city, country, or specific region outside of your own location).\n\n**2. Two Places Where Your Comparison Breaks Down:**\n\n- **Location 1:** The location where your devising is located (e.g., a city, country, or specific region).\n- **Location 2:** The location where your devising is not relevant to your own devising (e.g., a city, country, or specific region outside of your own location).\n\n**Example:**\n\nIf you have a devising that is located in a city with a specific location (e.g., a city with a particular location), you would need to compare it to another devising that is not relevant to your own location. For example, if you have a devising in a country with a different location, you would need to compare it to another devising that is not relevant to your own location.\n\nThis comparison helps you identify which areas are more relevant to your own devising and which are not.",
+   "response_sha256": "7f9a7216251fa8b64146f367dba7e8f84886cfaca8fda783e68b0d8a1bbaf664",
+   "generated_tokens": 348,
+   "termination": "complete",
+   "wall_time_seconds": 6.919
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "Here is the clearest case where mixing both vaccines and antibiotics would cause harm:\n\n**Vaccine (A)**  \n- **Effect**: Produces a vaccine containing the same type of toxin (A) and produces a toxin that produces a vaccine containing the same type of toxin (A).  \n- **Risk**: Produces a vaccine that produces a toxin that produces a vaccine that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that produces a toxin that",
+   "response_sha256": "8d158d5dc7dca54d56cc53ea8502f8829ee05261bed66944ee7307e7525569cf",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.153
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here is the Python function `group_by_initial` that returns a dictionary of words with their initial letters and values:\n\n```python\ndef group_by_initial(words):\n    return sorted(words)\n\nprint(group_by_initial([\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"m\", \"n\", \"o\", \"p\", \"r\", \"s\", \"t\", \"u\", \"v\"]))\n```\n\n**Output:**\n```\nDict { \"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"m\", \"n\", \"o\", \"p\", \"r\", \"s\", \"t\" }\n```\n\nThis returns the words sorted by their initial letters and values.",
+   "response_sha256": "be36b7e209423afd9d45c83640337036edd7a1b8b475e88a89f5a4acd5e9caad",
+   "generated_tokens": 165,
+   "termination": "complete",
+   "wall_time_seconds": 3.277
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here is the Python function `merge_ranges` that takes a list of tuples and returns the merged, non-overlapping ranges in ascending order of start:\n\n```python\ndef merge_ranges(pairs):\n    start = pairs[0]\n    end = pairs[1]\n    merged = sorted(pairs) + [pairs[0]]\n    sorted_overlap = sorted(pairs) + [pairs[1]]\n    return merged\n```\n\n**Time Complexity:** 1 (O(n) for sorting)\n\n**Explanation:**\n- The function sorts the elements by comparing overlapping ranges.\n- The merged range is returned as a sorted list.\n- The time complexity is O(n) for sorting.",
+   "response_sha256": "2afb461f8ec9a0995bb7ab781213adc9638cad00d5e5f37287dc4090d83999d1",
+   "generated_tokens": 151,
+   "termination": "complete",
+   "wall_time_seconds": 2.923
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "def add_item(item, basket=[]):\n    return basket\n\n# Corrected version\ndef add_item(item, basket=[]):\n    # Add item to basket\n    basket.append(item)\n    return basket\n\n# Explained explanation\n# This function handles adding items to a user's empty basket\n# It's a placeholder for a function that processes item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that processes the item addition\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes item additions\n# The output is a function that handles item additions\n# The original code is not used for testing purposes\n# The corrected version uses a function to handle item additions\n# The output is a function that handles item additions\n# This function is intended to simulate adding items to a user's empty basket\n# It's a test for a function that processes",
+   "response_sha256": "ec93b889e86bd1c1560ef7e7c572ff5fbca4aa5b7cbc8fdc3b77e2078036ab02",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.97
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The correct number is 1, as there is no row to process.\n\nCorrected version:\nThe number of rows is 1.\n\nThis is because there is no row to process, and the total number of rows is 1.",
+   "response_sha256": "aec2b29a6b35ee6167094a50244fdb7f59bf5344d9648a595a773794aa60959f",
+   "generated_tokens": 49,
+   "termination": "complete",
+   "wall_time_seconds": 0.989
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "I will not be able to provide a reply as the conversation cannot be generated. Please provide a specific topic or topic you would like me to help with.",
+   "response_sha256": "63ba95e4de7bc7742f81474579ab66b0fa5eeace6334db1f633018428d376236",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.631
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The engineer will fix the disk and the customer will notify the customer.",
+   "response_sha256": "49244e2d8dec3685c6f1b16e2c38d73f2d2cdb757dacafb3390b13dd9ef612c9",
+   "generated_tokens": 14,
+   "termination": "complete",
+   "wall_time_seconds": 0.301
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are the five steps for taking on a bookkeeping task:\n\n1. **Identify the source**: Start by researching the bookkeeping process and understanding the steps to avoid mistakes.\n\n2. **Research the book**: Look up the book's title and date to find out of the book's current state.\n\n3. **Determine the source**: Use the source to find out of the book's current state.\n\n4. **Make the decision**: Choose the most cost-effective option.\n\n5. **Implement the decision**: Execute the chosen option.\n\nThis process ensures that no mistake is dependent on it and that the chosen option is cheapest to undo if it turned out to be a mistake.",
+   "response_sha256": "bba29b36be71cf446aef50c4b1a78a4b6890a785d227c7c42d7c4ea5735020b5",
+   "generated_tokens": 150,
+   "termination": "complete",
+   "wall_time_seconds": 2.965
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are the steps to address the freeze change:\n\n1. **Identify the Change**: Determine which database index is affected by the 10th to 20th change.  \n   - **Action**: Review the change details and prioritize the most recent changes.  \n2. **Analyze the Impact**: Understand how the freeze affects the current index.  \n   - **Action**: Investigate the implications of the change.  \n3. **Determine Implications**: Decide on which index to replace the current one.  \n   - **Action**: Choose the most recent index.  \n4. **Implement Changes**: Apply the new index.  \n   - **Action**: Update the database.  \n5. **Verify Changes**: Confirm the changes and ensure they are applied correctly.  \n   - **Action**: Check the results and confirm the changes.  \n6. **Communicate Changes**: Notify stakeholders and update plans accordingly.  \n\n**Final Answer**:  \nThe changes would replace the current index. The most recent index is the one affected by the 25th change.",
+   "response_sha256": "947fded43f6877500cd8e009e4854997c9dfc8aac508c2eb6474905e3f413232",
+   "generated_tokens": 230,
+   "termination": "complete",
+   "wall_time_seconds": 4.509
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "The hospital that publishes a higher post-operative death rate than another nearby is likely to be **more expensive**, as it may be more costly to publish and to be more likely to be reported by others. However, to determine which hospital is better, you would need to **find out** before you can assess the data.\n\nHere's what you need to know:\n\n1. **Source of the higher post-operative death rate**: This is the data that the hospital publishes.\n2. **Source of the other hospital's post-operative death rate**: This is the data that the other hospital publishes.\n3. **Comparison**: You would need to compare the two hospitals to see which one has the higher post-operative death rate.\n\nFor example, if the other hospital publishes a higher rate, you would need to compare the two hospitals to see which one has the higher rate.",
+   "response_sha256": "2cd3f831c1e82ac24ee36bf28b528c082ca2f0ba0083e5715bf2245c7ac5ac95",
+   "generated_tokens": 182,
+   "termination": "complete",
+   "wall_time_seconds": 3.552
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The article states that the supplement cures tiredness, which is a measure of the effectiveness of the supplement in providing treatment to the patient. The specific change would be the patient's treatment, as the supplement is designed to address the patient's condition rather than providing treatment.",
+   "response_sha256": "420ed9cb2ca3524ca02f8a31bf776b94b9b5df678247e207d54064f45acbc96d",
+   "generated_tokens": 54,
+   "termination": "complete",
+   "wall_time_seconds": 1.09
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The scene is a child's moment of a dropped glove, a stranger's unexpected encounter, and a subtle moment of emotional tension. The tone is warm and reflective, focusing on character emotions and a sense of the character's role in the interaction.",
+   "response_sha256": "ce98675e904c1287267e1d64d0eb060bea85795aabc796d9c01ecea0d7b8ca1c",
+   "generated_tokens": 49,
+   "termination": "complete",
+   "wall_time_seconds": 0.982
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "Sure, I can provide a few sentences about a market at first light. Here's the answer:\n\n1. A market at first light is a place where light is used to indicate the position of a light bulb in the field of illumination.\n2. Light bulbs are used to illuminate small spaces and buildings.\n3. A light bulb is a device that uses to illuminate small spaces and buildings.\n4. A light is a device that uses to illuminate small areas of the world.\n5. A light is a device that uses to illuminate the world.\n6. A light is a device that uses to illuminate the world of the planet.",
+   "response_sha256": "9b540b488c1652ceda28db2ccb002507367bfafc8260d53d66555edee57fa09e",
+   "generated_tokens": 133,
+   "termination": "complete",
+   "wall_time_seconds": 2.676
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Here are the items in priority order:\n\n1. **Lighting** (2 pounds) - Buy the lightest of everything\n2. **Waterproofing** (1 pound) - Protect your gear from rain\n3. **Safety gear** (1 pound) - Ensure your gear is secure and ready\n\nThese items are all within your budget and should be prioritized.",
+   "response_sha256": "03844a060a489fcd259c9e7829be3658b52ca03ca0fe9ce289c979ffa8dbd7b1",
+   "generated_tokens": 78,
+   "termination": "complete",
+   "wall_time_seconds": 1.547
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here is the policy note for our staff handbook:\n\n**Section 1: Policy Overview**\n\nThis policy applies to all employees and staff members who have made the following actions:\n\n1. **Expense Allocation**  \n   - All employees are entitled to receive all their work-related expenses, travel bookings, overtime, remote work, equipment, data handling, and complaints procedures as a percentage of their work-related expenses.\n\n2. **Compliance with All Work Requirements**  \n   - All employees are required to comply with all work-related expenses, travel bookings, overtime, remote work, equipment, data handling, and complaints procedures.\n\n3. **Compliance with All Work Requirements**  \n   - All employees are required to comply with all work-related expenses, travel bookings, overtime, remote work, equipment, data handling, and complaints procedures.\n\n4. **Compliance with All Work Requirements**  \n   - All employees are required to comply with all work-related expenses, travel bookings, overtime, remote work, equipment, data handling, and complaints procedures.\n\n5. **Compliance with All Work Requirements**  \n   - All employees are required to comply with all work-related expenses, travel bookings, overtime, remote work, equipment, data handling, and complaints procedures.\n\nThis policy applies to all employees and staff members who have made the above actions.",
+   "response_sha256": "314f30f88c975b160f1b76fbf7b1b62860fd5da7564e07dc38023c9772e6f81d",
+   "generated_tokens": 289,
+   "termination": "complete",
+   "wall_time_seconds": 5.649
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 109.415
+}

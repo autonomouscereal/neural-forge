@@ -1,0 +1,25 @@
+{
+ "schema": "neural-forge-matrix-wave32-deployments-prune-v1",
+ "generated_at": "2026-08-28T10:33:34Z",
+ "root": "/home/cereal/model-surgery-lab/deployments",
+ "policy": "current + 1 predecessor",
+ "current": "neural-forge-matrix-b20583d2",
+ "kept": [
+  "neural-forge-matrix-b20583d2",
+  "neural-forge-matrix-d26e4481"
+ ],
+ "found": [
+  "neural-forge-matrix-4e2c25f0",
+  "neural-forge-matrix-6fb3f95f",
+  "neural-forge-matrix-71203be5",
+  "neural-forge-matrix-b20583d2",
+  "neural-forge-matrix-d26e4481",
+  "neural-forge-matrix-ee297349"
+ ],
+ "deleted": [
+  "neural-forge-matrix-4e2c25f0",
+  "neural-forge-matrix-6fb3f95f",
+  "neural-forge-matrix-71203be5",
+  "neural-forge-matrix-ee297349"
+ ]
+}

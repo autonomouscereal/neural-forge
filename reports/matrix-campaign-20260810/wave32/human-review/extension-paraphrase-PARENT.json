@@ -1,0 +1,699 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "paraphrase-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T09:38:30Z",
+ "label": "PARENT",
+ "campaign_wave": 32,
+ "cell_id": null,
+ "cell_instance_id": null,
+ "receipt_sha256": null,
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-4e2c25f0/research/lfm2_paraphrase_triplets_v1.json",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-4e2c25f0/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 45,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "shared-with-parent",
+ "child_responses": [],
+ "parent_responses": [
+  {
+   "id": "para-conversation-natural-greeting-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hello. Today wore me out. Reply like a person and put one worthwhile question at the end."
+    }
+   ],
+   "response_verbatim": "Sure! Here's a thoughtful and personalized response you could use:\n\n---\n\n**\"I really appreciate you taking the time to share your story. It means a lot to hear about how you\u2019ve been through something challenging. I\u2019d love to hear more about what\u2019s been going on and how you\u2019re coping or supporting others.\"**\n\nLet me know if you'd like to tailor it further!",
+   "response_sha256": "afa115399cf3c6babe54fb1027f572d80f0bb017a6932cc779d59cace2d1d1e1",
+   "generated_tokens": 81,
+   "termination": "complete",
+   "wall_time_seconds": 1.894
+  },
+  {
+   "id": "para-conversation-natural-greeting-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answering."
+    }
+   ],
+   "response_verbatim": "\"Have you ever felt like you're stuck in a never-ending loop of trying to solve a problem or overcome a challenge?\"",
+   "response_sha256": "efea34ceb2b4ceaee5c9626e4ba814575f4dc1cf745b2bebf1d19b12ac485c04",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.486
+  },
+  {
+   "id": "para-conversation-natural-greeting-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I am worn down after today. Respond naturally, and close with exactly one question that shows you were listening."
+    }
+   ],
+   "response_verbatim": "I'm here to help! How can I assist you today?",
+   "response_sha256": "cca3f49cf7d28066945c15a547b18b20321785caa4eb0ecbe5515a3663765d9a",
+   "generated_tokens": 13,
+   "termination": "complete",
+   "wall_time_seconds": 0.254
+  },
+  {
+   "id": "para-instruction-three-actions-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in."
+    }
+   ],
+   "response_verbatim": "Here are three actionable, time-sensitive chores to tackle before bed, designed to reduce mental clutter and create a calmer mindset:\n\n---\n\n### 1. **Declutter Your Workspace**  \n   - **Why it works**: A tidy environment reduces visual stress and mental noise. A messy desk or cluttered workspace can trigger anxiety and distract you from your goals.  \n   - **How to do it**:  \n     - Sort items into categories (e.g., \"keep,\" \"donate,\" \"discard\").  \n     - Use a drawer or shelf to keep only essentials (e.g., a laptop, a notebook, a pen).  \n     - Set a timer for 10\u201315 minutes to tackle one area at a time.  \n\n---\n\n### 2. **Prepare Your Bedroom for Sleep**  \n   - **Why it works**: A cluttered or chaotic bedroom can disrupt sleep and increase stress. A calm, organized space signals to your brain that it\u2019s time to rest.  \n   - **How to do it**:  \n     - Organize your bed with a \"keep\" pile for essentials (e.g., a pillow, a blanket) and \"donate\" or \"discard\" items that no longer serve you.  \n     - Use a white noise machine or calming music to mask disruptive sounds.  \n     - Declutter your closet or bedside table to create a sense of order.  \n\n---\n\n### 3. **Set a \"Mindful Morning Routine\"**  \n   - **Why it works**: Starting the day with intention reduces mental resistance and sets a positive tone. A structured routine can ease anxiety and improve focus.  \n   - **How to do it**:  \n     - Begin with 5\u201310 minutes of deep breathing or meditation.  \n     - Write down 3 things you\u2019re grateful for or a goal to focus on.  \n     - Avoid screens for 30 minutes to avoid digital overwhelm.  \n\n---\n\nThese tasks are simple, time-efficient, and directly address common stressors. By tackling them first, you\u2019ll create a foundation for a calmer, more productive night\u2019s sleep. \ud83c\udf19",
+   "response_sha256": "33037753aac82285b7b6186aeeccf86c2507b483de01265510b6db9767947422",
+   "generated_tokens": 458,
+   "termination": "complete",
+   "wall_time_seconds": 7.999
+  },
+  {
+   "id": "para-instruction-three-actions-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I lose track of little jobs around the house. Give three doable steps for today as a numbered list with nothing in front of it."
+    }
+   ],
+   "response_verbatim": "Here are three doable steps to help you regain focus and productivity:\n\n1. **Set a specific time and place**: Choose a dedicated time and location for work to minimize distractions. This could be a quiet corner of your home or a specific room.\n\n2. **Break tasks into smaller steps**: Divide large projects into smaller, manageable tasks. This makes them less overwhelming and easier to tackle one at a time.\n\n3. **Use a timer or productivity tool**: Set a timer for a specific amount of time and work on a task for that duration. This helps maintain focus and prevents burnout.\n\nThese steps should help you regain your attention and improve your efficiency.",
+   "response_sha256": "d781e713ddd426b9a9df4c1b5c8e05bed3806df2068a58858e2e84e9e9b0e48c",
+   "generated_tokens": 142,
+   "termination": "complete",
+   "wall_time_seconds": 2.53
+  },
+  {
+   "id": "para-instruction-three-actions-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in."
+    }
+   ],
+   "response_verbatim": "Here are three practical, actionable moves to improve your household odds and ends:\n\n1. **Review and Optimize Your Home\u2019s Layout**  \n   - **Why it works**: A cluttered or disorganized space can increase stress and reduce efficiency. A tidy layout minimizes wasted space and improves workflow.  \n   - **How to do it**:  \n     - Sort items into categories (e.g., keep, donate, discard).  \n     - Use storage solutions (baskets, shelves, drawer dividers) to keep essentials within reach.  \n     - Minimize travel time by placing frequently used items in high-traffic areas.  \n\n2. **Adjust Your Diet and Lifestyle**  \n   - **Why it works**: Poor nutrition and sedentary habits can lead to chronic stress, which affects mental health and productivity.  \n   - **How to do it**:  \n     - Prioritize balanced meals (e.g., lean proteins, whole grains, healthy fats).  \n     - Incorporate movement (e.g., walking, stretching, or yoga) into daily routines.  \n     - Limit processed foods and opt for whole foods to support energy levels and focus.  \n\n3. **Set Clear Boundaries and Prioritize Tasks**  \n   - **Why it works**: Overcommitting or neglecting important tasks can drain mental energy and increase stress.  \n   - **How to do it**:  \n     - Define daily/weekly goals and allocate time for critical tasks (e.g., work, family, self-care).  \n     - Use tools like to-do lists or digital calendars to track progress.  \n     - Delegate or automate repetitive tasks (e.g., scheduling, bill payments) to free up time for high-impact work.  \n\nThese steps address both physical and mental well-being, creating a foundation for sustained productivity and peace of mind.",
+   "response_sha256": "376e403d86166bcdf55135b96b43318f277b3dfe7a1763b606766e1aeca7eb47",
+   "generated_tokens": 396,
+   "termination": "complete",
+   "wall_time_seconds": 7.042
+  },
+  {
+   "id": "para-explanation-seasons-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Tell a twelve-year-old why the year has seasons, and set straight the belief that it gets hot because our planet swings nearer the Sun."
+    }
+   ],
+   "response_verbatim": "Hey there! \ud83c\udf1e I'm so glad you asked about seasons and why the year gets hot! Let me tell you about it in a fun way.\n\nImagine your planet is like a big, round ball of space. Every year, it's like a little sunbeam shining on the ball. When the sun is shining, the ball gets warm and gets hotter. But when the sun is not shining, the ball gets cooler and gets cooler too.\n\nSo, the year gets hot because our planet swings nearer to the Sun. It's like the sun is like a giant lightbulb that makes the ball get warm and hot! \ud83c\udf1e\n\nDoes that make sense? Let me know if you have any other questions about seasons or space!",
+   "response_sha256": "05106f9a931ede23ba91d6a664fb213e0ea5f87a6e4369498f610250472afd18",
+   "generated_tokens": 154,
+   "termination": "complete",
+   "wall_time_seconds": 2.805
+  },
+  {
+   "id": "para-explanation-seasons-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "For a bright twelve-year-old: what causes the seasons, and why is the idea that summer comes from being closer to the Sun wrong?"
+    }
+   ],
+   "response_verbatim": "Great question! Let's break it down:\n\n### **Why does summer come from being closer to the Sun?**\n\nThe reason summer occurs because the Earth orbits the Sun at an angle called **obliquity**, which is roughly **23.5 degrees**. This means that the Sun's rays strike the Earth at a different angle each day, causing the seasons to shift.\n\n- **Sun's rays** are tilted at about **23.5 degrees** relative to the Earth's orbit around the Sun.\n- This tilt causes the **latitude** (the angle between the Sun and the Earth's surface) to vary throughout the year.\n\n### **Why is summer wrong?**\n\nThe idea that summer comes from being closer to the Sun is **not correct**. Here's why:\n\n1. **Earth's orbit around the Sun is not a perfect circle**:\n   - The Earth's orbit is not a perfect circle. It has a **diameter** (about 12,742 km) and a **perihelion** (closest point to the Sun), which is about **0.39 degrees** from the Sun.\n   - This means the Sun's rays are not always at the same angle as the Earth's surface.\n\n2. **Seasonal changes are due to the tilt and orbit**:\n   - The tilt causes the seasons to occur because the Sun's rays strike the Earth at different angles each day.\n   - The **latitude** (how far north or south the Earth is from the Sun) also changes throughout the year, leading to seasonal variations.\n\n### **Summary**\n- **Summer** happens because the Sun's rays strike the Earth at different angles, causing the seasons to shift.\n- The idea that summer comes from being closer to the Sun is **wrong** because the Earth's orbit is not a perfect circle, and seasons are due to the tilt and orbit, not just the Sun's proximity.\n\nLet me know if you'd like more details!",
+   "response_sha256": "14159c0ed8548c2fcab5e50df5b1fff7d6012ea168cd575651487120d8d198d4",
+   "generated_tokens": 413,
+   "termination": "complete",
+   "wall_time_seconds": 7.525
+  },
+  {
+   "id": "para-explanation-seasons-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer."
+    }
+   ],
+   "response_verbatim": "Okay, let's break it down in a way that's easy to understand for a twelve-year-old!\n\nImagine the Sun is like a big, steady light source that helps our planet stay warm and keep us alive. This light is like a gentle, steady glow that helps our Earth stay in a special place called the \"habitable zone.\"\n\nNow, think about how far away from the Sun is this light source. If it's very far away, it might not be enough to keep us warm. If it's close, it might not be enough to keep us warm.\n\nSo, the \"season\" is like a cycle of warmth and coolness. The longer the light source is far away, the more seasons we get. The shorter the light source is, the more seasons we get.\n\nDoes that make sense? Let me know if you'd like to explore more about how this works!",
+   "response_sha256": "9b14354f519a1fd587c8082ea3331e9df1c364bccf7cf6e352627786110ca6cd",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 3.405
+  },
+  {
+   "id": "para-arithmetic-multi-step-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A shop turns out 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box and how many are left? Show your working."
+    }
+   ],
+   "response_verbatim": "The shop turns out 17 kits per hour. Over 6 hours, they produce:\n\\[\n17 \\text{ kits/hour} \\times 6 \\text{ hours} = 102 \\text{ kits}\n\\]\nThey reject 8 kits, so the number of kits remaining is:\n\\[\n102 - 8 = 94 \\text{ kits}\n\\]\nThey distribute these 94 kits into 5 boxes:\n\\[\n\\frac{94 \\text{ kits}}{5 \\text{ boxes}} = 18 \\text{ kits/box}\n\\]\nThus, the number of complete kits per box is \\(\\boxed{18}\\) and there are \\(\\boxed{18}\\) kits left.",
+   "response_sha256": "29dba193689b8c8ca9843079a16a1a6ea96e55af508d0b0266706accd744d68b",
+   "generated_tokens": 140,
+   "termination": "complete",
+   "wall_time_seconds": 2.508
+  },
+  {
+   "id": "para-arithmetic-multi-step-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Show the steps."
+    }
+   ],
+   "response_verbatim": "Here's the step-by-step solution:\n\n1. **Calculate production hours**:  \n   \\( 6 \\text{ hours} \\times 17 \\text{ kits/hour} = 102 \\text{ kits} \\).\n\n2. **Calculate failed kits**:  \n   \\( 102 \\text{ kits} - 8 \\text{ failed kits} = 94 \\text{ kits failed} \\).\n\n3. **Calculate remaining kits**:  \n   \\( 94 \\text{ kits} - 94 \\text{ kits} = 0 \\text{ kits remaining} \\).\n\n4. **Divide remaining kits by boxes**:  \n   \\( \\frac{0 \\text{ kits}}{5 \\text{ boxes}} = 0 \\text{ kits per box} \\).\n\n5. **Final Answer**:  \n   Each box contains \\(\\boxed{0}\\) whole kits, and the remainder is \\(\\boxed{0}\\).",
+   "response_sha256": "50501e7091c1952f1b903734184cc822da248de3f737200806ef1962c7b9c2f8",
+   "generated_tokens": 204,
+   "termination": "complete",
+   "wall_time_seconds": 3.714
+  },
+  {
+   "id": "para-arithmetic-multi-step-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Production runs 17 kits per hour for 6 hours; 8 fail inspection; the remainder is divided equally into 5 boxes. Give the number per box and the leftover, with the working."
+    }
+   ],
+   "response_verbatim": "To determine the number of kits per box and the leftover, we start by calculating the total number of kits produced:\n\n\\[\n17 \\text{ kits/hour} \\times 6 \\text{ hours} = 102 \\text{ kits}\n\\]\n\nNext, we calculate the number of kits that fail inspection:\n\n\\[\n102 \\text{ kits} - 8 \\text{ kits} = 94 \\text{ kits}\n\\]\n\nThese 94 kits are divided equally into 5 boxes:\n\n\\[\n\\frac{94 \\text{ kits}}{5 \\text{ boxes}} = 18.8 \\text{ kits per box}\n\\]\n\nSince the number of kits must be a whole number, we round down to 18 kits per box.\n\nThus, the number of kits per box is 18, and the leftover is:\n\n\\[\n\\boxed{18}\n\\]",
+   "response_sha256": "ac39cbe9a12622a2669ffbe5e90fc2b67d19313175dca93a4b3b3021bdbc1854",
+   "generated_tokens": 190,
+   "termination": "complete",
+   "wall_time_seconds": 4.06
+  },
+  {
+   "id": "para-logic-ordering-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it."
+    }
+   ],
+   "response_verbatim": "To determine which statements force each one, we analyze the relationships between the four individuals: Mira, Theo, Sal, and Jun.\n\n1. **Mira comes in ahead of Theo**: This implies that Mira is ahead of Theo.\n2. **Theo comes in ahead of Jun**: This implies that Theo is ahead of Jun.\n3. **Sal comes in behind Jun**: This implies that Sal is behind Jun.\n4. **All four statements force it**: This means that if any one of the statements is true, all must be true.\n\nLet's evaluate each statement:\n\n- **Statement 1**: Mira comes in ahead of Theo. This is true.\n- **Statement 2**: Theo comes in ahead of Jun. This is true.\n- **Statement 3**: Sal comes in behind Jun. This is true.\n- **Statement 4**: All four statements force it. This is true.\n\nThus, the statements that force it are **Statement 1, 2, and 3**.\n\n\\boxed{1, 2, 3}",
+   "response_sha256": "f125ec0914731efcc762bfeff8e71984cd2bc797c529a4fa6c416be26c98a334",
+   "generated_tokens": 233,
+   "termination": "complete",
+   "wall_time_seconds": 5.751
+  },
+  {
+   "id": "para-logic-ordering-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira beat Theo. Theo beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one."
+    }
+   ],
+   "response_verbatim": "The full finishing order is:\n\n1. **Mira beats Theo**  \n   *(The only one because Mira is the first player to beat Theo.)*\n\n**Explanation:**  \nThe only player to beat Theo is Mira, as she is the first to achieve this feat. The other players (Theo and Jun) are beaten by Jun, and Sal is beaten by Jun, making Mira the sole winner.",
+   "response_sha256": "830f21e0d45f44b8b5ad24b0ebde670bb4e0ab003199dad21c20c0cae810dbce",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 2.286
+  },
+  {
+   "id": "para-logic-ordering-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Put the four in order and name the facts that pin it down."
+    }
+   ],
+   "response_verbatim": "Here are the facts that pin it down in order:\n\n1. **Mira** before **Theo**  \n   *(Mira is the first person in the story)*\n\n2. **Theo** before **Jun**  \n   *(Jun is the second person in the story)*\n\n3. **Sal** after **Jun**  \n   *(Sal is the third person in the story)*\n\n4. **Theo** before **Sal**  \n   *(Theo is the fourth person in the story)*\n\nThese facts are arranged chronologically from the beginning to the end of the story.",
+   "response_sha256": "8c273bf0777869987ba91055d4dd817aa11034a575231f30ab5dd9a6a7dba738",
+   "generated_tokens": 126,
+   "termination": "complete",
+   "wall_time_seconds": 3.267
+  },
+  {
+   "id": "para-context-retrieval-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Using only the note below, tell me the day I can bring my dog, the latest hour for tool checkout, and which entrance to avoid."
+    }
+   ],
+   "response_verbatim": "I'm sorry, but I can't provide personal information such as your dog's specific needs, tool checkout hours, or entrance choices. My purpose is to assist with general information and safety guidelines. Let me know if you'd like help with something else!",
+   "response_sha256": "b0cb27c06fd3871a0bba48f8d6cb76cdd5bf4b44610b7365c41fe011159ff175",
+   "generated_tokens": 51,
+   "termination": "complete",
+   "wall_time_seconds": 1.309
+  },
+  {
+   "id": "para-context-retrieval-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From the note alone: which day are dogs allowed, when does tool checkout close, and which gate is out of service?"
+    }
+   ],
+   "response_verbatim": "I'm sorry, but I can't provide real-time information or updates on specific events like dog checkouts, gate closures, or service statuses. My knowledge is limited to the information available up until July 2024. For the most accurate and up-to-date details, I recommend checking the official website of the service provider or contacting them directly.",
+   "response_sha256": "38b8c70b9c5f8b979310c01f941811af3e22f78a82f8e383108b5edae88e9118",
+   "generated_tokens": 72,
+   "termination": "complete",
+   "wall_time_seconds": 1.871
+  },
+  {
+   "id": "para-context-retrieval-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Answer strictly from the note: dog day, tool checkout cut-off, and the gate that is shut."
+    }
+   ],
+   "response_verbatim": "The correct answer is **dog day, tool checkout cut-off, and the gate that is shut**.  \n\n- **Dog day** refers to the time when a dog is allowed to be checked out for a service (e.g., a dog walk or training session).  \n- **Tool checkout cut-off** means the process of purchasing or using a tool is stopped, often due to a payment issue or a service failure.  \n- The gate that is shut indicates that the gate is closed, preventing access to the area.  \n\nThese three elements are directly related to the dog day and tool checkout process.",
+   "response_sha256": "97e50c7e4778d32c9962d4e146f4be91d423dfeb924a3dcb06b2c244993cab1e",
+   "generated_tokens": 124,
+   "termination": "complete",
+   "wall_time_seconds": 3.191
+  },
+  {
+   "id": "para-summarization-priorities-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Boil the update below down to two sentences that keep the choice that was made and the risk that is still open."
+    }
+   ],
+   "response_verbatim": "Boil the update to ensure it addresses the most critical issues while minimizing risks. This approach balances thoroughness with practicality, allowing for timely fixes without unnecessary delays.",
+   "response_sha256": "dc776512190b9b7a7d03964226a66b097e133bd8937057193f15e6de19da31bb",
+   "generated_tokens": 33,
+   "termination": "complete",
+   "wall_time_seconds": 0.884
+  },
+  {
+   "id": "para-summarization-priorities-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Two sentences on the update below, carrying the decision taken and the risk still outstanding."
+    }
+   ],
+   "response_verbatim": "Here are two sentences that capture the decision and risk:\n\n1. **Sentence 1:**  \n   *\"The company has decided to proceed with the new product launch, but the risk of delays remains high due to unforeseen technical issues.\"*\n\n2. **Sentence 2:**  \n   *\"The company is confident in its current strategy but acknowledges that the risk of delays is still significant, requiring further planning and contingency measures.\"*\n\nBoth convey the same message, emphasizing the decision and ongoing risk. Let me know if you'd like further refinements!",
+   "response_sha256": "0f5e0f77f2b5249366783b10c1b4aaa8f80c295538d9500e3487c5a22538cdab",
+   "generated_tokens": 119,
+   "termination": "complete",
+   "wall_time_seconds": 3.085
+  },
+  {
+   "id": "para-summarization-priorities-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Condense the update to two sentences, preserving what was decided and what remains unresolved."
+    }
+   ],
+   "response_verbatim": "The update decided to implement a new feature that will enhance user experience by providing personalized recommendations based on past behavior. However, the implementation is still in progress and will require further testing to ensure it meets all requirements.",
+   "response_sha256": "fb9e7fda71aee26c4401b7ec281cc40f85fd9982bf97943f409693220121cdb4",
+   "generated_tokens": 43,
+   "termination": "complete",
+   "wall_time_seconds": 1.095
+  },
+  {
+   "id": "para-comparison-ram-rom-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads."
+    }
+   ],
+   "response_verbatim": "**Analogy:**  \nWorking memory is like a **temporary workspace** where you can temporarily hold and manipulate information for short periods (e.g., while solving a puzzle or remembering a list of tasks). Long-term storage is like a **long-term library** where you store information over time, such as books or digital files.\n\n**Misleading Analogy:**  \nOne way to mislead is to say, *\"Your working memory is like a temporary workspace, but long-term storage is like a permanent library.\"* This overlooks that working memory is a short-term tool for immediate tasks, while long-term storage is a permanent repository for information that can be revisited later.\n\n**Why it\u2019s misleading:**  \nThe analogy assumes working memory is a \"short-term\" tool, but long-term storage is a \"long-term\" system. This ignores how both are interconnected\u2014working memory supports the ability to retain information, and long-term storage enables it to be revisited and used for future tasks.",
+   "response_sha256": "b208589880e9353dbfcd22428f14b87b6817a627d3ab809d65aec387c2351735",
+   "generated_tokens": 206,
+   "termination": "complete",
+   "wall_time_seconds": 5.068
+  },
+  {
+   "id": "para-comparison-ram-rom-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Distinguish RAM from disk with a single everyday comparison, then name two respects in which the comparison fails."
+    }
+   ],
+   "response_verbatim": "**Distinction Between RAM and Disk:**  \nRAM (Random Access Memory) is a volatile memory that stores data temporarily for quick access, while a disk is a non-volatile storage medium that retains data permanently.  \n\n**Respects that Comparison Fails:**  \nThe comparison fails because RAM is not designed to store data permanently, whereas a disk is designed to retain data indefinitely.  \n\n**Two Respects in Which the Comparison Fails:**  \n1. **Data Persistence:** RAM retains data until it is accessed again, while a disk does not.  \n2. **Access Speed:** RAM accesses data quickly, whereas a disk requires waiting for the data to be written to a secondary storage medium.  \n\nThese differences highlight how RAM prioritizes speed and flexibility, while disks prioritize durability and long-term storage.",
+   "response_sha256": "f695f602fe4b0845eb2b72316399377d4c6960ae5935d0c945d3014209974261",
+   "generated_tokens": 166,
+   "termination": "complete",
+   "wall_time_seconds": 4.04
+  },
+  {
+   "id": "para-comparison-ram-rom-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One simple analogy for memory versus storage, followed by two honest limits of the analogy."
+    }
+   ],
+   "response_verbatim": "Here's a simple analogy for **memory versus storage**:\n\n**Memory** is like a **memory card** that stores information. When you recall something, it's like the card being activated and the information being retrieved.\n\n**Storage** is like a **temporary container** (e.g., a hard drive or SSD) that holds the information temporarily. It doesn't retain the information forever\u2014it's like a \"memory card\" that can be accessed later.\n\n### Honest Limits:\n1. **Memory**:  \n   - The card can only hold a limited number of items (e.g., 5 items).  \n   - If you try to access more than that, the card might \"die\" (erase) or become unavailable.  \n\n2. **Storage**:  \n   - The container can hold a large amount of data (e.g., a hard drive with 1TB capacity).  \n   - If you try to access more than the container's capacity, it might fail or become corrupted.  \n\n### Key Difference:\n- **Memory** is a **short-term, limited resource** (like a card), while **storage** is a **long-term, permanent resource** (like a container).  \n\nThis analogy helps illustrate how memory and storage work differently in terms of capacity, durability, and how they interact with the environment.",
+   "response_sha256": "6e9b0948c66eedc8143b70f6a00ea99bb22f7e636fbcb82ce5132f7b98d2a233",
+   "generated_tokens": 282,
+   "termination": "complete",
+   "wall_time_seconds": 6.947
+  },
+  {
+   "id": "para-coding-deduplicate-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that removes duplicates, keeps the first appearance order, and uses hashable values:\n\n```python\ndef unique_in_order(items):\n    seen = set()\n    unique_items = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            unique_items.append(item)\n    return unique_items\n\n# Example usage:\nitems = [1, 2, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 10]\nprint(unique_in_order(items))  # Output: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n```\n\n**Time Complexity:** O(n), where n is the number of items in the input list.\n\nThis function uses a set to track seen items and a list to store unique items in the order of first appearance.",
+   "response_sha256": "538c84df9650da8e76ead01cf46ebe9188c2c3cd4bccc1d5a908375048dedc6a",
+   "generated_tokens": 219,
+   "termination": "complete",
+   "wall_time_seconds": 5.354
+  },
+  {
+   "id": "para-coding-deduplicate-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that removes duplicates while preserving the order of first appearance:\n\n```python\ndef unique_in_order(items):\n    seen = set()\n    unique_items = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            unique_items.append(item)\n    return unique_items\n\n# Example usage:\nitems = [1, 2, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10]\nprint(unique_in_order(items))  # Output: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n```\n\n### How it works:\n- **`seen` set** keeps track of items that have already been encountered.\n- For each item in the input list:\n  - If the item is **not in `seen`**, it's added to the `unique_items` list.\n  - This ensures duplicates are removed while preserving the original order of first appearance.\n\n### Example:\nFor the input `[1, 2, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10]`, the output will be `[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]`, which matches the expected order.\n\nThis approach efficiently handles duplicates while maintaining the original order of first occurrence.",
+   "response_sha256": "2c280e218b90f2694644dccc6456de2ab5f6d8e42cc506c98c19623c1073b7b4",
+   "generated_tokens": 365,
+   "termination": "complete",
+   "wall_time_seconds": 9.067
+  },
+  {
+   "id": "para-coding-deduplicate-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me unique_in_order(items) in Python, preserving first-seen order for hashable inputs, with one example and the expected complexity."
+    }
+   ],
+   "response_verbatim": "Here's a unique implementation of `unique_in_order(items)` in Python that preserves the first-seen order for hashable inputs, with a complexity of **O(n)**:\n\n```python\ndef unique_in_order(items):\n    seen = set()\n    unique_order = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            unique_order.append(item)\n    return unique_order\n```\n\n### Explanation:\n- **`seen` set**: Keeps track of items that have already been encountered.\n- **`unique_order` list**: Stores the order of first-seen items.\n- **Time complexity**: O(n), where n is the number of items, because each item is processed once.\n\n### Example Usage:\n```python\nitems = [1, 2, 3, 2, 4, 5]\nprint(unique_in_order(items))  # Output: [1, 2, 3, 4, 5]\n```\n\nThis implementation ensures that the first occurrence of each item is preserved in the order of first appearance.",
+   "response_sha256": "a87af40869ac97e816345eb79f2be88e04b04212bc2ea44513b33ac10f1570f7",
+   "generated_tokens": 240,
+   "termination": "complete",
+   "wall_time_seconds": 5.965
+  },
+  {
+   "id": "para-debugging-off-by-one-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This should hand back the final three items but often hands back four. Find the fault and rewrite it.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "Here's the corrected and rewritten function:\n\n```python\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start:] if start > 0 else values\n```\n\n### Explanation:\n- **Fault**: The original code incorrectly returned the last three elements, which is invalid.\n- **Rewritten**: The function now correctly returns the last three elements of the list, handling edge cases where the list might be empty or have fewer than three elements.\n\nThis version ensures robustness and correctness for all possible input scenarios.",
+   "response_sha256": "98c8f4f8aebccde88e602d22fb6231506cba029549e775a7530b7a34c3137959",
+   "generated_tokens": 128,
+   "termination": "complete",
+   "wall_time_seconds": 3.2
+  },
+  {
+   "id": "para-debugging-off-by-one-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Returns four elements where three were wanted. Diagnose and correct.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "Here's a corrected and well-documented version of your function:\n\n```python\ndef last_three(values):\n    # Find the index of the last three elements\n    start = max(0, len(values) - 3)\n    return values[start:]\n\n# Example usage:\n# print(last_three([1, 2, 3, 4, 5]))  # Output: [4, 5, 1]\n```\n\n### Explanation:\n- **`max(0, len(values) - 3)`**: Ensures we don't access elements beyond the last three.\n- **`values[start:]`**: Returns the sublist starting at index `start` and ending before the last three elements.\n\nThis function now correctly handles cases where the input list has fewer than 3 elements, returning an empty list.",
+   "response_sha256": "1a00a0824eac3bbb9e268db4ca057f63e188d75210c375e6c3d1743c0b8a4985",
+   "generated_tokens": 186,
+   "termination": "complete",
+   "wall_time_seconds": 4.595
+  },
+  {
+   "id": "para-debugging-off-by-one-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The slice is wrong and the function over-returns. Say why and supply a fixed version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The issue with your function is that it returns a slice that includes the first three elements of the input list, which may not be the desired behavior. Here's a fixed version of your function that returns the last three elements of the input list:\n\n```python\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start:]\n```\n\nThis function works by finding the maximum length of the input list minus three, which gives the number of elements that should be returned. It then slices the list from the start of the list up to this length, effectively returning the last three elements.\n\nYou can use this function like this:\n\n```python\nprint(last_three([1, 2, 3, 4, 5]))  # Output: [5]\n```\n\nThis will return the last three elements of the input list, which are `[5]`.",
+   "response_sha256": "35ba78a50c03115fb35f215d8bf7696a940df436ca2d5d1de10941831e39a14d",
+   "generated_tokens": 195,
+   "termination": "complete",
+   "wall_time_seconds": 4.825
+  },
+  {
+   "id": "para-writing-concise-email-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number."
+    }
+   ],
+   "response_verbatim": "Subject: Confirmation of Late Delivery\n\nDear [Supplier Name],\n\nWe are writing to confirm the delivery of the product by Friday. We will provide a tracking number for your records. Please let us know if you need any further details.\n\nBest regards,  \n[Your Name]  \n[Your Position]  \n[Your Company]",
+   "response_sha256": "de46d56fb2010cd122d9688e0e439520852c21dbcc5aff5df0b744613914e801",
+   "generated_tokens": 69,
+   "termination": "complete",
+   "wall_time_seconds": 1.696
+  },
+  {
+   "id": "para-writing-concise-email-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a short courteous message (90 words maximum) to a supplier about a slipped delivery: will it arrive by Friday, our install is Monday, and please send an updated tracking number."
+    }
+   ],
+   "response_verbatim": "Subject: Update on Delivery  \n\nDear [Supplier Name],  \n\nWe\u2019re sorry to hear about the recent slip in delivery. We\u2019ll be on track to deliver by Friday, and we\u2019ll send an updated tracking number shortly. Please let us know if you need any further details.  \n\nBest regards,  \n[Your Name]  \n\n(Word count: 90)",
+   "response_sha256": "634af011c7cc1607467c357ec47ae243ff8ee030ee08fdc300337b47cea74881",
+   "generated_tokens": 78,
+   "termination": "complete",
+   "wall_time_seconds": 1.97
+  },
+  {
+   "id": "para-writing-concise-email-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number. Keep it under 90 words."
+    }
+   ],
+   "response_verbatim": "Subject: Follow-Up on Delayed Order  \n\nHi [Supplier Name],  \n\nI hope this message finds you well. I wanted to confirm that your order is scheduled to arrive on Friday, and I\u2019d like to ensure we\u2019re aligned on the Monday installation timeline. Could you please share a new tracking number for this shipment?  \n\nThank you for your prompt attention.  \n\nBest regards,  \n[Your Name]  \n\n(Word count: 90)",
+   "response_sha256": "946b82dd0f0a99ab4944a4bc01e74c59b1db5d49b266982c5ba149a22b762176",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 2.386
+  },
+  {
+   "id": "para-planning-dependencies-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Move a small site to a new domain with minimal downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out."
+    }
+   ],
+   "response_verbatim": "Here's a step-by-step guide to move a small site to a new domain with minimal downtime, using dependency-aware strategies:\n\n---\n\n### **Step 1: Backup the Site**\n1. **Backup the site** to a secure location (e.g., cloud storage, external drive, or a dedicated backup service).\n2. **Test the backup** to ensure it works before moving.\n\n---\n\n### **Step 2: Update DNS Settings**\n1. **Check DNS configuration**:\n   - Ensure DNS records (e.g., MX, TXT, CNAME) are correctly configured for the new domain.\n   - Use tools like `dig` or `nslookup` to verify DNS settings.\n\n2. **Update DNS servers**:\n   - If using a cloud provider (e.g., AWS, Azure), update DNS servers to point to the new domain.\n   - For local servers, ensure they are configured to point to the new domain.\n\n---\n\n### **Step 3: Configure DNS Records**\n1. **Create DNS records** for the new domain:\n   - **A Record**: Point to the new domain's IP address.\n   - **CNAME Record**: Point to a subdomain (e.g., `www` for the new site).\n   - **TXT Record**: Set DNS names for the new domain (e.g., `example.com`).\n   - **CACHE Record**: Set cache headers (e.g., `Cache-Control`) for performance optimization.\n\n2. **Test DNS**:\n   - Use tools like `dig` or `nslookup` to verify DNS resolution.\n\n---\n\n### **Step 4: Update SSL/TLS Certificates**\n1. **Generate and apply certificates**:\n   - Use a trusted CA (e.g., Let's Encrypt) to generate and distribute SSL/TLS certificates.\n   - Ensure certificates are valid and trusted.\n\n2. **Update server configurations**:\n   - Update server software (e.g., Apache, Nginx) to use the new certificate.\n   - Test certificate validation and renewal.\n\n---\n\n### **Step 5: Verify DNS Propagation**\n1. **Check DNS propagation**:\n   - Use tools like `dig` or `nslookup` to confirm DNS changes are visible.\n   - Ensure the new domain is reachable from the old one.\n\n2. **Test connectivity**:\n   - Use tools like `ping` or `traceroute` to verify network connectivity.\n\n---\n\n### **Step 6: Backup the Site**\n1. **Backup the site** to a secure location (e.g., cloud storage, external drive).\n2. **Test the backup** to ensure it works before moving.\n\n---\n\n### **Step 7: Deploy the Site**\n1. **Deploy the site**:\n   - Use a CDN, CDN provider, or cloud hosting service to deploy the site.\n   - Ensure the new domain is accessible via the updated DNS settings.\n\n2. **Test the deployment**:\n   - Verify the site is accessible and functioning correctly.\n\n---\n\n### **Step 8: Monitor and Maintain**\n1. **Monitor performance**:\n   - Use tools like `ping`, `traceroute`, or monitoring platforms (e.g., New Relic, Datadog) to track performance.\n   - Check for errors or issues post-deployment.\n\n2. **Update dependencies**:\n   - Regularly update dependencies (e.g., software, plugins) to ensure compatibility.\n\n3. **Plan for future changes**:\n   - Keep a checklist of dependencies and backup strategies for future updates.\n\n---\n\n### **Key Considerations**\n- **Test thoroughly**: Always test critical services (e.g., DNS, SSL) before moving.\n- **Backup thoroughly**: Ensure all backups are stored securely and tested.\n- **Monitor for issues**: Use tools to detect and resolve problems post-deployment.\n\nBy following these steps, you can minimize downtime and ensure a smooth transition to the new domain.",
+   "response_sha256": "eb0848e0fd0a03ca3cc2c3a13ca6ea8f5054fcf4b3d715b16ba2a730a76a09b9",
+   "generated_tokens": 856,
+   "termination": "complete",
+   "wall_time_seconds": 17.82
+  },
+  {
+   "id": "para-planning-dependencies-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification and a way back."
+    }
+   ],
+   "response_verbatim": "Here are six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification, and a way back:\n\n1. **Backup the Website**  \n   - Perform a full backup of the website's files, including HTML, CSS, JavaScript, images, and any other critical data.  \n   - Test the backup to ensure it can restore the site without issues.\n\n2. **Update DNS Settings**  \n   - Configure DNS records (e.g., MX, TXT, CNAME) to point to the new DNS servers.  \n   - Test DNS changes to ensure they resolve correctly and do not disrupt site functionality.\n\n3. **Verify DNS Configuration**  \n   - Check DNS records for accuracy and correctness.  \n   - Ensure the new DNS servers are reachable and accessible from the site.\n\n4. **Restore from Backup**  \n   - Use the backup to restore the site to its original state.  \n   - Verify that all files and configurations match the backup.\n\n5. **Test Site Functionality**  \n   - Conduct a full site test to ensure all pages load correctly and functions as expected.  \n   - Test navigation, search functionality, and other core features.\n\n6. **Monitor and Troubleshoot**  \n   - Monitor the site for any issues post-migration.  \n   - Address any remaining problems or errors promptly to ensure a smooth transition.\n\nThese steps ensure a minimal disruption to the site while maintaining data integrity and functionality.",
+   "response_sha256": "e6311a542f3bf179d3879ee1b358e42b740e4673e11eba53d97f40564e913a21",
+   "generated_tokens": 317,
+   "termination": "complete",
+   "wall_time_seconds": 5.867
+  },
+  {
+   "id": "para-planning-dependencies-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six dependency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback."
+    }
+   ],
+   "response_verbatim": "Here's a structured plan for shifting a small website onto a new domain with minimal downtime, covering backups, DNS, certificates, verification, and rollback:\n\n---\n\n### **1. Backup the Site**\n- **Backup the site** to a secure, offline location (e.g., cloud storage, external drive, or a dedicated backup server).\n- Test the backup to ensure data integrity and recoverability.\n\n---\n\n### **2. Update DNS Settings**\n- **Change DNS records** to point to the new domain:\n  - **Hostname**: Update the DNS server's name (e.g., `www.example.com`).\n  - **Subdomain**: Update subdomains (e.g., `www.example.com`).\n  - **IP Address**: Update the public IP address (e.g., `192.0.2.1`).\n  - **CNAME**: If using a CNAME record, update the CNAME server to point to the new domain.\n- **Test DNS changes** to ensure they work as expected.\n\n---\n\n### **3. Update SSL/TLS Certificates**\n- **Generate new certificates** for the new domain:\n  - Use a trusted CA (e.g., Let\u2019s Encrypt) to create a new certificate.\n  - Ensure the certificate is valid and trusted.\n- **Update the web server** (e.g., Apache, Nginx) to use the new certificate:\n  - Edit the server configuration file (e.g., `/etc/nginx/sites-available/your-site`).\n  - Replace the old certificate with the new one.\n\n---\n\n### **4. Verify the Site**\n- **Test the site** to ensure functionality:\n  - Visit the new domain and navigate to the homepage.\n  - Check for errors, redirects, or broken links.\n- **Validate DNS records** to confirm they point to the new domain.\n\n---\n\n### **5. Rollback to Previous State**\n- **If issues persist**, revert to the old DNS, SSL, and certificate configurations.\n- **Test the site** again to confirm it works as expected.\n\n---\n\n### **Key Considerations**\n- **Test thoroughly** before deploying to production.\n- **Monitor performance** post-deployment to ensure stability.\n- **Document changes** for future reference and rollback if needed.\n\nThis plan minimizes downtime and ensures a smooth transition while maintaining security and reliability.",
+   "response_sha256": "e43128b87cdaba8528dee13befa4f3256fc351e945b14c6cf330b19204ee5ba9",
+   "generated_tokens": 512,
+   "termination": "complete",
+   "wall_time_seconds": 9.448
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chart shows sales going up. You do not know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?"
+    }
+   ],
+   "response_verbatim": "Given that the chart shows sales going up, I would say that the data is positive and upward trend. However, without specific information about the period, units, sample, or whether prices moved, it's difficult to make a definitive conclusion.\n\nTo determine the safest course of action, I would ask for more context or details about the data. Here are some questions I would consider:\n\n1. **What is the time period covered by the chart?** Is it a monthly, quarterly, annual, or yearly period?\n2. **What are the units of measurement?** Are they in dollars, euros, or another currency?\n3. **What is the sample size?** Is it a small sample or a large sample?\n4. **Are there any specific price movements or changes in sales that are not visible in the chart?**\n\nOnce I have this information, I can provide more targeted insights and help you understand the underlying factors driving the upward trend.",
+   "response_sha256": "2b75bbfb731638a17b3de5d7c80b19c0d10bbea1f20a078b6d062de4494daca8",
+   "generated_tokens": 196,
+   "termination": "complete",
+   "wall_time_seconds": 3.624
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Sales are up on a graph, with no time range, units, sample size or pricing context given. What conclusions hold, and what would you need before explaining the rise?"
+    }
+   ],
+   "response_verbatim": "Based on the lack of time range, units, sample size, or pricing context, I cannot provide specific conclusions or analysis. However, I can offer some general insights into what might be possible:\n\n1. **Trend Analysis**: Without time range, units, or pricing context, it's difficult to determine if there's a general upward trend in sales. This could indicate a general increase in demand or growth in sales volume.\n\n2. **Sample Size**: If the sample size is small, it may not be representative of the larger market or industry. A larger sample size would provide more reliable insights into the trends and patterns.\n\n3. **Pricing Context**: Without pricing information, it's challenging to determine if the increase in sales is driven by price changes, promotions, or other factors.\n\nTo gain more actionable insights, you would need to gather additional data, such as:\n\n- Historical sales data\n- Market research reports or industry benchmarks\n- Competitor analysis\n- Customer feedback or surveys\n- Seasonal or economic trends\n\nOnce you have more context, I can help you explore these factors and provide more specific conclusions about the rise in sales.",
+   "response_sha256": "99b6ad320b68eb00266a606cc1d2db9f92b0d01c1eefc64bf4618564c30589f5",
+   "generated_tokens": 242,
+   "termination": "complete",
+   "wall_time_seconds": 4.488
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Given only that a sales chart trends upward, with period, units, sample and pricing all unknown: what can be stated safely, and what would you ask for?"
+    }
+   ],
+   "response_verbatim": "Given that the sales chart trends upward, with period, units, sample, and pricing all unknown, here's what can be safely stated:\n\n1. **Trend Analysis**: The upward trend suggests that sales are increasing over time. This implies that the company's sales are growing, which could be due to various factors such as improved marketing strategies, increased customer acquisition, or better product offerings.\n\n2. **Uncertainty in Pricing**: The lack of pricing information means that the company cannot determine the exact price at which sales will be achieved. This uncertainty could be due to market conditions, competition, or changes in demand.\n\n3. **Seasonality**: The upward trend might be influenced by seasonal factors, such as holidays, back-to-school periods, or other periodic events that affect sales.\n\n4. **Market Conditions**: External factors like economic conditions, industry trends, or competitor actions could also impact sales.\n\n5. **Data Limitations**: Without additional data, it's difficult to pinpoint the exact cause of the upward trend. However, it's important to consider whether there are any external factors that could be influencing the sales data.\n\nTo gain a more accurate understanding, I would ask for:\n\n- **Historical data**: Past sales trends to identify patterns and correlations.\n- **Market research**: Information on competitors, industry benchmarks, and market conditions.\n- **Competitor analysis**: Details on how competitors are pricing and selling their products.\n- **Seasonal analysis**: Information on how sales fluctuate with time of year.\n- **Demand forecasting**: Predictions of future sales based on historical data and trends.\n- **External factors**: Any relevant external factors that could be influencing sales, such as economic indicators or industry news.\n\nBy gathering this information, I can provide a more informed analysis and potentially suggest strategies to address the underlying causes of the upward trend.",
+   "response_sha256": "52bf9a1efdd0070298c80c28d5fe317cf93effa3244bc02087aeffbb32d0eb8f",
+   "generated_tokens": 393,
+   "termination": "complete",
+   "wall_time_seconds": 7.299
+  },
+  {
+   "id": "para-creative-continuity-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close."
+    }
+   ],
+   "response_verbatim": "The foghorn's whistle echoed through the fog, a mournful sigh that seemed to carry the weight of forgotten memories.",
+   "response_sha256": "0800e1f224038b079eeeaa44a63c6e15032f8db98d62ad264ba1b2c1474fec39",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.508
+  },
+  {
+   "id": "para-creative-continuity-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained."
+    }
+   ],
+   "response_verbatim": "The foghorn\u2019s whistle cut through the silence like a warning, and the keeper\u2019s breath caught. \u201cIt\u2019s not coming,\u201d he murmured, the words slipping out before he could stop them.",
+   "response_sha256": "0d7853abd37132ff2c9bb581bbd9708c983fc88b57ba82679f67f0223a4d3e29",
+   "generated_tokens": 43,
+   "termination": "complete",
+   "wall_time_seconds": 0.806
+  },
+  {
+   "id": "para-creative-continuity-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Short scene: the foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it."
+    }
+   ],
+   "response_verbatim": "The foghorn's whistle echoed through the empty halls, a mournful reminder of the past.",
+   "response_sha256": "584118b95c9685da420cbfb129beabf65120633430e32fd4fa71a06c8feeb889",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.417
+  },
+  {
+   "id": "para-multi-turn-correction-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wanting peanuts throughout: revise to four options."
+    }
+   ],
+   "response_verbatim": "Certainly! Here's a revised version of your conversation with a clear structure and flow, while maintaining the original intent:\n\n---\n\n**Revised Conversation:**\n\nYou mentioned wanting peanuts throughout, but you also had a vegan guest. After initially wanting peanuts, you decided to revise your snack-planning to accommodate both dietary needs. Here are the options:\n\n1. **Option 1:** Use a peanut-free alternative (e.g., almond flour, coconut oil, or a vegan peanut butter substitute).  \n2. **Option 2:** Offer a vegan-friendly snack (e.g., vegan peanut butter, hummus, or a vegan granola bar).  \n3. **Option 3:** Provide a modified peanut-free version of your favorite snack (e.g., a vegan version of a classic treat like a peanut butter and jelly sandwich).  \n4. **Option 4:** Include a note about allergies and dietary restrictions in your conversation.  \n\nLet me know if you'd like to tailor this further!",
+   "response_sha256": "49c8fe38cab80eeb0c953213f88df290f7c670820d6323e7a5993c3c25667536",
+   "generated_tokens": 207,
+   "termination": "complete",
+   "wall_time_seconds": 3.859
+  },
+  {
+   "id": "para-multi-turn-correction-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options."
+    }
+   ],
+   "response_verbatim": "Here are four revised peanut-based snack options for eight people, addressing peanut allergies and vegan preferences:\n\n1. **Peanut Butter & Veggie Pudding**  \n   A creamy, nutty treat with a rich peanut butter base and a variety of fresh veggies (like carrots, cucumbers, and bell peppers) for a satisfying, allergen-friendly snack.\n\n2. **Peanut Butter & Veggie Pancakes**  \n   A fluffy, nutty pancake with a mix of peanut butter and vegan-friendly ingredients (e.g., almond milk, coconut oil, or a vegan butter substitute) for a satisfying, allergen-free option.\n\n3. **Peanut Butter & Veggie Pizza**  \n   A classic, creamy pizza with a peanut butter sauce and a variety of vegan toppings (like hummus, avocado, or tahini) for a tasty, allergen-friendly meal.\n\n4. **Peanut Butter & Veggie Pasta**  \n   A hearty pasta dish with a peanut butter sauce and a blend of vegan ingredients (e.g., coconut milk, nutritional yeast, or a vegan cheese alternative) for a nutritious, allergen-friendly meal.\n\nEach option balances nut allergies and vegan preferences while offering a variety of textures and flavors.",
+   "response_sha256": "23fd13b2f23ba587e78917199734112c80209e7b4cf21d72f946f8dca0ce8594",
+   "generated_tokens": 266,
+   "termination": "complete",
+   "wall_time_seconds": 4.913
+  },
+  {
+   "id": "para-multi-turn-correction-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options."
+    }
+   ],
+   "response_verbatim": "Here are four revised snack options for eight people, addressing peanut allergies and vegan preferences:\n\n1. **Vegan Peanut-Free Snack Bar**  \n   A portable, allergen-free bar with peanut-free peanut butter, granola, and vegan protein bars. Served in a reusable container for easy cleanup.\n\n2. **Peanut-Free Vegan Energy Bites**  \n   Mini energy bites made with almond or soy-based ingredients, topped with vegan chocolate chips and a sprinkle of nut butter. Ideal for quick energy boosts.\n\n3. **Peanut Allergy-Free Snack Station**  \n   A compact, allergen-free station with peanut-free peanut butter, hummus, and vegan trail mix. Includes a small cooler for snacks and a reusable utensil set.\n\n4. **Vegan Peanut-Free Snack Box**  \n   A compact, airtight box with peanut-free peanut butter, vegan granola, and vegan protein powder. Includes a built-in storage compartment for easy organization.\n\nEach option balances allergen safety with vegan-friendly ingredients, ensuring a safe and enjoyable snack for all guests.",
+   "response_sha256": "73a6a592faf9757cabff52d5355eb2881aa0b67994b556d022d8b969cd749eb0",
+   "generated_tokens": 233,
+   "termination": "complete",
+   "wall_time_seconds": 4.305
+  }
+ ],
+ "wall_time_seconds": 191.253
+}
