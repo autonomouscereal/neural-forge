@@ -261,6 +261,63 @@ def channels_report(parent_dir: Path, retok_child: Path, bodies: dict[str, Path]
             "p90": round(ordered[int(0.90 * (len(ordered) - 1))], 6),
         }
 
+    # ------------------------------------------------------------------
+    # THE SECOND CANDIDATE, and the one the receipts point at.  `ARCH.CL1792M`'s
+    # own axis records its selection as a pivoted-Cholesky coreset on
+    # READER-METRIC-RESCALED channels, `s_j = sqrt(w2[:,j]^T M w2[:,j])`, where M
+    # is built from the PARENT's 65,536-row head.  So the M selection ranks a
+    # channel by its effect on the OUTPUT LOGITS and the plain selection ranks it
+    # in the residual stream.  Two quantities decide between the readings, and
+    # neither needs M itself:
+    #
+    #   a_j = w2[:,j]^T (H^T H) w2[:,j]   -- the channel's logit leverage through
+    #                                        the FULL head;
+    #   b_j = w2[:,j]^T (H_K^T H_K) w2[:,j] -- the same through the KEPT rows only;
+    #   s_j = ||w2[:,j]||^2                -- what it writes into the stream.
+    #
+    # `a_j / s_j` says whether the M selection really did prefer logit-heavy,
+    # stream-light channels.  `b_j / a_j` says whether the vocabulary restriction
+    # moves those channels' leverage more than the others'.  Both are exact in
+    # closed form off a 1024x1024 Gram, so the 65,536 x 2,560 product is never
+    # materialised.
+    import mx33_retok as _retok
+    keep = _retok.injection(retok_child)
+    head = None
+    for key in ("lm_head.weight", "model.embed_tokens.weight"):
+        if key in parent_tensors:
+            head = parent_tensors[key].to(torch.float64)
+            break
+    leverage: dict[str, Any] = {"available": head is not None}
+    if head is not None:
+        G_full = head.T @ head
+        rows = torch.tensor(sorted(keep), dtype=torch.long)
+        sub = head[rows]
+        G_keep = sub.T @ sub
+        buckets: dict[str, dict[str, list[float]]] = {
+            g: {"logit_per_stream": [], "restriction_ratio": []}
+            for g in ("shared", "plain_only", "metric_only")
+        }
+        for prefix in sites:
+            a_sel = set(selections[names[0]][prefix])
+            b_sel = set(selections[names[1]][prefix])
+            w2 = parent_tensors[prefix + "feed_forward.w2.weight"].to(torch.float64)
+            a = ((G_full @ w2) * w2).sum(dim=0)
+            b = ((G_keep @ w2) * w2).sum(dim=0)
+            s = (w2 * w2).sum(dim=0)
+            per_stream = (a / (s + 1e-30)).tolist()
+            ratio = (b / (a + 1e-30)).tolist()
+            for name, members in (("shared", a_sel & b_sel),
+                                  ("plain_only", a_sel - b_sel),
+                                  ("metric_only", b_sel - a_sel)):
+                for c in sorted(members):
+                    buckets[name]["logit_per_stream"].append(per_stream[c])
+                    buckets[name]["restriction_ratio"].append(ratio[c])
+        leverage["head_rows"] = int(head.shape[0])
+        leverage["kept_rows"] = len(keep)
+        leverage["groups"] = {
+            g: {k: stats(v) for k, v in d.items()} for g, d in buckets.items()
+        }
+
     summary = {k: stats(v) for k, v in groups.items()}
     plain_med = summary["plain_only"].get("median")
     metric_med = summary["metric_only"].get("median")
@@ -289,6 +346,7 @@ def channels_report(parent_dir: Path, retok_child: Path, bodies: dict[str, Path]
         "positions": {"parent_segmentation": base["positions"],
                       "child_segmentation": shifted["positions"]},
         "sensitivity_by_group": summary,
+        "logit_leverage": leverage,
         "per_site": per_site_rows,
         "verdict": verdict,
     }
@@ -351,6 +409,15 @@ def main() -> int:
     if "channels" in body:
         print(json.dumps(body["channels"]["sensitivity_by_group"], indent=1))
         print(body["channels"]["verdict"])
+        lev = body["channels"].get("logit_leverage") or {}
+        if lev.get("available"):
+            print(f"\nlogit leverage through the head ({lev['head_rows']} rows, "
+                  f"{lev['kept_rows']} kept):")
+            for group, d in lev["groups"].items():
+                lps = d["logit_per_stream"]
+                rr = d["restriction_ratio"]
+                print(f"  {group:<12} n {lps['n']:>5}  logit-per-stream median "
+                      f"{lps['median']:>10}  restriction ratio median {rr['median']:>8}")
     print(f"\n-> {args.out}")
     return 0
 

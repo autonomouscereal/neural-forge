@@ -49,10 +49,21 @@ STALE_MARKERS = ("stale", "parent's own stream", "unfolded parent")
 CONDITIONED_MARKERS = ("sequentially conditioned", "partially built child")
 
 
-def classify_axis(axis: dict[str, Any]) -> dict[str, Any]:
+def classify_axis(axis: Any) -> dict[str, Any]:
+    # Receipts from the campaign's earlier waves carry `axes` entries whose
+    # `heldout` is a STRING rather than the per-site mapping the later waves
+    # write, and one wave writes the axis itself as a bare string.  An inventory
+    # that walks 160-odd receipts across 28 waves meets every schema the campaign
+    # has ever had, so the shape is checked rather than assumed and an
+    # unreadable axis is reported `unstated` instead of crashing the run.
+    if not isinstance(axis, dict):
+        return {"axis": str(axis)[:60], "evidence_prose": "", "max_input_drift": None,
+                "arm_by_prose": "unstated", "arm_by_drift": "unstated",
+                "witnesses_agree": True, "schema_note": "axis is not a mapping"}
     prose = str(axis.get("evidence") or "")
     low = prose.lower()
-    drift = (axis.get("heldout") or {}).get("max_input_drift")
+    heldout = axis.get("heldout")
+    drift = heldout.get("max_input_drift") if isinstance(heldout, dict) else None
     by_prose = ("stale" if any(m in low for m in STALE_MARKERS)
                 else "conditioned" if any(m in low for m in CONDITIONED_MARKERS)
                 else "unstated")
