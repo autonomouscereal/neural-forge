@@ -1,0 +1,58 @@
+{
+ "schema": "neural-forge-matrix-wave30-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave30/children",
+ "built": [
+  "MX30-CL1280",
+  "MX30-CL1792",
+  "MX30-CL1792LG",
+  "MX30-CL1792M",
+  "MX30-SR24",
+  "MX30-SR64",
+  "MX30-V19CL1280",
+  "MX30-V19CL1792",
+  "MX30-V19CL1792M"
+ ],
+ "kept": {
+  "MX30-CL1280": {
+   "reason": "4/15 at 0.760331x -- the second rung in the hole, and the one that locates where the MLP axis falls.  Two rungs make a slope; one makes a point, and the allocator's next fit reads this row",
+   "bytes": 354052680
+  },
+  "MX30-CL1792": {
+   "reason": "7/15 at 0.856199x -- the body the frontier child is composed onto, and the first rung ever built inside the MLP axis's 2,560-to-896 hole.  It is also the control for the zero-cost vocabulary composition and for both reader-metric arms, so every A/B in section 5 is differenced against these bytes",
+   "bytes": 398092851
+  },
+  "MX30-CL1792M": {
+   "reason": "8/15 at 0.856199x, the reader-metric coreset at the solo rung.  Keeping it keeps the selection A/B reproducible without re-running a 1,040-second build whose selection depends on a metric accumulated from 768 positions of the parent's own logits",
+   "bytes": 398096756
+  },
+  "MX30-V19CL1792": {
+   "reason": "7/15 at 0.650769x -- the deepest child this campaign has sealed at >=4, >=5, >=6 AND >=7 of fifteen, all four rungs at once, and the frontier row every claim in NOTES-MX-AF rests on.  A capture plus fourteen site solves plus a vocabulary gather; no citation rebuilds it",
+   "bytes": 300077087
+  },
+  "MX30-V19CL1792M": {
+   "reason": "6/15 at 0.650769x, the composed half of the same A/B.  The two rungs disagree in sign and the extension bank refuses both margins, so the pair is the evidence and half of it is not evidence",
+   "bytes": 300080994
+  }
+ },
+ "deleted": {
+  "MX30-CL1792LG": {
+   "reason": "7/15 at 0.856199x, and it is NOT A SECOND MEASUREMENT: all sixteen response digests are byte-identical to MX30-CL1792's.  Its entire finding is that identity plus four numbers -- 0.200287 against 0.200310, 325.5163 against 325.5198 -- and all of them are in the packaged build receipt.  It is one CPU-bounded post-process off a retained child",
+   "bytes": 398094334
+  },
+  "MX30-SR24": {
+   "reason": "10/15 at 0.742049x.  One CPU pass over 1,024 numbers off two RETAINED wave-28 children, from a coordinate set that is written out in full in the packaged attribution artifact.  Reproducible exactly from the artifact plus mx30_blend.py --restore --restore-k 24",
+   "bytes": 341996318
+  },
+  "MX30-SR64": {
+   "reason": "10/15 at 0.742049x, same one CPU pass at k=64 from the same packaged coordinate set.  The pair's finding is that both land on the control's count with dedup still a set, which is two sealed reviews and not bytes",
+   "bytes": 341996635
+  },
+  "MX30-V19CL1280": {
+   "reason": "1/15 at 0.554901x, the allocator's 0.55x recommendation and its own EXTRAPOLATES-INTO-THE-GAP flag firing.  One CPU pass -- a vocabulary gather -- off retained MX30-CL1280, and its finding is a count that the packaged dossier and per-case table carry in full",
+   "bytes": 256036907
+  }
+ },
+ "bytes_kept": 1750400368,
+ "bytes_deleted": 1338124194,
+ "applied": true
+}

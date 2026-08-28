@@ -1,0 +1,19 @@
+{
+ "schema": "neural-forge-matrix-wave30-deployments-prune-v1",
+ "policy": "current+1: the deployment the wave sealed under, and the one before it",
+ "pruned_at": "2026-08-28T05:57:47Z",
+ "kept": [
+  "neural-forge-matrix-5c18a4d3",
+  "neural-forge-matrix-2057fbd7"
+ ],
+ "pruned": [
+  "neural-forge-matrix-091c6271",
+  "neural-forge-matrix-1de4aa7e",
+  "neural-forge-matrix-3ce98c0e",
+  "neural-forge-matrix-4502597b",
+  "neural-forge-matrix-74a8c871",
+  "neural-forge-matrix-bb44b96f",
+  "neural-forge-matrix-f7972a1c",
+  "neural-forge-matrix-fb2c3768"
+ ]
+}
