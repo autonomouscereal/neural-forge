@@ -1,0 +1,52 @@
+{
+ "schema": "neural-forge-matrix-wave32-preregistration-v1",
+ "purpose": "Every count this wave will read, predicted BEFORE its dossier is opened.  A prediction written after a result is not a prediction, so this file is written and committed before the first dossier of the slate it covers is read.",
+ "DISCIPLINE_FAILURE_DECLARED_HERE": {
+  "what": "The W1 blend slate -- BM25, BM50, BM75, BMS75, BV50, BMV3, BM50N -- was built, reviewed AND GRADED before this file existed.  Its seven counts are NOT pre-registered and must not be read as if they were.",
+  "why_it_happened": "The wave opened with a tree cut, a new builder and an alignment census, and the blend queue was launched the moment the census came back.  The pre-registration step was owed at that point and was skipped, not deferred.",
+  "why_the_excuse_that_offers_itself_is_not_good_enough": "The allocator models axis LEVELS and a convex blend of two bodies moves no axis level, so it cannot price one.  Wave 31 faced exactly that with ARCH.CL1792ME and still wrote an entry -- `predicted_review: null` with `UNPRICEABLE` and the honest prior stated.  The same entry was available here and was not written.",
+  "what_is_salvaged": "Nothing about W1.  The seven counts stand as measurements and are reported without a prediction column, and the one prediction that WAS on the record before the build -- `mx32_blend_body.py`'s own docstring, which says the naive --align none arm is meaningless -- is scored in the note because it is in a committed file with a timestamp before the build.",
+  "what_this_file_covers": "W2, W3 and W4 only.  Every child below had its dossier UNOPENED when this file was written; four of them were still generating."
+ },
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 878,
+  "sha256": "85d5f12674169787e69a55733a94f96d8705562a818d2679f47272652c23ea22",
+  "bytes": 1500006
+ },
+ "the_two_laws_this_slate_puts_against_each_other": {
+  "flatness": "NOTES-MX-AG section 2.  On the sealed ARCH.CL1792 body the composed vocabulary axis is FLAT from K=26,624 to K=8,192 -- the composed child reads the BODY's number and not the vocabulary's.  Applied to a body that reads 8/15 solo it predicts 8/15 all the way down.",
+  "m_inversion": "NOTES-MX-AF section 5 and NOTES-MX-AG section 3.  ARCH.CL1792M reads 8/15 solo and ARCH.V19CL1792M reads 6/15 composed -- one BELOW the stream-selected twin, whose solo reading is one LOWER.  Wave 31 built two mechanisms for it and both failed.  If the inversion is general, the M body's composed ladder sits at or below the plain body's at every K.",
+  "they_disagree_in_sign": "Flatness says composing onto the better body gives the better number.  The inversion says it gives a worse one.  W2 is four rungs of exactly that disagreement, on bodies at byte-identical storage."
+ },
+ "predictions": [
+  {"cell": "ARCH.V16CL1792M", "lane": "W2", "stored_parameters": 146331392, "net_ratio": 0.637073,
+   "predicted_review": 6,
+   "source": "The M-inversion, carried unchanged from K=19,456 to K=16,384: the plain twin ARCH.V16CL1792 reads 8/15, and V19CL1792M read two below V19CL1792's 7.  Flatness predicts 8.  The allocator refuses the split -- it prices axis levels and both bodies are at the same level."},
+  {"cell": "ARCH.V12CL1792M", "lane": "W2", "stored_parameters": 142137088, "net_ratio": 0.618813,
+   "predicted_review": 6, "source": "Plain twin 7/15, inversion charged at one case."},
+  {"cell": "ARCH.V9CL1792M", "lane": "W2", "stored_parameters": 138991360, "net_ratio": 0.605117,
+   "predicted_review": 5, "source": "Plain twin 6/15, inversion charged at one case."},
+  {"cell": "ARCH.V8CL1792M", "lane": "W2", "stored_parameters": 137942784, "net_ratio": 0.600552,
+   "predicted_review": 4, "source": "Plain twin 5/15, inversion charged at one case."},
+  {"cell": "ARCH.V16BMV3", "lane": "W2", "stored_parameters": 146331392, "net_ratio": 0.637073,
+   "predicted_review": 7,
+   "source": "The flatness law applied to a body class it has never seen.  ARCH.BMV3 -- the three-way simplex barycentre -- is the best of this wave's blends and the body reads 7/15, so flatness predicts 7/15 composed.  This is the cheapest available test of whether flatness is about the BODY's reading or about the particular way ARCH.CL1792 was built."},
+  {"cell": "ARCH.V6CL1792", "lane": "W3", "stored_parameters": 135845632, "net_ratio": 0.591422,
+   "predicted_review": 3,
+   "source": "BELOW THE CENSUS FLOOR (7,213 rows, measured).  Two hypotheses disagree and this is the point of the build.  Flatness says the composed child reads ARCH.CL1792's 7/15 whatever K is.  The solo ladder's own cliff -- five cases over the 1,024 rows between K=9,216 and 8,192 -- extrapolated below 8,192 says a case per 1,024 rows, which from V8's composed 5/15 gives 3.  I predict 3, which is the extrapolation and not the law, because 782 canonical corpus occurrences are now unreachable and that is a real change in the input distribution rather than a change in K alone."},
+  {"cell": "ARCH.V4CL1792", "lane": "W3", "stored_parameters": 133748480, "net_ratio": 0.582292,
+   "predicted_review": 1,
+   "source": "Same extrapolation, 4,096 rows below the floor, 2,860 canonical occurrences unreachable and tokens-per-byte up 48 per cent over the parent."},
+  {"cell": "ARCH.CL1792S", "lane": "W4", "stored_parameters": 196663040, "net_ratio": 0.856199,
+   "predicted_review": 4,
+   "source": "B4's controlled pair, finally built.  Byte-identical storage and the identical solver to ARCH.CL1792's 7/15; the ONLY difference is --arm stale, which reads every site's evidence off the unfolded parent instead of capturing it through the partially built child.  The build log confirms the control is doing what it says: input drift versus parent 0.0000 at every site, against 0.17 to 0.27 on the conditioned arms.  Wave 31's --evidence arm priced a 34 per cent evidence-budget cut at six cases; a stale arm keeps the budget and loses the conditioning, so it should cost less than that and more than nothing.  Three cases is the guess."}
+ ],
+ "falsifiers": {
+  "W2": "If ANY of V16/V12/V9/V8CL1792M reads strictly ABOVE its V*CL1792 twin, the M-inversion is not general and composing onto the better solo body is worth doing.  If all four read at or below, the inversion holds at four new K and the reader-metric body is a dead end at every rung rather than at one.",
+  "V16BMV3": "If it reads 7, flatness survives contact with a body class built by a different tool.  If it reads below 6 the law is about ARCH.CL1792 specifically and its eight rungs are eight readings of one body.",
+  "W3": "If either below-floor rung reads at or above 5, the coverage half of the census gate was the only thing holding the campaign above 0.60x and the axis has more room than the builder allowed.  If both read at or below 3, the extrapolated cliff is real and the floor was hiding nothing worth having.",
+  "W4": "If CL1792S reads at or above 7, sequentially conditioned capture buys nothing on this axis and eleven waves have paid for it without pricing it.  If it reads at or below 4, conditioning is worth three cases and B4's evidence-refresh question is answered in the direction the campaign assumed but never measured."
+ },
+ "standing_caution": "The reader is a fifteen-point instrument and its own noise floor is about one case; wave 31 reported a one-case margin on ARCH.V16CL1792 and said so where the claim was.  No single-case difference below is a result on its own, and the W2 verdict rides on the SIGN of four differences rather than on any one of them."
+}
