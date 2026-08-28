@@ -210,6 +210,28 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave35-blend-build-receipt-v1",
     "neural-forge-matrix-wave35-logit-metric-writer-v1",
     "neural-forge-matrix-wave35-body-blend-build-receipt-v1",
+    # Wave 36 adds NO builder class either.  Its four strings are wave 35's four
+    # renamed by `run/mx36/cut_wave36.py`, byte-identical in behaviour to the
+    # lines above them.  This wave builds through `mx36_build.py` (the composed
+    # width x MLP body, which is a NEW COMPOSITION but not a new receipt shape --
+    # it writes the standard-shape string with `keep_ff` and `keep_hidden_size`
+    # both non-null for the first time), `mx36_vocab.py` (the vocabulary folds on
+    # it) and `mx36_termgain.py` (the deep-family gain arms); the other three are
+    # appended with them for wave 33's stated reason.
+    #
+    # **THESE FOUR ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-36 TREE,
+    # BEFORE ANY GPU RAN.**  That is the third consecutive wave to be told to do
+    # it and the first to do it.  Waves 34 and 35 each paid a whole extra
+    # deployment to discover this list at their FIRST SEAL, with the GPU work
+    # already finished, on exactly the four tags the previous wave was refused
+    # on.  The cost is asymmetric -- the builder's own accept list refuses at the
+    # tree cut for one line of hand edit, this one refuses after the wave is
+    # measured -- and the asymmetry is the whole reason the paragraph above told
+    # the next wave to move the edit earlier rather than to remember harder.
+    "neural-forge-matrix-wave36-standard-shape-child-v1",
+    "neural-forge-matrix-wave36-blend-build-receipt-v1",
+    "neural-forge-matrix-wave36-logit-metric-writer-v1",
+    "neural-forge-matrix-wave36-body-blend-build-receipt-v1",
 )
 
 
