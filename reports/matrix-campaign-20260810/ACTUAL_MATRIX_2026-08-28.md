@@ -82,19 +82,31 @@ the count is now **fourteen of seventeen**, and the three that do not hold are s
 same three: `ARCH.V8CL896`, `ARCH.W512` and `ARCH.KKTD`. Every child in this table carries
 the sealed verdict `dead`.
 
-Wave 34's six are marked. They are the first sub-0.5x children in the campaign whose
-canonical count was read in the same pass as their seal rather than years of waves later,
-and on all six the two readings agree exactly.
+Wave 34's six and wave 35's seven are marked. Both waves read the canonical count in the
+same pass as the seal. On wave 34's six the two readings agreed exactly; on wave 35's
+seven, six read one HIGHER canonically, and in five of those six the single flipped lane
+is `planning-dependencies` — the child names backups, DNS, TLS, verification and rollback
+and then loops instead of sequencing them. Strike that one rule and wave 35's canonical
+column drops from 22 to 17 and the canonical 4/15 rung does not move.
+
+**The whole sub-0.5x band, all twenty-four children, is now in `DEEP_RECORD.md`.**
 
 | child | net ratio | stored params | sealed | **intel** | artifact-miss | content-miss | what it can still do |
 |---|---:|---:|---:|---:|---:|---:|---|
+| `ARCH.V12CL896X13` | **0.420779** | 96,649,984 | 1 | **2/15** | 11 | 2 | **wave 35. THE DEEPEST CHILD EVER BUILT**, below the V8CL896 death, and it writes a vendor email naming Friday and the tracking number. |
 | `ARCH.V8CL896` | **0.432784** | 99,407,616 | 0 | **0/15** | 7 | 8 | the floor. Copies its prompts back verbatim and answers none of them: seven artifact lanes, eight readable-and-empty. The copy path outlived the answer path. |
+| `ARCH.V9CL896` | **0.437349** | 100,456,192 | 2 | **2/15** | 12 | 1 | **wave 35.** Halves the 0/15 bracket to 0.0046 from the surviving side; names all four withheld quantities. |
 | `ARCH.V10CL896` | **0.441915** | 101,504,768 | 2 | **2/15** | 11 | 2 | **wave 34.** The deepest child ever built. Eleven artifact lanes and only two readable-and-wrong: the decode has collapsed and the content has not. |
+| `ARCH.V10CL896G01` | **0.441915** | 101,504,768 | 2 | **3/15** | 11 | 1 | **wave 35.** lambda 0.1: largest update, best objective, buys nothing sealed. |
+| `ARCH.V10CL896G03` | **0.441915** | 101,504,768 | 3 | **4/15** | 9 | 2 | **wave 35. THE DEEPEST THREE SEALED AND THE DEEPEST FOUR READ.** |
+| `ARCH.V10CL896G10` | **0.441915** | 101,504,768 | 3 | **4/15** | 10 | 1 | **wave 35.** lambda 1.0 ties lambda 0.3, on ten byte-identical lanes. |
 | `ARCH.V12CL896` | **0.451045** | 103,601,920 | 2 | **2/15** | 6 | 7 | **wave 34.** The zero-solve control of the lambda ladder. |
 | `ARCH.V12CL896G01` | **0.451045** | 103,601,920 | 2 | **2/15** | 9 | 4 | **wave 34.** lambda 0.1; "the latest checkout time is 4:15 MINUTES". |
 | `ARCH.V12CL896G03` | **0.451045** | 103,601,920 | 4 | **4/15** | 8 | 3 | **wave 34. FOUR at 0.4510x** -- summary, email, the four withheld quantities, and 4:15 p.m. |
 | `ARCH.V12CL896G10` | **0.451045** | 103,601,920 | 2 | **2/15** | 8 | 5 | **wave 34.** lambda 1.0; four lanes byte-identical to its source. |
 | `ARCH.V19X13CL896` | **0.452734** | 103,990,016 | 0 | **1/15** | 10 | 4 | one lane of intelligence at 0.4527x: it compresses the supplier update in its own words and lands the unresolved risk -- a one-week factory-expansion slip. |
+| `ARCH.V14CL896` | **0.460175** | 105,699,072 | 2 | **3/15** | 11 | 1 | **wave 35.** The interior rung; the body prior beat the allocator by 1.3 cases. |
+| `ARCH.V14CL896G03` | **0.460175** | 105,699,072 | 3 | **4/15** | 9 | 2 | **wave 35.** Settles that the CL896 gain arm is worth +1 and V12's +2 is K-specific. |
 | `ARCH.W512` | **0.463481** | 106,458,368 | 0 | **0/15** | 15 | 0 | fifteen for fifteen artifact. Nothing readable came out at all, so nothing here is evidence about intelligence in either direction. |
 | `ARCH.V16CL896` | **0.469305** | 107,796,224 | 1 | **2/15** | 5 | 8 | summarises and asks for the four things it was not told. Under half the parent and it still knows what it does not know. |
 | `ARCH.V16CL896G03` | **0.469305** | 107,796,224 | 3 | **3/15** | 6 | 6 | **wave 34.** The family's missing gain arm at K=16,384; three, on the lanes its two larger siblings hold. |

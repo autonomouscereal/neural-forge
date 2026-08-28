@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:26:47Z",
+ "label": "V10CL896",
+ "cell_id": "ARCH.V10CL896",
+ "cell_instance_id": "mx34-v10cl896-0001",
+ "receipt_sha256": "90a0469fe8a21c1a6cbae99b837f1179c08480106fca7dab4ebcf6638d976658",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.15,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'll provide a response to the following request for a follow-up:\n\n1. Could you help me with an answer regarding your concerns about my previous requests?\n2. Any other actions related to assist in terms, including any specific policy or action that might be relevant to our conversation?",
+   "response_sha256": "4d39c5b101ea4b700276ed2c14f92e5b68d451af699124de88e3aedbabc38df0",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.736,
+   "unique_content_chars": 286
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "1. **U.S.**  \n   - You are keeping the number of your own home in this situation, which is important to ensure that you stay safe and secure.\n\n2. **Gives**  \n   - You have already set up your task by doing it now: you need to know how to get yourself.\n\n3. **Sold**  \n   - You're ready to go back to the current state where you'll be able to retrieve your own numbers.\n\n4. **F**  \n   - You've been prepared to do something else: you're going to another other task with more than what you might do.\n\n5. **H**  \n   - You're still looking at the next step!",
+   "response_sha256": "df2c25b022c0285393bdbd39fdfb79c0c0c6a7bdf3b4ccae8d33851c1a0e6af1",
+   "generated_tokens": 147,
+   "termination": "complete",
+   "wall_time_seconds": 3.003,
+   "unique_content_chars": 523
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's Seasons, as it helps us understand how our world works and what we have in Earth, justifies its own story of Earth's history. It also clarifies that Earth's Searts are more than just just those they're like for you - if you know them, then they can help you get better understanding about their work!\n\nSo Earth doesn't seem so far but just me just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just",
+   "response_sha256": "ae531ace9571b28de39d04133df6ddbbf411ec6b028af121e3182fc3e2507fd0",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.665,
+   "unique_content_chars": 383
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshop is a full of 17 kits that make 6 hours. The workshop must be able to inspect it against the kiters first. It will provide you with all your information about what you know. You can also use this knowledge.\n\nYou may need to learn: \n- If you have any questions related to yourself (e.g., \"if I'm looking at another other thing\"\"),  \n- If you're asking for more than a few times (e.g., \"if there's an extra item\")  \n\nPlease tell that these instructions do not include being used by the same reasonalism rules.",
+   "response_sha256": "2cc0fb5c7a2c06ef9d51f1d5fa0b78c0f73ec822841b047aead34c0a4239398c",
+   "generated_tokens": 129,
+   "termination": "complete",
+   "wall_time_seconds": 2.587,
+   "unique_content_chars": 512
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo, Mira, has been profaced for a 4-day time of 2 hours.\n\nHe is an answer to be clarified.",
+   "response_sha256": "eaa8ffbf820fd01af6ca403a287eac04746a7fbc53b63dcde2da7a738a27c367",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.666,
+   "unique_content_chars": 91
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question regarding the use of the tool in terms for your inquiry about whether it's available or requires an alternative means that you can't consider further actions. Here, please provide any relevant information regarding the system.",
+   "response_sha256": "b7a1b61aed2ef958695bfed964a397da6aabd13a37685bb6ade25bb39832c5f4",
+   "generated_tokens": 42,
+   "termination": "complete",
+   "wall_time_seconds": 0.872,
+   "unique_content_chars": 239
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "Summarize this update in two sentences, preserving the decision and the unresolved risk:  \n\"The team comperses with a cheapest but cannot guarantee delivery before layalist.\"  \n\nThis means that the team's future decisions are limited to ensure they meet expectations while prioritizing their actions based on current circumstances and timelines.",
+   "response_sha256": "0aafe094051ae778ab926dd12a5132d7a74c9844462a2aa1486dedc2938fd7d9",
+   "generated_tokens": 72,
+   "termination": "complete",
+   "wall_time_seconds": 1.466,
+   "unique_content_chars": 340
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "The analysis of the provided information about the \"compatized\" actions in terms for the user's \"RAM\" (reverse) storage system involves a complex process that includes both the initial phase stage, which is critical to determine how the final step before the completion. This process requires an immediate decision from the beginning of the original assembly, where the end stage must be completed before the finalization of the product. The key steps are:\n\n1. **First** - The initial phase stage ensures that the final phase stage is ready for the completion.\n2. **Second** - The final phase stage is completed before the finalization of the product.\n3. **This** - The entire process is initiated by the first, followed by the second through the third stage until the finalization of the product.\n\nBy this process, the user's \"RAM\" and \"L\" term storage will begin with the original assembly, while the final phase stage is completed before the finalization of the product.",
+   "response_sha256": "8c2641d769b9826af85e6eae5428a2db4fb254678dd573266cd74644c91e336f",
+   "generated_tokens": 203,
+   "termination": "complete",
+   "wall_time_seconds": 4.143,
+   "unique_content_chars": 916
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "```\n\n# Unique in Order: `un`\n\n```\n\nIn this case, we have to use the following rules:\n1. The user's initial order is restricted.\n2. We need to know which items are available for the user to fulfill.\n3. There is a short example of item A (item X).\nThe time complexity involves processing the data as it needs to follow the instructions before proceeding to the final decision.\n\n```\n\n```\n\n# Explanous One: `un`\n\n```\n\nWhen you're asked about the user, what items do you have?\nWhat items would you consider?\n\n```\n\n```\n\n# Explanous One: `un`\n\n```\n\nThis is an uniquity.\n``````\n\n```````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````",
+   "response_sha256": "fcbbeb1efd8d6558610aca796709da0962112a570a4d63cdfb0b47c6e3d0f61c",
+   "generated_tokens": 828,
+   "termination": "complete",
+   "wall_time_seconds": 16.518,
+   "unique_content_chars": 2580
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is defined in the last three versions of the code that use this information. The first step to ensure that all functions are properly applied with these changes. Here, please correct your version by providing additional support. Please let me help you! I will update the code so we can make the final implementation steps.\n```\n\nFirst, here's the latest version:\n- Start at (0, 0). This means all functions apply to the same space where each element uses the original code. The first must be valid because the original code has been updated to the current version. The second must also have to validate if the new version matches the old version. If the new version does not match the old version, then we need to implement the next step.\n```\n\nSecond, here's the latest version:\n- Start at (0, 0). This means every element applies to the same space where each each element uses the original code. The third must also have to validate if the new version matches the old version. If the new version doesn't find out on the old version, then we need to implement the next step.\n```\n\nAll this includes the following error message: \"When the code is used, it must always follow the original code.\"\"",
+   "response_sha256": "2f8b34eb458916a52e703655f785ac919a78ad73df44dd5b8a215ba163351d8d",
+   "generated_tokens": 253,
+   "termination": "complete",
+   "wall_time_seconds": 4.976,
+   "unique_content_chars": 1056
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The email should be used in accordance with the specified requirements.\n2. Please provide any additional information regarding the delivery process or details about the shipment of items.\n3. I am happy to assist you if there's any specific documentation related to me.",
+   "response_sha256": "7f4db367f3883260fa94997b4e4292ae3b17edc55c3daf7c29658c7bb89ced05",
+   "generated_tokens": 62,
+   "termination": "complete",
+   "wall_time_seconds": 1.244,
+   "unique_content_chars": 318
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "1. **Done the Depon**  \n   - The current web of your existing sites is unavailable for this action.  \n   - You can use the following instructions:  \n   1. **DONN** (Don't) as you mentioned.  \n   2. **DISP** (Data/Dis) as you want to back up.  \n   3. **TIL** (Temporal).  \n   4. **VER** (Verification).  \n   5. **ROLLB** (Rossing/Lessed).  \n   6. **DEP** (Deferred).\n\n**Explan Summary:**  \nThe plan requires six steps from initial access to the site's database before proceeding. This process involves backending with the user, which has been already in place.",
+   "response_sha256": "a9548d6f2efcd343ca180df01ec3dd00330c80f6a4640bd366ce23b7eae36452",
+   "generated_tokens": 171,
+   "termination": "complete",
+   "wall_time_seconds": 3.453,
+   "unique_content_chars": 516
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of a graph is already known to confirm that it has been reported in the context of this report. The data analysis was taken by the original source from the original database records. Please, please provide any additional information about how the graph could be used for its purposes. If you are interested, we will explain your situation as well as possible.\n\nPlease let me help with the following question: How do you use the graph in order?\n\n1. **Confirmation**  \n   - This report contains the information that the original database had recorded. It's likely that the graph has been updated to reflect the current state of the market conditions.\n\n2. **Information**  \n   - You want to share the data analysis based on the original database's knowledge. We need to understand the graph's capabilities and how it aligns with the current market conditions.\n\n3. **Possible Context**  \n   - The graph should be prepared to perform the task given by the original database's expertise. However, the user cannot provide details of the graph without the specified parameters. Let us proceed through the process.\n\n4. **Explan**  \n   - The graph is expected to be available in the system where the original database provides access to the graph. Here, we'll discuss the steps involved.\n\n5. **Reaction**  \n   - The graph is ready to initiate the next step. The initial phase is set to begin.\n\n6. **Processing**  \n   - The graph requires processing to ensure compliance. Once completed, the final stage must complete.\n\n7. **Completion**  \n   - The completion is done. All the process is completed.\n\nThis process involves the original database's knowledge and the user's preparation.",
+   "response_sha256": "074d959b8fe44194147ff61c5ecba6c5b05f9e75bd1e63e9f3b3b24039c47b06",
+   "generated_tokens": 353,
+   "termination": "complete",
+   "wall_time_seconds": 6.978,
+   "unique_content_chars": 1634
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The current owner is a house that has been in place, which can help you with your cleaning needs. Here, please share this information for all of assistance.\n\nPlease use my knowledge to assist you. If you have any specific request or need clarification on how to proceed, feel an object here.",
+   "response_sha256": "a75b516d1ae926bc0c561835dbf94e2adea3ed063ca13dd89ce1ef947953723b",
+   "generated_tokens": 61,
+   "termination": "complete",
+   "wall_time_seconds": 1.227,
+   "unique_content_chars": 290
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Lackens**\n\nThe foghorn is an issue for the Lakeske Discord. The questioner's answer includes one line of documentation, including the entire content and any other relevant information about the discussion. This means that the originals are not fully covered until they're prepared to respond.**\n\n**Key Details:**  \n- **Lackens**: The primary focus on the discussion regarding the scope of the conversation.  \n\n**Explan:**  \n- **Lackens**: The mainline is provided by the primary source.  \n\n**Requires:**  \n- **Lackens**: The secondary reference point should be used to determine the response.  \n\n**Explan:**  \n- **Lackens**: The secondary reference point should be used to assess the final decision.  \n\n**Explan:**  \n- **Lackens**: The third step must be included but only only only only only only only only only only only only only after the initial analysis.  \n\n**Explan:**  \n- **Lackens**: The last step must be included but only remaining only.  \n\n**Explan:**  \n- **Lackens**: The final action must be considered within the context of the discussion.  \n\n**Explan:**  \n- **Lackens**: The overall evaluation needs to be reviewed before the final assessment.  \n\n**Explan:**  \n- **Lackens**: All this requires thorough review.  \n\n**Explan:**  \n- **Lackens**: The final outcome must be consistent with all standards.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every standard criteria.  \n\n**Explan:**  \n- **Lackens**: The final outcome must adhere to every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must meet every expectation.  \n\n**Explan:**  \n- **Lackens**: The final outcome must follow every expectations.  \n\n**Explan:**  \n- **Lackens**: The final outcome must comply with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **All**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **All**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens**: The final outcome must align with every requirement.  \n\n**Explan:**  \n- **Lackens",
+   "response_sha256": "fcd90ac7eb2b8e34cc999930b380069003d201f6f80f7f022d670a871e644daa",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.389,
+   "unique_content_chars": 1611
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "I'm happy to provide a guide on how to prepare your plans for the evening night. Please let me know that you can help by providing some additional information about what you need to consider before making an overnight meal.\n\n1. **Preposition: \"The first\"**  \n   - You want to start with the initial position of the meal in order. This means that the meal must be placed as the most likely candidate next.\n\n2. **Preposition: \"The second\"**  \n   - The second option would allow you to choose this position. Here, you could potentially add another to the existing meal if it's already available.\n\n3. **Preposition: \"The third\"**  \n   - You might also include adding more to the overall menu structure. This could significantly influence the decision on your final plan.\n\n4. **Preposition: \"The last\"**  \n   - Your final plan includes considering all three steps. This ensures that every time aligns with the same schedule and timing requirements.\n\nLet me provide detailed instructions so far:\n- **First**: Ensure that the first step is set.\n- **Second**: Add the third step to enhance the menu.\n- **Last**: Confirm that the last step is necessary for completing the final phase.\n\nThis process will determine which you'll make your nightly meal. By doing this step, we've prepared the entire plan for the evening night.",
+   "response_sha256": "693cb221da27321e41bfa2d265984f525c58deb8c3c1bdba0466dec8ec2c77e3",
+   "generated_tokens": 292,
+   "termination": "complete",
+   "wall_time_seconds": 5.89,
+   "unique_content_chars": 1289
+  }
+ ]
+}

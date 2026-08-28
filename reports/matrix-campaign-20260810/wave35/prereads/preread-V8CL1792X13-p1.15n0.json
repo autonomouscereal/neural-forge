@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:32:56Z",
+ "label": "V8CL1792X13",
+ "cell_id": "ARCH.V8CL1792X13",
+ "cell_instance_id": "mx34-v8cl1792x13-0001",
+ "receipt_sha256": "8efe94918f51021a0b8545e310837b7451cf305cd38c999b65d3f5c95c9e1e2c",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.15,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "Sure, I can help with that! Here's how I'd like to answer your questions:\n\n1. **What is the best response for you?**\n   - *I'm here*  \n2. **Can you provide more information about your situation?**  \n3. **Are there any specific types of responses you need?**  \n4. **Would you be able to provide detailed details on your personal experience?**  \n5. **Do you have any specific questions or concerns regarding my response?**\n\nLet me know what type of response you're interested in asking!",
+   "response_sha256": "d8557036656104a8299ee0f44653091094472a143598be3a41a173e34a853861",
+   "generated_tokens": 118,
+   "termination": "complete",
+   "wall_time_seconds": 2.772,
+   "unique_content_chars": 471
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "**Practualized Actionlist:**\n\n1. **A: Reviewing the task's scope**\n   - *Reviewing* the task's requirements (e.g., time, duration, specific constraints)\n   - *Review* any necessary resources or materials\n\n2. **B: Prioritize resource allocation**\n   - * prioritize* resources based on available resources\n   - * prioritize* tasks that align with resource availability\n\n3. **C: Ensure compliance meeting**\n   - * ensure* all requirements are met\n   - * ensure* adherence to deadlines\n\n4. **D: Document each step clearly**\n   - * document* every task in detail\n   - * document* any potential issues\n\n5. **E: Plan ahead**\n   - * plan* effectively\n   - * plan* strategically\n   - * plan* for future changes\n\n6. **F: Reflect on outcomes**\n   - * reflect* results\n   - * review* impact of decisions\n\n7. **G: Integrating into the process**\n   - * integrator* work\n   - * integrative* focus\n\n8. **H: Acknowment*\n   - * acknowledgment* needs\n   - * acknowledgment* opportunities\n\n9. **N: Conclusion**\n   - *conclusion* finalizing tasks\n   - * conciertratory*\n\n10. **T: Temporal constraints**\n    - * temporal* limits\n    - * temporal* constraints\n\n11. **S: Scheduling**\n    - * scheduling*\n    - * schedule*\n\n12. **U: Unique considerations**\n    - * unique* considerations\n    - * unique* challenges\n\n13. **R: Recommended practices**\n    - *recommended* practices\n    - * recommended* practices\n\n14. **M: Missions**\n    - *mission*\n    - *mission*\n\n15. **V: Verification**\n    - * verification*\n\n16. **W: Worker\u2019s directives**\n    - *direct* directives\n    - * direct* directives\n\n17. **Z: Zpecificities**\n    - *zpecificities*\n\n18. **A: Assigned tasks**\n    - * assigned tasks*\n\n19. **B: Bearing responsibility**\n    - *bearing responsibility*\n\n20. **C: Cultural culturalism**\n    - * cultural culturalism*\n\n21. **D: Dividing into the process**\n    - *dividing into the process*\n\n22. **E: Efficiency**\n    - * efficency*\n\n23. **F: Fictional expectations**\n    - *fictional expectations*\n\n24. **T: Time constraints**\n    - *time constraints*\n\n25. **S: Schedule**\n    - * schedule*\n\n26. **U: Unique considerations**\n    - *unique considerations*\n\n27. **R: Recommended practices**\n    - *recommended practices*",
+   "response_sha256": "7543cf1b36e63a9f211d7822bb590a94ed5833e90c8c6d5ca11d2f71336217bb",
+   "generated_tokens": 623,
+   "termination": "complete",
+   "wall_time_seconds": 11.586,
+   "unique_content_chars": 2018
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "**Earth's Seasons: The Unique Driving Driver**\n\nEarth, as a **curious **external** (e.g., *e.g.*), has seasons for its **specific** **location** (e.g., *e.g.*). This aligning with **east** (e.g., *e.g.*) due to its **proximission** and **cultural** **efficiency** in **e.g.** (e.g.).  \n\n### **1. why?**\n- **Proximission**: A **e.g.** (e.g.)** (e.g.) **economically** ( e.g.) **efficient** ( e.g.).\n- ** Cultural**: **e.g.** (e.g.)** (e.g.) **efficiency** ( e.g.) **efficiency** ( e.g.).  \n  These terms are **not** directly linked to **east** or **e.g.** (e.g.) **e.g.** (e.g.)** (e.g.) **e.g.**).  \n\n### **2. How does this impact?**\n- **e.g.** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)**)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)** (e.g.)**)** (e.g.)** (e.g.)** (e.g.)**)**** (e.g.)**** (e.g.)******(e.g.)****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "8a87358fa5668d0aa6e506b7ba4d8a8fafcd397a9d5ef85d2a0c3b0109c81b57",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.255,
+   "unique_content_chars": 2079
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "1. **total number of kits**: 17 (workshos) + 6 (hours) = 19 kits  \n2. **number of kits per box**: 19 (kits) \u00e7 (perb) \u00e7 (percentage) = 19 \u00e7 \u00e7 \u00e7 = 19 \u00e7 \u00e7 \u00e7 = 19  \n3. **number of kits per box**: 5 (percentage) \u00e7 \u00e7 \u00e7 = 5 \u00e7 \u00e7 \u00e7 = 5  \n4. **number of complete kits**: 5 \u00e7 \u00e7 \u00e7 = 5 \u00e7 \u00e7 = 5  \n5. **number of remaining kits**: 5 \u00e7 \u00e7 = 5 \u00e7 \u00e7 = 5  \n\n** Number of complete kits**: $\\boxed{5}$",
+   "response_sha256": "ad7f310c49b67d6022ba4cd67a6621a684965b46d401616cb78467ce1a5bd916",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 3.547,
+   "unique_content_chars": 350
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "The correct answer is **A: \"The four people in finish order\"**\n\nExplanatory:\n1. **A:** The four individuals (the original, the first, the second, and the third) are all placed in their own order of life.\n2. **B:** The specific details about the events (the original, the first, the second, and the third) are not provided in this question.\n3. **C:** The answer includes only two responses: \"The four people in finish order\" and \"The four people in finish order.\"\n\n**Exercultural explanation:**  \nThe answer is **A** because it aligns with the given information that each individual's life is placed in its own order of life, while the other response does not directly refer to a particular event or situation. This makes the answer more relevant than just for a generalist's view on what happens occurs when three different entities are placed in their life.",
+   "response_sha256": "f4bbb702db399c83d2a1645f123f41f36e2b8dcba6270d566d135c2885b960be",
+   "generated_tokens": 196,
+   "termination": "complete",
+   "wall_time_seconds": 3.697,
+   "unique_content_chars": 824
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The most accurate response is **\"which day\"** (since \"which\" means \"any\"), as it aligns with the question's request. Here's why:\n1. **\"Which\"** is correct because it reflects the actual day when the checkout start occurs.\n2. **\"temporal\"** is more specific than \"all,\" which would be appropriate if \"temporal\" meant \"every\" or \"every.\"\n\nThis clarification ensures clarity without conflicting with the original question.",
+   "response_sha256": "f413abf66e00d7bada9598912668cdedb7b69151e744f3a72a4a18fccf9a4804",
+   "generated_tokens": 105,
+   "termination": "complete",
+   "wall_time_seconds": 1.93,
+   "unique_content_chars": 418
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "The team **properized** their current situation by **specificizing** with **bearing** (a cost of $11 per unit), **confirmed** (reliability tests), **expected** (delivery), **not** (as per) **overload** (efficiency), **requided** (time), **not** (future), **not** (assessment). This ensures **maximimization** while maintaining **mitigulatory** risks for **further** (e.g., **extensive** or **high-risk** exposure).",
+   "response_sha256": "85a0e400a47e395d6959173f99853a6382b2e20e40f60a6fde8a3e8f6283d34d",
+   "generated_tokens": 119,
+   "termination": "complete",
+   "wall_time_seconds": 2.196,
+   "unique_content_chars": 414
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "RAM (Resolved Memory Access) and long-term storage are both important for optimizing performance and maintaining data integrity. Here's why they're often considered:\n\n**1. Completion of RAM:**  \nRAM allows memory access to be **completed** (e.g., `data`), which ensures that all available data can be accessed without duplication. This minimization benefits from **corporation** (efficiency) while minimizing memory costs.\n\n**2. Imternalized (imperfect):**  \nImperating data (e.g., `Data`) is **not** inherently perceptable due to its **perception** (e.g., `Data`). However, it remains **perfect** when stored in a **perception** (e.g., `Data`), as per **corporation** (efficiency). This aligns with **corporation** (efficiency) while preserving data integrity.\n\n**3. Summary:**  \nRAM and imperating data are **both** critical for **perception** (efficiency) while **perception** (data). This ensures **perception** (efficiency) while **perception** (data) maintains **perception** (data).\n\n**4. Conclusion:**  \nRAM and imperating data are **both** **perception** (efficiency) and **perception** (data). This reflects **corporation** (efficiency) while **perception** (data) maintains **perception** (data).\n\n**5. Deferred (implied):**  \nRAM and imperating data are **deferred** (implied) because **perception** (data) and **perception** (data) are **both** (deferred). This ensures **deferred** (efficiency) while **deferred** (data) maintains **deferred** (data).\n\n**6. Instances:**  \nRAM and imperating data are **instances** (e.g., `Data`), which **perception** (data) and **perception** (data) maintain **instances** (data).\n\n**7. Post-instance:**  \nRAM and imperating data are ** post-instance** (e.g., `Data`), which **perception** (data) and **perception** (data) maintain ** post-instance** (data).\n\n**8. Overall:**  \nRAM and imperating data are **overall** (e.g., `Data`), which **perception** (data) and **overall** (data) maintain **overall** (data).\n\n**9. Deferred:**  \nRAM and imperating data are **deferred** (deferred) because **overall** (data) and **overall** (data) maintain **overall** (data).\n\n**10. Deferred:**  \nRAM and imperating data are **deferred** (deferred) because **overall** (data) and **overall** (data) maintain **overall** (data).\n\n**In summary:**  \nRAM and imperating data are **both** **overall** (data) and **overall** (data) maintained **overall** (data). This ensures **overall** (data) maintains **overall** (data) while **overall** (data) maintains **overall** (data).",
+   "response_sha256": "3aaa79218ecb8caed709c8ca51c71c6b489e190412fcea6fc11d28df9fae3be4",
+   "generated_tokens": 727,
+   "termination": "complete",
+   "wall_time_seconds": 13.302,
+   "unique_content_chars": 2296
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "**Python Code: `unique_in_order` (Remaining Order)**\n\nThis code retrieves unique items from a list of `unique_in_order` values, then applies a `remaining_order` to maintain the original order while preserving the first order. Here's how it works:\n\n1. **Time Complexity Explained**:\n   - The task involves processing data where each item is not immediately remixed but can be remixed.\n   - The algorithm uses Python's `Order` method to handle `remaining_order` operations.\n   - The `Order` object returns `item` values before `remaining_order` to ensure we're correct ordering by `item` first.\n\n2. ** Step-by-step implementation**:\n   - ** Step 1:** Process `unique_in_order` values using `Order`.\n   - ** Step 2:** Apply `remaining_order` to `item` values.\n   - ** Step 3:** After `remaining_order`, return `item` values for `order` to maintain order.\n\n**Exceptionally**: This requires handling `remaining_order` operations where `item` values are non-remixed but can be remixed.\n\n---\n\n```python\nimport datetime\n\ndef unique_in_order(items)\n    defructions = Order(items)\n    remaining_order = Order(item)\n    return item_list[remaining_order]\n```\n\n**Time Complexity Explained**:\nThe `Order` object returns `item` values before `remaining_order` to ensure we're correctly ordering by `item` first. This operation ensures that `remaining_order` maintains the order of `item` first, even if `remaining_order` is deleted.",
+   "response_sha256": "a023d72b5f932e94ae3b4344f01a91827d16883af39f12f95f5f02245c2eb94c",
+   "generated_tokens": 374,
+   "termination": "complete",
+   "wall_time_seconds": 6.816,
+   "unique_content_chars": 1338
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The correct code is as per the provided description. Here's how it works:\n\n1. **Bugation**: The function `last_Threshold` returns four for multiple instances.\n2. **Python**: It returns four for multiple instances.\n3. ** Python**: It returns four for multiple instances.\n4. ** Code**: This does not include any specific error or bug in this code.\n\nHowever, if you're interested in **python**, here I'll provide the corrected code:\n\n```python\nimport Python\n\ndef last_Threshold(values): \n    start = max(0, lens(values) - 3)\nreturn values[street_1]\n```\n\nThis function returns four for multiple instances.",
+   "response_sha256": "83088a9f76fcc36b7181677299e55be86b924518fc95f3606a79b8acdb72dbcc",
+   "generated_tokens": 161,
+   "termination": "complete",
+   "wall_time_seconds": 2.908,
+   "unique_content_chars": 588
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "Email:\n\nTo confirm the delivery status of your shipments with Vendor, please send it to [Vendor's Email] at [email]. We're also looking upgrades scheduled on [date], so don't misses yet. Please keep track!\n\n(90-word)",
+   "response_sha256": "b76787c30239bdb56b4b3bd351cbb521b2f5799c4b35e18355dfc495c3d98a2f",
+   "generated_tokens": 58,
+   "termination": "complete",
+   "wall_time_seconds": 1.074,
+   "unique_content_chars": 214
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "**DOCs: A DOWN REasons Plan for Covered Worker's-Crypt (Covision)**\n\nThis plan includes **6 steps** covering **covered worker's-crypt (Covision)** for a **domain-baseded (Dro)** on **Vocelian** (a **domain**). Here\u2019s what each step means:\n\n---\n\n### Step 1: **Purchase & Verification**\n1. **Check if the site is already covered**  \n   - Ensure there are **exactible** (e.g. *virtually* or *insecure*) **worker's-Crypt** (Covision) in **Vocelian**.\n2. **Verify the security**  \n   - Check **Security** (e.g. *secure*), ** Security** (e.g. *secure*), ** Security** (e.g. *secure*), ** Security** (e.g. *secure*), ** Security** (e.g. *secure*).\n3. ** Review any **documentation** (e.g. * documentation*)**  \n   - Confirmation of **Security** (e.g. * document*), ** Security** (e.g. * document*), ** Security** (e.g. * document*), ** Security** (e.g. * document*).\n\n---\n\n### Step 2: ** Create a Purchtingable/ Verified Worker's-Crypt**\n4. ** Determine the **number of workers****  \n   - For **Vocelian**, use **number of workers** = **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** + **number of workers** +****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "d35cf011e5694698f79011559188e4e1d088a24964d43173dfc265721701b840",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.774,
+   "unique_content_chars": 2054
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Based on your question about a **sales-incentified** (SIS) analysis, I'll provide detailed information about **Sales Incentification** for **Sophot** (Sophot) and **Sales** (Sales) in **Sophot** (Sophot) without prior information.\n\n### Step-by-step Information Request:\n1. **Sophot** (Sophot):  \n   - **Name:** Sophot  \n   - **Type:** Sophot  \n   - **Purchase price:** $1000 per day  \n   - **Expiration date:** 2023-12-01  \n   - **Expiration year:** 2023-12-31  \n   - **Expiration month:** 2023-12-15  \n   - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - **Expiration year:**\n     - ************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "0541baa8a153fa5b21c534a194f1927ea14e8aa4446c5754fb687ae7d7feebf9",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.14,
+   "unique_content_chars": 1138
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "You're likely to need to **act immediately**, as both cleaning and sharinghouse-related actions are often too high-structured. Here's what you can do:\n\n1. **Clean up** (remaining): \n   - Remainerize cleaners in your home.\n   - Disheshes (e.g., cleaning, repair) might be necessary if you have a specific task or project.\n2. **Sharinghouse** (if needed): \n   - If you're working on a project that requires sharing with others, consider sharing with other cleaners/sharinghouse members.\n3. **Proceed** (if necessary): \n   - You may need to prioritize this over other tasks like cleaning or Sharinghouse.\n\nIf you're noticing a situation where cleaning and Sharinghouse are too complex, **consider prioritizing it**\u2014even though it doesn't always mean \"cleans\" but \"sharing\".\n\nLet me know which task or project you need to work through!",
+   "response_sha256": "85c4e667d4e762d181ba5abc81595e2c2de23bb1205d8f16ff3914439565530e",
+   "generated_tokens": 207,
+   "termination": "complete",
+   "wall_time_seconds": 3.655,
+   "unique_content_chars": 813
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Fictional Scribe: \"The Fragulations\"**\n\n*(1) * The Fragulations*\n\nThis is a fictional characterization that involves a long, complex, yet still pozyurized, **fictional** (a **phineicultural** or **corporate**) **scribe** that has been **unconservated** for years, particularly **the **fragulation** (a **aspect**). It's a **temporal** (a **structural**) **exercity** that doesn't fit well with the **fictional** (a **fictional**) **scribe**'s **duration** and **type**.\n\n*(2) * The Phabission*\n\n This is a **pharmacological** (a **disruptions**) **exercity** that requires **intermediate** (a **time**) **specific** **conditions** (a **condition**) to be **present** (a **condition**), especially **the **fragulation** (a **aspect**). It's a **fictional** **exercity** that isn't fully **fictional** (a **fictional**) **scribe**, likely to **require** **intermediate** (a **condition**) **specific** **conditions** (a **condition**) **specific** **conditions** (a **condition**).\n\n*(3) * The Conclusion*\n\n This is a **conclusion** (a **transcript**) that involves **intermediate** (a **condition**) **specific** **conditions** (a ** condition**) **specific** ** conditions** (a **condition**) **specific** **conditions** (a **condition**). It's a **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(4) * The finalizing*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(5) * The end itself*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(6) * The finalizing*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(7) * The end itself*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(8) * The end itself*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(9) * The end itself*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific** **conditions** (a **condition**).\n\n*(10) * The end itself*\n\n This is a **end** (a **end**) **fictional** **exercity** that **not** **fictional** (a **fictional**) **scribe**, likely **requining** **intermediate** **conditions** **specific** **conditions** **specific**",
+   "response_sha256": "fd9ae3428683776e825d984016f651e34b17fc98795df282917bff3e0f82e590",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.252,
+   "unique_content_chars": 1973
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "** Plan: Allergies & Vietos (4 Schnack)**\n*   **Allergy:** *allergies*  \n    - **e.g., *allergies* (e.g.)*  \n    - *all* (e.g.)*\n\n*   **Vietos:** *vegan* (e.g.)*\n\n**Explanation:** This plan includes all three types of food-based allergies while considering both *all* and *all* to ensure comprehensive coverage. The plan prioritization ensures each type has at least 100% of its required amount, including *all* and *all* to meet the needs of both *all* and *all*.",
+   "response_sha256": "7a94f761f63e22fa052731b4e5e3e87b557c0655b637a25e87b740828395c6ed",
+   "generated_tokens": 143,
+   "termination": "complete",
+   "wall_time_seconds": 2.534,
+   "unique_content_chars": 446
+  }
+ ]
+}

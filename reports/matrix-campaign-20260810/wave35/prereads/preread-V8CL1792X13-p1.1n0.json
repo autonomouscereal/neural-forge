@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:45:17Z",
+ "label": "V8CL1792X13",
+ "cell_id": "ARCH.V8CL1792X13",
+ "cell_instance_id": "mx34-v8cl1792x13-0001",
+ "receipt_sha256": "8efe94918f51021a0b8545e310837b7451cf305cd38c999b65d3f5c95c9e1e2c",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.1,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "Sure, I can help with that! Here's how I'd like to answer your question:\n\n**I'm happy to provide a response.**\n\nPlease don't have any questions about my personal life or I'll be able to answer anything for you. Please let me know what you're asking.",
+   "response_sha256": "41873924bdf67783a0de3e7a4c7474f2f53e41d21d50d336d07ddd77a08950df",
+   "generated_tokens": 61,
+   "termination": "complete",
+   "wall_time_seconds": 1.673,
+   "unique_content_chars": 247
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "**Practical Actionlist:**\n\n1. **A. Reviewing the task**  \n   - *e.g.,* \"Reviewing the task\" (e.g. \"Reviewing the task\")*\n2. **B. Assigned it**  \n   - *e.g.,* \" Assigned it\" (e.g. \" Assigned it\")\n3. **C. Prioritize it**  \n   - *e.g.,* \" Priority\" (e.g. \" Priority\")*\n\n**Note:** These actions are not intended to be intensive or for personalizing, as they are typically used for work-related tasks rather than for personalizing tasks.**",
+   "response_sha256": "2fad379deaa584a4128bc582a85459c095f03ff4aa79c2a875324cbbf163b078",
+   "generated_tokens": 139,
+   "termination": "complete",
+   "wall_time_seconds": 2.55,
+   "unique_content_chars": 417
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "**Earth's Seasons: The Unique Driving Driver**\n\nEarth's seasons are not just about its physical geographical location, but also about its **election of a \"curious\" (a \"specific\") and **uniquely** (a \"special\") **temporal** (a \"special\") **event** (a \"special\") **event** (a \"special\"). This concept reflects how **Earth's unique position** affects its **timelines**, **specificities**, **specificities**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**, **specialties**",
+   "response_sha256": "5a0664b05872df2d53ff9d5f5f1da4909a32e3a689d778a3601b5dca93eea6df",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.125,
+   "unique_content_chars": 521
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "1. **total number of kits**: 17 (workshop) + 6 (filled) = 19 kits  \n2. **number of kits per box**: 19 (percentage) / 5 (percentage) = 3.8 (percentage)  \n3. **number of kits per box**: 3 (percentage) / 5 = 0.6 (percentage)  \n4. **number of complete kits**: 0 (filled) / 0.6 = 0 (left)  \n5. **number of complete kits**: 0 (left)  \n\n**Exact answer**: $\\boxed{0}$",
+   "response_sha256": "28f794365b9907aaa53027235dd7d82ebcfdaa0dd2cdbd0df6797116e7d2ff06",
+   "generated_tokens": 147,
+   "termination": "complete",
+   "wall_time_seconds": 2.848,
+   "unique_content_chars": 348
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "The correct answer is **A: \"The four people in finish order\"**\n\nExplanatory:\n1. **A: \"The four people in finish order\"** - This is a clear explanation of the specific order in which the four individuals (the first, second, third, and last) are placed based on their roles.\n2. **B: \"The four people in finish order\"** - This is the correct answer for the question about the specific order in which the four individuals are placed.\n\n**Exerculturally**: The answer is **A**, as it provides detailed information about the specific order in which the four individuals are placed.",
+   "response_sha256": "fbee9e5a14e93902e29cf1af05f3b1093c6c25c9719e45d49088fb9be8987451",
+   "generated_tokens": 138,
+   "termination": "complete",
+   "wall_time_seconds": 2.598,
+   "unique_content_chars": 489
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The most accurate response is **\"which day\"** (since \"which\" is correct), as \"checkout\" typically means \"the same\" or \"same\" in the same time. Here's the specific details:\n- **Checkout**: 4:15 p.m. (no direct date)\n- **Located**: 7:30 AM (not directly)\n\n**Note**: The \"checkout\" system doesn't explicitly define \"which\" as a day, but it's just a general reference. For \"checkout\" in this case, \"checkout\" would be \"temporal\" (e.g., \"today\").",
+   "response_sha256": "ffebde3ca6db1c746b0cab3c3de985be4d0c7b78fe3643999d36be6c02f7e134",
+   "generated_tokens": 138,
+   "termination": "complete",
+   "wall_time_seconds": 2.65,
+   "unique_content_chars": 440
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "The team **properized** three battery suplists (A, B, C) based on their cost and availability. **The risk** remains **expiration** due to a **weekly schedule** for **safety**, which necessifies **procurrency** for **delivery**.  \n\n*(Note: *no *actual* risk* *confirmed*******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "e51d682eca853e961f5ce980386fabff5eea8e961fea9510d38fb0e2cf494919",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.281,
+   "unique_content_chars": 1208
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "RAM (Resolved Memory Access) and long-term storage are both important for optimizing performance and maintaining data integrity. Here's why they're often considered:\n\n**1. Completion of RAM**  \nRAM allows memory access to be **completed**, which means that all data can be accessed in a single, consistent memory pool (data). This ensures:\n- **Efficiency**: It minimises memory usage while minimizing memory allocation.\n- **Faulting**: It provides **faulting** (data integrity), preventing errors like errors or misconfigurements from being stored.\n- **Safety**: It ensures **safety** (data quality), preventing unauthorized access or unauthorised access from being stored.\n\n**2. Completion of long-term storage**  \n long-term storage involves **instantly** data, which requires **instantly** access to ensure data integrity. This includes:\n- **Data integrity**: It ensures data quality and compliance.\n- **Security**: It protects against unauthorised access or unauthorised access from being stored.\n- **Faulting**: It provides **faulting** (data quality), preventing errors like errors or misconfigurements from being stored.\n\n**Imternal**: These are often **implemented** as **complementary** to RAM and long-term storage, but they are not directly linked to RAM and long-term storage. They are typically **complementary** to RAM and long-term storage, but not directly to RAM.\n\n** Summary**: RAM and long-term storage are both critical for **RAM** and **data integrity**, but they are **not directly connected** to RAM and long-term storage. RAM and long-term storage are often **complementary** to RAM and long-term storage, but RAM and RAM are **not directly linked** to each other. RAM and long-term storage are **complementary** to RAM and RAM, but RAM and RAM are **not directly connected** to RAM and long-term storage. RAM and RAM are **not directly linked** to RAM and long-term storage. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly linked** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM. RAM and RAM are **not directly connected** to RAM and RAM",
+   "response_sha256": "52f359571090f4de799c6461edf9791ddf2165f6843440904464bd0dd93c653f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.372,
+   "unique_content_chars": 1809
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "**Python Code: `unique_in_order` (Remaining Order)**\n\nThis code retrieves unique items from a list of `unique_in_order` values, preserving the order of first-seen items. The implementation involves handling non-duplicational items by remapping them to a new order while maintaining the original order.\n\n---\n\n**Time Complexity Explained:**\n\n1. **Python Code:**  \n   - **Python**: `unique_in_order` (remaining order)\n     - **Time**: 0 (no complex)\n\n2. ** Step-by-step**:\n   - **Python**: `unique_in_order` (remaining order)\n     - **Time**: 0 (no complex)\n\n**Exceptionally**: This code is implemented as a Python Python code for `unique_in_order` (remaining order), which does not require any complex execution due to Python's built-inness constraints.\n\n---\n\n**Explanation**:\nThe `unique_in_order` method allows for non-duplicational items to be remixed while keeping the order of first-seen items. Here, it maintains the original order while remapping items to a new order without altering the primary order. This ensures that all non-duplicational items are handled correctly while preserving the order of first-seen items.\n\n**Note**: This code is used as a Python Python code for `unique_in_order` (remaining order).",
+   "response_sha256": "ec9cca3632ff75b1b96fd2c2939b90c46b881bf06d164a9e5dd134b731e2cc77",
+   "generated_tokens": 317,
+   "termination": "complete",
+   "wall_time_seconds": 6.042,
+   "unique_content_chars": 1118
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The correct function returns four for multiple inputs. The error occurs when `values` is too long, which can cause `value` errors during `last_Three` operations. Here's how to address this:\n\n**Cororrective Code:**\n\n```python\ndef last_Three(values):\n    start = max(0, lens(values) - 3)\n    return values[start - 1]\n```\n\n**Explanation:**\n\n- **`Lens`**: This function uses `Lens` as the source of `value` errors.\n- **`Lens`**: This function ensures `value` errors are handled correctly by returning `value` instead.\n- **`Lens`**: This function returns `value` data once `value` is processed.\n\n**Code Explained:**\n\n1. `Lens` returns `value` data.\n2. `value` errors are handled using `Lens`.\n3. `value` data is processed and `value` errors are resolved.\n\nThis code ensures `value` errors are handled correctly by returning `value` data instead.",
+   "response_sha256": "440b786b1ef58f06f26c6a010f7f65a31426daa193bfa27d1ea43a82daa1ff76",
+   "generated_tokens": 241,
+   "termination": "complete",
+   "wall_time_seconds": 4.599,
+   "unique_content_chars": 798
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "Email:\n\nDirector: Vendor\n\nrequesting confirmation\n\nWe are concerned about a Delayed Shipment\n\nOur installation is scheduled for Monday. We want an updated tracking number. Please let us know if you have any questions regarding this.\n\nThank you for your attention.",
+   "response_sha256": "c6f1cdc3ff6f84d4b6e6a84334849d12160b332ac3ac19fc3fb6cfcaa11e09c6",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.128,
+   "unique_content_chars": 258
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "**DOCs: A DOWN REasons Plan for Covered Worker's-Crypt (Covision)**\n\nThis plan includes **6 steps** to ensure a successful **covered worker's-Crypt (Covision)** on the **domain** *domain* *domain*. Here\u2019s what each step means:\n\n---\n\n**1. **Purchase and Deferred**  \n   - ** Step 1:** Create a **Deferred** (a temporary, non-publicated, non-standardized version) of the **domain** *domain* *domain* *domain* *(D).  \n   - ** Step 2:** Deferred is **purchased** by **recommended** (e.g., *recommended*), **not** *standard* (e.g., *standard*).  \n   - ** Step 3:** Deferred is **deferred** (a non standardized version) of *domain* *domain* *domain* *(D).**\n\n---\n\n**2. **Verification**  \n   - ** Step 4:** Verify that the **domain** *domain* *domain* *(D)* meets **Covision** requirements (e.g., **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**).  \n   - ** Step 5:** Check that **Covision** parameters are **valid** (e.g., **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**, **Cryptospecific**).\n\n---\n\n**3. **Roles**  \n   - ** Step 6:** ** Roles** (e.g., **recommended**, **recommended**, **recommended**, **recommended**, **recommended**, **recommended**).\n\n---\n\n**4. **Actions**  \n   - ** Step 7:** ** Action** (e.g., **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**, **deferred**,",
+   "response_sha256": "2724a10495e36fa93bc932946f30ff696244016a3201e8c5f517779b4a9b7a43",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.388,
+   "unique_content_chars": 1364
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Based on your question about sales increased, I can provide information about **sales** (not specifics) and **prices** (not exact). Here's what I can clarify:\n\n1. **Sales** (if you're looking at a *product*):  \n   - If you're asking for **product sales** (e.g., \"a product\"), I can describe sales as **quantified** (e.g., \"amount of product\") based on market data.  \n   - For **products** (e.g., \"a product\", \"a supply\"), I can explain **price** (e.g., \"price per unit\").  \n\n2. **Pairs** (if you're asking for **specific types**):  \n   - If you're looking at **specific categories** (e.g., \"category\", \"product\", \"product\"), I can provide details like \"category\" (e.g., \"category\", \"product\", \"product\").  \n\n3. **Information** (if you're asking about **specific details**):  \n   - If you're interested in **specific price** (e.g., \"price\", \"unit\", \"location\"), I can outline **price** (e.g., \"price\", \"unit\", \"location\").  \n\nLet me clarify which type you need!",
+   "response_sha256": "618f0ebf85eadba0ce69e3cc34566ffc283910c69b29ca12d9014dd81e1532f5",
+   "generated_tokens": 276,
+   "termination": "complete",
+   "wall_time_seconds": 5.301,
+   "unique_content_chars": 930
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "You're likely to need to **act immediately**, as both cleaning and sharinghouse-related actions are often too high-structured. Here's what you can do:\n\n1. **Clean up** (remaining): \n   - Remainerize cleaners in your home.\n   - **Remission** (notifying others):\n     - **Notify** other cleaning services (e.g., \"no more than 24 hours\").\n     - **Resolve** with a clear, detailed plan (e.g., \"resolved\").\n\n2. **Sharinghouse** (if necessary): \n   - ** Notify** others about potential risks (e.g., \"no more than 24 hours\").\n\n3. **Proceed** (if needed): \n   - ** Resolve** with a clear, detailed plan (e.g., \"resolved\").\n\nThis is a **high-risk** situation that requires immediate action. If you have specific concerns about these actions, I can help prioritize them accordingly.",
+   "response_sha256": "acc8ca7d20b9971c218702ae18708ff6d4f8bf8e5d358089d40e61447a1516c2",
+   "generated_tokens": 211,
+   "termination": "complete",
+   "wall_time_seconds": 3.978,
+   "unique_content_chars": 730
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Fictional Scribe: \"The Frague\"**\n\n*(1) * The Frague*\n\n*(2) * The Frague*\n\n*(3) * The Frague*\n\n*(4) * The Frague*\n\n*(5) * The Frague*\n\n*(6) * The Frague*\n\n*(7) * The Frague*\n\n*(8) * The Frague*\n\n*(9) * The Frague*\n\n*(10) * The Frague*\n\n*(11) * The Frague*\n\n*(12) * The Frague*\n\n*(13) * The Frague*\n\n*(14) * The Frague*\n\n*(15) * The Frague*\n\n*(16) * The Frague*\n\n*(17) * The Frague*\n\n*(18) * The Frague*\n\n*(19) * The Frague*\n\n*(20) * The Frague*\n\n*(21) * The Frague*\n\n*(22) * The Frague*\n\n*(23) * The Frague*\n\n*(24) * The Frague*\n\n*(25) * The Frague*\n\n*(26) * The Frague*\n\n*(27) * The Frague*\n\n*(28) * The Frague*\n\n*(29) * The Frague*\n\n*(30) * The Frague*\n\n*(31) * The Frague*\n\n*(32) * The Frague*\n\n*(33) * The Frague*\n\n*(4) * The Frague*\n\n*(5) * The Frague*\n\n*(6) * The Frague*\n\n*(7) * The Frague*\n\n*(8) * The Frague*\n\n*(9) * The Frague*\n\n*(10) * The Frague*\n\n*(11) * The Frague*\n\n*(12) * The Frague*\n\n*(13) * The Frague*\n\n*(14) * The Frague*\n\n*(15) * The Frague*\n\n*(16) * The Frague*\n\n*(17) * The Frague*\n\n*(18) * The Frague*\n\n*(19) * The Frague*\n\n*(20) * The Frague*\n\n*(21) * The Frague*\n\n*(22) * The Frague*\n\n*(23) * The Frague*\n\n*(24) * The Frague*\n\n*(25) * The Frague*\n\n*(26) * The Frague*\n\n*(27) * The Frague*\n\n*(28) * The Frague*\n\n*(29) * The Frague*\n\n*(30) * The Frague*\n\n*(31) * The Frague*\n\n*(32) * The Frague*\n\n*(33) * The Frague*\n\n*(4) * The Frague*\n\n*(5) * The Frague*\n\n*(6) * The Frague*\n\n*(7) * The Frague*\n\n*(8) * The Frague*\n\n*(9) * The Frague*\n\n*(10) * The Frague*\n\n*(11) * The Frague*\n\n*(12) * The Frague*\n\n*(13) * The Frague*\n\n*(14) * The Frague*\n\n*(15) * The Frague*\n\n*(16) * The Frague*\n\n*(17) * The Frague*\n\n*(18) * The Frague*\n\n*(19) * The Frague*\n\n*(20) * The Frague*\n\n*(21) * The Frague*\n\n*(22) * The Frague*\n\n*(23) * The Frague*\n\n*(24) * The Frague*\n\n*(25) * The Frague*\n\n*(26) * The Frague*\n\n*(27) * The Frague*\n\n*(28) * The Frague*\n\n*(29) * The Frague*\n\n*(30) * The Frague*\n\n*(31) * The Frague*\n\n*(32) * The Frague",
+   "response_sha256": "bb2d49556294faffad69b1f251c34138fa7ee17f13b3d2dff3760757c3f19d1d",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.218,
+   "unique_content_chars": 702
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "** Plan: Allergies and Diastructity (4 Schnacks)**\n\n**1. Allergy-Focusing**\n- **Possible:** *allergies* (e.g., food, medical, personal)\n- **Recommended:** *vegan* (as a food) + *vegan* (as a diastructity)\n\n**2. Diastructity (4 Schnacks)**\n- **Possible:** *allergies* + *vegan* (both)\n- **Recommended:** *allergies* + *vegan* (both)\n\n**3. Allergies & Diastructities**\n- **Possible:** *allergies* + *vegan* (both)\n- **Recommended:** *allergies* + *all* (both)\n\n**4. Diastructity & Allergies**\n- **Possible:** *allergies* + *all* (both)\n- **Recommended:** *all* (both)\n\n** Summary:** These four-schnack options allow you to address both allergy-related and diastructity concerns while providing all possible alternatives.",
+   "response_sha256": "b4f424f3fb7cd276621c18365f235ea7f4c7d76ba0760b1ef9ce200b7366a540",
+   "generated_tokens": 240,
+   "termination": "complete",
+   "wall_time_seconds": 4.461,
+   "unique_content_chars": 675
+  }
+ ]
+}

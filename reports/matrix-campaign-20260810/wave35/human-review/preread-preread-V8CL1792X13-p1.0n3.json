@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:37:33Z",
+ "label": "V8CL1792X13",
+ "cell_id": "ARCH.V8CL1792X13",
+ "cell_instance_id": "mx34-v8cl1792x13-0001",
+ "receipt_sha256": "8efe94918f51021a0b8545e310837b7451cf305cd38c999b65d3f5c95c9e1e2c",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.0,
+ "no_repeat_ngram": 3,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "Sure, I can help with that! Here's how I can answer your question:\n\n1. **What is your best response?**  \n   I can provide a response based on your response. Please share your response with me.\n\n2. **If you have any specific questions or need help with anything else**  \n3. **I can also answer questions about specifics**  \n4. **Please provide any details**  \n5. ** I can also help with other questions**  \n\nLet me start by sharing your response!",
+   "response_sha256": "2c50b6c47b3f7048edf5f9fac33cb2564600dff78069f638eac5a05cf65cfe61",
+   "generated_tokens": 109,
+   "termination": "complete",
+   "wall_time_seconds": 3.123,
+   "unique_content_chars": 429
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "**Practical Action list**\n\n1. **A. Reviewing and documenting the task**  \n   - **1. Review**: Reviewing the task thoroughly (e.g., logbook, document, or other source).  \n   **2. Document**: Create a detailed record (election, time, and any constraints).  \n2. **a. Set a time**: Determine when to start (efficiency, timeframe, or schedule).  \n3. **b. Prioritize**: Assigned tasks based on resource availability and deadlines.  \n4. **c. Ensure compliance**: Verify requirements, deadlines, and deades.  \n5. **d. Plan**: Schedule and identify key steps.  \n6. **e. Worked in**: Worked (economically) and working (efficient) hours.  \n7. **f. Worker**: workers (efficent, labor, or labor).  \n8. **g. Workers**: labor, labor (if required).  \n9. **10. Work**: working (worked in) hours (electors).  \n10. **11. Workout**:worked-in-hour (efectors).  \n\n**Note**: These are not \"intentionally\" tasks; they are just for planning and scheduling.",
+   "response_sha256": "6e141ae86049d60af9a874d728ec10d5977e9f1c31b59ca77da8c03668fe2517",
+   "generated_tokens": 281,
+   "termination": "complete",
+   "wall_time_seconds": 6.706,
+   "unique_content_chars": 899
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "**Explanatory:**\n\n1. **Earth's Seasons**: Earth's seasons are likely due to its position in the **specific time** (e.g., **election**, **scheduling**,**specific**, or **event**). These seasons align with **scheduled** events, **event **sources**, and **event**\n2. **Summation**: The **solution** for **setting** (**event**) is **efficiency**, which involves **efficient** **sizing** ( **efficency**) **sett** (.******** ******.**** ** **** **.****)** **e** ****\n3. **Clare**: **Claring** **clines** **cultural** **future** **time** **on** **event.******\n4. ****Claring **cline****:** **Clining** ** clines**** future******\n5. ** Claring****clines ****cline ******\n6. **claring**:**\n   - **Clines**:\n\n**Clare:** **clining**** clines **clinary****",
+   "response_sha256": "adf13997475dd58e0f5f9401072a4aee1d481daef0b9febe05414772251caba8",
+   "generated_tokens": 262,
+   "termination": "complete",
+   "wall_time_seconds": 6.202,
+   "unique_content_chars": 740
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "1. **total number of kits**: 17 (workshop) + 6 (filled) = 17 + 5 = **20** kits  \n2. **number of kits per box**: (17 kits / 5box) = (17/5) = **17/2** = 7 (since 7/2 = 3)  \n3. ** number of complete kits** (per box) **= 7 / 1 = **7**  \n4. ** Number of remaining kits** **= (7/1) =** 7**  \n\n**Exact answer**: **7 complete kits perbox**",
+   "response_sha256": "15481b7c27ab223437bc346de85d51bbbafd7fdd6f9231c59aa47bfd65df17c4",
+   "generated_tokens": 142,
+   "termination": "complete",
+   "wall_time_seconds": 3.359,
+   "unique_content_chars": 322
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "The answer is **MiRA (Missionary)**, **JUN (Jun)** (the most), **SAL (Solution)**(the most)** and **Fault (the least),** all four individuals in **order** ( **Frague**) **in** **order **before** **Jun** **specific** **in **order**\n**Explanation**: The **Missionaries** (M) and **Juries** (J) are **filled** **before **Jon** (S) **solution** **further** **over** **Fruit** **all** **possible** **options** **(**Fragues****** ******)** ** **** **.**\n\n**Explicit**: This **frequential** **process** **requests** **to** **mission** **the** **reasons** **of** **corporation** **operations** **e** **and** **external** **services** **a** **reservation** **for** **M** ** and** ** F** ****\n******\n** **",
+   "response_sha256": "fe3c9512703e365e775b333ef324117fcacbb26da9b86d422cde62118d7762d1",
+   "generated_tokens": 248,
+   "termination": "complete",
+   "wall_time_seconds": 5.856,
+   "unique_content_chars": 694
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The most accurate response is: **4:30 p.m.**\n\n** reasons why **4:**  \n- **4** is the most accurate answer.  \n- It is a **specific** time for **checkout**, not a **day**.  \n",
+   "response_sha256": "055d15b44c939dc769203b30aa82ca890f11417303363aa536d3d895e9288efe",
+   "generated_tokens": 54,
+   "termination": "complete",
+   "wall_time_seconds": 1.324,
+   "unique_content_chars": 164
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "The team **properized** three bister supliations**, **confirmed** that **battery** **specific** **criter** **express** **as** **efficiency** **per** **delivery** **before** **la** **charge** **on** **the** **frequ** **p** **t** **h** **d** **b** **r****** **a****",
+   "response_sha256": "1885228a799383b83e24e03fa4b3416f19475739c29e4e78d9a2bb9daae46b0b",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 2.353,
+   "unique_content_chars": 263
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "RAM and storage can be both **perfect** and **perplexing** depending on the type of data you need to store. Here's the **RAM** and** long- term** storage analysis:\n\n---\n\n**RAM (RISCING)**\n\n1. **Data size**: If you're looking at **data** (e.g., large, high- size data), **Rram** storage is **perceptually** (data size). This means data can be **perception** (not stored), but **percentage** (percentage data) is **not** ( percentage data).\n\n2. **Time**: **Ram** storage allows **time** (time) to **perce** data, but ** percentage** data is ** not** (Percentage data).\n3. ** Memory**: You can **percent** data (percent data) stored in **Raming** (RAM), but** percentage **data**\n4. **efficiency**: RAM **perper** data **per** per **per **per**\n5. **Efficiency** ( Percentage data): RAM** per per per** per Percentagedata**\n\n---**Rationale**\n\nRAM is **exact** (exact data) storage, but per **Percentagedata**\nRAM ** per perper** **per PercentageData**\n\n** Summary**\n\n RAM is**per**perper ** perperper per**perPer**per Per**per perPer** perPer **perPerPer**Per** Per** per**Per **Per**_per**per **Per**\nRaming **per perper per perPerper**PerperperperPer ** perPerPerPerperPer**\n RAM per per Perperper PerperPerper per Per**PerPer Per** Perper per ** per** PerPer**",
+   "response_sha256": "def6f3779f081da7c139e9341ebde700408135251e0cecc7e7130419d36956fb",
+   "generated_tokens": 396,
+   "termination": "complete",
+   "wall_time_seconds": 9.56,
+   "unique_content_chars": 1250
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "**Python Code: ` unique_in order` function**\n\n**Time Complexity Expl Expl Expl**\n\n1. **Python**: This code is used to implement a function ` unique_order` that returns a `Order` object with `items` and `order` values.\n\n2. **Time**: The complexity is **1** (since `Order ` items`) and **2** (efficiency) due to the ` hashability` function.\n\n**Possibleities**:\n- **` unique_inorder`**: ` Order` with ` items ` ` `` ` ` order ` ````\n\n**Explanation**:\nThe ` unique-inorder` function returns ` Order ` ` items``` ` `order ` ```\n\n** Steps**:\n1. ` uniqueinorder` returns `Order```` ` items`` ` ` Order``` ``` ``\n\n** Expl Expl **:\n- ` uniqueInorder` ` Order``` ``` ``",
+   "response_sha256": "c089d978bb49f8cf1fd92634f91fd1386e4f01ad3b404df304616a60f8d485a7",
+   "generated_tokens": 206,
+   "termination": "complete",
+   "wall_time_seconds": 4.984,
+   "unique_content_chars": 652
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The correct function returns four instances for each validator:\n\n1. **Bug** (0) returns four validator values.\n2. **bug**(0) does not return four validations.\n3. ** bug**() returns four validation checks.\n4. **c** (values[0]) returns three validator checks.\n\n**Explanation**: The function `last_Three` returns four values in each validating `bug` (0), `bag` (valutions), `c` (validator), `values` (list), `start` (value), `end` (end).",
+   "response_sha256": "ced4602a4d601958a5be5cfac59b5a64f8acd08b84565ef1105f43f01fc7b624",
+   "generated_tokens": 138,
+   "termination": "complete",
+   "wall_time_seconds": 3.249,
+   "unique_content_chars": 432
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "Email:\n\nDirector: Vendor\n\nrequesting confirmation\n\nWe are concerned about a delapsed shipment due to a scheduled shipment on Monday. Our installation is scheduled for Monday, so we need an updated tracker. Please confirm your response by [date] to ensure we are updated.\n\nThank you for your attention.",
+   "response_sha256": "52b69420650ff22bb3424cbc5a163490e8eb262738469f80d04299523f567765",
+   "generated_tokens": 67,
+   "termination": "complete",
+   "wall_time_seconds": 1.601,
+   "unique_content_chars": 297
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "**DOCs: A DOCs Plan**\n\n** Step 1: Create a DOC**\n- ** Create a new DOC** (e.g. `doc`) with `file` `dOC` `file `d` `specific` `location` `e` `date` `tim` `time` `status` `backup` ` back` `conf` `release` `out` `ex` `cov` `ver` `check` `valid` `is` `pro` `p` `update` ` update` `on` `change` `action` `log` `de` `end` `f` `n` `in` `a` `b` `con` `as` `al` `g` `m` `t` `r` `v` `w` `h` `o` `k` `l` `i` `j` `x` `y` `z` `u` `q` `not` `def` `im` `mod` `am` `ad` `ab` `ac` `cor` `ch` `ar` `ag` `com` `comp` `res` `cur` `id` `int` `str` `st` `trans` `tr` `ut` `at` `an` `mat` `qu` `per` `pm` `pol` `ip` `ol` `op` `or` `ro` `rel` `rob` `ob` `cl` `client` `agent` `ot` `user` `custom` `co` `profile` `list` `view` `review` ` review` `book` `read` ` book` `Book` `author` ` author` `title` `name` ` Author` ` name` ` Title` `Name` ` Name` `ID` ` ID` `Id` ` Id` ` Ident` `_id` ` ident` `ident` ` identity` ` identifying` ` identify` ` identities` ` Identity` `ids` `",
+   "response_sha256": "2a2067d0b5239c14753267d85e08b3075aa74cf332710098d1fca13018481ef6",
+   "generated_tokens": 447,
+   "termination": "complete",
+   "wall_time_seconds": 10.589,
+   "unique_content_chars": 951
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Based on the information provided, I can help you understand what sales increasing means and what data you would request before discussing sales increases.\n\n**Sales increased** typically means sales have been increase by **specific units** (e.g., per unit) **per** unit.\n\nIf you want information about **sales increases**, you would typically request data **before** you can discuss sales increances.\n\nFor sales increase data, you might ask about:\n1. **Sales** (per unit)\n2. **Per unit** ( per unit)\n3. **Time** (day)\n4. ** Number of units**\n\nIf sales increues are not available, I would only provide information about sales increanced without specifics.\n\nWould you like me to provide detailed information about specific sales increades or other data you need?",
+   "response_sha256": "59c93fb427fceea689c05713a602723636a8a4719839dd4edda04e1764fdabd5",
+   "generated_tokens": 176,
+   "termination": "complete",
+   "wall_time_seconds": 4.191,
+   "unique_content_chars": 755
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "You should **act immediately** to prevent the room's smaming. Here's why:\n\n1. **Check for a **safety**: Ensure the room is **not** a **sharing** (which could be a **frequential** or **specific** (e.g., a **efficiency**, **solution**,****** ******)**, or **** ** ****) ****).  \n2. ** Review**: Review **all** **signed** **house** ** clean** **shar** **room** **missions** **and** **effic** **located** **to** **the** **house** **caps** **on** **all **sources** **in** **every** **one** **of** **any** **fictional** **possible** **space** **over** **t** **r** **a** **d** **b** **n** **g** **ex** **con** **out** **as** **per** **both** **re** **with** **conf** **res** **st** **y** **not ****",
+   "response_sha256": "61b1c34c205bfd5173a181fc7f7fc9a842d12b07e522d2d43bbe6d92b2a48bd0",
+   "generated_tokens": 247,
+   "termination": "complete",
+   "wall_time_seconds": 5.939,
+   "unique_content_chars": 688
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Wr\u00ea a short, scene**\n\nThe lightheos that the forgoodhornis are asking about is a **fictionalized, unrealized, or unconspect** question. The tethered **phinex** is **not** a **pharmac**, **not **not**\n**not** **not.**\n\n**(end without explaining)**",
+   "response_sha256": "f4928855b38b7f3249287c31e74f32d9e9eedd781b0e6a66a17149bb89d83949",
+   "generated_tokens": 84,
+   "termination": "complete",
+   "wall_time_seconds": 1.997,
+   "unique_content_chars": 246
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "** Plan for 4 Signed Supposet: Allergies and Diary**\n\n**1. Allergies**\n\n*   **Peanut**: *Recommended* (allergies)\n*  **Vibee**:* *Reasons* (specific to food)\n*    **Dairy**:*\n*   *Revers*:**Reasons*\n*    *Solution*: * Revers*\n\n**2. Diary:**\n\n* **Allergies**: Reasons (allergy) + Revers (solution) + *Revision* (reasons) +* Revers*\n* **Diary**:\n\n* * Reasons*:*\n * * Revision*: Revers * Reven* * *Reven** ** Reasons ** *revers* *\n\n**3. Signed-Signed Sopharmac**\n\n * * *reasons** (Allergy) * **revers*\n ***reasons*\n * Recommended* * revers***\n\n** Revision *reven**\n* Recommended *revision***\n *Reason**",
+   "response_sha256": "a6b6c47a929589599b8ee3cb7d896264fa718ea63b0894797b9d6b745e510a86",
+   "generated_tokens": 246,
+   "termination": "complete",
+   "wall_time_seconds": 5.794,
+   "unique_content_chars": 575
+  }
+ ]
+}

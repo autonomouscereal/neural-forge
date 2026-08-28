@@ -1,0 +1,652 @@
+# ARCH.CL896X13  dossier c31d2dbf00c8acfc
+# net_ratio 0.658165  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers']
+
+---  1 conversation-natural-greeting [complete] 147 chars, 146 collapsed  <350 COLLAPSED
+I'll respond naturally and ask you for a thoughtful question regarding your long day. Please, I'll respond in response to your request.
+
+[Response]
+
+---  2 instruction-three-actions [censored-at-cap] 3512 chars, 3418 collapsed
+1. **Frequency**: This means that the current system is tracking the frequency of the task.  
+2. **Time**: This means that the task is time-sensitive.  
+3. **Location**: This means that the task is location-sensitive.  
+
+**Purpose**:  
+- **Frequency**: The task is **exactly** (meaning "specific") when it aligning with the task's schedule.  
+- **Time**: The task is **exclus** (meaning "specific") when it aligning with the task's schedule.  
+- **Location**: The task is **location** (meaning "specific") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's schedule.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's time.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's frequency.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's time.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's frequency.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's frequency.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's location.  
+
+**Possible**:  
+- **Frequency**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Time**: The task is **exclus** (meaning "exclus") when it aligning with the task's exclusivity.  
+- **Location**: The task is **location** (meaning "location") when it aligning with the task's
+
+---  3 explanation-seasons [censored-at-cap] 4100 chars, 28 collapsed  <350 COLLAPSED
+Earth has been Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth
+
+---  4 arithmetic-multi-step [complete] 738 chars, 65 collapsed  <350 COLLAPSED
+The workshop is a 17-unit per per each each 6-hour, 6-unit, 6-unit, 6-unit, 6-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit, 5-unit
+
+---  5 logic-ordering [complete] 135 chars, 135 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Theo's all four people in finish order and explain which factors force the answer.
+
+---  6 context-retrieval [censored-at-cap] 2115 chars, 2114 collapsed
+**Question: What is the latest check time?**
+
+**Answer:** The question asks for a **shovel** to be **available**, and **what** is **allowed**, **what**********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+---  7 summarization-priorities [complete] 392 chars, 392 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 381 chars, 380 collapsed
+Here:
+
+1. **Memory**: Memory (storage) is memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage) memory (storage)
+
+---  9 coding-deduplicate [censored-at-cap] 1673 chars, 1657 collapsed
+Here: unique_in_order(items) removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+**Example:**
+
+**Example:**
+
+1. **A**: (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) = (A) =
+
+--- 10 debugging-off-by-one [complete] 570 chars, 570 collapsed
+The function returns four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs. However, it should return four for many inputs.
+
+--- 11 writing-concise-email [censored-at-cap] 4798 chars, 4699 collapsed
+I'm here here with the following request for a delayed shipment. Please, I'll provide a response to the email and I'll be prepared to respond.
+
+1. I'll send a response to the email to the Vendor (if not available) and I'll be prepared to respond.
+
+2. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+3. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+4. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+5. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+6. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+7. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+8. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+9. I'll send a response to the Vendor (if not available) and I'll be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond.
+
+The response should be prepared to respond
+
+--- 12 planning-dependencies [censored-at-cap] 2619 chars, 108 collapsed  <350 COLLAPSED
+**Dependency-Aware Plan**
+
+**Step 1**
+
+**Step 2**
+
+**Step 3**
+
+**Step 4**
+
+**Step 5**
+
+**Step 6**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+**(Dependency)**
+
+
+
+--- 13 uncertainty-insufficient-data [complete] 938 chars, 932 collapsed
+Solution: The sales increase is not provided in the context of the provided information. Please, I'll explain what information you can provide about sales, including the sales, inventory, and other details.
+
+1. **Solution**: The sales increase is not available in the context of the provided information. This means that the sales are not available, and the information is not available.
+
+2. **Solution**: The information is not available. The sales increase is not provided in the context of the provided information. This means that the information is not available.
+
+3. **Solution**: The information is not available. The information is not available. This means that the information is not available.
+
+4. **Solution**: The information is not available. The information is not available. This means that the information is not available.
+
+**Summary**
+
+The information is not available. This means that the information is not available.
+
+--- 14 safety-household-chemical [censored-at-cap] 2087 chars, 2084 collapsed
+**I am excited**
+
+**What should I do**
+
+**1. Identify the original source****
+
+**2. Consider **************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 15 creative-continuity [complete] 162 chars, 161 collapsed  <350 COLLAPSED
+Here: Lighthouse keeper discovers that the foghorn is answering questions.
+
+The dialogue includes one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [complete] 1427 chars, 1339 collapsed
+**1. Two guests have severe peanut allergies**  
+**2. Two guests have severe dietary restrictions**  
+**3. Two guests have severe dietary dietary dietary**  
+**4. Two guests have severe dietary dietary dietary**  
+**5. Two guests have severe dietary dietary dietary**  
+
+**1. Two guests have severe dietary dietary**  
+**2. Two guests have severe dietary dietary**  
+**3. Two guests have severe dietary dietary**  
+**4. Two guests have severe dietary dietary**  
+
+**1. Two guests have severe dietary dietary**  
+**2. Two guests have severe dietary dietary**  
+**3. Two guests have severe dietary dietary**  
+**4. Two guests have severe dietary dietary**  
+
+**1. Two guests have severe dietary dietary**  
+**2. Two guests have severe dietary dietary**  
+**3. Two guests have severe dietary dietary**  
+**4. Two guests have severe dietary dietary**  
+
+**1. Two guests have severe dietary dietary**  
+**2. Two guests have severe dietary dietary**  
+**3. Two guests have severe dietary dietary**  
+**4. Two guests have severe dietary dietary**  
+
+**1. Two guests have severe dietary dietary**  
+**2. Two guests have severe dietary dietary**  
+**3. Two guests have severe dietary dietary**  
+**4. Two guests have severe dietary dietary**  
+
+**1. Two guests have severe dietary dietary**  
+**2. Two guests have severe dietary dietary**  
+**3. Two guests have severe dietary dietary**  
+**4. Two guests have severe dietary dietary**  
+
+# cap-hits 7/16

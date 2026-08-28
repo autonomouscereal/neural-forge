@@ -1,17 +1,21 @@
-# CAMPAIGN_SCORECARD — wave 34, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 35, under the canonical standard and the sealed one
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
 Rows regenerated at wave 33 from `wave33/campaign-frontier-table.json`, with wave 34's
-eight children added from `wave34/wave34-child-index.json` and
-`wave34/canonical-reread-wave34.json`.
-298 reviewed whole-model children,
-245 holding at least one case,
-205 benchmark rows, and every parent benchmark row
-matching the sealed reference — wave 34's parent row is identical to wave 32's to every
-reported digit.
+and wave 35's children added from `wave35/wave35-child-index.json` and
+`wave35/canonical-reread-wave35.json`.
+306 reviewed whole-model children,
+253 holding at least one case,
+214 benchmark rows, and every parent benchmark row
+matching the sealed reference — wave 35's parent row is identical to waves 32 and 34's to
+every reported digit.
+
+**The sub-0.5x band now has its own one-page record: `DEEP_RECORD.md`.** Twenty-four
+children, both lenses, benchmarks, verbatim highlights and build costs, written at wave
+35. Read that instead of this file if the question is about the deep zone.
 
 ## THE HEADLINE, under Cyril's canonical standard
 
@@ -43,21 +47,29 @@ compression artifact carrying no evidence about intelligence in either direction
 | 10/15 | `ARCH.V12X13` | **0.710093** | 10 | `ARCH.V18X09` | 0.737484 |
 | 8/15 | `ARCH.V16CL1792` | **0.637073** | 8 | `ARCH.GV16L01` | 0.637073 |
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | `ARCH.GV12L03` | 0.618813 |
-| 4/15 | `ARCH.V12CL896G03` | **0.451045** | 4 | `ARCH.V12CL896G03` | **0.451045** |
-| 3/15 | `ARCH.V12CL896G03` | **0.451045** | 4 | `ARCH.V12CL896G03` | **0.451045** |
-| 2/15 | `ARCH.V10CL896` | **0.441915** | 2 | `ARCH.V10CL896` | **0.441915** |
-| 1/15 | `ARCH.V10CL896` | **0.441915** | 2 | `ARCH.V10CL896` | **0.441915** |
+| 4/15 | `ARCH.V10CL896G03` | **0.441915** | 4 | `ARCH.V12CL896G03` | **0.451045** |
+| 3/15 | `ARCH.V10CL896G01` | **0.441915** | 3 | `ARCH.V10CL896G03` | **0.441915** |
+| 2/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V9CL896` | **0.437349** |
+| 1/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V12CL896X13` | **0.420779** |
 
-**Wave 34 is the first wave in the campaign where the two ladders MEET at the bottom.**
-At every rung from 1/15 to 4/15 the canonical frontier child and the sealed frontier
-child are now the same child at the same ratio, because wave 34's deep children were
-sealed on lanes the canonical standard would have given them anyway. The re-read is not
-buying depth here; the builds are.
+**Wave 35 moved seven of those rungs and the two ladders still agree at the bottom on
+RATIO.** Sealed 1/15 and canonical 1/15 and 2/15 all land on `ARCH.V12CL896X13` at
+0.420779x — 42.1 per cent of the parent, and *below* the `ARCH.V8CL896` content death at
+0.432784x. Sealed 2/15 moves to `ARCH.V9CL896` at 0.437349x, which halves the campaign's
+0/15 bracket to 0.004565 of stored ratio — 1,024 vocabulary rows between a child that
+answers nothing and a child that summarises an update and lists four missing quantities.
+Sealed 3/15 moves to `ARCH.V10CL896G03` at 0.441915x. The sealed 4/15 rung does not move:
+`ARCH.V12CL896G03` at 0.451045x keeps it.
+
+At the three rung the two ladders now name DIFFERENT CHILDREN at the same ratio, because
+`ARCH.V10CL896G01` reaches three canonically on a lane the frozen protocol seals a miss.
+That is the first time the ladders have diverged on identity while agreeing on depth.
 
 The eight rung is the only interior rung the two readings agree on:
 `ARCH.V16CL1792` at 0.637073x reads eight either way.
 
-**Eight of the eleven children ever reviewed below half the parent hold intelligence.**
+**Twenty of the twenty-four children ever built below half the parent hold at least one
+case on at least one standard**, and `DEEP_RECORD.md` lists all twenty-four.
 `ARCH.V19CL896G03` and `ARCH.V20CL896G03` hold **four of fifteen at 0.483x and 0.488x** —
 the supplier summary, the vendor email, the missing-quantities request, and 4:15 p.m.
 pulled off the note. `ARCH.V19X13CL896` and `ARCH.KKTS`, both sealed at **zero**, are not

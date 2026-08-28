@@ -1,0 +1,48 @@
+{
+ "schema": "neural-forge-matrix-wave35-deployments-prune-v1",
+ "root": "/home/cereal/model-surgery-lab/deployments",
+ "policy": "keep current + current-plus-one PLUS every deployment a sealed receipt names as code_identity.repo_head",
+ "on_disk": [
+  "03d39e85",
+  "2ae30d47",
+  "53928360",
+  "c3e00fe4",
+  "dcfa0c9c",
+  "de749f68",
+  "fa635517"
+ ],
+ "kept": {
+  "03d39e85": {
+   "reason": "named as code_identity.repo_head by 8 sealed receipts: wave34/ARCH.V10CL896, wave34/ARCH.V12CL1792X13, wave34/ARCH.V12CL896 ...",
+   "bytes": 293916406
+  },
+  "2ae30d47": {
+   "reason": "current+1, the standing rollback",
+   "bytes": 296655035
+  },
+  "53928360": {
+   "reason": "the CURRENT deployment; every artifact in this wave's package was produced from it",
+   "bytes": 283959271
+  },
+  "dcfa0c9c": {
+   "reason": "named as code_identity.repo_head by 8 sealed receipts: wave35/ARCH.CL896X13, wave35/ARCH.V10CL896G01, wave35/ARCH.V10CL896G03 ...",
+   "bytes": 297132032
+  }
+ },
+ "deleted": {
+  "c3e00fe4": {
+   "reason": "older than current+1 and named by no sealed receipt in wave 34 or 35; deploy.py --emit reproduces it byte-for-byte from commit c3e00fe4, and no receipt in this estate names a deployment PATH",
+   "bytes": 292392966
+  },
+  "de749f68": {
+   "reason": "older than current+1 and named by no sealed receipt in wave 34 or 35; deploy.py --emit reproduces it byte-for-byte from commit de749f68, and no receipt in this estate names a deployment PATH",
+   "bytes": 296798631
+  },
+  "fa635517": {
+   "reason": "older than current+1 and named by no sealed receipt in wave 34 or 35; deploy.py --emit reproduces it byte-for-byte from commit fa635517, and no receipt in this estate names a deployment PATH",
+   "bytes": 281381989
+  }
+ },
+ "bytes_kept": 1171662744,
+ "bytes_deleted": 870573586
+}

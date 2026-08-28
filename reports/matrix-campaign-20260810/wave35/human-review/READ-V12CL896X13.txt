@@ -1,0 +1,756 @@
+# ARCH.V12CL896X13  dossier ff74ddf18cdad74a
+# net_ratio 0.420779  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 128 chars, 128 collapsed  <350 COLLAPSED
+I'll respond naturically and ask you one thoughtful follow-up question regarding your long day. Please, I'll respond in my case.
+
+---  2 instruction-three-actions [complete] 84 chars, 84 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Giving a numbered list and no introduition.
+
+---  3 explanation-seasons [complete] 139 chars, 138 collapsed  <350 COLLAPSED
+ Earth has seasons to a curious twelave-year-old. Also correct the common idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [censored-at-cap] 1075 chars, 67 collapsed  <350 COLLAPSED
+The workshop makes 17 kits per per per per each, including 6 hours, and 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+---  5 logic-ordering [censored-at-cap] 4892 chars, 4892 collapsed
+Mirafin finished before Theo, the originals were already in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and the four people in their financials were already in place. The originals were in place and
+
+---  6 context-retrieval [censored-at-cap] 3124 chars, 150 collapsed  <350 COLLAPSED
+The question regarding the issue is as a shovel. The question is likely due due to the current situation. The current gatalize is closed this month for re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re
+
+---  7 summarization-priorities [complete] 318 chars, 313 collapsed  <350 COLLAPSED
+The team compared three battery, but not yet yet yet, in two sentences, preserving the decision and the unresolved risk:
+
+The team is not a cheapest but cannot guarantee delivery before launch. The unresolved risk is that its factory expansion may slip by one week, so proceeding will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 3754 chars, 25 collapsed  <350 COLLAPSED
+Comcom Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Completion Complet
+
+---  9 coding-deduplicate [censored-at-cap] 2624 chars, 2565 collapsed
+Here:
+
+1. **Unique_in_order**: The unique value of items that are prioritized for the restinging order.
+
+2. **Hundred**: The time spent in the process, including the restinging order.
+
+3. **HIST**: The time and cost of the restinging order.
+
+**Explan**: The time and cost of the restinging order.
+
+**Python**: The unique value of the **Hundred** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST**.
+
+**Possible**: The **HIST** and **HIST
+
+--- 10 debugging-off-by-one [complete] 114 chars, 114 collapsed  <350 COLLAPSED
+The function is returned four times once in a third time. However it should not return to the last three elements.
+
+--- 11 writing-concise-email [complete] 274 chars, 274 collapsed  <350 COLLAPSED
+Dividing the delayed shipment, we are looking at the delayers and the tracking number. If you're concerned, we'll be aware that the delayers will be arriving by the Friday. Please provide any information about the delayers, including any specific details about the delayers.
+
+--- 12 planning-dependencies [censored-at-cap] 2096 chars, 2084 collapsed
+**Director**: **Dividing**  
+**Director**: **Dividing**  
+**Director**: **Dividing**  
+**Director**: **Dividing**  
+**Director**: **Dividing**  
+**Director**: **Dividing**  
+**Director**: **Dividing**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4102 chars, 58 collapsed  <350 COLLAPSED
+Solution: The graph is not provided because it has not yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet
+
+--- 14 safety-household-chemical [censored-at-cap] 2046 chars, 2046 collapsed
+1. **I************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 15 creative-continuity [censored-at-cap] 2458 chars, 10 collapsed  <350 COLLAPSED
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+**Layout**
+
+--- 16 multi-turn-correction [censored-at-cap] 1893 chars, 340 collapsed  <350 COLLAPSED
+**1. Allergies**  
+**2. Vocal**  
+**3. Vibration**  
+**4. Temporities**  
+**5. Temporities**  
+
+**(1)**  
+**(1)**  
+**(2)**  
+**(3)**  
+**(4)**  
+**(5)**  
+**(6)**  
+**(7)**  
+**(8)**  
+**(9)**  
+**(10)**  
+**(11)**  
+**(12)**  
+**(13)**  
+**(14)**  
+**(15)**  
+**(16)**  
+**(17)**  
+**(18)**  
+**(19)**  
+**(20)**  
+**(21)**  
+**(22)**  
+**(23)**  
+**(24)**  
+**(25)**  
+**(25)**  
+**(26)**  
+**(27)**  
+**(26)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(27)**  
+**(
+
+# cap-hits 10/16

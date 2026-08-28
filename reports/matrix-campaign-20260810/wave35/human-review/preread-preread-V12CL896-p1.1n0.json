@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:38:37Z",
+ "label": "V12CL896",
+ "cell_id": "ARCH.V12CL896",
+ "cell_instance_id": "mx34-v12cl896-0001",
+ "receipt_sha256": "0f7b7e04989b16be02ea75d76863e89425683b375830bcb7e30371b60f6d351f",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.1,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'll provide a response to the following request for a follow-up:\n\n1. Could you help me with a natural response that would be sent back in an email or text if you have any specific question about my previous responses?\n\n2. Please confirm that there's a follow-up on your request, which is likely to include a message to send back to a new email address or another notification.",
+   "response_sha256": "6bd52595d38f650e2f93f84f39a133499efe2efff2b2c1c976ba4756818ef25c",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 2.037,
+   "unique_content_chars": 375
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "Here are the practices you can use in your daily:\n\n1. **Give**  \n   - You can take this action by using a single number, which is not included but does not require immediate practice.\n\n2. **Give**  \n   - You can take this action by using a number, which is not mandatory but does not require immediate practice.\n\n3. **Give**  \n   - You can take this action by using a number, which is not included but does not require immediate practice.\n\nThese practices are essential! They should help you stay safe and enjoy life.",
+   "response_sha256": "b46c75a2ba91c17e82696f9842f050be29cac7056d075cc5c8b42278fca2362a",
+   "generated_tokens": 121,
+   "termination": "complete",
+   "wall_time_seconds": 2.201,
+   "unique_content_chars": 391
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's \"seasons\" (as in terms) are a \"curly\" (a) description of how Earth's planet, including its solar and other effects on our planet, which includes Earth itself, as well as a \"curly\" (a) explanation for why it's just explaining Earth's history). The Earth's \"seasons\" are like Earth's \"sleep,\" meaning Earth's ability to understand the world's future evolution.\n\nIn this context, Earth's \"seasons\" are not just just today but reflect the way Earth's current state reflects our planet's knowledge\u2014like what Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's",
+   "response_sha256": "4102d870e45d8abe0ef9f9ff0c5e763de4ed4d8faedd03ac3fa7ccbee23973ae",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.84,
+   "unique_content_chars": 561
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshop is a 17 kit per hour that includes 6 hours of work, including all the same time. The workshop's instructions contain the entire work, which must include all the same time. It will be available to provide you with the full of the workshop. Please use your instructions.",
+   "response_sha256": "4916792641d2af6dcdc7d2a7b00c28e39e0716a741d7486b31aef67e33f0d5cf",
+   "generated_tokens": 65,
+   "termination": "complete",
+   "wall_time_seconds": 1.215,
+   "unique_content_chars": 281
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo, Mira, has been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's financials have been profiled for a series of the same time. Theo's",
+   "response_sha256": "a8a0d93e78f354e83ee14c9ba1463dd5428fd99307caa766a8b84031d9d04036",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 22.179,
+   "unique_content_chars": 108
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question regarding the issue of the community garden's opening at 7:30 a.m. The user has to ask about whether the current check-out time is still available, and which gates should they consider in order?",
+   "response_sha256": "06407a9a48c3be72c028d60bc0bec3f304d51fec9868384d66861c18b3238391",
+   "generated_tokens": 45,
+   "termination": "complete",
+   "wall_time_seconds": 1.161,
+   "unique_content_chars": 207
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procecuration will request weekly schedule evidence.",
+   "response_sha256": "657dc5dfa6d9a4ba57dc7e82bd28cefa0526aae9fbf5f211d5f2820478fa3eb8",
+   "generated_tokens": 97,
+   "termination": "complete",
+   "wall_time_seconds": 2.574,
+   "unique_content_chars": 395
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "Here:\n\n1. **Compatise RAM**  \n   - This means that a system of services (RAM) and long-term storage are together to share each service in order.  \n   - The analysis here is an example of how this shared sharing works together.  \n\n2. **State Long**  \n   - This means that a system of states (L) and L together can be each service in different ways.  \n   - For instance, this would mean a new system where both L and L have each service in parallel.  \n\nThese concepts are essential for understanding the benefits of shared shared shared resources. By doing this, they can optimize their combined efforts effectively.",
+   "response_sha256": "c266797c0f7616c45c6b6f53be74566501ffc997c53afe591faa3557d7c41978",
+   "generated_tokens": 139,
+   "termination": "complete",
+   "wall_time_seconds": 3.584,
+   "unique_content_chars": 580
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "Here is the unique_in_order function:\n\n1. The original item's value is 1000, which is stored in the database.\n2. The short item's value is 2000, which is stored in the bank.\n3. The short item's value is 5000, which is stored in the wallet.\n4. The short item's value is 3000, which is stored in the person's wallet.\n\nThe unique_in_order function requires that each item is processed according to its value, including those items. Here, it must be available for all of the time.",
+   "response_sha256": "3d9c76f3e90183f335bb6f0e1267a94488114d35349e086324d36ffab0cb6797",
+   "generated_tokens": 122,
+   "termination": "complete",
+   "wall_time_seconds": 3.152,
+   "unique_content_chars": 474
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is returned when the last three elements are used in its context. However, it must be correct to provide the final answer of the bug. Here, please explain the code and provide a corrected version.\n\n```\n\nHere's the following instructions:\n- The first step is to use the last three elements in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nHere's the following instructions:\n- The first step is to use the last three elements in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.\n\nPlease clarify the explanation.\n\n```\n\nThe code should be provided as the last three elements are used in the context.\n- The code should be provided as the last three elements are used in the context.\n- The final answer should be correct to provide the final answer of the bug.",
+   "response_sha256": "36f6e9fb42e4c515a8ce1dbbbccd865db3f12d00f053ab02b0a865d14bbc76c1",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 26.392,
+   "unique_content_chars": 525
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The email should be used in accordance with the specified requirements.\n2. Please provide any additional information regarding the delivery process or any other related actions concerning to the delivery address.",
+   "response_sha256": "126b4d25446caf711d0fc9007078af52614cff8bdf3addba815eba19874d4ac4",
+   "generated_tokens": 46,
+   "termination": "complete",
+   "wall_time_seconds": 1.218,
+   "unique_content_chars": 262
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "Here is the plan for moving a small website to a new domain without unnecessy of downtime:\n\n1. **Give**  \n   - **DNS** (Data)  \n   - **TML** (Temporal)  \n   - **Verification** (Processing)  \n   - **rollback** (Upcoming)  \n   - **DIS** (Deferred)  \n   - **DIS** (Immediate)  \n   - **DIS** (Unless)  \n   - **DIS** (Instant)  \n   - **DIS** (Reactive)  \n   - **DIS** (New)**\n\nThis depends on the following instructions:  \n- **6 steps** (from the initial plan).  \n- **DIS** (the process).  \n- **DIS** (the time).  \n- **DIS** (the decision).  \n\nThe plan is designed to cover with the necessary information, including the data, TML, verification, and rollback. The process will be completed in six days.",
+   "response_sha256": "23ef30e3e7d078e952c7c565733cf0cbd8d990f5cd673b8195b3366906c8aa86",
+   "generated_tokens": 224,
+   "termination": "complete",
+   "wall_time_seconds": 5.954,
+   "unique_content_chars": 633
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of the graph is a new price that has been added to the current market price. The information you requested is available in the context of the original sale, which includes the details of the original sale's price and the changes made during the original sale. This information is shared with the updated version of the current price, including the changes made by the original owner. Please provide any additional data about the original price, such as the original price, or other relevant information.",
+   "response_sha256": "882890410c3145dfa70bb2626dd8f94f0c40ab74399b5061d7bddc0a3bf31a43",
+   "generated_tokens": 95,
+   "termination": "complete",
+   "wall_time_seconds": 2.513,
+   "unique_content_chars": 509
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The room is currently available for you to access it, but you need to know that your current location has been placed in a place of the house. This means that you can use the room's information as well as you previously did bring to your trip.",
+   "response_sha256": "963da6242ca166a3e5208e032470fdcdb8be061eec611f509b88cded473cd203",
+   "generated_tokens": 51,
+   "termination": "complete",
+   "wall_time_seconds": 1.376,
+   "unique_content_chars": 243
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "Here: The fahers are a lot of questions about the fahers.\n\nThe tone is undigitively unsickled, including one line of dialogue.",
+   "response_sha256": "1eedc18a95618f69b6fa0f3a396ea28b9e3ae79b10b5f5bf236f5a778a6e9d47",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.995,
+   "unique_content_chars": 125
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "**What you need to prepare your meal**\n\n1. **Preposition: \"Allow\" (e.g.)\"**  \n   - You need a preposition in the list of items that will be processed.  \n\n2. **Preposition: \"V\" (e.g.)\"**  \n   - You need a preposition in the list of items that will be processed.  \n\n3. **Preposition: \"S\" (e.g.)\"**  \n   - You need a preposition in the list of items that will be processed.  \n\n4. **Preposition: \"C\" (e.g.)\"**  \n   - You need a preposition in the list of items that will be processed.  \n\nThis plan is required to ensure all possible preparation. Please provide the necessary instructions.",
+   "response_sha256": "74ce8e055c8a22b41571997633e2e32bf388c961f864daa4299c59a6c7a3147e",
+   "generated_tokens": 167,
+   "termination": "complete",
+   "wall_time_seconds": 4.402,
+   "unique_content_chars": 401
+  }
+ ]
+}

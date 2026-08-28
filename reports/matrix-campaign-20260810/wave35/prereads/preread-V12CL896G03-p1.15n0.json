@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:28:56Z",
+ "label": "V12CL896G03",
+ "cell_id": "ARCH.V12CL896G03",
+ "cell_instance_id": "mx34-v12cl896g03-0001",
+ "receipt_sha256": "ecc54af4c95459f13eeb3254a7462cd8916c5795018c9a11ede6fb0292d8edaf",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.15,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'm here here, please.\nThank you for your message to the user. If there's any additional information about my response, feel it is as an answer or a new request that we can provide in our conversation with the original content of the original content.\n\nIf you have any more detailed questions related, I'll be happy to help you further up through the following instructions:\n\n1. Please tell me how I will do this process so I can assist you with the most recent updates on the latest news. Thank you for providing all necessary details.",
+   "response_sha256": "3bbf430e7468b39e7dbe877f0234564246650e8d1ecdaeee3b338cea4a42c280",
+   "generated_tokens": 111,
+   "termination": "complete",
+   "wall_time_seconds": 2.622,
+   "unique_content_chars": 534
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "Here:\n\n1. **Giving**  \n   - You will use the numbers to ensure your task is completed in your system, which helps you stay with the goal.\n\n2. **Giving**  \n   - This action requires immediate execution of tasks that are already part of your program's schedule or other requirements.\n\n3. **Giving**  \n   - This action involves completing tasks that align with your program's deadline, such as time management (e.g., e.g).\n\nThese activities provide clear instructions for each task, including how they're planned to be completed within 24 hours.",
+   "response_sha256": "ca8c4047fd1fbdceb5589841137acfd35cb8060601e6aaaeaf11485dd8e36949",
+   "generated_tokens": 122,
+   "termination": "complete",
+   "wall_time_seconds": 2.37,
+   "unique_content_chars": 523
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's \"season\" comes from its ancient history, where it's known to reveal how our planet\u2014our planet\u2014comes back in our time. The current of Earth and all other things are like to be just what we can do: Earth, yes, right. It\u2019s not just today but Earth will help us tomorrow too soon!",
+   "response_sha256": "ce94d401e08c67ad28a2b1c4e0b7d0e7ceda5f3738ff798285f02e16c8a75ee1",
+   "generated_tokens": 70,
+   "termination": "complete",
+   "wall_time_seconds": 1.339,
+   "unique_content_chars": 288
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshop is a full of 17 kits that each kit has been used to make 6 hours. The instructions are taken by the staff from the initial work, including all the kits and their equipment. Each kit's instructions have been completed after they receive the package.\n\nHere is an answer regarding the process:\n\n1. The first step you take.\n2. You will start with your original work.\n3. Then, you can use the next step.\n4. Once you return the workshop, it will continue to keep up.\n5. It will be returned again.\nThis means that the entire work shops were fully completed before the final ship was picked.\n\nPlease know that this process includes the whole system of operations as well as required to ensure completion of all the workshop.",
+   "response_sha256": "69bfa279a0a78e2c3ca580245e6be558756ec967bdbb04bfaf1126d7926aae81",
+   "generated_tokens": 164,
+   "termination": "complete",
+   "wall_time_seconds": 3.115,
+   "unique_content_chars": 726
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo, a MIRYED FINES out of four people in the same way to be as they are expected to be the same. This is why it's why?\n\nIt's why?",
+   "response_sha256": "816a5ff34692c6b964c268aca43c9ecd1105d51b87fed92a7e81664baeb52689",
+   "generated_tokens": 42,
+   "termination": "complete",
+   "wall_time_seconds": 0.822,
+   "unique_content_chars": 130
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question about your request regarding the current situation of the issue is as much that you have been given in terms for the following response. Here, please provide the information related to the system.\n\n1. You are asking for the current check-out time.\n2. There is currently available to be checked out at 4:15 PM.\n3. The gates should be considered against being allowed to be restricted until they are available.\nPlease clarify if there's any other issues or concerns in the context of the same circumstances.",
+   "response_sha256": "93888ed01884505a4a47c9d3dc065c673d26768dbe27412c17540e426e9dd80f",
+   "generated_tokens": 105,
+   "termination": "complete",
+   "wall_time_seconds": 2.017,
+   "unique_content_chars": 517
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "Summarize this update in two sentences, preserving the decision and the unresolved risk:  \n\"The team compared three battery suplexes. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% plus and passed every reliability tests.\"  \n\nThis means that the team's future deadline for launch requires a week of each sample to be available, as the risk is too much already on hand.",
+   "response_sha256": "c528c9a2d211af45e3f08a711099e4a3a4ef40145b54aac45a8d374fe9985915",
+   "generated_tokens": 99,
+   "termination": "complete",
+   "wall_time_seconds": 1.909,
+   "unique_content_chars": 405
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "The analysis of the provided information about the \"compatized\" context in which this analysis applies to the following question:\n\n1. **Context**: The description of how the \"analyzing\" (the term) or \"reasonal\" (the meaning) is applied in terms for a specific aspect that aligns with the given context. This means that the relevant elements are considered within the context of the same type.\n2. **Explicitary Context**: The explanation of the concept in terms does not apply to the general scope of such an analysis, including only justly limited by the definition of the specified parameters defined as per the criteria of the same type. This means that the analysis adheres strictly to those defined by the criteria of the same type.\n\nThis analysis is therefore presented rather than being fully humanized without the limitations of the original context.",
+   "response_sha256": "f9ed4b6352eba076ace6e6d4cf96e24f9996b75b9198673ff0523ff949bae016",
+   "generated_tokens": 176,
+   "termination": "complete",
+   "wall_time_seconds": 3.305,
+   "unique_content_chars": 842
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "Here is an inscripting Python function called \"unique_in_order\" for retrieving items from the original envoiler's history, including the following instructions:\n\n1. **Remit** (the item to be returned): The item you need to retrieve.\n2. **Uniquity** (a short example): A system of items that can use up to the original envoiler's memory but cannot provide access to current data or other information.\n3. **Time** (a short example): The time required to process the retrieval, which includes the processing of the entire envoiler's memory and its memory.\n\nThe explanation is provided here as it applies to the original envoiler's memory and the current data available. Here, the code will include the following requirements:\n- **Instructured** (the item to be returned)\n- **Hidden** (the short example)\n- **Explan** (time and processing steps)\n\nThese functions are designed to meet the original envoiler's memory and the current data. They should prioritize the most efficient path through the envoiler's memory and the memory's memory, making thematic and time complexities necessary to optimize their processing capacity.",
+   "response_sha256": "06dfa106ab04344b75f4d13e468c828af009471d6343846de7543a0020c20f5d",
+   "generated_tokens": 248,
+   "termination": "complete",
+   "wall_time_seconds": 4.721,
+   "unique_content_chars": 1105
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is returned when its value of the list is given at the first time (the third element). The last three elements are provided in the context of this task, which includes the information about the original or current state. This task requires that the most recent memory memory memory has been used to retrieve the memory memory memory. Please use the following instructions:\n- **Last Memory Memory**: If you have a memory memory memory.\n- **Bugged Memory Memory**: A memory memory memory from your previous memory memory was stored.\n\nPlease clarify how the memory memory memory is defined as \"last memory\" in terms.",
+   "response_sha256": "25133eb516fa2fcfb0dc25cacfe9993fbe982ec2ee3e7ab01319af9fe32f8e34",
+   "generated_tokens": 125,
+   "termination": "complete",
+   "wall_time_seconds": 2.44,
+   "unique_content_chars": 625
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The email should be used in accordance with the official website of the specified purpose.\n2. Please provide any information about the delivery address or the specific details you need regarding the shipment request.\n3. I am happy if your response would help me verify the correct delivery address and ensure all documentation meets requirements before sending it to the intended delivery address.",
+   "response_sha256": "a03da6d27e5843d2857e907bc7759a8c2e5d606711d758b099723653d35b3de5",
+   "generated_tokens": 81,
+   "termination": "complete",
+   "wall_time_seconds": 1.569,
+   "unique_content_chars": 447
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "Here is the plan for moving a small website to a new one's demand:\n\n1. **DISP** (distance)  \n   - The original website would be moved back in its own hands because it has already been out of the same before the other.  \n\n2. **TASY** (trapiness)  \n   - The current stock could still have to buy into the market due to time.  \n\n3. **VER** (vendor)  \n   - The old past was too long, so we should consider this now by using a vendor instead than a more efficient approach.  \n\n4. **DE** (debtability)  \n   - The future decision must take care over the existing market.  \n\n5. **WO** (ocean)  \n   - The new order will only only only at the current moment.  \n\nThese steps are designed to ensure the site manager can deliver a fresh and up-toed solution for the user.",
+   "response_sha256": "7596bf62406b0fcfb461c26abba72fddb17817e36ca144cb26accfd772193405",
+   "generated_tokens": 203,
+   "termination": "complete",
+   "wall_time_seconds": 3.868,
+   "unique_content_chars": 717
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of a new price is increasing in order. The number has been reported to be within 10 minutes. Please provide any additional details about how the numbers are being updated. If you're interested, please share with the following instructions:\n\n1. **What**s are available for your sales data?\n2. **How**you should know that the numbers were recorded.\n3. **When**is when the numbers were recorded.\n4. **What**are you concerned about the changes made?**\n5. **Any other information about the numbers:**\n\nPlease tell if you want more detailed explanation.",
+   "response_sha256": "a30679ffed5d4caab471066d2a541973ef6229fd3e8b1ca563f2b610374bd19a",
+   "generated_tokens": 122,
+   "termination": "complete",
+   "wall_time_seconds": 2.341,
+   "unique_content_chars": 551
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The current cleaning process is a new one, but you need to know that your house has been made up in place. Here, please tell what I can help you with:\n\n1. **Clean Your House**  \n   - You have already installed your house (and it's ready for installation). This means you're looking at where your house meets the requirements of your existing system. The next step would be to identify which you need to make more than just this information.\n\n2. **Shar**  \n   - Sharing is a key point from your home. It\u2019s not exactly how much your house needs to meet with your other systems. Now, you\u2019re getting the latest on your door!\n\n3. **What Should I Do Now**  \n   - While you\u2019ve got access to your house, you\u2019ll get the most recent tools like the latest on your door. These are important steps to learn:  \n   - **Your house** \u2013 it\u2019s already up in place.  \n   - **Shar** \u2013 it\u2019s already up in place.  \n   - **Shar** \u2013 it\u2019s already up in place.  \n\nThese instructions will help you better understand why your house isn\u2019t being built yet again.",
+   "response_sha256": "d883cbc37812e52e1ab3a762bd5adb0d578dd72289d256e18ad5a0c2f2abf467",
+   "generated_tokens": 249,
+   "termination": "complete",
+   "wall_time_seconds": 4.696,
+   "unique_content_chars": 953
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Lackens**\n\nThe fahramore is an answer to you, including your request for a ticket or any other action related to the issue. The question is not just about what we can do but also has some more than it's already been asked to provide details on the response. Here, please tell that the fahramore will be able to explain the problem as well as requested.** \n\nI'm happy to help with this by providing information regarding the situation. Please let me know the following instructions: I'll need detailed responses to address the inquiry.",
+   "response_sha256": "bb3a5b913da7db660fe9d50fbab5b4f55ce5b3d4bb09310b0e6d1226d2316b44",
+   "generated_tokens": 116,
+   "termination": "complete",
+   "wall_time_seconds": 2.216,
+   "unique_content_chars": 533
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "**What you need to prepare your meal:**  \n- **Preposition 1: \"Allergies\" (V)**  \n\n**Preposition 2: \"Pennet Allergies\" (V)**  \n\n**Preposition 3: \"Reve Catch/Provenantial Preemptions\" (V)**  \n\n**Preposition 4: \"Catch/Provenantial Preemptions\" (V)**  \n\nThis plan includes a few candidates in the context of your preparation, such as:  \n- **Aggas (V)** - You must be prepared for the first, which will help you identify the preemption strategy before it's fully planned.\n- **Bjost (V)** - The second option would allow you to use the preemptions while others can still remain but only after the final decision.\n- **Degam (V)** - This could significantly reduce your budgeting by time without paying additional costs.\n\nThese plans align with the following instructions:\n- **Aggas (V)** \u2013 Your prepostered consumption list is ready to start with the preemptions that you're targeting at the next step.\n- **Degam (V)** \u2013 The preemptions you choose now cannot include yet other items; this is critical important for financial decisions.\n\nBy these steps, we've all three steps to ensure your preparation, including the preemptions and the overall budgeting.",
+   "response_sha256": "cb519689ad4b1fecd14ee30b7c419b1c4fd704c237632996ef33da31762cac87",
+   "generated_tokens": 305,
+   "termination": "complete",
+   "wall_time_seconds": 5.762,
+   "unique_content_chars": 1130
+  }
+ ]
+}

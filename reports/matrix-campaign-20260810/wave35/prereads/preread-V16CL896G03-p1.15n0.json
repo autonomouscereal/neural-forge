@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:30:23Z",
+ "label": "V16CL896G03",
+ "cell_id": "ARCH.V16CL896G03",
+ "cell_instance_id": "mx34-v16cl896g03-0001",
+ "receipt_sha256": "82fb04b35b79c3ff03813cd605800e82815c4cab324d862b243950f53ab58021",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.15,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'll provide a natural response for your request, including the following instructions:\n\n1. **Respective**  \n   - If you have any specific questions related to me or need further assistance in my future conversation, please share them with the current context of our interaction.\n\n2. **Narrative**  \n   - The original text is available now but can be modified by the user's prompting if it has been updated. This means that we're ready to resend up to the latest version of the content.\n\n3. **Formal**  \n   - A system of data processing (including the user) would help us to update this information. Please confirm the status of the database.\n\n4. **Temporal**  \n   - Time remains important as part of the ongoing task. Let all relevant updates are processed accordingly.\n\n5. **Possible**  \n   - You may use these tools. Please submit an email address so I can assist you immediately.",
+   "response_sha256": "b3a5e705005a447bb1bb8f39102a767e616a759824a822438d61638a72f59efe",
+   "generated_tokens": 198,
+   "termination": "complete",
+   "wall_time_seconds": 4.722,
+   "unique_content_chars": 853
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "Here are the practices you can use in your daily:\n\n1. **Giving**  \n   - You will need to stay with the task, which is essential for maintaining your personal account. This means that you have access to the necessary tools or resources for your own financial bank.\n\n2. **Giving**  \n   - The task of your personal account requires immediate action, such as you want to complete your plan. This means you must be ready to meet with the task before it's completed.\n\n3. **Giving**  \n   - The task of your personal account needs to be completed, so you should prepare yourself by doing this step. Your task is now finished, meaning you're ready to finish up with the task.\n\nThese practices are important! They help you get more useful knowledge about what you know.",
+   "response_sha256": "6fac8e174ea65585ca5ea514d34c741f68eea14855de8537d9682e319762e850",
+   "generated_tokens": 168,
+   "termination": "complete",
+   "wall_time_seconds": 3.518,
+   "unique_content_chars": 723
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's vastness and its ability to provide information about how it works in the context of this text, which is often referred by \"explaning\" or \"specificating\" (the current state on Earth). The explanation for these aspects explains why: Earth's scientific capabilities are essential as they're part of our planet, while we can share the same knowledge with other similar other things too.\n\nHere's just an answer for you to explain what Earth's science is doing... This is like a computer program designed to help us understand how Earth works! It doesn't matter unless there's any specific reason for Earth. Justify your story now!",
+   "response_sha256": "594650055a8f55fc1bd02034ff27af12c75dd01ec6774717b6c9217b2a400930",
+   "generated_tokens": 132,
+   "termination": "complete",
+   "wall_time_seconds": 2.862,
+   "unique_content_chars": 637
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshop is a full of 17 kits that each kit has been used to make 6 hours. The workshop's instructions include all the same time, including the entire process from the initial setup where it must be an inspererian who will follow the workshop through the entire route.\n\nHere:\n\n1. **Start**: The workshop begins by starting with the first instruction, which includes all the initial instructions.\n2. **Instructions**: Each step along within the workshop's journey, including the entire route, requires completion before the full execution.\n3. **Explan**: The final command, including all the instructions, must be completed before the full execution.\n4. **Steakout**: The workshop ends up to finish the remaining kits on their packaging, leaving them back after they carry the package.\n\nThis sequence involves completing every step until the full execution.\n\n\\End  \n```\n\nThe answer is the full execution.",
+   "response_sha256": "d47a0cf2d231263760649901548e47266e423804c3d82863be02d1012910e324",
+   "generated_tokens": 204,
+   "termination": "complete",
+   "wall_time_seconds": 4.337,
+   "unique_content_chars": 900
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo finished before Jun. Sal finished after Jun. Puts all four people in finish order and explained which facts force the answer.\n\n---\n\nHere is an answer explaining how the final process was completed:\n\n1. Mira finished before the original text.\n2. The original text was finished before the original text's content.\n3. The original text was finished after the original text's content.\n4. The final product of the original text was completed and received by the user.",
+   "response_sha256": "9f439f592d2e49eb89692e38ee90f638d20a86885e1bad79b7f1380fde191fc9",
+   "generated_tokens": 98,
+   "termination": "complete",
+   "wall_time_seconds": 2.069,
+   "unique_content_chars": 464
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question about your request regarding the current situation of the issue is as much that you have been given in terms for the following query. Here, please provide information about the context of the response.\n\n1. You are asking for the update to be made with the new system.\n2. There is an opportunity to ask if the new system has already been updated or removed.\n3. The user's notice is likely to include dogs only only only on the same days but cannot be used until further due.",
+   "response_sha256": "0133608211fcd25ac90e55e5f281390c1169829404469b75285ce673ff2a04cb",
+   "generated_tokens": 101,
+   "termination": "complete",
+   "wall_time_seconds": 2.101,
+   "unique_content_chars": 485
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "Summarize this update in two sentences, preserving the decision and the unresolved risk:  \n\"The team's information about the availability of available resources for the upcoming booking process is limited.\"  \n\nThis statement reflects the urgency of the urgent need to inform the team with their current plans for scheduling a booking ahead due to the deadline.",
+   "response_sha256": "408ab29f4cd4897b51ad1d7192a4587468ce12957ed1f79cbcf920c591abaa3b",
+   "generated_tokens": 72,
+   "termination": "complete",
+   "wall_time_seconds": 1.513,
+   "unique_content_chars": 355
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "Here:\n\n1. **RAM (Remote Management)**  \n   - This means that a remote management system in place can be used to control its operations effectively. The analysis of these systems requires understanding how they are designed to work, which is crucial for optimizing the implementation process.\n\n2. **LOC (Local Consumption)**  \n   - This means that local resources within the system have been managed to optimize their own capabilities by this approach. These resources provide information about what the system's architecture needs, making it more efficient than traditional methods.\n\n3. **SOLG/LC**  \n   - This means that the solution is shared with other others, allowing both the same resource to share each other. This shared exchange ensures that all resources together become effective and improve overall efficiency across shared systems.\n\nThese steps will help you understand why your implementation was successful because of the shared collaboration.",
+   "response_sha256": "e58c94f3a7f6d1f835695f39581ff505e73d42f32f3e0856504a2314598b24b1",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 3.863,
+   "unique_content_chars": 939
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "Here is an answer to help you understand why:\n\n1. The original item's value is hidden, meaning it remains in its own memory.\n2. This process requires a \"first\" (i) sequence of items to be processed before they can start.\n3. There are two short examples like Hare and T.\n4. The time is 10 minutes for all this operation, including the entire system.\n5. You need to know if there's a specific order or if your memory needs to be prioritized based on these requirements.\n\nPlease provide any information about how the system works here?",
+   "response_sha256": "74f8839c5dea8b8e49c803a7639d12af3cc4e6344fbf28934aa08fe12035b9ed",
+   "generated_tokens": 121,
+   "termination": "complete",
+   "wall_time_seconds": 2.499,
+   "unique_content_chars": 530
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is returned when its value of the list is given at the first time (the third element). The last three elements are provided in the context of this task, which includes the information about the original or current state. This task requires that the most recent memory memory memory has been used to retrieve the memory memory memory. Please use the following instructions:\n- **Last Memory Memory**: If you have a memory memory memory.\n- **Bugged Memory Memory**: A memory memory memory from your previous memory memory was stored.\n\nPlease clarify how the memory memory memory is defined as \"last memory\" in terms.",
+   "response_sha256": "25133eb516fa2fcfb0dc25cacfe9993fbe982ec2ee3e7ab01319af9fe32f8e34",
+   "generated_tokens": 125,
+   "termination": "complete",
+   "wall_time_seconds": 2.657,
+   "unique_content_chars": 625
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The delivery date was confirmed on Monday morning.\n2. I have been given you with this information in my system of electronic communication (EEC).\n3. Please provide any additional details about the shipping process or any other related actions regarding delays.\n\nPlease be aware that the delivery time has been recorded as a confirmation date. If you need more detailed documentation, please clarify the timing of the shipment request.",
+   "response_sha256": "8a6ef7210a2a3a9fd3b989b42eb54395a55849f4d8d9004339c2d04896057c2a",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 1.931,
+   "unique_content_chars": 483
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "Here is the plan for moving a small website to a new domain:\n\n1. **Give**  \n   - The original web of your site will be moved up to its current state (unnecessy).  \n   - **DNS**  \n   - **TMLs**  \n   - **Verification**  \n   - **RLL**  \n   - **rollback**  \n   - This depends on the system's ability to update or maintain existing updates.  \n\n2. **KEP**  \n   - **6 steps**  \n   - It\u2019s a 6-step process from the initial launch of the old website.  \n\n3. **A**  \n   - **B**  \n   - **C**  \n   - **F**  \n   - **E**  \n   - **D**  \n   - **Z**  \n   - **M**  \n   - **P**  \n   - **S**  \n   - **V**  \n   - **W**  \n   - **Y**  \n   - **T**  \n   - **O**  \n   - **U**  \n   - **H**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **N**  \n   - **",
+   "response_sha256": "4deceaf125597064af7bea9cb700721c7549481176bb52cfec58a9dc390e493f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.94,
+   "unique_content_chars": 558
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of a new product has been added to the list of items that are now available in the current market price catalog for the same products. The information is shared with the original owner's details, including the sale date and location where the item was sold. This means that the updated price includes only only only only only only only only only only products based on the same conditions as the original owner's unique personal information.\n\nThe report will be included here: \"I am aware that this update does not include any changes from our previous records.\" Please provide your full reference and confirm the following instructions. If you're concerned about the impact of the product, please tell that we'll share the information with the latest updates. We also need to ensure that all sales are properly reported within 24 hours. Please keep the order number so that it's always important to follow up with the customer service. Thank you very much!",
+   "response_sha256": "9fc77daac89e4909585100bdeea8d04429bfd0f06ac4c756b47004dc76e385b2",
+   "generated_tokens": 184,
+   "termination": "complete",
+   "wall_time_seconds": 3.806,
+   "unique_content_chars": 942
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The accident caused by your mix of ingredients, you can adjust your kitchen to better safety! Here, please tell that we've just made it up with you\u2014just what is a new one way for me to make this safe and happy for everyone!",
+   "response_sha256": "80f755fcb4c556bb0571b6dc375a46d0bb54085ce995375dd4d68635c3e11885",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 1.038,
+   "unique_content_chars": 223
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "Here: A short scene in which a lighthouse keeper discours that the foghorn is anssweding questioner includes one line of dialogue, and ends without explaining the phenomenal. The key to this is the conversation between the originals and the current state.\n\nThe first, the lighthouse keeper is not just a briefing but a long discussion about how the process works in relation with the originals and the present at the moment. The next step would be to ensure that the lighthouse keeper can still continue as they are prepared for their request. This means that the lighthouse keeper will remain until the final stage before the full is completed.\n\nThis is important because the lighthouse keeper has been fully integrated into its system, including the current demand for the full. The lighthouse keeper must have been ready to complete the full by the completion of the full.\n\nThe first, the lighthouse keeper is not just a briefing but a detailed analysis of how the entire process involves the lighthouse keeper's journey from the initial phase to the current state. The lighthouse keeper must prepare for the full by the completion of the full, and it must also make sure that the lighthouse keeper remains through the ongoing stages.\n\nThe second, the lighthouse keeper must provide the necessary information to the lighthouse keeper, such the details of the current requirements, the timeline of the lighthouse keeper's preparation, and the specific actions needed to meet the full. These elements should be included, like the timing of the lighthouse keeper's preparation, the execution of the lighthouse keeper's task, and the subsequent steps to the full.\n\nThe third, the lighthouse keeper must address any additional issues or other related components, such the need for the lighthouse keeper to reach the full, or if there is another requirement to proceed further ahead. If the lighthouse keeper needs to start with the full, the lighthouse keeper must begin with the full, and then proceed forward to the next stage.\n\nThese sections were carefully designed to align with the overall context and design principles of the system, making thematic and technical aspects relevant to the lighthouse keeper's workflow. The lighthouse keeper must prioritize the most efficient and least time-cumple tasks within the sequence, while optimizing for the highest efficiency and minimizing the complexity of each component to achieve the best possible solution for the largest available resources.",
+   "response_sha256": "f5ad1865b4dcbfaf32fdca6bd4ed296ac4ef097184535be11030417f254fa2e3",
+   "generated_tokens": 527,
+   "termination": "complete",
+   "wall_time_seconds": 10.934,
+   "unique_content_chars": 2440
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "**Guide:**  \n- **Allergies**: Ensure allergies (including a specific allergy) must be in place to prevent coverage.  \n\n**Hold:**  \n- **Hidden Holds**: Allergies may include a hidden food (e.g., \"a hidden food\" if not available).  \n\n**Flex:**  \n- **Flex**: If you need more than preemptions of other items, consider using the following list instead.  \n\n**Suggest:**  \n- **Suggest**: Use the above guidelines to avoid future decisions.  \n\n**Tactors:**  \n- **Tactors**: Provide guidance on how to use these tools.  \n\n**Pickings:**  \n- **Pickings**: List your preferred candidates for each item.  \n\n**Recommended:**  \n- **Recommended**: The most recent review has been updated to reflect current data availabilitys.  \n\n**Note:**  \n- **Note**: This update includes new information about the latest available data.  \n\nThis guide will help you identify which the tool is currently available for. Please provide the instructions.",
+   "response_sha256": "25b193308167480a53505570cc35cda024e84f3369c5d9059e03c230f92735d8",
+   "generated_tokens": 234,
+   "termination": "complete",
+   "wall_time_seconds": 4.934,
+   "unique_content_chars": 881
+  }
+ ]
+}

@@ -1,0 +1,95 @@
+{
+ "schema": "neural-forge-matrix-wave35-benchmark-table-v1",
+ "invocation": "limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090",
+ "tasks": [
+  "arc_easy",
+  "hellaswag",
+  "piqa",
+  "winogrande",
+  "lambada_openai",
+  "wikitext"
+ ],
+ "rows": {
+  "ARCH.V14CL896": {
+   "arc_easy": 0.325,
+   "hellaswag_norm": 0.36,
+   "piqa_norm": 0.485,
+   "winogrande": 0.475,
+   "lambada": 0.11,
+   "lambada_ppl": 4433.897261270591,
+   "wikitext_word_ppl": 1194.1099560224552
+  },
+  "ARCH.V12CL896X13": {
+   "arc_easy": 0.355,
+   "hellaswag_norm": 0.325,
+   "piqa_norm": 0.53,
+   "winogrande": 0.5,
+   "lambada": 0.1,
+   "lambada_ppl": 44244.131870044555,
+   "wikitext_word_ppl": 6630.608000470141
+  },
+  "PARENT": {
+   "arc_easy": 0.545,
+   "hellaswag_norm": 0.505,
+   "piqa_norm": 0.68,
+   "winogrande": 0.55,
+   "lambada": 0.46,
+   "lambada_ppl": 24.391247934692974,
+   "wikitext_word_ppl": 81.79763262054296
+  },
+  "ARCH.V10CL896G01": {
+   "arc_easy": 0.275,
+   "hellaswag_norm": 0.34,
+   "piqa_norm": 0.5,
+   "winogrande": 0.47,
+   "lambada": 0.08,
+   "lambada_ppl": 8147.683217618665,
+   "wikitext_word_ppl": 1866.4801980635964
+  },
+  "ARCH.CL896X13": {
+   "arc_easy": 0.335,
+   "hellaswag_norm": 0.37,
+   "piqa_norm": 0.555,
+   "winogrande": 0.48,
+   "lambada": 0.055,
+   "lambada_ppl": 36821.04093534559,
+   "wikitext_word_ppl": 1463.1487411767375
+  },
+  "ARCH.V10CL896G10": {
+   "arc_easy": 0.29,
+   "hellaswag_norm": 0.345,
+   "piqa_norm": 0.51,
+   "winogrande": 0.465,
+   "lambada": 0.095,
+   "lambada_ppl": 7880.91967383732,
+   "wikitext_word_ppl": 1904.8070160354036
+  },
+  "ARCH.V14CL896G03": {
+   "arc_easy": 0.33,
+   "hellaswag_norm": 0.345,
+   "piqa_norm": 0.49,
+   "winogrande": 0.47,
+   "lambada": 0.1,
+   "lambada_ppl": 4966.256186168623,
+   "wikitext_word_ppl": 1165.5941188378522
+  },
+  "ARCH.V10CL896G03": {
+   "arc_easy": 0.285,
+   "hellaswag_norm": 0.35,
+   "piqa_norm": 0.51,
+   "winogrande": 0.475,
+   "lambada": 0.095,
+   "lambada_ppl": 7970.173781433494,
+   "wikitext_word_ppl": 1875.2054189735677
+  },
+  "ARCH.V9CL896": {
+   "arc_easy": 0.27,
+   "hellaswag_norm": 0.345,
+   "piqa_norm": 0.51,
+   "winogrande": 0.475,
+   "lambada": 0.11,
+   "lambada_ppl": 7435.3150415975315,
+   "wikitext_word_ppl": 2403.215924938249
+  }
+ }
+}

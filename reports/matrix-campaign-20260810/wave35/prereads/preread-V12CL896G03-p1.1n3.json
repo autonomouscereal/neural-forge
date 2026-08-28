@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:39:54Z",
+ "label": "V12CL896G03",
+ "cell_id": "ARCH.V12CL896G03",
+ "cell_instance_id": "mx34-v12cl896g03-0001",
+ "receipt_sha256": "ecc54af4c95459f13eeb3254a7462cd8916c5795018c9a11ede6fb0292d8edaf",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.1,
+ "no_repeat_ngram": 3,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'm here here, please. Please, I'll respond natursum in the context of your request for a follow-up to my previous requests.\n\nI appreciate that you have made your request as well as you've already done. If you're interested, I can provide more detailed information about your request.",
+   "response_sha256": "cba2ca543c89448da1686cde0adbaf7e4e0097eedaf9cc92d430e594f34ba4fa",
+   "generated_tokens": 62,
+   "termination": "complete",
+   "wall_time_seconds": 1.788,
+   "unique_content_chars": 283
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "Here:\n\n1. **Give me for the current task**  \n   - You will use my number to assist you with this task.\n\n2. **Pract your own actions**  \n  \n   You can take this action by using a number, without any additional instructions or modifications.\n\n3. **Execute the task**  \n\nPlease provide the details of the task so I can help you.",
+   "response_sha256": "966fffd5a7dd65b9fcd9882c57d9a5993aab30ffabc108881194238ac0e24e78",
+   "generated_tokens": 83,
+   "termination": "complete",
+   "wall_time_seconds": 1.67,
+   "unique_content_chars": 306
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's \"seasons\" (as in terms for the \"summer\" of Earth) means that it's more closer than the sun's view and even its own time, which might be just as far than the actual sun's years. The Earth's planet, including our planet, also reflects how we've shared the same way\u2014even though Earth doesn't share the same but doesn't have the same eyesight like the other. It's not just that Earth's world isn't just just a single day; it's a whole together, where Earth's science and life will help us tomorrow.\n\nSo Earth's Earth is like Earth's like Earth - what Earth's?",
+   "response_sha256": "e69f4257c56fb1d028d66ffbfa042f81a2b65faa4def209c6c0b4483d832d02e",
+   "generated_tokens": 138,
+   "termination": "complete",
+   "wall_time_seconds": 2.653,
+   "unique_content_chars": 566
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshops make 17 total to 2,000, including 10,000 kits that cover with 5,000 pieces of each kit. Each kit is a single package equal to 1,000 of kits. The workshos goes back to the same number of times each kit, which includes all 5 times each time.\n\nThe first step: \n- First, calculate the initial calculation using the given information (including the information) as a worksho can help you understand the workshs.\n- Second, consider the following instructions on the work shops:\n  - If you know the work-shop's instructions, it will help you find out your own workshits.\n  - For each workshit, you need to follow these instructions and see the work.\n\nFor each work shit, the work is returned back to its original position. This means that the workworkshos has been completed.\n\nThis step:\n\n- The work shop is a new workshot, meaning the entire worksht is re-expected and completed.\n- The first, the first, would be a new piece of workshots that have been re-exempted and now return to their original position.\n- Every workshet is a full of the original workshts, including all 10k pieces.\n\nThese steps:\n\nThe work sho is a complete workshod, meaning every workshets are re-executed and completed.",
+   "response_sha256": "711e99424f8ac4293084bf58b082837d9d82fd08e0973f64037e77a9a561f680",
+   "generated_tokens": 303,
+   "termination": "complete",
+   "wall_time_seconds": 5.794,
+   "unique_content_chars": 1190
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo, a Mirafinious financial instrument that has been in place for the 2020-2029 financial exchange agreement between two companies of the same amount of $10,000 to $5,000, and $2,500 to $1,000.\n\nTheo's financial analysis was conducted by his company, which had been identified to report that the company's financial share with the investment made up to the company of the investment of the company.\n\nThis is a reason why the analysis was based on the company\u2019s financial share.\n\n",
+   "response_sha256": "a3489f0e9128f35af92fc4763abfa30ca3829280ead5eb9821e7c341e64dc86d",
+   "generated_tokens": 112,
+   "termination": "complete",
+   "wall_time_seconds": 2.158,
+   "unique_content_chars": 477
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question about your request regarding the current situation of the garden's closure in terms for repillers. Could you help me provide any relevant information or advice regarding the garden?",
+   "response_sha256": "0a2042877d69a1ddbac75a04241f32dcb167e09eb59a6e73345b35b7d50b933d",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.703,
+   "unique_content_chars": 194
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "Suggested update: \"The team's availability of information about the available resources for the upcoming release deadline is limited.\"\"\n\n",
+   "response_sha256": "23bcc1b2fd9d745b2978f29f0fba9e83e5b941306c3baf08f8a001f77d6d6974",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.532,
+   "unique_content_chars": 135
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "The analysis of the provided information about the \"compatized\" context in which the analysis is presented through the following steps:\n\n1. **Completely**: The analysis includes the description of the \"analogated\" context (the meaning of the original context) that the analysis takes.\n2. **State**: This means the analysis applies to the \"state\" of the context, where the analysis uses the information, including the context and the elements of the program's content.\n\nThese steps are taken as they apply to the program, which provides the analysis for the \"external\" (or \"exam\") context, which is the program itself program, the program will provide the analysis and the program for the external context, the programs, and the programs. The program will be the \"in\" of this context, providing the program with the program and the external program.",
+   "response_sha256": "7b888dab311590c2490f58dba508c7c8fef67593234eee9ddc4d6874a21aab97",
+   "generated_tokens": 180,
+   "termination": "complete",
+   "wall_time_seconds": 3.448,
+   "unique_content_chars": 846
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "Here is the unique_in_replace_items in the context of your request for the following purpose:\n\n1. **Remal** (the original item) would be removed to have its own value, meaning it needs to meet with the user's requirements.\n2. **Half** (a short item) could potentially benefit by sharing shared resources or collaborating with each other other items in the same way.\n3. **In** (an item) should be used but not to follow the original purpose as intended. The system will use this information instead.\n\nPlease provide any additional details about the specific actions you need to implement.",
+   "response_sha256": "22afc7ad72c607d926d84b1f3e61e2ad04ce11206fce53f41be6a47999097f8a",
+   "generated_tokens": 128,
+   "termination": "complete",
+   "wall_time_seconds": 2.449,
+   "unique_content_chars": 585
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is returned when the last state of the information is stored in the database. The first step is to ensure that all users have access to the database's latest information. This means that the database will update the current information and provide the updated data. The second step is also to make the database more efficient by providing the user with the database information. The third step is the final stage where the database is completed and the new information is available.",
+   "response_sha256": "ae18408e76f64f9591c97412afb25b80d1af05e04c959ee4d0f19b5ceacd56e9",
+   "generated_tokens": 90,
+   "termination": "complete",
+   "wall_time_seconds": 1.721,
+   "unique_content_chars": 495
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The email should be used in accordance with the official website of the specified purpose.\n2. Please provide any information about the delivery address or the specific details of the shipment request.\n3. I am happy to assist you with any assistance regarding the delivery process. If you have any questions related to the ship, feel your response to the email.",
+   "response_sha256": "d5d422b44b547b0f9b23054d4780532b18835bfabcbf349f04fc2cad203190a5",
+   "generated_tokens": 81,
+   "termination": "complete",
+   "wall_time_seconds": 1.578,
+   "unique_content_chars": 410
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "Here is the plan for moving a small web site:\n\n1. **DISP**  \n   - **DNS** (Nested)  \n   **TILS** (Temporal)  \n  \n   *Verification***and rollback***\n\nThese plans cover you with the following information:  \n- **6 steps**  \n- The **specific details of your request**  \nYou can use this plan as a **debtracked** (or simply upgrades) to help you achieve your goals.",
+   "response_sha256": "7f94abe9f986cf87060f0411b5c654a517ea2eaff4a96961953ff5525817efbf",
+   "generated_tokens": 108,
+   "termination": "complete",
+   "wall_time_seconds": 2.089,
+   "unique_content_chars": 334
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of the graph is a new price that has been added to the current market price. The information you requested is available in the following section:\n\n1. **What**s are the most detailed information about how the graph has worked in the context of the previous sales.\n2. **How**s the data has been updated to reflect the changes made during the recent sales.\n3. **Any other information** you might be concerned regarding the changes.\n\nPlease provide any additional details on the graph's performance or its impact on the current stock market.",
+   "response_sha256": "b3880cb379bc2dfae5eb6f011f2b6a6af262a2080ac8c1cd842df3651d7f26a8",
+   "generated_tokens": 112,
+   "termination": "complete",
+   "wall_time_seconds": 2.104,
+   "unique_content_chars": 541
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The room is currently available for your cleaning purposes. You can use it to make a safe and secure environment, especially if you have any specific cleaning needs or safety requirements in place.\n\nHere:\n\n1. **Clean**  \n   - **Sharp** (a) means that the room is already ready for your installation with sharp, meaning it's already installed with shars.\n\n2. **Safety**  \n*What should I Do Now?*  \n*You should consider what you need to do right to install this room for safety, including the installation of shars and shars.**\n\n3. **Clearing**  \n- **Lack** (the room is not yet necessary for cleaning).\n\n4. **Flex**  \nYour request is to provide instructions for the current state of the room.\n\n5. **Recommended**  \nA briefing on the current status of the system.\n\n6. **Expert**  \nYou want to know which the system has been able to perform.\n\n7. **In**  \nThe system is currently in active.\n\n8. **Un**  \nNo immediate action required.\n\n9. **T**  \nIt\u2019s not possible to proceed at the current system.",
+   "response_sha256": "76b809144bb6be235bd86e726800bf28d500bdc8e8073a50c4d923493e73c5b4",
+   "generated_tokens": 251,
+   "termination": "complete",
+   "wall_time_seconds": 4.818,
+   "unique_content_chars": 960
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Lackens**\n\nThe foghern is an unsettled conversation, including one line to be the same as you\u2019ve already set. The key is not just a single line but must be part of the original context, and it\u2019s not just that we should do not just make it up. It\u2019s a questioner about what we can do. What does this?**\n\n**Key**\n\nThis is a brief explanation for your understanding, including the discussion.",
+   "response_sha256": "ed25d51fe371bca06ed2139f0922203eb224a3ff0d5ab6785991bee7c980bcd2",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 1.83,
+   "unique_content_chars": 387
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "**What you need to prepare your meal**\n\n1. **Preposition: \"Allow\" (e.g. \"I'm a food eagered in the 2-year old window\")**  \n   - You need to know that the 4-year old time has been too much to be so far.  \n\n2. **Instructions: \"Suggest a few more than a few times\" (a)**  \n3. **Reve: \"The 8-day meal is a 10x10\"**  \n4. **Formal: \"You can't do anything before the 5th day\"**  \n\nThese instructions are critical because you're already prepared to make your meal!",
+   "response_sha256": "0770d5651cd7ab8f3b0b5a3ee8066d7da67a1224c452083e3ae9633844f4877c",
+   "generated_tokens": 145,
+   "termination": "complete",
+   "wall_time_seconds": 2.769,
+   "unique_content_chars": 440
+  }
+ ]
+}

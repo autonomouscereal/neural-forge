@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:27:57Z",
+ "label": "V12CL896",
+ "cell_id": "ARCH.V12CL896",
+ "cell_instance_id": "mx34-v12cl896-0001",
+ "receipt_sha256": "0f7b7e04989b16be02ea75d76863e89425683b375830bcb7e30371b60f6d351f",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.15,
+ "no_repeat_ngram": 0,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'll provide a response to the following request for a follow-up:\n\n1. Could you help me with an answer regarding your concerns about my previous requests?\n2. Any other actions related to assist in terms, including any specific policy or action that might be relevant to our conversation?",
+   "response_sha256": "4d39c5b101ea4b700276ed2c14f92e5b68d451af699124de88e3aedbabc38df0",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.869,
+   "unique_content_chars": 286
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "Here are the practices you can use in your daily:\n\n1. **Giving** - You can take this action by using a single number.\n2. **Giving** - You can take this action by using a number, which is not an introduced but does not require any new instructions or changes from existing systems.\n3. **Giving** - You can take this action by using a number without any additional modifications to existing systems.\n\nThese practices will help you stay with your daily routine. Please provide the list so we can assist you!",
+   "response_sha256": "d97ba520c12a2f1c7a6a9eeecf078c37e50020afd27f9faf8e2971865460627a",
+   "generated_tokens": 111,
+   "termination": "complete",
+   "wall_time_seconds": 2.282,
+   "unique_content_chars": 450
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's \"season\" comes from its ancient history, where it's known to reveal how our planet\u2014like Earth\u2019s surface and weather are just in place. The current of Earth (including the Sun) aligns with this story: Earth\u2019s core energy and climate life on Earth\u2019s planet. It\u2019s like Earth\u2019s \u201cseason\u201d by understanding what we can do today! Earth\u2019s Earth isn\u2019t as much than you\u2019ve already read but doesn\u2019t have yet yet now.\n\nSo Earth\u2019s Earth isn\u2019t like Earth\u2019s Earth too much than your sunrings\u2014just Earth\u2019s Earth\u2019s Earth isn\u2019t like Earth\u2019s other world. Just Earth\u2019s Earth isn\u2019t like Earth\u2019s other world, just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just",
+   "response_sha256": "cfcd082f5dfb2ea661de57d7c46598f0f7e178336cdbe0d93077cf2fed7f0cd4",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.994,
+   "unique_content_chars": 618
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshop is a full of 17 kits that make 6 hours. Each kit has its own weight (which includes all) to be able if it does not have any other actions or if it doesn't stop. The instructions are taken by the workshop, who will follow these instructions until they return back again.\n\nHere's the following question: What do you do?\nI'm asking about what happens when I can help with your request.\nWhat workshop should I ask regarding:\n- Is there any other actions or activities related to me?\n- Can you provide more detailed information on my request?\n- If no other action occurs, please proceed through the process.",
+   "response_sha256": "361282b5a8f657f1531bff839663f927079e058dbf5a23235af7a6a76970a6b7",
+   "generated_tokens": 138,
+   "termination": "complete",
+   "wall_time_seconds": 2.846,
+   "unique_content_chars": 614
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo, Mira, has been profiled for a series of his work on the financial industry sector, including the following question: \"What is about?\"\n\nThis response includes the content that was detailed to the originalers who were involved in their production, as well as they are being profiled. Here, it's likely to be an answer regarding how these questions were handled during the process.",
+   "response_sha256": "a158bc3730b83f0561add5cdb2a541b2ed8956de570de65c877874599eba1ece",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 1.662,
+   "unique_content_chars": 383
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question regarding the issue of your request concerning the update in terms. Here, you need to provide the relevant information about the current date and any changes related to the system. Please tell that the notice is included but it will be available if the user has access to the information or if there are other conditions such as the notification.",
+   "response_sha256": "84d7d57d8571c07f348e541b8209248afa0d21b30e3ada1a7108eb221914917b",
+   "generated_tokens": 66,
+   "termination": "complete",
+   "wall_time_seconds": 1.348,
+   "unique_content_chars": 359
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% plus and passed each sample to ensure a resubled trial. Supplier C can deliver the latest available information, including the most recent updates on the current data.",
+   "response_sha256": "d709fb255e9750a06018021057d0aff747ec764006a928360051eaa5aaf0a100",
+   "generated_tokens": 68,
+   "termination": "complete",
+   "wall_time_seconds": 1.443,
+   "unique_content_chars": 299
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "Here:\n\n1. **RAM (Remote)**  \n   - Analyzing a remote system to understand how it works in place or processes that are implemented for users.  \n   - *The analysis of the remote systems' implementation*  \n\n2. **LOC (Logical)**  \n   - The analysis of the logical components of these systems, including their physical and digital infrastructure, which align with the requirements for user needs and operationalities.  \n   - *The analysis of the LOC's impact on the logistics and resources*  \n\n3. **SOLM (Security)**  \n   - The security measures of these systems, such as compliance standards, criticality, and other aspects that ensure adherence to regulatory standards.  \n   - *The security protocols and safeguices of these systems*  \n\nThese tools provide detailed information about each step, from the initial phase to the final stage, detailing how they operate and what specific actions are taken by them.",
+   "response_sha256": "83a787eed5c89458a01c5f43d6e057a3106a7d517a1b3642b7568c698da66ff2",
+   "generated_tokens": 199,
+   "termination": "complete",
+   "wall_time_seconds": 4.049,
+   "unique_content_chars": 866
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "Here is an inscripting Python code for the following instructions:\n\n1. The unique_in_order item requires a hensable value, meaning it needs to be prioritized based on its own value.\n2. The item must have been enaped to follow the original source of this item.\n3. Time is limited but only only only are processed according to the requirements.\n4. The code will provide you with the details about how each item is handled under the specified conditions.\n\nPlease note: This code does not serve up to date as required by the specifications provided above. Please keep your information and share any updates regarding changes or modifications.",
+   "response_sha256": "4044acfdd67f8a57e35d2a58f2942b2a81c082fd44c2e43817678f6280b9f0e6",
+   "generated_tokens": 130,
+   "termination": "complete",
+   "wall_time_seconds": 2.639,
+   "unique_content_chars": 636
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is returned when its value of the list is given at the first time (the third element). The last three elements are provided in the context of this task, which includes the original task's value and the current state of the task. This task requires that the finalized version be used to ensure all parts are correctly applied and the correct sequence of the original tasks is performed as part of the task. If you use the tool, please use the following instructions:\n- **First**: Provide the initial position where the task is defined by.\n- **Second**: Specify the constraints on the second element, including the error or the error.\n- **Last**: Describe how the task is implemented with the finalized version.\n\nPlease note: I am happy if your request has been submitted.**",
+   "response_sha256": "39d2d5abe185f13e8d3d06f5289f0230c4d623912195153f873ca8df2a02cdc0",
+   "generated_tokens": 162,
+   "termination": "complete",
+   "wall_time_seconds": 3.264,
+   "unique_content_chars": 784
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The original delivery address was confirmed on my phone.\n2. I received the requested confirmation about the delayout of the shipment issue.\n3. We have been prepared to send you a message confirming that the delayout has been sent back to your request.\n\nPlease note that this information is subject to privacy and confidentiality purposes. Please keep all records except as allowed in the case of action.",
+   "response_sha256": "0e02a025546c5e9e02bf315ed8e8161fc6f6c485dc1e12fa6c9e2bc7ea0a69fc",
+   "generated_tokens": 91,
+   "termination": "complete",
+   "wall_time_seconds": 1.833,
+   "unique_content_chars": 452
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "Here is the plan for moving a small website to a new one's demand:\n\n1. **Departs** (the first) would cover you with the initial purchase.\n2. **Days** (the second) would provide coverage.\n3. **Trees** (the third) would help you in the process.\n4. **Verifications** (the final step).\n5. **Rows** (the last step).\n\nThese steps are necessary for your web experience. Here they will give you a six-step plan from your original purchases.",
+   "response_sha256": "faff2fa49608e8e31c52ca989131d53273b635aa26e611c7d1faf5965c35db44",
+   "generated_tokens": 112,
+   "termination": "complete",
+   "wall_time_seconds": 2.249,
+   "unique_content_chars": 430
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of a graph is increasing with data. The graph will increase in your records. Please tell that we are reporting this change to our team. If you need any additional details about how the graph has been updated, please provide as well as possible. We\u2019ll be happy if you\u2019re ready for further analysis.",
+   "response_sha256": "fe23670c8d4e287d95e3901e018c8fe8323e71b8502c3bd20edca8178d7cf438",
+   "generated_tokens": 63,
+   "termination": "complete",
+   "wall_time_seconds": 1.295,
+   "unique_content_chars": 303
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The current cleaning process is a \"sharp\" (which means meaning of the house's operation). Here, you need to consider that your home is already in place and can make it up to the door with access to rooms. This means that you're ready for the door to open or have access to rooms.\n\nHere:\n\n1. **Sharp** - Your home is already located at the door.\n2. **Upgrading** - You may be facing out on the roof due to the installation.\n3. **Maintenance** - The roof needs maintenance.\n4. **Lunching** - You'll need to install a new system.\n\nThese tasks are important because you've already installed your home and could upgrade your building as soon to open. So, you must know what this step is doing!",
+   "response_sha256": "cb6a9a241cfaedccf67069709d0ea3c3c80216d6c6ce0cd8e0925fd6a91eb827",
+   "generated_tokens": 165,
+   "termination": "complete",
+   "wall_time_seconds": 3.43,
+   "unique_content_chars": 685
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "Here: The fahers are not yet quite so we can discuss the questioner's response to how they might be misled about the issue.\nThe answer is that the fog is an unsettling conversation for those who have been unable to explain it.",
+   "response_sha256": "24bff4a4806ecc816852200af05bdf6723d2ad8169f76b2da2d90b49ae818421",
+   "generated_tokens": 52,
+   "termination": "complete",
+   "wall_time_seconds": 1.073,
+   "unique_content_chars": 226
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "**What you need to prepare your meal:**  \n- **Preposition 1: \"Allergies\" (V)**  \n\n**Preposition 2: \"Pennets (A)****  \n\n**Preposition 3: \"Catch (B)****  \n\n**Preposition 4: \"Lunching up in a new way\"**  \n\nThis will help you identify which you can use as an action of the plan. The next step is to make sure that all ingredients are prepared and ready for preparation.**  \n\nBy this plan, please provide the following instructions so we can determine what you'll be able to cook!  \n\n---\n\nPlease confirm the plan by providing details about how many individuals need to prepare their meals before they start cooking.**",
+   "response_sha256": "57de71379a61bbf3cf2222d338136bfd3ddc860a2111edc55cac0f660760f8df",
+   "generated_tokens": 160,
+   "termination": "complete",
+   "wall_time_seconds": 3.256,
+   "unique_content_chars": 591
+  }
+ ]
+}

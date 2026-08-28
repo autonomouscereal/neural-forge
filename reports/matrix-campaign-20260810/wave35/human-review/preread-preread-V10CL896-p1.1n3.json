@@ -1,0 +1,177 @@
+{
+ "schema": "neural-forge-matrix-wave35-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T17:38:13Z",
+ "label": "V10CL896",
+ "cell_id": "ARCH.V10CL896",
+ "cell_instance_id": "mx34-v10cl896-0001",
+ "receipt_sha256": "90a0469fe8a21c1a6cbae99b837f1179c08480106fca7dab4ebcf6638d976658",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.1,
+ "no_repeat_ngram": 3,
+ "no_repeat_ngram_bank": "the FULL sequence, prompt included, as transformers' own processor does; on this population that can forbid a correct answer which quotes the context, and both directions are counted",
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'll provide a response to the following request for a follow-up:\n\n1. Could you help me with a natural response that would be sent back in an email or text if you have any specific question about my previous responses?\n\n2. Please confirm that there's a follow up from your previous responses. If you're interested, I can also assist with this process.",
+   "response_sha256": "96cdde0581829f2284b45fce5eb05655b0c2cbe022c395fadf605230f813553f",
+   "generated_tokens": 75,
+   "termination": "complete",
+   "wall_time_seconds": 1.993,
+   "unique_content_chars": 349
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "I'm here here, please. Please keep the following instructions:\n\n1. **U.S.**  \n   - You're asking to keep your numbering in place.  \n   2. **Gives**  \n   Acknow-due you with the number of your own home.  \n3. **Sets**  \n  \n   You need to provide specific actions that are relevant to this task.  \n\nPlease let me give you some practice on your daily.",
+   "response_sha256": "eaf47f445de21009d40cf68f18987b8c60335a8dac7d6f5a7af00801fefff380",
+   "generated_tokens": 94,
+   "termination": "complete",
+   "wall_time_seconds": 1.838,
+   "unique_content_chars": 318
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The Earth's seasons, meaning Earth and its ability to help with the Sun are described in Earth's \"summer\" (the context of Earth's ability). The Earth's Earth is more than just just Earth itself, but it also helps with the same other things too.\n\nSo Earth's Seasons: Earth's Says Out for You to Help!",
+   "response_sha256": "008317a849cc55efb85a44d4dcbcba78093230426310d25bed52bf0aeb605ebc",
+   "generated_tokens": 73,
+   "termination": "complete",
+   "wall_time_seconds": 1.487,
+   "unique_content_chars": 298
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The workshops make 17 total to 2,000, including 10,000 kits per each time. The workshos goes back again every time.\n\nWhat is a worksho?",
+   "response_sha256": "82e85fc39cc180c52e993607fedaa0294f322fc8e0b5b7062d382b66151822f4",
+   "generated_tokens": 42,
+   "termination": "complete",
+   "wall_time_seconds": 0.883,
+   "unique_content_chars": 134
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "Theo, Mira, has been profaced for four people to be processed and explain why each reason of their financial processing.",
+   "response_sha256": "1e07e44bf4c07bef0ba732df6c050bf414c3b0769514ffe63fec0d0d48ba2f47",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.523,
+   "unique_content_chars": 120
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question regarding the use of the tool in terms for the current date and the need to avoid using the tool's instructions is based on the following question: \"I want to keep your dog and bring a shobling.\" What is the purpose of the next step?\"\n\nBased on the question, the response would likely be an explanation for the user about the tool being used, including the context of the previous request, and the reason why the tool was intended to provide information or assistance.",
+   "response_sha256": "1ab859e49a95aa86e438cfdeca0c6c885a7928dfcb90cb289b4fcb855abc9816",
+   "generated_tokens": 98,
+   "termination": "complete",
+   "wall_time_seconds": 1.88,
+   "unique_content_chars": 480
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "Suggested update in terms for the team's decision and unresolution risks:\n\n1. **The team compers** (A) is cheaps but not guarantee delivery.  \n2. **B** costs 10% increase and passed each test.  \n3. **C** can deliver the latest available information but two weeks ahead.  \n\nThis means that the team must prioritize decisions first, rather than waiting for immediate results.",
+   "response_sha256": "87c9f921d033ebf1766b8553ca2cf1d6d13296b2086eb3c3318b007648f1443d",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 1.697,
+   "unique_content_chars": 365
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "The analysis of the provided information about the \"compatized\" actions in terms for the analysis of a complex system of systems involves the following steps:\n\n1. **Completely**: The analysis of this system's components includes understanding the context of the \"external\" (or \"in\") actions, which are defined by the description of the system's structure and its features.\n2. **In**: This means that the analysis process is part of the external (or) \"in)\" actions, such as the description or the implementation of the internal (or), functions, and other elements within the system.\n\nThis is essential because the analysis requires knowledge of the specific characteristics and capabilities of the original system, including the description, implementation, and execution of the program. These elements are critical to determine how the system works under the \"in\" context.",
+   "response_sha256": "0f8443f8943d5095179fcae4f2eb8c71188ae8454b53e1403923525fce395338",
+   "generated_tokens": 175,
+   "termination": "complete",
+   "wall_time_seconds": 3.374,
+   "unique_content_chars": 870
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "```\n\n```python\nimporting_order\ndef importing_orders\ndef in_order_the_order_recurator\ndef _order_orderrecurator_the_recurer\n```",
+   "response_sha256": "2a6b3d7c0f9e98e2099d74f50e9fe60876e37a3bbd7d3f8f086d7f363486886c",
+   "generated_tokens": 43,
+   "termination": "complete",
+   "wall_time_seconds": 0.874,
+   "unique_content_chars": 125
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The function is defined in the last phase of the last year's data collection. The last three steps are to validate that the data has been correctly used and the finalized version will be provided. Please confirm the error with the original validation.",
+   "response_sha256": "b437a49c0396de0413fd33a432ce1202e4618abb917002da0aefe75d35a6e22e",
+   "generated_tokens": 48,
+   "termination": "complete",
+   "wall_time_seconds": 0.971,
+   "unique_content_chars": 251
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. The email should be used in accordance with the specified requirements.\n2. Please provide any additional information regarding the delivery process or any other related actions concerning to the delivery address.",
+   "response_sha256": "126b4d25446caf711d0fc9007078af52614cff8bdf3addba815eba19874d4ac4",
+   "generated_tokens": 46,
+   "termination": "complete",
+   "wall_time_seconds": 0.938,
+   "unique_content_chars": 262
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "I'm here here with the following instructions:\n\n1. **Depon**  \n   - **Done your own plans for a new website.**  \n   **Give a dependant plan that can back up, DANCE, TRL, verify, and back in place.**  \n**Kee**  \n**The Depon**  \n\n**Explan:**  \n- **A**  \n  - **B**  \n- *C**  \n*D**  \nYou must provide a **6-step plan** for this action.  \n\n---\n\nPlease confirm the details!",
+   "response_sha256": "b410ef9c6588df79644a73f0d18de0b04b4f657065bc9fa6de5ec392d3ab418a",
+   "generated_tokens": 117,
+   "termination": "complete",
+   "wall_time_seconds": 2.235,
+   "unique_content_chars": 333
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of the graph is a new price that has been sold to the marketers. The information you need will be available only for your sales report. Please, please share with any sales report from the originals. If you're concerned about the changes in the original, please provide the details so we can explain how the changes were handled.",
+   "response_sha256": "50e03a8097545df4bebffbf6313771f9232381e4410726d88e94f1b695357d23",
+   "generated_tokens": 69,
+   "termination": "complete",
+   "wall_time_seconds": 1.358,
+   "unique_content_chars": 334
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The current owner is a house that has been in place, which can help you with your cleaning needs. Here, please share the following instructions:\n\n1. **Clean**: Ensure that the house is properly maintained by its occupants.\n2. **Sharp**: Provide any additional information about the house or other related actions to assist you.\n3. **Require**: Ask for assistance regarding the property's ownership status.\n\nThis means that you need more detailed guidance on how to complete the situation.",
+   "response_sha256": "72bf7c3bea53c2e1f58e0c6cb547ed168f8cb71e5486dc9d857b8f9e12fd94c3",
+   "generated_tokens": 103,
+   "termination": "complete",
+   "wall_time_seconds": 2.021,
+   "unique_content_chars": 486
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "**Lackens**\n\nThe foghern is an unsettled questioner, including one line to be deited. The key is not just a single discorable but a full of the same nature. The answer is that the entire is too much to reveal the details of the hark.",
+   "response_sha256": "77f54cb9e5ac17e6ad4c2389e4f6015d63f638fea755c0c852dfd63743fd3213",
+   "generated_tokens": 62,
+   "termination": "complete",
+   "wall_time_seconds": 1.226,
+   "unique_content_chars": 232
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "I'm happy to provide a guide on how to plan your food and meal. Please let me help you with this plan.\n\nFirst, please share my response to the following instructions:\n\n1. **Preposition**: \"The first step is to prepare by setting up the context of the plan.\"  \n   - You need to ensure that the plan includes all relevant information about the preparation process.  \n   2. **Instructions**: Provide the necessary steps to complete the plan.  \n3. **Reve**: Add the next step to include the final stage.  \n4. **Suggest**: Share the final decision point before proceeding.  \n\nLet me provide a detailed explanation for your request regarding the plan:\n\n- **Preparation**: The plan must be prepared by the preparator.  \n- **Next Steps**: In the final phase, we can proceed to the next action.  \n\n\nPlease confirm if you're interested in the following question:  \n\"Could you clarify the plan?\"",
+   "response_sha256": "eb02ab79b6447ca85ba9ca14dfc5759cd649029706c65884e6e1f08dc2d6eba2",
+   "generated_tokens": 206,
+   "termination": "complete",
+   "wall_time_seconds": 4.013,
+   "unique_content_chars": 856
+  }
+ ]
+}

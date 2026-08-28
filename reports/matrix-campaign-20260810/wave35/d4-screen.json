@@ -1,0 +1,308 @@
+{
+ "table": {
+  "p1.0 n0": [
+   31,
+   9,
+   6,
+   13,
+   13,
+   0
+  ],
+  "p1.1 n0": [
+   37,
+   8,
+   0,
+   13,
+   10,
+   3
+  ],
+  "p1.15 n0": [
+   37,
+   7,
+   0,
+   13,
+   6,
+   7
+  ],
+  "p1.0 n3": [
+   31,
+   6,
+   6,
+   13,
+   10,
+   3
+  ],
+  "p1.1 n3": [
+   37,
+   5,
+   0,
+   13,
+   9,
+   4
+  ]
+ },
+ "flags": [
+  [
+   "p1.0 n0",
+   "V10CL896",
+   "creative-continuity"
+  ],
+  [
+   "p1.0 n0",
+   "V12CL896G03",
+   "planning-dependencies"
+  ],
+  [
+   "p1.0 n0",
+   "V12CL896G03",
+   "creative-continuity"
+  ],
+  [
+   "p1.0 n0",
+   "V12CL896G03",
+   "multi-turn-correction"
+  ],
+  [
+   "p1.0 n0",
+   "V16CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.0 n0",
+   "V16CL896G03",
+   "logic-ordering"
+  ],
+  [
+   "p1.0 n0",
+   "V8CL1792X13",
+   "logic-ordering"
+  ],
+  [
+   "p1.0 n0",
+   "V8CL1792X13",
+   "coding-deduplicate"
+  ],
+  [
+   "p1.0 n0",
+   "V8CL1792X13",
+   "creative-continuity"
+  ],
+  [
+   "p1.1 n0",
+   "V10CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n0",
+   "V10CL896",
+   "creative-continuity"
+  ],
+  [
+   "p1.1 n0",
+   "V12CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n0",
+   "V12CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n0",
+   "V12CL896G03",
+   "creative-continuity"
+  ],
+  [
+   "p1.1 n0",
+   "V16CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n0",
+   "V16CL896G03",
+   "logic-ordering"
+  ],
+  [
+   "p1.1 n0",
+   "V8CL1792X13",
+   "coding-deduplicate"
+  ],
+  [
+   "p1.15 n0",
+   "V10CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.15 n0",
+   "V10CL896",
+   "creative-continuity"
+  ],
+  [
+   "p1.15 n0",
+   "V12CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.15 n0",
+   "V12CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.15 n0",
+   "V16CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.15 n0",
+   "V16CL896G03",
+   "logic-ordering"
+  ],
+  [
+   "p1.15 n0",
+   "V8CL1792X13",
+   "coding-deduplicate"
+  ],
+  [
+   "p1.0 n3",
+   "V10CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.0 n3",
+   "V10CL896",
+   "context-retrieval"
+  ],
+  [
+   "p1.0 n3",
+   "V12CL896",
+   "context-retrieval"
+  ],
+  [
+   "p1.0 n3",
+   "V12CL896G03",
+   "multi-turn-correction"
+  ],
+  [
+   "p1.0 n3",
+   "V16CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.0 n3",
+   "V16CL896G03",
+   "planning-dependencies"
+  ],
+  [
+   "p1.1 n3",
+   "V10CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n3",
+   "V12CL896",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n3",
+   "V12CL896",
+   "context-retrieval"
+  ],
+  [
+   "p1.1 n3",
+   "V12CL896G03",
+   "instruction-three-actions"
+  ],
+  [
+   "p1.1 n3",
+   "V16CL896G03",
+   "instruction-three-actions"
+  ]
+ ],
+ "atrisk": [
+  [
+   "p1.1 n0",
+   "V10CL896",
+   "summarization-priorities"
+  ],
+  [
+   "p1.1 n0",
+   "V12CL896G03",
+   "context-retrieval"
+  ],
+  [
+   "p1.1 n0",
+   "V12CL896G03",
+   "writing-concise-email"
+  ],
+  [
+   "p1.15 n0",
+   "V10CL896",
+   "summarization-priorities"
+  ],
+  [
+   "p1.15 n0",
+   "V10CL896",
+   "uncertainty-insufficient-data"
+  ],
+  [
+   "p1.15 n0",
+   "V12CL896",
+   "uncertainty-insufficient-data"
+  ],
+  [
+   "p1.15 n0",
+   "V12CL896G03",
+   "writing-concise-email"
+  ],
+  [
+   "p1.15 n0",
+   "V16CL896G03",
+   "summarization-priorities"
+  ],
+  [
+   "p1.15 n0",
+   "V8CL1792X13",
+   "context-retrieval"
+  ],
+  [
+   "p1.15 n0",
+   "V8CL1792X13",
+   "writing-concise-email"
+  ],
+  [
+   "p1.0 n3",
+   "V12CL896G03",
+   "context-retrieval"
+  ],
+  [
+   "p1.0 n3",
+   "V16CL896G03",
+   "summarization-priorities"
+  ],
+  [
+   "p1.0 n3",
+   "V8CL1792X13",
+   "context-retrieval"
+  ],
+  [
+   "p1.1 n3",
+   "V12CL896G03",
+   "context-retrieval"
+  ],
+  [
+   "p1.1 n3",
+   "V12CL896G03",
+   "summarization-priorities"
+  ],
+  [
+   "p1.1 n3",
+   "V12CL896G03",
+   "writing-concise-email"
+  ],
+  [
+   "p1.1 n3",
+   "V8CL1792X13",
+   "context-retrieval"
+  ]
+ ]
+}
