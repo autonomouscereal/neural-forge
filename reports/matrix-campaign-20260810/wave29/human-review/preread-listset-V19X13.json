@@ -1,0 +1,357 @@
+{
+ "schema": "neural-forge-matrix-wave29-listset-forensic-v1",
+ "purpose": "GAP 3: read the terminal-gain case swap on sealed checkpoints instead of inferring it.  Zero builds, zero solves, pure inference.  Emits a PRE-REGISTERED mask for the masked terminal-gain arm.",
+ "generated_at": "2026-08-28T02:41:43Z",
+ "control": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13",
+ "solved": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13G03",
+ "case": "coding-deduplicate",
+ "diagonal": {
+  "coordinates": 1024,
+  "nonzero_delta": 1012,
+  "delta_l2": 22.51761779,
+  "delta_max_abs": 2.8671875,
+  "coords_for_50pct_energy": 95,
+  "coords_for_90pct_energy": 402,
+  "top_coordinates": [
+   {
+    "dim": 437,
+    "delta": -2.8671875
+   },
+   {
+    "dim": 853,
+    "delta": -2.8046875
+   },
+   {
+    "dim": 716,
+    "delta": -2.79296875
+   },
+   {
+    "dim": 606,
+    "delta": -2.66796875
+   },
+   {
+    "dim": 666,
+    "delta": 2.390625
+   },
+   {
+    "dim": 895,
+    "delta": 2.1875
+   },
+   {
+    "dim": 945,
+    "delta": -2.1640625
+   },
+   {
+    "dim": 423,
+    "delta": -2.03125
+   },
+   {
+    "dim": 233,
+    "delta": -2.0
+   },
+   {
+    "dim": 212,
+    "delta": 1.953125
+   },
+   {
+    "dim": 673,
+    "delta": -1.953125
+   },
+   {
+    "dim": 978,
+    "delta": -1.921875
+   },
+   {
+    "dim": 106,
+    "delta": 1.90625
+   },
+   {
+    "dim": 293,
+    "delta": 1.890625
+   },
+   {
+    "dim": 491,
+    "delta": -1.890625
+   },
+   {
+    "dim": 348,
+    "delta": -1.8828125
+   },
+   {
+    "dim": 75,
+    "delta": -1.84375
+   },
+   {
+    "dim": 495,
+    "delta": 1.828125
+   },
+   {
+    "dim": 492,
+    "delta": -1.79296875
+   },
+   {
+    "dim": 287,
+    "delta": 1.765625
+   },
+   {
+    "dim": 610,
+    "delta": 1.765625
+   },
+   {
+    "dim": 121,
+    "delta": -1.7421875
+   },
+   {
+    "dim": 323,
+    "delta": -1.7421875
+   },
+   {
+    "dim": 571,
+    "delta": -1.7421875
+   }
+  ]
+ },
+ "separability_reading": "DISTRIBUTED: the change is spread across the diagonal, so #7's per-entry partition arm is pre-doomed and the mask is a blunt instrument",
+ "control_text": "Here's a Python function that ensures **first-seen** order while **remaining** items are removed:\n\n```python\ndef unique_in_order(items):\n    seen = set()\n    unique_items = []\n\n    for item in items:\n        if item not in seen:\n            seen.add item\n            unique_items.append(item)\n    return unique_items\n\n# Short example\nexample_items = [1, 2, 3, 4, 5, 6]\nresult = unique_in_order(example_items)\nprint(\"Result:\", result)  # output: result: [1, 2, 3, 4, 5]\n```\n\n### Time Complexity:\n- **O(n)** where `n` is the number of items in `items` (since we iterating through `items` once).\n- Each item is checked once, making it efficient for large sets.\n\nThis function works by maintaining a ` seen` set to track items that have been processed, allowing us to ensure that **first-seen** items are included in the result.<|im_end|>",
+ "solved_text": "Here's a Python function that ensures **order** (first-seen) while **remaining** (remaining) values are **remaining** (remaining) values:\n\n```python\ndef unique_in_order(items):\n    seen = set()\n    unique_items = set()\n    for item in items:\n        if item not in seen:\n            seen.add item\n            unique_items.add( item )\n    return unique_items\n```\n\n### Time Complexity:\n- **O(n)** where `n` is the number of items. Each item is checked once, and set operations (adds) are O(1) average.\n\n### Short example:\n```python\nitems = [1, 2, 3, 4, 5]\nresult = unique_in_order(items)\nprint(result)  # output: [1, 2, 3, 4, 5]\n```\n\nThis function maintains **order** (first-seen) while **remaining** values are **remaining** (remaining) values, as required.<|im_end|>",
+ "flip": {
+  "first_divergence_step": 8,
+  "prefix_shared": "Here's a Python function that ensures **",
+  "control_token": "first",
+  "solved_token": "order",
+  "control_top_logit": 17.36002,
+  "solved_top_logit": 16.07235,
+  "coordinate_attribution_top": [
+   {
+    "dim": 100,
+    "delta": 1.046875,
+    "contribution": -11.431309
+   },
+   {
+    "dim": 716,
+    "delta": -2.79296875,
+    "contribution": -9.30171
+   },
+   {
+    "dim": 57,
+    "delta": 1.671875,
+    "contribution": 7.962479
+   },
+   {
+    "dim": 751,
+    "delta": 1.203125,
+    "contribution": 7.945342
+   },
+   {
+    "dim": 353,
+    "delta": -1.46875,
+    "contribution": -7.3687
+   },
+   {
+    "dim": 140,
+    "delta": -1.37109375,
+    "contribution": 7.292119
+   },
+   {
+    "dim": 149,
+    "delta": 1.5625,
+    "contribution": -7.207001
+   },
+   {
+    "dim": 647,
+    "delta": 1.5,
+    "contribution": 6.488646
+   },
+   {
+    "dim": 606,
+    "delta": -2.66796875,
+    "contribution": 6.482194
+   },
+   {
+    "dim": 916,
+    "delta": 1.484375,
+    "contribution": -6.451032
+   },
+   {
+    "dim": 492,
+    "delta": -1.79296875,
+    "contribution": 6.433603
+   },
+   {
+    "dim": 401,
+    "delta": 0.8125,
+    "contribution": -6.414191
+   },
+   {
+    "dim": 666,
+    "delta": 2.390625,
+    "contribution": 6.28874
+   },
+   {
+    "dim": 422,
+    "delta": -1.140625,
+    "contribution": -6.004514
+   },
+   {
+    "dim": 247,
+    "delta": 1.421875,
+    "contribution": -5.906241
+   },
+   {
+    "dim": 673,
+    "delta": -1.953125,
+    "contribution": 5.790663
+   },
+   {
+    "dim": 642,
+    "delta": 1.140625,
+    "contribution": 5.625758
+   },
+   {
+    "dim": 839,
+    "delta": 1.46875,
+    "contribution": 5.50226
+   },
+   {
+    "dim": 242,
+    "delta": -1.2265625,
+    "contribution": -5.467062
+   },
+   {
+    "dim": 520,
+    "delta": 0.40625,
+    "contribution": -5.411656
+   },
+   {
+    "dim": 703,
+    "delta": 1.734375,
+    "contribution": -5.301585
+   },
+   {
+    "dim": 717,
+    "delta": -0.84375,
+    "contribution": -5.29911
+   },
+   {
+    "dim": 860,
+    "delta": 1.5625,
+    "contribution": -5.204441
+   },
+   {
+    "dim": 1005,
+    "delta": -1.609375,
+    "contribution": 5.140802
+   }
+  ],
+  "attribution_in_mask": 18,
+  "attribution_concentration_top24_fraction": 0.1582
+ },
+ "mask": {
+  "quantile": 0.9,
+  "cutoff_abs_delta": 1.171875,
+  "coordinates": [
+   40,
+   42,
+   57,
+   62,
+   75,
+   106,
+   108,
+   111,
+   121,
+   125,
+   140,
+   144,
+   149,
+   156,
+   171,
+   177,
+   195,
+   212,
+   224,
+   233,
+   236,
+   239,
+   242,
+   247,
+   256,
+   286,
+   287,
+   293,
+   306,
+   314,
+   323,
+   348,
+   353,
+   365,
+   376,
+   379,
+   392,
+   423,
+   430,
+   437,
+   440,
+   442,
+   453,
+   463,
+   476,
+   491,
+   492,
+   495,
+   509,
+   510,
+   517,
+   528,
+   544,
+   569,
+   571,
+   572,
+   581,
+   603,
+   606,
+   610,
+   611,
+   616,
+   644,
+   645,
+   647,
+   664,
+   666,
+   673,
+   686,
+   698,
+   703,
+   716,
+   736,
+   745,
+   751,
+   815,
+   831,
+   834,
+   839,
+   846,
+   849,
+   853,
+   860,
+   878,
+   880,
+   884,
+   890,
+   895,
+   896,
+   912,
+   916,
+   927,
+   930,
+   945,
+   972,
+   977,
+   978,
+   987,
+   994,
+   1005
+  ],
+  "count": 100
+ },
+ "wall_time_seconds": 16.726
+}

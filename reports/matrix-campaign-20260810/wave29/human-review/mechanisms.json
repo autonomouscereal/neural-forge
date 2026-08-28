@@ -1,0 +1,20 @@
+{
+ "ARCH.V19MXO3": "w29 CHASM BRIDGE (plan #3) -- V19 gather on the parent-shaped MXO3 body; budgeted ratio VOID",
+ "ARCH.V19MXP2": "w29 CHASM BRIDGE (plan #3) -- V19 gather on the parent-shaped MXP2 body; budgeted ratio VOID",
+ "ARCH.B25": "w29 COMPLEMENT-MERGE (plan #7) -- convex blend alpha 0.25, zero solve",
+ "ARCH.B50": "w29 COMPLEMENT-MERGE (plan #7) -- convex blend alpha 0.50, zero solve",
+ "ARCH.B75": "w29 COMPLEMENT-MERGE (plan #7) -- convex blend alpha 0.75, zero solve",
+ "ARCH.BP64": "w29 COMPLEMENT-MERGE (plan #7) -- top-64 coordinate partition, zero solve",
+ "ARCH.MASK03": "w29 MASKED TERMINAL GAIN (plan #6) -- mask pre-registered by the LIST-to-SET forensic",
+ "ARCH.KKTD": "w29 GLOBAL-KKT (plan #4, ADDENDUM 16.2) -- 20 writers, diagonal, solved jointly",
+ "ARCH.KKTS": "w29 GLOBAL-KKT (plan #4, ADDENDUM 16.2) -- 20 writers, scalar, solved jointly",
+ "ARCH.V19": "w27 vocabulary peak K=19,456 -- the summit",
+ "ARCH.V19X13G03": "w28 terminal-gain lambda 0.3 on the summit excision",
+ "ARCH.V19X13G01": "w28 terminal-gain lambda 0.1 on the summit excision",
+ "ARCH.V19X13": "w28 summit + block-13 excision, zero solve",
+ "ARCH.V19X09": "w28 summit + block-9 excision, zero solve",
+ "ARCH.V18CL896": "w28 vocabulary + CL896 MLP width fold",
+ "ARCH.V19X13CL896": "w28 vocabulary + block-13 excision + CL896 MLP width fold",
+ "ARCH.V16CL896": "w23 vocabulary + CL896 MLP width fold",
+ "ARCH.CL896": "w15 CL896 MLP width fold"
+}

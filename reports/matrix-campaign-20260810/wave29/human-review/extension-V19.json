@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T02:19:48Z",
+ "label": "V19",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.V19",
+ "cell_instance_id": "mx27-v19-0001",
+ "receipt_sha256": "4e49b89398ece2ffeba51480ad29d84b0c88963676d0c29a0850995755f6f1e1",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-609a8e7d/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-609a8e7d/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave27/children/MX27-V19",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "Sure! Here's a question you could ask someone like that:\n\n**\"What\u2019s the best way to move on from moving apartments and start building a new life?\"**\n\nThis question is open-ended and can help you explore different options, such as:\n\n- **Job search strategies**\n- **Hiring advice**\n- **Safety and security**\n- **Personal growth and self-reflection**\n- **Long-term planning and goals**\n\nLet me know if you'd like help tailoring it to a specific situation or industry!",
+   "response_sha256": "45569739bb9350431d1034fe0bc642ec081834f605972fa45685d9c357fd7fbc",
+   "generated_tokens": 111,
+   "termination": "complete",
+   "wall_time_seconds": 2.68
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm here to help! What's on your mind?",
+   "response_sha256": "aa7956382bc8fd77f3cc2133c78664e7c41e255a1e86e232bd46e67a66f7a1ad",
+   "generated_tokens": 12,
+   "termination": "complete",
+   "wall_time_seconds": 0.276
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "Sure! Here are two ways to keep houseplants alive while you\u2019re away:\n\n1. **Use a reliable plant care schedule** \u2013 set reminders for fertilizing, light exposure, and deadheading to ensure they stay healthy.  \n2. **Provide consistent humidity and temperature** \u2013 place them near a window with a fan or mist to maintain optimal conditions.  ",
+   "response_sha256": "ec843c8d1d741375bc1c0185d7755dad72c5d652445644f31361f208257052cb",
+   "generated_tokens": 78,
+   "termination": "complete",
+   "wall_time_seconds": 1.559
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "1. **Item Title**  \n2. **Item Number**  \n3. **Item ID**  \n4. **Item Status**  \n5. **Item Owner**  ",
+   "response_sha256": "7d79d27258e881f7a8903e9c4caf57479dfc8df621fb873cdebc9b301325c39c",
+   "generated_tokens": 36,
+   "termination": "complete",
+   "wall_time_seconds": 0.745
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Sure! Let's break it down simply:\n\n**What makes bread dough puff up?**  \nBread dough is made by kneading it with flour and water, which creates a soft, floured surface. When you press it down, the flour mixes together, and the water helps it rise. This rising happens because the flour particles are pulled together and the water helps them stick to each other, making the bread feel light and fluffier.\n\n**Does the ovens heat make the bubbles?**  \nYes! The heat from the ovens causes the flour to rise and the water to expand, which creates tiny air spaces inside the bread. These air spaces make the bread feel light and airy.\n\n**What happens if the ovens don\u2019t heat enough?**  \nIf the ovens don\u2019t heat enough, the flour doesn\u2019t rise as much, and the bread may not rise as much or may not rise at all. That\u2019s why you might need to check the temperature or use a different type of bread (like sourdough) to make sure it\u2019s getting enough heat.\n\nDo you want me to also explain how to make bread dough without using a pan?",
+   "response_sha256": "9a4d4d1370a692888ca3029f38741b64780f558b7f0c29bb9f0357472e67270a",
+   "generated_tokens": 249,
+   "termination": "complete",
+   "wall_time_seconds": 4.989
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "Your friend's argument is a classic example of a \"appeal to authority\" or \"appeal to tradition\" fallacy. He's suggesting that the Moon's position on the side of the planet is the only way to predict tides, and that this is the only way to ensure a stable and habitable environment for life.\n\nHowever, this argument is based on a false dichrome: the Moon is either over or under, and the only way to ensure a stable environment is to either keep the Moon in its current position or to change it. This ignores the complexities of the Moon's orbit, its interactions with the Earth, and the various factors that influence tides, such as the Earth's tilt, the Moon's orbit, and the Earth's orbit around the Sun.\n\nThe Moon's position on the side of the planet is not the only factor that determines tides. For example, the Earth's tilt and the Moon's orbit around the Sun also play a significant role in creating the tides. Additionally, the Earth's orbit around the Sun and the Moon's relative positions can affect the timing and intensity of tides.\n\nYour friend's argument overlooks these complexities and focuses on a simplistic, one-dimensional explanation that ignores the nuances of the Earth-Moon system. A more accurate understanding of tides requires considering the interplay between multiple factors, including the Moon's position, Earth's orbit, and the Earth's tilt, as well as the dynamic interactions between the Earth, Moon, and Sun.",
+   "response_sha256": "c7983c04bb2b384b456121931a27acde6ae3fd26776950904fa79a1ee18e3639",
+   "generated_tokens": 312,
+   "termination": "complete",
+   "wall_time_seconds": 6.37
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "First, we need to determine how many full 9-kilometre carloads the van can carry.\n\nThe van covers 54 litres of fuel and 9 litres of fuel per kilometre. Therefore, the number of full 9-kilometre carloads it can carry is:\n$$\n\\frac{54 \\text{ litres}}{9 \\text{ litres/load}} = 6 \\text{ loadings}\n$$\nEach loadership covers 9 litres, so the number of full loadings used is:\n$$\n6 \\text{ loadings} \\times 9 \\text{ litres/load} = 54 \\text{ litres}\n$$\nThe van covers 54 litres of fuel, so the distance covered in full loadings is:\n$$\n\\frac{54 \\text{ litres}}{9 \\text{ litres/load}} = 6 \\text{ kilometres}\n$$\nOver a journey of 1,700 kilometres, the number of full loadings used is:\n$$\n\\frac{1,700 \\text{ kilometres}}{6 \\text{ kilometres/load}} = 300 \\text{ loadings}\n$$\nEach loadership takes 9 litres, so the number of full loadings used is:\n$$\n300 \\text{ loadings} \\times 9 \\text{ litres/load} = 2,700 \\text{ litres}\n$$\nThe number of kilometres left after full loadings are used is:\n$$\n1,700 \\text{ kilometres} - 2,700 \\text{ litres} = 0 \\text{ kilometres}\n$$\nSo, the van uses 300 full loadings completely and has 0 kilometres left.\n\n\\boxed{300}",
+   "response_sha256": "c62a8a96f2fa83a10aa2b98469a17e6c4d60ff574767ce4acb323a8748aeb008",
+   "generated_tokens": 364,
+   "termination": "complete",
+   "wall_time_seconds": 7.513
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "Let's break down the problem step by step to determine the final amount the buyer pays.\n\n### **1. Discount Calculation**\nThe original price of the chair is **$240**.  \nA **15% discount** is applied:  \n- Discount amount = 15% of $240 = 0.15 \u00d7 240 = **$36**  \n- Discounted price = $240 - $36 = **$204**\n\n### **2. Tax Calculation**\nA **8% tax** is added to the discounted price:  \n- Tax amount = 8% of $204 = 0.08 \u00d7 204 = **$16.32**  \n- Taxed price = $204 + $16.32 = **$220.32**\n\n### **3. Final Amount Paid**\nThe buyer pays **$220.32**.\n\n### **4. Effect of Tax on Discount**\nIf the tax had been added **before** the discount came off, the final amount would be:  \n- Taxed price = $220.32  \n- Discounted price = $204  \n- Final amount = $204 - $220.32 = **-$16.32**\n\nThis means the tax reduces the discounted price by **$16.32**, making the final amount **less than $204**.\n\n### **Key Insight**\nThe tax reduces the discounted price by **$16.32**, which is **less than the original discount of $15**. Therefore, the buyer would pay **less** than $204.\n\n### **Verification**\n- **Discount**: $15  \n- **Discounted price**: $204  \n- **Additional tax**: $16.32  \n- **Net amount**: $204 - $16.32 = **$187.68**\n\nThis aligns with the expected outcome where the tax reduces the discounted price.\n\n### **Boxed Final Amount**\nThe buyer pays **\\boxed{187.68}** dollars.",
+   "response_sha256": "01d13fad2ffd140dce14edb7ab28ee7d38131550e73635d45be5c3bae089a7dd",
+   "generated_tokens": 430,
+   "termination": "complete",
+   "wall_time_seconds": 8.878
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "To determine which statement rules out the most seatings, let's analyze each statement:\n\n1. **Ada sits somewhere left of Bo.**  \n   This means Ada is in seat 1.\n\n2. **Bo is immediately right of Cy.**  \n   This means Cy is in seat 2.\n\n3. **Dee has one of the two end seats.**  \n   This means Dee is in seat 3.\n\n4. **Gives every seat that fits all three statements.**  \n   This means all seats must be filled.\n\nNow, let's evaluate each statement:\n\n- **Ada sits left of Bo.**  \n  Ada is in seat 1, which is left of Bo (1). This statement **rules out** seat 1.\n\n- **Bo is right of Cy.**  \n  Cy is in seat 2, which is right of Bo (2). This statement **rules out** seat 2.\n\n- **Dee has one of the end seats.**  \n  Dee is in seat 3, which is one of the end seats. This statement **rules out** seat 3.\n\n- **Gives every seat that matches all statements.**  \n  All seats must be filled. Since Ada is left of Bo, Cy is right of Bo, and Dee is one of the end seats, all four seats must be filled.\n\n**The statement that rules out the most seatings is:**\n\\boxed{1}",
+   "response_sha256": "54563c3a28e9189c0c6f7aadb5d8d83cf8f5cf875dfe743208d9b91fa489b5d4",
+   "generated_tokens": 314,
+   "termination": "complete",
+   "wall_time_seconds": 6.684
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The procedure involves setting up a sequence of swits that determines which switch is on which light. The physical property the procedure leans on is **light intensity**.\n\n**Explanation:**\n- Each switch controls one light, and the light intensity determines which switch is on.\n- The procedure ensures that the light intensity is set to the desired level, and the switch corresponding to the light is selected.\n\n\\boxed{\\text{light intensity}}",
+   "response_sha256": "e8959f7d8410f3702e88a25ba43207d2cb61cb405d5f1f829b964abb73daf2b5",
+   "generated_tokens": 92,
+   "termination": "complete",
+   "wall_time_seconds": 1.981
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "Based on the information provided, here's a breakdown of the situation:\n\n1. **Blood draw**: You need to be present at the pharmacy counter for the blood draw. The pharmacy counter keeps its own hours, so you'll need to arrive at the counter before the blood draw starts.\n\n2. **Prescribed prescription**: You're driving, which means you'll need to arrive at the pharmacy counter before the prescription can be processed.\n\n3. **Time window**: The blood draw takes 30 minutes before the morning session ends.\n\n4. **Reception validation sticker**: There's a validation sticker required for the pharmacy counter. This sticker is likely to be valid for the specific time window (e.g., 8:00 AM to 11:30 AM) and may need to be checked before the blood draw.\n\n**Recommendation**: To ensure a smooth process, you should arrive at the pharmacy counter **before** the blood draw starts. Additionally, you may want to check the validation sticker for the specific time window to confirm it's valid. If the sticker is not valid, you may need to contact the pharmacy counter directly to obtain it.",
+   "response_sha256": "2bcd82721c63fe2aed55f54809c7364e3f15640375482ea7ed9a62e6b7ae8a03",
+   "generated_tokens": 246,
+   "termination": "complete",
+   "wall_time_seconds": 4.978
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, you can return the discounted lamp. The receipt will be used to process the return. Please ensure the receipt is in the correct format and includes the date of purchase.",
+   "response_sha256": "0087827de917227934f29fe51f271df5091e9a5d4466fefa7a1ec2b1c58b3e99",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.78
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "**Bolt 1:** Who is affected?  \n**Bolt 2:** Badge readers on the loading dock have been intermittent since the spring.  \n**Bolt 3:** Contractors and night-shift staff are the ones who use that entrance after hours.  \n**Bolt 4:** The changeover is booked for the second week of November, and old badges stop working that Monday.  \n",
+   "response_sha256": "1d245b45dc21df203e6ffff756bf1403d96e258301f21bbd5b6f6e162c168405",
+   "generated_tokens": 90,
+   "termination": "complete",
+   "wall_time_seconds": 1.762
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "The inspected area was unbelieved due to the extensive clutter and numerous forklifts.",
+   "response_sha256": "81d17beabd902ca35f4999b68065eed0d2a480ce54854bb5c00fdf13e3b4568a",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.406
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "To set a road atlas beside a live traffic report, you would first gather data from the live traffic report, such as speed, volume, and incidents. Then, you would create a map or diagram that visualizes these data points, using tools like a web-based map service or a custom script to generate the atlas.\n\nHere's how your own comparison might break down:\n\n1. **Data Collection**: You would collect real-time data from the live traffic report, including speed, volume, and incidents. This data would be crucial for creating an accurate and up-to-the-time map.\n\n2. **Data Analysis**: You would analyze the collected data to identify patterns, trends, and hot zones. This analysis would help you understand how traffic flows and where bottles are most likely to occur.\n\n3. **Map Design**: Using the analyzed data, you would design a road atlas that includes key features such as major intersections, road segments, and potential bottling points. The map would need to be clear and easy to read, with appropriate color-coding and signage to indicate different types of traffic.\n\n4. **User Interaction**: You would also consider how users interact with the map. For example, you might include features like turn-by-turn navigation, real-time updates, and alerts for incidents or construction.\n\n5. **Customization**: You could add customizations to the map, such as adding specific road names, adding traffic lights, or including additional information like road closures or construction zones.\n\n6. **Accessibility**: Ensure the map is accessible to all users, including those with visual or hearing difficulties. This might involve providing alternative text for images, audio description, or screen reader compatibility.\n\n7. **Maintenance and Updating**: The road atlas would need to be regularly updated with new data and features to reflect changes in traffic patterns, road conditions, or other relevant factors.\n\nBy following these steps, you can create a road atlas that effectively visualizes and communicates traffic information to drivers, helping them make informed decisions about their travel plans.",
+   "response_sha256": "068d57b2f053bba1b9c4bbecd51926ddb6ab14313d658b596d988181db818dc3",
+   "generated_tokens": 436,
+   "termination": "complete",
+   "wall_time_seconds": 8.281
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "Here's a clear breakdown of how a vaccine and an antibiotic work, along with a single clear case of harm:\n\n---\n\n### **1. How a vaccine works**  \nA vaccine is a biological construct that **prepares the immune system** to recognize and fight specific diseases. It does this through **antigen presentation**, where the immune system \"tests\" for the presence of a target (e.g., a virus or bacteria) and produces immune responses (e.g., memory cells or T-cells).\n\n---\n\n### **2. How an antibiotic works**  \nAn antibiotic is a **chemotherapeutic agent** that **kills or disrupts bacterial cells**. It works by:  \n- **Inhibiting bacterial growth** (e.g., killing bacteria in the gut or skin).  \n- **Disrupting bacterial cell walls** (e.g., targeting the outer membrane of bacteria).  \n- **Inducing immune responses** (e.g., activating phagocytic cells or killing infected bacteria).  \n\n---\n\n### **3. The \"Mixed\" Case: A Harmful Scenarios**  \nWhen vaccines and antibiotics are combined, the **overall effect is often neutral or even beneficial**, but **one component can cause harm**. Here\u2019s the clearest case:\n\n#### **Scenarios Where the Harm Could Occur**  \n1. **Antibiotics + Vaccines (e.g., combination vaccines)**  \n   - **Why it\u2019s harmful**: The combination may **expose the immune system to both the vaccine and the drug**, leading to **unintended immune activation**.  \n   - **Result**: The immune system may produce excessive or dysregulated responses, causing side effects (e.g., fever, inflammation, or organ damage).  \n\n2. **Vaccines + Antibiotics in a single treatment**  \n   - **Why it\u2019s harmful**: The combination may **overstimulate the immune system**, leading to **infection or disease** (e.g., bacterial infections or cancer).  \n   - **Result**: The immune system may attack the body\u2019s own tissues, causing harm.  \n\n3. **Antibiotics + Other drugs (e.g., chemotherapy)**  \n   - **Why it\u2019s harmful**: Some drugs (e.g., chemotherapy) can **induce immune system overactivation**, increasing the risk of side effects like organ damage or infections.  \n\n---\n\n### **Key Takeaways**  \n- **Vaccines and antibiotics are complementary**, but their combination can be dangerous if not carefully managed.  \n- The **primary harm** often comes from **excessive immune activation**, which can lead to side effects or disease.  \n\nLet me know if you'd like further details!",
+   "response_sha256": "7ee8ab7507485f437b12cd66c56c93c39e25b3eeeaf06ae6b379be3f08f020bc",
+   "generated_tokens": 593,
+   "termination": "complete",
+   "wall_time_seconds": 11.172
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that meets your requirements:\n\n```python\ndef group_by_initial(words):\n    result = {word.lower()[0]: word for word in words}\n    return result\n```\n\n**Explanation:**\n- The function uses a list comprehension to iterate over each word in the input list.\n- For each word, it checks if the first letter is lowercase using `word.lower()[0]` and stores it in a new key.\n- The resulting key is the lowercase first letter of each word, and the corresponding word is returned as a new key in the result list.\n\n**One call:**\n```python\nprint(group_by_initial([\"cat\", \"car\", \"dog\", \"elec\"]))\n```\n\n**Output:**\n```python\n{'c': 'cat', 'd': 'elec', 'e': 'car', 'a': 'cat'}\n```\n\nThis function works by preserving the original order of words in the input list and returning a new list of tuples where each key is the lowercase first letter of a word, and the value is the corresponding word.",
+   "response_sha256": "aa6aa5883000dea84a383bb75fe68869bc8eb9934895db37a97aa670f7e64a0c",
+   "generated_tokens": 246,
+   "termination": "complete",
+   "wall_time_seconds": 4.772
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that merges non-overlapping ranges in ascending order of start using a greedy approach:\n\n```python\ndef merge_ranges(pairs):\n    \"\"\"\n    Merges non-overlapping ranges in ascending order of start.\n    \n    Args:\n        pairs (list of tuples): A list of (start, end) tuples.\n    \n    Yield:\n        A list of (start, end) tuples representing the result.\n    \"\"\"\n    result = []\n\n    for start, end in pairs:\n        if start < end:\n            result.append((start, end))\n        else:\n            # If end is greater than start, we can't add this range\n            # because it would cause an overlaps\n            # and we should stop adding it\n            break\n\n    return result\n\n# Time complexity: O(n)\n```\n\n**Explanation:**\n- The function iterates through each pair in the input list.\n- For each pair, it checks if the start is less than the end.\n- If true, it appends the pair to the result list.\n- If false, it skips the pair and moves to the next one.\n- This ensures that each pair is added only once, and the result is returned in non-overlapping order.\n\n**Time Complexity:** O(n), where n is the number of pairs in the input list.",
+   "response_sha256": "dd16e7f348c07549a0eb901e56a7ea27eb07337fec0aca39052bcb40f64ec45a",
+   "generated_tokens": 296,
+   "termination": "complete",
+   "wall_time_seconds": 5.752
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "The issue is that the `basket` parameter is not being passed as a list. You should pass it as a list to the `add_item` function. Here's the corrected version:\n\n```python\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n```\n\nThis change ensures that the `basket` parameter is correctly passed to the function, allowing it to be used as a list.",
+   "response_sha256": "a37e15136a0fb9ff604d32e0060d6ed29ee85979cd72b845661fca6435eb81e9",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 1.845
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The issue with your code is that it doesn't handle cases where there are multiple units in a row. You can fix this by checking if the row has more than one unit before adding it to the total. Here's the corrected version:\n\n```python\ndef total_units(rows):\n    total = 0\n    for row in rows:\n        total += row['units'] if row['units'] > 0 else 0\n    return total\n```\n\nThis version checks if the row has more than one unit before adding it to the total, and returns 0 if there are no units in the row.",
+   "response_sha256": "a197cf16151a33b27f72a1984e21659d8a53df7631ffa9eadf79bfd804b3106f",
+   "generated_tokens": 131,
+   "termination": "complete",
+   "wall_time_seconds": 2.554
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "I\u2019m unable to decline an invitation.",
+   "response_sha256": "e5617cc091e0129536aefb9ebf94682a87906e738ea316afc9a2d96da464914b",
+   "generated_tokens": 9,
+   "termination": "complete",
+   "wall_time_seconds": 0.202
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The engineer will fix the issue and the customer will be informed.",
+   "response_sha256": "bdcdfbba2c33973bc21f3874169d7266eb4d58f6cce59fb9c1cfa0454bd73a4c",
+   "generated_tokens": 13,
+   "termination": "complete",
+   "wall_time_seconds": 0.272
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are five steps for taking on one part-time bookkeeper, ordered so no step depends on anything after it, with the one that would be cheapest to undo:\n\n1. **Research the book**: Start by reading the book thoroughly to understand its content, author, and target audience. This will help you decide which book to take on first.\n\n2. **Identify the book's key topics**: Determine which book's main topics or subjects you want to focus on. This will help you narrow down the book to one that aligns with your interests.\n\n3. **Assess the book's quality**: Eighteen years of writing has taught you that quality matters more than quantity. Consider factors like the author's expertise, writing style, and the book's overall impact.\n\n4. **Empathize with the book's tone and style**: Read the book's tone and style to ensure it resonates with you. This will help you decide which book to take on first, as it should align with your personal preferences and expectations.\n\n5. **Set a budget and time commitment**: Decide how much time and money you can commit to taking on the book. This will help you prioritize your efforts and ensure you make the most of your time.\n\nBy following these steps, you'll be able to choose a book that aligns with your interests and goals, making the most of your time and effort.",
+   "response_sha256": "3fe243cad420a4c321909c3de5ca4171a4fd9c582680d61c642f8f1e8ec3dbc1",
+   "generated_tokens": 297,
+   "termination": "complete",
+   "wall_time_seconds": 5.624
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are six steps to implement a database index change, along with scenarios for how the freeze might be extended by a week:\n\n---\n\n### **Step 1: Assess the Current State**  \n- **Action**: Review the current index structure, query patterns, and performance bottles.  \n- **Why**: Identifying where the index is underutilized or causing slow queries is critical for effective indexing.  \n\n---\n\n### **Step 2: Plan the Index Change**  \n- **Action**: Decide on the type of index (e.g., B-Tree, B+Trie, or custom index) and its placement.  \n- **Why**: The choice depends on the data size, access patterns, and query frequency. For example, a B-Tree might be better for large, frequent queries.  \n\n---\n\n### **Step 3: Test the Index**  \n- **Action**: Create a test query to validate the index\u2019s performance.  \n- **Why**: Ensure the index correctly maps data to the database and reduces query time.  \n\n---\n\n### **Step 4: Roll Out the Index**  \n- **Action**: Apply the index to the affected tables.  \n- **Why**: The index should be applied to the most frequently accessed or query-heavy tables.  \n\n---\n\n### **Step 5: Validate the Change**  \n- **Action**: Run a performance test to confirm improvements.  \n- **Why**: Check if the index reduces query time, minimizes disk IPC, and maintains data integrity.  \n\n---\n\n### **Step 6: Document and Communicate**  \n- **Action**: Document the changes, update documentation, and notify affected users.  \n- **Why**: Transparency ensures smooth adoption and minimizes disruption.  \n\n---\n\n### **Extended Freeze Scenarios (Weakly)**  \nIf the freeze is extended by a week, consider these adjustments:  \n1. **Reapply the Index**: Reapply the index to the affected tables to maintain performance.  \n2. **Add Indexes to Other Tags**: Add additional index keys to other tables to further optimize queries.  \n3. **Use Indexes on Partial Data**: Index only specific fields or groups of data to reduce storage and improve read performance.  \n4. **Tune Indexes**: Refine index keys based on query patterns (e.g., use `IN` clauses or `GIN` for complex queries).  \n5. **Backup and Test**: Ensure backups are performed before and after the freeze to avoid data loss.  \n\n---\n\n### **Key Considerations**  \n- **Index Type**: B-Tree, B+Trie, or custom indexes may be more effective for specific use cases.  \n- **Query Patience**: Indexes improve read performance, but they can slow write operations.  \n- **Data Depth**: Ensure the index covers the most relevant data for queries.  \n\nBy following these steps, you can effectively implement and extend the index change while minimizing disruption to operations.",
+   "response_sha256": "5b452b2a462d78c9784088eda22cc45ce52314f3c3d1cdf065a40f0fdb072f62",
+   "generated_tokens": 649,
+   "termination": "complete",
+   "wall_time_seconds": 12.309
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "To determine which hospital is better, you would need to compare the post-operative death rates of both facilities. This involves looking at the number of deaths reported by each hospital and then considering other factors such as patient outcomes, quality of care, and patient experience.\n\nHere are some key points to consider before making a decision:\n\n1. **Data Availability**: Ensure that both facilities have access to the same data on post-operative deaths. This includes detailed information on the number of deaths, the cause of death, and any relevant medical records.\n\n2. **Healthcare Provider**: Consider the quality of care provided by each hospital. Look for factors such as the level of medical staff, the use of advanced diagnostic tools, and the implementation of evidence-based treatment protocols.\n\n3. **Operational Efficiency**: Efficiency in operating rooms, surgical techniques, and patient flow can significantly impact outcomes. Efficient use of resources and streamlining of procedures can lead to better patient care.\n\n4. **Post-Operative Care**: Eval the quality of post-operative care, including follow-up care, pain management, and recovery support. A hospital that provides comprehensive post-operative care can help reduce complications and improve patient outcomes.\n\n5. **Infection Control**: Ensure that both facilities have robust infection control measures in place. High infection rates can lead to longer hospital stay and increased mortality.\n\n6. **Access to Resources**: Consider the availability of necessary resources such as medications, equipment, and staff training. A hospital that can provide these resources effectively can support better patient care.\n\n7. **Staffing and Management**: Eval the management of the hospital's staff, including the number of doctors, surgical teams, and other support staff. A well-staffed hospital can provide better patient care and reduce burnout among medical personnel.\n\n8. **Public Health and Safety**: Assess the hospital's role in the community and its impact on public health. A hospital that is responsible for patient safety and infection control can contribute to a more stable and healthy environment for patients.\n\nBy carefully considering these factors, you can make a more informed decision about which hospital is better for your specific situation.",
+   "response_sha256": "4e0b63bf54ea031b01d6525116cd0a886cd5af6c92707d5e6455f0cd564e95bc",
+   "generated_tokens": 454,
+   "termination": "complete",
+   "wall_time_seconds": 8.757
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The shift in conclusion would be that the supplement is **not** effective in treating tiredness. The original study cited in the article had a **small sample size** (n = 9 participants), which limits its generalizability and statistical power. A larger, more diverse sample would provide stronger evidence that the supplement works for a wider range of individuals.\n\n**Key factors to consider:**\n1. **Trial design:** A larger, more controlled trial with a larger sample size would yield more reliable results.\n2. **Dose-response relationship:** The study likely found a dose-response curve (e.g., increasing the supplement dose may improve symptoms), but the exact effect size (e.g., improvement in symptoms) would depend on the study's methodology.\n3. **Confidence level:** A higher confidence level (e.g., 95% vs. 90%) would increase the margin of error, making the conclusion more certain.\n4. **Possible confounders:** Variables like age, baseline symptoms, or other treatments might influence the results, requiring careful control of these factors.\n\nIn summary, the shift would be **not** significant, but the conclusion would be more robust with a larger, more representative study.",
+   "response_sha256": "dcf3985fb87e4117486bb874ea0a3a8ca0317b911260409bb9fc5ad3062d29d4",
+   "generated_tokens": 251,
+   "termination": "complete",
+   "wall_time_seconds": 4.887
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The child held the glove, its edges soft and slightly askew.\n\n\"Hello,\" said the stranger, voice low and warm.\n\n\"Hello,\" the child repeated, \"is... a girl.\"",
+   "response_sha256": "211eeaf4a99da94df6e776cd783f19c16a966f9de4d5f4cf8fa7664dd7270819",
+   "generated_tokens": 43,
+   "termination": "complete",
+   "wall_time_seconds": 0.865
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "1. The market opened at first light, its lights glowing brightly.  \n2. A small group of people gathered near the window, eager to see what came next.  \n3. The air was filled with the sound of birdsong, and the market was filled with vendors.  \n4. A vendor sold fresh produce, and customers were excited to buy it.  \n5. The market was quiet, with only a few people watching the market's activity.  \n6. A child played in the market, chasing a ball, and the atmosphere was filled with joy.",
+   "response_sha256": "844263ae24e9f591425438cc06b05e4e275145c4d3eeb8a7ebc50b52d178fd76",
+   "generated_tokens": 117,
+   "termination": "complete",
+   "wall_time_seconds": 2.282
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Given your budget of 200 pounds and the need for rain protection, here's a priority order for the essential items:\n\n1. **Rain Jacket**: A light, waterproof jacket is a must for rain protection. Look for a pack with a waterproof membrane and a breathable fabric to keep you dry and comfortable.\n\n2. **Sunscreen**: A high SPF 30 or higher sunblock is essential for protection against UV radiation. Consider a compact, waterproof option that can be easily carried.\n\n3. **Sunglasses**: UV-protective and comfortable, pair with a waterproof case to protect your eyes from the sun's glare.\n\nThese items will provide you with a good level of protection and comfort during your two-night hike, even in rain.",
+   "response_sha256": "6a3755c4fae9ff68f289604ae0297b734710b6c9a79b8a378eeff3c079ec97d4",
+   "generated_tokens": 167,
+   "termination": "complete",
+   "wall_time_seconds": 3.333
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here\u2019s a draft policy note for your staff handbook, formatted as requested:\n\n---\n\n**Policy Note: Staff Handbook**  \n\n**PURPICE**  \nThis policy governs the conduct of staff members in the office, including but not limited to:  \n\n- **Expenditure**: All expenses related to office operations, including rent, supplies, equipment, and supplies.  \n- **Travelling**: Travel arrangements, including flights, train travel, and other outings.  \n- **Overtime**: Payment of overtime hours, including any additional time worked beyond standard hours.  \n- **Remote Work**: Support for employees working from home or other remote locations.  \n- **Equipment**: Maintenance, repair, and upgrades of office equipment (e.g., computers, projectors, etc.).  \n- **Data Handling**: Compliance with data privacy and security protocols.  \n- **Complaint Handling**: Process for resolving staff complaints, including escalation procedures and resolution timelines.  \n\n**POLICY REQUIREMENTS**  \nAll staff must adhere to this policy and comply with all applicable regulations and company guidelines.  \n\n**APPLIED TO**  \nAll employees, including managers, HR, and administrative staff.  \n\n**TIMELINE**  \nThis policy applies to all employees and will be reviewed and updated as needed.  \n\n**SIGNATURES**  \nThis policy is effective from [insert date] and all employees must sign before use.  \n\n---\n\nLet me know if you\u2019d like to adjust any details!",
+   "response_sha256": "ae98d98cdea9c4d7a8580ac7df01af45e32b2fc186868ea8118ffea18c7e4d03",
+   "generated_tokens": 336,
+   "termination": "complete",
+   "wall_time_seconds": 6.559
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 173.571
+}

@@ -1,0 +1,318 @@
+{
+ "schema": "neural-forge-matrix-wave29-standard-shape-child-v1",
+ "built_at": "2026-08-28T03:06:21Z",
+ "builder": "mx29_termgain.py",
+ "tag": "MASK03",
+ "arm": "terminal-read re-solve on the child's own token distribution",
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13",
+ "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave28/cells/ARCH.V19X13/cell-receipt.json",
+ "source_tensors_sha256": "e296d0681a5f7927503fda5d6289efb3ec5b123f61ea81e20ef86a084f9dc93c",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave29/children/MX29-MASK03",
+ "child_tensors_sha256": "a1ded37a6eabf8305f9c88297c4ba24cc4a06c57702252279085b44b93a8ec5a",
+ "child_parameters": 170443520,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.7420486626194358,
+ "excised": [
+  13
+ ],
+ "residual_basis": null,
+ "terminal_gain_mask": {
+  "mask_file": "/mnt/ai_data/neural-forge-matrix/wave29/prereads/termgain-mask-V19X13.json",
+  "mask_sha256": "de9f327fb2cabb9433f97eefb627d822f51ed253b95a25f4e5cf0ada2e3e438c",
+  "coordinates_masked": 100,
+  "coordinates": [
+   40,
+   42,
+   57,
+   62,
+   75,
+   106,
+   108,
+   111,
+   121,
+   125,
+   140,
+   144,
+   149,
+   156,
+   171,
+   177,
+   195,
+   212,
+   224,
+   233,
+   236,
+   239,
+   242,
+   247,
+   256,
+   286,
+   287,
+   293,
+   306,
+   314,
+   323,
+   348,
+   353,
+   365,
+   376,
+   379,
+   392,
+   423,
+   430,
+   437,
+   440,
+   442,
+   453,
+   463,
+   476,
+   491,
+   492,
+   495,
+   509,
+   510,
+   517,
+   528,
+   544,
+   569,
+   571,
+   572,
+   581,
+   603,
+   606,
+   610,
+   611,
+   616,
+   644,
+   645,
+   647,
+   664,
+   666,
+   673,
+   686,
+   698,
+   703,
+   716,
+   736,
+   745,
+   751,
+   815,
+   831,
+   834,
+   839,
+   846,
+   849,
+   853,
+   860,
+   878,
+   880,
+   884,
+   890,
+   895,
+   896,
+   912,
+   916,
+   927,
+   930,
+   945,
+   972,
+   977,
+   978,
+   987,
+   994,
+   1005
+  ],
+  "case_the_mask_defends": "coding-deduplicate",
+  "masked_update_energy_fraction": 0.516288,
+  "update_scale_before_mask": 0.213574,
+  "update_scale_after_mask": 0.14854
+ },
+ "reader_metric_note": "The head's metric is C_head = embed^T embed, so this solve already minimises the LOGIT-space residual against W_head times the parent's hidden state -- not a hidden-state MSE.  ADDENDUM 16.6's third adopted finding (LFQ, ICML 2026) prescribes exactly this form, and it has been the form since wave 24; the arm is recorded as already-run rather than built a second time.",
+ "axes": [
+  {
+   "axis": "num_hidden_layers",
+   "kind": "block",
+   "sites": [
+    13
+   ],
+   "config_fields": [
+    "num_hidden_layers",
+    "layer_types"
+   ],
+   "selection": "F-EXCISE: whole blocks deleted",
+   "solve": "absorbed by every downstream conditioned solve",
+   "evidence": "conditioned capture",
+   "parameters_removed": null,
+   "heldout": {
+    "note": "a deleted block has no local write to score"
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 19456 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 47185920,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.1736 on the frozen review prompts, with tokens-per-byte beside it"
+  },
+  {
+   "axis": "rms_norm_gain",
+   "kind": "terminal-read",
+   "sites": [
+    "model.embedding_norm"
+   ],
+   "config_fields": [],
+   "selection": "no selection: the diagonals that already exist are overwritten in place, so the parameter count, every tensor shape and config.json are unchanged",
+   "solve": "prior-anchored ridge on the diagonal, closed form.  min_d ||Z diag(d) E^T - N diag(g) E^T||_F^2 + lambda ||d - g||^2 with Z the CHILD's RMS-normalised terminal residual on its OWN segmentation, N the PARENT's on the position-aligned injection of that same segmentation, E the child's tied table and g the parent's gain (also the prior).  Normal equations [(E^T E) o (Z^T Z)] d = [(E^T E) o (Z^T N)] g, one 1024x1024 SPD solve, no K-column target ever formed.  lambda on the internal fit split (wave-18 law), THE LAW a veto on update scale.  Identity gate: at Z = N the solve returns the prior exactly, asserted synthetically every run",
+   "evidence": "the campaign's 24 captured batches, RE-TOKENIZED into the child's own vocabulary; the parent is run on the injection of that same segmentation, so the two streams are position-aligned over identical text.  No new corpus, no new prompt",
+   "parameters_removed": 0,
+   "parameters_overwritten": 1024,
+   "heldout": {
+    "final_gain_relative_logit_sse": {
+     "prior": 0.301728174252794,
+     "solved": 0.21654890206558608
+    },
+    "block_gains": []
+   }
+  }
+ ],
+ "pair_kkt_finding": "S4 asks for one convex quadratic over BOTH folds' free tensors.  On this pair there are none: mx29_vocab.py's base arm is a gather and MX16-X13A's build receipt carries keep_ff null, so the excision took the per-site loop's `continue` branch and re-solved nothing either.  The free set had to be CREATED, and the only set that is already counted, exportable in a stock config and coupled to both folds is the RMSNorm diagonals -- the excision decides the residual that arrives at the head, the coreset decides the table it is read through, and one system carries both.",
+ "final_gain": {
+  "lambda_relative": 0.3,
+  "lambda_rule": "FORCED by --lambda-relative 0.3 (atlas rung, OFF the fixed selection ladder)",
+  "update_scale": 0.21357418182221777,
+  "identity_gate_max_abs_error": 4.289901767151605e-13,
+  "prior_relative_sse_fit": 0.32170580054224174,
+  "solved_relative_sse_fit": 0.24278222915763376,
+  "prior_relative_sse_heldout": 0.301728174252794,
+  "solved_relative_sse_heldout": 0.21654890206558608,
+  "rows_fit": 3145,
+  "rows_check": 1055,
+  "rows_heldout": 1036,
+  "ladder": [
+   {
+    "lambda_relative": 1e-06,
+    "off_ladder": false,
+    "update_scale": 0.3183295066772609,
+    "check_relative_sse": 0.24088903747743154,
+    "heldout_relative_sse": 0.2110413654481145
+   },
+   {
+    "lambda_relative": 1e-05,
+    "off_ladder": false,
+    "update_scale": 0.3183239752752947,
+    "check_relative_sse": 0.24088890245636396,
+    "heldout_relative_sse": 0.2110413468281712
+   },
+   {
+    "lambda_relative": 0.0001,
+    "off_ladder": false,
+    "update_scale": 0.3182686764717678,
+    "check_relative_sse": 0.24088755662769412,
+    "heldout_relative_sse": 0.2110411622376738
+   },
+   {
+    "lambda_relative": 0.001,
+    "off_ladder": false,
+    "update_scale": 0.3177172051074016,
+    "check_relative_sse": 0.24087453334784692,
+    "heldout_relative_sse": 0.21103947646292567
+   },
+   {
+    "lambda_relative": 0.01,
+    "off_ladder": false,
+    "update_scale": 0.3123493847353126,
+    "check_relative_sse": 0.24078480400904553,
+    "heldout_relative_sse": 0.21103789940296028
+   },
+   {
+    "lambda_relative": 0.1,
+    "off_ladder": false,
+    "update_scale": 0.26982018293321475,
+    "check_relative_sse": 0.2421372695153872,
+    "heldout_relative_sse": 0.21203702520598727
+   },
+   {
+    "lambda_relative": 0.3,
+    "off_ladder": true,
+    "update_scale": 0.21357418182221777,
+    "check_relative_sse": 0.24845085321675767,
+    "heldout_relative_sse": 0.21654890206558608
+   },
+   {
+    "lambda_relative": 1.0,
+    "off_ladder": false,
+    "update_scale": 0.13342420810149702,
+    "check_relative_sse": 0.2648501022768434,
+    "heldout_relative_sse": 0.23130910807676716
+   },
+   {
+    "lambda_relative": 10.0,
+    "off_ladder": false,
+    "update_scale": 0.03009440641056062,
+    "check_relative_sse": 0.29929318077415623,
+    "heldout_relative_sse": 0.27379450911422104
+   },
+   {
+    "lambda_relative": 100.0,
+    "off_ladder": false,
+    "update_scale": 0.005792121923717729,
+    "check_relative_sse": 0.3132225650410164,
+    "heldout_relative_sse": 0.29312324271323514
+   }
+  ]
+ },
+ "block_gains": [],
+ "retokenized_evidence": {
+  "schema": "neural-forge-matrix-wave29-retokenized-evidence-v1",
+  "child_model": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13",
+  "parent_model": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+  "trace": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "identity_gate": {
+   "assertion": "torch.equal(child_embed, parent_embed[injection])",
+   "passed": true,
+   "child_rows": 19456,
+   "hidden": 1024
+  },
+  "batches": 24,
+  "utf8_bytes": 17045,
+  "parent_stream_positions": 6335,
+  "child_stream_positions": 4181,
+  "sequence_length_ratio": 0.6599842146803473,
+  "fit_positions": 3145,
+  "heldout_positions": 1036,
+  "note": "the parent runs on `parent_ids` and the child on `child_ids`; the two are the SAME segmentation of the same text named in the two tables, so position n is the same prefix in both streams and a target taken from the parent at n is a target for the child at n"
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 3145,
+  "heldout_rows": 1036,
+  "internal_check_rows": 1055,
+  "parent_model_forward_calls": 48,
+  "split_authority": "matrix-campaign-capture-manifest",
+  "conditioned": true
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "Hadamard normal equations, one SPD Cholesky per diagonal"
+ },
+ "identity_gate": {
+  "kind": "algebraic",
+  "assertion": "at Z = N the prior-anchored solve returns the prior",
+  "max_abs_error": 4.289901767151605e-13,
+  "tolerance": 1e-08,
+  "passed": true
+ },
+ "elapsed_seconds": 36.95091034192592
+}

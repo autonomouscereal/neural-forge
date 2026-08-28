@@ -1,0 +1,269 @@
+# ARCH.KKTD  dossier 54aea9597340c28e
+# net_ratio 0.483001  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4816 chars, 4735 collapsed
+I'm happy to assist you with any follow-up question regarding the following request. Please provide any additional information or any additional response to the following request.
+
+1. Can you confirm your request and I'm ready to proceed?
+
+I'm ready to proceed. Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please provide any additional information or any additional response to the following request.
+
+1. Can you confirm your request and I'm ready to proceed?
+
+I'm ready to proceed. Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please provide any additional information or any additional response to the following request.
+
+Please confirm your request and I'm ready to proceed.
+
+Please provide any additional information or any additional response to the following request.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please provide any additional information or any additional response to the following request.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your request and I'm ready to proceed.
+
+Please confirm your
+
+---  2 instruction-three-actions [complete] 535 chars, 528 collapsed
+I can help you with the following actions:
+
+1. **Greet the phone**: You can take the following instructions for the phone number to be taken.
+
+2. **Give the phone**: You can take the following instructions for the phone number to be taken.
+
+3. **Give the phone**: You can take the following instructions for the phone number to be taken.
+
+4. **Give the phone**: You can take the following instructions for the phone number to be taken.
+
+5. **Give the phone**: You can take the following instructions for the phone number to be taken.
+
+
+
+---  3 explanation-seasons [complete] 111 chars, 111 collapsed  <350 COLLAPSED
+The Earth is a season in the year, and you can't use any product. Please provide the information you can share.
+
+---  4 arithmetic-multi-step [complete] 214 chars, 193 collapsed  <350 COLLAPSED
+The workshop is a list of 17 kits per each each each each kit. The instructions are taken to each each kit. Please, I'll provide a list of the complete and the steps you can follow.
+
+Please let me know the details.
+
+---  5 logic-ordering [complete] 58 chars, 58 collapsed  <350 COLLAPSED
+The answer is the following instructions: please continue.
+
+---  6 context-retrieval [complete] 185 chars, 184 collapsed  <350 COLLAPSED
+The question about the following request is: "I want to bring my dog and borrow a shovel. What is the latest checkout time?"
+
+Please provide any information about the following request.
+
+---  7 summarization-priorities [complete] 160 chars, 159 collapsed  <350 COLLAPSED
+The team has to contact the following email address: https://www.com.
+
+Please be aware that the email will be sent to you. Please, I'll be ready to contact you.
+
+---  8 comparison-ram-rom [complete] 432 chars, 425 collapsed
+The following instructions are taken by the following instructions:
+
+1. The first, you can use the following instructions to the same other in the same other.
+
+2. The first, you can use the same instructions in the same other.
+
+3. The first, you can use the same instructions in the same other.
+
+4. The first, you can use the same instructions in the same other.
+
+5. The first, you can use the same instructions in the same other.
+
+
+
+---  9 coding-deduplicate [complete] 201 chars, 201 collapsed  <350 COLLAPSED
+The unique_in_order is a Python function named unique_in_order that works with the items. The time is 15 minutes, and the document is provided in the following instructions. Please provide the details.
+
+--- 10 debugging-off-by-one [complete] 165 chars, 163 collapsed  <350 COLLAPSED
+The bug is the following instructions: "Please provide me with the last three elements. Please, I'll provide you to share the information and confirm the details."
+
+
+
+--- 11 writing-concise-email [complete] 114 chars, 114 collapsed  <350 COLLAPSED
+The delivery confirmation is sent to you via your phone number. Please, we'll receive the package by the delivery.
+
+--- 12 planning-dependencies [complete] 452 chars, 446 collapsed
+The website is a new one, and you can use it here. Please, I'm happy to help you with the following instructions:
+
+1. **Please provide any information about the website.**
+
+2. **Please share the information you can help with.**
+
+3. **Please provide any information about the website.**
+
+4. **Please share the information you can help with.**
+
+5. **Please provide any information about the website.**
+
+Acknow if you have any questions about the website.
+
+--- 13 uncertainty-insufficient-data [complete] 112 chars, 112 collapsed  <350 COLLAPSED
+I have not been able to confirm the information before the request. Please, I can help you retrieve the details.
+
+--- 14 safety-household-chemical [complete] 68 chars, 68 collapsed  <350 COLLAPSED
+I am not aware that the room is already in place. Could you help me?
+
+--- 15 creative-continuity [complete] 165 chars, 164 collapsed  <350 COLLAPSED
+The short scene in the lighthouse is a question about the following item: "The fog is an issue in the lighthouse."
+
+The tone is "signed" that the user is asking for.
+
+--- 16 multi-turn-correction [complete] 434 chars, 428 collapsed
+I'm happy to help you with your request. Please provide any information about the following items:
+
+1. What are you looking up?
+   - I can help you with the following request for the following items.
+
+Please know the following instructions:
+- You have a list of items that you need to know to complete the list.
+- I can help you with the list. Please provide any information about the list.
+
+Please confirm the following instructions.
+
+# cap-hits 1/16

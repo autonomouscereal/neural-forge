@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T03:33:33Z",
+ "label": "B75",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.B75",
+ "cell_instance_id": "mx29-b75-0001",
+ "receipt_sha256": "b2976ff90f400d3bfc6f14e2c983e3bab4b36cd38831f95ad10d5e643631da98",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-27ae37de/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-27ae37de/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave29/children/MX29-B75",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "Sounds like a great moment to express your feelings! Here's a question that might help clarify your experience:\n\n**\"What did you feel most positive about moving away? Was it the sense of freedom, the new environment, or something else?\"**\n\nThis question allows you to focus on specific aspects of your experience (like feeling more connected, feeling less stress, or feeling more comfortable) while still asking for a general insight into what made moving so positive. It also helps you understand whether your feelings were positive, negative, or mixed, which can inform future decisions.\n\nLet me know if you'd like to explore other questions too!",
+   "response_sha256": "53f44407b436987f59d108588f3a9fda32dd50a1a5cdacff5c54e0aa4e1f1be2",
+   "generated_tokens": 129,
+   "termination": "complete",
+   "wall_time_seconds": 7.828
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I don't have personal experiences or personal preferences, so I can't read a draft. However, I can help you brainize it or brainfresh it if you'd like!",
+   "response_sha256": "6d3d8272229fa60c4586147fa24e93bee89c78a98c056c6b065d79171afbc32b",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 1.749
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "Scheduling a regular maintenance routine can help keep houseplant care consistent.",
+   "response_sha256": "eb71dfae73c5d2d1882d2efe4804d3478cfa83118cac4537036673d5dd52ab2e",
+   "generated_tokens": 15,
+   "termination": "complete",
+   "wall_time_seconds": 0.601
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "1. **Number**  \n2. ** Author**  \n3. ** Title**  \n4. ** Author Name**  \n5. ** ISBN**  \n\nThese are the five key details required to track a library checkout record.",
+   "response_sha256": "72a516559d1bd0d532d7eb9437b172927099bba419bb731fa5d5113089380815",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 1.748
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Sweetie, let me explain to you like you're young! Bodies are like tiny, super cool super-weary super-weeds that can grow very tall and very small. When they grow too large, they can become too big and spread out too much, like they're trying to spread too much soil.\n\nBodies like that can make a super-weary super-weeds (like boulders) by growing too much and becoming too tall. But if they're not too tall, they can still spread out and become small and small, like tiny super-weeds that are too small to be super-weary super-weeds.\n\nSo, when you do a super-weary super-weeds (like boulders) by growing too tall, it's like they're trying to grow too much and become too big and too small. But if they're not too tall, they can still spread out and become small and small, like super-weeds that are too small to be super-weary super-weeds.\n\nSo, the ovens do what they do to boulders (like boulders) by heating them up, making them super-weary super-weeds (like boulders) by growing too tall and too small. That's how boulders get super-weary super-weeds!",
+   "response_sha256": "9c6c028f63cee9e5dada016bd2f8fa4562ba71b85ea680260381ab78e571bc50",
+   "generated_tokens": 285,
+   "termination": "complete",
+   "wall_time_seconds": 18.371
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "Your friend's argument is based on a common myth about Earth's Earth's orbit and Moon's position. However, this is a false and false claim. Earth's Earth is indeed orbit around the Moon, and its Moon is not over.\n\nThe truth is that Earth's Earth is not a fixed, fixed point around the Moon. Earth's Earth is a dynamic planet, constantly moving and changing its position relative to the Moon. This movement occurs due to Earth's Earth's orbit around its Moon, which is influenced by Earth's Earth's orbit around its Moon, as well as Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's",
+   "response_sha256": "b6a748d229d290879c76fd3ddf40933e8b1dbcae1b78c2c52775e14a2fee282e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 55.467
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "First, calculate the total fuel consumption:\n- The van covers 9 km per liters.\n- It takes 54 liters to cover 9 km.\n- Therefore, the total fuel consumption is 9 km/liters \u00d7 54 liters = 54 liters.\n\nNext, determine how many full load(s) are used:\n- The van can carry 54 liters.\n- The journey is 1,700 km.\n- Number of full load(s) used = 1,700 km \u00f7 54 liters = 26.\n\nNow, calculate the distance covered by one full load:\n- Each full load covers 9 km.\n- Number of full load(s) used = 26.\n\nThe distance covered by one full load is 9 km.\n\nThe distance left after full load usage is:\n- Remaining distance = 1,700 km - 9 km = 1,\u5316\u77f3\n\nSo, one full load takes it 26 full, and there are 1,700 km left.\n\n\\boxed{26}",
+   "response_sha256": "764b2429bea7a49a799959c2de5908a0117317c757b8382a1fa3d0b4550e652f",
+   "generated_tokens": 219,
+   "termination": "complete",
+   "wall_time_seconds": 9.375
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "First, let's calculate the price after the 15% discount:\n\nDiscount amount = 15% of 240 dollars = 0.15 \u00d7 240 = 24 dollars\n\nprice after discount = 240 - 24 = arser\n\nNext, let's calculate the tax:\n\ntax amount = 8% of 240 dollars = 0.8 \u00d7 240 = 192 dollars\n\nprice after tax = arser + tax amount = 240 + 192 = 52 dollars\n\nSo, the buyer pays 52 dollars.\n\nIf the tax had been added before the discount came off, the price would be:\n\nprice before tax = 52 - 24 = 28 dollars\n\nHowever, since the tax was added, the price would be 28 dollars.\n\nThe second answer is correct because adding tax to the price before discount does not change the price. The price remains 28 dollars.",
+   "response_sha256": "e3110a008faf5110e81ad1122cb7c0508d3b56d5134644c5a8f47dd839378943",
+   "generated_tokens": 190,
+   "termination": "complete",
+   "wall_time_seconds": 7.269
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "To determine which statement rules out the most seatings, we analyze each statement:\n\n1. **Ada sizes some seat left of Bo**: This implies there is at least one seat left of Bo.\n\n2. ** Cy sizes in the right seat immediately right of Bo**: This implies there is at least one seat right of Cy immediately right of Bo.\n\n3. **Dee has one end seat**: This implies there is at least one end seat.\n\n4. **Gives every seating that fires all three statements**: This implies all three statements are true.\n\nNow, let's evaluate which statement rules out the most seatings:\n\n- **Ada sizes some seat left of Bo**: This does not rule out any seatings because there is at least one left seat.\n- ** Cy sizes in the right seat immediately right of Bo**: This does not rule out any seatings because there is at least one right seat.\n- **Dee has one end seat**: This does not rule out any seatings because there is at least one end seat.\n- **Gives every seating that fires all three statements**: This implies all three statements are true, which means **all three** statements are true.\n\nSince all three statements are true, **all three** statements rule out the most seatings.\n\n\\boxed{\\text{all three}}",
+   "response_sha256": "9a3dbbec231c29c1080c20231ae113bd7e56ad52a5a6ae976dd7f67cb1de794a",
+   "generated_tokens": 291,
+   "termination": "complete",
+   "wall_time_seconds": 9.114
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The physical property leaning on is **efficiency**. \n\n**Explanation:**  \nEach switch can only be operated once, so there is no multiple operation. The procedure must ensure that each switch is used only once, which inherently requires efficient resource allocation (efficiency).",
+   "response_sha256": "0c07b182e4367032553bd1a34ecaa55ed0d1533dea2be6b7d0100de725e0695a",
+   "generated_tokens": 59,
+   "termination": "complete",
+   "wall_time_seconds": 1.781
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "You need to be present at reception for at least 30 minutes before the blood draw begins. There is no specific time required, but it is important to ensure you are present for at least 30 minutes before the blood draw starts.\n\nAt reception, you should check if there is a validation sticker required for a blood draw. If not, you may need to contact the pharmacy for information about the necessary documentation.\n\nOnce you are present at reception, you can start your blood draw at the designated time.",
+   "response_sha256": "5123cc4fd3a790c882adae5ddb867a9fdc05c0f8ae2c0b58e974589e2f713557",
+   "generated_tokens": 106,
+   "termination": "complete",
+   "wall_time_seconds": 3.114
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, you can return the lamp. Here's how to do it:\n\n1. **Check the receipt**: Ensure you have the receipt for the lamp. If you don't, contact the store immediately to confirm.\n\n2. **Purchase from the store**: If you have the receipt, you can complete the return process at the store.\n\n3. ** return the lamp**: Once you're at the store, you can return the lamp.\n\n4. ** Receiving the lamp**: The store will process your return and may not accept it without a receipt.\n\n5. ** Reflect on the return**: If you're not able to return the lamp, consider contacting the store for further assistance.\n\nRemember, return policies can vary depending on the store and product. It's best to check with the store directly for specific details.",
+   "response_sha256": "f83d07b59ca577968f9355ddb6b9e07811b2e5c94ac48b55771fe2d4423369db",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 5.326
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "**Brief Summary:**  \n- **Who:** Contractors and night-shift staff  \n- **What:** Entire dock will move to same reader model at main entrance  \n- **When:** Second week of November  \n- **Why:** Old badges stop working Monday  \n\n**Bolt:** *Brief*  \n\n**Explicit:** *Brief*",
+   "response_sha256": "3e72efcaac12b26bfad05987ac19fb7e77fff64e762b4bf05df0397fd0c1dd1f",
+   "generated_tokens": 76,
+   "termination": "complete",
+   "wall_time_seconds": 2.555
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "The inspected area has been re-arranged from Thursday to Tuesday, and the third-party auditor has now been informed.",
+   "response_sha256": "b0484c9867cd55752535dc5e6ca1fe684d64e7372116a74496f4ca747a8c9dcb",
+   "generated_tokens": 27,
+   "termination": "complete",
+   "wall_time_seconds": 1.154
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "**Road atlas vs. Live traffic report: Key differences**\n\n1. ** Purpose**  \n   - **Road atlas**: Providing a detailed map of roads, including traffic flow, road conditions, and safety information (e.g., traffic density, road closures, and emergency services).  \n   - ** Live traffic report**: Real-time data (sources like traffic flow, vehicle numbers, and safety alerts) for immediate decision making.  \n\n2. ** Data Collection**  \n   - **Road atlas**: Relies on historical data, satellite maps, and user input (e.g., traffic flow from multiple sources).  \n   - ** Live report**: A continuous stream of data from sources like sensor networks, vehicle traffic, and weather, often updated in real time.  \n\n3. ** Accuracy**  \n   - **Road atlas**: May have limitations due to static data (e.g., no updates for new roads or events).  \n   - ** Live report**: Provided by multiple sources, reducing errors from incomplete data or delays.  \n\n4. ** Real-time vs. historical**  \n   - **Road atlas**: Offering historical context (e.g., past traffic patterns) but not real-time updates.  \n   - ** Live report**: Providing current conditions (e.g., traffic volume, safety incidents) for immediate action.  \n\n5. ** User Access**  \n   - **Road atlas**: Accessible via a dedicated app, web, or digital interface (e.g., Google Wayfare, Open Road Map).  \n   - ** Live report**: Accessible via a dedicated app, web, or mobile device (e.g., Google Google Wayfare, Wayfare.com).  \n\n6. ** Intermediate vs. Direct**  \n   - **Road atlas**: More complex to interpret (requires understanding of geospaces, navigation, and safety protocols).  \n   - ** Live report**: Direct and straight-to-application, often with clear visualizations (e.g., real-time traffic flow, safety zones).  \n\n**Key Takeaways**  \n- **Road atlas**: Use for long-term planning (e.g., planning a route) and understanding infrastructure.  \n- ** Live report**: Use for immediate decision making (e.g., adjusting traffic flow, alerting drivers).  \n\n**Exemplifying differences**  \n- **Road atlas**: *\"This map shows the total traffic volume for the next 24 hours, but it doesn\u2019t update when new roads are built.\"*  \n- ** Live report**: *\"The real-time data shows a sudden surge in traffic due to a road closure, and I\u2019ve already alerting drivers to avoid it.\"*  \n\nBy contrast, **Road atlas** provides a foundational understanding of infrastructure, while ** Live report** offers dynamic, actionable information for current situations.",
+   "response_sha256": "68cb3e55ece418d49a94530c12c49a045b80f7ec54dde6207970ead40f545099",
+   "generated_tokens": 612,
+   "termination": "complete",
+   "wall_time_seconds": 31.432
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "**Case: Overrecommended Use of Ant antibiotic**\n\n**Exterior:**  \nLay out a **virus-based vaccine** (e.g., vaccines against viral infections) and **antibacterial antimicrobial agents** (e.g., antimicrobial drugs). These are both designed to **direct immune responses** against bacterial infections.\n\n**Function:**  \n- **Virus-based vaccine:** Generates immune responses against viral proteins (e.g., viral surface proteins), which can neutralize viruses and prevent infection.  \n- **Antimicrobial agents:** Direct antimicrobial activity against bacterial infections, reducing infection rates and preventing disease.\n\n**Result:**  \nBy **overrecommended use**, both vaccines and antimicrobial agents can **exploiting their unique mechanisms** to **exploiting each other**, leading to **overuse** and **diversion** of resources. This can result in **overproduction**, **efficiency loss**, and **health risks** (e.g., increased infection rates, antimicrobial resistance).\n\n**Key Point:**  \nThe **virus-based vaccine** (e.g., vaccines against viral diseases) and ** antimicrobial agents** (e.g., antimicrobial drugs) are **functionally complementary**, but overuse can disrupt their intended roles.",
+   "response_sha256": "eaa14e93574a64d2f957a56382b0a6ff6eb247105407cb5bfed77585c4b66cb6",
+   "generated_tokens": 256,
+   "termination": "complete",
+   "wall_time_seconds": 8.164
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that meets your requirements:\n\n```python\ndef group_by_initial(words):\n    group = { word[0] for word in words}\n    return group\n\n# One call\nresult = group_by_initial(\"abc\")\nprint result)  # output: { 'a', 'b', 'c' }\n```\n\nThis function uses Python's built-in `set` to group words based on their first letters, then returns a ` dict` where each key is a lowercase letter from the group and values are the words that come next.",
+   "response_sha256": "600f9de43e958a5691d4052f4c7cb2233f68b7380b995238bfc959c40067ed03",
+   "generated_tokens": 119,
+   "termination": "complete",
+   "wall_time_seconds": 7.347
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here is a Python function that merging nonoverlapping range pairs in ascending order:\n\n```python\ndef Merge_ranges(pairs):\n    result = list()\n    for start, end in pairs:\n        if start < end:\n            result.append((start, end))\n    return result\n\n# Test case\npairs = [(1, 3), (2, 4), (5, 6), (7, 8), (10, 11), (12, 13), (14, 15), (20, 30), (30, 40), (50, 60), (100, 200), (300, 400), (600, 700)]\nprint( Merge_ranges(pairs))  # output: [(1, 3), (2, 4), (5, 6), (7, 8), (10, 11), (12, 13), (14, 15), (20, 30), (30, 40), (50, 60), (100, 200), (300, 400), (600, 700)]\n```\n\nTime complexity: O(n), where n is the number of pairs, as we iterating through the list once.\n\nThis function uses a list to store the resulting range pairs, which has a time complexity of O(n).",
+   "response_sha256": "64b351b6a4fffbe96861b49f99880bde4fc6a2e51767cc4897fd184d20cde410",
+   "generated_tokens": 289,
+   "termination": "complete",
+   "wall_time_seconds": 16.57
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "The issue lies in the `basket` parameter being set to `[]` when calling `add_item` without providing a `basket` object. This means `basket` is not initialized when `add_item` is called, leading to `None` being added to `basket` instead of `[]`.\n\n** corrected version:**\n```python\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n```\n\n### Expl Expl Expl Expl:\n- `basket` is now `None` when `add_item` is called without `basket` provided.\n- This ensures `basket` is always `[]` when `add_item` is called, preventing `None` from being added.\n\n**Alternative (if `basket` should be defined):**\n```python\ndef add_item(item, basket):\n    basket.append(item)\n    return basket\n```\n\nThis version ensures `basket` is always `[]` when `add_item` is called, regardless of `basket` being provided.",
+   "response_sha256": "2fbb9e11d8ff5824fb24dca45d55bd61976d064a88569e212911e232369d0eb3",
+   "generated_tokens": 236,
+   "termination": "complete",
+   "wall_time_seconds": 13.011
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The issue lies in the `total` variable being calculated for each `row` in `rows`. Since `total` is not set before `total += row['units']` (which is `0`), it will never be `0` even if `row` has `units` values.\n\nHere's the corrected version:\n\n```python\ndef total_units(rows):\n    total = 0\n    for row in rows:\n        total += row['units']  # Correct: set total before adding\n    return total\n```\n\n### Expl Expl Explained:\n- `total` is initialized to `0`.\n- For each `row` in `rows`:\n  - `total` is `0` (since `total` is not `0`).\n  - `total += row['units']` ensures `total` is `0` even if `row` has `units` values.\n\nThis ensures `total` always returns `0` regardless of `row`'s `units` values.",
+   "response_sha256": "e4335d825b3f7ce2eecf83c02355b094bc4b14789265213a1980f1f2d25991fc",
+   "generated_tokens": 226,
+   "termination": "complete",
+   "wall_time_seconds": 11.433
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "I will not attend the meeting due to my absence. I will not participate in the panel discussion.",
+   "response_sha256": "45d09b3de6faa7137860deafd6ce34cdb9ee07ceb76dadb68a4689c8caf0ef76",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.936
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "** Engineer:** The system will be reconfigured to prioritize data processing and retrieving data from the backend. ** Customer:** The data will be re-architected to ensure smooth data flow and minimal delays.",
+   "response_sha256": "f61f6d06775cd7b200d00e8cfdd0bb7f28802dba68903966ba95cb48fd1988e9",
+   "generated_tokens": 45,
+   "termination": "complete",
+   "wall_time_seconds": 2.049
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are five step-by-step, non-dependencies for taking on one part-time bookkeeper, where each step depends only on the previous step:\n\n1. **Research and identify a book**  \n   *(depending on the book's title, author, and format.)*\n\n2. **Read the book thoroughly**  \n   *(depending on the book's content, read it carefully.)*\n\n3. **Identify key topics or characters**  \n   *(depending on the book's focus.)*\n\n4. ** Determine the most relevant and relevant information**  \n   *(depending on the book's content.)*\n\n5. ** Research and understand the book's context**  \n   *(depending on the book's historical, cultural, or literary significance.)*\n\n**Cheerful: The most cost-free step**  \n*(This step doesn\u2019t depend on any prior steps and is entirely self-constructing.)*  \n\n*(This step is ideal because it doesn\u2019t require any prior knowledge or context, making it the most efficient and non-dependencies.)*",
+   "response_sha256": "e119b8f2b6643bc96b91c76a396e84e70ee244f84801f19b2585a20c82fcbe6b",
+   "generated_tokens": 230,
+   "termination": "complete",
+   "wall_time_seconds": 13.235
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are six steps to ensure your database index is ready by the 25th, with different approaches depending on whether the freeze is extended by a week:\n\n1. ** Review and Plan**  \n   - **Action**: Review your database's current index structure and identify critical queries that depend on it.  \n   - **Immediately**: Prioritize index creation for high-implying queries (e.g., frequently accessed data).  \n   - **Immediately**: Ensure all existing queries are also updated to reflect the new index.  \n\n2. ** Test Indexes**  \n   - **Action**: Run a **test query** (e.g., querying data by a specific column) to verify the new index works.  \n   - **Immediately**: If successful, **test with a new query** to confirm performance improvements.  \n   - **Immediately**: If tests fail, **analize the data** to identify botted queries or unindexed data that may need reindexing.  \n\n3. ** Reflective Revision**  \n   - **Action**: Review your database's **architectural changes** (e.g., migration from older versions) to ensure the new index aligning with current data patterns.  \n   - **Immediately**: If the migration is incomplete, **prioritize reindexing** to align with updated data structures.  \n   - **Immediately**: **Update documentation** to inform users about the new index and its benefits.  \n\n4. ** Deferred Revision**  \n   - **Action**: **Deferred reversion** (if applicable) to allow **weeks** for data updates, migration, and testing.  \n   - **Immediately**: ** Schedule a reversion** to ensure data remains accessible and ready for the next phase.  \n   - **Immediately**: **Test the reversion** to confirm data integrity and performance.  \n\n5. ** Continuous monitoring**  \n   - **Action**: Continuous monitoring (e.g., SQL tools, database health tools) to detect issues post-revision.  \n   - **Immediately**: **Identify and address issues** (e.g., data integrity, performance) promptly.  \n   - **Immediately**: **Update monitoring** to ensure ongoing visibility into database health.  \n\n6. ** Post-change evaluation**  \n   - **Action**: **Review performance** (e.g., query performance, data readability) to assess the impact of the reversion.  \n   - **Immediately**: ** Analize data readability** and **specific performance issues** to determine if reversion is necessary.  \n   - **Immediately**: ** adjust strategies** (e.g., reindexing, data cleaning) based on findings.  \n\n**Key Considerations**:  \n- ** Prioritize critical queries** first to ensure performance benefits are realized.  \n- **Test thoroughly** before reversion to prevent data loss.  \n- ** Document** all steps for future reference and compliance.  \n- ** Consider scalability**: Ensure the reversion aligning with future data growth.  \n\nBy following these steps, you can proactively address the freeze and ensure your database remains efficient and reliable.",
+   "response_sha256": "ce5ca5356521c2f26b9d4efbcba03c82470ae895fd85b15f1c90575e52a454b9",
+   "generated_tokens": 676,
+   "termination": "complete",
+   "wall_time_seconds": 17.146
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "To determine which hospital is better, you would need to compare the **post-operative death rates** of both hospital publishes. Here's how you can do it:\n\n1. ** Collect data**: Collect data on death rates (including mortality) for both hospital publishes.\n2. ** compare**: compare the death rates (higher than the other).\n3. ** determine**: identify which hospital has a higher death rate.\n\n**Key considerations**:\n- **Data quality**: Ensure both data sources are reliable and accurate.\n- ** Context**: Consider factors like patient age, health status, and hospital staffing levels.\n- ** Context**: Consider whether the data reflects real-time outcomes (e.g., hospital staffing, medical care) or historical data (e.g., past mortality rates).\n- ** Interpretation**: Ensure you understand that higher death rates do not necessarily mean better care; it depends on other factors like patient outcomes, treatment effectiveness, and patient safety.\n\n**What you would need to find out**:\n- **Data**: The post-operative death rates (including mortality).\n- ** Context**: Information about patient health, hospital staffing, and medical care.\n- ** Context**: Whether the data reflects real-time outcomes (e.g., hospital staffing) or historical data (e.g., past mortality rates).\n- ** Interpretation**: Determine if higher death rates are due to better care, better staffing, or other factors.\n\n**Key question**: What specific data (e.g., mortality rates, patient outcomes) would you need to analyze? This will help you make a clear, informed decision.",
+   "response_sha256": "7325f71180c9ee7bbed7ae92e38acd49c3aa6f88dd27d3e32c0899d9c133251d",
+   "generated_tokens": 339,
+   "termination": "complete",
+   "wall_time_seconds": 5.686
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The article's claim that a supplement causes tiredness is **confidence-based**, meaning it is based on **statistics** (e.g., a **posterior probability**) rather than **experimental data** (e.g., **experimental design**). \n\n### Key points to consider:\n1. **Confidence-based claims** (e.g., \"9 participants**) are **statistics**, not **experimental results**. They rely on **prior knowledge** (e.g., a **prior probability**) to infer the efficacy of a treatment.\n2. **Experimental design** (e.g., ** controlled trials**) would provide **direct evidence** (e.g., **robust statistical data**) to validate the efficacy of the supplement.\n3. Without **experimental data**, the claim remains **confidence-based**, even if the **prior probability** (e.g., 90%) is high.\n\n### What would change?\n- **Experimental data** would **directly** validate the **prior probability** (e.g., 90%) and **confidence** (e.g., 95%), making the claim more **confidence-based** than a statistical **posterior**.\n- Without experimental evidence, the **confidence** (e.g., 95%) would **not** be as reliable as a statistical **prior** (e.g., 90%).\n\n### Final answer:\nThe article should **not** shift its conclusion based on **experimental data** (e.g., a **prior probability**). Instead, it should **confidence-based** (e.g., 95%) if the **prior probability** is high.",
+   "response_sha256": "f1acb5d81f511d3245cdb70c6f67bddbf0fb9b1a3b3e2b4d044fb80090005063",
+   "generated_tokens": 362,
+   "termination": "complete",
+   "wall_time_seconds": 6.166
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The child's hand clared, handsharing a glove, and the strangely off-array glove clared, handsharing a handsharing.",
+   "response_sha256": "75dec1c4fcc8c82c91c3a85c80efaaca6bda755915fc8bdbc54e2fad4170ba6a",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.633
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "1. The market opened at first light, with a bright and clear atmosphere.  \n2. The first business in the area began to show, and customers began to come.  \n3. The market's first sign of activity, with new vendors and customers.  \n4. The first price for goods and services began to increase, as demand grew.  \n5. The market's first market, with a small number of businesses, started to attract more attention.  \n6. The first market's sales increased, and the surrounding area began to develop.",
+   "response_sha256": "7aefcd5785ecadf4d38c116d153fbcc585aff82ae540d954923d4ff7bf0dadb0",
+   "generated_tokens": 110,
+   "termination": "complete",
+   "wall_time_seconds": 1.872
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Given a total of 200 pounds and two nights of rain, here are three items in priority order based on their importance and impact on your trip:\n\n1. **Faulty equipment** (e.g., equipment, tools, or equipment that may cause issues): This is critical because it could disrupt your activities and potentially cause severe damage. Prioritizing this item ensures you have a reliable and functional equipment for your two-night hiker.\n\n2. **Weather-related equipment** (e.g., weatherproofing, weatherproofing, or weatherproofing equipment): This item is essential for maintaining your safety and comfort during the weather. It helps prevent damage to your equipment and ensures you can stay safe and comfortable throughout your trip.\n\n3. **Emergency supplies** (e.g., emergency supplies, medical equipment, and a basic emergency plan): While not as critical as the above two items, having emergency supplies is vital. It ensures you have a basic response to potential emergencies, such as injuries or lost equipment, which could be life-safety-related.\n\nThese three items are prioritized based on their impact on your safety, comfort, and ability to perform essential activities during your two-night hiker.",
+   "response_sha256": "d09ba71d8960d62efa28bc51e49aaab04b8770fa05f6423a8d28d339866a0e24",
+   "generated_tokens": 247,
+   "termination": "complete",
+   "wall_time_seconds": 4.414
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Understood. What has to be covered?",
+   "response_sha256": "f68d572a48d4db0bcf36665ad50711c363a3eb109bd77a6cc24a0b36b49ff875",
+   "generated_tokens": 9,
+   "termination": "complete",
+   "wall_time_seconds": 0.189
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 280.647
+}

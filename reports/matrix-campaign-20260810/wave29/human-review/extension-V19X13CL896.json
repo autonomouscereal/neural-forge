@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T02:32:26Z",
+ "label": "V19X13CL896",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.V19X13CL896",
+ "cell_instance_id": "mx28-v19x13cl896-0001",
+ "receipt_sha256": "14e9018ec388cd11c4820028c0247afe302528cd0f7fb0d950f5990408a21155",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-609a8e7d/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-609a8e7d/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13CL896",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "I've already been given you with the information about your \"wreck\" and \"training\" for me. It's really, but I've been a good person. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one. I've been a good one, but I've been a good one",
+   "response_sha256": "d903a407047664869e522c29f2f35e5e3b08eee18fd3bb47e654da1385ef664e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.582
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "A friend would help her with something at the same time. Respond the way a friend would.",
+   "response_sha256": "d66580d59791d5c049d28de9ae6c9885badb31dc2b27f7790f46bfb0358c3203",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.381
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "I am here with the two ways I've been given. Please, I'll keep houseplants alive while I'm not using 'water' in your re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re",
+   "response_sha256": "22d565d50078c32b10d95830dc4b502ef4d58659946ce61ff98ff5c3289751aa",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.18
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "1. Information: Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines.\n\n2. Information: Number them, write nothing before or after the numbered lines.\n\n3. Information: Name exactly five pieces of information a library checkout record has to hold. Number them, write, and ensure that each each each information, and each each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information, and each information",
+   "response_sha256": "3760d1fe74fc78d9025d7b058d93cf901bfd94d87bddc2daa69d462de875d2e0",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.196
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "The answer regarding the puff of the bidded, is what makes it for the oven to produce the bubbles in the first place, and if it isn't, it's what does produce the budders?",
+   "response_sha256": "706d2b1606b4f92895440d2f8b55f0edbed42dfe8d9f59f83367e6215e793112",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.857
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The Moon is over, and it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not just that it's not",
+   "response_sha256": "5f0bbd897a55ef358fc7b8a09140e00de4b57703b1a14ca490e1078c9b66028f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.887
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "The full load is 9,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000,000",
+   "response_sha256": "80d4ea70d09a24fd988fd27ba27604be6dbfd723c54e30cb6f195f6b024d5c1f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.076
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The buyer pays the 15% discount and then 8% tax. The first, the discount is 15% off. The second, the tax is added to the left. The second answer is just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just",
+   "response_sha256": "0e3a7224fb70c4c643dcace3f20a81bbbcece427615de8943f22a713ae12399e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.226
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "FULLS ARE Family SEEDS\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\nA SEED Facts\n",
+   "response_sha256": "3bc7500bf43bbb51dc82401453dd2761b721ae6b0e232b583f7813059439a34c",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.0
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "Thorality: The first, the second, and the third, all three lamps in a closed room. You can work the switch as long as you like, but you may open the room once and only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only",
+   "response_sha256": "3b336ac312af4be62fbc1b293350fd8f1dc25ccabcc8af1b613f04641fff623f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.992
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "The answer is that the time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from the reception. The time I need to be there is from from the reception. The time I need to be there is from from from from from from from from from from from from from from from from from from from from from from from",
+   "response_sha256": "3831d1f752b38b622b6ce3eb8f0128920a180a7ba40d7c85d21a00c4ed0de63e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.308
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "NOTE: Yes. I returned it within 14 days. I can return it immediately.",
+   "response_sha256": "0c88faaf798cd81b9b2b2dbd1f2c347803363cc4c0d3541c9345aca2d2cb284c",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.392
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "Facilities circulated a note this week after a long consultation with the two night shifts.",
+   "response_sha256": "8a00b77d45ae2db2a84fb397375a2deac4daaf315fe89958a1417bf2fa156566",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.408
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shutening, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet.",
+   "response_sha256": "393876f89ead8da7990340b71f19f9b111c7d74e04c8ae87a3c34293bb8795ba",
+   "generated_tokens": 95,
+   "termination": "complete",
+   "wall_time_seconds": 1.773
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "Here:\n\n1. **A**: **A**********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "f686fd69a0b698e79e3eb5ab49478220dd5781235de9087b0331149304ffd3df",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.666
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "1. **Labor**: Luminates the vaccine and an antibiotic for both.\n\n2. **Luminous**: Luminates the vaccine and an antibiotic for both.\n\n3. **Luminous**: Luminous for both.\n\n4. **Luminous**: Luminous for both.\n\n**Note**: The above instructions are not applicable to the same purpose.",
+   "response_sha256": "1e3135e03b120cbd49365e6acbc0c5a3a6be75f441de3014ed9e8f330f794443",
+   "generated_tokens": 86,
+   "termination": "complete",
+   "wall_time_seconds": 1.522
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "group_by_initial(words) returns a dictionary whose keys are lowercase first letters and values are the words beginning with that letter, each value keeping the order.",
+   "response_sha256": "b0125d34a91a88792b94428c2736ab37d837f3285bcf5efd0ea6e372551982dd",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.641
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n",
+   "response_sha256": "f1f3cbf5e7fc0bdec22017ccce1a7bf4c9f0d676e35d27c403186f2b36074330",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.926
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "def add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):\n\ndef add_item(item, basket):",
+   "response_sha256": "60a7a7996725b398708baa2e96cedf190f89ea236129b1f72ed4ead060d41223",
+   "generated_tokens": 120,
+   "termination": "complete",
+   "wall_time_seconds": 2.156
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The number is wrong for every input with more than one row. Say what is wrong and give a corrected version.",
+   "response_sha256": "5fe45c17a8999eea5605b4dfc764e5c55f8e763c485bd8643a88125aa00d39ff",
+   "generated_tokens": 24,
+   "termination": "complete",
+   "wall_time_seconds": 0.442
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "[1][]]]]]]]]]]]]]]]]]]]]]]]]]]))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+   "response_sha256": "6eb00094f503752d803c790c3b21cb6c5e543f4bfcafd562e3225ac38ee5a90f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.213
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "**Existing**\n\n**1. Existing**\n\n**2. Witness**\n\n**3. Witness**\n\n**4. Expected**\n\n**5. Not**\n\n**(1)**\n\n**(2)**\n\n**(3)**\n\n**(4)**\n\n**(5)**\n\n**(6)**\n\n**(7)**\n\n**(8)**\n\n**(9)**\n\n**(10)**\n\n**(11)**\n\n**(12)**\n\n**(13)**\n\n**(14)**\n\n**(15)**\n\n**(16)**\n\n**(17)**\n\n**(18)**\n\n**(19)**\n\n**(20)**\n\n**(21)**\n\n**(22)**\n\n**(3)**\n\n**(4)**\n\n**(5)**\n\n**(6)**\n\n**(7)**\n\n**(8)**\n\n**(9)**\n\n**(10)**\n\n**(5)**\n\n**(6)**\n\n**(7)**\n\n**(8)**\n\n**(5)**\n\n**(7)**\n\n**(6)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**(5)**\n\n**",
+   "response_sha256": "400cc1f602b69fd0d7b0521381fe65e6fb1b724922547bda4c9428d74339d473",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.566
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake.",
+   "response_sha256": "b9bebc6c3d5704096d1a415e300a88c4a2e065186941169c8b24aa29e173bce8",
+   "generated_tokens": 52,
+   "termination": "complete",
+   "wall_time_seconds": 0.925
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "**A database index change****\n\n**A**\n\n**B**\n\n**C**\n\n**D**\n\n**E**\n\n**F**\n\n**G**\n\n**H**\n\n**A**\n\n**P**\n\n**S**\n\n**T**\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n********\n\n********\n\n********\n\n********\n\n********\n\n********\n\n**********\n\n************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "09b988e02404a4f1278e9d0cb7a729db744559083f22027ce0082b9d7de3b18e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.517
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "Hospitaling is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is not a publicistion of information about the hospital's own. It is",
+   "response_sha256": "fa3c486d3c5295037927d41a5e3b9c31f5941eeaa703e137a39ade63b8658121",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.629
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**  \n**Solution:**",
+   "response_sha256": "22d7e9edec4e2f32928d4254c0ea5a32c12f5cf9d62fc75ae98c20f3f4e1ff2c",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.928
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "A child's deferred to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, including one line of spoked dialogue, and before any other, no otherwise explains anything.",
+   "response_sha256": "7b0978a94fb1da0daac3431d666829e32d99a543f5e6b412128e14454a071963",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 0.951
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "Here are six sentences about a market at first. Use no adjectives at all\u2014let the verbs and the nouns carry it. Keep it concrete.",
+   "response_sha256": "e3bfe0ff8f2fcf828bc322ebd5a4d10167f1685654685a1782c2bfc4a28b9723",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.69
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "1. ** Priority** (2) ** Prior** (3) ** Prior** (4) ** Prior** (5) ** Prior** (6) ** Prior** (7) ** Prior** (8) ** Prior** (9) ** Prior** (10)**************\n\n**(1)** ** Prior** (1)** ** Prior** (2)** ** Prior** (3)** ** Prior** (4)** ** Prior** (5)** ** Prior** (6)** ** Prior** (7)** ** Prior** (8)** ** Prior** (9)** ** Prior** (10)******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "6ccb410c3bc204b74f92b057cf347ef7c9e74ed4a70e570c42c1d4352f652228",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.809
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Understood. What has to be covered?",
+   "response_sha256": "f68d572a48d4db0bcf36665ad50711c363a3eb109bd77a6cc24a0b36b49ff875",
+   "generated_tokens": 9,
+   "termination": "complete",
+   "wall_time_seconds": 0.193
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 336.459
+}

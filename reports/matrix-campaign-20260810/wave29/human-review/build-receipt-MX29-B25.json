@@ -1,0 +1,69 @@
+{
+ "schema": "neural-forge-matrix-wave29-blend-build-receipt-v1",
+ "built_at": "2026-08-28T02:52:31Z",
+ "builder": "mx29_blend.py",
+ "tag": "B25",
+ "arm": "COMPLEMENT-MERGE sibling diagonal blend at identical storage: convex alpha=0.25",
+ "blend": {
+  "alpha": 0.25
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13",
+ "other_model": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X13G01",
+ "source_cell_receipt": "",
+ "other_cell_receipt": "",
+ "source_tensors_sha256": "e296d0681a5f7927503fda5d6289efb3ec5b123f61ea81e20ef86a084f9dc93c",
+ "other_tensors_sha256": "1896a320d5d9b777c7c011a9b7bf2e9ac570c16c2d87327e84f1948b7c33c761",
+ "differing_tensors_between_sources": [
+  "model.embedding_norm.weight"
+ ],
+ "coordinates_changed_from_source": 1017,
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave29/children/MX29-B25",
+ "child_tensors_sha256": "fff6c9887dff39bc576ce91b3d70fe8a309cbd02486e834926bca6653c423341",
+ "child_parameters": 170443520,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.7420486626194358,
+ "parameters_added": 0,
+ "excised": [
+  13
+ ],
+ "residual_basis": null,
+ "axes": [
+  {
+   "axis": "num_hidden_layers",
+   "kind": "block",
+   "sites": [
+    13
+   ],
+   "config_fields": [
+    "num_hidden_layers",
+    "layer_types"
+   ],
+   "selection": "F-EXCISE: whole blocks deleted",
+   "solve": "absorbed by every downstream conditioned solve",
+   "evidence": "conditioned capture",
+   "parameters_removed": null,
+   "heldout": {
+    "note": "a deleted block has no local write to score"
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the 19456 rows kept by: every added/special token and every one of the 256 ByteLevel alphabet tokens (mandatory -- byte_fallback is false and there is no unk, so those 256 are the only reason an arbitrary byte can still be encoded), the transitive merge-tree closure of everything kept, and then the ranking (-census count, parent token id) until the budget is exactly met.  The census sums two streams over the sealed corpus: the donor-mapped ids the captures ran on and this tokenizer's own canonical segmentation of the same text.  With only 4633 observed tokens admitted beyond the mandatory set, the tie-break -- parent id order, which for a BPE table is its merge order and therefore its training-corpus frequency order -- decides most of this table, and that is stated rather than implied",
+   "solve": "NONE.  The rows are gathered verbatim; the identity gate is torch.equal against the source table's own bytes, not a tolerance.  The merge list is restricted to the closure (a merge survives iff its product and both operands are kept) and the ids are densely remapped, including the TemplateProcessing special-token ids, which carry hard ids a remap that missed them would silently corrupt",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only; no activation, no capture, no forward pass",
+   "parameters_removed": 47185920,
+   "heldout": "not applicable: nothing is fitted.  What IS measured out of sample is the segmentation shift -- position agreement 1.0000 on the sealed corpus and 0.1736 on the frozen review prompts, with tokens-per-byte beside it"
+  }
+ ],
+ "note": "A convex combination of two sealed children's terminal diagonals.  No capture, no solve, no gradient, no added parameter: one CPU pass over 1,024 numbers, at byte-identical storage to both endpoints."
+}

@@ -1022,3 +1022,54 @@ ask which initialization distils fastest rather than guessing one.
 | the vocabulary builder | `reports/matrix-campaign-20260810/run/mx23/mx23_vocab.py` (wave 23; a row gather, a merge-tree closure and a tokenizer emit, and it solves nothing) |
 | the deployment protocol | `reports/matrix-campaign-20260810/run/mx23/deploy.py` (wave 23; it had only ever lived in a shell history) |
 | the width/basis builder | `reports/matrix-campaign-20260810/run/mx23/mx23_build.py` (waves 19–22 lineage; **ten** code lines of body differ from `mx21_build.py` — nine renamed at `5e17bb58`, one added at `70a2498d` — and the solver is byte-identical) |
+
+---
+
+## 8. Wave-29 update — 2026-08-28
+
+**This section supersedes the counts in §5 and §7 and nothing else.** The laws in
+§2, the corrections in §3 and the gating in §6 are unchanged except where named
+below. The report body still reads at 662 ledger rows because it was written
+there; the authoritative counts now live in an artifact rather than in prose.
+
+| | at wave 23 (report body) | at wave 29 |
+|---|---:|---:|
+| ledger rows | 662 | **822** |
+| reviewed whole-model children | — | **241** |
+| children holding ≥ 1 case | — | **189** |
+| benchmark rows | — | **146** |
+| parent benchmark rows, all matching the sealed reference | — | **16** |
+
+**The frontier ladder, and what wave 29 moved in it.** One rung: `ARCH.B75`
+takes ≥ 11/15 at **0.742049x** — tying the deepest eleven, and reaching it by a
+**convex blend of two sealed children's terminal diagonals with no solve of its
+own**. Every other rung is unchanged, which is the honest headline: three of the
+retention plan's four mechanism bets returned nulls, and the nulls are the
+wave's product.
+
+**The new authoritative artifact** is
+`reports/matrix-campaign-20260810/RESULTS_MATRIX_2026-08.md` — every reviewed
+whole-model child on two storage columns, with the sealed fifteen and ADDENDUM
+16.1's extension thirty side by side, the benchmark columns, and a mechanism
+column. It is generated from the sealed join; it is not written.
+
+**Three findings that change what §6 should be gated on.**
+
+1. **The parent-shaped chasm entries are arithmetically void.** Every wave-11–13
+   parent-shaped base — MXO2, MXO3, MXP2, MXQ5 — already carries `C01.T5.S4`, an
+   embedding fold owning the whole 67,108,864-parameter table. A vocabulary
+   coreset does not stack with it; it replaces it, and at 19,922,944 rows it is
+   *larger*. Any future plan that budgets a vocabulary gather onto a
+   parent-shaped body must read the base's per-component storage first.
+2. **Emission collapse at depth is not terminal-margin collapse.** The 0/15
+   child at 0.452734x retains 96% of the parent's generative margin. What the
+   two empty-string children lose, and no other child loses, is this parent's
+   single massive-activation dimension. The repair target moves accordingly.
+3. **The frozen-gate linear response is not usable at 0.48x.** Both GLOBAL-KKT
+   arms improved their own held-out objective and read 0/15, and the rung-0
+   discriminator measured why: the linearisation's error is 1.5–2.3 times the
+   size of the repair it predicted. A closed-form terminal objective evaluated
+   through frozen gates cannot be trusted at that depth — which is a narrower and
+   more useful bound than "closed-form objectives do not repair composition".
+
+Full argument and measurements: `NOTES-MX-AE.md`.

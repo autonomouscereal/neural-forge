@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T03:39:47Z",
+ "label": "MASK03",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.MASK03",
+ "cell_instance_id": "mx29-mask03-0001",
+ "receipt_sha256": "5e3de340ed5e1eb9e1a6fc3382e4a631b646094ff4ad72e69f3b698300a94ca3",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-27ae37de/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-27ae37de/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave29/children/MX29-MASK03",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "Sounds like a great way to express your feelings! Here's a question that might help:\n\n**\"What did you do next, and how did it impact your life?\"**\n\nThis question is open-ended and allows you to explore different aspects of your experience, such as emotional well being, personal growth, or personal relationships. It also gives you a sense of how you felt and what might have been done next.\n\nLet me know if you'd like to explore other questions too!",
+   "response_sha256": "e5cfa3afb6ba50a0d4bc08d3fe78f0312322bced56ddd17ae942e49c79cf3020",
+   "generated_tokens": 100,
+   "termination": "complete",
+   "wall_time_seconds": 2.213
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I don't have personal preferences, but I can help you brainen yourselves about what you're looking for!",
+   "response_sha256": "67aeeb8056fba4861ee2629bfb0fcf2c8cc5a4f2a8d337230e7722bd8fc9b0fd",
+   "generated_tokens": 23,
+   "termination": "complete",
+   "wall_time_seconds": 0.422
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "Suggesting ways to keep houseplant life active without specifics.",
+   "response_sha256": "70860290c50fdbaddc9905b3f28542b50cec3229ac8b27e26f602adad5c3f870",
+   "generated_tokens": 14,
+   "termination": "complete",
+   "wall_time_seconds": 0.265
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "1. **Number**  \n2. ** Author**  \n3. ** Title**  \n4. ** Author Name**  \n5. ** ISBN**  \n\nThese are the five key information points required for a library checkout record.",
+   "response_sha256": "55963eea0d746f9d545959d9f93b442a2687ecc843ba6adbb605e65e7b2e0ee6",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.848
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Sweetie, let me explain to you like you're young! Bouldy Bodies, the best bouldy boulders, make bouldy boulders! Bouldy boulders are like super small, super cool boulders that can make bouldy boulders!\n\nWhen bouldy boulders are made, they have a special secret: they have a secret secret called \"bodies\"! These bodies are like tiny, super small, super cool boulders that can make bouldy boulders!\n\nNow, when bouldy boulders are made, they don't just have bodies. They have a special \"bodies\" that help them become bouldy boulders. These bodies are like tiny, super strong, super cool boulders that can make bouldy boulders even more super cool and super strong!\n\nSo, bouldy boulders are made by bouldy boulders having bodies that help them become bouldy boulders! It's like a super cool, super super fun process!",
+   "response_sha256": "ac81dd3150b2d2f67dc7cefe8f03938575f1ac4103e06f34f4ef6178c1b57b2d",
+   "generated_tokens": 228,
+   "termination": "complete",
+   "wall_time_seconds": 4.069
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "Your friend's argument is based on a common myth about Earth's orbit and Moon's position. However, this is not true. Earth's orbit around the Moon is not just a side-off; it's a complex system influenced by several factors.\n\nThe Moon's position is not determined by a simple \"side-off\" but by its orbit around Earth, which is influenced by Earth's Earth's magnetic field, its orbit around its orbit around the solar system, and its orbit around its orbit around its planet, Earth. Additionally, Earth's Earth's Earth's orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around its orbit around its planet, Earth's orbit around its orbit around",
+   "response_sha256": "455e87ca0ee57674df449c26c828478473794433d0f5f1f42222d41e9689db02",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.616
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "First, calculate the total fuel consumption:\n- The van covers 9 km per liters.\n- It takes 54 liters to fully fueling 9 km.\n- Therefore, the total fuel consumption is 9 km/liters \u00d7 54 liters = 54 liters.\n\nNext, determine how many full load(s) are used:\n- The total distance is 1,700 km.\n- Each full load takes 54 liters.\n- Number of full load(s) = 1,700 km / 54 liters = 26.ayer\n\nNow, calculate the distance covered by one full load:\n- Each full load covers 9 km.\n- Number of full load(s) used = 26.ayer / 9 km/load = 2 full load(s) with 2% of the distance covered.\n\nThe distance covered by 2 full load(s) is 2 \u00d7 9 km = 18 km.\n\nThe distance left after full load(s) are covered is 1,700 km - 18 km = iliters.\n\nSince 1 liter = 0. Liter, convert iliters to km:\n- 1 liter = 0. Liter = 0. Liter \u00d7 0. Liter/km = 0 km.\n\nHowever, since 1 full load takes 54 liters, we need to calculate how many full load(s) are used:\n- Number of full load(s) = 1,700 km / 54 liters = 26.ayer\n\nNow, calculate the remaining distance:\n- Remaining distance = 0 km (since 26 full load(s) are used)\n\n** Final answer:**\n\n- One full load takes **26** full load(s).\n- Remaining distance after full load(s) are used = **0** km.\n\n\\boxed{26}",
+   "response_sha256": "0ea89a59ed7b77e50bdde5e1504f6a9c74a5e096ac9903c29d1ad713319c09ee",
+   "generated_tokens": 385,
+   "termination": "complete",
+   "wall_time_seconds": 6.613
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "Let's break down the problem step-by-step:\n\n1. **Marked price**: 240 dollars\n\n2. **Discount**: 15% off\n   \\[\n   \\text{Discount} = 240 \\, \\text{d dollars} \\times 0.15 = 24 \\, \\text{d dollars}\n   \\]\n\n3. ** Remaining price**:\n   \\[\n   \\text Remaining price} = 240 - 24 = arser\n   \\]\n\n4. ** Tax**: 8% tax on the remaining price:\n   \\[\n   \\text Tax} = arser \\times 0.08 = arser \\times 0.08 = 0.008 \\times arser = 0.008 \\, \\text{d dollars}\n   \\]\n\n5. ** total cost**:\n   \\[\n   \\text total cost} = arser + 0.008 = 240 + 0.008 = 0.008 \\, \\text{d dollars}\n   \\]\n\n**Result**: The buyer pays **0.008** dollars.\n\n**Key Point**: The tax is added **before** the discount, so the total cost is **0.008** dollars.\n\n\\boxed{0 \\text{ dollars}}",
+   "response_sha256": "7afdd126a0b10a07e9eb124ada0eb4c90e52540875853382a8f909363d2b5206",
+   "generated_tokens": 271,
+   "termination": "complete",
+   "wall_time_seconds": 4.551
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "To determine which statement rules out the most seatings, we analyze each statement:\n\n1. **Ada sizes some seat left of Bo**: This implies there is at least one seat left of Bo.\n\n2. ** Cy sizes in the right seat immediately right of Bo**: This implies there is at least one seat right of Cy immediately right of Bo.\n\n3. **Dee has one end seat**: This implies there is at least one end seat.\n\n4. **Gives every seating that fitnesses all three statements**: This implies all three statements are true.\n\nNow, let's evaluate each statement:\n\n- **Ada sizes some seat left of Bo**: This implies at least one seat is left of Bo. This does not rule out any seatings.\n- ** Cy sizes in the right seat immediately right of Bo**: This implies at least one seat right of Cy immediately right of Bo. This implies at least one seat is right of Cy, which does not rule out any seatings.\n- **Dee has one end seat**: This implies there is at least one end seat. This does not rule out any seatings.\n- **Gives every seating that fitnesses all three statements**: This implies all three statements are true.\n\nThe statement that rules out the most seatings is ** Cy sizes in the right seat immediately right of Bo**, as it implies at least one seat right of Cy immediately right of Bo, which does not necessarily rule out any seatings.\n\n\\boxed{\\text{C}}",
+   "response_sha256": "69d18e1b17e7c1d968681111a281094cd757299b0eec51d1bd61908e818027c8",
+   "generated_tokens": 327,
+   "termination": "complete",
+   "wall_time_seconds": 5.593
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The physical property leaning on is **efficiency**. \n\n**Explanation:**  \nEach control (e.g., control 1) has three possible states (e.g., off, off, off), so there are $3^3 = 27$ possible combinations. However, only $3$ (efficiency) states are valid, meaning only $3$ control-1 states are permuted. Thus, efficiency is the key property.",
+   "response_sha256": "9219e1783e1c9723234cd059ff1f1234f575adcc493e9387e34c0fe14312ad96",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 1.603
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "Based on the information provided, you need to be present at reception for a blood draw. The time you need to be there is between 8:00 and 11:30 on weekday morning.\n\nRegarding the prescription, you should sort out at reception.",
+   "response_sha256": "dfe3895d17aee891b46d70f412bc4193f5b063e81ff4c8027f6b5dcb854f311f",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 0.998
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes, you can return the lamp. Here's how:\n\n1. **Check the receipt**: Ensure you have the original receipt for the lamp. This will help verify the return process.\n2. ** Contact the store**: Contact the store directly to confirm if you can return the lamp. They may have specific requirements or restrictions.\n3. ** Provide a clear and detailed explanation**: If you have any questions about the return process, including what to do if you don't have a receipt, provide them with your receipt. This will help the store understand your situation.\n4. ** Consider the return policy**: If the store has a specific return policy, referencing it can help ensure you're not undue pressure on you.\n\nIf you have any further questions or need assistance with the return process, feel free to ask!",
+   "response_sha256": "a4aa88ace5c25874dce8bb7fe596ac901e9b7ad3353fae10ad30d135c5f4766e",
+   "generated_tokens": 172,
+   "termination": "complete",
+   "wall_time_seconds": 2.956
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "**Brief Summary:**  \n- **Who:** Contractors and night-shift staff  \n- **What:** Entrant readers will move to the same reader model  \n- **When:** Second week of November  \n- **Why:** Booking for the cafeteria refit  \n\n**Bolt:** *Brief*",
+   "response_sha256": "268622a18b065974fb82832ee795a3e723e48e37cc7066d2b97b1ce90721458e",
+   "generated_tokens": 67,
+   "termination": "complete",
+   "wall_time_seconds": 1.183
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "The inspected area has been re-arranged from Thursday to Tuesday, and the third-party auditor has now been informed.",
+   "response_sha256": "b0484c9867cd55752535dc5e6ca1fe684d64e7372116a74496f4ca747a8c9dcb",
+   "generated_tokens": 27,
+   "termination": "complete",
+   "wall_time_seconds": 0.473
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "**Road atlas vs. Live traffic report: Key differences**\n\n1. ** Purpose**  \n   - **Road atlas**: Provides detailed, detailed information about road conditions, including traffic flow, safety, and infrastructure (e.g., roadways, signposts, and emergency services).  \n   - ** Live traffic report**: A real-time, updated summary of current traffic conditions (sources, speed, density, and safety).  \n\n2. ** Granularity**  \n   - **Road atlas**: Offering detailed data (e.g., traffic flow, vehicle types, and safety alerts) for specific areas or sections.  \n   - ** Live report**: Providing general statistics (e.g., average speed, traffic volume) without detailed context.  \n\n3. ** Real-time vs. historical data**  \n   - **Road atlas**: A static, pre-configured map with specific details (e.g., \"safety zones\" or \"highway bottoms\").  \n   - ** Live report**: Continuous updates (e.g., \"safety alerts\" or \"specific traffic patterns\") based on real-time data.  \n\n4. ** Accuracy**  \n   - **Road atlas**: Reliable but may lack nuanced details (e.g., specific road types, construction, or emergency protocols).  \n   - ** Live report**: More accurate but may not capture all critical information (e.g., sudden changes in traffic due to weather).  \n\n5. ** Accessibility**  \n   - **Road atlas**: Requires manual navigation (e.g., identifying safety zones, roadways, and emergency services).  \n   - ** Live report**: Accessible via app, web, or digital tools (e.g., real-time updates, visualizations).  \n\n**Key Takeaways**  \n- **Road atlas** is ideal for detailed, specific analysis (e.g., identifying safety risks).  \n- ** Live report** is better for general, real-time monitoring (e.g., tracking traffic flow, safety incidents).  \n\n**Appreciation**  \nBy contrast, **e.g., a road atlas** might be used for planning a roadway, while **e.g., a live report** could inform emergency response or traffic management decisions. Both are essential for effective navigation and safety.",
+   "response_sha256": "154fec143b440f03a3a4073b0dab4c2dea0cfee902d8440a7ae35eb3b1a9fd2d",
+   "generated_tokens": 493,
+   "termination": "complete",
+   "wall_time_seconds": 8.315
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "**Case 1: Layer-by-Layer Interaction**  \n**Vaccine:** * vaccines * (e.g., vaccines against viral infections)  \n** antibiotic:** * antimicrobial * (e.g., antimicrobial drugs)  \n\n**Function:**  \n- **Vaccine**: Inhibitors (e.g., vaccines) neutralize viruses, preventing them from reaching immune cells.  \n- ** antibiotic**: Directly disrupt bacterial DNA/RNA, causing infection.  \n\n**Result:**  \n- **Vaccine** reduces viral or bacterial infections (e.g., vaccine-induced flu).  \n- ** antibiotic** causes bacterial infections (e.g., bacterial infections).  \n\n**Highest Harm:**  \nMixed up, as vaccines and antibiotics are **functionally complementary** but **not equally effective**. Their combined efficacy depends on their specific targets (e.g., vaccines may not target bacterial DNA, while antibiotics target bacterial DNA).  \n\n**Key Point:**  \nThe **functional relationship** between vaccine and antibiotic is **not equally beneficial**; their roles are interdependencies, not direct competition.",
+   "response_sha256": "fcc5f2c6074af5fdd047ca53d53c1b59ed646868fb959201aa4c1d65f5509da0",
+   "generated_tokens": 230,
+   "termination": "complete",
+   "wall_time_seconds": 3.979
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that meets your requirements:\n\n```python\ndef group_by_initial(words):\n    group = { word.lower()[0] : word for word in words}\n    return group\n\n# One call\nresult = group_by_initial(\"abc\")\nprint result)\n```\n\n**Output:**\n```python\n{'a': 'abc', 'b': 'def', 'c': 'def'}\n```\n\nThis function uses Python's `set` to ensure lowercase letters are treated as distinct, then uses ` dict` to convert the set back to a Python ` dict` object. The `word.lower()` method ensures case sensitivity by treating lowercase letters as identical.",
+   "response_sha256": "0faad369922a1849a84134d0390db7780d8e528c1bfe23e2e24fbcb5fc4a9dd6",
+   "generated_tokens": 148,
+   "termination": "complete",
+   "wall_time_seconds": 2.524
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that merging nonoverlapping range pairs in ascending order:\n\n```python\ndef Merge_ranges(pairs):\n    result = []  # List to store the resulting range\n    for start, end in pairs:\n        if start < end:\n            result.append((start, end))\n    return result\n\n# Test case\npairs = [(1, 3), (2, 4), (5, 6), (7, 8), (10, 11), (12, 13), (20, 21), (30, 31), (40, 50), (60, 70), (80, 90), (100, 101), (120, 100]]\nprint( Merge_ranges(pairs))  # output: [(1, 3), (2, 4), (5, 6), (7, 8), (10, 11), (12, 13), (20, 21), (30, 31), (40, 50), (60, 70), (100, 101), (120, 100]]\n```\n\n**Time Complexity:** O(n), where n is the number of pairs. Each pair is processed in constant time, so the overall complexity is linear.\n\n** Expl Expl Expl:**  \nThe function iterates through each pair in `pairs` and appends them to `result` only when `start` is less than `end`. This ensures nonoverlapping and nonoverlapping matching.",
+   "response_sha256": "4f2ec91b2e2fa9dd4504c2f0c2f8374d762204d561295d2d580c723fa0f62f1c",
+   "generated_tokens": 329,
+   "termination": "complete",
+   "wall_time_seconds": 5.605
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "The issue lies in the `basket` parameter being passed as a parameter to `add_item`. Since `basket` is not defined in the `add_item` function, calling `add_item` with `basket` as arguments will cause a `ValueError` because `basket` is not provided.\n\nHere's the corrected version:\n\n```python\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n```\n\nThis ensures that `basket` is always defined when calling `add_item` with `basket` as arguments.",
+   "response_sha256": "ce0d1f143f28b15f242460653ad5bffe5a8148cd7db31c68666cce3aa030e3af",
+   "generated_tokens": 130,
+   "termination": "complete",
+   "wall_time_seconds": 2.263
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The issue lies in the `total` variable being calculated. Since `total` is not set to a value, it will always be `0` regardless of the input `rows`. This makes `total` incorrect for every input with more than one row.\n\nHere's the corrected version:\n\n```python\ndef total_units(rows):\n    total = 0\n    for row in rows:\n        total += row['units']  # Correcting the variable\n    return total\n```\n\nThis function now correctly calculates the total units for each row, regardless of the number of row elements.",
+   "response_sha256": "d33dc7f70827badb29e55cd09cce84aaa5bd1c7af977ab8a86b5f892b33c0e3c",
+   "generated_tokens": 128,
+   "termination": "complete",
+   "wall_time_seconds": 2.186
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "I'm currently in Australia and not available for a meeting on March 4. I'll schedule a date in April and I'll inform you once I've been out.",
+   "response_sha256": "b16522cacc3d64ac9397f85c8260b75a9f870ff94ae31784c96eafa0dc4155e7",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.599
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The engineer will fix the issue, and the customer will be informed about the late notification.",
+   "response_sha256": "8648a433727d1eeaddcb1675dec564d033b78bbd225e2deace78845546fb5d20",
+   "generated_tokens": 18,
+   "termination": "complete",
+   "wall_time_seconds": 0.32
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are five step-by-step, non-dependential, and non-matchable steps for a **one-part-time bookkeeper** (e.g., a book with a unique bookmark or a book that doesn\u2019t have a bookmark), with one step that would be **cheerless** (e.g., a book that doesn\u2019t have a bookmark).\n\n---\n\n### **Step 1: Research the Book**\n**Step:**  \n1. **Identify the book\u2019s title, author, and publication year** (e.g., *The Great Gathering* by *T.S. James*).  \n2. **Check if the book has a bookmark** (e.g., *Bookmark* by *Sophie*).  \n3. ** Review the book\u2019s content** (e.g., *The Great Gathering*\u2019s narrative, character development, or literary significance).  \n\n**Why it\u2019s non-dependential:** The book\u2019s content doesn\u2019t depend on the bookmark.\n\n---\n\n### **Step 2: Determine the Book\u2019s Purpose**\n**Step:**  \n1. **Identify the purpose of the book** (e.g., *The Great Gathering*\u2019s role as a *bookmark* for readers who don\u2019t have one).  \n2. ** Determine if the book\u2019s content aligns with the book\u2019s purpose** (e.g., *The Great Gathering*\u2019s narrative, which is *read*).  \n\n**Why it\u2019s non-dependential:** The book\u2019s purpose doesn\u2019t depend on the book\u2019s content.\n\n---\n\n### **Step 3: Review the Book\u2019s Details**\n**Step:**  \n1. **Check for specific details** (e.g., *Bookmark*\u2019s title, author, or character names).  \n2. ** Look for unclear or unmarked details** (e.g., *Bookmark*\u2019s name, location, or character name).  \n\n**Why it\u2019s non-dependential:** The book\u2019s details are not dependent on the book\u2019s content.\n\n---\n\n### **Step 4: Consider the Book\u2019s Context**\n**Step:**  \n1. ** Determine if the book\u2019s content is relevant** (e.g., *The Great Gathering*\u2019s *bookmark* is a *book* that readers can read).  \n2. ** Check if the book\u2019s content is *read*** (e.g., *The Great Gathering*\u2019s narrative, which is *read*).  \n\n**Why it\u2019s non-dependential:** The book\u2019s content is not dependent on the book\u2019s content.\n\n---\n\n### **Step 5: Decision: Undoing the Step**\n**Step:**  \n1. **Identify the book\u2019s bookmark** (e.g., *Bookmark*\u2019s name).  \n2. ** Determine if undoing the step would be a *match*** (e.g., *Bookmark*\u2019s title).  \n3. ** If undoing is possible, choose the step that would be *cheerless* (e.g., *Bookmark*\u2019s title).  \n\n**Why it\u2019s non-dependential:** The book\u2019s content doesn\u2019t depend on the book\u2019s bookmark.\n\n---\n\n### **Key Principles**\n- **Non-deependential steps**: Each step doesn\u2019t depend on the previous step\u2019s outcome.  \n- **Non-matchable steps**: Steps that would be *cheerless* (e.g., *Bookmark*\u2019s title).  \n- **Non-constructible steps**: Steps that are inherently impossible (e.g., *Bookmark*\u2019s title).  \n\nThis approach ensures no step depends on anything that comes after it, while prioritizing the most efficient (cheerless) path.",
+   "response_sha256": "698ff28cc8179b27752968bf4ba8504577a0c032dd07f8417f456d217d988d85",
+   "generated_tokens": 799,
+   "termination": "complete",
+   "wall_time_seconds": 13.818
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are six steps to ensure your database index is ready by the **25th**, with different approaches depending on whether the freeze is extended **by a week**:\n\n---\n\n### **Step 1: ** Check for Existing Indexes**  \n**Action:**  \n- **Query:**  \n  ``` SQL  \n  SECTION ( SECTION ( SECTION ( SECTION))  \n  SECTION ( SECTION ( SECTION))  \n  ```  \n  This ensures you have existing indexing (e.g., SQL tables, column names) that can be used to optimize queries.  \n\n**If extended:**  \n- **Action:**  \n  - **Update:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Add:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Remaining:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n\n---\n\n### **Step 2: ** Validate Indexes**  \n**Action:**  \n- **Query:**  \n  ``` SQL  \n  SECTION ( SECTION ( SECTION))  \n  SECTION ( SECTION ( SECTION))  \n  ```  \n  Ensure all queries refer to the updated index.  \n\n**If extended:**  \n- **Action:**  \n  - **Update:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Add:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Remaining:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n\n---\n\n### **Step 3: ** Test Indexes**  \n**Action:**  \n- **Query:**  \n  ``` SQL  \n  SECTION ( SECTION ( SECTION))  \n  SECTION ( SECTION ( SECTION))  \n  ```  \n  Verify that queries now access the updated index.  \n\n**If extended:**  \n- **Action:**  \n  - **Update:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Add:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Remaining:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n\n---\n\n### **Step 4: ** Reflective Maintenance**  \n**Action:**  \n- **Query:**  \n  ``` SQL  \n  SECTION ( SECTION ( SECTION))  \n  ```  \n  Ensure your database is **ready** for future queries.  \n\n**If extended:**  \n- **Action:**  \n  - **Update:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Add:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Remaining:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n\n---\n\n### **Step 5: ** monitor and adjust**  \n**Action:**  \n- **Query:**  \n  ``` SQL  \n  SECTION ( SECTION ( SECTION))  \n  ```  \n  Check performance (e.g., query execution time) and adjust if necessary.  \n\n**If extended:**  \n- **Action:**  \n  - **Update:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Add:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Remaining:**  \n    ``` SQL  \n    ```  \n\n---\n\n### **Step 6: ** Ensure Consistent Data**  \n**Action:**  \n- **Query:**  \n  ``` SQL  \n  SECTION ( SECTION ( SECTION))  \n  ```  \n  Verify data integrity (e.g., no unindexed fields).  \n\n**If extended:**  \n- **Action:**  \n  - **Update:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Add:**  \n    ``` SQL  \n    SECTION ( SECTION ( SECTION))  \n    ```  \n  - **Remaining:**  \n    ``` SQL  \n    ```  \n\n---\n\n### **Key Considerations**  \n- **Backward compatibility:** Ensure older queries still work with the updated index.  \n- **Redirecting queries:** If you need",
+   "response_sha256": "d83a96552629a2da93c81673e7de16ed05fdbdc42331ef0a39d0b356d7b80764",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.406
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "To determine which hospital is better, you would need to compare the **post-operative death rates** of both hospital facilities. Here's how to analyze it:\n\n1. ** Collect data**: Collect data on deaths (e.g., number of deaths, mortality rates) for both hospital facilities.\n2. ** compare**: compare the mortality rates (e.g., percentage of deaths) between the two facilities.\n3. ** consider other factors**: Consider other factors that might influence mortality, such as patient health, treatment effectiveness, hospital staff, and patient care quality.\n4. ** evaluate outcomes**: Look at outcomes like hospitalization rates, recovery rates, and overall patient outcomes (e.g., hospitalization duration, recovery time).\n5. ** assess costs**: Consider the costs associated with each hospital (e.g., medical equipment, staff, patient care).\n6. ** consider patient preferences**: Consider patient preferences and expectations (e.g., hospital facilities may prioritize patient safety over medical outcomes).\n\nBy doing so, you can determine which hospital has better post-operative death rates and make informed decisions based on these data.",
+   "response_sha256": "3eaf1a4b0da8716ae40a33ba0c9e20ff0aa872a1252e72d37cd6aa1724d069db",
+   "generated_tokens": 227,
+   "termination": "complete",
+   "wall_time_seconds": 3.951
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The article's claim that a supplement causes tiredness is **confidence-based**, meaning it is based on **statisticically significant evidence** (e.g., a large number of participants who experienced symptoms). However, **confidence alone does not determine the validity** of the claim.\n\nTo determine whether the **sharing of data** (e.g., a **posterior probability**) would **change** the conclusion, you would need to **analize the **posterior probability** (e.g., the probability that the supplement causes tiredness given that 9 participants experienced symptoms) **before** considering the **confidence** of the study.\n\n### Key points to consider:\n1. **Confidence in the study**: If the study has **higher confidence** (e.g., 95% or more), the **posterior probability** would be **high**, indicating that the **true effect** (tiredness) is likely to be present. This would **confirm** the claim that the supplement causes tiredness.\n2. **Confidence in the data**: If the **posterior probability** (e.g., 95%) **confidence** (e.g., 95%) **confidence** (e.g., 95%) **confidence** (e.g., 95%), it would **confidence** that the **true effect** (tiredness) is likely to be present. This would **confirm** the claim that the supplement causes tiredness.\n3. **Context**: The **size** of the study (number of participants) and **method** (e.g., randomization, control group) also influence confidence. However, **confidence** is the **primary factor** in decision making.\n\n### Final answer:\nThe **sharing of data** would **confidence** **change** the conclusion. If the **posterior probability** (e.g., 95%) **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence** **confidence",
+   "response_sha256": "3455431f3229de5262f342f689c4e051d5e06115ea22ce35d3cacab543263cc9",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.292
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "The child's hand clared, handing the glove back with a soft, unconfirmed touch.",
+   "response_sha256": "4f1c5648760706fa58c76cf2e4afdef04af274e2535bc30c276bdc502cb12790",
+   "generated_tokens": 22,
+   "termination": "complete",
+   "wall_time_seconds": 0.393
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "1. The market at first light began with a clear and bright sky.  \n2. It was a quiet day when the first light sharing the ground.  \n3. The market's first sign was a new supply of goods.  \n4. The first price for a product reached its highest value.  \n5. The market's first market price was set at a high.  \n6. The first day's market price was determined by the market's rules.",
+   "response_sha256": "88aae51c2fc9bf703f034f33c9b8d49eb74b8d578c6334c70fffc1a4443e9c4c",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 1.615
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Given your two-hour two-night hiker's trip, I'll prioritize items based on their importance and impact on your experience. Here's a three- item order:\n\n1. **Fairies (2-3)**: These are essential for safety and comfort. They provide a safe and comfortable environment, especially in weather conditions.\n\n2. **Faulty equipment (1)**: This includes a basic equipment like a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer, a thermometer,",
+   "response_sha256": "7d964470fedaa0fd1045c1ea3d7c62c4f2e1b3604a48f9fc977a43c7e4cc984c",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 17.264
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Understood. What has to be covered?",
+   "response_sha256": "f68d572a48d4db0bcf36665ad50711c363a3eb109bd77a6cc24a0b36b49ff875",
+   "generated_tokens": 9,
+   "termination": "complete",
+   "wall_time_seconds": 0.172
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 150.269
+}

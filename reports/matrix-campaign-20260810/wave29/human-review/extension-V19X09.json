@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T02:20:29Z",
+ "label": "V19X09",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.V19X09",
+ "cell_instance_id": "mx28-v19x09-0001",
+ "receipt_sha256": "f59e85065d2324eb8ca4739c1f613d4c80c45715e02f85da9d926842e46b4392",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-609a8e7d/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-609a8e7d/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave28/children/MX28-V19X09",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "I'm really excited to share this moment with you! I'm always happy to help, and I'm eager to connect with you in a way that makes it feel more personal and authentic. What would be the most interesting question to ask? I'd be happy to share a story or a perspective that could help you reflect on your feelings and your journey.",
+   "response_sha256": "d8fb8156c61844e8dfe0054f31bde47e37baaad56cda70d656c64a1d79a9c38f",
+   "generated_tokens": 71,
+   "termination": "complete",
+   "wall_time_seconds": 2.091
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I'm always happy to help, but I can't ask for your personal time.",
+   "response_sha256": "abe6caed9d56307a6a67bdeed7b58736bfff5f53147a94d3cb8e7c05feed828b",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.412
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "Two ways to keep house plants alive while away:  \n1. misting with water  \n2. using a light source  \n",
+   "response_sha256": "cbb1380f08f886afb4c254732eb793d01064f9cd763058387ddac6c4bb60aa9d",
+   "generated_tokens": 25,
+   "termination": "complete",
+   "wall_time_seconds": 0.515
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "Here are the five pieces of information a library checkout record contains, listed in a clear, order by name:\n\n1. **Name**  \n2. **Address**  \n3. **Date**  \n4. **Item**  \n5. **Item description**  \n6. **Item quantity**  \n7. **Item price**  \n8. **Item availability**  \n9. **Item expiration date**  \n10. **Item type**  \n11. **Item category**  \n12. **Item location**  \n13. **Item description**  \n14. **Item description**  \n15. **Item description**  \n\nEach entry is in a clear, order by name.",
+   "response_sha256": "6c923c016d14f25ec67b8c2b643542244e5e0cb8c5a1846477e4d7e6cbd06f14",
+   "generated_tokens": 139,
+   "termination": "complete",
+   "wall_time_seconds": 2.854
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "A ten-year-old might think bread dough is just a simple mix of flour, water, and salt, but it's really a special mix that makes a very special bread. The first thing that makes the bread go up is the air inside the air. It's like a little air that helps the bread to grow and make it strong and good.\n\nWhen the ovens are hot, they make the air inside the bread very hot and very hot. This helps the bread to grow strong and make it better. The air inside the bread also helps the bread to make the flour and water mix together, and it helps the flour to make the flour and water.\n\nSo, the ovens are like a little air, and they make the air inside the bread very hot and very hot. This helps the bread grow strong and make it better!",
+   "response_sha256": "801c74b06cf7d468223966aeb0048c11b602c51f160f3ee235622b395e6067dd",
+   "generated_tokens": 171,
+   "termination": "complete",
+   "wall_time_seconds": 3.405
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "The phenomenon of high tides on the side of the Moon is a complex and nuanced phenomenon that can occur due to the Moon's orbit and its position in the Earth's orbit. The Earth's orbit around the Sun is slightly tilted, and the Moon's orbit around the Earth is slightly slightly tilted. This tilt causes the Moon to move in a nearly constant orbit, which can result in high tides.\n\nHowever, the Moon's orbit around the Earth is slightly slightly tilted, and this is not a perfect alignment. The Moon's orbit is slightly in a 3:5 ratio, which means the Moon is moving in a slightly more eastward direction than its orbit. This is a slight tilt of the Moon's orbit, but it's not a perfect alignment.\n\nThe high tides are caused by the Moon's orbit and its position in the Earth's orbit. The Moon's orbit is slightly in a 3.5-year cycle, and the Earth's orbit is slightly in a 1.5-year cycle. This means that the Moon's orbit is slightly more eastward than its orbit, and the high tides are caused by the Moon's orbit being slightly tilted in this direction.\n\nThe other factors that can cause high tides include the Earth's orbit and the Moon's orbit, as well. The Moon's orbit is slightly in a 3.5-year cycle, and the Earth's orbit is slightly in a 1.5-year cycle, which means the Moon's orbit is slightly more eastward than its orbit.\n\nIt's not a perfect alignment, but it is a relatively stable and consistent pattern of high tides, which can occur every 27 days. This is a natural phenomenon that can occur in the Earth's orbit, and it is a relatively stable pattern that can be observed in the Earth's orbit.",
+   "response_sha256": "801de0b784109b3a0fa974b6425533e9e0eaf09b88d52cab48beb6bb3f2209b6",
+   "generated_tokens": 377,
+   "termination": "complete",
+   "wall_time_seconds": 7.35
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "First, we determine the number of liters of fuel used for the journey. The van covers 9 liters per kilometre, and it is full when it is 54 liters.\n\nThe total distance is 1,700 km.\n\nThe total fuel used is:\n- 9 liters per kilometure\n- 54 litre per full load\n- 1,700 km\n\nThe total fuel used is:\n- 9 litures per kilometure\n- 54 litre per full load\n- 1,700 km\n\nThe total fuel used is:\n- 9 litures per kilometure\n- 54 litre per full load\n- 1,700 km\n\nThe total fuel used is:\n- 9 litures per kilometure\n- 54 litre per full load\n- 1,700 litre per full load\n\nWe calculate the total fuel used:\n- 9 litures per kilometure \u00d7 1,700 km = 9 litre\n- 54 litre per full full load\n- 1,700 litre per full load\n\nThe total fuel used is:\n- 9 litures + 54 litre + 1,700 litre = 1,000 litre\n- 1 litre is lit, so 1 litre is full.\n\nThe number of full full load is:\n- 1 litre full = 1 full load\n- 1 litre is full\n- 1 litre is full\n- 1 full load = 1 litre\n- 1 litre is full\n- 1 full load = 1 litre\n- 1 full load = 1 litre\n- 1 full load = 1 litre\n- 1 full load = 1 litre\n- 1 full load = 1 litre\n- 1 full load = 1 litre\n- 1 full load = 1 lit\n\nThe number of full full load is 1 full full load.\n\nThe remaining distance is 1 litre.\n\nThe remaining distance is 1 kilometre.\n\nThe number of full full load is 1 full full load.\n\nThe remaining distance is 1 kilometre.\n\nThis is the number of full full load and the remaining distance.\n\nThe answer is 1 full full load and 1 kilometle.",
+   "response_sha256": "2e63165593c68e11b984e3042c7897bf6781320f5b7cd3ff47a76ffc03093a6b",
+   "generated_tokens": 492,
+   "termination": "complete",
+   "wall_time_seconds": 9.484
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "Let's break down the problem step-by-step:\n\n**1. The original price of the chair is $240.**\n\n**2. The discount of 15% is applied:**\n- Discount = $240 * 0.15 = $6\n- New price = $240 - $6 = $160\n\n**2. Tax of 8% is added to the new price:**\n- Tax = $160 * 0.08 = $8.8\n- New total = $160 + $8.8 = $160 + 8.8 = $108\n\n**2. The final amount is $108.**\n\n**2. The question is: Would the tax have been added before the discount applied?**\n\n**This is a question about the impact of tax on the price of the chair. The discount reduces the price by 15%, but the tax is applied to the new price, which is $108.\n\n**This is a question about the effect of tax on the price of a product:**\n- Tax is applied to the price, which is $108.\n- The price is not changed.\n- The tax does not affect the price.\n- The final amount is $108.\n\n**This is a correct answer: The tax does not have any effect on the price of the chair.\n\n**\\boxed{No**, the tax does not have any effect on the price of the chair.**",
+   "response_sha256": "e0912f5dfd0d176d6ac83915f367738165a1d17a22a40e3c5f4659578e0bf720",
+   "generated_tokens": 294,
+   "termination": "complete",
+   "wall_time_seconds": 5.667
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "To determine which statement is the one that excludes the most, we analyze each person's seat and their position:\n\n1. **Ada** sitting left of Bo.\n2. **Dee** has one seat.\n3. Cy is in the right seat.\n4. **B** is the seat with the number 1.\n\n**Explanation:**\n- Ada is sitting left of Bo, and Cy is in the right seat.\n- Dee has one seat, which is not the seat where Cy is.\n- The seat with the number 1 is not assigned to either person.\n\n**Exclusion:**\nThe most incorrect statement is **Dee**, as it is not assigned to the seat where Cy is.\n\n\\boxed{De}",
+   "response_sha256": "6f8c283be2329870d268942bb45331a0bd44c70900a3c0808247990af96995a6",
+   "generated_tokens": 158,
+   "termination": "complete",
+   "wall_time_seconds": 3.06
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "**Procedure:**\n\n1. **Objective:** Determine which switch is assigned to the light that controls the room.\n2. **Objective:** Ensure the switch is assigned to the correct light.\n3. **Objective:** Ensure the switch is not assigned to any other light.\n4. **Objective:** Ensure the switch is not closed.\n5. **Objective:** Ensure the switch is open.\n6. **Objective:** Ensure the switch is closed.\n7. **Objective:** Ensure the switch is not used for any other purpose.\n8. **Objective:** Ensure the switch is used for the room's purpose.\n9. **Objective:** Ensure the switch is used for the room's purpose.\n10. **Objective:** Ensure the switch is used for the room's purpose.\n11. **Objective:** Ensure the switch is used for the room's purpose.\n12. **Objective:** Ensure the switch is used for the room's purpose.\n13. **Objective:** Ensure the switch is used for the room's purpose.\n14. **Objective:** Ensure the switch is used for the room's purpose.\n15. **Objective:** Ensure the switch is used for the room's purpose.\n16. **Objective:** Ensure the switch is used for the room's purpose.\n17. **Objective:** Ensure the switch is used for the room's purpose.\n18. **Objective:** Ensure the switch is used for the room's purpose.\n19. **Objective:** Ensure the switch is used for the room's purpose.\n20. **Objective:** Ensure the switch is used for the room's purpose.\n\n**Property:**\n- **Lamp**: The switch is the light that controls the room.\n- **Lamp**: The switch is the switch that controls the light.\n- **Room**: The room is the designated area where the switch is used.",
+   "response_sha256": "e4c178826d270e1019e5ead7a2755d529c06b33258476fd35792cb7111e5db96",
+   "generated_tokens": 388,
+   "termination": "complete",
+   "wall_time_seconds": 7.331
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "I don't have access to specific details about the pharmacy's hours, the specific time you need to be driving, and the specific items you need to pick up on the blood draw. However, I can suggest that you check the pharmacy's hours and the specific items you need to have on hand.\n\nIf you're driving, you can ask the driver to confirm the time and the number of items you need to pick up. You can ask them to ask for the time to arrive and the number of items to have on hand.\n\nIt's a good idea to ask for a confirmation to ensure that you have the necessary information and that you can pick up the blood draw and prescription on the appropriate time.",
+   "response_sha256": "3cc7ee0c4a19304ae5fb82067de077250e6c4ebe7c32afaddff5c497919663b9",
+   "generated_tokens": 142,
+   "termination": "complete",
+   "wall_time_seconds": 2.75
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "Yes. You can return the discounted lamp. The receipt is included with the purchase, and it's a good option for the return.",
+   "response_sha256": "fdbc459b4a80dea81bd2a20100aa41f849160d03deba32824369d563698a17ca",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.587
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "Who is affected? What changes? When it takes effect?",
+   "response_sha256": "d54eec95f550a015ebabd3d585354bcbfce1a21e0a7949a667e2386216b0bb3a",
+   "generated_tokens": 12,
+   "termination": "complete",
+   "wall_time_seconds": 0.258
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I'm not believed that the event occurred.",
+   "response_sha256": "201e744afd48fb6dbf58432290ddc9d21bd518cf5c63829166d52297377f0284",
+   "generated_tokens": 9,
+   "termination": "complete",
+   "wall_time_seconds": 0.2
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "Here's a road atlas set in the context of a live traffic report, with a comparison of your own devising and two places where the comparison would be most relevant.\n\n**Setup:**\n- A live traffic report is generated by a system that analyzes real-time data (e.g., traffic volume, speed, incidents, weather, etc.) to provide a detailed map of the road network.\n- The road atlas is a visual representation of the road network, including key features like interseals, intersections, roads, and other road types, along with data on traffic flow and incidents.\n\n**Your Devising:**\n- A custom road atlas is developed using a detailed map and data analysis. This includes creating a detailed road network, identifying key features, and incorporating real-time traffic data to highlight specific road segments or areas of interest.\n\n**Two places where comparison would be relevant:**\n1. **The National Interseue**:\n   - **Context:** The National Interseue is a critical segment of the road network, where traffic flows and incidents occur. It is a key area for understanding how traffic patterns and incidents affect the road network.\n   - **Key Insight:** The comparison of this road to the other road at the National Interseue would highlight how traffic flow and incidents affect the road network, providing a detailed map of the interseal and its impact on traffic.\n   - **Implications:** This comparison can help identify bottays, intersections, and other interseal features that affect traffic flow and incident management, providing a comprehensive understanding of the road network's dynamics.\n\n2. **The Major Interseure**:\n- **Context:** The Major Interseure is a critical segment of the road network, where traffic flows and incidents occur. It is a key area for understanding the flow of traffic and the impact of incidents on the road network.\n- **Key Insight:** This comparison would highlight the traffic flow at the Major Interseue, showing how traffic is distributed and affected by incidents. It can provide a detailed map of the traffic flow and incident management, offering a comprehensive view of the road network's dynamics.\n- **Implications:**\n   - This comparison can help identify the traffic flow at the Major Interseue, which is crucial for understanding the traffic patterns and incident management strategies. It can provide a detailed map of the traffic flow and the impact of incidents, which can be used to optimize traffic management and improve road network efficiency.\n\nThese two places are relevant to the comparison, as they provide a detailed map of traffic flow and incident management, which can be used to compare the road network and identify key features and impacts.",
+   "response_sha256": "7811da5a96a977e43a8f116967d3d8ec0c4e17e64d42ce32b8678f96ed228fe4",
+   "generated_tokens": 548,
+   "termination": "complete",
+   "wall_time_seconds": 10.598
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "Here's a clear breakdown of how each name are intended to do, and the most critical case where the mix would lead to harm:\n\n**1. \"Vaccine\" vs. \"Antibit\"**  \n- **Vaccine**: A **protective measure** (protection from illness or disease)  \n- **Antitet (antibit)**: A **medication** (in some medical fields)  \n- **Key difference**: The vaccine is a *protective* measure, while an antitet is a *medical intervention*.  \n- **Why it matters**: The vaccine is a *protective* measure, while an antit is a medical intervention.  \n- **Harm**: **No harm**.  \n- **Why this is a clear case**: The vaccine is a protective measure, and an antit is not a medical intervention.\n\n---\n\n****Another \"Name\"**: \"Lipid\"  \n- **Meaning**: A **drug** (in medicine)  \n- **Mechanism**: It's a **medication** that reduces cholesterol levels.  \n- **Harm**: **Highly dangerous**  \n- **Why it's the most critical**: A drug is a **medical intervention**, and the harm is severe.  \n- **This is the most critical case**: The **antit** is a **medical intervention**, and the vaccine is a **protective measure**.\n\n---\n\n### **Key Takeaways:**\n- **Vaccine vs. Antit**: The vaccine is a **protective measure**, while an antit is a medical intervention.  \n- **Harm**: **No harm**.  \n- **Most critical**: **The drug** (antit) is the most dangerous, and the vaccine is the protective measure.\n\nThis is a clear, straight-up comparison, and the most critical case is the **antit**.",
+   "response_sha256": "3c5922a7cb9026d020d8d7f33097568f49d5f4735017862884210122c8cfc48c",
+   "generated_tokens": 415,
+   "termination": "complete",
+   "wall_time_seconds": 8.015
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that returns a group by key in a list of words, where each key is the first letter of the word, and the value is the list of words that begin with that letter.\n\n```python\ndef groupby_by_first_word(words):\n    result = {\n        first: [word for word in words if first == 'a']\n    }\n    return result\n```\n\n**Call:** `groupby__first_word([\"a\", \"b\", \"c\"])`\n\n**Output:**\n```python\n{'a': [\"a\"]}\n\n```\n\nThis function returns a list of words where each letter is the first letter, and the order is maintained.",
+   "response_sha256": "4455ef27672d3ae4c26e7c9743e11f822fc4c041a301100f066a19de91070fac",
+   "generated_tokens": 149,
+   "termination": "complete",
+   "wall_time_seconds": 2.804
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "Here's a Python function that merges a list of tuples into a non-overlapping range in the order of start, and returns the result.\n\n```Python\ndef merge_ranges(pairs):\n    result = list(enumerate(range(start, end, 2)))\n    return result\n    return result\n```\n\n**Time Complexity:** O(n)\n\n**Explanation:**\nThe function uses `enumerate` to generate the range in the order of start, and then returns a list of the same order. The `enumeration` function is a standard Python function that returns a list of tuples in the order they are generated.\n\n**Output:**\nThe result is a list of tuples in the order of start, which is a non-overlapping range.\n\n**Implications:**\nThis function can be used to find a range that minimizes the number of operations, which is a key optimization in range queries.",
+   "response_sha256": "ea9aaa7f3dc8ecf0e44337d5eb0b491b86fa4788b4df886836206c586bd896a0",
+   "generated_tokens": 204,
+   "termination": "complete",
+   "wall_time_seconds": 3.893
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "Here's the corrected version of the function:\n\n```python\ndef add_item(item, b: b = []):\n    item = item\n    b.append(x)\n    return b\n```\n\nThe original function was missing the `b` parameter, which is required to pass the item to the function. The corrected version includes the `b` parameter to pass the item to the function.",
+   "response_sha256": "ed70eb060dd28b5b6470cdffb0065a6c9d7d81f87703db3b8f1109e5738eb22d",
+   "generated_tokens": 81,
+   "termination": "complete",
+   "wall_time_seconds": 1.605
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "The issue with your code is that it doesn't handle the case where the input is a single row. The total is simply the sum of all values in the row.\n\nTo fix this, you can modify the function to handle the single row input and return the total as the value.\n\nHere's the corrected version:\n\n```python\ndef total_units(rows):\n    total = sum(row for row in rows if row['units'] == 1)\n    return total\n```\n\nThis function takes a single row as input and returns the total value of the units in that row.\n\nYou can pass a single row as an argument to the function:\n\n```python\nrows = [{'units': 1, 'value': 1]]\ntotal = total_units(rows)\nprint(total)  # returns 1\n```\n\nThis is a simple and straight forward solution.",
+   "response_sha256": "09347a3eb6eab75393323be5484ece4cc74bdef88fe121627863fd227765f9ed",
+   "generated_tokens": 190,
+   "termination": "complete",
+   "wall_time_seconds": 3.797
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "I'm happy to decline. I'll be available for a date in April.",
+   "response_sha256": "8abed3323d808af4c96069bd1599cd95fe504f5be543b496ca3e003fe92703a5",
+   "generated_tokens": 16,
+   "termination": "complete",
+   "wall_time_seconds": 0.4
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The engineer will fix the disk and the customer will notice the delay.",
+   "response_sha256": "04744fc07d2f3c9f0c7504acd3b4ad57b4c0ce168ffb77af3ecddc678795f344",
+   "generated_tokens": 14,
+   "termination": "complete",
+   "wall_time_seconds": 0.291
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are the five steps for taking on a book keeper, ordered by priority, with a one-toone check that ensures no step depends on anything after the step.\n\n**Step 1: Start with the book**\n- **Action:** Book\n- **Possibility:** Book\n- **No step depends on anything after this step**\n\n**Step 2: Check for a book\n- **Action:** Book\n- **Possibility:**\n  - Book is available\n  - Book is available\n  - Book is not available\n  - Book is not available\n- **Possibility:**\n  - Book is available\n  - Book is not available\n  - Book is not available\n  - Book is a book\n\n**Step 3: Check for a book with a book\n- **Action:**\n  - Book is available\n  - Book is a book\n  - Book is not available\n  - Book is a book\n- **Possibility:**\n  - Book is available\n  - Book is a book\n  - Book is not available\n  - Book is a book\n- **Possibility:**\n  - Book is a book\n  - Book is a book\n  - Book is a book\n- **Possibility:**\n  - Book is a book\n  - Book is a book\n  - Book is a book\n- **Possibility:**\n  - Book is a book\n  - Book is a book\n  - Book is a book\n- **Possibility:**\n  - Book is a book\n- **Possibility:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n  - Book is a book\n- **Pick:**\n- **Pick:**\n- **Pick:**\n- **Pick:**\n- **Pick**\n\nThis is a one-toone check, and the steps are prioritized based on the book's availability and the book's status.",
+   "response_sha256": "7759ff0e32f8c0cadd02e0e4346aa65ba277b1a3bd2c45d87ee9e24e7687b250",
+   "generated_tokens": 635,
+   "termination": "complete",
+   "wall_time_seconds": 12.834
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are six steps to implement a database index change, with a focus on the 25th day, and a different approach if the freeze is extended by a week.\n\n### **Step 1: Plan the Change**\n**Action:**  \n- **Identify the affected table(s):**  \n  - The table that has been changed (e.g., `TableName`) and the new index.  \n- **Understand the impact:**  \n  - The change will affect the table's primary key, index, and performance.  \n  - Consider the data volume and query patterns.  \n- **Create a plan:**  \n  - Document the change, including the table name, new index, and any new constraints.  \n  - Ensure the table is updated to reflect the new index.  \n- **Validate the change:**  \n  - Test the table with queries to ensure the new index is created and the data is updated.  \n  - Check for any performance bottays or performance degradation.  \n- **Update the database:**  \n  - Apply the changes to the database.  \n  - Ensure the table is updated to reflect the new index.  \n- **Test the change:**  \n  - Run queries to verify the new index and the table's performance.  \n  - Test the new index to ensure it works correctly.  \n- **Review and document:**  \n  - Document the change, including any new constraints, data types, and performance considerations.  \n  - Ensure the table is updated and the new index is applied.  \n\n**Why this step?**  \nThis step ensures the change is documented and tested before the change is fully implemented. It helps avoid confusion and ensures the table is updated correctly.\n\n---\n\n### **Step 2: Simulate the Change (If the Freeze is a Week)**\n**Action:**  \n- **Simulate the change:**  \n  - Use a tool or process to create a table with the new index.  \n  - Simulate the table's data and performance.  \n  - Test the new index and the table's performance.  \n- **Check for errors:**  \n  - Ensure the table is not affected by the change.  \n  - Verify the new index is created and the data is updated.  \n- **Test the new index:**  \n  - Run queries to test the new index.  \n  - Check if the data is updated and the performance is improved.  \n- **Update the database:**  \n  - Apply the changes to the table.  \n  - Ensure the table is updated and the new index is applied.  \n- **Test the new index:**  \n  - Run queries to test the new index.  \n  - Ensure the new index is correctly created and the data is updated.  \n- **Test the new table:**  \n  - Verify the new table is created and the data is stored.  \n  - Check for any errors or performance issues.  \n- **Review the changes:**  \n  - Document the new table and index, and ensure the table is updated.  \n  - Ensure the table is updated and the new index is applied.  \n\n**Why this step?**  \nIf the freeze is extended by a week, the test is more extensive and thorough. This ensures the new index is applied and the table is updated, and the changes are tested thoroughly.\n\n---\n\n### **Alternative: Use a New Table Instead**\nIf the table is not affected, you can use a new table instead.  \n**Action:**  \n- **Create a new table:**  \n  - Use a new table with the new index.  \n  - Ensure the table is created and the data is stored.  \n- **Test the new table:**  \n  - Run queries to test the new table.  \n  - Verify the data and performance.  \n- **Update the database:**  \n  - Apply the new table and the index.  \n  - Ensure the table is updated and the new index is applied.  \n- **Test the new table:**  \n  - Run queries to test the new table.  \n  - Ensure the data is stored and the performance is improved.  \n- **Test the new table:**  \n  - Verify the new table is created and the data is stored.  \n- **Test the new table:**\n  - Check if the new table is created and the data is stored.\n  \n\n**Why this step?**\nThis step is more efficient and less time. It ensures the new table is created and the data is stored, and the new index is applied.\n\n---\n\n### **Key Considerations**\n- **Data Consumption:**  \n  - If the table is large, the new index may take up more resources.  \n- **Data Type Changes:**  \n  - If the table has a new column type, the index may need to be updated.  \n- **Indexes:**\n  - Ensure the index is created and the data is updated.  \n  - Consider the performance impact on the table.\n  - Use a separate",
+   "response_sha256": "24b6b29eeeb51a934fd371f428d005967a0dd847027c48094a38586e7a4554fb",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.815
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "To determine which hospital has a higher post-operative death rate, you need to compare the death rates of the two patients. This is a statistical comparison, which can be done using a statistical test or a simple comparison of the death rates.\n\nThe death rate is a measure of mortality, which can be influenced by various factors such as the hospital's quality of care, the patient's overall health, and the specific circumstances. However, it's not a direct comparison of the death rates of two patients without considering other factors.\n\nTo find the difference in death rates, you can use a statistical test, such as a comparison of the death rates between the two patients. This will provide a more nuanced understanding of the differences in mortality rates and help determine which hospital has a higher death rate.\n\nIn addition, you may also consider other factors such patient age, medical history, and other healthcare services, which can influence the death rate. However, without additional information, it's not as straight forward as a comparison of death rates.",
+   "response_sha256": "97ce941749197fad1a6ffb0d7f3ceb473df36f22ce68c1df50746408872c60f2",
+   "generated_tokens": 207,
+   "termination": "complete",
+   "wall_time_seconds": 3.94
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The shift in the article would be a significant change in the conclusion. The original conclusion was that the supplement was effective, and the trial was a large-scale study. The new conclusion would suggest that the supplement is more effective than the one mentioned in the article, and the study was more likely to be more effective.\n\nThis change would be more significant because the original article was based on a large-scale study, which would have been more robust and reliable. The new conclusion would be more likely to be supported by the data in the study, and the results would be more likely to be more conclusive.\n\nIt's a crucial consideration when making a decision, and the new conclusion would be more likely to be supported by the data in the study.",
+   "response_sha256": "344841684f33f2bc7f103deaaefb288bec3c7bd91106940b9bde4933a15b4142",
+   "generated_tokens": 150,
+   "termination": "complete",
+   "wall_time_seconds": 2.926
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "A child hands a dropped glove back to a stranger, holding it in a hand.",
+   "response_sha256": "cda8ef96e762970bab37614c3e190f69fbdc0bf7ca1cbc186b248a0a3a5ac8ce",
+   "generated_tokens": 19,
+   "termination": "complete",
+   "wall_time_seconds": 0.382
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "A market at first light  \nThe first day  \nThe new stock is bought  \nThe new stock is sold  \nThe new stock is a new  \nThe new stock is a new  \n",
+   "response_sha256": "b916c451d4af32ca91b8a7c91418d2570e84fc5c283f36586b2cbab856915dc6",
+   "generated_tokens": 36,
+   "termination": "complete",
+   "wall_time_seconds": 0.693
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Here's a priority order for two pounds of essential items, considering weather and safety:\n\n1. **First Lightweight Waterproof Jacket** (2 pounds)  \n   - Priority: Safety  \n   - This provides essential protection against rain, wind, and potential exposure to cold temperatures.  \n   - A light jacket can be easily layered if you're in the upper layers.\n\n2. **First Waterproof Waterproof Biped Strainer** (1.5 pounds)  \n   - Priority: Waterproofing  \n   - A straining device helps prevent water damage and reduce pooling.  \n   - A waterproof bag or container can be used for storage.  \n   - This is a reliable option for your first use.\n\n3. **First Waterproof Waterproof Waterproof Waterproof Waterproof Waterproof Water** (1.5 pounds)  \n   - Priority: Waterproofing  \n   - This is the most essential item for your first rain.  \n   - A waterproof waterproof bag or waterproof waterproof waterproof waterproof waterproof water.  \n   - It's a critical item for your first rain.\n\n**Additional Considerations:**  \n- If you're in a high-altitude location, a waterproof jacket or a waterproof waterproof bag may be needed for safety.  \n- If you're carrying heavy water, a waterproof waterproof bag or waterproof waterproof waterproof waterproof water (e.g., a waterproof waterproof waterproof water bottle) is recommended.  \n- Check the weather conditions and adjust your pack accordingly.  \n\nLet me know if you need further details!",
+   "response_sha256": "a596914f35a6d1f77d7b5d155ec9bfb2f20aa19b6196ffe8b52ac66290f9788e",
+   "generated_tokens": 337,
+   "termination": "complete",
+   "wall_time_seconds": 6.784
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here is a draft policy note for a staff handbook, with two examples included. Each example is clearly described and included in the section.\n\n**Policy Summary**\n\nThis policy governs the use of the following services and activities:\n\n**Workplace Expectations**\n\nAll employees are expected to adhere to the following guidelines:\n\n- **Workplace**: All employees are expected to work in a safe and comfortable environment. This includes providing access to the internet, internet bandwidth, and necessary equipment for remote work.\n- **Remote Work**: All employees are expected to work from home or a remote location. This includes setting up a dedicated workspace, providing necessary internet access, and maintaining a clear separation from personal devices.\n- **Overtime**: Overtime is a recognized time for additional hours of work. This includes any additional hours beyond 15 hours worked.\n- **Data Handling**: Data is handled securely and responsibly. This includes data storage, access, and protection.\n- **Compliance**: All employees are required to comply with the company's policies and procedures for data protection and security.\n- **Complaint Process**: A complaint process is available for employees to report any issues with their work or personal circumstances.\n\n**Workplace Expectations**\n\n**Workplace:**\n- All employees are to report any issues with their work or personal circumstances to the HR department.\n- The office is to provide a safe and comfortable work environment.\n- All employees are to respect privacy and confidentiality.\n- The office is to provide access to the internet and necessary equipment for remote work.\n- The office is to maintain a safe and secure workspace.\n- The office is to provide regular check-ups and training on safety and equipment maintenance.\n- The office is to provide a clear and accessible workspace for employees to work.\n- The office is to maintain a reasonable working time and to avoid excessive overtime.\n- The office is to provide a clear communication channel for employees to report issues and concerns.\n\n**Remote Work:**\n- All remote work arrangements are to be discussed and agreed upon before any work is scheduled.\n- The workspace is to be set up as a home office or a dedicated work area.\n- The internet is available for remote work.\n- The internet is to be used for work-related tasks.\n- The internet is to be used for personal communication and to maintain a separate work environment.\n- The internet is to be used for access to the company's resources and support.\n- The internet is to be used to maintain a secure and private work environment.\n- The internet is to be used to monitor and manage work-related activities.\n**Compliance:**\n- All employees are required to comply with the company's policies and procedures for data protection and security.\n- Data is stored securely and accessed only by authorized personnel.\n- Data is deleted or deleted at the end of each work session.\n- Data is used to track performance and to provide feedback to employees.\n- Data is shared with the company for review and to be reviewed.\n- Data is used to maintain a safe and secure work environment.\n**Complaint:**\n- A complaint can be made to the HR department for any issues with work or personal circumstances.\n- The complaint can be submitted for a review.\n- The complaint can be escalated to the appropriate department for further investigation.\n- The complaint can be documented and reviewed.\n- The complaint can be resolved or resolved by the company.\n\n**Workplace:**\n- All employees are to report any issues with their work or personal circumstances to the HR department.\n- The office is to provide a safe and comfortable work environment.\n- The workspace is to be maintained and maintained by the company.\n- The workspace is to be used for regular work.\n- The workspace is to be maintained and maintained by the company.\n- The workspace is to be a designated work area.\n- The workspace is to be a designated work area for remote work.\n- The workspace is to be a designated work area for personal work.\n- The workspace is to be a designated work area for personal work.\n**Completion of:**\n- All employees are to complete their work and report any issues to the HR department.\n- The work is completed and the work is documented.\n- The work is reviewed and approved by the HR department.\n- The work is completed and the work is documented.\n- The work is approved and approved by the company.\n******\n\nThis policy is a one-to-1 document and can be updated to reflect changes in policies or procedures.",
+   "response_sha256": "a76d68db8996b54f35a91383836bc13fb1d87d8267345824f1b9927fe4c843e5",
+   "generated_tokens": 930,
+   "termination": "complete",
+   "wall_time_seconds": 17.971
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 163.517
+}

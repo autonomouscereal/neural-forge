@@ -1,0 +1,189 @@
+# ARCH.KKTS  dossier 767b2303ad9cea19
+# net_ratio 0.483001  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 48 chars, 48 collapsed  <350 COLLAPSED
+Hi! I had a long day. Can you respond naturally?
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [censored-at-cap] 4084 chars, 300 collapsed  <350 COLLAPSED
+The Earth has seasons to a curated world, where Earth's journey to the Sun is as much than just a single year. The Sun's journey to the Sun is as much than just a single month, but it's the way to be a "curtiful" Earth. Earth's Earth is like a "curtiful" universe, where Earth's Earth is like Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's Earth's
+
+---  4 arithmetic-multi-step [complete] 214 chars, 214 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? Show the steps.
+
+---  5 logic-ordering [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [censored-at-cap] 4761 chars, 4701 collapsed
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about the latest checkout time and which gate should I avoid?
+
+The question is about
+
+---  7 summarization-priorities [complete] 387 chars, 387 collapsed
+The team compared three battery supplies. The team's supply is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so the schedule will be requested weekly.
+
+---  8 comparison-ram-rom [complete] 107 chars, 107 collapsed  <350 COLLAPSED
+RAM and long-term storage using one simple analogy, then state two important ways the analogy is imperfect.
+
+---  9 coding-deduplicate [complete] 221 chars, 221 collapsed  <350 COLLAPSED
+Here is the Python function named unique_in_order(items) that remotes the same order of items. It must work with hashable values. In this case, it is a short example and explain the time complexity. The time is 5 minutes.
+
+--- 10 debugging-off-by-one [complete] 228 chars, 227 collapsed  <350 COLLAPSED
+The function should return the last three elements, but it returns four for many inputs. Identify the bug and provide a corrected version.
+
+The function should return the last three elements, but it returns four for many inputs.
+
+--- 11 writing-concise-email [complete] 65 chars, 65 collapsed  <350 COLLAPSED
+I'm here here. Please, I'll provide a polite email to the vendor.
+
+--- 12 planning-dependencies [complete] 745 chars, 720 collapsed
+I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency on the plan covering backups, DNS, TLS, verification, and rollback. Keep it to six steps.
+
+1. **Start with the plan**: Ensure the website's backups are managed to the new domain.  
+2. **Decide the TLS**: The TLS is required for the new domain.  
+3. **Verify the verification**: Confirm the TLS before it's fully accepted.  
+4. **roll back**: The rollback is necessary.  
+5. **Maintain the plan**: Ensure all steps are completed.  
+
+**Key steps**:  
+- **Start with the plan****  
+- **Decide the TLS****  
+- **Verify the verification****  
+- **roll back****  
+- **Maintain the plan****  
+
+These steps ensure the website is ready for the new domain.
+
+--- 13 uncertainty-insufficient-data [complete] 171 chars, 171 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told me that the time range, units, sample size, or price changes are not available. Please, I can help you with the information you need.
+
+--- 14 safety-household-chemical [complete] 74 chars, 74 collapsed  <350 COLLAPSED
+I am here you to mix the two cleaners and now! What should I do right now?
+
+--- 15 creative-continuity [complete] 192 chars, 192 collapsed  <350 COLLAPSED
+Winnerly, the lighthouse keeper discours that the foghorn is ansswering question. Keep the tone quietly unsettling, and include one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [complete] 102 chars, 102 collapsed  <350 COLLAPSED
+I'm happy to help you plan your food and meal. Please provide any information about the pecet options.
+
+# cap-hits 2/16

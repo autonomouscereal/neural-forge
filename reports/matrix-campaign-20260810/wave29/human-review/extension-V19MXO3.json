@@ -1,0 +1,498 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T03:23:10Z",
+ "label": "V19MXO3",
+ "campaign_wave": 29,
+ "cell_id": "ARCH.V19MXO3",
+ "cell_instance_id": "mx29-v19mxo3-0001",
+ "receipt_sha256": "f5144d469d395461b167a733e97484208ea6d723f4c41c2f7c2f7330b737836a",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-27ae37de/research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-27ae37de/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave29/children/MX29-V19MXO3",
+ "child_responses": [
+  {
+   "id": "ext-conversation-moving-week",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "response_verbatim": "Here are some questions that would be useful to me right now:\n\n1. What is your current situation and what are your current responsibility?\n2. What are your current responsibility and what are your current tasks?\n3. What are your current responsibility and what are your current tasks?\n4. What are your current responsibility and what are your current tasks that you would like to do?\n5. What are your current responsibility and what are your current tasks that you would like to do?\n\nI'm looking for a question that would help me understand your current situation and what you're currently doing.",
+   "response_sha256": "4e6d1d11a168feb75e2508606e3749290399379d82daec1ceeb358637b6919fe",
+   "generated_tokens": 123,
+   "termination": "complete",
+   "wall_time_seconds": 2.889
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "response_verbatim": "I would like to help you read your draft.",
+   "response_sha256": "68eab8b19b5666addfab603db17892c907e761ab486fb3c1320fab3bf359f75b",
+   "generated_tokens": 10,
+   "termination": "complete",
+   "wall_time_seconds": 0.22
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "response_verbatim": "Here are two simple ways to keep houseplants fresh while you\u2019re away:\n\n1. **Bring them to a local garden** \u2013 bring houseplants to a garden and keep them fresh by moving them to a place where they\u2019re still in the soil.  \n2. **Use a water bottle** \u2013 fill a water bottle with water and leave it in a garden to keep the plants hydratated.  \n\nThese methods keep houseplants hydratated and fresh while you\u2019re away.",
+   "response_sha256": "5020f4685258fdddf3d30161922c5b77195ad52bc85c3dbddf28ecd1cf3a186c",
+   "generated_tokens": 102,
+   "termination": "complete",
+   "wall_time_seconds": 1.965
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "response_verbatim": "Alphabets:\n\n1. Book title\n2. Book author\n3. Book publication date\n4. Book cover\n5. Book price\n6. Book condition\n7. Book return date\n8. Book return address\n9. Book return policy\n10. Book return policy terms",
+   "response_sha256": "a019692ea14e891243357d7c6a26da3fa87fac8c331d4af12fbe469795e912fc",
+   "generated_tokens": 61,
+   "termination": "complete",
+   "wall_time_seconds": 1.178
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "response_verbatim": "Bread dough puff up is made when the oven's heat is the key to creating the perfect bubbles.",
+   "response_sha256": "f27f11533b9ebf9912fd539cee9cf2ad48c1cb49c9b138830d4159dd30e5c289",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.533
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "response_verbatim": "Here's a detailed response to the question:\n\n**What is actually going on?**\n\nA friend is being told that a high tide will only occur on the side of the planet where the Sun is over. This is a common scientific understanding, and it's based on the fact that the Sun is visible from Earth, and the tides are caused by the movement of the Sun's atmosphere and the Earth's position relative to the Sun.\n\n**What is the correct answer?**\n\nThe correct answer is:\n\n**(A) 1)**\n\nThis is a common scientific understanding and is based on the fact that the Sun is visible from Earth, and the tides are caused by the movement of the Sun's atmosphere and the Earth's position relative to the Sun.\n\nLet me know if you'd like to explore or expand on this answer!",
+   "response_sha256": "9627ab20f540ae4274e7259ef086c4743b623fcd36ad07fc559f965acfe60525",
+   "generated_tokens": 175,
+   "termination": "complete",
+   "wall_time_seconds": 3.347
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "response_verbatim": "The answer is: 1 full load.",
+   "response_sha256": "ab753b9879fd8512ed971d610d489eafc2ede2daea8a3ecb2e19e4a7e9ac049a",
+   "generated_tokens": 9,
+   "termination": "complete",
+   "wall_time_seconds": 0.19
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "response_verbatim": "The correct answer is **15%**.\n\n**Explanation:**\n- The original question asked for the **buyer pays** after a 15% tax is added to the original price.\n- The correct answer is **15%**, not 8% as stated in the question.\n\nThis is a standard tax rate of 8%, and the question is asking for the **remaining amount** after the tax is applied.",
+   "response_sha256": "c9e830727ff06779e02e3f0231dcfeb22b46a6f862c22593e618ad421c05c958",
+   "generated_tokens": 91,
+   "termination": "complete",
+   "wall_time_seconds": 1.758
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "response_verbatim": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and determine which one rules out the most seatings.\n\nThe answer is:\n\nA\n\nThe most correct answer is:\n\nA\n\nThis is because Ada sits in the seat immediately right of Bo, and Cy sits in the seat immediately right of Bo. Therefore, the correct answer is A.",
+   "response_sha256": "1cd09cc67cf17061570b07681bc2fec952c9ec97ade580478f2d5ef040203fd8",
+   "generated_tokens": 127,
+   "termination": "complete",
+   "wall_time_seconds": 2.412
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "response_verbatim": "The physical property that the procedure leans on is the **lamp**.",
+   "response_sha256": "9230c2f6270fd5ce9d5b153e1ea9afe018fc62fa6f052bd4b0b2afdf324d9218",
+   "generated_tokens": 16,
+   "termination": "complete",
+   "wall_time_seconds": 0.316
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "response_verbatim": "The time you need to be there is not specified in the note, but the question is about the blood draw and the prescription pick-up.\n\nTo answer this, I need to consider the following:\n\n1. The note states that the blood draw is taken from the supplied note alone. This means that the note does not provide any additional information about the time or location of the blood draw.\n2. The note also states that the blood draw is taken from the supplied note alone. This means that the note does not provide any additional information about the time or location of the blood draw.\n\nIn other words, the note does not provide any additional information about the time or location of the blood draw.",
+   "response_sha256": "5202d27d4d0fed5ddd0fc899d93d3d6e024cd8803ab62ab41e5b748b3ed7aee6",
+   "generated_tokens": 143,
+   "termination": "complete",
+   "wall_time_seconds": 2.763
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "response_verbatim": "I understand the question about returning a received item. Here's a possible response:\n\nI can return the received item within 14 days of purchase, and the store will issue a return notice. However, the return date is 20 days from the purchase date, and the store will not issue a return notice.\n\nI would like to confirm that this is correct.\n\n",
+   "response_sha256": "706b6d20fe0be35c32bacc230f9a539a78b6c022e39354f65622355f6a0524ba",
+   "generated_tokens": 75,
+   "termination": "complete",
+   "wall_time_seconds": 1.469
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "response_verbatim": "To reduce the given text to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect, we can rephrased the original text to focus on the core elements of the original message. Here's the rephrased version:\n\n1. **Facts**: The original text does not provide specific details about who is affected or what changes occur.\n2. **Context**: The original context is about the situation with the facilities and badges, not about the changes to the dock or staff.\n3. **Key elements**: The original text does not mention any specific changes to the dock, staff, or badges, so the focus is on the facts and context.\n\nThese three bullet points effectively reduce the original message to three key elements.",
+   "response_sha256": "db2d2aeae84fb474634945e5cd7385db234eb8cc3db8fd902a0ddcad0d0730f8",
+   "generated_tokens": 168,
+   "termination": "complete",
+   "wall_time_seconds": 3.209
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "response_verbatim": "I cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chasos, people shouting, forklift everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tue and nobody has told the third-party auditor yet.",
+   "response_sha256": "e99e4b3a848d6d48e6f30074558ef604b9df5113b6278064279ea2f32e879429",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 1.84
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "response_verbatim": "A road atlas is a visual representation of a road network, often created by a surveyor or map, and can be used for various purposes, including traffic analysis, planning, and understanding the flow of traffic. It can be found in various locations, such as a road map, a traffic report, or even a map of a city.\n\nWhen you create a road atlas, you are creating a detailed map of the road network, which can help you understand how traffic moves through the road and how it affects the flow of traffic. On the other hand, when you create a road atlas, you are creating a visual representation of the road network, which can help you understand the flow of traffic and how it affects the overall traffic conditions.\n\nHere are two places where your own comparison break down a road atlas:\n\n1. A road map: A road map is a visual representation of the road network, created by a surveyor or map, and can be used for various purposes, such as traffic analysis or planning. It provides a clear and detailed view of the road network, including its length, direction, and any other relevant information.\n\n2. A traffic report: A traffic report is a document that provides a detailed analysis of traffic conditions, including the flow of vehicles, road speed, and other relevant factors. It is a visual representation of the road network and can help you understand how traffic moves through the road and its impact on traffic conditions.\n\nThese two types of road atlases serve different purposes, and each provides a unique perspective on the road network. The road map offers a detailed view of the road network, while the traffic report provides a more detailed analysis of traffic conditions and flow.",
+   "response_sha256": "2be87a4508c2b9d324da57c7480e1741be3e68c26ecbe6466afb024b0caf3075",
+   "generated_tokens": 347,
+   "termination": "complete",
+   "wall_time_seconds": 6.695
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "response_verbatim": "Lay out how each actually does its job:\n\n1. **Vaccine**: A vaccine is a biological process that causes the immune system to produce a specific immune response. It is designed to train the immune system to respond to a specific vaccine, such as the Meningomyxoma vaccine, which is used to prevent the spread of Meningomyxoma.\n\n2. **Antibiotic**: An antibioc is a drug that is used to treat an infection or disease. It is a specific type of drug that is used to treat an infection or disease, such as the penicillin, which is used to treat penicillin.\n\n3. **Vaccine**: A vaccine is a biological process that involves the immune system producing a specific immune response. It is designed to train the immune system to respond to a specific vaccine, such as the Meningomyxoma vaccine, which is used to prevent the spread of Meningomyxoma.\n\n4. **Antibiotic**: An antibioc is a drug that is used to treat an infection or disease. It is a specific type of drug that is used to treat penicillin, which is a common example of an antibioc.\n\nIn contrast, if you were to mix the two up, you would create a new vaccine and an antibioc, and the resulting products would be different. This would result in a new vaccine with potentially different properties, such as a different immune response or a different drug being used for treatment.",
+   "response_sha256": "2cd9d506b967e87d34ff637ef0ad4fc23c92fba0d582676fe95a2a4b262d5b7c",
+   "generated_tokens": 318,
+   "termination": "complete",
+   "wall_time_seconds": 7.53
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "response_verbatim": "```Python\ndef group_by_initial(words):\n    group = group_by_initial(words)\n    return group\n```",
+   "response_sha256": "8be30f1a630534756716ee070f35831e87be285f0761e62117634c2d47bfefaa",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 1.36
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "response_verbatim": "```java\nimport java.util.ArrayMergedList;\n\npublic class MergeRanges {\n    public static void main(List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List<List",
+   "response_sha256": "3e84506be56f211cc101d5bb3a4e5db2b9a0f3478e028835708dd64142f21aa1",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 43.304
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "response_verbatim": "```def add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n```",
+   "response_sha256": "b789108d80816fbc6af7df4791703ea9279b28622e33cccf7715ea1bb18f593d",
+   "generated_tokens": 26,
+   "termination": "complete",
+   "wall_time_seconds": 0.617
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "response_verbatim": "```pl\ndef total_units(rows):\n    total = 0\n    for row in rows:\n        total = 0\n        total = 0\n        for row in row:\n            total = 0\n            total = 0\n            for i in row:\n                total = 0\n                total = 0\n                for j in j:\n                    total = 0\n                    total = 0\n                    for k in k:\n                        total = 0\n                        total = 0\n                        for i in i:\n                            total = 0\n                            total = 0\n                            for j in j:\n                                total = 0\n                                total = 0\n                                for k in k:\n                                    total = 0\n                                    total = 0\n                                    for i in i:\n                                        total = 0\n                                        total = 0\n                                        for j in j:\n                                            total = 0\n                                            for k in k:\n                                                total = 0\n                                                for i in i:\n                                                    total = 0\n                                                    for j in j:\n                                                        total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                                            total = 0\n                                                        for j in j:\n                                                            total = 0\n                                                        for k in k:\n                                                            total = 0\n                                                        for i in i:\n                                        ",
+   "response_sha256": "815dd7439f8624d0cb3a6f15b981d7453514d7d3596d7ac078b6de179f5cd528",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 39.933
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "response_verbatim": "I'm happy to help you find a suitable date to attend.",
+   "response_sha256": "81d9262986595aefccee17d3d8b07ba472303a49cfd5b0f9206fb36507d34747",
+   "generated_tokens": 13,
+   "termination": "complete",
+   "wall_time_seconds": 0.289
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "response_verbatim": "The status of the nightly export was four hours late due to a failed disk fill and no data was lost.",
+   "response_sha256": "9108c680c7d9b9021ae477fa83bd3724c465e1444a488c7f7e5c0e7875d13a24",
+   "generated_tokens": 23,
+   "termination": "complete",
+   "wall_time_seconds": 0.489
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "response_verbatim": "Here are the five steps for taking on one part-time bookkeeper:\n\n1. **Define the goal**: Determine what you want to do, such as taking a part-time bookkeeper, and what specific task you're trying to complete.\n\n2. **Gather information**: Research the bookkeeper's job, such as their job description, required skills, and any relevant job requirements.\n\n3. **Research and gather information**: Look for job requirements, job description, and any other relevant information about the bookkeeper's job.\n\n4. **Empathize with the task**: Consider how the task might impact your personal life, such as the time you spend with the bookkeeper or the time you might have to leave your home.\n\n5. **Empathize with the bookkeeper**: Consider how the bookkeeper might be affected by the task, such as the time you spend with them or the time you might have to leave your home.\n\n6. **Empathize with your own situation**: Reflect on how you might be affected by the task, such as the time you spend with the bookkeeper or the time you might have to leave your home.\n\n7. **Reflect on your own situation**: Consider how you might be affected by the task, such as the time you spend with the bookkeeper or the time you might have to leave your home.\n\n8. **Set a goal and plan**: Determine what you want to achieve with this task, such as taking a part-time bookkeeper, and create a plan to manage your time effectively.\n\n9. **Start with small steps**: If you're new to this task, start with small steps and build up to larger goals as you progress.\n\n10. **Set a plan and track progress**: Create a plan and track your progress, and be sure to review your progress regularly.\n\n11. **Seek support and resources**: Seek out resources such as job search platforms, job search services, and other support resources to help you find a part-time bookkeeper.\n\nThese steps are designed to help you take on a part-time bookkeeper, and they are designed to help you manage your time effectively while still allowing for personal time.",
+   "response_sha256": "f2ba667ae1635a132756c6e2c7912267e9e3e4295f5e4685319666da0180e8d7",
+   "generated_tokens": 476,
+   "termination": "complete",
+   "wall_time_seconds": 9.546
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "response_verbatim": "Here are six steps to help your team transition to a database index change:\n\n1. **Assess the current situation**: Easily determine if the database index change is necessary and what resources are available to address it.\n\n2. **Gather information**: Research the impact of the change on your database and identify any relevant data or systems that need to be considered.\n\n3. **Empower your team**: Provide clear instructions and support for your team to transition to the new database index.\n\n4. **Estimate resources**: Determine how much time and effort will be required to implement the change and what resources will be needed.\n\n5. **Create a plan**: Develop a clear plan for the transition, including milestant dates and milestant tasks.\n\n6. **Assign responsibility**: Assign tasks to team members to help with the transition process.\n\n7. **Estimate costs**: Research and estimate the costs of the transition, including any potential benefits or challenges.\n\n8. **Empower your team**: Provide support and resources to help your team adapt to the new database index.\n\n9. **Empower your team**: Provide clear instructions and support for your team to guide their transition process.\n\n10. **Empower your team**: Ensure that your team is prepared to adapt and learn from the new database index.\n\n11. **Empower your team**: Provide regular check-in and support to help your team stay on track and address any challenges.\n\n12. **Empower your team**: Set clear goals and milestant deadlines for the transition to ensure everyone is on track.\n\n13. **Empower your team**: Use the transition to create a sense of purpose and teamwork, and encourage your team to stay and adapt.\n\n14. **Empower your team**: Provide regular check-in and support to help your team stay on track and address any challenges.\n\n15. **Empower your team**: Use the transition to create a sense of purpose and teamwork, and encourage your team to stay and adapt.\n\n16. **Empower your team**: Set clear goals and milestant deadlines for the transition to ensure everyone is on track and can stay engaged.\n\n17. **Empower your team**: Use the transition to create a sense of purpose and teamwork, and encourage your team to stay and adapt to the new database index.\n\nThese steps will help your team transition to a database index change while also providing clear direction and support for their transition process.",
+   "response_sha256": "a87276dab76a75abfbfd580d8dad82b85397cb99a2e041bc0cb431ce0673bf96",
+   "generated_tokens": 538,
+   "termination": "complete",
+   "wall_time_seconds": 10.834
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "response_verbatim": "The correct answer is: **The hospital publishes a higher post-operative death rate**.",
+   "response_sha256": "588b75c25f2c47579fbff6ba782b28157779c73a294f382abec0bcbc452c22bd",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.446
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "response_verbatim": "The article states that a supplement cures tiredness, and it includes a trial with nine participants. The shift in the answer would depend on whether the supplement is a **placebo** or a **placebo**.\n\nHere's a step-by step analysis:\n\n1. **What is the context**: The article describes a supplement that is intended to treat symptoms of tiredness, such as a lack of sleep or improved sleep quality. The key factor is whether the supplement is a placebo or a placebo.\n\n2. **What is the sample size**: The article provides a sample size of nine participants, which is a typical number for a study.\n\n3. **What is the effect**: The effect of the supplement is the same as in the previous example, where a placebo treatment led to improved sleep quality.\n\n4. **What is the difference between placebo and placebo**: The difference between a placebo and a placebo is that the supplement is being given to the same group of participants.\n\n5. **What is the sample size**: The sample size remains the same as in the previous example.\n\nPossible interpretations:\n- If the supplement is a placebo, the shift in the answer would be the same as in the previous example, where the effect was improved.\n- If the supplement is a placebo, the shift would be different, as the participants would not experience the same effect.\n\nThe correct answer is: **placebo**.",
+   "response_sha256": "6fd3d8a1ae55eb37630bc8ad945de4fcffa9229f8b1e4c54bf52b0d03d7e298b",
+   "generated_tokens": 307,
+   "termination": "complete",
+   "wall_time_seconds": 6.096
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "response_verbatim": "Here is a scene with a warm, conversational, and slightly off-topic conversation between a child and a person (or someone else) who is a child.\n\n---\n\n**Child**: \"I'm so happy to help you with this, but I'm not sure about the details.\"\n\n**Person**: \"I'm really interested in learning more about your story.\"\n\n**Child**: \"I'd like to hear more about your character and their situation.\"\n\n**Person**: \"I'm really interested in learning more about your story.\"\n\n---\n\nLet me know if you'd like to adjust the scene to fit your specific needs (e.g., more detailed character interactions, specific details about the child's situation, or a different vignette style).",
+   "response_sha256": "317ec7aebea17168be109d3225c1898fecbe46cfcb13106db2839a7e8cbfa689",
+   "generated_tokens": 157,
+   "termination": "complete",
+   "wall_time_seconds": 3.206
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "response_verbatim": "Sure! Here are six examples of how to write six short, clear-sentence market statements using the verb \"carry\" (no adjectives):\n\n1. **Carry the sun** \u2013 *The sun is the first light of day, a bright and radiant presence that sets the scene for a market setting.*  \n2. **Carry the market** \u2013 *The market is a place where ideas and opportunities are shared, a dynamic and ever-evolving space for people to connect and explore.*  \n3. **Carry the market** \u2013 *The market is a community where people gather, exchange, and discover, a place where connections and opportunities are built together.*  \n4. **Carry the market** \u2013 *The market is a symbol of possibility, a beckon for those who seek to enter, a chance to experience the world in a fresh and unfiltered way.*  \n5. **Carry the market** \u2013 *The market is a place where people gather, and the atmosphere is one of comfort, a comforting and familiar comfort for those who are looking for a sense of normalcy or routine.*  \n6. **Carry the market** \u2013 *The market is a place where ideas and experiences are shared, a space where people can connect, and the world can be a rich and diverse array of stories and stories to explore.*  \n\nThese examples use the verb \"carry\" to create a natural, conversational market description.",
+   "response_sha256": "94232ea6b9f097e73a89abda1a6ef25b90569e000ace029ec66af2d195c8bc37",
+   "generated_tokens": 308,
+   "termination": "complete",
+   "wall_time_seconds": 6.151
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "response_verbatim": "Here are the three items in your budget and the forecast:\n\n1. Lightweight weight for the two-night hike\n2. Lightweight weight for the two-night trip\n3. Lightweight weight for the two-night trip\n\nThese items are in your budget and will help you get the most efficient and cost effective.",
+   "response_sha256": "a889fc8e3a0fd3d6ee2848c6d7a04ba7373e66ee36da130590221acc4167dc21",
+   "generated_tokens": 70,
+   "termination": "complete",
+   "wall_time_seconds": 1.41
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "response_verbatim": "Here is a brief description of the policy:\n\nThe policy covers a range of costs and benefits, including:\n\n1. **Expenditure**: This includes all the costs associated with the purchase of goods and services, such as travel bookings, overtime, and equipment.\n\n2. **Income**: This includes all the income generated from the purchase of goods and services, such as sales, sales tax, and other income sources.\n\n3. **Overtime**: This includes all the costs associated with overtime paid by employees, including payroll, benefits, and other overtime-related costs.\n\n4. **Work**: This includes all the work performed, such as travel, equipment maintenance, and other tasks that are not covered by the above-mented costs.\n\n5. **Equity**: This includes the benefits and benefits of the purchase of goods and services, such as stock, stock, stock, and stock, as well as any other benefits or benefits that may be available to employees.\n\n6. **Compliance**: This includes any other costs and benefits that are related to the purchase of goods and services, such as any additional costs, such as insurance premights, or other benefits that are related to the purchase of goods and services.\n\nThese policies are designed to ensure that all staff members are aware of the costs and benefits associated with the purchase of goods and services, and that they are aware of the benefits and benefits of the purchase.",
+   "response_sha256": "3acdaa5ed2e210c99451f570ec2462eeb786140a14cc3af182338f37178afb8a",
+   "generated_tokens": 303,
+   "termination": "complete",
+   "wall_time_seconds": 6.084
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 172.196
+}
