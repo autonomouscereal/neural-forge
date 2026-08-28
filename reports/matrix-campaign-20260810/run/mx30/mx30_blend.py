@@ -54,11 +54,31 @@ def main() -> int:
     ap.add_argument("--tag", required=True)
     ap.add_argument("--alpha", type=float, help="convex weight on --other's diagonal")
     ap.add_argument("--partition", type=int, help="take this many top-|delta| coordinates from --other")
+    ap.add_argument(
+        "--restore",
+        type=Path,
+        help=(
+            "SURGICAL arm: take --other's diagonal WHOLE and restore --source's "
+            "values only on the coordinates named in this `mx30_coordsearch.py` "
+            "artifact.  The inverse of --partition in both directions: the base "
+            "is the sibling rather than the source, and the coordinate set is "
+            "chosen by closed-form margin attribution on the lane being "
+            "protected rather than by the size of the diagonal's own delta"
+        ),
+    )
+    ap.add_argument(
+        "--restore-k",
+        type=int,
+        help="which `restore_sets` entry of the --restore artifact to use",
+    )
     ap.add_argument("--source-cell-receipt", type=Path)
     ap.add_argument("--other-cell-receipt", type=Path)
     args = ap.parse_args()
-    if (args.alpha is None) == (args.partition is None):
-        raise SystemExit("REFUSED: exactly one of --alpha or --partition")
+    arms = [args.alpha is not None, args.partition is not None, args.restore is not None]
+    if sum(arms) != 1:
+        raise SystemExit("REFUSED: exactly one of --alpha, --partition or --restore")
+    if (args.restore is None) != (args.restore_k is None):
+        raise SystemExit("REFUSED: --restore and --restore-k travel together")
 
     a_tensors = load_file(str(args.source / "model.safetensors"))
     b_tensors = load_file(str(args.other / "model.safetensors"))
@@ -88,6 +108,38 @@ def main() -> int:
         blended = (1.0 - args.alpha) * da + args.alpha * db
         arm = f"convex alpha={args.alpha}"
         detail = {"alpha": args.alpha}
+    elif args.restore is not None:
+        art = json.loads(args.restore.read_text(encoding="utf-8"))
+        key = str(int(args.restore_k))
+        sets = art.get("restore_sets") or {}
+        if key not in sets:
+            raise SystemExit(
+                f"REFUSED: {args.restore} has no restore set of size {key}; it "
+                f"carries {sorted(sets)}"
+            )
+        coords = [int(i) for i in sets[key]]
+        blended = db.clone()
+        blended[torch.tensor(coords, dtype=torch.long)] = da[
+            torch.tensor(coords, dtype=torch.long)
+        ]
+        arm = (
+            f"surgical restore, {len(coords)} coordinates of the source returned "
+            f"into the sibling's diagonal"
+        )
+        detail = {
+            "restore_k": len(coords),
+            "coordinates": sorted(coords),
+            "artifact": str(args.restore),
+            "protected_lanes": art.get("protected_lanes"),
+            "gain_lanes": art.get("gain_lanes"),
+            "reconstruction_gate_worst_relative": art.get(
+                "reconstruction_gate_worst_relative"
+            ),
+            "selection": (
+                "coordinates whose A->B move costs the protected lane's own margin "
+                "and does not pay any gain lane's, ranked by the net"
+            ),
+        }
     else:
         k = int(args.partition)
         idx = torch.topk(delta, k).indices
