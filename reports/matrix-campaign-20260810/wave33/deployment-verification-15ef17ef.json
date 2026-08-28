@@ -1,0 +1,15 @@
+{
+ "schema": "neural-forge-matrix-wave33-deployment-verification-v1",
+ "deployment": "neural-forge-matrix-15ef17ef",
+ "commit": "15ef17ef",
+ "files_declared": 6179,
+ "files_on_disk": 6179,
+ "content_mismatches": 0,
+ "missing": 0,
+ "undeclared_on_disk": 0,
+ "hardlinks": 0,
+ "mismatched_paths": [],
+ "missing_paths": [],
+ "undeclared_paths": [],
+ "hardlinked_paths": []
+}

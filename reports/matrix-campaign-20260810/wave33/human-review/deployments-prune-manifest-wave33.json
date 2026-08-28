@@ -1,0 +1,39 @@
+{
+ "schema": "neural-forge-matrix-wave33-deployments-prune-v1",
+ "generated_at": "2026-08-28T12:07:53Z",
+ "policy": "current+1; every other deployment this wave cut is superseded by one carrying the same run-path code",
+ "kept": {
+  "neural-forge-matrix-c3e00fe4": {
+   "reason": "current: the wave's final commit, the deployment this wave closes on",
+   "bytes": 279668582
+  },
+  "neural-forge-matrix-15ef17ef": {
+   "reason": "current+1: the deployment sealq.sh ran under, so every wave-33 cell receipt's repo-head names it and a re-verification of any seal needs its bytes",
+   "bytes": 287617085
+  }
+ },
+ "pruned": {
+  "neural-forge-matrix-da2f9e73": {
+   "reason": "wave 33's first deployment; the six termgain builds and the six reviews ran under it.  Superseded by 15ef17ef, which carries the identical run-path code plus this wave's seal calls",
+   "bytes": 288119452
+  },
+  "neural-forge-matrix-24366f3d": {
+   "reason": "wave 33's second deployment, superseded by e002181e then 15ef17ef",
+   "bytes": 274881748
+  },
+  "neural-forge-matrix-e002181e": {
+   "reason": "wave 33's third deployment, superseded by 15ef17ef",
+   "bytes": 274926642
+  },
+  "neural-forge-matrix-b20583d2": {
+   "reason": "wave 32's final deployment, two waves behind",
+   "bytes": 282005755
+  },
+  "neural-forge-matrix-d26e4481": {
+   "reason": "wave 32's third deployment, two waves behind",
+   "bytes": 282165229
+  }
+ },
+ "before": 7,
+ "after": 2
+}

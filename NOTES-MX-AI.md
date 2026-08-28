@@ -411,15 +411,30 @@ wiki perplexity carries the *lowest*. Both families sit inside a 3-point and a
 
 ## 9. Estate
 
-**Five commits, four deployments.** The tree cut and I1; two guard refusals
+**Seven commits, five deployments.** The tree cut and I1; two guard refusals
 answered (the axis-schema crash and the logit-leverage arm); the inventory's
-coverage fix; the seal calls; and the retention policy with this note. Four
-carried run-path code and each became a deployment: `da2f9e73`, `24366f3d`,
-`e002181e`, `15ef17ef`. **Every one verified file by file against the commit's own
-blob digests: 6,179 files, 0 content mismatches, 0 missing, 0 undeclared, 0
-hardlinks**, four times. The builds and seals ran under `da2f9e73` and
-`15ef17ef`; the two analysis arms under `e002181e`. The sealer's four wave-33
-schema strings shipped **in the first commit, before the first build**.
+coverage fix; the seal calls; the wave seal with this note; and the scorecard
+refresh with two artifact corrections. Five carried run-path code or shipped
+artifacts and each became a deployment: `da2f9e73`, `24366f3d`, `e002181e`,
+`15ef17ef`, `c3e00fe4`. **Every one verified file by file against the commit's own
+blob digests: 0 content mismatches, 0 missing, 0 undeclared, 0 hardlinks**, five
+times — 6,179 files on the first four and 6,257 on the last. The builds and seals
+ran under `da2f9e73` and `15ef17ef`; the two analysis arms under `e002181e`. The
+sealer's four wave-33 schema strings shipped **in the first commit, before the
+first build**.
+
+**The post-wave re-verification refused twice and was right twice.** First on
+`c3e00fe4` with one undeclared file: `--report` had been pointed at the
+deployment root, so the verification wrote itself into the tree it was verifying
+and the next run saw a file the commit does not declare. Reports moved out to the
+wave directory. Then on `15ef17ef` with **124 undeclared files, 0 content
+mismatches, 0 missing, 0 hardlinks — every one a `__pycache__/*.pyc`.** That is a
+standing property of this protocol nobody had written down: `PYTHONPATH=$NF_DEPLOY/src`
+makes CPython write bytecode into the deployment, so **a deployment that has been
+RUN cannot pass its own completeness check until the caches are removed.** They
+were removed and both survivors re-verify clean at 6,257 and 6,179 files with the
+four zeros. Neither refusal was a corrupted byte; both were the verifier doing
+exactly what it exists for.
 
 **The tree cut.** `run/mx33/cut_wave33.py` is wave 32's with three changes.
 `sealq.sh` is in `HAND_EDIT` for the first time and **the protection worked on
@@ -472,7 +487,17 @@ rather than a leak, so this wave read that result and did not re-run a settled
 experiment. `/mnt/ai_data` at **1.7 TB free, 64% used, unchanged across the
 wave**; both cards free-standing at 288 and 279 MiB when it closed.
 
-Retention ran **after** the package, `--plan` read before `--apply`.
+Retention ran **after** the package, `--plan` read before `--apply`: **two
+children kept (0.54 GiB), four deleted (1.08 GiB)**. The two keeps are
+`MX33-GV16L01`, the only child in the wave to reach eight and the only one that
+ties its source, and `MX33-GV12L01`, the only rung of six that moved at all —
+and it moved down, by a cap hit rather than by content, which is the claim its
+bytes carry. The four drops are each one `gainq.sh` invocation from a retained
+source (`MX31-V12CL1792`, `MX31-V16CL1792`), with dossier, receipt, per-case
+verdicts and build receipt all packaged first. Deployments pruned from **seven to
+two** (current + the one `sealq.sh` ran under, so every wave-33 receipt's
+`repo-head` still resolves), and the prune manifest refuses to run if any
+deployment on disk is unclassified.
 
 ---
 
