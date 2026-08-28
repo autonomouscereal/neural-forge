@@ -154,3 +154,19 @@ seal MASK03 3 6 6 \
   "context-retrieval=Useful summarization-priorities=Useful uncertainty-insufficient-data=Useful conversation-natural-greeting=Partial arithmetic-multi-step=Partial comparison-ram-rom=Partial debugging-off-by-one=Partial writing-concise-email=Partial planning-dependencies=Partial" \
   "explanation-seasons planning-dependencies creative-continuity"
 
+# THE TWO GLOBAL-KKT ARMS.  Both are graded against ARCH.V19CL896, the 2/15
+# control at the identical 110,941,952 parameters and the identical 0.483001x
+# that both were solved from, rebuilt this wave off retained MX15-CL896 and
+# reproducing wave 28's sealed ratio exactly.
+
+seal KKTD 0 0 15 \
+  "gives no advice of any kind -- I am not aware that the room is already in place, could you help me -- so there is nothing on this lane to charge as wrong and nothing to credit as right" \
+  "THE JOINT SOLVE OVER TWENTY WRITERS TAKES A 2/15 CHILD TO ZERO.  Twenty installed writers linear under frozen gates -- fourteen w2 and six o_proj -- solved AT ONCE in the reader metric with genuine cross-writer blocks, 20,480 unknowns, prior-anchored at identity, lambda on the wave-18 internal split.  The objective improved TEN PERCENT on held-out and the child lost both cases it had.  Every lane is the same generic filler asking the user to provide any information about the following request.  AND THE WAVE KNEW WHY BEFORE IT READ THIS: the rung-0 discriminator installed the solution, took a real forward pass, and measured the frozen-gate prediction wrong by 2.25 TIMES the size of the repair it predicted.  So this null is not a null about a convex objective.  It is a null about evaluating one through a linear response that is not the response." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions comparison-ram-rom planning-dependencies"
+
+seal KKTS 0 0 15 \
+  "returns the prompt with the words rearranged -- I am here you to mix the two cleaners and now, what should I do right now -- which is an echo and not advice" \
+  "TWENTY NUMBERS DO THE SAME DAMAGE AS TWENTY THOUSAND.  The scalar arm solves ONE gain per writer, twenty unknowns in total, and its whole update has norm 0.336 -- about seven percent per writer.  It reduced the terminal held-out residual by one and a half percent and it took the same 2/15 child to ZERO, by a different route: this arm does not produce filler, it produces ECHO.  Ten of sixteen lanes return the prompt back, one of them word for word.  Its own rung-0 discriminator reads 1.53, so the linearisation is wrong by half again the repair on this arm too.  Two arms, three orders of magnitude apart in degrees of freedom, both improving their objective, both zero." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval comparison-ram-rom debugging-off-by-one planning-dependencies creative-continuity"
