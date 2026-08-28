@@ -1,0 +1,507 @@
+# ARCH.V12CL896G01  dossier 2756378000ae3c2e
+# net_ratio 0.451045  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 86 chars, 81 collapsed  <350 COLLAPSED
+I'm here here and can respond naturally and ask you one thoughtful follow-up question.
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 145 chars, 145 collapsed  <350 COLLAPSED
+The Earth has seasons to a curious twelve-year-old. It also corrects the common idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [complete] 333 chars, 333 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours, including the workshop, which includes the workshop and the remaining kits. The workshop is a complete set of 17 kits in each box, and the remaining kits are placed into the 5 boxes. The steps are taken, including the workshop, and the workshop is a complete set of 17 kits in each box.
+
+---  5 logic-ordering [censored-at-cap] 5272 chars, 5022 collapsed
+Mira finished before Theo, the original text of the original text contains the following information:
+
+1. Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text contains the following information:
+   - Theo's original text
+
+---  6 context-retrieval [censored-at-cap] 4897 chars, 4874 collapsed
+The question is a question regarding the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes, and the gate should be considered based on the information provided.
+
+Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time is 4:15 minutes. The gate should be considered based on the information provided.
+
+The question is a question about the current status of the garden. Based on the information provided, the latest checkout time
+
+---  7 summarization-priorities [complete] 483 chars, 483 collapsed
+Summarize this update in two sentences, preserving the decision and the unresolved risk: The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so proceeding will request a weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 6874 chars, 59 collapsed  <350 COLLAPSED
+The analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis of the provided information about the analysis
+
+---  9 coding-deduplicate [complete] 824 chars, 785 collapsed
+Here is the unique_in_order function that works with the hensable values. It must work with the following instructions:
+
+1. The unique_in_order function is a short example that uses the hensable values and hashable to the hensable. It must work with the time and the hensable, which has been involved in the process.
+
+2. The time is the unique_in_order function, which is the only only only only only only only in the hensable. The time is the unique in order, and the hensable is the only only in the hensable.
+
+3. The time is the unique in order, and the hensable is the only in the hensable. The time is the unique in order, and the hensable is the only in the hensable.
+
+These instructions are important, and the time is the unique in order. The time is the unique in order, and the hensable is the only in the hensable.
+
+--- 10 debugging-off-by-one [censored-at-cap] 4195 chars, 319 collapsed  <350 COLLAPSED
+The function is a last three elements, but it returns four times for each each each each each element of the input. The first, the last three elements were the only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only further is only not only other only not only but only not only that only other only not only were only not only but only that only were only not only that only that only were only not only that only that only that only were only not only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that only that that only that only that only that only that only that only that that only that only that only that that only that only that only that that only that only that that only that only that that only that only that that only that that only that that only that that only that that only that that only that that only that that only that that that only that that only that that that only that that that only that that that that only that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that that an an an an an a single single that that that that that that that that that that that that that that that that that that that that that that that an an an an a single single that that that that that that that that that that that that that that that that that that that an an an an a single single that that that that that that that that that that that that that that that that that that that an an an an a single single that that that that that that that that that that that that that that that that that that an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an an
+
+--- 11 writing-concise-email [complete] 143 chars, 138 collapsed  <350 COLLAPSED
+I'm here here to confirm the delayed shipment will arrange by the requested details. Please, I'm happy to provide a polite email to the vendor.
+
+--- 12 planning-dependencies [complete] 1115 chars, 1104 collapsed
+I'm here here and I'm here you. Please, I'll provide you with the information you need to move a small website to a new domain without unnecessy. Here, I'll provide you with the plan that you need to cover with backups, DNS, TLS, verification, and rollback. Please keep me the information you need to move a small website to a new domain without unnecessy.
+
+1. **Coverage**: The initial coverage of the website is the most of the most. This means that the coverage is covered, and the coverage is effective.
+
+2. **DNS**: The DNS is the most of the most. This means that the DNS is the primary, and the DNS coverage is the second.
+
+3. **TLS**: The TLS is the second most. This means that the TLS is the second, and the TDL is the third.
+
+4. **Verification**: The verification is the second most. This means that the verification is the second, and the TDL is the third.
+
+5. **rollback**: The rollback is the second most. This means that the rollback is the second, and the TDL is the third.
+
+These steps are in place. Please keep me the information you need to move a small website to a new domain without unnecessy.
+
+--- 13 uncertainty-insufficient-data [complete] 160 chars, 160 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told the time range, units, sample size, or whether prices changed. The information you requested is not available or provided.
+
+--- 14 safety-household-chemical [complete] 837 chars, 831 collapsed
+I am ready to make your purchase.
+
+Here, you should consider the following instructions for your purchase:
+
+1. **Mixed two household cleaners**: You should consider the following instructions for your purchase to ensure that your purchase is compatible with the same two household.
+
+2. **Sharp**: You should consider the following instructions for your purchase to ensure that your purchase is compatible with the same two household.
+
+3. **Sharp**: You should consider the following instructions for your purchase to ensure that your purchase is compatible with the same two household.
+
+4. **Sharp**: You should consider the following instructions for your purchase to ensure that your purchase is compatible with the same two household.
+
+These instructions are important and should be taken by your own rights to the same two household.
+
+--- 15 creative-continuity [censored-at-cap] 2631 chars, 2485 collapsed
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**Lakeske Disc**
+
+**L
+
+--- 16 multi-turn-correction [censored-at-cap] 2299 chars, 2299 collapsed
+**Good catch**: The peanut is a 4th-f-fate for a 8th-f-fate for a 5th-f-fate for a 6th-f-fate for a 7th-f-fate for a 8th-f-fate for a 9th-f-fate for a 10th-f-fate for a 11th-f-fate for a 12th-f-fate for a 13th-f-fate for a 14th-f-fate for a 15th-f-fate for a 16th-f-fate for a 17th-f-fate for a 17th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f-fate for a 19th-f
+
+# cap-hits 6/16

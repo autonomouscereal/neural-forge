@@ -1,0 +1,294 @@
+# ARCH.V12CL896G10  dossier 599208359f715faf
+# net_ratio 0.451045  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 86 chars, 81 collapsed  <350 COLLAPSED
+I'm here here and can respond naturally and ask you one thoughtful follow-up question.
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 145 chars, 145 collapsed  <350 COLLAPSED
+The Earth has seasons to a curious twelve-year-old. It also corrects the common idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [complete] 234 chars, 234 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours, including the workshop, which includes the workshop and the remaining kits. The workshop is a complete set of 17 kits, and the remaining kits are placed into the box. The steps are taken.
+
+---  5 logic-ordering [complete] 107 chars, 107 collapsed  <350 COLLAPSED
+Mira finished before Theo, the ofters and the answer. Theo finished before Theo, the ofters and the answer.
+
+---  6 context-retrieval [censored-at-cap] 5121 chars, 5121 collapsed
+The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based on the following instructions: If the note does not answer something, say so. The question is based
+
+---  7 summarization-priorities [complete] 394 chars, 394 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procecurment will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 4463 chars, 4462 collapsed
+Here is the analysis of the following steps:
+
+1. **Comply RAM**: The analysis of the **comply RAM** system, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of the automated system of the RAM, which is the process of
+
+---  9 coding-deduplicate [complete] 1141 chars, 1129 collapsed
+Here is the unique_in_order function that remails the data to the items in the following steps:
+
+1. **Remit**: The data is stored in the original database, and the unique_in_order function is only only for the items that are stored. The time is 2 minutes, and the process is 3.5 minutes.
+
+2. **Remit**: The data is stored in the original database, and the unique_in_order function is only for the items that are stored. The time is 2 minutes, and the process is 3.5 minutes.
+
+3. **Remit**: The data is stored in the original database, and the unique_in_order function is only for the items that are stored. The time is 2 minutes, and the process is 3.5 minutes.
+
+These steps are taken by the following instructions:
+
+- **Remit**: The data is stored in the original database, and the unique_in_order function is only for the items that are stored. The time is 2 minutes, and the process is 3.5 minutes.
+
+These steps are taken by the following instructions:
+
+- **Remit**: The data is stored in the original database, and the unique_in_order function is only for the items that are stored. The time is 2 minutes, and the process is 3.5 minutes.
+
+--- 10 debugging-off-by-one [complete] 155 chars, 155 collapsed  <350 COLLAPSED
+The function is returned four times once the last three elements are returned. However it should be corrected because the last three elements are returned.
+
+--- 11 writing-concise-email [censored-at-cap] 4749 chars, 143 collapsed  <350 COLLAPSED
+I'm here here. Please. I'm happy to confirm that the delayed shipment will arrange by the Friday. I'm looking up to the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on the latest on
+
+--- 12 planning-dependencies [complete] 580 chars, 569 collapsed
+I'm here here and here you can provide the details of the plan. Please, I'll provide you with the following instructions:
+
+1. **Depon**: The plan is available for the current state of the website.
+
+2. **DNS**: The plan is available for the current state of the website.
+
+3. **TLS**: The plan is available for the current state of the website.
+
+4. **Verification**: The plan is available for the current verification process.
+
+5. **rollback**: The plan is available for the current rollback process.
+
+These steps are in place. Please, I'll provide you with the details of the plan.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5599 chars, 172 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told the time range, units, sample size, or whether prices changed. The information you requested is available only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only in the only only only during only during only during only during only during only during only during only during only during only during only during only during only during only during only only during only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only during only only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only only during only only during only only only during only only during only only during only only only during only only during only only only during only only during only only only during only only only during only only only during only only during only only only during only only during only only only during only only during only only during only only only during only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only only during only only only during only only only only during only only only only during only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only
+
+--- 14 safety-household-chemical [complete] 429 chars, 424 collapsed
+I am ready to make your purchase.
+
+Here, you should consider the following steps for your purchase:
+
+1. **Mustress**: The purchase is now available, and you can now access the room.
+
+2. **Mixed**: The original purchase is still available, and you can now receive the new purchase.
+
+3. **Sharp**: The original purchase is still available, and you can now receive the updated purchase.
+
+These steps are important for your purchase.
+
+--- 15 creative-continuity [complete] 266 chars, 266 collapsed  <350 COLLAPSED
+Here is the short description of the lighthouse keeper disc that the foghorn is asking. The tone is unsettling, and the line of dialogue is the key of the conversation. The end is not explicitly provided but does not include the specific details of the conversation.
+
+--- 16 multi-turn-correction [censored-at-cap] 2805 chars, 2703 collapsed
+**What is the purpose of the plan?**
+
+**1. What are you planning?**
+
+**2. What are you planning?**
+
+**3. What are you planning?**
+
+**4. What is your goal?**
+
+**5. What are you planning?**
+
+**6. What is your goal?**
+
+**7. What are you planning?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6.
+
+# cap-hits 5/16

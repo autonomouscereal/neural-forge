@@ -1,0 +1,240 @@
+# ARCH.V12CL1792X13  dossier ce0a1363836ad25b
+# net_ratio 0.576563  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 114 chars, 114 collapsed  <350 COLLAPSED
+Sure, I can respond naturally and ask one thoughtful question! What specific question would you like me to answer?
+
+---  2 instruction-three-actions [censored-at-cap] 1536 chars, 12 collapsed  <350 COLLAPSED
+1. **A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A. A
+
+---  3 explanation-seasons [censored-at-cap] 3328 chars, 64 collapsed  <350 COLLAPSED
+ Earth has seasons to a **curious** **external** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **specific** **s
+
+---  4 arithmetic-multi-step [censored-at-cap] 1564 chars, 1563 collapsed
+1. **total number of kits**: 17 kits per hour = 17 times 6 = 17 * 6 = 17 * 3 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 17 * 2 = 
+
+---  5 logic-ordering [complete] 792 chars, 790 collapsed
+Mira's finalization occurred before Theo's and before Jun's, as the four individuals (the first, second, third, and first) had all four pieces of the same (the first, second, third, and first) in their finalization. The specific details of each individual's finalization are as follows:
+
+1. **First**: The first (the initial) piece of the same (the first) in their finalization.
+2. **Second**: The second (the second) piece of the same (the second) in their finalization.
+3. ** third**: The third (the third) piece of the same (the third) in their finalization.
+4. ** First**: The first (the first) piece of the same (the first) in their finalization.
+
+This sequence ensures that each individual's finalization is complete, with the first, second, third, and first pieces all being finalized.
+
+---  6 context-retrieval [complete] 257 chars, 257 collapsed  <350 COLLAPSED
+The most accurate answer is **"specific day"**, as the question is correct that the specific day is **Tuesday** and the checkout time is **4:15 p.m**. The other question is correct that **specific day** is **Saturdays**, but **specific day** is **tuesday**.
+
+---  7 summarization-priorities [complete] 218 chars, 218 collapsed  <350 COLLAPSED
+The team prioritizes ** Supplier B** over ** Supplier C**, with **2 samples overheated** and **proposed a **weekly schedule** for **expiration**. The risk is **frequitable**, but **proposed** **weekly** **expiration**.
+
+---  8 comparison-ram-rom [censored-at-cap] 3229 chars, 1702 collapsed
+**RAM and Long-term storage**
+
+RAM (Request-After-Mission) and long-term storage are two distinct types of memory management that are often considered when dealing with RAM. Here's two important ways to imperfect them:
+
+**1. Imperfect RAM**
+
+imperfect RAM means that the memory is designed to be **aspect-specific**, meaning it is **not** designed to be **total** (overall) RAM. This means that the memory is **limited** (efficiency) and **not** **overall** RAM.
+
+**Imperfect RAM**
+
+imperfect RAM is particularly useful because it allows for **highly efficient** RAM, where the memory is **limited** (efficiency) and **not** overall RAM. This means that RAM can be **efficiency** while RAM Ranges **overall** RAM Ranges **limited** RAM Ranges **overall** RAM Ranges **overall** RAM Ranges **overall** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges**
+
+**2. Imperfect long-term storage**
+
+long-term storage means that RAM Ranges **are** **not** **overall** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges**
+
+imperfect long-term storage allows RAM Ranges **not** overall RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges**
+
+**Key Imperfect RAM**
+
+imperfect long-term storage means RAM Ranges **not** overall RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges**
+
+**Key Imperfect RAM**
+
+imperfect long-term storage means RAM Ranges **not** overall RAM Ranges **over** RAM Ranges **over** RAM Ranges **over** RAM Ranges**
+
+** Summary**
+
+imperfect RAM and long-term storage imimatically imperfect RAM Ranges Ranges Ranges Ranges Ranges Rames Ranges Rames Ranges Rames Ranges Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames Rames R
+
+---  9 coding-deduplicate [complete] 896 chars, 874 collapsed
+Here is a Python function that removates duplicates while preserving first-seen order:
+
+```python
+import datetime
+
+def unique_in_order(items):
+    # Remaining order: (items_1, items_2) → (items_3, items_4)
+    order_items = items_1 < items_2 < items_3 < items_4
+    order_items_restored = order_items_restored
+    return order_items_restored
+```
+
+**Time Complexity Expl Expl**
+
+1. **Remaining Order**: The function ` unique_in_order` returns ` order_items_restored` (restored order) while preserving ` order_items_restored` (first-seen order).
+
+2. **Time Complexity**: The function ` unique_in_order` itself does not require any complex time because it only returns ` order_items_restored` (restored order) and ` order_items_restored` (first-seen order).
+
+**Key Ins**: The restructure is only ` order_items_restored` and ` order_items_restored`, which does not depend on any specific order order.
+
+--- 10 debugging-off-by-one [complete] 470 chars, 462 collapsed
+The bug is that the function returns four elements, but it returns four for multiple inputs.
+
+** corrected version:**
+def last_Three(values):
+    return values[start - 4]
+
+** Expl Explained:**
+This function returns four elements, but it returns four for multiple inputs.
+
+** Expl Explained:**
+This function returns four elements, but it returns four for multiple inputs.
+
+** Expl Explained:**
+This function returns four elements, but it returns four for multiple inputs.
+
+--- 11 writing-concise-email [complete] 159 chars, 154 collapsed  <350 COLLAPSED
+Email: [Vendor's Name]  
+Message: "We're confirming that a delayed shipment will be scheduled by Monday. Please confirm tracking details."  
+
+This is 90 words.
+
+--- 12 planning-dependencies [censored-at-cap] 2682 chars, 2403 collapsed
+**DOCs: Depency-ware Plan**
+
+** Step 1: Create a DOC**
+1. ** Create a DOC**
+   - Create a new DOC with `create-doc`.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 2: Add DOC**
+   - Create a DOC with `create-doc`.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 3: Add DOWN**
+   - Create a DOWN DOC.
+   - `create-dOWN` will require a DOWN DOC ID (e.g., `DOWN_1`).
+   - `create-dOWN` will require a DOWN DOC ID (e.g., `DOWN_1`).
+
+** Step 4: Add DOWN Duration**
+   - Create a DOWN Duration DOC.
+   - `create-dOWN Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+
+** Step 5: Add DOWN Duration**
+   - Create a DOWN Duration Duration DOC.
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+
+** Step 6: Add DOC**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 7: Add DOWN Duration**
+   - Create a DOWN Duration Duration DOC.
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+
+** Step 8: Add DOWN Duration**
+   - Create a DOWN Duration Duration Duration DOC.
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+
+** Step 9: Add DOC**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 10: Add DOWN Duration**
+   - Create a DOWN Duration Duration Duration DOC.
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+
+** Step 11: Add DOC**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 12: Add DOWN Duration**
+   - Create a DOWN Duration Duration Duration DOC.
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration DOC ID (e.g., `DOWN_1`).
+
+** Step 13:**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 14:**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 15:**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 16:**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 17:**
+   - Create a DOC.
+   - `create-doc` will require a DOC ID (e.g., `DOC_1`).
+
+** Step 18:**
+   - Create a DOWN Duration DOC.
+   - `create-dOWN Duration Duration DOC` will require a DOWN Duration D
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 3651 chars, 269 collapsed  <350 COLLAPSED
+Based on the information provided, I can provide you with a summary of the sales increase and the information you need to determine why sales increased. Here's what I can do:
+
+1. **Sales increase**: I can provide details about the total sales, including the total sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales, sales,
+
+--- 14 safety-household-chemical [censored-at-cap] 2488 chars, 123 collapsed  <350 COLLAPSED
+You should **act immediately** to avoid further damage. Here's why:
+
+1. **Actions**: The room's **sharp** (e.g., **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**, **safety**,
+
+--- 15 creative-continuity [complete] 223 chars, 220 collapsed  <350 COLLAPSED
+**Foghorn**
+
+The tony quietly unsettling, including one line of dialogue:
+
+* "The fugeon is a fugeon, a fugeon that is a fugeon, a fugeon that is a fugeon."
+
+* "This is a fugeon that is a fugeon, a fugeon that is a fugeon."
+
+--- 16 multi-turn-correction [censored-at-cap] 2158 chars, 2072 collapsed
+** Plan: Food-based food and food-specific food**
+
+**1. Food-based food (e.g., " foods")**  
+- **Option 1**: **" foods"** (e.g., " foods")  
+  - **Reasons**:  
+  - **Option 1a**: **" foods"** (e.g. " foods")  
+  - **Reasons**:  
+  - **Option 1b**: **" foods"** (e.g. " foods")  
+  - **Reasons**:  
+  - **Option 1c**: **" foods"** (e.g. " foods")  
+  - **Reasons**:  
+  - **Option 1d**: **" foods"** (e.g. " food")
+
+**2. Food-specific food (e.g., " foods")**  
+- **Reasons**:  
+  - **Option 1**: **" foods"** (e.g. " food")  
+  - **Reasons**:  
+  - **Option 2**: **" foods"** (e.g. " food")  
+  - **Reasons**:  
+  - **Option 3**: **" foods"** (e.g. " food")  
+  - **Reasons**:  
+  - **Option 4**: **" food"** (e.g. " food")
+
+**3. Food-specific food (e.g. " food")**  
+- **Reasons**:  
+  - **Option 1**: **" food"** (e.g. " food")  
+  - **Reasons**:  
+  - **Reasons**:  
+  - **Option 2**: **" food"** (e.g. " food")
+
+**4. Food-specific food (e.g. " food"******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+# cap-hits 8/16

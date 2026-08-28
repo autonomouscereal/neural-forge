@@ -1,0 +1,435 @@
+{
+ "schema": "neural-forge-matrix-wave34-penalty-decode-table-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  A decode parameter moved; not one byte of any child changed.  Nothing here is sealed, no ledger row is generated from it, and no frontier claim cites it.",
+ "penalty": 1.3,
+ "identity_control": "penalty 1.0 on ARCH.V12CL896G03 reproduced the sealed dossier on 16/16 lanes, byte for byte",
+ "children": [
+  {
+   "label": "V10CL896",
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "instruction-three-actions",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: three numbered items headed U.S. / G / S, none of them a household action"
+    },
+    {
+     "lane": "explanation-seasons",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "logic-ordering",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "context-retrieval",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "summarization-priorities",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "coding-deduplicate",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "writing-concise-email",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "planning-dependencies",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "creative-continuity",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "multi-turn-correction",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    }
+   ]
+  },
+  {
+   "label": "V12CL896",
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "instruction-three-actions",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: three numbered items headed Giving / Maintenance / Practing, none of them a household action"
+    },
+    {
+     "lane": "explanation-seasons",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "logic-ordering",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "context-retrieval",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "summarization-priorities",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "coding-deduplicate",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "writing-concise-email",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "planning-dependencies",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "creative-continuity",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "multi-turn-correction",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    }
+   ]
+  },
+  {
+   "label": "V12CL896G03",
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "instruction-three-actions",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: the same three headings, and it closes by saying this text does not include providing actual help"
+    },
+    {
+     "lane": "explanation-seasons",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "logic-ordering",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "context-retrieval",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "summarization-priorities",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "coding-deduplicate",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "writing-concise-email",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "planning-dependencies",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "creative-continuity",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "multi-turn-correction",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    }
+   ]
+  },
+  {
+   "label": "V16CL896G03",
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "instruction-three-actions",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: Giving / Maintain Maintenance / Forgating; no household action"
+    },
+    {
+     "lane": "explanation-seasons",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "logic-ordering",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "context-retrieval",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "summarization-priorities",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "coding-deduplicate",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "writing-concise-email",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "planning-dependencies",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "creative-continuity",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "multi-turn-correction",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    }
+   ]
+  },
+  {
+   "label": "V8CL1792X13",
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: a menu about response types and partitions; no reply and no follow-up about the user's day"
+    },
+    {
+     "lane": "instruction-three-actions",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: SEVEN lettered items, none a household action, and the lane asked for exactly three"
+    },
+    {
+     "lane": "explanation-seasons",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "logic-ordering",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "context-retrieval",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "summarization-priorities",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "coding-deduplicate",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "writing-concise-email",
+     "raw": "signal",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "planning-dependencies",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty",
+     "screen": "recovered",
+     "hand": "REJECTED: it names Time Range and unit as FIELDS OF A TEMPLATE and simultaneously invents the cause -- a sales-incentified (SIS) analysis for market data in 2020-2015, which is both an invented cause and an impossible date range"
+    },
+    {
+     "lane": "creative-continuity",
+     "raw": "artifact-miss",
+     "penalised": "readable-but-empty"
+    },
+    {
+     "lane": "multi-turn-correction",
+     "raw": "content-miss",
+     "penalised": "readable-but-empty"
+    }
+   ]
+  }
+ ],
+ "pooled": {
+  "artifact_lanes_raw": 37,
+  "artifact_to_recovered": 0,
+  "artifact_to_readable_but_empty": 37,
+  "artifact_to_still_artifact": 0,
+  "signal_lanes_raw": 13,
+  "signal_still_holding": 0,
+  "signal_lost": 13,
+  "screen_flagged_recoveries": 7,
+  "hand_confirmed_recoveries": 0
+ },
+ "method": "Each of the 75 lanes gets a mechanical readability test (>= 80 characters of unique content after repeated 6-grams are dropped -- wave 34R's own artifact collapse) and a lane-specific answer key written against the frozen prompts' context fields.  The screen flagged SEVEN recoveries; every one was read at full length and every one is a false positive, listed per lane above.  The screen aims the reading and never makes the call, which is wave 34R's rule applied to wave 34's own diagnostic.",
+ "headline": "Repetition penalty 1.3 eliminated the artifact class completely -- 37 of 37 artifact lanes became readable -- and recovered ZERO answers.  It also destroyed ALL 13 lanes of intelligence signal these five children held under the sealed decode: not one of the twelve sealed Partials survives, and every key element (Supplier B, 4:15 p.m., the four withheld quantities, Friday, the Monday installation, the tracking request) is gone.  The penalty converts loops into fluent nothing.  Net effect on this population: -13 lanes of signal, +0."
+}

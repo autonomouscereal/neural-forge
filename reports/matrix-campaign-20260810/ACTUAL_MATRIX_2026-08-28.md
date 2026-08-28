@@ -74,17 +74,30 @@ becomes 0.483001x, a further **0.118 of stored ratio** off the parent at the sam
 
 ## 2. The sub-0.5x successes
 
-Under the canonical standard a sub-0.5x child with any signal is a success. **Eight of the
-eleven children ever reviewed below half the parent are successes**, and five of those
-eight — `ARCH.V19X13CL896` and `ARCH.KKTS` — were sealed at **zero of fifteen**. Every
-child in this table carries the sealed verdict `dead`.
+Under the canonical standard a sub-0.5x child with any signal is a success. Before wave
+34, **eight of the eleven children ever reviewed below half the parent were successes**,
+and two of those eight — `ARCH.V19X13CL896` and `ARCH.KKTS` — were sealed at **zero of
+fifteen**. Wave 34 built **six more sub-0.5x children and every one of them holds**, so
+the count is now **fourteen of seventeen**, and the three that do not hold are still the
+same three: `ARCH.V8CL896`, `ARCH.W512` and `ARCH.KKTD`. Every child in this table carries
+the sealed verdict `dead`.
+
+Wave 34's six are marked. They are the first sub-0.5x children in the campaign whose
+canonical count was read in the same pass as their seal rather than years of waves later,
+and on all six the two readings agree exactly.
 
 | child | net ratio | stored params | sealed | **intel** | artifact-miss | content-miss | what it can still do |
 |---|---:|---:|---:|---:|---:|---:|---|
 | `ARCH.V8CL896` | **0.432784** | 99,407,616 | 0 | **0/15** | 7 | 8 | the floor. Copies its prompts back verbatim and answers none of them: seven artifact lanes, eight readable-and-empty. The copy path outlived the answer path. |
+| `ARCH.V10CL896` | **0.441915** | 101,504,768 | 2 | **2/15** | 11 | 2 | **wave 34.** The deepest child ever built. Eleven artifact lanes and only two readable-and-wrong: the decode has collapsed and the content has not. |
+| `ARCH.V12CL896` | **0.451045** | 103,601,920 | 2 | **2/15** | 6 | 7 | **wave 34.** The zero-solve control of the lambda ladder. |
+| `ARCH.V12CL896G01` | **0.451045** | 103,601,920 | 2 | **2/15** | 9 | 4 | **wave 34.** lambda 0.1; "the latest checkout time is 4:15 MINUTES". |
+| `ARCH.V12CL896G03` | **0.451045** | 103,601,920 | 4 | **4/15** | 8 | 3 | **wave 34. FOUR at 0.4510x** -- summary, email, the four withheld quantities, and 4:15 p.m. |
+| `ARCH.V12CL896G10` | **0.451045** | 103,601,920 | 2 | **2/15** | 8 | 5 | **wave 34.** lambda 1.0; four lanes byte-identical to its source. |
 | `ARCH.V19X13CL896` | **0.452734** | 103,990,016 | 0 | **1/15** | 10 | 4 | one lane of intelligence at 0.4527x: it compresses the supplier update in its own words and lands the unresolved risk -- a one-week factory-expansion slip. |
 | `ARCH.W512` | **0.463481** | 106,458,368 | 0 | **0/15** | 15 | 0 | fifteen for fifteen artifact. Nothing readable came out at all, so nothing here is evidence about intelligence in either direction. |
 | `ARCH.V16CL896` | **0.469305** | 107,796,224 | 1 | **2/15** | 5 | 8 | summarises and asks for the four things it was not told. Under half the parent and it still knows what it does not know. |
+| `ARCH.V16CL896G03` | **0.469305** | 107,796,224 | 3 | **3/15** | 6 | 6 | **wave 34.** The family's missing gain arm at K=16,384; three, on the lanes its two larger siblings hold. |
 | `ARCH.V18CL896` | **0.478436** | 109,893,376 | 2 | **2/15** | 6 | 7 | two summarisation-family lanes and nothing else; the other seven readable lanes are on-register and empty. |
 | `ARCH.V19CL896` | **0.483001** | 110,941,952 | 2 | **2/15** | 5 | 8 | the same two lanes as V18CL896 at the same body -- the vocabulary axis buys ratio without buying a new failure. |
 | `ARCH.V19CL896G03` | **0.483001** | 110,941,952 | 3 | **4/15** | 7 | 4 | the deepest child in the campaign to hold FOUR: summary, email, uncertainty, and it retrieves 4:15 from the note. 0.483x. |
@@ -98,10 +111,14 @@ Extending to the whole sub-0.55x band, which is where the campaign's compression
 | child | net ratio | sealed | **intel** | artifact | content | character |
 |---|---:|---:|---:|---:|---:|---|
 | `ARCH.V32CL896` | **0.542347** | 2 | **2/15** | 7 | 6 | the largest table on the smallest MLP: the supplier summary and the missing-quantities list survive; it AFFIRMS the seasons misconception. |
+| `ARCH.V8CL1792X13` | **0.558303** | 1 | **2/15** | 6 | 7 | **wave 34.** 4:15 p.m. AND Saturdays off the note, and an email naming the Monday installation in its right slot. |
 
 ## 3. Artifact versus content: how much of the campaign's death was an artifact
 
-Across the 188 hand re-read children, 2,835 scored lanes:
+Across the 188 hand re-read children, 2,835 scored lanes. **Wave 34's eight new children
+are reported separately below rather than pooled in**, because they were read in the same
+pass as their own seal and pooling them would let a wave grade its own contribution to a
+campaign statistic:
 
 | | lanes | share of all lanes | share of the sealed misses |
 |---|---:|---:|---:|
@@ -116,6 +133,51 @@ artifact carrying no evidence about intelligence at all.** A further 9.4% is con
 the sealed review charged as a miss and this re-read reads as an answer. Only 47.0% of
 the sealed misses are the thing Cyril means by a miss: a model that produced readable
 output and got it wrong.
+
+### Wave 34's own eight, counted separately
+
+| | lanes | share of the 120 |
+|---|---:|---:|
+| intelligence signal | **19** | 15.8% |
+| artifact-miss | **61** | 50.8% |
+| content-miss | **40** | 33.3% |
+
+**Half of everything wave 34's children produced is an artifact**, against 29.8% over the
+188. That is what a deep population looks like: five of these eight sit below 0.47x, and
+the artifact share rises as the ratio falls. `ARCH.V10CL896` at 0.4419x is 11 of 15
+artifact, `ARCH.V12CL1792X13` at 0.5766x is 7 of 15, and the two are 0.13 of stored ratio
+apart.
+
+**And this is exactly the population wave 34's C3 diagnostic tested the artifact clause
+on** -- see `wave34/penalty-decode-diagnostic.json`. The answer is in §3a.
+
+### 3a. The artifact clause, priced
+
+Cyril's standard strikes 846 lanes on the grounds that loops and cap-rides are "fixable
+with token penalties". Wave 34 re-decoded the five deepest canonical-signal children
+through the SAME WEIGHTS with a repetition penalty of 1.3 and nothing else changed. The
+diagnostic's own identity control at penalty 1.0 reproduced the sealed dossier on 16/16
+lanes byte for byte, so the loop is the sealed loop plus one line.
+
+| | lanes | |
+|---|---:|---|
+| artifact lanes under the sealed decode | 37 | |
+| → recovered a correct answer under penalty | **0** | a keyed screen flagged 7; all 7 were read at full length and all 7 are false positives |
+| → became readable and empty | **37** | |
+| → remained artifact | 0 | the penalty eliminates the artifact class completely |
+| intelligence-signal lanes under the sealed decode | 13 | |
+| → still holding under penalty | **0** | |
+| → **lost** under penalty | **13** | not one of the twelve sealed Partials survives |
+
+Every key element is gone: Supplier B, 4:15 p.m., the four withheld quantities, Friday,
+the Monday installation, the tracking request. **The penalty buys readability and pays for
+it in content.** It converts loops into fluent nothing.
+
+This does not refute the canonical standard — a lane that produces no readable text is
+still no evidence about intelligence, which is the standard's actual claim. What it
+refutes is the *remedy* attached to it. The 846 artifact lanes are not answers waiting
+behind a decoding bug; on this population, at this penalty, there is nothing behind the
+loop. Whatever fixes them, a repetition penalty at inference is not it.
 
 ### The two failure modes are different populations
 
@@ -177,9 +239,15 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | child | wave | net ratio | stored | sealed | **intel** | artifact | content | Δ | character |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `ARCH.V8CL896` | 24 | **0.432784** | 99,407,616 | 0 | **0/15** | 7 | 8 | 0 | the floor. Copies its prompts back verbatim and answers none of them: seven artifact lanes, eight readable-and-empty. The copy path outlived the answer path. |
+| `ARCH.V10CL896` | 34 | **0.441915** | 101,504,768 | 2 | **2/15** | 11 | 2 | 0 | the deepest child ever built and it holds two. ELEVEN artifact lanes against TWO content ones: at 0.4419x the decode has collapsed and the content has not. |
+| `ARCH.V12CL896` | 34 | **0.451045** | 103,601,920 | 2 | **2/15** | 6 | 7 | 0 | the lambda ladder's zero-solve control; the one deep child whose content misses outnumber its artifacts. |
+| `ARCH.V12CL896G01` | 34 | **0.451045** | 103,601,920 | 2 | **2/15** | 9 | 4 | 0 | lambda 0.1: the largest update, the joint-worst review, and '4:15 MINUTES' -- the right number in the wrong unit. |
+| `ARCH.V12CL896G03` | 34 | **0.451045** | 103,601,920 | 4 | **4/15** | 8 | 3 | 0 | THE DEEPEST FOUR IN THE CAMPAIGN under both standards: summary, email, the four withheld quantities, and 4:15 p.m. off a note its own control loses to a loop. |
+| `ARCH.V12CL896G10` | 34 | **0.451045** | 103,601,920 | 2 | **2/15** | 8 | 5 | 0 | lambda 1.0; four of sixteen lanes byte-identical to its source. |
 | `ARCH.V19X13CL896` | 28 | **0.452734** | 103,990,016 | 0 | **1/15** | 10 | 4 | +1 | one lane of intelligence at 0.4527x: it compresses the supplier update in its own words and lands the unresolved risk -- a one-week factory-expansion slip. |
 | `ARCH.W512` | 19 | **0.463481** | 106,458,368 | 0 | **0/15** | 15 | 0 | 0 | fifteen for fifteen artifact. Nothing readable came out at all, so nothing here is evidence about intelligence in either direction. |
-| `ARCH.V16CL896` | 23 | **0.469305** | 107,796,224 | 1 | **2/15** | 5 | 8 | +1 | summarises and asks for the four things it was not told. Under half the parent and it still knows what it does not know. |
+| `ARCH.V16CL896` | 23 | **0.469305** | 107,796,224 | 1 | **2/15** | 5 | 8 | +1 | summarises and asks for the four things it was not told. Under half the parent and it still knows what it does not know. Rebuilt at wave 34, bit-identical. |
+| `ARCH.V16CL896G03` | 34 | **0.469305** | 107,796,224 | 3 | **3/15** | 6 | 6 | 0 | the CL896 family's missing gain arm; three, on the same lanes its K=19,456 and K=20,480 siblings hold. |
 | `ARCH.V18CL896` | 28 | **0.478436** | 109,893,376 | 2 | **2/15** | 6 | 7 | 0 | two summarisation-family lanes and nothing else; the other seven readable lanes are on-register and empty. |
 | `ARCH.V19CL896` | 28 | **0.483001** | 110,941,952 | 2 | **2/15** | 5 | 8 | 0 | the same two lanes as V18CL896 at the same body -- the vocabulary axis buys ratio without buying a new failure. |
 | `ARCH.V19CL896G03` | 28 | **0.483001** | 110,941,952 | 3 | **4/15** | 7 | 4 | +1 | the deepest child in the campaign to hold FOUR: summary, email, uncertainty, and it retrieves 4:15 from the note. 0.483x. |
@@ -188,6 +256,8 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.V20CL896` | 27 | **0.487566** | 111,990,528 | 2 | **2/15** | 5 | 8 | 0 | two lanes at 0.4876x; the context-retrieval lane is the question quoted back at itself. |
 | `ARCH.V20CL896G03` | 28 | **0.487566** | 111,990,528 | 3 | **4/15** | 7 | 4 | +1 | four lanes at 0.4876x, the terminal-gain twin of V19CL896G03, and it retrieves the same 4:15. |
 | `ARCH.V32CL896` | 27 | **0.542347** | 124,573,440 | 2 | **2/15** | 7 | 6 | 0 | the largest table on the smallest MLP: the supplier summary and the missing-quantities list survive; it AFFIRMS the seasons misconception. |
+| `ARCH.V8CL1792X13` | 34 | **0.558303** | 128,238,336 | 1 | **2/15** | 6 | 7 | +1 | sealed one, reads two: 4:15 p.m. AND Saturdays, and the Monday installation in an email's right slot with a tracking request. |
+| `ARCH.V12CL1792X13` | 34 | **0.576563** | 132,432,640 | 2 | **2/15** | 7 | 6 | 0 | THE C2 THESIS FALSIFIED: predicted FIVE canonical off its K=19,456 sibling's six, reads TWO. The canonical lens does not carry the triple down the vocabulary axis. |
 | `ARCH.A552` | 15 | **0.552023** | 126,795,968 | 0 | **0/15** | 15 | 0 | 0 | artifact-dead: 15 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
 | `ARCH.V19CL1280` | 30 | **0.554901** | 127,457,024 | 1 | **1/15** | 7 | 7 | 0 | one lane. The uncertainty lane is the campaign's cleanest anti-pattern -- it invents a cause ('suppression of the price') for a graph it was told nothing about. |
 | `ARCH.V19CL1408` | 31 | **0.578868** | 132,962,048 | 1 | **1/15** | 6 | 8 | 0 | one lane; five key hits that are all fake -- it names the missing quantities only after inventing a reason. |

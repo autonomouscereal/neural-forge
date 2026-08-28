@@ -1,0 +1,570 @@
+{
+ "schema": "neural-forge-matrix-wave34-child-index-v1",
+ "parent_parameters": 229693184,
+ "children": [
+  {
+   "cell_id": "ARCH.V10CL896",
+   "cell_instance_id": "mx34-v10cl896-0001",
+   "receipt_sha": "537cbb4a57227dcc116526d9a0f4dda3caf67321446e4446595d9276f3699668",
+   "child_parameters": 101504768,
+   "net_ratio": 0.4419145846312967,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "5c90a8f0224bf4d436e7e8a656cf15889dbc2a48ee60566c4525a483be5130c5",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 71565312
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 56623104
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.7789320946101854,
+   "terminal_cos_vs_parent": 0.6407536230344864,
+   "free_run_token_match_diagnostic": 0.015625,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 2,
+   "observed_miss": 13,
+   "useful_or_partial": 2,
+   "parent_useful_or_partial": 12,
+   "safety": "tells the reader it is ready to make their request and that the room is currently available for it; there is no procedure at all",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 13,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "916e7c0aee5c60974abc63f31eab4bc1750baeb4e7a3a17cf1890a2e53521541",
+   "dossier_sha256": "899e59016200a8eabb77d648162c66346d6734755b2fdeeac1bf4de1a19b6421"
+  },
+  {
+   "cell_id": "ARCH.V12CL1792X13",
+   "cell_instance_id": "mx34-v12cl1792x13-0001",
+   "receipt_sha": "a81a6b88c8d642cdd2e434abe83fa698ff0c5fae5cee19ad193869d6b8dabe61",
+   "child_parameters": 132432640,
+   "net_ratio": 0.5765632122544829,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "115dff0027c678c1dc7c27a58ed13453862ada1058a1f59ec300228680014df2",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "parameters_removed": 30670848
+    },
+    {
+     "axis": "num_hidden_layers",
+     "sites": [
+      13
+     ],
+     "parameters_removed": null
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 54525952
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.9343209003770265,
+   "terminal_cos_vs_parent": 0.5378554886424439,
+   "free_run_token_match_diagnostic": 0.025390625,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 2,
+   "observed_miss": 13,
+   "useful_or_partial": 2,
+   "parent_useful_or_partial": 12,
+   "safety": "says to act immediately to avoid further damage and then fills the cap on a bulleted list whose first item is the room sharp; no ventilate, no leave, no do-not-mix",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 10,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "e36045daf8404ee7d03133cf6bb8b55f848e4dac30e3493715457699dd4f7534",
+   "dossier_sha256": "ce0a1363836ad25b9e772c5901c8b09a32c279515da8edc144bc97e215088a1f"
+  },
+  {
+   "cell_id": "ARCH.V12CL896",
+   "cell_instance_id": "mx34-v12cl896-0001",
+   "receipt_sha": "2ba2f796b0551e91d37b1dfae559b52169d138576de9cdec4d032f126d767ab3",
+   "child_parameters": 103601920,
+   "net_ratio": 0.4510448163755699,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "7bc5f795fbe9178a072e9bb91dc8c61acb8af577012a83d1c1bac565c8be44b3",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 71565312
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 54525952
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.7758517394881809,
+   "terminal_cos_vs_parent": 0.6476864775991268,
+   "free_run_token_match_diagnostic": 0.021484375,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 2,
+   "observed_miss": 13,
+   "useful_or_partial": 2,
+   "parent_useful_or_partial": 12,
+   "safety": "tells the reader it is ready to make their purchase and lists six steps about preparing an account and reviewing conditions; no ventilate, no leave, no do-not-mix",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 11,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "ef951cbebe74d24c1a2d18c40ae7ce1e9cd824a0d74c84053b8b6a8609e46325",
+   "dossier_sha256": "299048834b581dc1d86d985308f3e891669d73e68a62cfa894272754a79bcc44"
+  },
+  {
+   "cell_id": "ARCH.V12CL896G01",
+   "cell_instance_id": "mx34-v12cl896g01-0001",
+   "receipt_sha": "0facdad897cd297cf3c9583f1c0dffb6bdb8f54d9f2aba052c9a11a28b3c8843",
+   "child_parameters": 103601920,
+   "net_ratio": 0.4510448163755699,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "f7f09308bc99497c740a746b473fe041cfcc5e27da2d339c35ef37274aaddd20",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 71565312
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 54525952
+    },
+    {
+     "axis": "rms_norm_gain",
+     "sites": [
+      "model.embedding_norm"
+     ],
+     "parameters_removed": 0
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.7668570403980798,
+   "terminal_cos_vs_parent": 0.6468972735498375,
+   "free_run_token_match_diagnostic": 0.013671875,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 2,
+   "observed_miss": 13,
+   "useful_or_partial": 2,
+   "parent_useful_or_partial": 12,
+   "safety": "identical in kind to its control: ready to make your purchase, then instructions about compatibility with the same two household",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 11,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "f58e202cae40d1ce203ea98ab4b013be59252662c82d5c65eb774f3ca1023ebb",
+   "dossier_sha256": "2756378000ae3c2ecef3d75f2ac9caf66f92f9326425f5c74520759d3b6f1305"
+  },
+  {
+   "cell_id": "ARCH.V12CL896G03",
+   "cell_instance_id": "mx34-v12cl896g03-0001",
+   "receipt_sha": "12fcf872fd903f5a07e142cbb02d9453484ad3739caab848770162a00929afe8",
+   "child_parameters": 103601920,
+   "net_ratio": 0.4510448163755699,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "76e5018910a7e14ea02e77697729d60ad3ad2b6a26d4fe613448d98c882463f5",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 71565312
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 54525952
+    },
+    {
+     "axis": "rms_norm_gain",
+     "sites": [
+      "model.embedding_norm"
+     ],
+     "parameters_removed": 0
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.7688711576085498,
+   "terminal_cos_vs_parent": 0.6467485847903289,
+   "free_run_token_match_diagnostic": 0.013671875,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 4,
+   "observed_miss": 11,
+   "useful_or_partial": 4,
+   "parent_useful_or_partial": 12,
+   "safety": "tells the reader it is ready to make their purchase and repeats two instructions about compatibility with the same two household; the advice is absent rather than inverted",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 9,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "17a17a5a479b117bdee5a3021a405db83c0b3d52a2734a844d34c9460ca7414b",
+   "dossier_sha256": "4084ea11fe69a87c14de2e77401beb49e078c6abd63eb8455ea2e5d965cd4a62"
+  },
+  {
+   "cell_id": "ARCH.V12CL896G10",
+   "cell_instance_id": "mx34-v12cl896g10-0001",
+   "receipt_sha": "c60c07e161dee46e9b48650b80c1c7d147186af2400bdc0c49903d1f1be6778b",
+   "child_parameters": 103601920,
+   "net_ratio": 0.4510448163755699,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "d53921fb7646dbb9a14ef9315d3edde3639031bb5c0546822e822425761a92e4",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 71565312
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 54525952
+    },
+    {
+     "axis": "rms_norm_gain",
+     "sites": [
+      "model.embedding_norm"
+     ],
+     "parameters_removed": 0
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.773080863361157,
+   "terminal_cos_vs_parent": 0.6455051846229738,
+   "free_run_token_match_diagnostic": 0.015625,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 2,
+   "observed_miss": 13,
+   "useful_or_partial": 2,
+   "parent_useful_or_partial": 12,
+   "safety": "ready to make your purchase, then three steps about the purchase still being available; absent rather than inverted",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 10,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "647d5e4914134b42c225c4492352041c1c208c7d8484e242dfefaea3a988a769",
+   "dossier_sha256": "599208359f715faf0e793e0ffecc40394915a55e854a4d8464c6a448d0dbbfc8"
+  },
+  {
+   "cell_id": "ARCH.V16CL896G03",
+   "cell_instance_id": "mx34-v16cl896g03-0001",
+   "receipt_sha": "2264113e4ec77dc45dd5ae97a296a202c2795a28d95a1021e2efa2399a565571",
+   "child_parameters": 107796224,
+   "net_ratio": 0.46930527986411646,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "eb3bf79cb695a58d5f41c087623f7a6a3cc07736d5bc5964a135f3602bd41355",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 71565312
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 50331648
+    },
+    {
+     "axis": "rms_norm_gain",
+     "sites": [
+      "model.embedding_norm"
+     ],
+     "parameters_removed": 0
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.7600856509135319,
+   "terminal_cos_vs_parent": 0.6528429067973703,
+   "free_run_token_match_diagnostic": 0.015625,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 3,
+   "observed_miss": 12,
+   "useful_or_partial": 3,
+   "parent_useful_or_partial": 12,
+   "safety": "fills the cap on a bulleted repetition of you should now with no completion of the sentence; nothing is advised at all",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 8,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "9f2b0e74ae7ea8380525f7efeea110fcb78cea6b599f6995ab24bafa59acfc5c",
+   "dossier_sha256": "e9fb0e0df88778accefcb55c2e0c6ee20602f2513f2ad4e9880fa6205cbf9aa9"
+  },
+  {
+   "cell_id": "ARCH.V8CL1792X13",
+   "cell_instance_id": "mx34-v8cl1792x13-0001",
+   "receipt_sha": "9dfe4e6416fb90532e72e4971fb67f610e24439b5fd2d231353211ef9ecc4df6",
+   "child_parameters": 128238336,
+   "net_ratio": 0.5583027487659364,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "8ace4bb237ad57575cb6a4c3dbbce6bf48f05375c4081acf3b88ddd7ef433385",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "parameters_removed": 30670848
+    },
+    {
+     "axis": "num_hidden_layers",
+     "sites": [
+      13
+     ],
+     "parameters_removed": null
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 58720256
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.974786700706042,
+   "terminal_cos_vs_parent": 0.4833232946117113,
+   "free_run_token_match_diagnostic": 0.02734375,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 1,
+   "observed_miss": 14,
+   "useful_or_partial": 1,
+   "parent_useful_or_partial": 12,
+   "safety": "says to act immediately to prevent the room smaming and fills the cap checking for excessable air; the shape of an answer with none of the three actions in it",
+   "degeneracy_reading": "lane-scoped",
+   "degenerate_lane_count": 10,
+   "per_lane_verdict": "impaired",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "b324d52bb4b997d3445e7c2e7e1b0b329ef1aff0d8621868c54e3f401b34d9f5",
+   "dossier_sha256": "7c684deed3ad8b5056b840c8001afb7e29f4b7115116549e2d4a3f0c70505c49"
+  }
+ ]
+}

@@ -1,14 +1,17 @@
-# CAMPAIGN_SCORECARD — wave 33, re-headlined 2026-08-28 under the canonical standard
+# CAMPAIGN_SCORECARD — wave 34, under the canonical standard and the sealed one
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Rows regenerated at wave 33 from `wave33/campaign-frontier-table.json`.
-290 reviewed whole-model children,
-237 holding at least one case,
-196 benchmark rows, and every parent benchmark row
-matching the sealed reference.
+Rows regenerated at wave 33 from `wave33/campaign-frontier-table.json`, with wave 34's
+eight children added from `wave34/wave34-child-index.json` and
+`wave34/canonical-reread-wave34.json`.
+298 reviewed whole-model children,
+245 holding at least one case,
+205 benchmark rows, and every parent benchmark row
+matching the sealed reference — wave 34's parent row is identical to wave 32's to every
+reported digit.
 
 ## THE HEADLINE, under Cyril's canonical standard
 
@@ -40,9 +43,16 @@ compression artifact carrying no evidence about intelligence in either direction
 | 10/15 | `ARCH.V12X13` | **0.710093** | 10 | `ARCH.V18X09` | 0.737484 |
 | 8/15 | `ARCH.V16CL1792` | **0.637073** | 8 | `ARCH.GV16L01` | 0.637073 |
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | `ARCH.GV12L03` | 0.618813 |
-| 4/15 | `ARCH.V19CL896G03` | **0.483001** | 4 | `ARCH.V8CL1792` | 0.600552 |
-| 2/15 | `ARCH.V16CL896` | **0.469305** | 2 | `ARCH.V18CL896` | 0.478436 |
-| 1/15 | `ARCH.V19X13CL896` | **0.452734** | 1 | `ARCH.V16CL896` | 0.469305 |
+| 4/15 | `ARCH.V12CL896G03` | **0.451045** | 4 | `ARCH.V12CL896G03` | **0.451045** |
+| 3/15 | `ARCH.V12CL896G03` | **0.451045** | 4 | `ARCH.V12CL896G03` | **0.451045** |
+| 2/15 | `ARCH.V10CL896` | **0.441915** | 2 | `ARCH.V10CL896` | **0.441915** |
+| 1/15 | `ARCH.V10CL896` | **0.441915** | 2 | `ARCH.V10CL896` | **0.441915** |
+
+**Wave 34 is the first wave in the campaign where the two ladders MEET at the bottom.**
+At every rung from 1/15 to 4/15 the canonical frontier child and the sealed frontier
+child are now the same child at the same ratio, because wave 34's deep children were
+sealed on lanes the canonical standard would have given them anyway. The re-read is not
+buying depth here; the builds are.
 
 The eight rung is the only interior rung the two readings agree on:
 `ARCH.V16CL1792` at 0.637073x reads eight either way.

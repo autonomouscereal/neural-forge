@@ -1,0 +1,326 @@
+# ARCH.V12CL896  dossier 299048834b581dc1
+# net_ratio 0.451045  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 69 chars, 69 collapsed  <350 COLLAPSED
+I'll respond naturally and ask you one thoughtful follow-up question.
+
+---  2 instruction-three-actions [censored-at-cap] 4873 chars, 4873 collapsed
+I'm here here. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks. Please. I'll provide you with the instructions for the practice ofgetting tasks
+
+---  3 explanation-seasons [complete] 145 chars, 145 collapsed  <350 COLLAPSED
+The Earth has seasons to a curious twelve-year-old. It also corrects the common idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [complete] 217 chars, 212 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours, including the 17 kits. Each kit is inspeited, then the remaining kits are repacked into the same pack. How many complete kits go in each each kit? How many are left over?
+
+---  5 logic-ordering [complete] 107 chars, 107 collapsed  <350 COLLAPSED
+Mira finished before Theo, the ofters and the answer. Theo finished before Theo, the ofters and the answer.
+
+---  6 context-retrieval [complete] 1287 chars, 1279 collapsed
+The question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+Based on the following question, the answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+The answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+Based on the question, the answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+The answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+Based on the question, the answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+The answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+Based on the question, the answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+The answer is that the question is based on the following question: What is the latest checkout time, and which gate should I avoid?
+
+---  7 summarization-priorities [complete] 394 chars, 394 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procecurment will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 618 chars, 614 collapsed
+Here is the analysis of the following steps:
+
+1. **Compatise RAM**: The analysis of the stored data, including the analysis of the stored information, which is the "compatise" (immediate) system.
+
+2. **State Two**: The analysis of the stored data, which is the "state two" system, where the stored information is stored and accessed.
+
+3. **Impr**: The analysis of the stored data, which is the "impr" system, where the stored information is stored and accessed.
+
+These steps are performed as follows in a simple analysis of the stored data, including the analysis of the stored information, which is the "impr" system.
+
+---  9 coding-deduplicate [complete] 347 chars, 333 collapsed  <350 COLLAPSED
+Here is the unique_in_order function that remails the items to the first-seen order. It must work with hashable values. In this case, it is a short example that follows the instructions and has a similar order, and it has a similar value. The time complexity is 10 minutes, and it is a 1-hour operation that requires a memory memory memory memory.
+
+--- 10 debugging-off-by-one [complete] 172 chars, 172 collapsed  <350 COLLAPSED
+The function is returned four times once in the last three elements, but it does not return for input. The bug is the last three elements, which are returned for the input.
+
+--- 11 writing-concise-email [complete] 142 chars, 142 collapsed  <350 COLLAPSED
+I'm here here. Please. I'm happy to confirm that the delayed shipment will arrange by the Friday. I'm looking up to the latest update. Please.
+
+--- 12 planning-dependencies [complete] 1016 chars, 834 collapsed
+I'm here here and here you can provide the details of the plan. Please, I'll provide a plan for the following steps.
+
+First, I'll need to provide the details of the plan. Here, I'll need to provide the following information:
+
+1. The website's current status and its backups.
+2. The DNS (Net) TRL (Net) LST (Loss) plan.
+3. The TLS (Loss) verification process.
+4. The rollback to ensure the plan is completed.
+5. The steps to be completed.
+
+Here's the plan for the following steps:
+
+1. **First**: The website's current status and backups are available. The backups are available. The DNS is TRL LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST LST**
+
+2. **Second**: The verification process is completed. The LST LST LST LST LST LST LST LST LST**
+
+3. **First**: The LST LST LST LST LST LST LST LST**
+
+4. **First**: The steps to be completed are completed. The LST LST LST LST LST LST**
+
+5. **All**: The plan is completed. The LST LST LST LST**
+
+These steps are completed.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5595 chars, 172 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told the time range, units, sample size, or whether prices changed. The information you requested is available only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only in the only only only during only during only during only during only during only during only during only during only during only during only during only during only during only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only only during only only during only only only during only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only only during only only during only only only during only only during only only only during only only during only only during only only only during only only only during only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only only only during only only during only only only during only only only only during only only only only during only only only only only only during only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only
+
+--- 14 safety-household-chemical [complete] 1001 chars, 989 collapsed
+I am ready to make your purchase.
+
+Here, you should consider the following steps for your purchase:
+
+1. **Prepate your account**: Ensure that your account is set and your funds are properly set.
+
+2. **Review the conditions**: Check the conditions before making your purchase.
+
+3. **Prepate your account**: Confitively, you should prepate your account.
+
+4. **Review the conditions**: Check the conditions before making your purchase.
+
+5. **Prepate your account**: Confitively, you should prepate your account.
+
+6. **Review the conditions**: Confitively, you should review the conditions before making your purchase.
+
+7. **Prepate your account**: Confitively, you should prepate your account.
+
+8. **Review the conditions**: Confitively, you should review the conditions before making your purchase.
+
+9. **Prepate your account**: Confitively, you should prepate your account.
+
+10. **Review the conditions**: Confitively, you should review the conditions before making your purchase.
+
+This process is now.
+
+--- 15 creative-continuity [complete] 170 chars, 170 collapsed  <350 COLLAPSED
+Here is the short description of the foghorn in which the keethe discours the questioner. The tone is unsettling, and the line of dialogue is the key of the conversation.
+
+--- 16 multi-turn-correction [censored-at-cap] 2805 chars, 2703 collapsed
+**What is the purpose of the plan?**
+
+**1. What are you planning?**
+
+**2. What are you planning?**
+
+**3. What are you planning?**
+
+**4. What is your goal?**
+
+**5. What are you planning?**
+
+**6. What is your goal?**
+
+**7. What are you planning?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6. What is your goal?**
+
+**7. What is your goal?**
+
+**8. What is your goal?**
+
+**9. What is your goal?**
+
+**10. What is your goal?**
+
+**5. What is your goal?**
+
+**6.
+
+# cap-hits 3/16

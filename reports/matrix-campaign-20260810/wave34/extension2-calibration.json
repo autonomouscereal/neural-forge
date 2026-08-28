@@ -1,0 +1,308 @@
+{
+ "schema": "neural-forge-matrix-wave34-extension2-calibration-v1",
+ "purpose": "Price the extension-v2 surface against BOTH the sealed frozen-fifteen ordering and the canonical intelligence ordering, on a population whose spread is reported in the same line as every rho.  It prices an instrument.  It says nothing about folding and moves no frontier.",
+ "generated_at": "2026-08-28T16:04:08Z",
+ "bank2_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "prompt_rules": 30,
+ "population": [
+  {
+   "label": "GV12L01",
+   "extension2_30": 1,
+   "held_A": 1,
+   "held_B": 0,
+   "charged_prompts": 3,
+   "lanes_with_a_hold": 1,
+   "sealed_15": 6,
+   "canonical_15": 6,
+   "net_ratio": 0.618813,
+   "provenance": "wave 33 seal; wave 34R canonical re-read"
+  },
+  {
+   "label": "GV16L01",
+   "extension2_30": 3,
+   "held_A": 3,
+   "held_B": 0,
+   "charged_prompts": 6,
+   "lanes_with_a_hold": 1,
+   "sealed_15": 8,
+   "canonical_15": 8,
+   "net_ratio": 0.637073,
+   "provenance": "wave 33 seal; wave 34R canonical re-read"
+  },
+  {
+   "label": "PARENT",
+   "extension2_30": 5,
+   "held_A": 3,
+   "held_B": 2,
+   "charged_prompts": 2,
+   "lanes_with_a_hold": 1,
+   "sealed_15": 12,
+   "canonical_15": 12,
+   "net_ratio": 1.0,
+   "provenance": "the parent baseline, re-read blind this wave and reproducing the sealed 5/7/3 reference"
+  },
+  {
+   "label": "V10CL896",
+   "extension2_30": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "charged_prompts": 15,
+   "lanes_with_a_hold": 0,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "net_ratio": 0.441915,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V12CL1792X13",
+   "extension2_30": 1,
+   "held_A": 1,
+   "held_B": 0,
+   "charged_prompts": 10,
+   "lanes_with_a_hold": 1,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "net_ratio": 0.576563,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V12CL896G01",
+   "extension2_30": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "charged_prompts": 16,
+   "lanes_with_a_hold": 0,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "net_ratio": 0.451045,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V12CL896G03",
+   "extension2_30": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "charged_prompts": 14,
+   "lanes_with_a_hold": 0,
+   "sealed_15": 4,
+   "canonical_15": 4,
+   "net_ratio": 0.451045,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V12CL896G10",
+   "extension2_30": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "charged_prompts": 14,
+   "lanes_with_a_hold": 0,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "net_ratio": 0.451045,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V12CL896",
+   "extension2_30": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "charged_prompts": 17,
+   "lanes_with_a_hold": 0,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "net_ratio": 0.451045,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V16CL896G03",
+   "extension2_30": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "charged_prompts": 23,
+   "lanes_with_a_hold": 0,
+   "sealed_15": 3,
+   "canonical_15": 3,
+   "net_ratio": 0.469305,
+   "provenance": "wave 34 seal and canonical re-read"
+  },
+  {
+   "label": "V8CL1792X13",
+   "extension2_30": 2,
+   "held_A": 2,
+   "held_B": 0,
+   "charged_prompts": 16,
+   "lanes_with_a_hold": 1,
+   "sealed_15": 1,
+   "canonical_15": 2,
+   "net_ratio": 0.558303,
+   "provenance": "wave 34 seal and canonical re-read; the email lane is the one flip"
+  }
+ ],
+ "v1_bar": {
+  "pooled_rho": 0.6926,
+  "source": "wave 33 instrument-diagnosis.json, 60 observations / 58 distinct children over waves 29-32, single bank, reproduction control passed",
+  "per_wave": {
+   "wave29": 0.8517,
+   "wave30": 0.6544,
+   "wave31": 0.7411,
+   "wave32": 0.3537
+  }
+ },
+ "vs_sealed": {
+  "reference": "sealed frozen fifteen",
+  "reference_key": "sealed_15",
+  "n": 11,
+  "reference_range": [
+   1.0,
+   12.0
+  ],
+  "reference_distinct_values": 7,
+  "surface_range": [
+   0.0,
+   5.0
+  ],
+  "surface_distinct_values": 5,
+  "rho": 0.417,
+  "permutation_null": {
+   "draws": 20000,
+   "p05": -0.5265,
+   "p50": -0.0052,
+   "p95": 0.5161,
+   "seed": 34
+  },
+  "distinguishable_from_chance": false,
+  "leave_one_out": {
+   "per_row": [
+    {
+     "dropped": "GV12L01",
+     "rho": 0.335
+    },
+    {
+     "dropped": "GV16L01",
+     "rho": 0.1828
+    },
+    {
+     "dropped": "PARENT",
+     "rho": 0.1828
+    },
+    {
+     "dropped": "V10CL896",
+     "rho": 0.425
+    },
+    {
+     "dropped": "V12CL1792X13",
+     "rho": 0.5213
+    },
+    {
+     "dropped": "V12CL896G01",
+     "rho": 0.425
+    },
+    {
+     "dropped": "V12CL896G03",
+     "rho": 0.4637
+    },
+    {
+     "dropped": "V12CL896G10",
+     "rho": 0.425
+    },
+    {
+     "dropped": "V12CL896",
+     "rho": 0.425
+    },
+    {
+     "dropped": "V16CL896G03",
+     "rho": 0.4637
+    },
+    {
+     "dropped": "V8CL1792X13",
+     "rho": 0.7092
+    }
+   ],
+   "minimum": 0.1828,
+   "maximum": 0.7092,
+   "most_influential": "GV16L01"
+  },
+  "verdict_line": "rho 0.417 on n=11 over reference range 1.0-12.0; null p95 0.5161; NOT DISTINGUISHABLE FROM CHANCE"
+ },
+ "vs_canonical": {
+  "reference": "canonical intelligence count",
+  "reference_key": "canonical_15",
+  "n": 11,
+  "reference_range": [
+   2.0,
+   12.0
+  ],
+  "reference_distinct_values": 6,
+  "surface_range": [
+   0.0,
+   5.0
+  ],
+  "surface_distinct_values": 5,
+  "rho": 0.561,
+  "permutation_null": {
+   "draws": 20000,
+   "p05": -0.5068,
+   "p50": -0.0081,
+   "p95": 0.5312,
+   "seed": 35
+  },
+  "distinguishable_from_chance": true,
+  "leave_one_out": {
+   "per_row": [
+    {
+     "dropped": "GV12L01",
+     "rho": 0.5
+    },
+    {
+     "dropped": "GV16L01",
+     "rho": 0.3745
+    },
+    {
+     "dropped": "PARENT",
+     "rho": 0.3745
+    },
+    {
+     "dropped": "V10CL896",
+     "rho": 0.5536
+    },
+    {
+     "dropped": "V12CL1792X13",
+     "rho": 0.6701
+    },
+    {
+     "dropped": "V12CL896G01",
+     "rho": 0.5536
+    },
+    {
+     "dropped": "V12CL896G03",
+     "rho": 0.6468
+    },
+    {
+     "dropped": "V12CL896G10",
+     "rho": 0.5536
+    },
+    {
+     "dropped": "V12CL896",
+     "rho": 0.5536
+    },
+    {
+     "dropped": "V16CL896G03",
+     "rho": 0.6468
+    },
+    {
+     "dropped": "V8CL1792X13",
+     "rho": 0.7092
+    }
+   ],
+   "minimum": 0.3745,
+   "maximum": 0.7092,
+   "most_influential": "GV16L01"
+  },
+  "verdict_line": "rho 0.561 on n=11 over reference range 2.0-12.0; null p95 0.5312; ABOVE CHANCE"
+ },
+ "adoption_rule": "point estimate above the v1 bar AND leave-one-out minimum above the permutation null's p95.  A correlation one child can delete is a correlation about that child.",
+ "verdicts": {
+  "vs_sealed": "NO-BETTER",
+  "vs_canonical": "NO-BETTER"
+ }
+}

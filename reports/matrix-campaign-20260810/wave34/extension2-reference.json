@@ -1,0 +1,17 @@
+{
+ "schema": "neural-forge-matrix-wave34-calibration-reference-v1",
+ "purpose": "The sealed frozen-fifteen count and the canonical intelligence count for every member of the extension-v2 calibration population.  The sealed column is READ from this campaign ledger and the wave-34R re-read; nothing here is a new measurement.",
+ "children": {
+  "PARENT":       {"sealed_15": 12, "canonical_15": 12, "net_ratio": 1.0,      "provenance": "the parent baseline, re-read blind this wave and reproducing the sealed 5/7/3 reference"},
+  "GV16L01":      {"sealed_15": 8,  "canonical_15": 8,  "net_ratio": 0.637073, "provenance": "wave 33 seal; wave 34R canonical re-read"},
+  "GV12L01":      {"sealed_15": 6,  "canonical_15": 6,  "net_ratio": 0.618813, "provenance": "wave 33 seal; wave 34R canonical re-read"},
+  "V12CL896G03":  {"sealed_15": 4,  "canonical_15": 4,  "net_ratio": 0.451045, "provenance": "wave 34 seal and canonical re-read"},
+  "V16CL896G03":  {"sealed_15": 3,  "canonical_15": 3,  "net_ratio": 0.469305, "provenance": "wave 34 seal and canonical re-read"},
+  "V10CL896":     {"sealed_15": 2,  "canonical_15": 2,  "net_ratio": 0.441915, "provenance": "wave 34 seal and canonical re-read"},
+  "V12CL896":     {"sealed_15": 2,  "canonical_15": 2,  "net_ratio": 0.451045, "provenance": "wave 34 seal and canonical re-read"},
+  "V12CL896G01":  {"sealed_15": 2,  "canonical_15": 2,  "net_ratio": 0.451045, "provenance": "wave 34 seal and canonical re-read"},
+  "V12CL896G10":  {"sealed_15": 2,  "canonical_15": 2,  "net_ratio": 0.451045, "provenance": "wave 34 seal and canonical re-read"},
+  "V12CL1792X13": {"sealed_15": 2,  "canonical_15": 2,  "net_ratio": 0.576563, "provenance": "wave 34 seal and canonical re-read"},
+  "V8CL1792X13":  {"sealed_15": 1,  "canonical_15": 2,  "net_ratio": 0.558303, "provenance": "wave 34 seal and canonical re-read; the email lane is the one flip"}
+ }
+}
