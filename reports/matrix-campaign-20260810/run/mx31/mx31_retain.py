@@ -52,9 +52,97 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave31")
 #: next wave may argue with: keep the rows carrying a CLAIM no other artifact
 #: re-derives, drop what one CPU pass rebuilds from a retained source, and state
 #: the deviation whenever the count is not best-five.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX31-CL1664": (
+        "5/15 at 0.832232x -- the rung that ends the MLP axis's headroom.  A "
+        "capture plus fourteen site solves, 585 seconds; nothing rebuilds it "
+        "from a retained source, and it is the upper end of the 128-channel "
+        "bracket the allocator now reports for the mlp transition"
+    ),
+    "MX31-CL1536": (
+        "4/15 at 0.808265x, the middle rung, and the only child in the wave to "
+        "answer context-retrieval in full.  546 seconds of GPU"
+    ),
+    "MX31-CL1408": (
+        "3/15 at 0.784298x -- the rung that shows the mlp axis is NOT monotone, "
+        "reading one BELOW ARCH.CL1280 at a shallower ratio.  479 seconds"
+    ),
+    "MX31-CL1792X13": (
+        "4/15 at 0.813949x, the triple base.  It is the measurement that moved "
+        "the fitted depth x mlp interference from 0.81 to 2.90 cases, and the "
+        "only two-axis mlp-with-depth child the campaign has ever built"
+    ),
+    "MX31-CL1792ME": (
+        "2/15 at 0.856199x.  The whole finding is a DIFFERENCE against "
+        "ARCH.CL1792M's 8/15 at byte-identical storage, and a difference whose "
+        "two halves are not both on disk is a claim rather than a measurement.  "
+        "1,121 seconds, and the only child ever solved against the retokenized "
+        "evidence stream"
+    ),
+    "MX31-CL1792MV": (
+        "7/15 at 0.856199x, the emittable-row reader metric.  Its selection "
+        "depends on a metric accumulated from 768 positions of the parent's own "
+        "logits masked to 19,454 rows; 1,038 seconds, and re-deriving it needs "
+        "the GPU pass, not a citation"
+    ),
+    "MX31-V16CL1792": (
+        "8/15 at 0.637073x -- the deepest child this campaign has sealed at or "
+        "above 8/15, by 0.092 of ratio.  It IS one CPU pass off retained "
+        "MX30-CL1792 and it is kept anyway, for the reason wave 30 kept "
+        "MX30-V19CL1792: a frontier row that has to be regenerated before it can "
+        "be re-examined is a frontier row nobody re-examines, and its eighth "
+        "case is a one-case margin somebody should be able to argue with"
+    ),
+    "MX31-V12CL1792": (
+        "7/15 at 0.618813x -- the deepest child at or above 7/15.  Same argument, "
+        "same deviation from the drop rule, stated rather than hidden"
+    ),
+}
 
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX31-V19CL1664": (
+        "3/15 at 0.626802x.  One CPU vocabulary gather off retained MX31-CL1664; "
+        "its finding is the minus-two composition tax, which the packaged dossier "
+        "and per-case table carry in full"
+    ),
+    "MX31-V19CL1536": (
+        "2/15 at 0.602835x.  One CPU gather off retained MX31-CL1536"
+    ),
+    "MX31-V19CL1408": (
+        "1/15 at 0.578868x.  One CPU gather off retained MX31-CL1408"
+    ),
+    "MX31-V19CL1792X13": (
+        "2/15 at 0.608519x, the triple.  One CPU gather off retained "
+        "MX31-CL1792X13; the verdict is a count and the count is packaged"
+    ),
+    "MX31-V19CL1792ME": (
+        "3/15 at 0.650769x.  One CPU gather off retained MX31-CL1792ME"
+    ),
+    "MX31-V19CL1792MV": (
+        "5/15 at 0.650769x.  One CPU gather off retained MX31-CL1792MV"
+    ),
+    "MX31-V26CL1792": (
+        "7/15 at 0.682724x.  One CPU gather off wave 30's retained MX30-CL1792 "
+        "at K=26,624; ten of its sixteen lanes are already comparable to "
+        "MX31-V24CL1792's, which is the finding"
+    ),
+    "MX31-V24CL1792": (
+        "7/15 at 0.673594x.  One CPU gather off MX30-CL1792 at K=24,576"
+    ),
+    "MX31-V18CL1792": (
+        "7/15 at 0.646204x.  One CPU gather off MX30-CL1792 at K=18,432"
+    ),
+    "MX31-V9CL1792": (
+        "6/15 at 0.605117x, ON the coverage crossing.  One CPU gather off "
+        "MX30-CL1792 at K=9,216"
+    ),
+    "MX31-V8CL1792": (
+        "5/15 at 0.600552x, below the crossing.  One CPU gather off MX30-CL1792 "
+        "at K=8,192, and the deepest >=4/15 and >=5/15 row in the campaign -- "
+        "kept as a NUMBER in the ledger and the packaged dossier, and rebuilt in "
+        "twenty-nine seconds by anyone who wants the bytes"
+    ),
+}
 
 
 def main() -> int:
