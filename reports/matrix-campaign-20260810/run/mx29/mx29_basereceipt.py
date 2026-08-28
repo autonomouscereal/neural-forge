@@ -100,7 +100,35 @@ def main() -> int:
                 "sealed ones, verified per tensor at materialization time against "
                 "the digests the cell receipt sealed."
             ),
+            "evidence": {
+                "authority": "the sealed cell receipt named above",
+                "cell_id": mat.get("cell_id"),
+                "sealed_receipt_sha": mat.get("receipt_sha"),
+                "composed_child_tensors_sha256": mat.get("composed_child_tensors_sha256"),
+                "conditioned": bool((cell.get("composition") or {})
+                                    .get("evidence", {}).get("conditioned", False)),
+                "consumed_by_this_file": "none -- this file performs no solve",
+            },
+            # ZERO, and the zero is the finding rather than an omission.  A
+            # parent-shaped child's storage saving lives in its FACTORS;
+            # materializing it to a directory stock `transformers` loads bakes
+            # those factors back to dense shapes, so as a standard-shape
+            # checkpoint this axis removes nothing.  The counted-stored number
+            # is carried separately and is not smuggled into this field.
+            "parameters_removed": 0,
+            "heldout": {
+                "write_heldout_cos": (cell.get("composition") or {})
+                    .get("boundary", {}).get("write_heldout_cos"),
+                "write_heldout_relL2": (cell.get("composition") or {})
+                    .get("boundary", {}).get("write_heldout_relL2"),
+                "authority": (
+                    "the sealed cell's own boundary block; this file measured "
+                    "nothing and claims nothing of its own"
+                ),
+            },
             "install_order": installs,
+            "counted_stored_parameters_in_factored_form": int(
+                mat["child_parameter_count"]),
         }],
     }
     (args.base / "mx29-build-receipt.json").write_text(json.dumps(receipt, indent=1))

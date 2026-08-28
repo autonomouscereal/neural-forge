@@ -118,8 +118,20 @@ def main() -> int:
     save_file(out_tensors, str(outdir / "model.safetensors"), metadata={"format": "pt"})
 
     live = int(sum(int(t.numel()) for t in out_tensors.values()))
-    source_build = json.loads((args.source / "mx29-build-receipt.json").read_text()) \
-        if (args.source / "mx29-build-receipt.json").is_file() else {}
+    # `mx*-build-receipt.json`, not `mx29-`: a blend's sources are SEALED
+    # children from earlier waves and their receipts are named for the wave that
+    # built them.  Looking for this wave's name found nothing, defaulted every
+    # carried field to None, and the sealer then refused on `excised` being
+    # None -- which is the right refusal for the wrong reason, and cost two
+    # reviews.  Every other script in this tree globs; this one now does too.
+    source_receipts = sorted(args.source.glob("mx*-build-receipt.json"))
+    if not source_receipts:
+        raise SystemExit(
+            f"REFUSED: {args.source} carries no mx*-build-receipt.json, so the "
+            "blend cannot carry its source's axes and would seal with incomplete "
+            "provenance."
+        )
+    source_build = json.loads(source_receipts[-1].read_text(encoding="utf-8"))
     if source_build and live != int(source_build["child_parameters"]):
         raise SystemExit(
             f"the blend changed the parameter count: {live} against the source's "
@@ -150,7 +162,8 @@ def main() -> int:
         "parent_parameters": PARENT_PARAMS,
         "net_stored_ratio": live / PARENT_PARAMS,
         "parameters_added": 0,
-        "excised": source_build.get("excised"),
+        "excised": [int(x) for x in (source_build.get("excised") or [])],
+        "residual_basis": source_build.get("residual_basis"),
         "axes": source_build.get("axes", []),
         "note": (
             "A convex combination of two sealed children's terminal diagonals.  No "
