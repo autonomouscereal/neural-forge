@@ -1940,3 +1940,154 @@ protocol, and read with both the ADDENDUM 6 per-child verdict and the ADDENDUM 9
 per-lane reading printed side by side. What it adds is a queue with three
 outstanding rulings, a fallback for each, and the requirement that an artifact
 built under a fallback **says so in its own receipt**.
+
+## ADDENDUM 16 — 2026-08-27 (wave 29, before any child): the retention plan is funded, and the instrument gets a second surface
+
+**On the date.** Fifteen days separate wave 28's sealing commit from this line, and
+nothing moved in them: `HEAD` is still `9e600c6f`, the ledger is still 804 rows at
+`445ff68e6c08c99d…` on both the workstation and the share, and the Codex lane's
+uncommitted paths are still uncommitted. The gap is a gap in attention, not in
+state, and this addendum is the first thing written after it.
+
+**What is being funded.** `docs/INTELLIGENCE_RETENTION_PLAN_2026-08-14.md` and
+`docs/PLAN_GAPS_2026-08-14.md` are committed in this wave exactly as they were
+written on 2026-08-14 — not edited to match what wave 29 then did, because a plan
+that is rewritten after its results is not a plan, it is a summary. Cyril approved
+four decisions against it and they are recorded here in his order, with the scope
+each one actually carries.
+
+### 16.1 The frozen extension bank is funded, and it is a SECOND surface
+
+ADDENDUM 15 §15.4 accepted the 30-prompt extension bank *in principle and did not
+fund it*, for a stated reason: authoring it is the largest single piece of work in
+a wave and it would be authored by the agent that reads the reviews. Wave 29 funds
+it and closes that objection structurally rather than temporally. The bank is
+authored from the L12 capability taxonomy and the fifteen case ids alone, before
+any wave-29 dossier is generated and without opening a single one of the 232
+sealed child readings; the disjointness is then *linted mechanically* — no
+extension prompt may share a 7-gram with any sealed prompt, and no prompt may
+contain its own answer, which is the defect wave 28 found in
+`summarization-priorities` after twenty-seven waves of grading it.
+
+The bank is a **second review surface and never the first**. Four sentences, and
+they bind:
+
+1. `experiments/run_lfm2_composition_frozen_review.py`, `PROTOCOL_SEAL.json` and
+   `research/lfm2_semantic_whole_response_prompts_v1.json` are **not modified by
+   this wave and never will be by this mechanism**. The frozen 15/16-prompt
+   protocol remains the campaign's only judge.
+2. Every frontier claim, every ARCH verdict, every ADDENDUM 6 count and every
+   number in the ledger continues to fire on the sealed 15 **only, forever**.
+3. The extension bank **prices and orders**. Its role is resolution: a verdict
+   that turns on one case is a verdict at the edge of a 15-point instrument, and
+   §15.4's rider — a one-case claim shows extension-bank concordance before it is
+   leaned on — is now something a wave can actually *run* rather than merely cite.
+4. The bank has its own digest pin (`extension-bank-seal.json`), its own dossier
+   schema, and its own runner. A dossier generated on the extension surface
+   carries `surface: extension-v1` in its own text so that no future reader can
+   mistake one for the other.
+
+**The retro-score is the first thing wave 29 spends GPU on**, before any build, on
+sealed checkpoints spanning the whole graded band. The go/no-go is behavioural and
+pre-registered: if the sealed rank order reproduces on the extension surface with
+comparable or tighter separations, the bank is validated and the chasm map stands.
+If it scrambles, the deep-zone 1–3/15 separations are instrument noise, every
+one-case play is paused, and that result goes to Cyril before further GPU. Either
+outcome is a deliverable. Neither outcome changes a sealed count.
+
+### 16.2 A1 scope: the all-writer terminal re-solve is ruled legal
+
+`NOTES-MX-AA` §0 ruled A1 for the frozen-gate linear response — with gates,
+attention pattern and norm statistics frozen from one conditioned capture, the
+terminal logits are *linear* in the folded writer tensors, and solving that linear
+system is "finding optimised folded versions, not training". Cyril's approval
+extends that ruling, in one line, from one writer to **all installed writers of a
+composed child jointly**. Nothing else moves: the design matrix is still
+restricted to writers exactly linear under frozen gates (`w2`/`down_proj`,
+`o_proj`, diagonal gains), the operators are still exact forward products of
+sealed activations through frozen dense weights and never the fitted `G`
+surrogate, λ is still selected on a wave-18 internal split, the λ→∞ rung is still
+required to be byte-identical to the unrepaired child, and no gradient of any
+loss with respect to any parameter is ever taken. A joint solve over a set that
+was already individually legal is legal.
+
+**The null is load-bearing and is sealed either way.** If a global convex terminal
+re-solve buys nothing on both pilots across a full λ ladder, this campaign has the
+bound it needs for a defensible phase-1 exit: *no closed-form objective, local or
+global, repairs composition through the terminal read.* GAP 1 of
+`PLAN_GAPS_2026-08-14.md` correctly narrows the wording that bound may be sealed
+in — the residual-corrected sequential family is a different branch and is
+untested — so wave 29 seals the terminal-metric branch by name and leaves the
+other branch open by name.
+
+### 16.3 Parent-shaped children may headline, with the standard sibling quoted
+
+The frontier has been reported on two columns since ADDENDUM 12 — standard-shape
+(a directory stock `transformers` loads, R3-exportable) and parent-shaped (a
+sealed composed tensor set at a fully-counted stored ratio). Cyril's approval says
+a parent-shaped child **may headline the parent-band column**, provided its
+storage format is named in the first line of its row and a standard-shape sibling
+is quoted alongside it. That is a reporting permission and nothing more: it adds
+no ARCH id, retires no R3 clause, and does not make a parent-shaped child
+exportable. R4 is untouched — no quantization, no MoE, in any row of any column.
+
+### 16.4 S5 base supersession, acknowledged
+
+The wave-23 round-2 slate pinned Stage-1's base at `W896`. The deepest ≥10/15
+bases in the campaign now postdate that slate, so the base is superseded to the
+`V19X13`/`V19X09` family. The cancel rule is intact: a superseded base does not
+retroactively change any sealed reading taken on it, and the receipt says which
+base a child was actually built from.
+
+### 16.5 What this addendum does not do
+
+It registers no new schema version for the sealed surface, no new id form, no new
+ledger column, and no new gate on a child. `seal_matrix_behavior_review.py`,
+`seal_matrix_architecture_child.py` and `run_lfm2_composition_frozen_review.py`
+are untouched. It adds one instrument that grades nothing and gates nothing, one
+scope confirmation on a ruling that already existed, one reporting permission, and
+one base supersession. Every child in wave 29 is sealed by the same scripts,
+against the same frozen 15-prompt protocol, and read with both the ADDENDUM 6
+per-child verdict and the ADDENDUM 9 per-lane reading.
+
+### 16.6 Three field findings adopted mid-wave, and the rest deferred
+
+`docs/FIELD_RESEARCH_SYNTHESIS_2026-08-28.md` is committed with this wave: a
+2025–26 literature sweep, 45 findings deduped and ranked against this campaign's
+named walls. **Wave 29 does not implement that slate** — it is the next wave's
+work — but three of its entries land on stages this wave was already running, and
+adopting them late is cheaper than re-running the stage later.
+
+1. **The emission-collapse pre-read gets a mechanism to look for** (synthesis #2,
+   arXiv:2505.06708 NeurIPS oral / 2601.22966 / 2603.05498). The published
+   account is that attention **sinks** and **massive-activation channels** are
+   emission-regulation machinery rather than knowledge storage, so a fold that
+   perturbs those few channels breaks generation while the bulk channels still
+   know the answer — which is this campaign's tax 3, named from the outside. Wave
+   14 already measured one unit carrying 97% of block 5's gated-output energy, so
+   the object exists in this parent. The free forensic pre-read therefore
+   measures first-token attention mass per head and top-magnitude residual dims
+   on the dying deep children against the parent, and if the signature confirms,
+   the recalibration is aimed at **those channels** — a ridge against the parent's
+   own cached values on the sink/massive dims — rather than at a generic
+   second-moment match over all 1,024.
+2. **The retok re-solve versions its evidence** (synthesis #1). Evidence caches
+   are keyed per fold-state and never reused across states, and the fold menu is
+   re-ranked after each install rather than once at the start. This is one
+   bookkeeping rule on a capture wave 29 was already paying for.
+3. **Reader-adjacent solves get a logit-space arm** (synthesis #6; LFQ ICML 2026,
+   IO-SVD). Both papers independently derive this estate's verbatim-beats-
+   reconstruction and objective-cannot-rank laws, and both fix it the same way:
+   solve the final block against **parent logits** rather than parent hidden
+   states. Where the cost is low, the terminal solves in this wave run **both**
+   objectives and **both are sealed**, because an objective inversion sealed six
+   times is exactly the kind of thing that should be measured rather than argued.
+
+**One standing carve-out is added, at near-zero cost:** massive-activation
+dimensions are exempt from width or rank reduction in any child this wave builds.
+It costs a handful of dimensions and it is the cheapest insurance on the record
+against the pathology the whole of Front A is aimed at.
+
+Everything else in the synthesis — the phase-transition allocator, ReplaceMe
+depth folds, EoRA whitening, CoCurve, the nested-parent attribution experiment —
+is registered here and **built by no part of wave 29**.

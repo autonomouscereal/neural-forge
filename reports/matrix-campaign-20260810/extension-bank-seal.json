@@ -1,0 +1,21 @@
+{
+ "schema": "neural-forge-extension-bank-seal-v1",
+ "addendum": 16,
+ "authored": "2026-08-27",
+ "bank_path": "research/lfm2_extension_bank_prompts_v1.json",
+ "bank_sha256": "98f7e52510ac1fe1368b8890cba1b525d086f9fdbf0ec22a8a08606cce36cef6",
+ "bank_prompts": 30,
+ "paraphrase_path": "research/lfm2_paraphrase_triplets_v1.json",
+ "paraphrase_sha256": "15e97ea2d7c182065a22a0d33dd66368140beaef35ad8d415e2c6c5c3422e4a3",
+ "paraphrase_prompts": 45,
+ "sealed_pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "lint": {
+  "ngram_disjointness_n": 7,
+  "ngram_collisions": 0,
+  "lanes_covered": 15,
+  "prompts_per_lane": 2,
+  "off_ladder_prompts": 10,
+  "self_answer_tokens_found": 0
+ },
+ "binding": "This bank is a SECOND surface.  The sealed fifteen remain the only judge of any frontier claim, verdict, count or ledger row.  No file of the sealed protocol is modified by the mechanism this seal describes."
+}
