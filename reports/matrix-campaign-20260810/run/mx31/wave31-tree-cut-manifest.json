@@ -1,0 +1,366 @@
+{
+ "schema": "neural-forge-matrix-wave31-tree-cut-v1",
+ "generated_at": "2026-08-28T06:09:04Z",
+ "source_tree": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\matrix-campaign-20260810\\run\\mx30",
+ "destination_tree": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\matrix-campaign-20260810\\run\\mx31",
+ "substitutions_applied": [
+  {
+   "from": "--campaign-wave 30",
+   "to": "--campaign-wave 31"
+  },
+  {
+   "from": "\"campaign_wave\": 29",
+   "to": "\"campaign_wave\": 31"
+  },
+  {
+   "from": "wave30",
+   "to": "wave31"
+  },
+  {
+   "from": "mx30",
+   "to": "mx31"
+  },
+  {
+   "from": "MX30",
+   "to": "MX31"
+  }
+ ],
+ "prose_left_alone": "`wave 30` / `Wave 30` / `WAVE 30` in English are NOT substituted, so a docstring recording what wave 30 measured still says so",
+ "hand_edit_set": [
+  "mx30_build.py",
+  "mx30_retain.py",
+  "mx30_verify_seals.py"
+ ],
+ "files": [
+  {
+   "source": "benchq.sh",
+   "target": "benchq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 1,
+    "MX30": 1
+   }
+  },
+  {
+   "source": "blendq.sh",
+   "target": "blendq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 3,
+    "MX30": 4
+   }
+  },
+  {
+   "source": "bodyq.sh",
+   "target": "bodyq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 4,
+    "MX30": 5
+   }
+  },
+  {
+   "source": "deploy.py",
+   "target": "deploy.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 2
+   }
+  },
+  {
+   "source": "extq.sh",
+   "target": "extq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 3,
+    "MX30": 2
+   }
+  },
+  {
+   "source": "mx30_allocator.py",
+   "target": "mx31_allocator.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "mx30_basereceipt.py",
+   "target": "mx31_basereceipt.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 3
+   }
+  },
+  {
+   "source": "mx30_benchtab.py",
+   "target": "mx31_benchtab.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "mx30_blend.py",
+   "target": "mx31_blend.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 5
+   }
+  },
+  {
+   "source": "mx30_build.py",
+   "target": "mx31_build.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_campaign_table.py",
+   "target": "mx31_campaign_table.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "mx30_child_index.py",
+   "target": "mx31_child_index.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 3
+   }
+  },
+  {
+   "source": "mx30_coordsearch.py",
+   "target": "mx31_coordsearch.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 1
+   }
+  },
+  {
+   "source": "mx30_emission.py",
+   "target": "mx31_emission.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 2
+   }
+  },
+  {
+   "source": "mx30_emission_invariant.py",
+   "target": "mx31_emission_invariant.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 1
+   }
+  },
+  {
+   "source": "mx30_emitcoverage.py",
+   "target": "mx31_emitcoverage.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 1
+   }
+  },
+  {
+   "source": "mx30_extreview.py",
+   "target": "mx31_extreview.py",
+   "action": "renamed",
+   "substitutions": {
+    "\"campaign_wave\": 29": 1
+   }
+  },
+  {
+   "source": "mx30_extscore.py",
+   "target": "mx31_extscore.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "mx30_logitsolve.py",
+   "target": "mx31_logitsolve.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 13
+   }
+  },
+  {
+   "source": "mx30_massive_probe.py",
+   "target": "mx31_massive_probe.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "mx30_merge_ledger.py",
+   "target": "mx31_merge_ledger.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "mx30_parent_identity.py",
+   "target": "mx31_parent_identity.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_percase.py",
+   "target": "mx31_percase.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_read_dossier.py",
+   "target": "mx31_read_dossier.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_report_tables.py",
+   "target": "mx31_report_tables.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_results_matrix.py",
+   "target": "mx31_results_matrix.py",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 1
+   }
+  },
+  {
+   "source": "mx30_retain.py",
+   "target": "mx31_retain.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_retok.py",
+   "target": "mx31_retok.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 7
+   }
+  },
+  {
+   "source": "mx30_retokcensus.py",
+   "target": "mx31_retokcensus.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 1
+   }
+  },
+  {
+   "source": "mx30_termgain.py",
+   "target": "mx31_termgain.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 14
+   }
+  },
+  {
+   "source": "mx30_verify_seals.py",
+   "target": "mx31_verify_seals.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx30_vocab.py",
+   "target": "mx31_vocab.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 2,
+    "mx30": 5
+   }
+  },
+  {
+   "source": "package.sh",
+   "target": "package.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 5,
+    "mx30": 4,
+    "MX30": 3
+   }
+  },
+  {
+   "source": "reviewonly.sh",
+   "target": "reviewonly.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 1,
+    "MX30": 3
+   }
+  },
+  {
+   "source": "reviewq.sh",
+   "target": "reviewq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 1,
+    "MX30": 2
+   }
+  },
+  {
+   "source": "run-bench.sh",
+   "target": "run-bench.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1
+   }
+  },
+  {
+   "source": "seal_and_review.sh",
+   "target": "seal_and_review.sh",
+   "action": "renamed",
+   "substitutions": {
+    "--campaign-wave 30": 1,
+    "wave30": 1,
+    "mx30": 2
+   }
+  },
+  {
+   "source": "seal_verdict.sh",
+   "target": "seal_verdict.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave30": 1,
+    "mx30": 1
+   }
+  },
+  {
+   "source": "sealq.sh",
+   "target": "sealq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 5,
+    "MX30": 2
+   }
+  },
+  {
+   "source": "vocabq.sh",
+   "target": "vocabq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx30": 4,
+    "MX30": 4
+   }
+  }
+ ]
+}
