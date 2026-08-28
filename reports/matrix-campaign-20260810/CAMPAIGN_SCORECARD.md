@@ -1,44 +1,61 @@
-# CAMPAIGN_SCORECARD — wave 32
+# CAMPAIGN_SCORECARD — wave 33
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Regenerated at wave 32 from `wave32/campaign-frontier-table.json`.
-284 reviewed whole-model children,
-231 holding at least one case,
-184 benchmark rows, and every parent benchmark row
+Regenerated at wave 33 from `wave33/campaign-frontier-table.json`.
+290 reviewed whole-model children,
+237 holding at least one case,
+196 benchmark rows, and every parent benchmark row
 matching the sealed reference.
 
-**What wave 32 changed about how to read this table.** Wave 31 wrote here that
-on a pre-transition MLP body *the composed child reads the body's number, not
-the vocabulary's*, and that every deep-band ranking explained by "which K" needed
-re-reading as "which body". Wave 32 composed the same four K onto a body that
-reads **one better alone** — wave 30's `ARCH.CL1792M`, at byte-identical storage
-— and the four rungs read **3, 4, 2, 3** against the plain body's **8, 7, 6, 5**.
-Composed onto a convex blend body they read 3 against a body of 7. **The
-flatness law now has three bodies where it fails and one where it holds, and the
-one where it holds is the body it was discovered on.** It is a fact about
-`ARCH.CL1792`, not a law about composition, and no plan should assume a better
-body composes better.
+**READ THE REVIEW COLUMN AS AN UPPER BOUND, and wave 33 is the first wave that
+can say by how much.** The sealed fifteen is a reading of one wording of each
+ask. `wave33/robustness-frontier.json` re-asks every sealed-held lane in three
+restatements and counts the ones that still answer:
 
-**Two rows below carry a caveat wave 32 added.** `ARCH.V16CL1792`'s 8/15 at
-0.637073x rides entirely on `creative-continuity`, and wave 32 ran the
-paraphrase triplets on it three waves late: **zero of the three restatements of
-that lane's ask would be graded Partial.** The robust claim at that ratio is
-7/15, which ties `ARCH.V12CL1792` at a shallower depth — so the campaign's
-honest deep frontier is `ARCH.V12CL1792` at **7/15, 0.618813x**. Wave 32 itself
-moved **no** frontier row at any of the fifteen thresholds.
+| child | net | sealed 15 | **robust** |
+|---|---:|---:|---:|
+| PARENT | 1.000000 | 12 | **6** |
+| `ARCH.B75` | 0.742049 | 11 | **2** |
+| `ARCH.V19X13G03` | 0.742049 | 11 | **2** |
+| `ARCH.V18X13` | 0.737484 | 10 | **3** |
+| `ARCH.V16CL1792` | 0.637073 | 8 | **2** |
+| `ARCH.CL1792M` | 0.856199 | 8 | **0** |
+| `ARCH.V12CL1792` | 0.618813 | 7 | **1** |
+| `ARCH.V8CL1792` | 0.600552 | 5 | **2** |
 
-**The second review surface.** ADDENDUM 16.1's 30-prompt extension bank prices
-and orders; it grades nothing. Every count in this file is the frozen fifteen,
-read by hand, exactly as it has been for thirty-two waves. Wave 32's retro-score
-over seventeen sealed children gives Spearman **0.3537** — *SCRAMBLED: the
-sealed ordering does NOT reproduce* — against wave 31's 0.7411 `VALIDATED` and
-wave 30's 0.6544 `PARTIAL`. Its worst-reviewed child, `ARCH.V4CL1792` at 1/15,
-takes the **highest** extension score in the wave at 10/30. Nothing in this file
-fires on that surface, and after three waves reading 0.65, 0.74 and 0.35 it is
-not yet an instrument.
+**The sealed ordering does not survive rewording.** `ARCH.V18X13` is more robust
+than `ARCH.B75` and deeper; `ARCH.V8CL1792` at sealed five is as robust as
+`ARCH.B75` at sealed eleven; and `ARCH.CL1792M` — the reader-metric body that
+reads one case BETTER than its stream-selected twin — holds **none** of its eight
+under a restatement. The parent holds six of its ten scorable lanes, so this is
+not an impossible bar. Two of the fifteen lanes are unscorable for everyone
+because the paraphrase bank dropped the note and the update its own prompts refer
+to; that defect is charged to the bank and stated in the artifact.
+
+**The `ARCH.V16CL1792` ≥8 rung at 0.637073x stays retired**, and wave 33 added a
+second cell to it: `ARCH.GV16L01` ties that 8/15 exactly, holding the same eight
+lanes including the same `creative-continuity` case that fails all three
+restatements. **The campaign's honest deep frontier remains `ARCH.V12CL1792` at
+7/15, 0.618813x**, and wave 33 moved no frontier row at any of the fifteen
+thresholds — the sixth consecutive wave that has not.
+
+**The second review surface, bounded.** ADDENDUM 16.1's 30-prompt extension bank
+prices and orders; it grades nothing, and wave 33 measured what it can price.
+Pooled over **sixty child observations across four waves** on one frozen bank its
+Spearman is **0.6926**, and it is reproducible to the byte: two children decoded
+in wave 31 and again in wave 32 score identically and hold the identical prompt
+set. Its resolution, by sealed gap: **48.1% agreement and 34.5% inversions at one
+case, 81.6% at four, 100% at ten and beyond.** So it may be used to order two
+children four or more cases apart and may **not** be used to price a one-case
+margin, which is the job it was built for. The per-wave verdict string is retired:
+a null holding the instrument fixed and varying only the population puts wave 32's
+`SCRAMBLED` 0.3537 at the 8th percentile and wave 31's `VALIDATED` 0.7411 at the
+89th, on a 90% interval of 0.31–0.79 — wider than the gap between the scorer's own
+thresholds. Every count in this file is the frozen fifteen, read by hand, exactly
+as it has been for thirty-three waves.
 
 | rank | child | net | review | shape | the character of its failure | READ- dossier |
 |---:|---|---:|---:|---|---|---|

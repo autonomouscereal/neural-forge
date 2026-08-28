@@ -1,8 +1,8 @@
-# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 32
+# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 33
 
 **Generated** 2026-08-28 from `campaign-frontier-table.json`, which is itself a join of the sealed `ledger.jsonl`, the per-wave child indexes and the sealed `lm-eval` output. Nothing in this file is recomputed from prose.
 
-**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **284 whole-model children reviewed**, 231 holding at least one case, 184 benchmark rows, 908 ledger rows.
+**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **290 whole-model children reviewed**, 237 holding at least one case, 196 benchmark rows, 920 ledger rows.
 
 **How to read the two review columns.** `sealed 15` is the frozen 15-prompt protocol, read by hand, and it is the **only** column any frontier claim, verdict or ledger row fires on — before wave 29 and after it. `ext 30` is ADDENDUM 16.1's extension surface, authored blind in wave 29 and machine-scored against a rubric written before any child was decoded. It prices and orders; it never grades. A row with a blank `ext 30` was not run on the second surface, which is a statement about GPU budget and not about the child.
 
@@ -18,8 +18,8 @@
 | 11/15 | `ARCH.B75` | 0.742049x | 11/15 | 29 | S |
 | 10/15 | `ARCH.V18X09` | 0.737484x | 10/15 | 27 | S |
 | 9/15 | `ARCH.V18X07` | 0.737484x | 9/15 | 27 | S |
-| 8/15 | `ARCH.V16CL1792` | 0.637073x | 8/15 | 31 | S |
-| 7/15 | `ARCH.V12CL1792` | 0.618813x | 7/15 | 31 | S |
+| 8/15 | `ARCH.GV16L01` | 0.637073x | 8/15 | 33 | S |
+| 7/15 | `ARCH.GV12L03` | 0.618813x | 7/15 | 33 | S |
 | 6/15 | `ARCH.V9CL1792` | 0.605117x | 6/15 | 31 | S |
 | 5/15 | `ARCH.V8CL1792` | 0.600552x | 5/15 | 31 | S |
 | 4/15 | `ARCH.V8CL1792` | 0.600552x | 5/15 | 31 | S |
@@ -52,23 +52,29 @@
 | S | `ARCH.V19CL1408` | 0.578868x | **1**/15 | -- | -- | dead | -- | arc 0.345 · hella 0.385 · piqa 0.565 · wino 0.515 |
 | S | `ARCH.R5` | 0.579946x | **0**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.W14FF320` | 0.580580x | **0**/15 | -- | -- | dead | -- | -- |
-| S | `ARCH.V4CL1792` | 0.582292x | **1**/15 | 10/30 | 2 | dead | w32 BELOW THE CENSUS FLOOR -- K=4,096, 3,117 rows under the floor; tokens-per-byte 0.3164 against the parent's 0.2135 | -- |
+| S | `ARCH.V4CL1792` | 0.582292x | **1**/15 | -- | -- | dead | -- | arc 0.325 · hella 0.340 · piqa 0.520 · wino 0.485 |
 | S | `ARCH.W640` | 0.590763x | **0**/15 | -- | -- | dead | -- | -- |
-| S | `ARCH.V6CL1792` | 0.591422x | **3**/15 | 8/30 | 7 | dead | w32 BELOW THE CENSUS FLOOR (plan W3) -- K=6,144, 1,069 rows under the measured floor of 7,213; the coverage half of wave 25's gate released with --below-floor, the merge-closure half asserted | -- |
+| S | `ARCH.V6CL1792` | 0.591422x | **3**/15 | -- | -- | dead | -- | arc 0.305 · hella 0.315 · piqa 0.495 · wino 0.530 |
 | S | `ARCH.V8CL1792` | 0.600552x | **5**/15 | -- | -- | dead | -- | arc 0.305 · hella 0.350 · piqa 0.495 · wino 0.575 |
-| S | `ARCH.V8CL1792M` | 0.600552x | **3**/15 | 6/30 | 3 | dead | w32 COMPOSED ON THE READER-METRIC BODY -- K=8,192, below the crossing | -- |
+| S | `ARCH.V8CL1792M` | 0.600552x | **3**/15 | -- | -- | dead | -- | arc 0.310 · hella 0.355 · piqa 0.515 · wino 0.505 |
 | S | `ARCH.V19CL1536` | 0.602835x | **2**/15 | -- | -- | dead | -- | arc 0.310 · hella 0.360 · piqa 0.545 · wino 0.565 |
 | S | `ARCH.R4` | 0.603922x | **0**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.V9CL1792` | 0.605117x | **6**/15 | -- | -- | dead | -- | arc 0.280 · hella 0.365 · piqa 0.485 · wino 0.555 |
-| S | `ARCH.V9CL1792M` | 0.605117x | **2**/15 | 7/30 | 2 | dead | w32 COMPOSED ON THE READER-METRIC BODY -- K=9,216, on wave 30's 0.81402 emission-coverage crossing | -- |
+| S | `ARCH.V9CL1792M` | 0.605117x | **2**/15 | -- | -- | dead | -- | arc 0.290 · hella 0.365 · piqa 0.505 · wino 0.545 |
 | S | `ARCH.V19CL1792X13` | 0.608519x | **2**/15 | -- | -- | dead | -- | arc 0.365 · hella 0.345 · piqa 0.585 · wino 0.520 |
-| S | `ARCH.V12CL1792` | 0.618813x | **7**/15 | 9/30 | 3 | dead | -- | arc 0.370 · hella 0.385 · piqa 0.530 · wino 0.535 |
-| S | `ARCH.V12CL1792M` | 0.618813x | **4**/15 | 4/30 | 6 | dead | w32 COMPOSED ON THE READER-METRIC BODY -- K=12,288 | arc 0.365 · hella 0.360 · piqa 0.505 · wino 0.575 |
+| S | `ARCH.GV12L01` | 0.618813x | **6**/15 | -- | -- | dead | terminal-gain lambda 0.1: one case lost to a cap hit, not to content | -- |
+| S | `ARCH.GV12L03` | 0.618813x | **7**/15 | -- | -- | dead | terminal-gain lambda 0.3: flat at the source | -- |
+| S | `ARCH.GV12L10` | 0.618813x | **7**/15 | -- | -- | dead | terminal-gain lambda 1.0 on the robust deep frontier: flat at the source | -- |
+| S | `ARCH.V12CL1792` | 0.618813x | **7**/15 | -- | -- | dead | -- | arc 0.370 · hella 0.385 · piqa 0.530 · wino 0.535 |
+| S | `ARCH.V12CL1792M` | 0.618813x | **4**/15 | -- | -- | dead | -- | arc 0.365 · hella 0.360 · piqa 0.505 · wino 0.575 |
 | S | `ARCH.V16W896X13` | 0.623329x | **1**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.V19CL1664` | 0.626802x | **3**/15 | -- | -- | dead | -- | arc 0.345 · hella 0.345 · piqa 0.580 · wino 0.595 |
-| S | `ARCH.V16BMV3` | 0.637073x | **3**/15 | 7/30 | 5 | dead | w32 COMPOSED ON A BLEND BODY -- K=16,384 gather on ARCH.BMV3; the flatness law's cheapest test on a body class it has never seen | -- |
-| S | `ARCH.V16CL1792` | 0.637073x | **8**/15 | 9/30 | 5 | dead | -- | arc 0.400 · hella 0.405 · piqa 0.545 · wino 0.520 |
-| S | `ARCH.V16CL1792M` | 0.637073x | **3**/15 | 9/30 | 6 | dead | w32 COMPOSED ON THE READER-METRIC BODY (plan W2) -- K=16,384 gather on ARCH.CL1792M; tests flatness against the M-inversion | arc 0.360 · hella 0.390 · piqa 0.515 · wino 0.565 |
+| S | `ARCH.GV16L01` | 0.637073x | **8**/15 | -- | -- | dead | terminal-gain lambda 0.1: ties the source at eight on a non-robust case | -- |
+| S | `ARCH.GV16L03` | 0.637073x | **7**/15 | -- | -- | dead | terminal-gain lambda 0.3: identical seven lanes to lambda 1.0 | -- |
+| S | `ARCH.GV16L10` | 0.637073x | **7**/15 | -- | -- | dead | terminal-gain lambda 1.0: one case lost, conversation-natural-greeting | -- |
+| S | `ARCH.V16BMV3` | 0.637073x | **3**/15 | -- | -- | dead | -- | arc 0.355 · hella 0.435 · piqa 0.505 · wino 0.565 |
+| S | `ARCH.V16CL1792` | 0.637073x | **8**/15 | -- | -- | dead | -- | arc 0.400 · hella 0.405 · piqa 0.545 · wino 0.520 |
+| S | `ARCH.V16CL1792M` | 0.637073x | **3**/15 | -- | -- | dead | -- | arc 0.360 · hella 0.390 · piqa 0.515 · wino 0.565 |
 | S | `ARCH.V20X13W896` | 0.639307x | **2**/15 | -- | -- | dead | -- | arc 0.310 · hella 0.415 · piqa 0.585 · wino 0.525 |
 | S | `ARCH.CL640` | 0.640497x | **0**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.CT640` | 0.640497x | **0**/15 | -- | -- | dead | -- | -- |
@@ -217,19 +223,19 @@
 | S | `ARCH.T030713` | 0.842437x | **0**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.T030913` | 0.842437x | **2**/15 | -- | -- | dead | -- | -- |
 | S | `ARCH.V32` | 0.853916x | **11**/15 | -- | -- | alive-parent-band | -- | arc 0.485 · hella 0.485 · piqa 0.640 · wino 0.525 |
-| S | `ARCH.BM25` | 0.856199x | **6**/15 | 8/30 | 3 | dead | w32 BODY BLEND (plan W1) -- aligned convex blend, 0.75 ARCH.CL1792 + 0.25 ARCH.CL1792M on CL1792's channel selection; zero solve, byte-identical storage | arc 0.405 · hella 0.450 · piqa 0.590 · wino 0.540 |
-| S | `ARCH.BM50` | 0.856199x | **4**/15 | 8/30 | 4 | dead | w32 BODY BLEND -- the midpoint of the same segment, alpha 0.50 | arc 0.405 · hella 0.445 · piqa 0.580 · wino 0.550 |
-| S | `ARCH.BM50N` | 0.856199x | **0**/15 | 3/30 | 25 | dead | w32 BODY BLEND, NAIVE ARM (--align none) -- the same convex weights as BM50 with NO channel alignment; built to measure a prediction the builder's own docstring made before the build | -- |
-| S | `ARCH.BM75` | 0.856199x | **2**/15 | 7/30 | 5 | dead | w32 BODY BLEND -- alpha 0.75, wave 29 ARCH.B75's own alpha applied to a whole body instead of a 1,024-number diagonal | arc 0.405 · hella 0.460 · piqa 0.570 · wino 0.590 |
-| S | `ARCH.BMS75` | 0.856199x | **5**/15 | 7/30 | 5 | dead | w32 BODY BLEND, SOURCE-SWAP CONTROL -- the same convex point as BM25 built on ARCH.CL1792M's selection and w1/w3; isolates the selection from the coefficients | arc 0.410 · hella 0.430 · piqa 0.540 · wino 0.575 |
-| S | `ARCH.BMV3` | 0.856199x | **7**/15 | 8/30 | 4 | dead | w32 BODY BLEND, THREE-WAY SIMPLEX BARYCENTRE -- one third each of CL1792, CL1792M and CL1792MV; the best blend in the wave and a tie with the plain body | arc 0.405 · hella 0.455 · piqa 0.565 · wino 0.555 |
-| S | `ARCH.BV50` | 0.856199x | **4**/15 | 8/30 | 1 | dead | w32 BODY BLEND -- alpha 0.50 against the OTHER sibling, ARCH.CL1792MV; the second midpoint | arc 0.400 · hella 0.460 · piqa 0.590 · wino 0.550 |
+| S | `ARCH.BM25` | 0.856199x | **6**/15 | -- | -- | dead | -- | arc 0.405 · hella 0.450 · piqa 0.590 · wino 0.540 |
+| S | `ARCH.BM50` | 0.856199x | **4**/15 | -- | -- | dead | -- | arc 0.405 · hella 0.445 · piqa 0.580 · wino 0.550 |
+| S | `ARCH.BM50N` | 0.856199x | **0**/15 | -- | -- | dead | -- | -- |
+| S | `ARCH.BM75` | 0.856199x | **2**/15 | -- | -- | dead | -- | arc 0.405 · hella 0.460 · piqa 0.570 · wino 0.590 |
+| S | `ARCH.BMS75` | 0.856199x | **5**/15 | -- | -- | dead | -- | arc 0.410 · hella 0.430 · piqa 0.540 · wino 0.575 |
+| S | `ARCH.BMV3` | 0.856199x | **7**/15 | -- | -- | dead | -- | arc 0.405 · hella 0.455 · piqa 0.565 · wino 0.555 |
+| S | `ARCH.BV50` | 0.856199x | **4**/15 | -- | -- | dead | -- | arc 0.400 · hella 0.460 · piqa 0.590 · wino 0.550 |
 | S | `ARCH.CL1792` | 0.856199x | **7**/15 | -- | -- | dead | -- | arc 0.385 · hella 0.420 · piqa 0.580 · wino 0.570 |
 | S | `ARCH.CL1792LG` | 0.856199x | **7**/15 | -- | -- | dead | -- | arc 0.385 · hella 0.420 · piqa 0.580 · wino 0.570 |
 | S | `ARCH.CL1792M` | 0.856199x | **8**/15 | -- | -- | dead | -- | arc 0.435 · hella 0.460 · piqa 0.535 · wino 0.560 |
 | S | `ARCH.CL1792ME` | 0.856199x | **2**/15 | -- | -- | dead | -- | arc 0.420 · hella 0.395 · piqa 0.555 · wino 0.480 |
 | S | `ARCH.CL1792MV` | 0.856199x | **7**/15 | -- | -- | dead | -- | arc 0.415 · hella 0.460 · piqa 0.550 · wino 0.565 |
-| S | `ARCH.CL1792S` | 0.856199x | **4**/15 | 8/30 | 6 | dead | w32 B4's CONTROLLED EVIDENCE PAIR (plan W4), three waves late -- ARCH.CL1792 solved with --arm stale; the only variable is whether each site's evidence is captured through the partially built child or read off the unfolded parent | arc 0.375 · hella 0.430 · piqa 0.590 · wino 0.545 |
+| S | `ARCH.CL1792S` | 0.856199x | **4**/15 | -- | -- | dead | -- | arc 0.375 · hella 0.430 · piqa 0.590 · wino 0.545 |
 | S | `ARCH.MM896` | 0.859023x | **2**/15 | -- | -- | dead | -- | arc 0.320 · hella 0.435 · piqa 0.555 · wino 0.505 |
 | S | `ARCH.W896` | 0.859023x | **4**/15 | -- | -- | dead | -- | arc 0.355 · hella 0.400 · piqa 0.565 · wino 0.490 |
 | S | `ARCH.W896LS` | 0.859023x | **3**/15 | -- | -- | dead | -- | arc 0.365 · hella 0.405 · piqa 0.565 · wino 0.510 |
@@ -316,32 +322,6 @@
 | P | `COMP.MA.MXJ1` | 0.991439x | **12**/15 | -- | -- | alive-parent-band | -- | -- |
 | P | `COMP.MA.MXK14` | 0.994287x | **13**/15 | -- | -- | alive-parent-band | -- | -- |
 | P | `COMP.MA.MXK6` | 0.994859x | **10**/15 | -- | -- | alive-parent-band | -- | -- |
-
-## 3. The retro-score — does the sealed map survive a second instrument?
-
-**Verdict: SCRAMBLED: the sealed ordering does NOT reproduce.  Under the plan's pre-registered go/no-go every one-case play pauses and this goes to Cyril.**
-
-Spearman(sealed 15, extension 30) = **0.3537** over 17 sealed checkpoints spanning 8/15 down to 0/15. The sealed surface separates them into 9 distinct levels; the extension surface separates them into 7.
-
-| child | sealed 15 | extension 30 | extension % | charged |
-|---|---:|---:|---:|---:|
-| `V16CL1792` | 8/15 | 9/30 | 30.0% | 5 |
-| `BMV3` | 7/15 | 8/30 | 26.7% | 4 |
-| `V12CL1792` | 7/15 | 9/30 | 30.0% | 3 |
-| `BM25` | 6/15 | 8/30 | 26.7% | 3 |
-| `BMS75` | 5/15 | 7/30 | 23.3% | 5 |
-| `BM50` | 4/15 | 8/30 | 26.7% | 4 |
-| `BV50` | 4/15 | 8/30 | 26.7% | 1 |
-| `CL1792S` | 4/15 | 8/30 | 26.7% | 6 |
-| `V12CL1792M` | 4/15 | 4/30 | 13.3% | 6 |
-| `V16BMV3` | 3/15 | 7/30 | 23.3% | 5 |
-| `V16CL1792M` | 3/15 | 9/30 | 30.0% | 6 |
-| `V6CL1792` | 3/15 | 8/30 | 26.7% | 7 |
-| `V8CL1792M` | 3/15 | 6/30 | 20.0% | 3 |
-| `BM75` | 2/15 | 7/30 | 23.3% | 5 |
-| `V9CL1792M` | 2/15 | 7/30 | 23.3% | 2 |
-| `V4CL1792` | 1/15 | 10/30 | 33.3% | 2 |
-| `BM50N` | 0/15 | 3/30 | 10.0% | 25 |
 
 ## 4. What this matrix does not say
 
