@@ -67,8 +67,11 @@ refused every round-A review before a receipt was written:
 ```
 
 **A wave that has to be refused twice by its own guards to get its schema strings
-right is a wave whose guards work.** Both refusals cost a deployment each and
-nothing else.
+right is a wave whose guards work.** They cost differently, and the difference is
+the argument for putting a guard as early as it will go: the builder's list
+refused at the *tree cut*, before a deployment existed, and cost one line of hand
+edit. The sealer's list refused at the *first seal*, after two deployments and
+four GPU builds, and cost a third deployment. Neither cost a wrong number.
 
 ---
 
