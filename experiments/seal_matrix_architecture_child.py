@@ -137,6 +137,23 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave31-standard-shape-child-v1",
     "neural-forge-matrix-wave31-blend-build-receipt-v1",
     "neural-forge-matrix-wave31-logit-metric-writer-v1",
+    # Wave 32's first three strings are wave 31's renamed by
+    # `run/mx32/cut_wave32.py`, byte-identical in behaviour to the lines above.
+    "neural-forge-matrix-wave32-standard-shape-child-v1",
+    "neural-forge-matrix-wave32-blend-build-receipt-v1",
+    "neural-forge-matrix-wave32-logit-metric-writer-v1",
+    # The FOURTH is a new builder class, and it gets a line here for the reason
+    # wave 29's two did.  `mx32_blend_body.py` convex-blends two or three sealed
+    # SIBLING BODIES rather than two sealed children's terminal diagonals: the
+    # mlp fold selects real parent channels per site, so two siblings that
+    # disagree about which channels to keep store the SAME parent rows in a
+    # DIFFERENT ORDER, and a blend that mixes row i with row i mixes two
+    # unrelated channels.  The builder recovers each sibling's selection by
+    # matching w1 rows against the parent's own and blends `w2` column-wise on
+    # the aligned intersection; every other tensor is a straight convex
+    # combination.  No solve, no capture, no added parameter, one CPU pass, and
+    # the parameter count is asserted against the source's own receipt.
+    "neural-forge-matrix-wave32-body-blend-build-receipt-v1",
 )
 
 
