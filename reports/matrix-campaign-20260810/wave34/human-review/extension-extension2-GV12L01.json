@@ -1,0 +1,490 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension2-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T15:58:43Z",
+ "label": "GV12L01",
+ "campaign_wave": 34,
+ "cell_id": "ARCH.GV12L01",
+ "cell_instance_id": "mx33-gv12l01-0001",
+ "receipt_sha256": "9332eb74814ff957bbb9c7f6633bc4e25b74be4b72f4d9e156dab88e251e119e",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-0ed36347/research/lfm2_extension_bank_prompts_v2.json",
+ "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-0ed36347/reports/matrix-campaign-20260810/extension-bank-seal-v2.json",
+ "seal_sha256": "d7b91717fa11a4523ce423f24095128533732cb8b11c74be2fe481a1c9895ba1",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave33/children/MX33-GV12L01",
+ "child_responses": [
+  {
+   "id": "ext2-conversation-dead-battery",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "My car battery died in the supermarket car park last night and I waited two hours for the roadside crew. Reply the way a friend would, in plain sentences. Ask me exactly one thing, and do not give me a list."
+    }
+   ],
+   "response_verbatim": "My car battery did not work out of the supermarket car park.",
+   "response_sha256": "52ef4d5c5a07ff80fca243642ab9baccba712675316402fdaa68a06217f99bff",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.893
+  },
+  {
+   "id": "ext2-conversation-two-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I said yes to covering a shift on Saturday and then remembered I already promised my daughter I would take her to her swim meet the same morning. Talk to me like a person, not like a helpdesk. Do not tell me which one to pick and do not give me options as a list. Ask exactly one thing."
+    }
+   ],
+   "response_verbatim": "I'm not sure what you can provide. Could you please share more details about your preference or any specific needs?",
+   "response_sha256": "0cf4ebd3a832795923e73d152482f2e73723a67a6c48e003a395af22b347d700",
+   "generated_tokens": 23,
+   "termination": "complete",
+   "wall_time_seconds": 0.463
+  },
+  {
+   "id": "ext2-instruction-first-week",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write exactly three numbered steps someone should take in their first week at a new job to work out who owns what. Number them 1, 2 and 3. Each step must be different from the other two and each must name a specific thing to do."
+    }
+   ],
+   "response_verbatim": "Here are the three numbered steps to take in their first week at a new job:\n\n1. **Work out the job**: Start by identifying the specific tasks and resources available in the job. For example, if you're planning a project, you might need to research a project management document, gather data, or prepare a list of materials.\n\n2. **Name the task**: Once you have identified the task, assign it to yourself. For example, if you're planning a project, you might need to write a detailed plan, create a list of materials, or prepare a list of resources.\n\n3. **Execute the task**: Execute the task on time. For example, if you're planning a project, you might need to work out the task, start a process, or prepare a schedule.\n\nThese steps are essential for making the most progress in your job.",
+   "response_sha256": "2dbf28dc080bb50439e52b14d4b7b7771b1d61e1ab478120f7f5230b9476be5f",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 3.593
+  },
+  {
+   "id": "ext2-instruction-power-restored",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The mains supply to a small office has just come back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about ringing the electricity company, and do not add a fourth item."
+    }
+   ],
+   "response_verbatim": "The person who arrives first can be:\n1. **Aneid (a)**: The person uses a light or a light that is a light, which is a light in the main supply supply.\n2. **A light (b)**: The person uses a light that is a light, which is a light in the main supply supply.\n\nThese actions are taken to ensure the person uses the main supply supply.",
+   "response_sha256": "c28dec5e54f8905d9da75b9aa7d4ffc4f1e1b52abb9eb4ff0c76b08031a9a5ec",
+   "generated_tokens": 88,
+   "termination": "complete",
+   "wall_time_seconds": 1.735
+  },
+  {
+   "id": "ext2-explanation-second-tide",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend says high tide happens because the moon pulls the water up on the side facing it, so there should be one high tide a day. There are two. Explain in plain language what actually causes the second one. Do not use equations."
+    }
+   ],
+   "response_verbatim": "The second one is caused by the moon pulling the water up on the side facing it.",
+   "response_sha256": "ed110cde6b6124f53c5e2ff593197fd4170c34cd3dc676fa1e0b83afae3fdcf0",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.409
+  },
+  {
+   "id": "ext2-explanation-blue-then-red",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone tells me the sky is blue because it reflects the ocean. Explain why that is wrong and why the same sky turns red at sunset. Your answer has to account for both colours with a single mechanism."
+    }
+   ],
+   "response_verbatim": "The reason why the sky is blue is because the color reflects the natural light of the sun, which is the same as the color of the other sky's. The natural light is the same as the color of the other sky's, and it reflects the exact color of the light they have in their eyes. This is why the same color appears in both sky's, and it's why the same color appears in both their eyes.\n\nThe same color also reflects the exact color of the light they have in their eyes, and it's why the same color appears in both their eyes. This is why the same color appears in both their eyes, and it's why the same color appears in both their eyes.\n\nThis explanation is a simple explanation of how the color reflects the natural light of the other sky's and their own eyes.",
+   "response_sha256": "401b8fc5116ac5f8110333665b21e6f44bd6cc5485455f60450b1b2c78a2b127",
+   "generated_tokens": 173,
+   "termination": "complete",
+   "wall_time_seconds": 3.527
+  },
+  {
+   "id": "ext2-arithmetic-bolt-bags",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A workshop has 7 crates with 24 bolts in each. 19 bolts are damaged and thrown out. The rest are packed into bags of 8. How many full bags are there, and how many bolts are left over?"
+    }
+   ],
+   "response_verbatim": "The workshop has 7 crates, each with 24 bolts, so they have 7 x 24 = 140 crates. They have 19 bolts left over, which is 8 crates remaining. Since the remaining btars are 8, they can pack into 8 bags. Each bag has 1 btars left, so they can pack 8 / 1 = 8 btars. The remaining btars are 0.\n\nThe workshop can pack 8 btars, but only 0 are left. They can do it in 0 btars, so they can do it in 0 btars.\n\nThe remaining btars are 0.\n\nSo, the workshop can do 8 btars.\n\nThe answer is:\n\n\\boxed{8}",
+   "response_sha256": "c2d633d3ecf3099ef402bce130b861ba3582e9431dcaeaafb00bdceb83c56614",
+   "generated_tokens": 183,
+   "termination": "complete",
+   "wall_time_seconds": 3.611
+  },
+  {
+   "id": "ext2-arithmetic-faulty-run",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A machine makes 45 parts an hour and runs for 6 hours. A fault then spoils 20 per cent of everything made so far. After the fault it runs 3 more hours at 30 parts an hour. How many good parts are there at the end? Give the number immediately after the fault as well."
+    }
+   ],
+   "response_verbatim": "The machine makes 45 parts an hour, which is 45 \u00f7 1 hour = 45 parts.\nThe fault spopses 20 parts, so it spopses 45 \u00f7 20 = 18 parts.\nAfter the fault, it has 3 more parts at each hour, which is 3 hours \u00f7 1 hour = 3 parts.\nThe number of good parts is 18 parts + 3 parts = 15 good parts.\nThe number immediately after the fault is 15 good parts.\nThe answer is 15 good parts.\n\\boxed{15}",
+   "response_sha256": "c79357eef6252b850118baa0feb4d121b4565d5a581c109040506eb2a84253ca",
+   "generated_tokens": 125,
+   "termination": "complete",
+   "wall_time_seconds": 2.563
+  },
+  {
+   "id": "ext2-logic-shelf-order",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four books sit on a shelf. The atlas is somewhere to the left of the ledger. The ledger is to the left of the manual. The primer is to the right of the manual. Give the left-to-right order of all four."
+    }
+   ],
+   "response_verbatim": "The correct order is:\n1. **Shelf** (left) \u2192 **Manual** (right) \u2192 **Shelf** (left) \u2192 **Manual** (right) \u2192 **Shelf** (left) \u2192 **Manual** (right) \u2192 **Shelf** (left)\n\n**Explanation:**\n- The order follows the sequence: Shelf \u2192 Manual \u2192 Shelf \u2192 Manual \u2192 Shelf \u2192 Manual \u2192 Shelf (left) \u2192 Manual (right) \u2192 Shelf (left) \u2192 Manual (right) \u2192 Shelf (left) \u2192)",
+   "response_sha256": "33325df956ffbbe13365b8dd672e63318bb86a33f709722cd4b040eee0d9e365",
+   "generated_tokens": 135,
+   "termination": "complete",
+   "wall_time_seconds": 2.771
+  },
+  {
+   "id": "ext2-logic-relay-finish",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Five runners finish a relay leg. Dara finishes before Erin. Fitz finishes after Erin. Gil finishes before Dara. Hana finishes immediately after Erin. Give the finishing order for all five, first to last."
+    }
+   ],
+   "response_verbatim": "The correct order for all five is:\n\n1. Dara finishes before Erin,  \n2. Fitz finishes after Erin,  \n3. Gil finishes before Dara,  \n4. Hana finishes immediately after Erin,  \n5. F5 finishes (finish)\n\nThis sequence ensures that each player's position is placed in the order of Dara, Fitz, Gil, Hana, and Erin.",
+   "response_sha256": "365cf502ca1698d92e27a15bef0d88b65057e3c534e4c9f316d6eac500edc4f8",
+   "generated_tokens": 100,
+   "termination": "complete",
+   "wall_time_seconds": 2.078
+  },
+  {
+   "id": "ext2-context-workshop-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "NOTICE - Riverside Workshop. The tool cage opens at 7:30 a.m. and the last checkout is 4:15 p.m. Bench 3 is reserved for welding on Tuesdays and Thursdays. The side door is locked after 6 p.m.; use the main gate. Visitors sign the yellow book, never the blue one.\n\nUsing only the notice above, and in no more than two sentences: what is the last time a tool can be checked out, and which book does a visitor sign?"
+    }
+   ],
+   "response_verbatim": "The last time a tool can be checked out is when a book is written, and the book does not contain the word \"one\" in it. The book does not contain the word \"one\" because it is a standard book that does not contain the word \"one\" and is a non-visible book.",
+   "response_sha256": "7f6c13ff2cec93e45b06fc0801506d1193683e029ed6cc6e25341c4c57676c9b",
+   "generated_tokens": 63,
+   "termination": "complete",
+   "wall_time_seconds": 1.303
+  },
+  {
+   "id": "ext2-context-clinic-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "CLINIC NOTICE. Walk-in hours are 9 a.m. to 12 p.m. on Monday, Wednesday and Friday. Blood tests are taken only between 8 a.m. and 10 a.m., and only on days that have walk-in hours. The pharmacy counter closes at 3 p.m. every weekday. The ambulance bay is not a car park.\n\nFrom the notice only: a patient wants a blood test on Thursday morning. Say whether they can, and if they cannot, give the next day they can and the window."
+    }
+   ],
+   "response_verbatim": "The patient's request is to confirm a blood test on Thursday morning. They can confirm the next day if they can, and the window is set for 8 a.m. to 10 a.m. on days that have walk-in hours. The pharmacy counter at 3 p.m. is closed every weekday. The ambulance bay is not a car park.",
+   "response_sha256": "f1689ba322419ca2f012792c95dd6cc75b89aebc46b9406cf5f9b694c5e2a471",
+   "generated_tokens": 77,
+   "termination": "complete",
+   "wall_time_seconds": 1.537
+  },
+  {
+   "id": "ext2-summary-vendor-choice",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Read this and reply in no more than three sentences, naming the decision that was made and the one risk that is still open.\n\nThe team compared three logging vendors. Kestrel is cheapest but stores data outside the EU. Marlin costs 40 per cent more and keeps data in Dublin. Osprey was ruled out for lacking single sign-on. The team chose Marlin. Legal has not yet confirmed whether the Dublin site satisfies the new retention rule, and the contract has to be signed by 14 November."
+    }
+   ],
+   "response_verbatim": "The decision was made between Kestrel and Marlin, with Kestrel being cheapest and Marlin having higher costs and data stored in Dublin. Osperey was not found for the single sign-on, and the contract must be signed by 14 November.",
+   "response_sha256": "1391463afc2bf6f6849fee69f91892a5b3918dc103c549c9b313bf0e94e94157",
+   "generated_tokens": 59,
+   "termination": "complete",
+   "wall_time_seconds": 1.227
+  },
+  {
+   "id": "ext2-summary-friday-backlog",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Summarise the following in at most four short lines. Name the single item that has to happen first and the single item that can wait, and say why for each.\n\nBacklog for Friday: (a) the certificate on the payments gateway expires on Sunday; (b) the marketing site needs a new hero image; (c) two customers report duplicate invoices; (d) the staging database needs a version bump before the next release, which is in three weeks."
+    }
+   ],
+   "response_verbatim": "**Summation:**\n\n1. **a) the certificate on the payments gateway expires on Sunday**  \n   - **Name:** The certificate on the payments gateway expires on Sunday  \n   - **Way:** The certificate is due on Sunday, meaning it expires on Sunday.\n\n2. **b) the marketing site needs a new hero image**  \n   - **Name:** The marketing site requires a new image  \n   - **Way:** The new image is needed for the next release.\n\n3. **c) two customers report duplicate invoices**  \n   - **Name:** The two customers report duplicate invoices  \n   - **Way:** The reports are due for the next release.\n\n4. **d) the staging database needs a version bump before the next release, which is in three weeks**  \n   - **Name:** The version bump is required before the next release  \n   - **Way:** The version is in three weeks.\n\n**Note:** The first item is \"a) the certificate on the payments gateway expires on Sunday\" (line 1).",
+   "response_sha256": "aafa2354f45b959a3fd01749c78ac85ec8298a1fefa8af201b7e11b0ee696548",
+   "generated_tokens": 254,
+   "termination": "complete",
+   "wall_time_seconds": 5.155
+  },
+  {
+   "id": "ext2-comparison-cache-memory",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between a processor cache and main memory to somebody who has never opened a computer, using one everyday comparison. Then say two specific ways your comparison would mislead them."
+    }
+   ],
+   "response_verbatim": "**Processor vs Main Memory: A Processor vs Main Memory**\n\n**Key Distincting:**  \n1. **Processor vs Main Memory**  \n   - **Processor**: A dedicated memory system (e.g., micro-circular or dedicated memory) that provides storage for the entire memory.  \n   - **Main Memory**: A dedicated memory system (e.g., micro-circular or dedicated memory) that provides storage for the entire memory.  \n\n**Misleadings:**  \n1. **Processor**:  \n   - **Misleadings**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main Memory**:  \n   - **Main Memory**:  \n   - **Processor**:  \n   - **Main",
+   "response_sha256": "c71d1a48422016088fa4b417a16ec05d100bb0f436c07e8756cb65920ade0eb8",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.522
+  },
+  {
+   "id": "ext2-comparison-bandwidth-latency",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between bandwidth and latency to a person who has never used a computer. You may not use any comparison involving roads, traffic, pipes or water. Then give two specific ways your comparison breaks down."
+    }
+   ],
+   "response_verbatim": "**Difference of Disability**\n\nThe key difference between bandwidth and latency is the **type of connection** and **specific bandwidth requirements**.\n\n- **Standard bandwidth** (e.g., 1/2/3/4) allows for a stable connection with a fixed bandwidth.\n- **Standard bandwidth** (e.g., 1/2/3/4) allows for a stable connection with a more flexible bandwidth, but a more limited capacity.\n\n**How to break down the difference**\n\n1. **Standard bandwidth** (e.g., 1/2/3/4) is more limited, but it still allows for a stable connection with a fixed bandwidth.\n2. **Standard bandwidth** (e.g., 1/2/3/4) is more flexible, but it allows for a more limited capacity.\n\n**Key points**\n\n- **Standard bandwidth** (e.g., 1/2/3/4) is more limited, but it still allows for a stable connection with a fixed bandwidth.\n- **Standard bandwidth** (e.g., 1/2/3/4) is more flexible, but it allows for a more limited capacity.\n\n**How to apply the difference**\n\n- **Standard bandwidth** (e.g., 1/2/3/4) is more limited, but it still allows for a stable connection with a fixed bandwidth.\n- **Standard bandwidth** (e.g., 1/2/3/4) is more flexible, but it allows for a more limited capacity.\n\nThese differences are important for understanding how bandwidth and network connection differ in terms to a computer.",
+   "response_sha256": "56327ac73d741e261ac954b5d3538cdf85da00bab40a5419876b821e9e8181e9",
+   "generated_tokens": 339,
+   "termination": "complete",
+   "wall_time_seconds": 6.828
+  },
+  {
+   "id": "ext2-coding-collapse-runs",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called collapse_runs(items) that returns a new list with consecutive duplicates collapsed to a single element and everything else kept. collapse_runs([1, 1, 2, 1, 1, 3]) must return [1, 2, 1, 3]. Do not import itertools."
+    }
+   ],
+   "response_verbatim": "Here is the Python function `colapse_runs` that processes a list of duplicates and returns a single element with the remaining items:\n\n```python\ndef collapse_runs(items):\n    return\n    return\n```\n\nThis function returns a list of duplicates with the remaining items, which is `[1, 2, 1, 3]` and the original elements.",
+   "response_sha256": "1a828f0809bc66655dadeb16785bb11365f94fc4ef1df350fc426bb5514996cf",
+   "generated_tokens": 86,
+   "termination": "complete",
+   "wall_time_seconds": 1.665
+  },
+  {
+   "id": "ext2-coding-first-unique",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function first_unique(items) that returns the first element appearing exactly once, in the original order, or None when there is no such element. first_unique(['a', 'b', 'a', 'c', 'b']) must return 'c'. Count in a single pass and do not sort."
+    }
+   ],
+   "response_verbatim": "To address the Python function `first_unique` that returns the first element appearing in the original order, we can use Python's built-in `Ordered` method. Here's the Python code:\n\n```python\ndef first_unique(items):\n    return first_unique(items)\n```\n\nThis function call retrieves the first element in the original order and returns it as a unique item.\n\n```python\ndef first_unique(items):\n    return first_unique(items)\n```\n\nThis returns the first element in the original order, which is `'a'` in this case.",
+   "response_sha256": "e9da0c9dd26ddd3846898e44eb8a678c947652ae9a16f69a1176ed42f1c270c2",
+   "generated_tokens": 128,
+   "termination": "complete",
+   "wall_time_seconds": 2.507
+  },
+  {
+   "id": "ext2-debug-tail-slice",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This function is meant to return the last n items of a list but it returns one too many. Fix it and say in one sentence what was wrong.\n\ndef tail(items, n):\n    return items[len(items) - n - 1:]"
+    }
+   ],
+   "response_verbatim": "The function `tail` is intended to extract the last item from a list of items, but it returns one item too many.\n\nHere's the corrected Python code:\n\n```python\ndef tail(items, n):\n    return items[len(items) - n + 1:]\n\n# Explained explanation\ndef tail(items, n):\n    return items[len(items) - n + 1:]\n\n# Explained explanation\n# This function takes a list of items and returns the last item, which is the one after the initial list.\n```\n\nThis function returns the last item, which is the one after the initial list.",
+   "response_sha256": "16f61e1ba99b2e6cdc465e2a595ef7ec88d1be8dd05b6f09029b4d2702011485",
+   "generated_tokens": 138,
+   "termination": "complete",
+   "wall_time_seconds": 2.635
+  },
+  {
+   "id": "ext2-debug-adjacent-pairs",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This is meant to return every adjacent pair from a list. On [1, 2, 3] it should give [(1, 2), (2, 3)] but it raises IndexError. Fix it and name the exact bound that is wrong.\n\ndef pairs(values):\n    out = []\n    for i in range(len(values)):\n        out.append((values[i], values[i + 1]))\n    return out"
+    }
+   ],
+   "response_verbatim": "def pairs(values):\n    out = []\n    for i in range(len(values)):\n        out.append((values[i], values[i + 1]))\n    return out",
+   "response_sha256": "ec9a17b4c98148dcff486cd5c70f0e51279e65e79f68bb1f4d7a9f719e1c5c82",
+   "generated_tokens": 46,
+   "termination": "complete",
+   "wall_time_seconds": 0.914
+  },
+  {
+   "id": "ext2-email-wrong-colour",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a short email to a shop. The facts: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thursday. Ask them to confirm which address to bring it to. Keep it under 120 words."
+    }
+   ],
+   "response_verbatim": "The order is to be refunded, not a replacement, and you can drop the item off in person on Thursday. Please confirm the address to bring it to.",
+   "response_sha256": "7b5d8938400b3c8d0db3c477baf0cef0a8f6659f1cb1e4f48513d974d03aeb23",
+   "generated_tokens": 33,
+   "termination": "complete",
+   "wall_time_seconds": 0.65
+  },
+  {
+   "id": "ext2-email-reschedule",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write an email to a client moving Tuesday's review to the following Monday at 10:00. Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday. Apologise no more than once, and keep it under 130 words."
+    }
+   ],
+   "response_verbatim": "Dear, I'm writing to you about your review and would like to move it to the following Monday at 10:00. I understand the importance of the review and would like to offer one alternative option on the same day. Please confirm your response by Friday and keep it under 130 words.",
+   "response_sha256": "08f05a111ff84a3759b696acd5b9f9dd5bce1fcb8af76fc923b764e408871695",
+   "generated_tokens": 62,
+   "termination": "complete",
+   "wall_time_seconds": 1.193
+  },
+  {
+   "id": "ext2-planning-office-move",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A four-person team is moving to a new office next Friday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancelling the old cleaning contract, and a check on the first morning that everything works. Number them 1 to 5."
+    }
+   ],
+   "response_verbatim": "Here is the numbered plan for the four-person team moving to a new office next Friday:\n\n1. **Transfer Phone Number**  \n   - Transfer the phone number to the new office.\n\n2. **Pack the Server Rack**  \n   - Set up the new server rack and update the address with the bank.\n\n3. **Cancell the Old Clearing Contract**  \n   - Cancel the current cleaning contract and replace the old one with a new agreement.\n\n4. **Check the First Morning**  \n   - Verify everything works and ensure no further action is needed.\n\n5. **Execute the Plan**  \n   - All tasks are completed successfully.\n\nThis sequence ensures the team maintains their organization and is ready for the next move.",
+   "response_sha256": "8746299c958abc5b6c4a835e12387d1853176e8897096a858e449eccf55f2de7",
+   "generated_tokens": 163,
+   "termination": "complete",
+   "wall_time_seconds": 3.201
+  },
+  {
+   "id": "ext2-planning-db-cutover",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a numbered plan of exactly six steps to move a live customer database to a new host overnight. It has to cover a verified backup, a read-only freeze, the data copy, a connection switch, a smoke check, and a way back if the check fails. The freeze may not be the first step and the backup may not be the last."
+    }
+   ],
+   "response_verbatim": "Here is the numbered plan for moving a live customer database to a new host overnight:\n\n1. **Verify the backup**: Confirm the existing backup to ensure it is up-to-cadence and not the first step.\n\n2. **Prep the read-only freeze**: Ensure the freeze is applied correctly and the data is read-ready.\n\n3. **Set up the connection switch**: Conv the connection to the new host and establish the connection.\n\n4. **Set up the smoke check**: Verify the smoke check to ensure it is up-to-cadence and not the first step.\n\n5. **Confirm the connection switch**: Verify the connection switch to ensure it is set up correctly and the connection is active.\n\n6. **Verify the connection**: Confirm the connection to ensure it is active and the connection is up.\n\nIf the check fail, the plan is to proceed with the next steps.",
+   "response_sha256": "658af7b5b71bf7b21725b3d15f17a2efb6b6003e173b49d99324a5c5d7436ed5",
+   "generated_tokens": 205,
+   "termination": "complete",
+   "wall_time_seconds": 4.038
+  },
+  {
+   "id": "ext2-uncertainty-churn-jump",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our churn went from 3 per cent to 5 per cent. Should we cut the price? Answer by naming what you would need to know before answering, and say the one thing you can already say safely."
+    }
+   ],
+   "response_verbatim": "The decision to cut the price depends on several factors, including the cost of supply supply, demand for supply, and potential supply supply costs. Here are the key considerations:\n\n1. **Coldness**: The most significant factor is the supply supply supply. If supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply supply",
+   "response_sha256": "94bbd5492f78254f3298263ce3a5bae65d0e3b2671d5ff54686c129637561cf5",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.82
+  },
+  {
+   "id": "ext2-uncertainty-first-hour",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Variant B got 12 sign-ups and variant A got 8 in the first hour of an A/B test. My co-founder wants to ship B this afternoon. Write the reply."
+    }
+   ],
+   "response_verbatim": "The correct answer is **A**. Your co-founder is correct that B has 12 sign-ups and variant A has 8 in the first hour of an A/B test. Therefore, B will ship on the afternoon.",
+   "response_sha256": "5349697fbb23675e36b801478f820082103cfa20e9b2cd9635f5e9fb8f43f7dd",
+   "generated_tokens": 51,
+   "termination": "complete",
+   "wall_time_seconds": 1.112
+  },
+  {
+   "id": "ext2-creative-cold-cellar",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this, keeping the same three things going: the cellar is colder than it should be, the tenant upstairs keeps moving furniture at night, and the narrator counts things to stay calm. Write one more paragraph and include exactly one line of spoken dialogue in quotation marks."
+    }
+   ],
+   "response_verbatim": "The text is a summary of the three key points to be addressed in the context of the discussion:\n\n1. **Colder than it should be**: The primary focus is to maintain the temperature of the cellar, which is the most important factor for the discussion to be effective.\n\n2. **Upstairs keep moving**: The main objective is to ensure that the tenant upstairs continue to move, which is essential for the discussion to be effective.\n\n3. **Narrator counts things to stay calm**: The discussion should focus on the number of items to be kept, which is the key area to address.\n\nThese points are relevant to the context of the discussion, as they are the core elements that will be addressed in the summary.",
+   "response_sha256": "5bc1c0032c121ce5f4a9e55752d11681993442daa331d39ec895eb84ebdb71f5",
+   "generated_tokens": 158,
+   "termination": "complete",
+   "wall_time_seconds": 3.109
+  },
+  {
+   "id": "ext2-creative-own-handwriting",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this without resolving it: a night keeper finds a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boat is overdue. Write one more paragraph, include one line of spoken dialogue in quotation marks, and do not explain who wrote the note."
+    }
+   ],
+   "response_verbatim": "The note was written in the lamp room, the fog has not been reported in the nigh, and the supply boat is overdischained.",
+   "response_sha256": "3e73ef10534527890c2f3efe6f06a5b8a1fc5d7fd5a3e7763f42859e06f7a652",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.618
+  },
+  {
+   "id": "ext2-multiturn-venue-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Suggest four venues for a thirty-person team dinner in a city centre."
+    },
+    {
+     "role": "assistant",
+     "content": "1. The Iron Grill - steakhouse, private room.\n2. Marea - seafood, terrace.\n3. Casa Nova - Italian, set menus.\n4. The Smokehouse - barbecue, long tables."
+    },
+    {
+     "role": "user",
+     "content": "Two of the group are vegetarian and one uses a wheelchair. Redo the list of four with that in mind and say what changed."
+    }
+   ],
+   "response_verbatim": "The four venues are:\n1. The Iron Grill (vegetice)\n2. Marea (seafood)\n3. Casa Nova (italian)\n4. The Smokehouse (barbecue)\n\nThe change in the list of vegetarian and wheelchair guests is:\n- **Virtuletice** (vegetice) is now in mind and the group is reduced to one.\n- **Wheelchair** is reduced to a long tides menu.\n- **Cara Nova** is reduced to a barbecue.\n- **Smokehouse** is reduced to a long tides barbecue.",
+   "response_sha256": "13d9c44c98ef8bbddf706655c82c04540c72325cfc35b60b0648e1ea82f7a2e8",
+   "generated_tokens": 143,
+   "termination": "complete",
+   "wall_time_seconds": 2.8
+  },
+  {
+   "id": "ext2-multiturn-dinner-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me three weeknight dinners I can cook in under twenty-five minutes."
+    },
+    {
+     "role": "assistant",
+     "content": "1. Chicken stir-fry with rice.\n2. Salmon and couscous.\n3. Carbonara."
+    },
+    {
+     "role": "user",
+     "content": "I should have said: no fish, no pork, and my partner does not eat gluten. Give three replacements and say why each one works."
+    }
+   ],
+   "response_verbatim": "Here are three replacements for you:\n\n1. **Chicken stir-fry with rice** \u2013 This is a traditional breakfast that uses fresh, unprocessed ingredients like chicked (chicked) and fresh (fresh) rices. It\u2019s a well-balanced meal that\u2019s not just a fish or pork, but a variety of other items like saltfish, gransets, and other fresh options.\n\n2. **Salmon and couscous** \u2013 These are a common choice for a gr\u00fcveal or a fishy meal. They\u2019re a mix of both fish and protein, and they\u2019re a good choice for a variety of items like saltfish, gransets, and other fresh options.\n\n3. **Canned and gransets** \u2013 These are a common choice for a fishy meal. They\u2019re a mix of both fish and protein, and they\u2019re a good option for a variety of items like saltfish, gransets, and other fresh options.\n\nThese are the reasons why you can cook in under 5 minutes!",
+   "response_sha256": "bb1ea410093bfc0f811238ba8b08fe476f399924fe448137b9a04c349332f57a",
+   "generated_tokens": 227,
+   "termination": "complete",
+   "wall_time_seconds": 4.452
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 143.645
+}

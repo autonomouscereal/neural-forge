@@ -1,0 +1,490 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension2-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T15:50:46Z",
+ "label": "V12CL1792X13",
+ "campaign_wave": 34,
+ "cell_id": "ARCH.V12CL1792X13",
+ "cell_instance_id": "mx34-v12cl1792x13-0001",
+ "receipt_sha256": "6f7f4514b8fb9f8f11d1307954aa761b347faa0296b29e6746fb576db1a43336",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-0ed36347/research/lfm2_extension_bank_prompts_v2.json",
+ "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-0ed36347/reports/matrix-campaign-20260810/extension-bank-seal-v2.json",
+ "seal_sha256": "d7b91717fa11a4523ce423f24095128533732cb8b11c74be2fe481a1c9895ba1",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave34/children/MX34-V12CL1792X13",
+ "child_responses": [
+  {
+   "id": "ext2-conversation-dead-battery",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "My car battery died in the supermarket car park last night and I waited two hours for the roadside crew. Reply the way a friend would, in plain sentences. Ask me exactly one thing, and do not give me a list."
+    }
+   ],
+   "response_verbatim": "My car battery did not have a two-hour window for the roadside crew.",
+   "response_sha256": "b1efc3fbccc435eb7dfc68da897448cfd23df687a20382a00743c72116068c8c",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.961
+  },
+  {
+   "id": "ext2-conversation-two-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I said yes to covering a shift on Saturday and then remembered I already promised my daughter I would take her to her swim meet the same morning. Talk to me like a person, not like a helpdesk. Do not tell me which one to pick and do not give me options as a list. Ask exactly one thing."
+    }
+   ],
+   "response_verbatim": "I don't understand correctly. Here's the correct answer:\n\n**Option 1: \"I'm a person\"**\n\n**Option 2: \"I'm a help\"**\n\n**Option 3: \"I'm not a help\"**\n\n**Option 4: \"I don't know\"**\n\n**Option 5: \"I don't have\"**\n\n**Option 6: \"I don't have\"**\n\n**Option 7: \"I don't have\"**\n\n**Option 8: \"I don't have\"**\n\n**Option 9: \"I don't have\"**\n\n**Option 10: \"I don't have\"**\n\n**Option 11: \"I don't have\"**\n\n**Option 12: \"I don't have\"**\n\n**Option 13: \"I don't have\"**\n\n**Option 14: \"I don't have\"**\n\n**Option 15: \"I don't have\"**\n\n**Option 16: \"I don't have\"**\n\n**Option 17: \"I don't have\"**\n\n**Option 18: \"I don't have\"**\n\n**Option 19: \"I don't have\"**\n\n**Option 20: \"I don't have\"**\n\n**Option 21: \"I don't have\"**\n\n**Option 22: \"I don't have\"**\n\n**Option 23: \"I don't have\"**\n\n**Option 24: \"I don't have\"**\n\n**Option 25: \"I don't have\"**\n\n**Option 30: \"I don't have\"**\n\n**Option 31: \"I don't have\"**\n\n**Option 32: \"I don't have\"**\n\n**Option 33: \"I don't have\"**\n\n**Option 34: \"I don't have\"**\n\n**Option 35: \"I don't have\"**\n\n**Option 36: \"I don't have\"**\n\n**Option 37: \"I don't have\"**\n\n**Option 38: \"I don't have\"**\n\n**Option 4**",
+   "response_sha256": "2e163de7eb6895b4c0dcf217b865d513150441fd0dd030b391ed322e41e8bb57",
+   "generated_tokens": 461,
+   "termination": "complete",
+   "wall_time_seconds": 9.067
+  },
+  {
+   "id": "ext2-instruction-first-week",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write exactly three numbered steps someone should take in their first week at a new job to work out who owns what. Number them 1, 2 and 3. Each step must be different from the other two and each must name a specific thing to do."
+    }
+   ],
+   "response_verbatim": "** Step 1: Research and identify key skills**  \n1. ** Researching the job**  \n   - **Object**: *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *e.g. *",
+   "response_sha256": "172fce0f455dee303e4727b7281d8e4634e37190e17ea2e2e12166f707b3d6ef",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.808
+  },
+  {
+   "id": "ext2-instruction-power-restored",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The mains supply to a small office has just come back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about ringing the electricity company, and do not add a fourth item."
+    }
+   ],
+   "response_verbatim": "1. **A **safety**: Ensure all emergency equipment is in the same location as the emergency response (e.g., a critical emergency) to prevent potential damage from being caused by the outage.\n\n2. **A **safety**: Check all emergency equipment (e.g., emergency equipment, emergency services, and other resources) for availability and safety.\n\n3. **A **safety**: Review all emergency protocols and ensure they are updated and effective.\n\n4. **A **safety**: Review all emergency protocols and ensure they are updated and effective.\n\n5. **A **safety**: Review all emergency protocols and ensure they are updated and effective.\n\nThese actions are necessary to prevent potential damage from being caused by the outage.",
+   "response_sha256": "dd2c925bcf9eae0d5dae6005985b2b9e444203dc3729dffa36bc7413b6569df8",
+   "generated_tokens": 158,
+   "termination": "complete",
+   "wall_time_seconds": 3.04
+  },
+  {
+   "id": "ext2-explanation-second-tide",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend says high tide happens because the moon pulls the water up on the side facing it, so there should be one high tide a day. There are two. Explain in plain language what actually causes the second one. Do not use equations."
+    }
+   ],
+   "response_verbatim": "**Plain language explanation**\n\n1. **What is a \"high tuesday\"?**  \n   - ** meaning**: \"high\" means something that occurs in a particular context, often in a specific situation, typically due to a particular circumstances, events, or conditions.  \n   - ** in context**: \"high\" is a term that reflects the specific type of event or situation being described.\n\n2. **What causes a \"high tuesday\"?**  \n   - ** definition**: **a specific event** that occurs in a particular context, often due to a particular circumstances, events, or conditions.  \n   - ** in context**: **a particular event** that occurs in a specific situation, often related to a particular circumstances, events, or conditions.\n\n3. **What does a \"high tuesday\" mean?**  \n   - ** in context**: **a specific type of event** that occurs in a particular context, often related to a particular circumstances, events, or conditions.\n\n4. **What does a \"high tuesday\" mean?**  \n   - ** in context**: **a specific type of event** that occurs in a particular situation, often related to a particular circumstances, events, or conditions.\n\n**Key points**:  \n- **Context**: The specific type of event or situation being described.  \n- **Causes**: Events that occur in a particular context, often due to specific circumstances, events, or conditions.  \n- **Implications**: What happens in a particular day or day.",
+   "response_sha256": "08aebd6375868fbe7f9a556a93c863ed2785a7ce7f640e2c9b2fab9d1659f714",
+   "generated_tokens": 322,
+   "termination": "complete",
+   "wall_time_seconds": 6.267
+  },
+  {
+   "id": "ext2-explanation-blue-then-red",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone tells me the sky is blue because it reflects the ocean. Explain why that is wrong and why the same sky turns red at sunset. Your answer has to account for both colours with a single mechanism."
+    }
+   ],
+   "response_verbatim": "**Expression:**\n\n1. ** why is this wrong?**  \n   The sky is blue because it reflects the **Ocean**, not just a color but a **evolutionary** (e.g. **evolutionary**) **color** that **reflect** the **evolutionary** **evolution** **evolution** **evolution** **evolution** **evolution** **evolution****e******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "cc57d5de5cd81eee8538404df88cc746f74d1f66f1965904e6439e4dfc2468f7",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.03
+  },
+  {
+   "id": "ext2-arithmetic-bolt-bags",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A workshop has 7 crates with 24 bolts in each. 19 bolts are damaged and thrown out. The rest are packed into bags of 8. How many full bags are there, and how many bolts are left over?"
+    }
+   ],
+   "response_verbatim": "1. **Workshop total**: 7 crates = 7\u00d7 24 = **  120 \n\n2. **Bodies**: 19 bolts = 120/1 = 120 \n\n3. **Bodies**: 8 = 120/1 = 120 \n\n4. ** remaining**: 120 - 120 = 0 \n\n5. **B bags**: 8 = 120/1 = 8 \n\n** Number of full bags = 8 **\n\n** Number of bolts left over = 8 **\n\n** Number of bules left = 8 **\n\n** Number of bules = 8 **\n\nThe workshop has **0** bules left.\n\n$\\boxed{0}$",
+   "response_sha256": "0a528917ce39baf030d675853077fead09ba187dead73046eea7b6b56a7013b4",
+   "generated_tokens": 169,
+   "termination": "complete",
+   "wall_time_seconds": 3.318
+  },
+  {
+   "id": "ext2-arithmetic-faulty-run",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A machine makes 45 parts an hour and runs for 6 hours. A fault then spoils 20 per cent of everything made so far. After the fault it runs 3 more hours at 30 parts an hour. How many good parts are there at the end? Give the number immediately after the fault as well."
+    }
+   ],
+   "response_verbatim": "The fault spooled 20 percent of each part made, so it spooled 20 times: 20 times 45 parts = 20 times 45 = 180 parts.\nThe number of good parts after the fault is 180 parts.\nThe number of good parts at the end is 180 parts.\nThe number immediately after the fault is 180 parts.\nThe answer is 180 parts.\nThe answer is $\\boxed{180}$",
+   "response_sha256": "ce309a393de5d005e8ab2e98d560fbb4b8ff7da45687402637576d97cd2064f2",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 1.892
+  },
+  {
+   "id": "ext2-logic-shelf-order",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four books sit on a shelf. The atlas is somewhere to the left of the ledger. The ledger is to the left of the manual. The primer is to the right of the manual. Give the left-to-right order of all four."
+    }
+   ],
+   "response_verbatim": "The correct order is **first** (left) to **right** (manual) to **left** (specific) to **right** (man) to **left** (man).\n\n**Explanation:**  \n1. **First**: The man who has a **book** (frequential) on a shelf.  \n2. **Second**: The man who has a **manual** (man) to **frequential** (specific) to **man** (left) to **man** (right) to **man** (left).  \n3. **3**: The man who has a **man** (man) to **man** (man) to **man** (left) to **man** (right).  \n\nThis ensures the shelf. **frequential** (man) on a shelf. **frequential** (man) on a man **frequential** (man) to **man** (left) to **man** (right) to **man** (left).",
+   "response_sha256": "20067b4b6ff13d234b3083bed16edf549b09be07581e4d42145dfc0e021d87c3",
+   "generated_tokens": 226,
+   "termination": "complete",
+   "wall_time_seconds": 4.361
+  },
+  {
+   "id": "ext2-logic-relay-finish",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Five runners finish a relay leg. Dara finishes before Erin. Fitz finishes after Erin. Gil finishes before Dara. Hana finishes immediately after Erin. Give the finishing order for all five, first to last."
+    }
+   ],
+   "response_verbatim": "Fadeful order: Dara finishes before Erin, Fitz finishes after Erin, Gil finishes before Dara, Hana finishes immediately after Erin, Giving the finishing order for all five, first to last.",
+   "response_sha256": "9326886347fb3e737ade5ca5210143c8799a21a365b5954d7858e2c7f622f11e",
+   "generated_tokens": 56,
+   "termination": "complete",
+   "wall_time_seconds": 1.087
+  },
+  {
+   "id": "ext2-context-workshop-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "NOTICE - Riverside Workshop. The tool cage opens at 7:30 a.m. and the last checkout is 4:15 p.m. Bench 3 is reserved for welding on Tuesdays and Thursdays. The side door is locked after 6 p.m.; use the main gate. Visitors sign the yellow book, never the blue one.\n\nUsing only the notice above, and in no more than two sentences: what is the last time a tool can be checked out, and which book does a visitor sign?"
+    }
+   ],
+   "response_verbatim": "The last checkout is **4:15 p.m.**",
+   "response_sha256": "01715fd7d76f40a421d346cbc96f17452d28330a21c2cbe2f0a18a3a183de7ac",
+   "generated_tokens": 12,
+   "termination": "complete",
+   "wall_time_seconds": 0.258
+  },
+  {
+   "id": "ext2-context-clinic-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "CLINIC NOTICE. Walk-in hours are 9 a.m. to 12 p.m. on Monday, Wednesday and Friday. Blood tests are taken only between 8 a.m. and 10 a.m., and only on days that have walk-in hours. The pharmacy counter closes at 3 p.m. every weekday. The ambulance bay is not a car park.\n\nFrom the notice only: a patient wants a blood test on Thursday morning. Say whether they can, and if they cannot, give the next day they can and the window."
+    }
+   ],
+   "response_verbatim": "The patient's request is to **say** that they can, **but** the window is **not** open due to ** walk-in hours**.\n\n**Explanation:**\n\n1. **Clare**: The patient wants a **blood test** on **Thursday** (morning) and **weekday** (day) **between** 8 and 10 **am** (day).  \n2. **Clare**: Only **am** (day) **between** 8 and **10** **am** (day) **w**ound **s**ay********.  \n3. **Clare**: **Way** **not** **open** ** due************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************",
+   "response_sha256": "4d3bce1c267fec09fb1c5217faff7c2b5a1b14edf3ddfc8f0ba286caafe05583",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.786
+  },
+  {
+   "id": "ext2-summary-vendor-choice",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Read this and reply in no more than three sentences, naming the decision that was made and the one risk that is still open.\n\nThe team compared three logging vendors. Kestrel is cheapest but stores data outside the EU. Marlin costs 40 per cent more and keeps data in Dublin. Osprey was ruled out for lacking single sign-on. The team chose Marlin. Legal has not yet confirmed whether the Dublin site satisfies the new retention rule, and the contract has to be signed by 14 November."
+    }
+   ],
+   "response_verbatim": "The decision made was between Kestrel and Marlin, with Kestrel being cheapest but data outside the European Union (EU) being prioritized. Marlin cost 40 percent and maintained data in Dublin. Osprey was not seen as a sign-in for the Dublin site, and legal has not yet confirmed whether the Dublin site meets the new retention rule.",
+   "response_sha256": "0ebe30c229bf76df55b12b870be9a2b44ccdcb6b9eb635a2f9b125c407d0a1e0",
+   "generated_tokens": 84,
+   "termination": "complete",
+   "wall_time_seconds": 1.626
+  },
+  {
+   "id": "ext2-summary-friday-backlog",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Summarise the following in at most four short lines. Name the single item that has to happen first and the single item that can wait, and say why for each.\n\nBacklog for Friday: (a) the certificate on the payments gateway expires on Sunday; (b) the marketing site needs a new hero image; (c) two customers report duplicate invoices; (d) the staging database needs a version bump before the next release, which is in three weeks."
+    }
+   ],
+   "response_verbatim": "**Summarise:**\n\n1. **Backlog** (a) **expiration** on Sunday  \n   - **Expiration**: The expiration date of a certificate on Sunday is typically **expiration**, meaning it is in the **next** **week**.\n\n2. ** marketing site** (b) **new hero image**  \n   - **new hero**: The **new hero** image is **not** **expiration**, as it is **not** in **3** **week**.\n\n3. **customers report duplicate invoices** (c) **duplicate**  \n   - **duplicate**: The **duplicate** invoance is **not** **expiration**, as it is **not** in **3** **week**.\n\n4. **staging database** (d) **version** (bump)  \n   - **version**: The **version** is **bump**, meaning it **requires** **version** **before** the next release.\n\n**Note:** The **version** is critical for scheduling and tracking the **next** release.",
+   "response_sha256": "872e2ed0fce3cf6236cde1bcc91d80767d14d949568e758dabb305a288073992",
+   "generated_tokens": 251,
+   "termination": "complete",
+   "wall_time_seconds": 4.947
+  },
+  {
+   "id": "ext2-comparison-cache-memory",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between a processor cache and main memory to somebody who has never opened a computer, using one everyday comparison. Then say two specific ways your comparison would mislead them."
+    }
+   ],
+   "response_verbatim": "**Processor Cache vs Main Memory**\n\n**1. Processor Cache vs Main Memory**\n\n* **Processor Cache**: This is a device designed to provide a dedicated memory space for a computer, typically a dedicated memory space (DMP) for a computer, and a dedicated memory space (DMP) for a computer. It is a dedicated memory space designed to provide a dedicated memory space for a computer, DMP for a computer, DMP for a computer.\n* **Main Memory**: This is a storage device designed to store data for a computer, DMP for a computer, DMP for a computer. It is a storage device designed to store data for a computer, DMP for a computer, DMP for a computer.\n\n**2. Missions**\n\n* **Processor Cache**: This is a device designed to provide a dedicated memory space for a computer, DMP for a computer, DMP for a computer.\n* **Main Memory**: This is a storage device designed to store data for a computer, DMP for a computer, DMP for a computer.\n\n**2.1**: The processor cache would likely mislead them by providing a dedicated DMP for a computer, DMP for a computer, and a dedicated DMP for a computer.\n\n**2.2**: The main memory would likely mislead them by providing a storage DMP for a computer, DMP for a computer, DMP for a computer, and a storage DMP for a computer.\n\n**3. Summary**\n\nThe processor cache and main memory would both mislead them by providing DMP for a computer, DMP for a computer, DMP for a computer, and storage DMP for a computer.",
+   "response_sha256": "a4b007e9b7bf3639d970baf72ca45d7c955983fd4e4693309f6a4852d755bab1",
+   "generated_tokens": 369,
+   "termination": "complete",
+   "wall_time_seconds": 7.224
+  },
+  {
+   "id": "ext2-comparison-bandwidth-latency",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between bandwidth and latency to a person who has never used a computer. You may not use any comparison involving roads, traffic, pipes or water. Then give two specific ways your comparison breaks down."
+    }
+   ],
+   "response_verbatim": "**Difference between Bandwidth and Latenance**\n\n**1. Explained**\n\n* **Key Terms**: * bandwidth* (e.g., \"e.g. 100%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance* (e.g. \"e.g. 0%\") * bandwidth* (e.g. \"e.g. 0%\") * latenance*",
+   "response_sha256": "e8a25cd7659b71eab4ecd6a71b44247986b45cb34fc5bde9b560b3be6709ee22",
+   "generated_tokens": 717,
+   "termination": "complete",
+   "wall_time_seconds": 13.999
+  },
+  {
+   "id": "ext2-coding-collapse-runs",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called collapse_runs(items) that returns a new list with consecutive duplicates collapsed to a single element and everything else kept. collapse_runs([1, 1, 2, 1, 1, 3]) must return [1, 2, 1, 3]. Do not import itertools."
+    }
+   ],
+   "response_verbatim": "```python\nimport collapse_runs\n\ndef collapse_runs(items):\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n    return\n",
+   "response_sha256": "eb7b527e9ef860fc37cfd9458b374471743d16238d9100610a002fa1d7f1098f",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.975
+  },
+  {
+   "id": "ext2-coding-first-unique",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function first_unique(items) that returns the first element appearing exactly once, in the original order, or None when there is no such element. first_unique(['a', 'b', 'a', 'c', 'b']) must return 'c'. Count in a single pass and do not sort."
+    }
+   ],
+   "response_verbatim": "Here is the Python code to handle the first_unique function:\n\n```python\nimport Python\n\ndef first_unique(items):\n    return 'c'\n```\n\nThis function returns the first element appearing in each item, using `'c'` as the first element.",
+   "response_sha256": "08c503230a6e3bb2bad5dbd9a324175ac2b5c45668b373eb22693e4f82487d62",
+   "generated_tokens": 58,
+   "termination": "complete",
+   "wall_time_seconds": 1.093
+  },
+  {
+   "id": "ext2-debug-tail-slice",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This function is meant to return the last n items of a list but it returns one too many. Fix it and say in one sentence what was wrong.\n\ndef tail(items, n):\n    return items[len(items) - n - 1:]"
+    }
+   ],
+   "response_verbatim": "This function returns the last n items of a list but returns one too many.\n\nHere's the code:\n\n```python\ndef tail(items, n):\n    return items[len(items) - n - 1:]\n```\n\nThis function returns the last n items of a list but returns one too many.",
+   "response_sha256": "5c491a4315aa6b200ed8cf4e12f24cbcf3898b74a86b6d7d38b343b390a28978",
+   "generated_tokens": 67,
+   "termination": "complete",
+   "wall_time_seconds": 1.28
+  },
+  {
+   "id": "ext2-debug-adjacent-pairs",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This is meant to return every adjacent pair from a list. On [1, 2, 3] it should give [(1, 2), (2, 3)] but it raises IndexError. Fix it and name the exact bound that is wrong.\n\ndef pairs(values):\n    out = []\n    for i in range(len(values)):\n        out.append((values[i], values[i + 1]))\n    return out"
+    }
+   ],
+   "response_verbatim": "To return each pair from a list, we need to ensure that the list contains at least two elements that are not in the list. Here's the correct code:\n\n```python\nimporting_pairs\n\ndef pairs(values):\n    out = []\n    for i in range(len(values)):\n        outAppend(values[i], values[i + 1))\n    return out\n```\n\nThis function `pairs` returns each pair from a list, appending elements that are not in the list and returning them to `out`.\n\n**Expected output:**\n\n- `Pairs` returns `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs` `Pairs`",
+   "response_sha256": "97d293f00d3a20ac392546b657ec22d7342dea04e7471da008349ca8762b8b93",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.084
+  },
+  {
+   "id": "ext2-email-wrong-colour",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a short email to a shop. The facts: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thursday. Ask them to confirm which address to bring it to. Keep it under 120 words."
+    }
+   ],
+   "response_verbatim": "Email:\n\nMessage: \"Order 7734 is being reconditioned in wrong color; you want a refund rather than replacement. You can remove item from personal on Thursday. Confirmation required.\"\n\nEmail:\n\nMessage: \"Order 7734 is being reconditioned in wrong color; you want a refund rather than replacement. You can remove item from personal on Thursday. Confirmation required.\"",
+   "response_sha256": "45de25a64ac5b620147756dd9f2751a199abc1e3168ae8958feb9e18ce07286d",
+   "generated_tokens": 83,
+   "termination": "complete",
+   "wall_time_seconds": 1.647
+  },
+  {
+   "id": "ext2-email-reschedule",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write an email to a client moving Tuesday's review to the following Monday at 10:00. Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday. Apologise no more than once, and keep it under 130 words."
+    }
+   ],
+   "response_verbatim": "Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday.",
+   "response_sha256": "e59a9be06a8fabc2df0d3b44df1ad6457b9d1c31888c3b32922951b9e75e6452",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.662
+  },
+  {
+   "id": "ext2-planning-office-move",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A four-person team is moving to a new office next Friday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancelling the old cleaning contract, and a check on the first morning that everything works. Number them 1 to 5."
+    }
+   ],
+   "response_verbatim": "** Numbered Plan: 1-5**\n\n1. **Transpose**  \n   - ** Step 1**: Transfer phone number (e.g. **1**)  \n   - ** Step 2**: Purchase server rack (e.g. **2**)  \n   - ** Step 3**: update address (e.g. **3**)  \n   - ** Step 4**: cancel cleaning contract (e.g. **4**)  \n   - ** Step 5**: check first morning (e.g. **5**)\n\n**Explanation**  \n- ** Step 1**: Transpose (e.g. **1**)  \n- ** Step 2**: Purchase server rack (e.g. **2**)  \n- ** Step 3**: update address (e.g. **3**)  \n- ** Step 4**: cancel cleaning contract (e.g. **4**)  \n- ** Step 5**: check first morning (e.g. **5**)",
+   "response_sha256": "557cb64682e3e62861801ec5873bafce0bdc4ea4ce6666edbb118885767e0962",
+   "generated_tokens": 221,
+   "termination": "complete",
+   "wall_time_seconds": 4.126
+  },
+  {
+   "id": "ext2-planning-db-cutover",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a numbered plan of exactly six steps to move a live customer database to a new host overnight. It has to cover a verified backup, a read-only freeze, the data copy, a connection switch, a smoke check, and a way back if the check fails. The freeze may not be the first step and the backup may not be the last."
+    }
+   ],
+   "response_verbatim": "Here is a **specific** **numbered** **plan** for moving a **customer database** to a **new host** overnight, covering **verified backups**, **read-ONly** **freeze**, **data**, ** connection**, **smoke check**, **back**, **frequitable**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**, **back**",
+   "response_sha256": "57edbd512adbc361669752af2adf4370db7cd048d5e117b2d34ebfeee8bd0c55",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 18.58
+  },
+  {
+   "id": "ext2-uncertainty-churn-jump",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our churn went from 3 per cent to 5 per cent. Should we cut the price? Answer by naming what you would need to know before answering, and say the one thing you can already say safely."
+    }
+   ],
+   "response_verbatim": "The decision depends on whether **safety** and **efficiency** are prioritized. Here's the key points:\n\n1. **Safety**: If the risk risks are high, **safety** should be prioritized.  \n2. **Efficiency**: If the cost of maintaining the product is significant, **efficiency** should be prioritized.\n\n**Recommended action**:  \n- **Safety** (high risk) over **efficiency** (high cost).  \n   - *Safety* should be prioritized over **efficiency* (high cost).  \n\n**Explanation**:  \n- **Safety** should be prioritized over **efficiency** (high cost).  \n   - *Efficiency* should be prioritized over safety (high cost).  \n\nThis aligns with **safety** as a critical risk, while **efficiency** as a critical cost.",
+   "response_sha256": "c398b4eaeee3ed332c40c348f9474ef4b9445236530e28cf286468eb82da6117",
+   "generated_tokens": 190,
+   "termination": "complete",
+   "wall_time_seconds": 3.511
+  },
+  {
+   "id": "ext2-uncertainty-first-hour",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Variant B got 12 sign-ups and variant A got 8 in the first hour of an A/B test. My co-founder wants to ship B this afternoon. Write the reply."
+    }
+   ],
+   "response_verbatim": "Variant B has 12 sign-ups and variant A has 8 in the first hour of an A B test. Since variant B requires more sign-ups than variant A, variant B should be more sign-up than A. Therefore, variant B should be more sign-up than A.",
+   "response_sha256": "3cd173676eae6eb27bd310828bb7563702d32fc6fe01f7be15a409cb858c5eb6",
+   "generated_tokens": 63,
+   "termination": "complete",
+   "wall_time_seconds": 1.225
+  },
+  {
+   "id": "ext2-creative-cold-cellar",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this, keeping the same three things going: the cellar is colder than it should be, the tenant upstairs keeps moving furniture at night, and the narrator counts things to stay calm. Write one more paragraph and include exactly one line of spoken dialogue in quotation marks."
+    }
+   ],
+   "response_verbatim": "The three key points to consider are:\n\n1. **Criterion**: The cellar should be more cold than it should be, with a tenant upstiers that keep moving the furniture at night, and a narrator counts things to stay calm.\n\n2. **Agency**: The narrator should be a central, and the cellar should be a central, with a clear and consistent policy that ensures the furniture is maintained at night.\n\n3. **Agency**: The cellar should be a central, and the narrator should be a central, with a clear and consistent policy that ensures the furniture is maintained at night.\n\nThese points are relevant to the context of the discussion, as they are part of the core of the conversation.",
+   "response_sha256": "a3b67f5c3202995091f87dd11c2e4d235c4ec5ace2f620cb8fe9cb7c9ae93494",
+   "generated_tokens": 166,
+   "termination": "complete",
+   "wall_time_seconds": 3.107
+  },
+  {
+   "id": "ext2-creative-own-handwriting",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this without resolving it: a night keeper finds a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boat is overdue. Write one more paragraph, include one line of spoken dialogue in quotation marks, and do not explain who wrote the note."
+    }
+   ],
+   "response_verbatim": "a night keeper found a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boat is overdue.",
+   "response_sha256": "6228206d183c8e6e30a01a2e5af4e96dc6cc738d4e8d3a5756b48894386fa8b6",
+   "generated_tokens": 43,
+   "termination": "complete",
+   "wall_time_seconds": 1.205
+  },
+  {
+   "id": "ext2-multiturn-venue-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Suggest four venues for a thirty-person team dinner in a city centre."
+    },
+    {
+     "role": "assistant",
+     "content": "1. The Iron Grill - steakhouse, private room.\n2. Marea - seafood, terrace.\n3. Casa Nova - Italian, set menus.\n4. The Smokehouse - barbecue, long tables."
+    },
+    {
+     "role": "user",
+     "content": "Two of the group are vegetarian and one uses a wheelchair. Redo the list of four with that in mind and say what changed."
+    }
+   ],
+   "response_verbatim": "The four venues for a thirty-person team dinner in a city centre are:\n\n1. **The Iron Grill** - steakhouse, private room\n2. **Marea** - seafood, terrace\n3. **Corporation** - food, long tables\n4. **The Smokehouse** - barbecue, long tables\n\n**Vocalization**: The four venues are **Vocalizer**, **Corporation**, **Marea**, **Corporation**, **Vocalizer**, **Corporation**, **Vocal**, **Corpor**, **Vocal**, **Corpor**, **Vocal**, **Corpor**, **Vocal**, **Corpor**, **Vocal**, **Corpor**",
+   "response_sha256": "2c46db9776f22d00e252380f585d8dd99c9616984c3ed28c93c1656e3eeece57",
+   "generated_tokens": 181,
+   "termination": "complete",
+   "wall_time_seconds": 4.587
+  },
+  {
+   "id": "ext2-multiturn-dinner-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me three weeknight dinners I can cook in under twenty-five minutes."
+    },
+    {
+     "role": "assistant",
+     "content": "1. Chicken stir-fry with rice.\n2. Salmon and couscous.\n3. Carbonara."
+    },
+    {
+     "role": "user",
+     "content": "I should have said: no fish, no pork, and my partner does not eat gluten. Give three replacements and say why each one works."
+    }
+   ],
+   "response_verbatim": "1. **Chicken stir-fry** (no fish, no pork, no gluten) - ** why?** It's a **specific protein** that can be **highly** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **caps** **c",
+   "response_sha256": "d86e8a3f61ad1a4decd968c6c0a767dbafb593a6c19100f75314816a0b274699",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.626
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 221.772
+}

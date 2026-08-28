@@ -1,0 +1,88 @@
+{
+ "schema": "neural-forge-matrix-wave34-benchmark-table-v1",
+ "invocation": "limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090",
+ "parent_row_identical_to": "wave32/bench/benchmark-table.json PARENT, to every reported digit",
+ "models": {
+  "ARCH.V8CL1792X13": {
+   "arc_easy": 0.315,
+   "hellaswag_acc_norm": 0.3,
+   "piqa_acc_norm": 0.495,
+   "winogrande": 0.52,
+   "lambada_acc": 0.145,
+   "lambada_perplexity": 8829.546061523788,
+   "wikitext_word_perplexity": 8529.610358662881
+  },
+  "ARCH.V12CL1792X13": {
+   "arc_easy": 0.33,
+   "hellaswag_acc_norm": 0.37,
+   "piqa_acc_norm": 0.53,
+   "winogrande": 0.525,
+   "lambada_acc": 0.165,
+   "lambada_perplexity": 3593.7047288637095,
+   "wikitext_word_perplexity": 3224.952079438549
+  },
+  "ARCH.V12CL896": {
+   "arc_easy": 0.33,
+   "hellaswag_acc_norm": 0.345,
+   "piqa_acc_norm": 0.5,
+   "winogrande": 0.485,
+   "lambada_acc": 0.125,
+   "lambada_perplexity": 4959.708312889131,
+   "wikitext_word_perplexity": 1457.5822894729774
+  },
+  "ARCH.V12CL896G03": {
+   "arc_easy": 0.33,
+   "hellaswag_acc_norm": 0.335,
+   "piqa_acc_norm": 0.495,
+   "winogrande": 0.49,
+   "lambada_acc": 0.115,
+   "lambada_perplexity": 5482.090255314295,
+   "wikitext_word_perplexity": 1418.6129663813508
+  },
+  "ARCH.V16CL896G03": {
+   "arc_easy": 0.335,
+   "hellaswag_acc_norm": 0.33,
+   "piqa_acc_norm": 0.49,
+   "winogrande": 0.47,
+   "lambada_acc": 0.095,
+   "lambada_perplexity": 5079.194821325535,
+   "wikitext_word_perplexity": 998.2495728727255
+  },
+  "ARCH.V12CL896G10": {
+   "arc_easy": 0.32,
+   "hellaswag_acc_norm": 0.335,
+   "piqa_acc_norm": 0.495,
+   "winogrande": 0.49,
+   "lambada_acc": 0.12,
+   "lambada_perplexity": 5414.5925230839175,
+   "wikitext_word_perplexity": 1438.815946869867
+  },
+  "ARCH.V12CL896G01": {
+   "arc_easy": 0.315,
+   "hellaswag_acc_norm": 0.34,
+   "piqa_acc_norm": 0.49,
+   "winogrande": 0.495,
+   "lambada_acc": 0.105,
+   "lambada_perplexity": 5619.574498496046,
+   "wikitext_word_perplexity": 1413.0822933654154
+  },
+  "ARCH.V10CL896": {
+   "arc_easy": 0.295,
+   "hellaswag_acc_norm": 0.35,
+   "piqa_acc_norm": 0.51,
+   "winogrande": 0.475,
+   "lambada_acc": 0.1,
+   "lambada_perplexity": 7300.221954910311,
+   "wikitext_word_perplexity": 1930.2722315339943
+  },
+  "PARENT": {
+   "arc_easy": 0.545,
+   "hellaswag_acc_norm": 0.505,
+   "piqa_acc_norm": 0.68,
+   "winogrande": 0.55,
+   "lambada_acc": 0.46,
+   "lambada_perplexity": 24.391247934692974,
+   "wikitext_word_perplexity": 81.79763262054296
+  }
+ }
+}

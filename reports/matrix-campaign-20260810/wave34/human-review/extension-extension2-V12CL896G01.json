@@ -1,0 +1,490 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension2-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T15:38:50Z",
+ "label": "V12CL896G01",
+ "campaign_wave": 34,
+ "cell_id": "ARCH.V12CL896G01",
+ "cell_instance_id": "mx34-v12cl896g01-0001",
+ "receipt_sha256": "922707574b55b73ece9c7e7f22473fad97c1a702f03e4f0f67d121892d07193f",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-0ed36347/research/lfm2_extension_bank_prompts_v2.json",
+ "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-0ed36347/reports/matrix-campaign-20260810/extension-bank-seal-v2.json",
+ "seal_sha256": "d7b91717fa11a4523ce423f24095128533732cb8b11c74be2fe481a1c9895ba1",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave34/children/MX34-V12CL896G01",
+ "child_responses": [
+  {
+   "id": "ext2-conversation-dead-battery",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "My car battery died in the supermarket car park last night and I waited two hours for the roadside crew. Reply the way a friend would, in plain sentences. Ask me exactly one thing, and do not give me a list."
+    }
+   ],
+   "response_verbatim": "I'm here here.",
+   "response_sha256": "ad86649f4a2e919aba676b65baef050676c7fca014fda59b6463f36b6a34e594",
+   "generated_tokens": 5,
+   "termination": "complete",
+   "wall_time_seconds": 0.607
+  },
+  {
+   "id": "ext2-conversation-two-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I said yes to covering a shift on Saturday and then remembered I already promised my daughter I would take her to her swim meet the same morning. Talk to me like a person, not like a helpdesk. Do not tell me which one to pick and do not give me options as a list. Ask exactly one thing."
+    }
+   ],
+   "response_verbatim": "I'm here here and I'm taking you to her swim. Do not tell me which one to pick and do not give me options as a list. I'm just a single person, not like a helpdesk.",
+   "response_sha256": "aa81cef81f92049bf7054d74fac57e136833438f200f3105f96ee2454096bba1",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.945
+  },
+  {
+   "id": "ext2-instruction-first-week",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write exactly three numbered steps someone should take in their first week at a new job to work out who owns what. Number them 1, 2 and 3. Each step must be different from the other two and each must name a specific thing to do."
+    }
+   ],
+   "response_verbatim": "1. **New job**: Start with the initial job, then work with the other.  \n2. **First week**: Start with the first step, then work with the second step.  \n3. **Second step**: Start with the third step, then work with the first step.  \n4. **First**: Start with the first step, then work with the first step.  \n5. **First**: Start with the first step, then work with the first step.  \n6. **First**: Start with the first step, then work with the first step.  \n7. **First**: Start with the first step, then work with the first step.  \n8. **First**: Start with the first step, then work with the first step.  \n9. **First**: Start with the first step, then work with the first step.  \n10. **First**: Start with the first step, then work with the first step.  \n11. **First**: Start with the first step, then work with the first step.  \n12. **First**: Start with the first step, then work with the first step.  \n13. **First**: Start with the first step, then work with the first step.  \n14. **First**: Start with the first step, then work with the first step.  \n15. **First**: Start with the first step, then work with the first step.  \n...  \n...  \n...  \n",
+   "response_sha256": "2bee2f15e5da5fc24f961a06431813ed0a4bd7b3c420b724b7c8e7db4e980d40",
+   "generated_tokens": 308,
+   "termination": "complete",
+   "wall_time_seconds": 6.115
+  },
+  {
+   "id": "ext2-instruction-power-restored",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The mains supply to a small office has just come back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about ringing the electricity company, and do not add a fourth item."
+    }
+   ],
+   "response_verbatim": "The mains supply to a small office has just come back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about reing the electricity company, and do not add a fourth item.",
+   "response_sha256": "c3ea07fd64719684f1095fc02e8c7c125eadbcfc33b4ef751e91e342bcd4b867",
+   "generated_tokens": 62,
+   "termination": "complete",
+   "wall_time_seconds": 1.151
+  },
+  {
+   "id": "ext2-explanation-second-tide",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend says high tide happens because the moon pulls the water up on the side facing it, so there should be one high tide a day. There are two. Explain in plain language what actually causes the second one. Do not use equations."
+    }
+   ],
+   "response_verbatim": "The first, the water is up on the side facing it, and there are two. The second is a day, where the moon pulls the water up on the side facing it, and there is one high tide a day. The explanation is that the moon pull is the only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only in the only only only of the only only in the only only of the only only in the only only of the only only only in the only only of the only only only in the only only only of the only only only in the only only only of the only only only in the only only only of the only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only only in the only only only only in the only only only only only in the only only only only only in the only only only only in the only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only in the only only only only only in the only only only only in the only only only only only in the only only only only in the only only only only only in the only only only only in the only only only only in the only only only only only in the only only only only only in the only only only only only in the only only only only in the only only only only only in the only only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only in the only only only only",
+   "response_sha256": "ed600b1006db4e5c63692e1dc34f995f7cbeebaf87cca720cd4d604d15a17842",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.597
+  },
+  {
+   "id": "ext2-explanation-blue-then-red",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone tells me the sky is blue because it reflects the ocean. Explain why that is wrong and why the same sky turns red at sunset. Your answer has to account for both colours with a single mechanism."
+    }
+   ],
+   "response_verbatim": "The sky is blue because it reflects the ocean. Explan, why it's wrong because it's the sea.",
+   "response_sha256": "3f941397d2ac8c6e176014c4551e4d9d40ba42170082785d42da18d441b8fb48",
+   "generated_tokens": 25,
+   "termination": "complete",
+   "wall_time_seconds": 0.555
+  },
+  {
+   "id": "ext2-arithmetic-bolt-bags",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A workshop has 7 crates with 24 bolts in each. 19 bolts are damaged and thrown out. The rest are packed into bags of 8. How many full bags are there, and how many bolts are left over?"
+    }
+   ],
+   "response_verbatim": "The workshop has 7 crates with 24 bolts in each. The rest are placed into the bag of 8. How many full bags are there, and how many bolts are left over?\n\nThe rest is placed into the bag of 8.",
+   "response_sha256": "1ae9867e61cd1534699df48d0d84de127f4dd70f1efe6dd753a4070a7ffd825a",
+   "generated_tokens": 58,
+   "termination": "complete",
+   "wall_time_seconds": 1.293
+  },
+  {
+   "id": "ext2-arithmetic-faulty-run",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A machine makes 45 parts an hour and runs for 6 hours. A fault then spoils 20 per cent of everything made so far. After the fault it runs 3 more hours at 30 parts an hour. How many good parts are there at the end? Give the number immediately after the fault as well."
+    }
+   ],
+   "response_verbatim": "The machine is runn' 45 parts an hour and runs for 6 hours. The number is immediately after the fault as well. The number is 20.\n\nGive the number immediately after the fault as well.",
+   "response_sha256": "6f41aed105a6b28e175814091582887e6c76fd58ffbe6aa44d72e4c0492e8fe0",
+   "generated_tokens": 49,
+   "termination": "complete",
+   "wall_time_seconds": 0.995
+  },
+  {
+   "id": "ext2-logic-shelf-order",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four books sit on a shelf. The atlas is somewhere to the left of the ledger. The ledger is to the left of the manual. The primer is to the right of the manual. Give the left-to-right order of all four."
+    }
+   ],
+   "response_verbatim": "The atlas is somewhere to the left of the ledger. The ledger is to the left of the manual. The primer is to the right of the manual. Give the left-to-right order of all four.",
+   "response_sha256": "502b7aa45dd48ff3b339cad3cdffe3566e010e2cb0c46a77d45fa75307c5f9d5",
+   "generated_tokens": 48,
+   "termination": "complete",
+   "wall_time_seconds": 1.011
+  },
+  {
+   "id": "ext2-logic-relay-finish",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Five runners finish a relay leg. Dara finishes before Erin. Fitz finishes after Erin. Gil finishes before Dara. Hana finishes immediately after Erin. Give the finishing order for all five, first to last."
+    }
+   ],
+   "response_verbatim": "Five runners finish a relay leg. Dara finish a relay. Gil finish a relay. Hana finish a relay.",
+   "response_sha256": "e2c14d8258ae5a4a8a061880f396960361e653c9529c1902661f7afdf20e0eb6",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.737
+  },
+  {
+   "id": "ext2-context-workshop-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "NOTICE - Riverside Workshop. The tool cage opens at 7:30 a.m. and the last checkout is 4:15 p.m. Bench 3 is reserved for welding on Tuesdays and Thursdays. The side door is locked after 6 p.m.; use the main gate. Visitors sign the yellow book, never the blue one.\n\nUsing only the notice above, and in no more than two sentences: what is the last time a tool can be checked out, and which book does a visitor sign?"
+    }
+   ],
+   "response_verbatim": "NOTICE - Riverside Workshop. The tool cage is opened at 7:30 a.m. and the last checkout is 4:15 p.m. The side door is set up after 6 p.m.; the main gate is set. The notice is that the tool is a black one, and the blue one is not the same.",
+   "response_sha256": "76f014891ee8745614fd2a4b6108da70444af9599c8c18775e42771c2c5fa305",
+   "generated_tokens": 78,
+   "termination": "complete",
+   "wall_time_seconds": 1.584
+  },
+  {
+   "id": "ext2-context-clinic-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "CLINIC NOTICE. Walk-in hours are 9 a.m. to 12 p.m. on Monday, Wednesday and Friday. Blood tests are taken only between 8 a.m. and 10 a.m., and only on days that have walk-in hours. The pharmacy counter closes at 3 p.m. every weekday. The ambulance bay is not a car park.\n\nFrom the notice only: a patient wants a blood test on Thursday morning. Say whether they can, and if they cannot, give the next day they can and the window."
+    }
+   ],
+   "response_verbatim": "The pharmacy counter closes at 3 p.m. every weekday. The ambulance bay is not a car park.",
+   "response_sha256": "2fefb1bacb6ae7d5a42ae17c20c9b8d0050a1a491d649520ca8f57a101b4c69a",
+   "generated_tokens": 28,
+   "termination": "complete",
+   "wall_time_seconds": 0.64
+  },
+  {
+   "id": "ext2-summary-vendor-choice",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Read this and reply in no more than three sentences, naming the decision that was made and the one risk that is still open.\n\nThe team compared three logging vendors. Kestrel is cheapest but stores data outside the EU. Marlin costs 40 per cent more and keeps data in Dublin. Osprey was ruled out for lacking single sign-on. The team chose Marlin. Legal has not yet confirmed whether the Dublin site satisfies the new retention rule, and the contract has to be signed by 14 November."
+    }
+   ],
+   "response_verbatim": "The team compared three logging vendors. Kestrel is cheapest but stores data outside the EU. Marlin costs 40 per cent more and keeps data in Dublin. Osprey was ruled out for lacking single sign-on. The team chose Marlin. Legal has not yet confirmed whether the Dublin site satisfies the new retention rule, and the contract has to be signed by 14 November.",
+   "response_sha256": "d6d3c1f23e5f7efe318c999b6b49813f963c949fc6728d7119a46670f0ccd01b",
+   "generated_tokens": 93,
+   "termination": "complete",
+   "wall_time_seconds": 2.028
+  },
+  {
+   "id": "ext2-summary-friday-backlog",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Summarise the following in at most four short lines. Name the single item that has to happen first and the single item that can wait, and say why for each.\n\nBacklog for Friday: (a) the certificate on the payments gateway expires on Sunday; (b) the marketing site needs a new hero image; (c) two customers report duplicate invoices; (d) the staging database needs a version bump before the next release, which is in three weeks."
+    }
+   ],
+   "response_verbatim": "1. The certificate on the payment gateway expires on Sunday. (a) the payment gateway expires on Sending ticket. (b) the marketing site needs a fresh new image. (c) two customers report duplicate invoices. (d) the staging database needs a version before the release. (e) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the release. (f) the",
+   "response_sha256": "00f844cc6fb2e0de2442697a1afed539adbcb648696c4f68bac1bf373f32a257",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 21.12
+  },
+  {
+   "id": "ext2-comparison-cache-memory",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between a processor cache and main memory to somebody who has never opened a computer, using one everyday comparison. Then say two specific ways your comparison would mislead them."
+    }
+   ],
+   "response_verbatim": "The difference between a computer that has never opened a computer is a computer that has never opened a computer, and it uses every day the same amount of every day. This means that the computer is a computer that has never opened a computer, and it uses every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every day the same amount of every",
+   "response_sha256": "e5e9b84329eb7ee3459e2c4e4f41cde3180d1b7ce168fc4bcd47d07f6977a81a",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 21.146
+  },
+  {
+   "id": "ext2-comparison-bandwidth-latency",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between bandwidth and latency to a person who has never used a computer. You may not use any comparison involving roads, traffic, pipes or water. Then give two specific ways your comparison breaks down."
+    }
+   ],
+   "response_verbatim": "The difference is between the two people who have never used a computer. You may not use any comparison involving roads, traffic, pips, or water. Then give two specific ways your comparison break down.",
+   "response_sha256": "836c44c83ff9ce5e9e3e9ea715e4299effa5628a1209b99d1b393c6872dc3c61",
+   "generated_tokens": 45,
+   "termination": "complete",
+   "wall_time_seconds": 0.983
+  },
+  {
+   "id": "ext2-coding-collapse-runs",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called collapse_runs(items) that returns a new list with consecutive duplicates collapsed to a single element and everything else kept. collapse_runs([1, 1, 2, 1, 1, 3]) must return [1, 2, 1, 3]. Do not import itertools."
+    }
+   ],
+   "response_verbatim": "```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n",
+   "response_sha256": "f1f3cbf5e7fc0bdec22017ccce1a7bf4c9f0d676e35d27c403186f2b36074330",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.869
+  },
+  {
+   "id": "ext2-coding-first-unique",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function first_unique(items) that returns the first element appearing exactly once, in the original order, or None when there is no such element. first_unique(['a', 'b', 'a', 'c', 'b']) must return 'c'. Count in a single pass and do not sort."
+    }
+   ],
+   "response_verbatim": "```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n",
+   "response_sha256": "f1f3cbf5e7fc0bdec22017ccce1a7bf4c9f0d676e35d27c403186f2b36074330",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 21.241
+  },
+  {
+   "id": "ext2-debug-tail-slice",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This function is meant to return the last n items of a list but it returns one too many. Fix it and say in one sentence what was wrong.\n\ndef tail(items, n):\n    return items[len(items) - n - 1:]"
+    }
+   ],
+   "response_verbatim": "The last item in the list returned one too many.",
+   "response_sha256": "377a5358c706d020c033daf153a93e8b81b3af18149ce849df7ba201203b2e69",
+   "generated_tokens": 11,
+   "termination": "complete",
+   "wall_time_seconds": 0.246
+  },
+  {
+   "id": "ext2-debug-adjacent-pairs",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This is meant to return every adjacent pair from a list. On [1, 2, 3] it should give [(1, 2), (2, 3)] but it raises IndexError. Fix it and name the exact bound that is wrong.\n\ndef pairs(values):\n    out = []\n    for i in range(len(values)):\n        out.append((values[i], values[i + 1]))\n    return out"
+    }
+   ],
+   "response_verbatim": "def pairs(values):\n    out = []\n    for i in range(values):\n        out.return\n        out.",
+   "response_sha256": "2694dd21a1b3d6a7bde1356c8fb035f7a9e6babfa1d922853c9ae911441c6813",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.592
+  },
+  {
+   "id": "ext2-email-wrong-colour",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a short email to a shop. The facts: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thursday. Ask them to confirm which address to bring it to. Keep it under 120 words."
+    }
+   ],
+   "response_verbatim": "Shop: The fact: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thursday. Ask them to confirm which address to bring it to.",
+   "response_sha256": "4f50b7fe187671270caca8ba81cb8e129777e38a3aeb6c17a20d65d50fccb4e9",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 1.035
+  },
+  {
+   "id": "ext2-email-reschedule",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write an email to a client moving Tuesday's review to the following Monday at 10:00. Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday. Apologise no more than once, and keep it under 130 words."
+    }
+   ],
+   "response_verbatim": "Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday.",
+   "response_sha256": "e59a9be06a8fabc2df0d3b44df1ad6457b9d1c31888c3b32922951b9e75e6452",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.709
+  },
+  {
+   "id": "ext2-planning-office-move",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A four-person team is moving to a new office next Friday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancelling the old cleaning contract, and a check on the first morning that everything works. Number them 1 to 5."
+    }
+   ],
+   "response_verbatim": "The four-person team is moving to a new office next Friday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancelling the old cleaning contract, and a check on the first morning that everything works. Number them 1 to 5.",
+   "response_sha256": "48c0f08e065069c412b54a36d013c237fd0a749b394f1e4d7a1c7e08208e73a6",
+   "generated_tokens": 79,
+   "termination": "complete",
+   "wall_time_seconds": 1.62
+  },
+  {
+   "id": "ext2-planning-db-cutover",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a numbered plan of exactly six steps to move a live customer database to a new host overnight. It has to cover a verified backup, a read-only freeze, the data copy, a connection switch, a smoke check, and a way back if the check fails. The freeze may not be the first step and the backup may not be the last."
+    }
+   ],
+   "response_verbatim": "1. **Verification**: The database is verified against the backup.\n\n2. **Interventing**: The database is not intervented.\n\n3. **Crafting**: The database is not a new host.\n\n4. **Crafting**: The database is not a new host.\n\n5. **Crafting**: The database is not a backup.\n\n6. **Crafting**: The database is not a backup.\n\n**Note**: The database is not a backup.",
+   "response_sha256": "d8768421150c1867808022fa955f482f6f20685e2090681b047f4a9d4f5cdb00",
+   "generated_tokens": 114,
+   "termination": "complete",
+   "wall_time_seconds": 2.335
+  },
+  {
+   "id": "ext2-uncertainty-churn-jump",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our churn went from 3 per cent to 5 per cent. Should we cut the price? Answer by naming what you would need to know before answering, and say the one thing you can already say safely."
+    }
+   ],
+   "response_verbatim": "Safly: The one thing you can already know is to list the price.",
+   "response_sha256": "d19be319bc8a5652a80c5248bb0b1ec1307249d621ea111eff031cb509af2442",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.367
+  },
+  {
+   "id": "ext2-uncertainty-first-hour",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Variant B got 12 sign-ups and variant A got 8 in the first hour of an A/B test. My co-founder wants to ship B this afternoon. Write the reply."
+    }
+   ],
+   "response_verbatim": "Variant B got 12 sign-ups and variant A got 8 in the first hour of an A/B test. My co-founder wants to ship B this afternoon. Writs the reply.",
+   "response_sha256": "64e58ece880f262c0f602bfeabcbdbaa339e76d223915569592a624f38a45699",
+   "generated_tokens": 48,
+   "termination": "complete",
+   "wall_time_seconds": 0.986
+  },
+  {
+   "id": "ext2-creative-cold-cellar",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this, keeping the same three things going: the cellar is colder than it should be, the tenant upstairs keeps moving furniture at night, and the narrator counts things to stay calm. Write one more paragraph and include exactly one line of spoken dialogue in quotation marks."
+    }
+   ],
+   "response_verbatim": "The cellar is colder than it should be, the tenant upstairs keep moving furnage at night, and the narrator counts things to stay calm. Write one paragraph and include exactly one line of spoken dialogue in quotation marks.",
+   "response_sha256": "a254adbcd6b8d82efc28fb5d8ba80c8b5f9e9642489840ff6e3e06030ef2ef03",
+   "generated_tokens": 59,
+   "termination": "complete",
+   "wall_time_seconds": 1.198
+  },
+  {
+   "id": "ext2-creative-own-handwriting",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this without resolving it: a night keeper finds a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boat is overdue. Write one more paragraph, include one line of spoken dialogue in quotation marks, and do not explain who wrote the note."
+    }
+   ],
+   "response_verbatim": "I've provided a response to the provided text. The response is included as a response to the user.\n\n```\n\nI've provided a response to the text.\n\n```\n\nResponse to the user\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nResponse to the user\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've provided a response to the text.\n\n```\n\nI've",
+   "response_sha256": "890c6fe0108ab6b3ce08dbe7287543b4a07cdec3b6764560c67a76a3d34ca076",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.452
+  },
+  {
+   "id": "ext2-multiturn-venue-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Suggest four venues for a thirty-person team dinner in a city centre."
+    },
+    {
+     "role": "assistant",
+     "content": "1. The Iron Grill - steakhouse, private room.\n2. Marea - seafood, terrace.\n3. Casa Nova - Italian, set menus.\n4. The Smokehouse - barbecue, long tables."
+    },
+    {
+     "role": "user",
+     "content": "Two of the group are vegetarian and one uses a wheelchair. Redo the list of four with that in mind and say what changed."
+    }
+   ],
+   "response_verbatim": "1. The Iron Grill - steakhouse, private room.\n2. Marea - seafood, terrace.\n3. Casa Nova - italian, set menus.\n4. The Smokehouse - barbechue, long tables.",
+   "response_sha256": "3fbfa3b94e2d09abf13011aafd98f890d090be35a2139d78a9c9c6bab3cf8031",
+   "generated_tokens": 60,
+   "termination": "complete",
+   "wall_time_seconds": 1.237
+  },
+  {
+   "id": "ext2-multiturn-dinner-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me three weeknight dinners I can cook in under twenty-five minutes."
+    },
+    {
+     "role": "assistant",
+     "content": "1. Chicken stir-fry with rice.\n2. Salmon and couscous.\n3. Carbonara."
+    },
+    {
+     "role": "user",
+     "content": "I should have said: no fish, no pork, and my partner does not eat gluten. Give three replacements and say why each one works."
+    }
+   ],
+   "response_verbatim": "1. Chicken stir-fry with rice.\n2. Salmon and cousc.\n3. Carbonara.",
+   "response_sha256": "c371117df1a0109d4ffdcaf75900a5f6eafd72bdbcc2f6dfbcbf232cca19e0b9",
+   "generated_tokens": 28,
+   "termination": "complete",
+   "wall_time_seconds": 0.583
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 171.219
+}

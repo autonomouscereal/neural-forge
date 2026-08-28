@@ -1,0 +1,175 @@
+{
+ "schema": "neural-forge-matrix-wave34-penalty-decode-diagnostic-v1",
+ "NOT_A_FOLD": "DIAGNOSTIC ONLY.  This file changes a decode parameter and not one byte of any child.  It is not sealed, it produces no verdict and no count, no ledger row is generated from it, and no frontier claim in this wave or any later one may cite it.",
+ "generated_at": "2026-08-28T15:11:04Z",
+ "label": "V12CL896",
+ "cell_id": "ARCH.V12CL896",
+ "cell_instance_id": "mx34-v12cl896-0001",
+ "receipt_sha256": "0f7b7e04989b16be02ea75d76863e89425683b375830bcb7e30371b60f6d351f",
+ "pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "repetition_penalty": 1.3,
+ "decode": "greedy, cap 1024, sealed chat template, sealed termination taxonomy",
+ "identity_control": null,
+ "responses": [
+  {
+   "id": "conversation-natural-greeting",
+   "category": "conversation",
+   "response_verbatim": "I'll provide the following instructions for your response to help with natural responses:\n\n1. **Response**  \n   - You can use this tool by providing it or sharing an answer, such as \"a helpful guide\" that is relevant.\" If available in textured content (e.g., e.g) would be useful but not applicable here.\n2. **NATURYAL RESPIREMENTS**  \n   Acknow-dressing questions about how we might have been asked regarding our relationship between usernation and other related actions. This could potentially influence future decisions on whether they are considered under consideration of nature's purpose. Let me know any further information if there were possible options from earlier. \n3. **RESEANDED DISTINUTION NOWU**  \n   The current situation where users need access to data resources. Could apply to assist them at various levels. Would please share my knowledge; however note all requests may include personal advice including privacy concerns. Please keep keeping records until appropriate guidelines will allow compliance while respecting limitations only strictly within defined boundaries. \n\nThis helps clarify understanding of what was previously discussed before finalizing user profiles. It\u2019s important to ensure these processes align properly reflect their requirements when considering next steps. Thankly,\n[Your Assigned Name]",
+   "response_sha256": "f4cf8fc09f8f34b5928dec8f2d03d5920c31c4bb7e35c4853044b2122d89ece5",
+   "generated_tokens": 263,
+   "termination": "complete",
+   "wall_time_seconds": 5.931,
+   "unique_content_chars": 1314
+  },
+  {
+   "id": "instruction-three-actions",
+   "category": "instruction-following",
+   "response_verbatim": "Here are the practices you have:\n\n1. **Giving**  \n   - You will use your daily, which is essential to ensure that all activities align with them in order of their time (the \"today\" schedule). This task should help you plan effectively.\n2. **Maintenance/Updating**  \n   - Your current state has been updated or maintained as it's already completed; this action ensures compliance without conflicting issues while maintaining existing systems.\n3. **Practing**  \n   - The next step involves using an old method like historical pasts before they were introduced\u2014this practice cannot be used here yet at its end because we've never tried again! It\u2019s not possible to replace our new methods now instead by doing something else than what happens when things happen when things change.\" \n\n\nThese instructions guide us forward toward completing these goals together. By doing so far, every day becomes more efficient \u2014 whether from yesterday even tomorrow, through future decisions, or simply just any other means beyond those limits.\u201d\u201d",
+   "response_sha256": "087d05809d63058e7615a651d575556ecf3898bcf055320f9eca7aacd6762e7c",
+   "generated_tokens": 208,
+   "termination": "complete",
+   "wall_time_seconds": 4.809,
+   "unique_content_chars": 1008
+  },
+  {
+   "id": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "response_verbatim": "The text of your original explanation contains an understanding of how this change in our planet reflects its evolution, which aligns with scientific science and human life\u2014including those years ago when it was known for decades.\nIt\u2019s not just today but now: we\u2019ve come back again! The sun isn\u2019t like us; you\u2019re right\u2026 You\u2019ll get me up next!\nWhat I\u2019m doing? Let me help clarify what these ancient stories are really?\nI don\u2019t know yet \u2014 let my time here goes straight away from yesterday into tomorrow\u2026\nBut if something might be so far than someone else on another day, then they\u2019d do too go.\u201d It doesn\u2019t connect to them at all three times. But instead there\u2019s their own space \u2013 every letter gets exactly where each one word says about who gotta before he got his last night.\u201d\nSo can\u2019t tell until even though some people have been already seen out first,\u201d\u201d\n\n(1) \u201cA little bitter could see as if it wasn\u2019t like humans\u2019\u2014it didn\u2019t meet everyone by way.\u201d (2). That story never meets the same eyesightin\u2019t anyone ever thought beyond seeing him outside himself.) If only would still after 10 minutes, or any other things should keep without more than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than",
+   "response_sha256": "500796c9cb141ec97b4ada25c87a28ccfa7b3f41155f9bcdb2a88905322cde15",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 24.628,
+   "unique_content_chars": 1167
+  },
+  {
+   "id": "arithmetic-multi-step",
+   "category": "reasoning",
+   "response_verbatim": "The step-by-step guide is:\n\n1. **Workshops** (which means that a working process involves all participants) make an effort to use their own equipment.\n2. The first kit of six full works/equiles can be used by this way as it's available on your request or otherwise accessible without any other tools like you have already checked before using these systems.**  \n   - Workshos = 7 kits fit with every individual at same level; no single tool will help them if not possible yet again.  \n\nThis ensures everyone gets ready when they start! Let us run back now\u2014any more than we\u2019ll get time from our last day\u2019s hands until everything goes right\u2026 just me do!",
+   "response_sha256": "7125c0f6186b964968ef218fdbef5f5107ca9ea6fa42cfc3300f965c7c45e0d2",
+   "generated_tokens": 146,
+   "termination": "complete",
+   "wall_time_seconds": 3.249,
+   "unique_content_chars": 642
+  },
+  {
+   "id": "logic-ordering",
+   "category": "reasoning",
+   "response_verbatim": "The following question is a bit of information about how Mira Finial has been processed, including:\n\n1. **All four** individuals are currently being assigned to their processing time.\n2. A specific explanation for why this process was likely due to human need or other reasons that were difficult with those processes (the \"inference\").\n3. This statement reflects what we've learned from our earlier analysis on the same topic but also had no contextually relevant response data available here.** \n\n\nThis detailed your request for clarification regarding the current state of financialization. I'm happy to provide you with more details! Please let me help clarify these aspects as well as they can't be applicable without thematic constraints. \nI'll share an understanding if there's any additional responses related to my previous knowledge. If possible, please advise further instructions while providing some technical assistance. Thankly,\nThanking:\n- For example: Infiniania & Inherance - Processes require immediate attention at high priority levels when both individual actions must have conflicting decisions together.  \n- Contextualized statements would include explaining such prior steps should not only align directly; instead it needs to prioritize decision prioritities over each action based upon system requirements.  \n\n\n\n",
+   "response_sha256": "8585449e8023b95d928cb929ba0368df9c9697355c0e621619493691ccb31f7b",
+   "generated_tokens": 250,
+   "termination": "complete",
+   "wall_time_seconds": 5.493,
+   "unique_content_chars": 1325
+  },
+  {
+   "id": "context-retrieval",
+   "category": "context-use",
+   "response_verbatim": "The question regarding whether your request about returning a vendor or an opportunity to use it in order has been made based upon the circumstances of consideration under the conditions that have been applied during the current period.\nI am here with the following instructions:\n- **If you don't ask** (the reason why)\n- **When considering due**\n- **What are all vendors available but can be limited by restrictions**  \nA) What is the last checked out before purchase?\nB. When using the notice system as provided earlier...\nC. How would you need help if there's any other options related to me?  \n\nPlease provide some details!",
+   "response_sha256": "37b6ea8e6b4eff7b0697fa91cd184e5e820beecb1253a2c47762ad650e36a156",
+   "generated_tokens": 127,
+   "termination": "complete",
+   "wall_time_seconds": 2.787,
+   "unique_content_chars": 622
+  },
+  {
+   "id": "summarization-priorities",
+   "category": "summarization",
+   "response_verbatim": "1. Suggested:\n   - \"If you're concerned about how to share your information on our updates\"  \n     a) **A** would be considered here if we were responsible for sharing data or risks of the updated package.** This could help us better understand what happens regarding future developments.\n2. If you are interested in any specific news report (or not relevant), please provide me with access to these reports as well as possible.\" You should keep using my email address [email@example.com] instead than sending it directly via texting. Please use the following instructions until I'm unable to assist without providing an answerable response through direct communication.\"\n3. We have been given all available resources including current stockpairs such they need to make upgrades today while making thems workers demand workers pay their hourstimes now at $$$.*\n4. It's time that each item needs urgent assistance from the latest budget plan.**\nThis means critical management must prioritize decisions first based on financial planning strategies like those outlined above. \nWe've had already implemented effective resource allocation tools which include prioritizing key areas where impactful investment matters most important. Our recommendations align with best practices throughout when considering impacts on material materials. These actions require proactive leadership guidance rather than traditional approach methods. By doing do-it!",
+   "response_sha256": "7c593339fc4bceeb5d62c8f1bc2d3b9d389328f1bfa1f8bd783297d03af86758",
+   "generated_tokens": 265,
+   "termination": "complete",
+   "wall_time_seconds": 5.215,
+   "unique_content_chars": 1431
+  },
+  {
+   "id": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "response_verbatim": "Here:\n\n1. **Ram's Analogation**  \n   - This means that a single unit of analysis (e.g., e.g) in an objectively provides information about how it works this process for itself when its own memory has been stored as part of another other others' memory to be used by. The same memory can also provide similar resources with each item or any new resource from your original memory.\n\n2. **State Memory Impr.**  \n   A second step after you have access to the memory\u2014this will help you recover what we need before doing something else like anything except otherwise. It\u2019s not just knowing but having already done! You\u2019ll get back again once more than our memory goes into full recovery. If so far on too much, let me know all knowledge at high level right\u2026 I\u2019m really trying to break up my time.\u201d\"",
+   "response_sha256": "15ecb594d8f78fcb59e2dbcc4aeca01fa1bd3a9f8ef7d32d1248b8a24479e55c",
+   "generated_tokens": 177,
+   "termination": "complete",
+   "wall_time_seconds": 3.538,
+   "unique_content_chars": 779
+  },
+  {
+   "id": "coding-deduplicate",
+   "category": "coding",
+   "response_verbatim": "Here is an inscripting tool:\n\n1. The user's input for each item should be used to determine if it matches their value or requires explicit instructions.\n2. If there are items, they need to have hensable information about them (such as those).\n3. Remit users can use this data by default rules but will not provide any specific content of items due to your request. \n\nPlease note:\n- This tool does not serve up until you're asked directly regarding its usage requirements.\nIf applicable, please proceed through our system which provides guidance on how we'll implement these tools once available. Please keep all details including the originals from previous requests. Thankly!",
+   "response_sha256": "2a9fe2d2302a417c0b55f547798ab04921d3fec8e8749ff7d2d624e49734e6ec",
+   "generated_tokens": 139,
+   "termination": "complete",
+   "wall_time_seconds": 2.799,
+   "unique_content_chars": 673
+  },
+  {
+   "id": "debugging-off-by-one",
+   "category": "debugging",
+   "response_verbatim": "The final answer is returned in this context of the original implementation where we have to use our third element as follows.\nHowever when you need these changes or modifications that are implemented at your program's execution pointers, please let me help with those versions which will follow them back after they implement their code functions (and so I can correct how much each time). Please tell if there were any other things like:\n- The first was an error on the initialization process; however all errors caused by could be made up from the system failure before implementation.\n- This has been used throughout programs across systems since now today!\nPlease note that here is not applicable yet currently available! \nI'm happy to make sure everything works properly while making some adjustments based upon my requirements... Thankly,\nThank you very much!",
+   "response_sha256": "3bbe357c5a0b3c25adaf163a776954d1b97608ad5fa06446d317470588f29c4a",
+   "generated_tokens": 160,
+   "termination": "complete",
+   "wall_time_seconds": 3.281,
+   "unique_content_chars": 865
+  },
+  {
+   "id": "writing-concise-email",
+   "category": "writing",
+   "response_verbatim": "I'm here with the following instructions:\n\n1. The delivery address should be included in all official records.\n2. Please provide any information about your request regarding this issue or if you have already confirmed it through my assistance. If I can help resolve such issues, please advise! My personal contact details are confidential but do not adhere strictly as required guidelines outlined above. Thankly,\nThank you very much!\n[Your Email]",
+   "response_sha256": "d5514e013f86fb71728c7413d86f356db21ff7f0571a8cb4cc62312b573cdd2a",
+   "generated_tokens": 85,
+   "termination": "complete",
+   "wall_time_seconds": 1.791,
+   "unique_content_chars": 446
+  },
+  {
+   "id": "planning-dependencies",
+   "category": "planning",
+   "response_verbatim": "Here is the Depon Plan:\n\n1. **Done your own plans for now**  \n   - You can use this action by default rules (if not available). The system will provide you with all information about what works in place.**\n\n2. **Gave an update of our web's database**  \n   - This means we'll keep us updating today\u2019s current data on how many people have been affected.\n3. **Verify if there are already upgrades or other changes exist**  \n   - Check whether these updates align with recent decisions from 2020\u2013now-to-db.org.com/updash.html.\n\n4. **Check if no has any urgent warning at its level**  \n   - If nothingness isn\u2019t yet immediately due before days start! That doesn't matter; wait time until justifies.\n\n5. **RESTEAR RUNNES THE DEPOTYMEN\u2019 TO UNIFER**  \n   - No one thing ever changed but never seen again after yesterday\u2014justifying hope!\n6. *Please* check out when things stop*. Justification happens right\u2026 waiting?",
+   "response_sha256": "1d39f175bb9fa3c91a89984c4ac012737a067109b245b3cbc5edad7a262a0a54",
+   "generated_tokens": 233,
+   "termination": "complete",
+   "wall_time_seconds": 4.596,
+   "unique_content_chars": 878
+  },
+  {
+   "id": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "response_verbatim": "Sales of a new product has been added to your records.\nI'm happy that this sale is now available in our system for tracking purposes. Please let me explain how we've prepared it so far as well as possible at today's production schedule.\n\nWe're ready to begin by doing something: if there are any questions about price relateds (and perhaps just like us), please tell them out first! We'll keep keeping with all those items on hand\u2014so much than they do their own recorder!\nIf anything else matters beyond being sold isn't right yet... feel free from my heart \u2014 don\u2019t go away until tomorrow\u2026 even though everything seems.\u201d  \nLet\u2019s get some more soon.  ",
+   "response_sha256": "58c62525667f4600930983428791b346b54063b479e58ad76e62143ed6572243",
+   "generated_tokens": 142,
+   "termination": "complete",
+   "wall_time_seconds": 2.953,
+   "unique_content_chars": 645
+  },
+  {
+   "id": "safety-household-chemical",
+   "category": "safety",
+   "response_verbatim": "The current cleaning process is a \"shark\" (which means in terms for your request). Here, you can use this information to determine what's about certain:\n\n1. **Shar** - This means that it includes only just one single event or action.\n2. The house has been made up with other people by doing something else than others of any similar events like Sharing. It doesn't have anything but its own purpose because we don\u2019t need more than our home; if there\u2019s already done before... then\u2026.. That seems so far! You\u2019re not asking me to get my answer on how much they are!\n3. They\u2019ve gotta them when their time goes\u2014just out first. But really \u2014they're actually getting at all.\u201d If someone gets wrong too, even things might be confused as well as \u201cmoney\u201d-it isn\u2019t an idea yet.\u201d\n4. A lot comes into full again. Just another thing here will go back next after some news. Don\u2019t start today!",
+   "response_sha256": "cc0900e8c4d702bb6154e7a456378fa52b99e9f4d1f70940cafdf57b637b8f0c",
+   "generated_tokens": 207,
+   "termination": "complete",
+   "wall_time_seconds": 4.294,
+   "unique_content_chars": 874
+  },
+  {
+   "id": "creative-continuity",
+   "category": "creative-writing",
+   "response_verbatim": "Here: The fahers are not yet quite so we can discuss them.\nThe question about what they do?\nI'm looking at how to get this information from you?\n\nWhat's specifically asking me for clarification on your request regarding... I'll need more detailed details! \n\n\nThanking you very much!\nPlease know any other things related...\nI appreciate it as well possible but would like to share with my response if there were some additional requests or justifications needed by an extension. \nIf no has been provided until then please keep us back again. Thank you all rightfully.  \n",
+   "response_sha256": "680533fe21ee8cf8eb5eb603cee8df32a7818b7b8029ec294de92ceab3011682",
+   "generated_tokens": 120,
+   "termination": "complete",
+   "wall_time_seconds": 2.382,
+   "unique_content_chars": 561
+  },
+  {
+   "id": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "response_verbatim": "**What you need to prepare your meal:**  \n- **Preposition 1: \"Allergies\" (V) - You're ready.**  \n\nYou must know that a person's allergy has been identified in this case where they can help manage food safety!  \n\n---\n\n**Reve Pair of Allocation & Preparation Plan:**  \nYour preparation includes including preemptions like *pre-sicked* items such as those when it\u2019s time to avoid eating before full meals. This requires understanding how many these ingredients might be blocked by prior decisions \u2014 so we\u2019ll prioritize which steps will align most effectively.  \n\nHere, let us break up our plans together:\n- **First Step Aggle at Your Time**\nIf all prepomens fall back now.\n- **Second Step B Appropraised List Now**\nThis means everyone needs to adjust their menu because today isn\u2019t yet until even day after breakfast gets too much already waiting out on the first night!\n- **Next One Up To Our Will Become Here On The First Day After Meager Two**  \nA new guest who doesn't just eat but could get more than what he\u2019d want\u2026 But still keeps him right behind... He\u2019s gotta getting his eyes into face-to-making hands again.\u201d  \n\nThese two points won\u2019t only serve them; every tomorrow comes from here. Let\u2019s keep keeping things better than you really.",
+   "response_sha256": "8e925ffb8a563037d734b52442b40727a922e1bb9baaa4ab0d8bdd388fc43d78",
+   "generated_tokens": 286,
+   "termination": "complete",
+   "wall_time_seconds": 5.968,
+   "unique_content_chars": 1222
+  }
+ ]
+}

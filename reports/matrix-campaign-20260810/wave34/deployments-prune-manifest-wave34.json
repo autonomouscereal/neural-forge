@@ -1,0 +1,39 @@
+{
+ "schema": "neural-forge-matrix-wave34-deployments-prune-v1",
+ "policy": "current+1, plus every deployment a sealed receipt names as its repo_head.  A pruned deployment is not lost: deploy.py --emit reproduces it byte-for-byte from its commit, and no receipt in this estate names a deployment PATH.",
+ "root": "/home/cereal/model-surgery-lab/deployments",
+ "kept": {
+  "neural-forge-matrix-03d39e85": {
+   "reason": "named as repo_head by ALL SIXTEEN wave-34 receipts (8 ARCH cell receipts, 8 behaviour verdicts)",
+   "bytes": 293916406
+  },
+  "neural-forge-matrix-c3e00fe4": {
+   "reason": "wave 33 own deployment, named by wave 33 receipts; the current+1 half of the policy",
+   "bytes": 292392966
+  },
+  "neural-forge-matrix-fa635517": {
+   "reason": "THIS WAVE current deployment: the package and the retention ran from it",
+   "bytes": 281381989
+  }
+ },
+ "deleted": {
+  "neural-forge-matrix-02dd19c6": {
+   "reason": "wave 34 first deployment.  It built only the two run-1 bodies, which were rebuilt bit-identically under 082409cb after the receipt-filename fix and then deleted.  No surviving artifact names it",
+   "bytes": 280660037
+  },
+  "neural-forge-matrix-082409cb": {
+   "reason": "built the two retained bodies and the five vocabulary folds.  Their build receipts carry no repo_head, and every CELL receipt over them names 03d39e85",
+   "bytes": 293579052
+  },
+  "neural-forge-matrix-0ed36347": {
+   "reason": "carried the eight seal calls.  The verdicts it wrote name 03d39e85 as their repo_head, not this path",
+   "bytes": 293670146
+  },
+  "neural-forge-matrix-15ef17ef": {
+   "reason": "a wave-33 intermediate that wave 33 itself superseded with c3e00fe4",
+   "bytes": 274891961
+  }
+ },
+ "bytes_kept": 867691361,
+ "bytes_deleted": 1142801196
+}
