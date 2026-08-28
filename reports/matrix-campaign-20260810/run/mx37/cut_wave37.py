@@ -141,31 +141,42 @@ ALLOWED_HISTORICAL = {
     ),
     # DECLARED IN ADVANCE, as wave 36 declared it, because the estate's retention
     # rule requires every DROP reason to name WHAT REBUILDS the deleted child AND
-    # FROM WHICH RETAINED SOURCE.  On this wave several dropped children rebuild
-    # from a checkpoint an earlier wave retained -- MX34-CL896, MX36-V9CL896G10 --
-    # so the retention file cannot obey the retention rule without naming an
-    # earlier wave's child directory.  Only the WAVE-36 spelling is exempted here
-    # and only in prose: `MX34-` is not a needle this cut forbids.  The count is
-    # pinned rather than waived, so a wave that accidentally reintroduces an
-    # executable wave-36 name still gets refused.
+    # FROM WHICH RETAINED SOURCE, and a wave whose dropped children rebuild off
+    # last wave's checkpoints cannot obey that rule without naming a wave-36 child
+    # directory in prose.
+    #
+    # **THIS DECLARATION WENT UNUSED AND THE FACT IS RECORDED RATHER THAN THE
+    # DECLARATION DELETED.**  Wave 37's retention was written after its verdicts
+    # were sealed and every one of its seven dropped children rebuilds from wave
+    # 34's `MX34-CL896` or from a wave-37 checkpoint the KEEP set holds; no
+    # wave-36 checkpoint is named.  `MX34-` is not a needle this cut forbids, so
+    # the retention file contains ZERO occurrences of the exempted string and the
+    # audit never consults this entry.  It is left in place, at its pinned count,
+    # because a pre-declaration that turned out to be unnecessary is a correct
+    # prediction to have made and deleting it would hide that the wave checked.
     ("mx37_retain.py", "MX36-"): (
         2,
-        "the KEEP and DROP reasons name the wave-36 checkpoints that rebuild the "
-        "deleted children and the wave-36 checkpoint this wave's F3 adjudication "
-        "was read on, which the retention rule requires them to do; they are "
-        "prose in a reason string and this file resolves no wave-36 path",
+        "PRE-DECLARED AND UNUSED.  Reserved for KEEP/DROP reasons naming a "
+        "wave-36 checkpoint as the retained source that rebuilds a deleted child, "
+        "which the retention rule requires when it applies.  Wave 37's drops all "
+        "rebuild from wave 34's body or from this wave's own kept body, so the "
+        "count on disk is zero and this entry never fires",
     ),
     # DECLARED IN ADVANCE for the same reason wave 36 declared it AFTER being
     # refused: a terminal-gain arm whose retained source is unnamed is an arm
     # nobody can re-derive, so the seal is REQUIRED to carry the source's name.
-    # `sealq.sh` resolves exactly two paths, `$W` and `$MX37`, and both are this
-    # wave's; the count is pinned rather than waived.
+    #
+    # **ALSO UNUSED.**  Wave 37's six seals are all wave-37 cells solved on
+    # wave-37 sources; the F3 adjudication that DOES read a retained wave-36
+    # checkpoint produced no seal, because `ARCH.V9CL896G10` is wave 36's cell and
+    # this wave does not re-seal it.  `sealq.sh` resolves exactly two paths, `$W`
+    # and `$MX37`, and both are this wave's.
     ("sealq.sh", "MX36-"): (
         1,
-        "one seal note names the RETAINED wave-36 checkpoint the F3 paraphrase "
-        "adjudication was read on, which is provenance the seal is required to "
-        "carry; it is prose in a note string and this file resolves no wave-36 "
-        "path",
+        "PRE-DECLARED AND UNUSED.  Reserved for a seal note naming the RETAINED "
+        "wave-36 checkpoint an arm was solved on, which is provenance the seal is "
+        "required to carry when it applies.  Wave 37's arms are all solved on "
+        "wave-37 sources, so the count on disk is zero and this entry never fires",
     ),
 }
 

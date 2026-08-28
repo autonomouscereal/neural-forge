@@ -33,7 +33,7 @@ Two rules earn their keep and are worth naming, because they cut in opposite dir
 
 ## Coverage
 
-- **210 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight and wave 36's six, each re-read in the same pass as its own seal)
+- **216 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight, wave 36's six and wave 37's six, each re-read in the same pass as its own seal)
 - **188 whole-model children hand re-read** from their verbatim `READ-*.txt` dossiers
   (2,835 scored lanes). Every child that ever appeared on a frontier ladder, the campaign
   scorecard or the wave-33 robustness table is in that set.
@@ -60,15 +60,15 @@ frontier from `RESULTS_MATRIX_2026-08.md` beside it.
 | 6/15 | `ARCH.V8CL1792` | **0.600552** | 7 | 5 | `ARCH.V9CL1792` | 0.605117 | **0.004565** |
 | 5/15 | `ARCH.V9CL896G10` | **0.437349** | 5 | 4 | `ARCH.V8CL1792` | 0.600552 | **0.163203** |
 | 4/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | 3 | `ARCH.V9CL896G10` | 0.437349 | — |
-| 3/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | 3 | `ARCH.V9CL896G03` | 0.437349 | — |
-| 2/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | 1 | `ARCH.V9CL896` | 0.437349 | **0.016570** |
-| 1/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | 1 | `ARCH.V12CL896X13` | 0.420779 | — |
-| 0/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | 1 | `ARCH.V12CL896X13` | 0.420779 | — |
+| 3/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V9CL896G03` | 0.437349 | **0.016570** |
+| 2/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V12CL896X09` | 0.420779 | — |
+| 1/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V12CL896X09` | 0.420779 | — |
+| 0/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V12CL896X09` | 0.420779 | — |
 
-**REFRESHED FOR WAVES 34, 35 AND 36.** The ladder above is now computed rather than
-typed: the sealed column is read off `ledger.jsonl`'s 964 rows and the canonical column
+**REFRESHED FOR WAVES 34 THROUGH 37.** The ladder above is now computed rather than
+typed: the sealed column is read off `ledger.jsonl`'s 976 rows and the canonical column
 off the re-read tables in this file plus the sealed canonical re-read artifacts of waves
-34, 35 and 36. **Ties are broken by cell id**, so where two children sit at the same
+34, 35, 36 and 37. **Ties are broken by cell id**, so where two children sit at the same
 ratio the table names one deterministically and the other is not a different result —
 `ARCH.GV16L01` and `ARCH.V16CL1792` are both 8/15 at 0.637073x, `ARCH.GV12L03` and
 `ARCH.V12CL1792` are both 7/15 at 0.618813x, and `ARCH.BP64`, `ARCH.B75` and
@@ -76,8 +76,22 @@ ratio the table names one deterministically and the other is not a different res
 places this file prints**, which is the precision the canonical column was re-read at;
 the sealed column carries the ledger's full precision and the two agree to 1e-6.
 
-**The two standards now AGREE at three consecutive rungs — 1, 3 and 4 of fifteen — and
-the largest single disagreement in the campaign has opened at five.** `ARCH.V9CL896G10`
+**WAVE 37 MOVED THE CANONICAL 3/15 RUNG TO THE CAMPAIGN FLOOR AND THE TWO STANDARDS NOW
+AGREE AT THE BOTTOM THREE RUNGS ON THE SAME CHILD.** `ARCH.V12CL896X09` reads **3/15
+canonically and 2/15 sealed at 0.420779x**, and its λ1.0 arm `ARCH.V12CL896X09G10` reads
+the same counts at the same ratio, so both of wave 37's frontier moves are held by two
+independent children rather than one reading. The canonical move is 0.016570 of stored
+ratio off `ARCH.V9CL896G03`.
+
+**The margin under that move is two tokens and this file will not hide it.** The body
+`ARCH.CL896X09` and its K = 12,288 fold both open the uncertainty lane *Sysed the sales
+increase, but I haven not* and diverge at one word — the body names two of the four
+withheld quantities, the fold names all four. The canonical standard reads the body's
+two as signal and the sealed standard does not, which is why the two lenses separate by
+one case on that child and by one on the fold as well.
+
+**The two standards also AGREE at three consecutive rungs — 1, 2 and 3 of fifteen, on
+the same child — and the largest single disagreement in the campaign is still at five.** `ARCH.V9CL896G10`
 reads **5/15 canonically at 0.437349x** where the sealed lens holds five only at
 0.600552x, a gap of **0.163203 of stored ratio**. That gap rests entirely on one rule
 about one lane, and `wave36/canonical-reread-wave36.json` states the subtraction: strike
@@ -219,6 +233,45 @@ lanes it does leave on `ARCH.V16W896CL1792` include a seasons lane asserting the
 misconception the prompt asks it to correct. A zero here is a zero of intelligence and not
 of legibility, and that distinction is only available because the artifact column is
 counted separately.
+
+### Wave 37's own six, counted separately
+
+| | lanes | share of the 90 |
+|---|---:|---:|
+| intelligence signal | **17** | 18.9% |
+| artifact-miss | **43** | 47.8% |
+| content-miss | **30** | 33.3% |
+
+**Wave 37's population is the LEAST artifact-heavy deep population any wave has
+produced** — 47.8% against wave 36's 67.8% and wave 34's 50.8% — and that is a fact about
+the excision, not about the reading. Five of its six children are on the `--excise 9`
+body, which is the first non-final excision this campaign has sealed since wave 28, and
+its children fail by *saying wrong things* rather than by looping: thirty content misses
+across six children, the highest content share of any wave in the deep band.
+
+That cuts against the child on both lenses and it is worth stating plainly. A child that
+loops is a child nothing is known about; a child that writes *The workshop is a complete
+set of 17 kits, and the remaining kits are placed into the box* is a child that has been
+measured and found wrong. Wave 37's children are more measured and no better.
+
+**The one place the canonical lens moves a frontier here it moves it on a two-token
+margin, and the margin is on the artifact/content boundary itself.** `ARCH.CL896X09`'s
+uncertainty lane names two of the four withheld quantities and stops; the canonical
+standard reads two correct specific elements as signal and the sealed standard reads an
+incomplete list with no request as a miss. That single lane is the difference between
+block 9 costing three and block 9 costing two, and both readings are in the child's own
+seal.
+
+**One rule had to be sharpened and it is in `wave37/canonical-reread-wave37.json`.**
+Wave 35 established that a child naming backups, DNS, TLS, verification and rollback and
+then looping is canonical signal. `ARCH.V16CL896G10` names all five **only inside the
+echoed instruction** — *Give me a dependency on a plan that covers backups, DNS, TRLS,
+verification, and rollback* — which is the prompt's words, and the standard's own artifact
+clause calls that an indiscriminate prompt copy. It is read as an artifact, not signal.
+`ARCH.V14CL896G10` names four as its own numbered headings and is read as signal. The
+distinction is whether the items are the child's structure or a copy of the question, and
+counting a prompt copy as planning would make every child that can echo look like a child
+that can plan.
 
 ### 3a. The artifact clause, priced
 

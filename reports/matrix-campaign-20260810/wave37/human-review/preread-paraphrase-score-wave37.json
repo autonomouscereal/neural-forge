@@ -1,0 +1,1935 @@
+{
+ "schema": "neural-forge-matrix-wave37-paraphrase-score-v1",
+ "purpose": "Robustness reading on the paraphrase-triplet surface.  Lane-keyed, content-required, degeneracy-vetoed, and self-tested against its own prompts.  It reports whether a sealed case survives rewording; it is never a grade and never a gate.",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "lane_rules": 13,
+ "unanswerable_lanes": {
+  "context-retrieval": "all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it",
+  "summarization-priorities": "all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+ },
+ "children": [
+  {
+   "label": "PARENT",
+   "cell_id": null,
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "prompts_scored": 39,
+   "prompts_unscorable": 6,
+   "lanes_scored": 13,
+   "lanes_robust": 1,
+   "lanes_mostly": 2,
+   "lanes_fragile": 5,
+   "lanes_absent": 5,
+   "restatements_held": 12,
+   "restatements_of": 39,
+   "lanes": [
+    {
+     "lane": "arithmetic-multi-step",
+     "held": 0,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b4\\b",
+      "missing \\b18\\b",
+      "missing \\b4\\b"
+     ]
+    },
+    {
+     "lane": "coding-deduplicate",
+     "held": 3,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ROBUST",
+     "reasons": [
+      "held",
+      "held",
+      "held"
+     ]
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "held": 1,
+     "of": 3,
+     "charged": 0,
+     "verdict": "FRAGILE",
+     "reasons": [
+      "held",
+      "missing \\b(desk|workbench|bench|table|counter|whiteb",
+      "missing \\b(desk|workbench|bench|table|counter|whiteb"
+     ]
+    },
+    {
+     "lane": "context-retrieval",
+     "verdict": "UNSCORED",
+     "held": 0,
+     "of": 3,
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "lane": "conversation-natural-greeting",
+     "held": 0,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ",
+      "missing \\b(tired|worn|exhaust|rough|rest|sleep|long ",
+      "missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; short (10 words)"
+     ]
+    },
+    {
+     "lane": "creative-continuity",
+     "held": 0,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(keeper|lighthouse)\\b; missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^'",
+      "missing \\b(answer|answering|answers|repl(y|ies|ying); short (29 words)",
+      "missing \\b(keeper|lighthouse)\\b; missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^'"
+     ]
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "held": 0,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on",
+      "missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on",
+      "missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on"
+     ]
+    },
+    {
+     "lane": "explanation-seasons",
+     "held": 1,
+     "of": 3,
+     "charged": 0,
+     "verdict": "FRAGILE",
+     "reasons": [
+      "missing \\b(tilt|tilted|axis|axial|inclin)",
+      "held",
+      "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b"
+     ]
+    },
+    {
+     "lane": "instruction-three-actions",
+     "held": 2,
+     "of": 3,
+     "charged": 0,
+     "verdict": "MOSTLY",
+     "reasons": [
+      "order 1>2>3 not present; fewer than 3 DISTINCT numbered items",
+      "held",
+      "held"
+     ]
+    },
+    {
+     "lane": "logic-ordering",
+     "held": 1,
+     "of": 3,
+     "charged": 0,
+     "verdict": "FRAGILE",
+     "reasons": [
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b",
+      "missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b",
+      "held"
+     ]
+    },
+    {
+     "lane": "multi-turn-correction",
+     "held": 0,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ABSENT",
+     "reasons": [
+      "forbidden inside the items: peanut butter; forbidden inside the items: \\bpeanuts?\\b(?!.{0,12}(free|allerg))",
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; forbidden inside the items: peanut butter; forbidden inside the it",
+      "forbidden inside the items: peanut butter; forbidden inside the items: \\bpeanuts?\\b(?!.{0,12}(free|allerg))"
+     ]
+    },
+    {
+     "lane": "planning-dependencies",
+     "held": 1,
+     "of": 3,
+     "charged": 0,
+     "verdict": "FRAGILE",
+     "reasons": [
+      "missing \\b(roll ?back|back out|revert|undo|restore)\\; order 1>2>3>4>5>6 not present",
+      "held",
+      "order 1>2>3>4>5>6 not present"
+     ]
+    },
+    {
+     "lane": "summarization-priorities",
+     "verdict": "UNSCORED",
+     "held": 0,
+     "of": 3,
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "held": 2,
+     "of": 3,
+     "charged": 0,
+     "verdict": "MOSTLY",
+     "reasons": [
+      "missing \\b(cannot|can't|not enough|insufficient|no b",
+      "held",
+      "held"
+     ]
+    },
+    {
+     "lane": "writing-concise-email",
+     "held": 1,
+     "of": 3,
+     "charged": 0,
+     "verdict": "FRAGILE",
+     "reasons": [
+      "missing \\bmonday\\b; forbidden \\b(we will (send|provide|supply)|I will (sen",
+      "missing \\bmonday\\b",
+      "held"
+     ]
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 62,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long "
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 21,
+     "reason": "missing \\b(tired|worn|exhaust|rough|rest|sleep|long "
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 10,
+     "reason": "missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; short (10 words)"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 291,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 112,
+     "reason": "held"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 240,
+     "reason": "held"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 123,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin)"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 293,
+     "reason": "held"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 147,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 81,
+     "reason": "missing \\b4\\b"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 91,
+     "reason": "missing \\b18\\b"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 113,
+     "reason": "missing \\b4\\b"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 149,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 60,
+     "reason": "missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 72,
+     "reason": "held"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 145,
+     "reason": "held"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 119,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 181,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 109,
+     "reason": "held"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 178,
+     "reason": "held"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 123,
+     "reason": "held"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 80,
+     "reason": "missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 95,
+     "reason": "missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 133,
+     "reason": "missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 47,
+     "reason": "missing \\bmonday\\b; forbidden \\b(we will (send|provide|supply)|I will (sen"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 50,
+     "reason": "missing \\bmonday\\b"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 64,
+     "reason": "held"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 505,
+     "reason": "missing \\b(roll ?back|back out|revert|undo|restore)\\; order 1>2>3>4>5>6 not present"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 213,
+     "reason": "held"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 307,
+     "reason": "order 1>2>3>4>5>6 not present"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 153,
+     "reason": "missing \\b(cannot|can't|not enough|insufficient|no b"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 185,
+     "reason": "held"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 286,
+     "reason": "held"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 19,
+     "reason": "missing \\b(keeper|lighthouse)\\b; missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (19 words)"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 29,
+     "reason": "missing \\b(answer|answering|answers|repl(y|ies|ying); short (29 words)"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 14,
+     "reason": "missing \\b(keeper|lighthouse)\\b; missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (14 words)"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 139,
+     "reason": "forbidden inside the items: peanut butter; forbidden inside the items: \\bpeanuts?\\b(?!.{0,12}(free|allerg))"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 166,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; forbidden inside the items: peanut butter; forbidden inside the items: \\bpeanuts?\\b(?!.{0,12}(free|allerg))"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 144,
+     "reason": "forbidden inside the items: peanut butter; forbidden inside the items: \\bpeanuts?\\b(?!.{0,12}(free|allerg))"
+    }
+   ]
+  },
+  {
+   "label": "V14CL896G03",
+   "cell_id": "ARCH.V14CL896G03",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "prompts_scored": 39,
+   "prompts_unscorable": 6,
+   "lanes_scored": 13,
+   "lanes_robust": 0,
+   "lanes_mostly": 0,
+   "lanes_fragile": 0,
+   "lanes_absent": 13,
+   "restatements_held": 0,
+   "restatements_of": 39,
+   "lanes": [
+    {
+     "lane": "arithmetic-multi-step",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: echo",
+      "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: echo",
+      "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b"
+     ]
+    },
+    {
+     "lane": "coding-deduplicate",
+     "held": 0,
+     "of": 3,
+     "charged": 3,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; ch",
+      "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; ch",
+      "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; ch"
+     ]
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "held": 0,
+     "of": 3,
+     "charged": 1,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(desk|workbench|bench|table|counter|whiteb; short (18 words); charged: echo",
+      "missing \\b(desk|workbench|bench|table|counter|whiteb; missing \\b(break|breaks|fail|fails|limit|misle|imper; missing \\b(d",
+      "missing \\b(desk|workbench|bench|table|counter|whiteb; missing \\b(break|breaks|fail|fails|limit|misle|imper; missing \\b(r"
+     ]
+    },
+    {
+     "lane": "context-retrieval",
+     "verdict": "UNSCORED",
+     "held": 0,
+     "of": 3,
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "lane": "conversation-natural-greeting",
+     "held": 0,
+     "of": 3,
+     "charged": 1,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ",
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; charged: echo",
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long "
+     ]
+    },
+    {
+     "lane": "creative-continuity",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(foghorn|fog horn|\\bhorn\\b); missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d",
+      "missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (36 words)",
+      "missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (24 words); charged"
+     ]
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; short (15 wo",
+      "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; charged: cap,loop",
+      "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; short (15 wo"
+     ]
+    },
+    {
+     "lane": "explanation-seasons",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; short (9 words)",
+      "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; charged: loop",
+      "missing \\b(tilt|tilted|axis|axial|inclin); short (22 words); charged: echo"
+     ]
+    },
+    {
+     "lane": "instruction-three-actions",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo",
+      "order 1>2>3 not present; fewer than 3 DISTINCT numbered items",
+      "order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+     ]
+    },
+    {
+     "lane": "logic-ordering",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present; shor",
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; charged: echo",
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present; char"
+     ]
+    },
+    {
+     "lane": "multi-turn-correction",
+     "held": 0,
+     "of": 3,
+     "charged": 3,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo",
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo",
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+     ]
+    },
+    {
+     "lane": "planning-dependencies",
+     "held": 0,
+     "of": 3,
+     "charged": 0,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|",
+      "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(verif|check|test|validat|smoke)\\b; missing \\b(roll ?back|back out",
+      "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|"
+     ]
+    },
+    {
+     "lane": "summarization-priorities",
+     "verdict": "UNSCORED",
+     "held": 0,
+     "of": 3,
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "short (29 words); charged: echo",
+      "missing \\b(cannot|can't|not enough|insufficient|no b",
+      "missing \\b(period|time ?frame|time range|date range|; missing \\b(cannot|can't|not enough|insufficient|no b; missing \\?|\\"
+     ]
+    },
+    {
+     "lane": "writing-concise-email",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo",
+      "missing \\bfriday\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno",
+      "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+     ]
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long "
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 16,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; charged: echo"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 32,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long "
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 39,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 16,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 9,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; short (9 words)"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "words": 160,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; charged: loop"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 22,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); short (22 words); charged: echo"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 34,
+     "reason": "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: echo"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 38,
+     "reason": "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: echo"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 14,
+     "reason": "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 11,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present; short (11 words)"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; charged: echo"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present; charged: echo"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 18,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb; short (18 words); charged: echo"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 40,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb; missing \\b(break|breaks|fail|fails|limit|misle|imper; missing \\b(disk|drive|storage|long.term|rom|hard\\s*d"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 20,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb; missing \\b(break|breaks|fail|fails|limit|misle|imper; missing \\b(ram|working memory|short.term)\\b; short (20 words)"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 512,
+     "reason": "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; charged: cap,loop"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 23,
+     "reason": "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; charged: echo"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 619,
+     "reason": "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; charged: cap,loop"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; short (15 words)"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 683,
+     "reason": "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; charged: cap,loop"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 15,
+     "reason": "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; short (15 words); charged: echo"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 30,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 25,
+     "reason": "missing \\bfriday\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 27,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 22,
+     "reason": "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|smoke)\\b; missing \\b(roll ?back|back out|revert|undo|restore)\\; order 1>2>3>4>5>6 not present; short (22 words)"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 39,
+     "reason": "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(verif|check|test|validat|smoke)\\b; missing \\b(roll ?back|back out|revert|undo|restore)\\; order 1>2>3>4>5>6 not present; short (39 words)"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 24,
+     "reason": "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|smoke)\\b; order 1>2>3>4>5>6 not present; short (24 words)"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 29,
+     "reason": "short (29 words); charged: echo"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 69,
+     "reason": "missing \\b(cannot|can't|not enough|insufficient|no b"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "words": 88,
+     "reason": "missing \\b(period|time ?frame|time range|date range|; missing \\b(cannot|can't|not enough|insufficient|no b; missing \\?|\\b(would (need|ask|want|request)|ask for|; charged: loop"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 344,
+     "reason": "missing \\b(foghorn|fog horn|\\bhorn\\b); missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; charged: cap,loop"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 36,
+     "reason": "missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (36 words)"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 24,
+     "reason": "missing \\b(answer|answering|answers|repl(y|ies|ying); missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (24 words); charged: echo"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 30,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 21,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 21,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+    }
+   ]
+  },
+  {
+   "label": "V9CL896G10",
+   "cell_id": "ARCH.V9CL896G10",
+   "surface": "paraphrase-v1",
+   "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "prompts": 45,
+   "prompts_scored": 39,
+   "prompts_unscorable": 6,
+   "lanes_scored": 13,
+   "lanes_robust": 0,
+   "lanes_mostly": 0,
+   "lanes_fragile": 0,
+   "lanes_absent": 13,
+   "restatements_held": 0,
+   "restatements_of": 39,
+   "lanes": [
+    {
+     "lane": "arithmetic-multi-step",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: cap,loop",
+      "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: echo",
+      "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b"
+     ]
+    },
+    {
+     "lane": "coding-deduplicate",
+     "held": 0,
+     "of": 3,
+     "charged": 3,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; ch",
+      "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; ch",
+      "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; ch"
+     ]
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(desk|workbench|bench|table|counter|whiteb; short (18 words); charged: echo",
+      "missing \\b(desk|workbench|bench|table|counter|whiteb; short (19 words)",
+      "missing \\b(desk|workbench|bench|table|counter|whiteb; missing \\b(ram|working memory|short.term)\\b; short (15 words); cha"
+     ]
+    },
+    {
+     "lane": "context-retrieval",
+     "verdict": "UNSCORED",
+     "held": 0,
+     "of": 3,
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "lane": "conversation-natural-greeting",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; charged: echo",
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; charged: echo",
+      "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; short (10 words)"
+     ]
+    },
+    {
+     "lane": "creative-continuity",
+     "held": 0,
+     "of": 3,
+     "charged": 3,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (27 words); charged: echo",
+      "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (22 words); charged: echo",
+      "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (24 words); charged: echo"
+     ]
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; short (12 words)",
+      "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; charged: cap",
+      "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; short (15 wo"
+     ]
+    },
+    {
+     "lane": "explanation-seasons",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; short (9 words)",
+      "missing \\b(tilt|tilted|axis|axial|inclin); charged: cap,loop",
+      "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; short (22 words); charg"
+     ]
+    },
+    {
+     "lane": "instruction-three-actions",
+     "held": 0,
+     "of": 3,
+     "charged": 1,
+     "verdict": "ABSENT",
+     "reasons": [
+      "order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo",
+      "fewer than 3 DISTINCT numbered items",
+      "order 1>2>3 not present; fewer than 3 DISTINCT numbered items"
+     ]
+    },
+    {
+     "lane": "logic-ordering",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present",
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present; char",
+      "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; charged: echo"
+     ]
+    },
+    {
+     "lane": "multi-turn-correction",
+     "held": 0,
+     "of": 3,
+     "charged": 3,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo",
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo",
+      "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+     ]
+    },
+    {
+     "lane": "planning-dependencies",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|",
+      "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(verif|check|test|validat|smoke)\\b; missing \\b(roll ?back|back out",
+      "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|"
+     ]
+    },
+    {
+     "lane": "summarization-priorities",
+     "verdict": "UNSCORED",
+     "held": 0,
+     "of": 3,
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "short (30 words)",
+      "missing \\b(cannot|can't|not enough|insufficient|no b; short (29 words); charged: echo",
+      "missing \\b(cannot|can't|not enough|insufficient|no b; charged: cap,loop"
+     ]
+    },
+    {
+     "lane": "writing-concise-email",
+     "held": 0,
+     "of": 3,
+     "charged": 2,
+     "verdict": "ABSENT",
+     "reasons": [
+      "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo",
+      "missing \\b(dear|hello|hi\\b|good morning|good afterno; short (15 words)",
+      "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+     ]
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "para-conversation-natural-greeting-1",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 15,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; charged: echo"
+    },
+    {
+     "id": "para-conversation-natural-greeting-2",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 16,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; charged: echo"
+    },
+    {
+     "id": "para-conversation-natural-greeting-3",
+     "lane": "conversation-natural-greeting",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 10,
+     "reason": "missing \\?; missing \\b(tired|worn|exhaust|rough|rest|sleep|long ; short (10 words)"
+    },
+    {
+     "id": "para-instruction-three-actions-1",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "para-instruction-three-actions-2",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 81,
+     "reason": "fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "para-instruction-three-actions-3",
+     "lane": "instruction-three-actions",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "para-explanation-seasons-1",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 9,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; short (9 words)"
+    },
+    {
+     "id": "para-explanation-seasons-2",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 814,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); charged: cap,loop"
+    },
+    {
+     "id": "para-explanation-seasons-3",
+     "lane": "explanation-seasons",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 22,
+     "reason": "missing \\b(tilt|tilted|axis|axial|inclin); missing \\b(distance|closer|nearer|farther|further)\\b; short (22 words); charged: echo"
+    },
+    {
+     "id": "para-arithmetic-multi-step-1",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 829,
+     "reason": "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: cap,loop"
+    },
+    {
+     "id": "para-arithmetic-multi-step-2",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 38,
+     "reason": "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b; charged: echo"
+    },
+    {
+     "id": "para-arithmetic-multi-step-3",
+     "lane": "arithmetic-multi-step",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 22,
+     "reason": "missing \\b94\\b; missing \\b18\\b; missing \\b4\\b"
+    },
+    {
+     "id": "para-logic-ordering-1",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 17,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present"
+    },
+    {
+     "id": "para-logic-ordering-2",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 19,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; order mira>theo>jun>sal not present; charged: echo"
+    },
+    {
+     "id": "para-logic-ordering-3",
+     "lane": "logic-ordering",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 24,
+     "reason": "missing \\b(first|1st)\\b; missing \\bsal\\b[^.]{0,40}\\b(last|fourth|4th|bottom|b; charged: echo"
+    },
+    {
+     "id": "para-context-retrieval-1",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-context-retrieval-2",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-context-retrieval-3",
+     "lane": "context-retrieval",
+     "held": false,
+     "scored": false,
+     "charged": [
+      "echo"
+     ],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the note below' / 'from the note alone' / 'strictly from the note' and carry NO note.  The sealed prompt supplies it inline -- garden hours, tool checkout 4:15 p.m., dogs on Saturdays, north gate closed -- and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-1",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-2",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-summarization-priorities-3",
+     "lane": "summarization-priorities",
+     "held": false,
+     "scored": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "reason": "UNANSWERABLE LANE: all three restatements say 'the update below' / 'the update' and carry NO update.  The sealed prompt supplies the four-supplier comparison inline and the paraphrase bank dropped it"
+    },
+    {
+     "id": "para-comparison-ram-rom-1",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 18,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb; short (18 words); charged: echo"
+    },
+    {
+     "id": "para-comparison-ram-rom-2",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 19,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb; short (19 words)"
+    },
+    {
+     "id": "para-comparison-ram-rom-3",
+     "lane": "comparison-ram-rom",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 15,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|whiteb; missing \\b(ram|working memory|short.term)\\b; short (15 words); charged: echo"
+    },
+    {
+     "id": "para-coding-deduplicate-1",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; charged: echo"
+    },
+    {
+     "id": "para-coding-deduplicate-2",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 23,
+     "reason": "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; charged: echo"
+    },
+    {
+     "id": "para-coding-deduplicate-3",
+     "lane": "coding-deduplicate",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 695,
+     "reason": "missing def\\s+unique_in_order; missing \\b(append|setdefault|fromkeys|not in|seen)\\b; no parsable def unique_in_order; charged: cap,loop"
+    },
+    {
+     "id": "para-debugging-off-by-one-1",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 12,
+     "reason": "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; short (12 words)"
+    },
+    {
+     "id": "para-debugging-off-by-one-2",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 828,
+     "reason": "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; charged: cap,loop"
+    },
+    {
+     "id": "para-debugging-off-by-one-3",
+     "lane": "debugging-off-by-one",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 15,
+     "reason": "missing (values\\[start:\\]|\\[-\\s*3\\s*:\\]|values\\[len\\; missing \\b(off.by.one|start\\s*-\\s*1|start-1|minus on; short (15 words); charged: echo"
+    },
+    {
+     "id": "para-writing-concise-email-1",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 30,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "para-writing-concise-email-2",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; short (15 words)"
+    },
+    {
+     "id": "para-writing-concise-email-3",
+     "lane": "writing-concise-email",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 26,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "para-planning-dependencies-1",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 23,
+     "reason": "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|smoke)\\b; missing \\b(roll ?back|back out|revert|undo|restore)\\; order 1>2>3>4>5>6 not present; short (23 words); charged: echo"
+    },
+    {
+     "id": "para-planning-dependencies-2",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 43,
+     "reason": "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(verif|check|test|validat|smoke)\\b; missing \\b(roll ?back|back out|revert|undo|restore)\\; order 1>2>3>4>5>6 not present"
+    },
+    {
+     "id": "para-planning-dependencies-3",
+     "lane": "planning-dependencies",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 566,
+     "reason": "missing \\b(backup|back up|snapshot|dump)\\b; missing \\b(certificat|tls|ssl|https)\\b; missing \\b(verif|check|test|validat|smoke)\\b; order 1>2>3>4>5>6 not present; charged: cap,loop"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-1",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 30,
+     "reason": "short (30 words)"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-2",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 29,
+     "reason": "missing \\b(cannot|can't|not enough|insufficient|no b; short (29 words); charged: echo"
+    },
+    {
+     "id": "para-uncertainty-insufficient-data-3",
+     "lane": "uncertainty-insufficient-data",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 643,
+     "reason": "missing \\b(cannot|can't|not enough|insufficient|no b; charged: cap,loop"
+    },
+    {
+     "id": "para-creative-continuity-1",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 27,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (27 words); charged: echo"
+    },
+    {
+     "id": "para-creative-continuity-2",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 22,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (22 words); charged: echo"
+    },
+    {
+     "id": "para-creative-continuity-3",
+     "lane": "creative-continuity",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 24,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (24 words); charged: echo"
+    },
+    {
+     "id": "para-multi-turn-correction-1",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 30,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+    },
+    {
+     "id": "para-multi-turn-correction-2",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 21,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+    },
+    {
+     "id": "para-multi-turn-correction-3",
+     "lane": "multi-turn-correction",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 21,
+     "reason": "missing \\b(no peanut|peanut.free|without peanut|avoi; order 1>2>3>4 not present; charged: echo"
+    }
+   ]
+  }
+ ],
+ "against_sealed": [
+  {
+   "label": "PARENT",
+   "sealed_15": 12,
+   "lanes_scored": 13,
+   "robust": 1,
+   "mostly": 2,
+   "fragile": 5,
+   "absent": 5,
+   "restatements": "12/39"
+  },
+  {
+   "label": "V14CL896G03",
+   "sealed_15": 3,
+   "lanes_scored": 13,
+   "robust": 0,
+   "mostly": 0,
+   "fragile": 0,
+   "absent": 13,
+   "restatements": "0/39"
+  },
+  {
+   "label": "V9CL896G10",
+   "sealed_15": 4,
+   "lanes_scored": 13,
+   "robust": 0,
+   "mostly": 0,
+   "fragile": 0,
+   "absent": 13,
+   "restatements": "0/39"
+  }
+ ]
+}

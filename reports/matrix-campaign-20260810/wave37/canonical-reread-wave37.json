@@ -1,0 +1,117 @@
+{
+ "schema": "neural-forge-matrix-wave37-canonical-reread-v1",
+ "purpose": "The canonical re-read of wave 37's six new children, done in the same pass as the sealed reading and against the same verbatim dossiers.  It is an ASSESSMENT LAYER: no sealed artifact was modified, no ledger row carries any number in this file, and every sealed count is preserved beside every canonical count.",
+ "standard": {
+  "intelligence_signal": "sealed Useful or Partial, OR a sealed miss whose text carries at least one correct, specific, usable element of what the lane asked, in the child's own words",
+  "artifact_miss": "empty, pure loop, cap-ride with no unique content, indiscriminate prompt copy, or token salad -- never counts against intelligence",
+  "content_miss": "readable, on-register output that is wrong, vacuous, deflecting or a restatement with no answer -- the only miss that is about intelligence",
+  "note_on_the_echo": "unchanged from waves 34, 35 and 36: a sealed Partial is signal by the rule above even when the lane is a whole-prompt echo, because the SEAL is what the canonical standard reads against",
+  "THE_ONE_RULE_THIS_WAVE_HAD_TO_SHARPEN": "IN THE CHILD'S OWN WORDS IS DOING WORK IN THIS WAVE AND IT IS SHARPENED HERE RATHER THAN LEFT IMPLICIT.  Wave 35 stated that planning-dependencies separates the two standards most often: a child that names backups, DNS, TLS, verification and rollback correctly and then loops instead of sequencing them is a sealed MISS and a canonical SIGNAL.  Wave 37 found the case that rule does not cover.  ARCH.V16CL896G10 names ALL FIVE work items -- and names them ONLY INSIDE THE ECHOED INSTRUCTION, as 'Give me a dependency on a plan that covers backups, DNS, TRLS, verification, and rollback'.  Those are the PROMPT'S words handed back, which the standard's own artifact clause calls an indiscriminate prompt copy, so the lane is an ARTIFACT here and not signal.  ARCH.V14CL896G10 names four of the five as its own numbered headings with a repeated body, which IS the wave-35 case, and is signal.  The distinction is whether the items appear as the child's own structure or inside a copy of the question, and it is applied in both directions across all six children."
+ },
+ "children": [
+  {
+   "cell": "ARCH.CL896X09",
+   "net_ratio": 0.658165,
+   "sealed_15": 1,
+   "canonical_15": 3,
+   "artifact_misses": 8,
+   "content_misses": 4,
+   "sealed_lanes": ["context-retrieval"],
+   "canonical_only_lanes": [
+    "summarization-priorities -- 'The team select supplier B' is the decision, correct and specific, in the child's own words.  The lane is a sealed MISS because the unresolved risk is absent and Supplier C's overheating samples are misattributed to Supplier B, but the decision itself is signal.",
+    "uncertainty-insufficient-data -- names the time range and the units.  Two correct, specific elements of what the lane asked; the sealed miss is for stopping at two of four, making no request and inverting the direction to 'I haven not informed'."
+   ],
+   "artifact_lanes": ["instruction-three-actions", "explanation-seasons", "arithmetic-multi-step", "comparison-ram-rom", "coding-deduplicate", "planning-dependencies", "creative-continuity", "multi-turn-correction"],
+   "content_lanes": ["conversation-natural-greeting", "logic-ordering", "debugging-off-by-one", "writing-concise-email"]
+  },
+  {
+   "cell": "ARCH.V12CL896X09",
+   "net_ratio": 0.420779,
+   "sealed_15": 2,
+   "canonical_15": 3,
+   "artifact_misses": 6,
+   "content_misses": 6,
+   "sealed_lanes": ["context-retrieval", "uncertainty-insufficient-data"],
+   "canonical_only_lanes": [
+    "planning-dependencies -- 'The website is a new DNS, TS, verification, and rollback' names three of the five work items in the child's own heading structure.  Wave 35's rule applies: correct, specific, usable elements present, sequencing absent."
+   ],
+   "artifact_lanes": ["explanation-seasons", "arithmetic-multi-step", "logic-ordering", "coding-deduplicate", "creative-continuity", "multi-turn-correction"],
+   "content_lanes": ["conversation-natural-greeting", "instruction-three-actions", "summarization-priorities", "comparison-ram-rom", "debugging-off-by-one", "writing-concise-email"]
+  },
+  {
+   "cell": "ARCH.V12CL896X09G03",
+   "net_ratio": 0.420779,
+   "sealed_15": 1,
+   "canonical_15": 2,
+   "artifact_misses": 8,
+   "content_misses": 5,
+   "sealed_lanes": ["context-retrieval"],
+   "canonical_only_lanes": [
+    "uncertainty-insufficient-data -- 'you have not told the time range' names one withheld quantity with the DIRECTION REPAIRED, where its own control writes 'I haven not told'.  One correct, specific element; the sealed miss is for dropping the other three."
+   ],
+   "artifact_lanes": ["instruction-three-actions", "explanation-seasons", "arithmetic-multi-step", "logic-ordering", "comparison-ram-rom", "debugging-off-by-one", "planning-dependencies", "creative-continuity"],
+   "content_lanes": ["conversation-natural-greeting", "summarization-priorities", "coding-deduplicate", "writing-concise-email", "multi-turn-correction"]
+  },
+  {
+   "cell": "ARCH.V12CL896X09G10",
+   "net_ratio": 0.420779,
+   "sealed_15": 2,
+   "canonical_15": 3,
+   "artifact_misses": 6,
+   "content_misses": 6,
+   "sealed_lanes": ["context-retrieval", "uncertainty-insufficient-data"],
+   "canonical_only_lanes": [
+    "summarization-priorities -- 'The cost of 11 percent more and passed every test' is a correct, specific statement about Supplier B in the child's own words.  The lane is a sealed miss because neither the decision nor the risk survives."
+   ],
+   "artifact_lanes": ["explanation-seasons", "arithmetic-multi-step", "logic-ordering", "coding-deduplicate", "planning-dependencies", "creative-continuity"],
+   "content_lanes": ["conversation-natural-greeting", "instruction-three-actions", "comparison-ram-rom", "debugging-off-by-one", "writing-concise-email", "multi-turn-correction"]
+  },
+  {
+   "cell": "ARCH.V14CL896G10",
+   "net_ratio": 0.460175,
+   "sealed_15": 2,
+   "canonical_15": 3,
+   "artifact_misses": 8,
+   "content_misses": 4,
+   "sealed_lanes": ["summarization-priorities", "uncertainty-insufficient-data"],
+   "canonical_only_lanes": [
+    "planning-dependencies -- names DNS, TLS, Verification and rollback as its OWN numbered headings, with the fifth garbled to 'Depach' and every body the same repeated sentence.  This is exactly wave 35's stated case and it is read the same way here: four correct, specific, usable elements in the child's own structure, sequencing absent."
+   ],
+   "artifact_lanes": ["conversation-natural-greeting", "instruction-three-actions", "explanation-seasons", "logic-ordering", "comparison-ram-rom", "writing-concise-email", "creative-continuity", "multi-turn-correction"],
+   "content_lanes": ["arithmetic-multi-step", "context-retrieval", "coding-deduplicate", "debugging-off-by-one"]
+  },
+  {
+   "cell": "ARCH.V16CL896G10",
+   "net_ratio": 0.469305,
+   "sealed_15": 2,
+   "canonical_15": 3,
+   "artifact_misses": 7,
+   "content_misses": 5,
+   "sealed_lanes": ["summarization-priorities", "uncertainty-insufficient-data"],
+   "canonical_only_lanes": [
+    "multi-turn-correction -- 'The guests have severe peanut and one is a vegan.  The plan is four snacks' identifies both constraints and the ask correctly, in the child's own words, before looping.  The sealed miss is for producing no revised snack list."
+   ],
+   "artifact_lanes": ["conversation-natural-greeting", "explanation-seasons", "logic-ordering", "comparison-ram-rom", "writing-concise-email", "planning-dependencies", "creative-continuity"],
+   "content_lanes": ["instruction-three-actions", "arithmetic-multi-step", "context-retrieval", "coding-deduplicate", "debugging-off-by-one"],
+   "note_on_its_planning_lane": "NOT counted as signal, and this is the sharpening the standard needed.  All five work items are present but ONLY as a verbatim restatement of the question.  Counting a prompt copy as signal would make every child that can copy its own instruction look like a child that can plan."
+  }
+ ],
+ "totals": {
+  "children": 6,
+  "sealed_sum": 10,
+  "canonical_sum": 17,
+  "gap": 7,
+  "gap_source": "One lane per child, six times, plus one: five of the six canonical-only lanes are a correct named element buried in a loop or a truncated list, and the sixth (ARCH.CL896X09) contributes two.  planning-dependencies is again the single largest contributor at three of seven, exactly as wave 35 predicted it would be."
+ },
+ "frontier_effect": {
+  "canonical_1_15": "unchanged at 0.420779",
+  "canonical_2_15": "unchanged at 0.420779",
+  "canonical_3_15": "MOVED from ARCH.V9CL896G03 at 0.437349 to ARCH.V12CL896X09 and ARCH.V12CL896X09G10 at 0.420779, a move of 0.016570 of stored ratio, held by TWO independent children",
+  "canonical_4_15": "unchanged at 0.437349 (ARCH.V9CL896G03)",
+  "canonical_5_15": "unchanged at 0.437349 (ARCH.V9CL896G10), and wave 37's F3 read does NOT settle it -- see paraphrase-score-wave37.json"
+ },
+ "what_this_file_does_not_do": [
+  "It does not modify any sealed artifact, receipt, verdict or ledger row.",
+  "It does not claim these children are intelligent.  Seventeen canonical cases across six children at 0.42x-0.66x is a statement that a named behaviour survived a named fold, and wave 37's paraphrase read is the evidence that those same behaviours do NOT survive their own ask reworded."
+ ]
+}

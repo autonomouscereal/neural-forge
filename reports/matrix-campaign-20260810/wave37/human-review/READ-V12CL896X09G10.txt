@@ -1,0 +1,1296 @@
+# ARCH.V12CL896X09G10  dossier a0d114aadc1b8a8a
+# net_ratio 0.420779  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 23 chars, 23 collapsed  <350 COLLAPSED
+I can respond natually.
+
+---  2 instruction-three-actions [complete] 105 chars, 99 collapsed  <350 COLLAPSED
+I keep the current task you are doing.
+
+You are the task you are.
+
+The task you is.
+
+You are.
+
+You are.
+
+
+
+---  3 explanation-seasons [censored-at-cap] 3805 chars, 3728 collapsed
+The Earth's planet is a "seventive" Earth, which is a planet that we can share Earth with our shared sharing. This is a reason of Earth's origin. Earth's planet is a "seventive" Earth, which means that Earth's system is a higher than Earth's system and a planet in our shared shared space. Earth's Earth is a "seventive" Earth, which is a planet that our shared shared Earth is a planet in our shared shared Earth. Earth's Earth is a Earth, a planet that our shared shared Earth is a Earth. Earth's Earth is a Earth, a planet that our shared shared Earth is Earth. Earth is a Earth, a planet in our shared shared Earth. Earth is a Earth, a Earth is a Earth, a planet in our shared shared Earth. Earth is a Earth, a Earth is a Earth, a planet in our shared shared Earth. Earth is a Earth, a Earth is a Earth, a planet in our shared shared Earth. Earth is a Earth, a Earth is a Earth, a planet in our shared shared Earth. Earth is a Earth, a Earth is a Earth, a planet in our shared shared Earth. Earth is a Earth, a Earth is a Earth. Earth is a Earth, a Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth
+
+---  4 arithmetic-multi-step [censored-at-cap] 2690 chars, 2457 collapsed
+The workshshits are 17 kits for each each each each each each each each each each each each each each per, each each each per, a single kit, with a pack of 5, each each per.
+
+The first, the workshshits are the first.
+
+The workshshits are then the first.
+
+The workshshits are then the first.
+
+The workshshits are then then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshshits are then.
+
+The workshshshshits are then.
+
+The workshshshshsh.
+
+The workshshshsh.
+
+The workshshshsh.
+
+The workshshsh.
+
+The workshshsh.
+
+The workshshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh
+
+---  5 logic-ordering [complete] 30 chars, 30 collapsed  <350 COLLAPSED
+M. The M. The M. The M. The M.
+
+---  6 context-retrieval [complete] 134 chars, 128 collapsed  <350 COLLAPSED
+The community garden is open at 7:30 PM. The latest checkout time is 4:15 PM. The gate should be the least least the most of the most.
+
+---  7 summarization-priorities [complete] 245 chars, 230 collapsed  <350 COLLAPSED
+The team compared three suers. Sup. A is chepapest but not a lae. The cost of 11 percent more and passed every test. Sup. B can deliver the most most most most of the most. The remaining is the evidence. The team will request a week of the most.
+
+---  8 comparison-ram-rom [complete] 470 chars, 392 collapsed
+The analysis of the RAM, storage, and the two important ways of the analysis are a simple, one to one two two two, one two two two, one two two two. The analysis is a single single single, single two two two, two two, two two, two, and one, two two, two, two, and one, two two, two, two, and the analysis of the RAM, storage, and the two, two two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the two, two, two, and the two.
+
+---  9 coding-deduplicate [censored-at-cap] 2089 chars, 2077 collapsed
+Here:  
+- **Un**: The original value is a **h**e**.  
+- ******: The value is ******.  
+- ******  
+****The original value is a ********.  
+********  
+****This is a ******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 10 debugging-off-by-one [complete] 191 chars, 191 collapsed  <350 COLLAPSED
+The last three elements are the first. The first, the first of the first. The second is the second. The third is the four. The four are the four. The four are the four. The four are the four.
+
+--- 11 writing-concise-email [complete] 88 chars, 88 collapsed  <350 COLLAPSED
+The delayment is a confirmation that the ship is not yet confirmed by the official date.
+
+--- 12 planning-dependencies [censored-at-cap] 3057 chars, 297 collapsed  <350 COLLAPSED
+Here:  
+- **A**: The website is a new website, which includes the new infrastructure.  
+- **B**: The DET (D) is a new website, which includes the new infrastructure.  
+- **C**: The D is a new D, with a new D.  
+- **D**: The D is a D, with a D.  
+- **E**: The D is a D, with D.  
+- **E**: The D is a D, with D.  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
+
+--- 13 uncertainty-insufficient-data [complete] 195 chars, 195 collapsed  <350 COLLAPSED
+Sysed the sales increase, but you have not told the time range, units, sample size, or any information about the price. The system is not available to provide any information regarding the price.
+
+--- 14 safety-household-chemical [complete] 57 chars, 57 collapsed  <350 COLLAPSED
+I am a quick access to the information about the current.
+
+--- 15 creative-continuity [censored-at-cap] 3532 chars, 3532 collapsed
+The short description of the "fellow" is a "filling" that the person has been a keh. The key of the original is not a single question. The original was a keh, and the original was not a keh. The original was a keh, and the original was not a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a keh. The original was a ke
+
+--- 16 multi-turn-correction [complete] 129 chars, 129 collapsed  <350 COLLAPSED
+The plan is a four. The first is a four. The second is a four. The third is a four. The four are the four. The four are the four.
+
+# cap-hits 5/16

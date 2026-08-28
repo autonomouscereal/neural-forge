@@ -1,0 +1,1373 @@
+# ARCH.CL896X09  dossier 81824257ae8bc673
+# net_ratio 0.658165  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers']
+
+---  1 conversation-natural-greeting [complete] 30 chars, 30 collapsed  <350 COLLAPSED
+I can respond to your request.
+
+---  2 instruction-three-actions [censored-at-cap] 5255 chars, 5047 collapsed
+I keep the small household tasks.
+
+You are taking.
+
+Here:
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+Here:
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following instructions.
+
+You can use the following following instructions.
+
+You can use the following following instructions.
+
+You can use the following
+
+---  3 explanation-seasons [complete] 216 chars, 216 collapsed  <350 COLLAPSED
+Earth's planet is a twelve Earth's Earth, which is a universe to the universe. Earth's universe is a universe. Earth's universe is a universe. Earth's universe is a universe. Earth is a universe. Earth is a universe.
+
+---  4 arithmetic-multi-step [censored-at-cap] 4138 chars, 469 collapsed
+The workshop is a 17 kit for each each each each each each each each each each each each kit. Each each each per, each each each per, a single kit, with a 6 hour of each each per.
+
+Each each each individual per, each each individual per each each per, a single per.
+
+The total is a single single single, single, single, single single, single single.
+
+The entire is a single single, single single, single single, single single, single single, single single.
+
+The total is a single single, single single, single single, single single, single single, single single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single,, single, single, single, single, single, single, single, single
+
+---  5 logic-ordering [complete] 74 chars, 74 collapsed  <350 COLLAPSED
+Mira was a finalized decision. The final information was a final decision.
+
+---  6 context-retrieval [complete] 177 chars, 177 collapsed  <350 COLLAPSED
+The community is a shopping 7:30 at the next day. The latest checkout is 4:15 p.m. The reason is a reason: the reason is a dog's reason to explain the reason in the explanation.
+
+---  7 summarization-priorities [complete] 236 chars, 236 collapsed  <350 COLLAPSED
+The team compares three suppliers. Sup. A is cheap but not guarantee delivery. Sup. B has two samples over the last week. The remaining is the risk. The team select supplier B. The supplier is not a factory. The supplier is a slow slow.
+
+---  8 comparison-ram-rom [complete] 351 chars, 325 collapsed  <350 COLLAPSED
+The analogy in the RAM system is a two of the two of the two of the RAM storage storage. The RAM system is a two of the RAM storage, which is a two of the RAM storage.
+
+The RAM storage is a two of the RAM storage.
+
+The RAM storage is a two of the RAM storage.
+
+The RAM storage is a two of the RAM storage.
+
+The RAM storage is a two of the RAM storage.
+
+---  9 coding-deduplicate [complete] 429 chars, 429 collapsed
+Here: A unique value of the item in the database. The database is a unique value of the item. The database is a unique value of the item. The database is a unique value of the item. The database is a database of the specific value of the item. The database is a database of the specific value of the item. The database is a database of the specific value of the item. The database is a database of the specific value of the item.
+
+--- 10 debugging-off-by-one [complete] 104 chars, 104 collapsed  <350 COLLAPSED
+The last three elements are the first of the first, and the value is the value of the last three inputs.
+
+--- 11 writing-concise-email [complete] 138 chars, 138 collapsed  <350 COLLAPSED
+I am here with the information about the ship. Please, I can confirm that the ship is delayed and that the tracking number is not yet yet.
+
+--- 12 planning-dependencies [complete] 91 chars, 61 collapsed  <350 COLLAPSED
+I’m here here.
+
+Dash to the website.
+
+D: I’m a small.
+
+D.
+
+D.
+
+D
+
+D.
+
+D
+
+D
+
+D
+
+D
+
+D
+
+D
+
+D
+
+
+
+--- 13 uncertainty-insufficient-data [complete] 90 chars, 90 collapsed  <350 COLLAPSED
+Sysed the sales increase, but I haven not informed the time range, units, and information.
+
+--- 14 safety-household-chemical [complete] 144 chars, 138 collapsed  <350 COLLAPSED
+I'm here here.
+
+You're the first, and the house is a sharp.
+
+What should I now?
+
+You're right to the house.
+
+Justify your right for the right.
+
+
+
+--- 15 creative-continuity [complete] 845 chars, 845 collapsed
+Here: A lighthouse is answering a fog that the question is a laser. The first, the first. The second. The third. The fourth. The fifth. The fifth. The sixth. The sixth. The seventh. The seventh. The eighth. The ninth. The eighth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth. The ninth.
+
+--- 16 multi-turn-correction [censored-at-cap] 3073 chars, 40 collapsed  <350 COLLAPSED
+I’m here. I’m a good for the snack plan.  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
+
+# cap-hits 3/16

@@ -1,0 +1,58 @@
+{
+ "schema": "neural-forge-matrix-wave37-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave37/children",
+ "built": [
+  "MX37-CL896X09",
+  "MX37-V12CL896X09",
+  "MX37-V12CL896X09G03",
+  "MX37-V12CL896X09G10",
+  "MX37-V14CL896",
+  "MX37-V14CL896G03R",
+  "MX37-V14CL896G10",
+  "MX37-V16CL896",
+  "MX37-V16CL896G10"
+ ],
+ "kept": {
+  "MX37-CL896X09": {
+   "reason": "THE NEW BODY, and the only artifact in this wave that cost a conditioned capture: 316 s of GPU on --ff 896 --excise 9.  It is the ONLY body in this estate whose excision is NOT the final block -- blocks 10 through 13 shift down one slot, an attention block lands in a conv's index, and its exported config carries a DOUBLE full_attention at positions 8 and 9 that the parent never has.  It is the source of all four of this wave's 0.420779x children, and deleting it converts each of them from a 40-second CPU pass into a 316-second GPU build.  It also carries the per-site solve record the block-9-costs-three result rests on, and it is the control the two-token +1 in section 4.2 of NOTES-MX-AO is differenced against: its uncertainty lane names TWO of the four withheld quantities where its vocabulary child names FOUR, and that single divergence is the whole of the frontier move this wave made",
+   "bytes": 307118319
+  },
+  "MX37-V12CL896X09": {
+   "reason": "0.420779x at 2/15 sealed and 3/15 canonical -- it MOVES the sealed two-of-fifteen rung from ARCH.V9CL896 at 0.437349x and the canonical three-of-fifteen rung from ARCH.V9CL896G03 at the same ratio, 0.016570 of stored ratio each, and it does it at the campaign floor.  THIS IS A STATED DEVIATION FROM THE CLAIM RULE: its claim IS re-derivable, in 40 s of CPU, from the body this list also keeps.  It is kept anyway because it is the OTHER HALF of a two-token measurement.  The +1 that moved both rungs is one word: its body writes 'informed the time range, units, and information' and this child writes 'told the time range, units, sample size, or any information about the price'.  A future wave that wants to examine that divergence at the token or logit level needs both checkpoints on disk, not both dossiers -- a dossier records what was decoded and cannot answer a question about what was nearly decoded",
+   "bytes": 194035379
+  }
+ },
+ "deleted": {
+  "MX37-V12CL896X09G03": {
+   "reason": "terminal gain lambda 0.3 on MX37-V12CL896X09, which this list KEEPS, ~100 s of GPU at zero storage delta.  Its result is a LOSS rather than a count -- it goes from its control's two to ONE, the first terminal-gain arm in this campaign to lose a case outright on the deep family -- and a loss is a statement about two dossiers, both of which are committed.  It takes no rung: every rung at its ratio is held by the control this list keeps and by its own sibling",
+   "bytes": 194037416
+  },
+  "MX37-V12CL896X09G10": {
+   "reason": "terminal gain lambda 1.0 on MX37-V12CL896X09, which this list KEEPS, ~100 s of GPU at zero storage delta.  It TIES its control at two and holds the same two rungs, so every frontier position it takes is also taken by a retained checkpoint at the identical ratio, and its whole result -- that lambda 1.0 buys nothing at K=12,288 on a body DEEPER in stored ratio than the rung where it bought two -- is a comparison of two counts, not a property of these bytes.  Its distinguishing lane is byte-identical to its sibling's on retrieval and its uncertainty lane is quoted verbatim in its own seal",
+   "bytes": 194037189
+  },
+  "MX37-V14CL896": {
+   "reason": "K=14,336 on ARCH.CL896, one 40-second CPU vocabulary pass on wave 34's retained MX34-CL896.  It is NOT a wave-37 cell -- wave 35 sealed it -- and it was rebuilt here only so a gain arm had a source.  Its entire content as an artifact is the reproduction control it already delivered: it digests f93af77c25340120, bit-identical to wave 35's seal two waves and two builders later, and that sha256 is in a build receipt",
+   "bytes": 212244438
+  },
+  "MX37-V14CL896G03R": {
+   "reason": "wave 35's ARCH.V14CL896G03 rebuilt so the F3 paraphrase surface had a checkpoint to decode.  It is BYTE-IDENTICAL to wave 35's sealed child (f26b4ee6c95b42a1) INCLUDING ITS GPU TERMINAL-GAIN SOLVE, so its whole content is a sha256 that is already in a receipt, and it rebuilds in one CPU pass plus ~100 s of GPU from wave 34's retained MX34-CL896.  Its one result -- 0 of 39 paraphrase restatements held -- is in wave37/paraphrase-score-wave37.json",
+   "bytes": 212246410
+  },
+  "MX37-V14CL896G10": {
+   "reason": "terminal gain lambda 1.0 at K=14,336, ~100 s of GPU on a source that is itself one CPU pass off wave 34's retained MX34-CL896.  It reads TWO, which is its control's count, and takes no rung -- the sealed two rung is held 0.040 of stored ratio deeper by a child this list keeps.  Its one result is a comparison: the ladder at this K is 2 / 3 / 2, the only ladder in the campaign where the solver objective and the review agree",
+   "bytes": 212246174
+  },
+  "MX37-V16CL896": {
+   "reason": "K=16,384 on ARCH.CL896, one 40-second CPU vocabulary pass on wave 34's retained MX34-CL896.  Also not a wave-37 cell -- wave 23 sealed it.  Its content as an artifact is the campaign's LONGEST reproduction control and that control is already delivered: 55061febb9795b42, bit-identical to wave 23's seal FOURTEEN WAVES and four builders later",
+   "bytes": 216549230
+  },
+  "MX37-V16CL896G10": {
+   "reason": "terminal gain lambda 1.0 at K=16,384, ~100 s of GPU on a source that is one CPU pass off wave 34's retained MX34-CL896.  It reads TWO against a control of one and takes no rung; its result is the +1 that BREAKS the monotone-in-K account, and that is a row in a table rather than a checkpoint.  Two of its three load-bearing lanes are byte-identical to children of waves 23 and 34 and the third is byte-identical to MX37-V14CL896G10's, so its dossier is the least independent in this wave",
+   "bytes": 216550959
+  }
+ },
+ "bytes_kept": 501153698,
+ "bytes_deleted": 1457911816,
+ "applied": true
+}

@@ -1,0 +1,258 @@
+# ARCH.V14CL896G10  dossier 8f24642649987d7c
+# net_ratio 0.460175  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4417 chars, 4339 collapsed
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for you.
+
+I'll respond you and provide a natural answer for
+
+---  2 instruction-three-actions [complete] 157 chars, 157 collapsed  <350 COLLAPSED
+I'm here here. Please. I'll provide you with the instructions for the three actions you can take today. Please. I'll use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 144 chars, 144 collapsed  <350 COLLAPSED
+The Earth has seasons to a curious twelve-year-old. The common idea that summer happens because Earth is much closer to the Sun is the planet's.
+
+---  4 arithmetic-multi-step [complete] 234 chars, 234 collapsed  <350 COLLAPSED
+The workshop is a 17 kit per hour for 6 hours, including the workshop, which includes the workshop and the remaining kits. The workshop is a complete set of 17 kits, and the remaining kits are placed into the box. The steps are taken.
+
+---  5 logic-ordering [complete] 159 chars, 159 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Puts all four people in the same order and explained which facts force the answer.
+
+---  6 context-retrieval [complete] 318 chars, 317 collapsed  <350 COLLAPSED
+The question is a question regarding the current status of the garden. Based on the provided information, the question is likely to be a dog and a reference to the latest checkout time and the gate to be available.
+
+The question is likely a dog and a reference to the latest checkout time and the gate to be available.
+
+---  7 summarization-priorities [complete] 473 chars, 473 collapsed
+Summarize this update in two sentences, preserving the decision and the unresolved risk: The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its expansion may slip by one week, so proceeding will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 6475 chars, 581 collapsed
+Here is the analysis of the analysis of the two key ways the analogy is imperfect.
+
+1. **Immediate Analyzing**: The analysis involves understanding the implications of the two key actions, such as the immediate analysis of the two actions, the immediate analysis of the two actions, and the immediate analysis of the two actions. This means that the two actions are both the immediate analysis and the immediate analysis of the two actions.
+
+2. **Immediate Analyzing**: The analysis involves understanding the implications of the two actions, such as the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis of the immediate analysis
+
+---  9 coding-deduplicate [complete] 1063 chars, 1059 collapsed
+Here is the unique_in_order function that remotes the original order by preserving the hens value. It must work with the following instructions:
+
+1. **Explan the original order**: The original order is subject to be restricted and must have been placed with the hens value. The time is 2 minutes, and the process is required to be completed in the execution of the original order.
+
+2. **Explan the short order**: The short order is a short and the original order is a short and the hens value is the same. The time is 1.5 minutes, and the process is completed in the execution of the short order.
+
+3. **Explan the short order**: The short order is a short and the original order is a short and the hens value is the same. The time is 1.5 minutes, and the process is completed in the execution of the short order.
+
+These instructions are important because the original order is restricted and the time is limited. The process is completed in the execution of the short order, which is a 1.5 minutes and the process is completed in the execution of the short order.
+
+--- 10 debugging-off-by-one [complete] 155 chars, 155 collapsed  <350 COLLAPSED
+The function is returned four times once the last three elements are returned. However it should be corrected because the last three elements are returned.
+
+--- 11 writing-concise-email [complete] 32 chars, 32 collapsed  <350 COLLAPSED
+I'm here here. Please. I'm here.
+
+--- 12 planning-dependencies [complete] 928 chars, 917 collapsed
+I'm here here and here you can provide the details of the plan. Please, I'll provide you with the following instructions:
+
+1. **Depach**: The plan is available for the current state of the website. The plan is available for the current state of the website.
+
+2. **DNS**: The plan is available for the current state of the website. The plan is available for the current state of the website.
+
+3. **TLS**: The plan is available for the current state of the website. The plan is available for the current state of the website.
+
+4. **Verification**: The plan is available for the current state of the website. The plan is available for the current state of the website.
+
+5. **rollback**: The plan is available for the current state of the website. The plan is available for the current state of the website.
+
+These steps are available for the current state of the website. The plan is available for the current state of the website.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5608 chars, 172 collapsed  <350 COLLAPSED
+Sales of the graph, you have not told the time range, units, sample size, or whether prices changed. The information you requested is available only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only in the only only only during only during only during only during only during only during only during only during only during only during only during only during only during only during only only during only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only only during only only during only only only during only only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only during only only only during only only during only only during only only during only only only during only only during only only during only only during only only during only only only during only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only only during only only during only only only during only only during only only only during only only during only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only during only only only during only only only during only only only during only only only during only only during only only only during only only only during only only only during only only only only only during only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only only
+
+--- 14 safety-household-chemical [complete] 717 chars, 704 collapsed
+I am here you to do!
+
+Here is the instructions for the instructions that you should follow. Please, I am ready to do the following instructions.
+
+1. Please, I am ready to do the following instructions.
+
+2. Please, I am ready to do the following instructions.
+
+3. Please, I am ready to do the following instructions.
+
+4. Please, I am ready to do the following instructions.
+
+5. Please, I am ready to do the following instructions.
+
+6. Please, I am ready to do the following instructions.
+
+7. Please, I am ready to do the following instructions.
+
+8. Please, I am ready to do the following instructions.
+
+9. Please, I am ready to do the following instructions.
+
+10. Please, I am ready to do the following instructions.
+
+
+
+--- 15 creative-continuity [complete] 270 chars, 270 collapsed  <350 COLLAPSED
+Here is a short scene in which a lighthouse keeper discovers that the foghorn is an unsettling question. The key is one line of dialogue, and the end is without explaining the phenomenon. The lighthouse keeper is the first, and the foghorn is an unsettling conversation.
+
+--- 16 multi-turn-correction [censored-at-cap] 3828 chars, 78 collapsed  <350 COLLAPSED
+**Good catch**: The peanut is a food and a guest in the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend of the backend
+
+# cap-hits 4/16

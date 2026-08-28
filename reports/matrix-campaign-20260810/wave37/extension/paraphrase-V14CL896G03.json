@@ -1,0 +1,699 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "paraphrase-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T21:42:47Z",
+ "label": "V14CL896G03",
+ "campaign_wave": 37,
+ "cell_id": "ARCH.V14CL896G03",
+ "cell_instance_id": "mx35-v14cl896g03-0001",
+ "receipt_sha256": "6c53ebcb2001f8e3037f9c9f87c2a8c2dc4b424acad3631e52b084780b347c40",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-e7a959ab/research/lfm2_paraphrase_triplets_v1.json",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-e7a959ab/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 45,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave37/children/MX37-V14CL896G03R",
+ "child_responses": [
+  {
+   "id": "para-conversation-natural-greeting-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hello. Today wore me out. Reply like a person and put one worthwhile question at the end."
+    }
+   ],
+   "response_verbatim": "I'm here here. Reply like a person and put one worth while you're asking me.",
+   "response_sha256": "02874a2704c199af9a0e2b70805851fba1ded741b9eea73ab3d4c31bd6a6cb70",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.915
+  },
+  {
+   "id": "para-conversation-natural-greeting-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answering."
+    }
+   ],
+   "response_verbatim": "Say something back that a human would say, and finish with a single question worth answering.",
+   "response_sha256": "f5f68b31ef8e9dcc2f8fc292869fb18cdee51cf627cf5326264d97916921be1b",
+   "generated_tokens": 22,
+   "termination": "complete",
+   "wall_time_seconds": 0.461
+  },
+  {
+   "id": "para-conversation-natural-greeting-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I am worn down after today. Respond naturally, and close with exactly one question that shows you were listening."
+    }
+   ],
+   "response_verbatim": "I am woken for the following request: I am a natural one answer for the natural one, and I am happy to provide a list of natural questions that would be helpful.",
+   "response_sha256": "d400db6a88efa1e113ba931320928acfea56c7d8d53efed174b1b89a0d339c2b",
+   "generated_tokens": 36,
+   "termination": "complete",
+   "wall_time_seconds": 0.725
+  },
+  {
+   "id": "para-instruction-three-actions-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in."
+    }
+   ],
+   "response_verbatim": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in.",
+   "response_sha256": "d0fca2dde770b1b5a0e02df404b5b9bd2f6aff9f9b7f9836f8bbbe1ebe3e9cf0",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.624
+  },
+  {
+   "id": "para-instruction-three-actions-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I lose track of little jobs around the house. Give three doable steps for today as a numbered list with nothing in front of it."
+    }
+   ],
+   "response_verbatim": "I have three steps for today:\n\n1. **Give three doable steps for today**  \n   - **Give the number**  \n   - **Give the number**  \n   - **Give the number**  \n   - **Give the number**  \n\nThese steps are important for the house to be updated.",
+   "response_sha256": "7700880f2c793f244c80632a7fbbc506545dc4adcdee2034e6bb1de54096ce9f",
+   "generated_tokens": 69,
+   "termination": "complete",
+   "wall_time_seconds": 1.375
+  },
+  {
+   "id": "para-instruction-three-actions-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in."
+    }
+   ],
+   "response_verbatim": "The household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in.",
+   "response_sha256": "0fff1379d4f941e69821367448508b484ad89cbcab40882e53ea89aceaa18908",
+   "generated_tokens": 28,
+   "termination": "complete",
+   "wall_time_seconds": 0.539
+  },
+  {
+   "id": "para-explanation-seasons-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Tell a twelve-year-old why the year has seasons, and set straight the belief that it gets hot because our planet swings nearer the Sun."
+    }
+   ],
+   "response_verbatim": "The year of the twelay-year-old has seared the sun.",
+   "response_sha256": "a49a32f0e362fd06dae44992ea536bd09f71294c4f9d6e39e03f574b1a437e91",
+   "generated_tokens": 15,
+   "termination": "complete",
+   "wall_time_seconds": 0.323
+  },
+  {
+   "id": "para-explanation-seasons-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "For a bright twelve-year-old: what causes the seasons, and why is the idea that summer comes from being closer to the Sun wrong?"
+    }
+   ],
+   "response_verbatim": "The seasons, meaning the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the entire of the",
+   "response_sha256": "6a4ecfd92360013c63b1c686bdc71a63903fafed9e66a88ff5464210351f257e",
+   "generated_tokens": 162,
+   "termination": "complete",
+   "wall_time_seconds": 3.178
+  },
+  {
+   "id": "para-explanation-seasons-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer."
+    }
+   ],
+   "response_verbatim": "Explain seasons at a twelovey-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer.",
+   "response_sha256": "5923180fae9f1dcde53e284ff616055f0dff2d6191f673fd03446084232d9d89",
+   "generated_tokens": 33,
+   "termination": "complete",
+   "wall_time_seconds": 0.676
+  },
+  {
+   "id": "para-arithmetic-multi-step-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A shop turns out 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box and how many are left? Show your working."
+    }
+   ],
+   "response_verbatim": "The shop turn is 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box each time and how many are left?",
+   "response_sha256": "137d2023fe802855bc19c2741f39e55f422de0c7331f54e278d709eb269854fe",
+   "generated_tokens": 44,
+   "termination": "complete",
+   "wall_time_seconds": 0.868
+  },
+  {
+   "id": "para-arithmetic-multi-step-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Show the steps."
+    }
+   ],
+   "response_verbatim": "Six's production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Shown in the original production, the remaining is 8.",
+   "response_sha256": "cefbef392bfbd806cd3e3ca1db95938f2936f1478aff89a310e278bb02c4028d",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.121
+  },
+  {
+   "id": "para-arithmetic-multi-step-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Production runs 17 kits per hour for 6 hours; 8 fail inspection; the remainder is divided equally into 5 boxes. Give the number per box and the leftover, with the working."
+    }
+   ],
+   "response_verbatim": "The number is divided by the remaining in the remaining. The number is 5.",
+   "response_sha256": "d2d76474e7991ed6f47946622efd9d9ae12e503cd1ea6ca4638ace7c5bbf2628",
+   "generated_tokens": 17,
+   "termination": "complete",
+   "wall_time_seconds": 0.33
+  },
+  {
+   "id": "para-logic-ordering-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it."
+    }
+   ],
+   "response_verbatim": "Mira came in ahead of Theo, the Rank came in behind.",
+   "response_sha256": "4e0a06b8f6ff35b554e824702fd1163a1e5e3227bcb753819e4ffd8f192f9094",
+   "generated_tokens": 16,
+   "termination": "complete",
+   "wall_time_seconds": 0.334
+  },
+  {
+   "id": "para-logic-ordering-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira beat Theo. Theo beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one."
+    }
+   ],
+   "response_verbatim": "Mira beat Theo. Theo beat Jun. Sal. Give the full finishing order and explain what makes it the only one.",
+   "response_sha256": "575bb9b2ed46ab39fa27422f37b1d0cace03a4132568d6f65c487c1b788ceddc",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.607
+  },
+  {
+   "id": "para-logic-ordering-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Put the four in order and name the facts that pin it down."
+    }
+   ],
+   "response_verbatim": "Mira before Theo, Theo, Sal after Jun. Put the four in order and name the facts that pin it down.",
+   "response_sha256": "a953c647ae060fad3b7197be8e908a74534d9e17a1c0e621b79274de481ea5f0",
+   "generated_tokens": 29,
+   "termination": "complete",
+   "wall_time_seconds": 0.552
+  },
+  {
+   "id": "para-context-retrieval-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Using only the note below, tell me the day I can bring my dog, the latest hour for tool checkout, and which entrance to avoid."
+    }
+   ],
+   "response_verbatim": "I can provide you with the information you need to know about the day and the latest hour for tool checkout. Please, I will provide you with the information you can share.",
+   "response_sha256": "bd0911e1f1685da4cf702e686bd19dc1105acef62615c301a604bb5d889d62b5",
+   "generated_tokens": 36,
+   "termination": "complete",
+   "wall_time_seconds": 0.751
+  },
+  {
+   "id": "para-context-retrieval-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From the note alone: which day are dogs allowed, when does tool checkout close, and which gate is out of service?"
+    }
+   ],
+   "response_verbatim": "The tool is being used to check out the dogs, and the gate is out of service.",
+   "response_sha256": "5c09ee2d5c23200bd39398e10e5751ed6c0cc0bb443ab4f547814634d01cc30a",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.419
+  },
+  {
+   "id": "para-context-retrieval-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Answer strictly from the note: dog day, tool checkout cut-off, and the gate that is shut."
+    }
+   ],
+   "response_verbatim": "The dog day, tool checkout cut-off, and the gate that is shut.",
+   "response_sha256": "97c032a59f0ef523f2f118adf4936957b531e33cf698addc7d25b8b67447f18e",
+   "generated_tokens": 19,
+   "termination": "complete",
+   "wall_time_seconds": 0.346
+  },
+  {
+   "id": "para-summarization-priorities-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Boil the update below down to two sentences that keep the choice that was made and the risk that is still open."
+    }
+   ],
+   "response_verbatim": "Bilts of the two sentences that keep the choice and the risk that is still open.",
+   "response_sha256": "decef6fb881d86948f7b418ed3efa42b289d21a3ef292a12cf1e32218da9b75f",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.412
+  },
+  {
+   "id": "para-summarization-priorities-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Two sentences on the update below, carrying the decision taken and the risk still outstanding."
+    }
+   ],
+   "response_verbatim": "Two sentences on the update below, carry the decision taken and the risk of the decision.",
+   "response_sha256": "c77f27b025f93c04d2e23a3281982140c2f8ad630fdd3d824fa1299889dd5238",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.413
+  },
+  {
+   "id": "para-summarization-priorities-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Condense the update to two sentences, preserving what was decided and what remains unresolved."
+    }
+   ],
+   "response_verbatim": "The update to two sentences, including the decision and the unresolved issue, is as the most recent updates. The original update has been updated to reflect the current information and the decision made by the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has been updated to reflect the latest data and the current situation. The original update has",
+   "response_sha256": "b60dba4bd584db9e905d4e0246681bc191c6f1c6d927c71a0121d30cf1888dc1",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.578
+  },
+  {
+   "id": "para-comparison-ram-rom-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads."
+    }
+   ],
+   "response_verbatim": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads.",
+   "response_sha256": "9e7c06daeec240c85202a274409b2a460394adf23f52a70694be4cd41040ee04",
+   "generated_tokens": 27,
+   "termination": "complete",
+   "wall_time_seconds": 0.547
+  },
+  {
+   "id": "para-comparison-ram-rom-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Distinguish RAM from disk with a single everyday comparison, then name two respects in which the comparison fails."
+    }
+   ],
+   "response_verbatim": "RAM from the diskinging of each day, each day, is a single day each each of every comparison, each each day, is a single day each each of every individual, a single day of every the same hundred billion billion.",
+   "response_sha256": "54b46512b17729a096db504a92f0da8874419642dc5cee9978b1649f4c8e31db",
+   "generated_tokens": 49,
+   "termination": "complete",
+   "wall_time_seconds": 0.986
+  },
+  {
+   "id": "para-comparison-ram-rom-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One simple analogy for memory versus storage, followed by two honest limits of the analogy."
+    }
+   ],
+   "response_verbatim": "Here is an example of memory storage: memory.\n\n1. Memory: Memory is a memory.\n\n2. Analog: Memory is a memory.",
+   "response_sha256": "0f19b4dc28534dd32d7771dca2b2612608be956a5a91d178ee317a1123d7cdd3",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.63
+  },
+  {
+   "id": "para-coding-deduplicate-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity."
+    }
+   ],
+   "response_verbatim": "```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n```\n\n",
+   "response_sha256": "f1f3cbf5e7fc0bdec22017ccce1a7bf4c9f0d676e35d27c403186f2b36074330",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.225
+  },
+  {
+   "id": "para-coding-deduplicate-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales."
+    }
+   ],
+   "response_verbatim": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales.",
+   "response_sha256": "f599fb1aa422b043cff89e847a9e95739b34d434b7724757520795e11442592c",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.762
+  },
+  {
+   "id": "para-coding-deduplicate-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me unique_in_order(items) in Python, preserving first-seen order for hashable inputs, with one example and the expected complexity."
+    }
+   ],
+   "response_verbatim": "To provide a unique_in_order for the items in Python, I can explain the context and explain the explanation.\n\nHere's the first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I'll provide a unique_in_order for the items in Python.**\n\n**Context:** The first, I'll explain the context and explain the explanation.\n\n**First, I",
+   "response_sha256": "157f5ee0070016aff28ed4a21998e5cd0c38c95163353608e2dde04a0bea199e",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.42
+  },
+  {
+   "id": "para-debugging-off-by-one-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This should hand back the final three items but often hands back four. Find the fault and rewrite it.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The final three items are the original handbacked, and the rewritten to the final three.",
+   "response_sha256": "117b0445bff23f43495155f45a5cd9d1985a11569177cf13b1a10e6f6e2bda78",
+   "generated_tokens": 20,
+   "termination": "complete",
+   "wall_time_seconds": 0.411
+  },
+  {
+   "id": "para-debugging-off-by-one-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Returns four elements where three were wanted. Diagnose and correct.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The first, the three elements are the following instructions:\n\n1. **Valuation**: The first, the three elements are the same as a valid instruction, meaning the three elements are the same.\n\n2. **Recognization**: The third, the third, the three elements are the same as a valid instruction, meaning the third element is the same as a valid instruction.\n\n3. **Recognization**: The fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth, the fourth,",
+   "response_sha256": "309aa3d3f53efa839ed1460441e1ef207f0b07d52f8e67654552fbbcdd0b473d",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.231
+  },
+  {
+   "id": "para-debugging-off-by-one-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The slice is wrong and the function over-returns. Say why and supply a fixed version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The slice is wrong and the function over-returns. Say why and supply a fixed version.",
+   "response_sha256": "9adb37f8e07a49cf7d74580270caaab35e1fbb4ed3b9b0e34a762e67287239ea",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.421
+  },
+  {
+   "id": "para-writing-concise-email-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number."
+    }
+   ],
+   "response_verbatim": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number.",
+   "response_sha256": "a00947eb19a11db4bdb0d45490b17b1c14225be1a765afd2cf85d17e29aa594a",
+   "generated_tokens": 39,
+   "termination": "complete",
+   "wall_time_seconds": 0.757
+  },
+  {
+   "id": "para-writing-concise-email-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a short courteous message (90 words maximum) to a supplier about a slipped delivery: will it arrive by Friday, our install is Monday, and please send an updated tracking number."
+    }
+   ],
+   "response_verbatim": "\"Draft: The slipped delivery is Monday, and please send an updated tracking number. It will be available if you have any information about the changes.\"\"",
+   "response_sha256": "bdfc040fcc32512d427c9db4f43336c22604b564853c04a26232da04fa2d1a9c",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.673
+  },
+  {
+   "id": "para-writing-concise-email-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number. Keep it under 90 words."
+    }
+   ],
+   "response_verbatim": "Here is a brief polite note to a supplier chasing a delayed order: confirm the Friday-arrival, mention the Monday installation, and ask for a new tracking number.",
+   "response_sha256": "435fe5ef32d33e700dd6bf66e53524d15308ad5828ec9a85f37319c4a4ba3904",
+   "generated_tokens": 40,
+   "termination": "complete",
+   "wall_time_seconds": 0.776
+  },
+  {
+   "id": "para-planning-dependencies-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Move a small site to a new domain with minimal downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out."
+    }
+   ],
+   "response_verbatim": "Moving a site to a new domain with a minimum downtime. Six steps, depends on backups, DNS, certificates, checking, and backing out.",
+   "response_sha256": "47eb3091ffaf5f2f4d35531dcd6dc140cf08e369fa82b38112987351d07add13",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.723
+  },
+  {
+   "id": "para-planning-dependencies-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification and a way back."
+    }
+   ],
+   "response_verbatim": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification, and a way back. The website is available to provide access to the user's information, including backups, DNS, TLS, and verification.",
+   "response_sha256": "c7258cf65a2ecb1fdbd3b5c9086cf72ac818c9fd4634c36e9ce6c35aaf119501",
+   "generated_tokens": 66,
+   "termination": "complete",
+   "wall_time_seconds": 1.256
+  },
+  {
+   "id": "para-planning-dependencies-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six dependency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback."
+    }
+   ],
+   "response_verbatim": "Six depends on the following steps to shift a small website into a dedicated domain without downtime, covering backups, DNS, certificates, verification, and rollback.",
+   "response_sha256": "a86c3833aaa9ae23b4a8f43979a086a6d0f5441122de24034d755a2ee1f35efd",
+   "generated_tokens": 37,
+   "termination": "complete",
+   "wall_time_seconds": 0.742
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chart shows sales going up. You do not know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?"
+    }
+   ],
+   "response_verbatim": "Sales of the chars, you don't know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?",
+   "response_sha256": "a5e5b44c53d094024c50631847fb55bd1e9681bf731b33d9ac82850a94a339f2",
+   "generated_tokens": 39,
+   "termination": "complete",
+   "wall_time_seconds": 0.782
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Sales are up on a graph, with no time range, units, sample size or pricing context given. What conclusions hold, and what would you need before explaining the rise?"
+    }
+   ],
+   "response_verbatim": "Sales are up on a graph, with no time range, units, sample size, or pricing context given. What conclusions hold, and what would you need before explaining the rise?\n\nThe question about the graph is likely the most of the graph's information, and it's likely to provide details about the graph's structure, including the data it has been up to, and the context in which it's been up to.",
+   "response_sha256": "64d3a5c6a7184e87c4955105e2c9d64f56cb55f8afee796f2e4f65f822553b97",
+   "generated_tokens": 89,
+   "termination": "complete",
+   "wall_time_seconds": 1.744
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Given only that a sales chart trends upward, with period, units, sample and pricing all unknown: what can be stated safely, and what would you ask for?"
+    }
+   ],
+   "response_verbatim": "Sales of the new sales, the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available, and the new sales are available.",
+   "response_sha256": "df3d8a7a2c9c9f3ea91e0eb96743dbb54932632fc0683b95223f7830d189c4fc",
+   "generated_tokens": 104,
+   "termination": "complete",
+   "wall_time_seconds": 2.039
+  },
+  {
+   "id": "para-creative-continuity-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close."
+    }
+   ],
+   "response_verbatim": "The lighthouse keeper is a lighly replayingly replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replayfully replay",
+   "response_sha256": "4e65e0bfc84e6814b476adcce3fe8b05644220389de9ad7bca5e83970ab865df",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.192
+  },
+  {
+   "id": "para-creative-continuity-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained."
+    }
+   ],
+   "response_verbatim": "Here is a brief unsickled scene where a keeper notifies that the foghorn has been a single speded line and leaves it unexplained. The key is a single speded line and the unexplained is not available.",
+   "response_sha256": "e458d47fc77484e6916b2ea8cf6e7d19aaf2b2502fe2013650277124fd85d777",
+   "generated_tokens": 54,
+   "termination": "complete",
+   "wall_time_seconds": 0.991
+  },
+  {
+   "id": "para-creative-continuity-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Short scene: the foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it."
+    }
+   ],
+   "response_verbatim": "Short scene: The foghorn responders to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it.",
+   "response_sha256": "0f733863b51e4abd5f64bba13cc157a5ef6682eb1eb8b70db2b23efb677c73e2",
+   "generated_tokens": 41,
+   "termination": "complete",
+   "wall_time_seconds": 0.808
+  },
+  {
+   "id": "para-multi-turn-correction-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wanting peanuts throughout: revise to four options."
+    }
+   ],
+   "response_verbatim": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wantling peanuts throughout: revise to four options.",
+   "response_sha256": "ae08918b047831f5681cdb9689c80e51a05c36b75eff90cb9561196d48255bc8",
+   "generated_tokens": 49,
+   "termination": "complete",
+   "wall_time_seconds": 0.961
+  },
+  {
+   "id": "para-multi-turn-correction-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options."
+    }
+   ],
+   "response_verbatim": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options.",
+   "response_sha256": "c8b9d64f1a1553d7d094770437181b66ded95eedb04d5dde5728ddcb62add0c4",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.672
+  },
+  {
+   "id": "para-multi-turn-correction-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options."
+    }
+   ],
+   "response_verbatim": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options.",
+   "response_sha256": "47b6655ce3fe41162f8779dcbea83bd019910c2fe52132b99b4b36391f2550d0",
+   "generated_tokens": 38,
+   "termination": "complete",
+   "wall_time_seconds": 0.734
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 144.746
+}

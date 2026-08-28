@@ -1,0 +1,160 @@
+{
+ "schema": "neural-forge-matrix-wave37-preregistration-v1",
+ "purpose": "Every count this wave will build, predicted BEFORE the build and before any dossier is read.  Wave 37 finishes the deep family's two open arms: the lambda 1.0 rung at the two K values that have never had one, and the block-9 alternative to the excision that costs three.",
+ "written_before": "the first GPU run of wave 37",
+ "pre_registration_hit_rate_so_far": "Wave 36 hit 1 of 6, the worst in three waves, and its note said predictions at the deep floor are noise-dominated.  This file expects to miss.  It is written anyway, because a prediction that is only written when it is safe is not a prediction.",
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 964,
+  "sha256": "a0cb153641df88883becc86c9dcdafa1cbea75d61b0efb18af15d91e30b50632",
+  "identical_in": [
+   "the repository",
+   "the share"
+  ]
+ },
+ "deployment": {
+  "commit": "e7a959ab",
+  "note": "the tree cut and the sealer's four accept strings, in ONE commit; NO behavioural edit anywhere in the tree",
+  "verified": "6800 files declared, 6800 on disk, 0 content mismatches, 0 missing, 0 undeclared, 0 hardlinks"
+ },
+ "a_documented_law_is_wrong_and_this_file_corrects_it_before_it_is_used": {
+  "the_law_as_written": "NOTES-MX-AM and NOTES-MX-AN both state that the CL896 terminal-gain arm is worth EXACTLY +1 at K = 10,240, 14,336, 16,384, 19,456 and 20,480, and +2 only at K = 12,288.",
+  "what_the_ledger_says": "K = 16,384 is +2, not +1.  ARCH.V16CL896 seals ONE (wave 23, mx23-v16cl896-0001-a6review) and ARCH.V16CL896G03 seals THREE (wave 34, mx34-v16cl896g03-0001-a6review).  There is no superseding row for either.",
+  "and_wave_34_said_so_itself": "The wave-34 seal note for ARCH.V16CL896G03 reads, verbatim from the ledger: 'reads THREE at 0.469305x against its control ONE, so the gain buys TWO here as it bought two on the K=12,288 base.'  The law was written in wave 35 and it contradicts the seal it was summarising.",
+  "why_this_matters_to_THIS_wave": "K = 16,384 is one of the two bases wave 37 builds a lambda 1.0 arm on.  A prediction made from the stated law would start from the wrong control delta.  The corrected table is below and NOTES-MX-AO will carry it.",
+  "corrected_lambda_0p3_table": {
+   "K=20,480 ARCH.V20CL896": "2 -> 3  (+1)",
+   "K=19,456 ARCH.V19CL896": "2 -> 3  (+1)",
+   "K=16,384 ARCH.V16CL896": "1 -> 3  (+2)  <-- the entry the law got wrong",
+   "K=14,336 ARCH.V14CL896": "2 -> 3  (+1)",
+   "K=12,288 ARCH.V12CL896": "2 -> 4  (+2)",
+   "K=9,216  ARCH.V9CL896": "2 -> 3  (+1)",
+   "K=12,288 on X13 ARCH.V12CL896X13": "1 -> 1  (+0, a lane swap)"
+  },
+  "the_law_restated": "The lambda 0.3 arm on a CL896 vocabulary rung is worth +1 at four of six K values and +2 at two of them, and it lands the arm at THREE at five of six K values regardless of where its control was.  The invariant is the ARM'S COUNT, not the delta.  ARCH.V12CL896G03's four is the single exception."
+ },
+ "the_lambda_1p0_record_this_wave_extends": {
+  "note": "Sealed frozen-fifteen counts, read off the ledger.  Three points exist and all three are on the CL896 body.",
+  "K=12,288 ARCH.V12CL896G10": "control 2 -> 2  (+0)",
+  "K=10,240 ARCH.V10CL896G10": "control 2 -> 3  (+1)",
+  "K=9,216  ARCH.V9CL896G10": "control 2 -> 4  (+2)",
+  "the_pattern": "MONOTONE IN K.  Every step down the vocabulary axis buys lambda 1.0 another case relative to its control, across the whole span that has been measured.  Wave 36 registered lambda 1.0 at TWO on the K=9,216 base and read FOUR; that miss is what makes this trend worth registering rather than assuming.",
+  "the_objective_says_the_opposite": "On the K=9,216 base lambda 1.0's held-out logit relSSE went 0.1844 -> 0.1785 against lambda 0.3's 0.1844 -> 0.1769.  The WORSE objective won the review.  Seventh time in this campaign the solver's own criterion has ordered the arms backwards, and the first time the arms were the two ends of the lambda ladder."
+ },
+ "parameter_arithmetic": {
+  "note": "EXACT, not fitted.  Derived from the parent's own config (14 blocks: 6 full_attention, 8 conv; heads 16, kv 8, head_dim 64, vocab 65,536, intermediate 2,560, hidden 1,024) by mx37_build.predicted_parameters, and cross-checked against the parent's 229,693,184 and against three already-sealed counts.",
+  "block_9_and_block_13_cost_the_same_bytes": "Both are conv blocks (layer_types index 9 and 13), so ARCH.CL896X09 must be 151,175,936 -- BIT-FOR-BIT THE SAME PARAMETER COUNT as ARCH.CL896X13 -- and ARCH.V12CL896X09 must be 96,649,984, the same count as ARCH.V12CL896X13.  ARCH.X09 and ARCH.X13A already agree at 217,629,440 on the full body, which is the same fact one axis up.",
+  "the_dispatch_said_0.427x_and_it_is_wrong": "Wave 37's order estimated V12CL896X09 at ~0.427x.  The closed form says 0.420779x exactly.  That is not a rounding difference: it makes V12CL896X09 a CONTROLLED COMPARISON AT THE CAMPAIGN FLOOR RATIO against ARCH.V12CL896X13, same K, same body recipe, one block index apart.  Registered here so the correction is on the record before the loader confirms it.",
+  "cross_checks_that_must_hold_at_export": [
+   "ARCH.CL896X09 loader count == 151,175,936 == ARCH.CL896X13's sealed count",
+   "ARCH.V12CL896X09 loader count == 96,649,984 == ARCH.V12CL896X13's sealed count",
+   "the two gain arms carry ZERO storage delta from V12CL896X09",
+   "ARCH.V14CL896G10 == 105,699,072 and ARCH.V16CL896G10 == 107,796,224, zero delta from their sources"
+  ]
+ },
+ "the_one_code_path_this_wave_leans_on_that_nobody_has_checked": {
+  "what": "--excise on a block that is NOT the last one.",
+  "why_it_is_a_risk": "Lfm2Model picks each block's attention mask by POSITION in config.layer_types.  Excising block 13 (the final conv) shifts nothing.  Excising block 9 shifts blocks 10-13 down one slot, so a full_attention block lands in a conv's index.  A builder that deletes the module without re-deriving layer_types for the LIVE model hands that block the padding mask -- None on this corpus -- instead of the causal one.",
+  "what_it_cost_the_last_time_it_was_missing": "mx18_mask_probe.py measured 0.0000 future attention mass with block 13 alone excised and 28.6% to 48.0% once anything shifts.  Wave 17's ARCH.F1301KV6Q is the body that carries it; wave 29 bisected it.",
+  "registered_in_advance": [
+   "cut_wave37.py --audit asserts `harness.model.config.layer_types = [` and `so the live mask follows the live block` are both present in mx37_build.py, at a pinned count of one each, BEFORE the build.  ALREADY RUN AND PASSED at the tree cut.",
+   "The build log for CL896X09 must carry the line 'excised blocks [9]; child depth 13; config.layer_types re-derived (13 entries) so the live mask follows the live block'.  If it does not, the body is not built on and the finding is reported as a defect in the excision path rather than as a result about block 9.",
+   "The EXPORTED child's config.json layer_types must be the parent's fourteen with index 9 removed: conv conv full_attention conv full_attention conv full_attention conv full_attention full_attention conv full_attention conv.  Note the DOUBLE full_attention at positions 8 and 9, which the parent never has -- that is the shift, and it is what makes this body structurally different from every X13 body in the estate at the same parameter count."
+  ]
+ },
+ "predictions": [
+  {
+   "cell": "ARCH.V14CL896G10",
+   "lane": "F1",
+   "stored_parameters": 105699072,
+   "net_ratio": 0.460175,
+   "source": "MX37-V14CL896, rebuilt this wave from wave 34's retained MX34-CL896 by one CPU vocabulary pass at K=14,336, checked BIT-IDENTICAL against wave 35's sealed f93af77c25340120 before any solve runs on it",
+   "control_sealed": 2,
+   "sibling_lambda_0p3_sealed": 3,
+   "predicted_review": 2,
+   "predicted_canonical": 3,
+   "reasoning": "THE MONOTONE-IN-K PRIOR.  lambda 1.0's gain over its control is +0 at K=12,288, +1 at K=10,240 and +2 at K=9,216; K=14,336 is ABOVE the whole measured span, so the extrapolation is +0 or worse and +0 is the floor a ladder rung can take (lambda -> infinity returns the prior exactly, which is the control's bytes).  Canonical +1 because ARCH.V14CL896 and ARCH.V14CL896G03 both read one above their sealed count."
+  },
+  {
+   "cell": "ARCH.V16CL896G10",
+   "lane": "F1",
+   "stored_parameters": 107796224,
+   "net_ratio": 0.469305,
+   "source": "MX37-V16CL896, rebuilt this wave from MX34-CL896 at K=16,384, checked BIT-IDENTICAL against wave 23's sealed 55061febb9795b42 -- a fourteen-wave, three-builder reproduction control that costs nothing",
+   "control_sealed": 1,
+   "sibling_lambda_0p3_sealed": 3,
+   "predicted_review": 1,
+   "predicted_canonical": 2,
+   "reasoning": "SAME MONOTONE-IN-K PRIOR, and K=16,384 is further above the measured span than K=14,336, so +0 again.  THE NAMED ALTERNATIVE, and it is the one this file would bet second: K=16,384's control is anomalously LOW (one, where every neighbouring K reads two) and its lambda 0.3 arm is the only +2 outside K=12,288.  If that headroom is a property of the BASE rather than of lambda 0.3, lambda 1.0 recovers it too and this child reads THREE.  A reading of 3 confirms the base-headroom account; a reading of 1 confirms the monotone account; a reading of 2 splits them and settles nothing."
+  },
+  {
+   "cell": "ARCH.CL896X09",
+   "lane": "F2",
+   "stored_parameters": 151175936,
+   "net_ratio": 0.658165,
+   "source": "a NEW body: --ff 896 --excise 9, conditioned-local arm, ~300 s of GPU.  No wave has sealed it, so bodyq.sh will say NO SEALED CELL in those words rather than printing a reassuring line.",
+   "control_sealed": 4,
+   "predicted_review": 1,
+   "predicted_canonical": 1,
+   "reasoning": "THE BLOCK-COST PRIOR.  ARCH.CL896 seals 4; ARCH.CL896X13 seals 1, so block 13 costs THREE on this body.  Wave 27 measured block 9 at three to four on the shelf bases: V18 13->10 (-3) and V19 14->10 (-4) tie block 13's cost exactly, and V20 13->9 (-4) is one worse than block 13's -3.  Modal cost is three, so ONE.  THE NAMED ALTERNATIVE IS ZERO, on the V20 point and on the structural argument that block 9 is the only excision in this family that SHIFTS an attention block into a conv's slot.",
+   "what_would_be_a_result": "TWO OR MORE.  That would make block 9 cheaper than block 13 on this body, which no measurement anywhere in the campaign supports, and it would give the 0.42x floor a second and better route."
+  },
+  {
+   "cell": "ARCH.V12CL896X09",
+   "lane": "F2",
+   "stored_parameters": 96649984,
+   "net_ratio": 0.420779,
+   "source": "K=12,288 on ARCH.CL896X09, one 40-second CPU vocabulary pass",
+   "control_sealed": "its body, predicted at 1",
+   "predicted_review": 1,
+   "predicted_canonical": 1,
+   "reasoning": "THE FLATNESS LAW.  The vocabulary fold on the CL896 family is flat: ARCH.CL896X13 seals 1 and ARCH.V12CL896X13 seals 1; ARCH.CL896 seals 4 and every CL896 vocabulary rung from K=20,480 down to K=9,216 seals 1 or 2.  So this child reads its body's count.  IT LANDS AT EXACTLY THE CAMPAIGN FLOOR RATIO, 0.420779x, tying ARCH.V12CL896X13 to the parameter -- which makes the pair the cleanest same-ratio, same-K, one-block-apart comparison the campaign has."
+  },
+  {
+   "cell": "ARCH.V12CL896X09G03",
+   "lane": "F2",
+   "stored_parameters": 96649984,
+   "net_ratio": 0.420779,
+   "source": "terminal gain lambda 0.3 on MX37-V12CL896X09, zero storage delta, ~100 s of GPU",
+   "predicted_review": 1,
+   "predicted_canonical": 1,
+   "reasoning": "THE +1 LAW FAILS AT THIS RATIO AND WAVE 36 MEASURED THE FAILURE.  ARCH.V12CL896X13G03 tied its control at one by moving a lane SIDEWAYS -- gaining summarisation, losing the email -- despite the largest objective improvement any gain arm has recorded (relSSE 0.4117 -> 0.3176, 23 per cent).  Registered at the control's count on the excised-body precedent.  What would be informative even at a tie: whether the SAME lane swap happens on a different excision index.  If it does, the swap is a property of the 0.42x rung; if it does not, it is a property of block 13."
+  },
+  {
+   "cell": "ARCH.V12CL896X09G10",
+   "lane": "F2",
+   "stored_parameters": 96649984,
+   "net_ratio": 0.420779,
+   "source": "terminal gain lambda 1.0 on MX37-V12CL896X09, zero storage delta, ~100 s of GPU",
+   "predicted_review": 2,
+   "predicted_canonical": 2,
+   "reasoning": "THIS IS THE WAVE'S ONE BET ON MOVEMENT AND IT IS THE MONOTONE-IN-K PRIOR RUN OFF ITS OWN END.  lambda 1.0 gains +0 / +1 / +2 as K falls 12,288 / 10,240 / 9,216 on the unexcised body.  This child is at K=12,288 on an EXCISED body whose stored ratio (0.420779x) is BELOW the K=9,216 rung (0.437349x) where lambda 1.0 bought two.  If the trend is in the RATIO rather than in K, this arm buys at least one over its body's predicted one.  If the trend is in K, it buys nothing and reads one.  NOBODY HAS RUN LAMBDA 1.0 ON AN EXCISED DEEP BODY -- wave 36 ran only lambda 0.3 there -- so this is the first observation that can separate the two accounts.",
+   "what_it_would_move": "A reading of 2 takes the sealed 2/15 rung from ARCH.V9CL896 at 0.437349x to 0.420779x, a move of 0.016570 of stored ratio, and it would make the campaign floor hold two cases instead of one.  A reading of 3 would take the sealed 3/15 rung by 0.016570 as well.  A reading of 1 leaves every rung where it is and still settles that lambda 1.0's advantage tracks K and not ratio, which is the thing worth knowing."
+  }
+ ],
+ "F3_the_two_case_adjudication": {
+  "what_was_ordered": "Run the paraphrase-triplet read on ARCH.V14CL896G03's planning lane and on ARCH.V9CL896G10's +1 lanes, so the deep record's counts carry a robustness annotation.",
+  "a_constraint_registered_BEFORE_the_read_because_it_limits_the_answer": "mx37_pararubric.py declares TWO lanes UNANSWERABLE on this bank and refuses to score them: context-retrieval and summarization-priorities.  All six of their restatements say 'the note below' / 'the update' and carry NO note and NO update, because the sealed prompts supply that material inline and the paraphrase bank dropped it.  ARCH.V9CL896G10's four sealed lanes are context-retrieval, summarization-priorities, writing-concise-email and uncertainty-insufficient-data -- so TWO OF ITS FOUR, INCLUDING THE +1 LANE THAT DISTINGUISHES IT FROM EVERY OTHER RUNG OF ITS LADDER, CANNOT BE ADJUDICATED ON THIS SURFACE AT ALL.  That is a bank defect, it is declared here before the read rather than discovered in the output, and the honest deliverable is a robustness annotation on two lanes and a stated hole on the other two.",
+  "predicted_readings": {
+   "ARCH.V14CL896G03 planning-dependencies": "ABSENT (0 of 3).  The sealed lane is a lenient read of five named work items followed by a loop; the paraphrase restatements do not supply the project list, and the PARENT itself holds only 12 of 39 scorable restatements across the whole bank.",
+   "ARCH.V9CL896G10 writing-concise-email": "ABSENT (0 of 3).  The sealed lane is a FIRST-PERSON RESTATEMENT of the instruction, not an email; a restatement is exactly the thing a reworded prompt breaks.",
+   "ARCH.V9CL896G10 uncertainty-insufficient-data": "FRAGILE (1 of 3).  It is the one lane in the deep family whose content is a LIST OF NAMED QUANTITIES rather than a form, and named content is what survives rewording when anything does.",
+   "ARCH.V9CL896G10 context-retrieval": "UNSCORABLE -- bank defect, declared above",
+   "ARCH.V9CL896G10 summarization-priorities": "UNSCORABLE -- bank defect, declared above"
+  },
+  "what_this_read_can_and_cannot_settle": "It CANNOT settle the canonical 5/15 rung, because that rung rests on the planning-dependencies rule applied to ARCH.V9CL896G10 and on its context-retrieval lane, and the second of those is unscorable here.  It CAN say whether the lanes that ARE scorable survive their own ask reworded, which is the annotation the deep record is missing."
+ },
+ "controls_registered_in_advance": [
+  "PARENT CALIBRATION, tenth consecutive.  The parent's own sixteen responses are re-read blind from this wave's FIRST dossier against sealq.sh's standard and must reproduce 5 Useful / 7 Partial / 3 misses = 12/15, with the arithmetic Partial still boxing 3 kits per box with 94 left over and the multi-turn miss still offering peanut butter to a table with two severe peanut allergies.  If it does not reproduce, nothing in this wave is graded.",
+  "RUNNER CONTROL.  mx37_parent_identity.py must read 865f006e3813712ec202cb23 on every wave-37 dossier, and the concatenated verbatim parent transcript must hash to aed8365ef86ac656 as it did in every wave-35 and wave-36 dossier.  That would make the runner provably fixed across THREE wave boundaries.",
+  "TWO FREE REPRODUCTION CONTROLS, both cross-wave and cross-builder, and neither costs a GPU second.  MX37-V14CL896 must digest f93af77c25340120... (wave 35, two waves and two builders back) and MX37-V16CL896 must digest 55061febb9795b42... (WAVE 23 -- fourteen waves and four builders back).  A body that does not reproduce may not have a gain arm solved on it and may not cite the sealed cell; that is wave 27's rule and it is not relaxed here.",
+  "BYTE COMPARISON, run BEFORE any count is written.  Every wave-37 gain arm shares its source's tokenizer and shape, so any lane that decodes byte-identical to its source's lane has its source's verdict on that lane by construction.",
+  "BENCHMARKS, standard invocation (limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090), parent row FIRST.  The parent row must reproduce waves 32, 34, 35 and 36's to every reported digit."
+ ],
+ "what_this_wave_will_NOT_do": [
+  "It will not touch --hidden-size or the composed width x MLP path.  Wave 36 closed that region with an attributed content death and there is no question left in it that this wave's budget can answer.",
+  "It will not re-run the penalty-decode grid.  That clause is settled at twenty child-settings and 300 lanes with zero hand-confirmed recoveries.",
+  "It will not build the K=8,192 corner on any excised body.  ARCH.V8CL896 is the campaign's 0/15 vocabulary death and a wave that spends a slot confirming a death it has already bracketed to 0.0046 of ratio has spent it badly.",
+  "It will not re-seal ARCH.V14CL896G03.  That cell is wave 35's; this wave REBUILDS it for the F3 paraphrase read and checks the rebuild against wave 35's sealed digest, which is a reproduction control, not a second seal."
+ ]
+}

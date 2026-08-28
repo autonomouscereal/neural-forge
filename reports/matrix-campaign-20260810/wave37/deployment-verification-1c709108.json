@@ -1,0 +1,15 @@
+{
+ "schema": "neural-forge-matrix-wave37-deployment-verification-v1",
+ "deployment": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-1c709108",
+ "commit": "1c709108",
+ "files_declared": 6801,
+ "files_on_disk": 6801,
+ "content_mismatches": 0,
+ "missing": 0,
+ "undeclared_on_disk": 0,
+ "hardlinks": 0,
+ "mismatched_paths": [],
+ "missing_paths": [],
+ "undeclared_paths": [],
+ "hardlinked_paths": []
+}

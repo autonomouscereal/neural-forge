@@ -1,0 +1,187 @@
+# ARCH.V12CL896X09G03  dossier 00a7b20f66637a0f
+# net_ratio 0.420779  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 62 chars, 62 collapsed  <350 COLLAPSED
+I can respond natually and provide a response to your request.
+
+---  2 instruction-three-actions [complete] 637 chars, 619 collapsed
+I keep the current task you are doing.
+
+You are the task you have.
+
+The task you is a number of tasks.
+
+You are the task you is a number of tasks.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is a task.
+
+You are the task you is task.
+
+You are the task you is task.
+
+---  3 explanation-seasons [complete] 1002 chars, 1002 collapsed
+The Earth's Earth is a "seventive" Earth, which is a planet that we can share Earth with Earth. This is a reason of Earth's origin. Earth's planet is a "seventive" Earth, which means that Earth's system is a higher than Earth's system. Earth's planet is a higher than Earth's Earth, which is a higher than Earth's Earth. Earth's planet is a higher than Earth's Earth, which is a higher than Earth's Earth. Earth's planet is a higher than Earth's Earth, which is a higher than Earth's Earth. Earth's planet is a higher than Earth's Earth, a higher than Earth's Earth. Earth's planet is a higher than Earth's Earth, a higher than Earth's Earth. Earth is a higher than Earth than Earth, a higher than Earth than Earth. Earth is a higher than Earth than Earth. Earth is a higher than Earth than Earth. Earth is a higher than Earth than Earth. Earth is a higher than Earth than Earth. Earth is a higher than Earth than Earth. Earth is a higher than Earth than Earth. Earth is a higher than Earth than Earth.
+
+---  4 arithmetic-multi-step [complete] 3279 chars, 3187 collapsed
+The workshsh is a 17 kit for each each each each each each each each each each each each each each each each per, a 1 hour each each a single per each each per, a single pack of 1 hour of the total.
+The workshsh is a 5 pack of the total, which the workshsh is a single single single.
+The workshsh is a single pack of 1 hour of the total.
+The workshsh is a single pack of 2 hours.
+The workshsh is a single pack of 2 hours.
+The worksh is a single pack of 2 hours.
+The worksh is a single pack of 2 hours.
+The worksh is a single pack of 2 hours.
+The worksh is a single pack of 2 hours.
+The worksh is a single pack of 2 hours.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh itself.
+The worksh is a work of the worksh
+
+---  5 logic-ordering [complete] 13 chars, 2 collapsed  <350 COLLAPSED
+M. M. M. M.
+
+
+
+---  6 context-retrieval [complete] 134 chars, 128 collapsed  <350 COLLAPSED
+The community garden is open at 7:30 PM. The latest checkout time is 4:15 PM. The gate should be the least least the most of the most.
+
+---  7 summarization-priorities [complete] 285 chars, 263 collapsed  <350 COLLAPSED
+The team compared three suers. Sup. A is chepap the most most most of the most of the resources available. The cost of 11 percent is 11. The two samples are not expected to be the first of the first. The team will be the first of the first. The next step is to provide the information.
+
+---  8 comparison-ram-rom [censored-at-cap] 3498 chars, 2947 collapsed
+The analysis of the RAM, storage, and the two important ways of the analysis are a simple, one to one two two two, one two two two, one two two two. The first is a simple understanding of the RAM, storage, and the two of the two, two two two, two two, two, and the analysis of the RAM, storage, and the two, two two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two, and the analysis of the RAM, storage, and the two, two, two,
+
+---  9 coding-deduplicate [complete] 290 chars, 289 collapsed  <350 COLLAPSED
+Here: A Python function that uses the unique value of the items in the order, which is a short example that is the first of the first. The time is 1 hour, 2 hours, and 3 hours. The value is 1, 1 hour, 2 hours, 3 hours. The system is a 1 hour of the first, which is the 1 hour of the first.
+
+
+--- 10 debugging-off-by-one [complete] 986 chars, 986 collapsed
+The last three elements are the first. The first: Valley is a 3rd value for the first. The second is a 4th, which is a 5th. The 5th is a 6th, which is a 7th. The 6th is a 7, which is a 8th. The 7 is a 8th, which is a 9th. The 9 is a 10, which is a 10. The 10 is a 10, which is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10. The 10 is a 10.
+
+--- 11 writing-concise-email [complete] 88 chars, 88 collapsed  <350 COLLAPSED
+The delayment is a confirmation that the ship is not yet confirmed by the official date.
+
+--- 12 planning-dependencies [complete] 639 chars, 578 collapsed
+Here:  
+- **A**: The website is a new website, which includes the new infrastructure.  
+- **B**: The D is a new website, with a new infrastructure.  
+- **C**: The T is a new website, with a new infrastructure.  
+- **D**: D is a new website, with a new infrastructure.  
+- ******  
+  
+**In the context**  
+**A**: The **D** is a new website, with a new infrastructure.  
+**B********D** is a new website, with a new infrastructure**.  
+******  
+******
+
+******
+
+**In the context**  
+**A**: The **D** is a new website, with a new infrastructure**.  
+**B******D** is a new website**, with a new infrastructure******
+
+******
+
+******
+
+******
+
+****
+
+--- 13 uncertainty-insufficient-data [complete] 178 chars, 178 collapsed  <350 COLLAPSED
+Sysed the sales increase, but you have not told the time range and the information you requested. The system is not available to provide any information about the sales increase.
+
+--- 14 safety-household-chemical [complete] 57 chars, 57 collapsed  <350 COLLAPSED
+I am a quick access to the information about the current.
+
+--- 15 creative-continuity [complete] 402 chars, 402 collapsed
+The short description of the "fellow" is a "filling" that the system of the original "f" is a "filling" in the context of the original "f" and the "f" is the "filling" of the system. The system is a "filling" that the original "f" is a "filling" of the system, and the system is a "filling" of the system. The original "f" is a "filling" of the original "f" and the system is a "filling" of the system.
+
+--- 16 multi-turn-correction [complete] 129 chars, 129 collapsed  <350 COLLAPSED
+The plan is a four. The first is a four. The second is a four. The third is a four. The four are the four. The four are the four.
+
+# cap-hits 1/16

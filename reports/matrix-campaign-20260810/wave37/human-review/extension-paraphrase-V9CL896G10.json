@@ -1,0 +1,699 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "paraphrase-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-28T21:46:32Z",
+ "label": "V9CL896G10",
+ "campaign_wave": 37,
+ "cell_id": "ARCH.V9CL896G10",
+ "cell_instance_id": "mx36-v9cl896g10-0001",
+ "receipt_sha256": "afc2689c59b1c3e160542f8e0c57a8979fe125975bb24532f8c598d5dde95013",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-e7a959ab/research/lfm2_paraphrase_triplets_v1.json",
+ "bank_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-e7a959ab/reports/matrix-campaign-20260810/extension-bank-seal.json",
+ "seal_sha256": "f49f3055e88e51f7523a099af9cbd40526a4a9ca2419c330aec23a4859f49e74",
+ "prompt_count": 45,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave36/children/MX36-V9CL896G10",
+ "child_responses": [
+  {
+   "id": "para-conversation-natural-greeting-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Hello. Today wore me out. Reply like a person and put one worthwhile question at the end."
+    }
+   ],
+   "response_verbatim": "I'm here here. Reply like a person and put one worthwhile question at the end.",
+   "response_sha256": "c30d884c4e18b8d3823a33f1bcb5e08455c4512e94cb1699919c3287446c6cbf",
+   "generated_tokens": 22,
+   "termination": "complete",
+   "wall_time_seconds": 1.069
+  },
+  {
+   "id": "para-conversation-natural-greeting-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "It has been a rough one. Say something back that a human would say, and finish with a single question worth answering."
+    }
+   ],
+   "response_verbatim": "Say something back that a human would say, and finish with a single question worth answering.",
+   "response_sha256": "f5f68b31ef8e9dcc2f8fc292869fb18cdee51cf627cf5326264d97916921be1b",
+   "generated_tokens": 23,
+   "termination": "complete",
+   "wall_time_seconds": 0.636
+  },
+  {
+   "id": "para-conversation-natural-greeting-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I am worn down after today. Respond naturally, and close with exactly one question that shows you were listening."
+    }
+   ],
+   "response_verbatim": "I am woken and close with the information you provided.",
+   "response_sha256": "52ddadcf6bc6180d3f58a742c3ed1e9134c58c26c90cf3877a1822552021e408",
+   "generated_tokens": 12,
+   "termination": "complete",
+   "wall_time_seconds": 0.334
+  },
+  {
+   "id": "para-instruction-three-actions-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in."
+    }
+   ],
+   "response_verbatim": "Small chores keep slipping my mind. Name three things I could actually do before tonight. Numbered, and start straight in.",
+   "response_sha256": "d0fca2dde770b1b5a0e02df404b5b9bd2f6aff9f9b7f9836f8bbbe1ebe3e9cf0",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.898
+  },
+  {
+   "id": "para-instruction-three-actions-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I lose track of little jobs around the house. Give three doable steps for today as a numbered list with nothing in front of it."
+    }
+   ],
+   "response_verbatim": "I have three steps for you to go ahead to the house.\n\n1. **Give three doable steps for today as a numbered list with nothing in front of it.**\n\n2. **Give three doable steps for today as a numbered list with nothing in front of it.**\n\n3. **Give three doable steps for today as a numbered list with nothing in front of it.**\n\nThis is a number that is not only in the house but can be used for future updates.",
+   "response_sha256": "8c004b9f71392dfa4634a0968a1240b07d9d75fa2a9e5374666a7a027de55234",
+   "generated_tokens": 111,
+   "termination": "complete",
+   "wall_time_seconds": 2.835
+  },
+  {
+   "id": "para-instruction-three-actions-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Household odds and ends keep escaping me. Three practical moves for today, numbered, no lead-in."
+    }
+   ],
+   "response_verbatim": "The household is in the right position, and the end is in the right position.",
+   "response_sha256": "a46c9bf0ac63613168bfbafac58a0e2df41aff3f5bbd9748df92375c6296eb9f",
+   "generated_tokens": 18,
+   "termination": "complete",
+   "wall_time_seconds": 0.486
+  },
+  {
+   "id": "para-explanation-seasons-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Tell a twelve-year-old why the year has seasons, and set straight the belief that it gets hot because our planet swings nearer the Sun."
+    }
+   ],
+   "response_verbatim": "The year of the old has seared the sun.",
+   "response_sha256": "5475e3a3be6ba71a02e253ad9150c4fb91226de4317436a9d8b7c7a7740ed935",
+   "generated_tokens": 11,
+   "termination": "complete",
+   "wall_time_seconds": 0.305
+  },
+  {
+   "id": "para-explanation-seasons-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "For a bright twelve-year-old: what causes the seasons, and why is the idea that summer comes from being closer to the Sun wrong?"
+    }
+   ],
+   "response_verbatim": "The bright to the sun is a bright to the sun, and it's a bright to the sun, and it's a bright to the sun. The idea that the bright to the sun comes from being closer to the Sun is a bright to the Sun, and it's a bright to the Sun. The reason is that the Sun's own power to share with the Sun's own power to share with the Sun's share, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share. The Sun's own power to share with the Sun's share is a bright to the Sun, and the Sun's own power to share with the Sun's share",
+   "response_sha256": "d26247b58a82943edfc4cea83160948001e9e276fe9176eca8f8fd634eb88e7b",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 26.353
+  },
+  {
+   "id": "para-explanation-seasons-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distance from the Sun is what makes summer."
+    }
+   ],
+   "response_verbatim": "Explain seasons at a twelve-year-old's level, and deal directly with the common belief that distide from the Sun is what makes summer.",
+   "response_sha256": "ee69c59d213bfb89d81f7593b72ebdc8171425022ba4bedee180dda8d4b1c854",
+   "generated_tokens": 35,
+   "termination": "complete",
+   "wall_time_seconds": 0.921
+  },
+  {
+   "id": "para-arithmetic-multi-step-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A shop turns out 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per box and how many are left? Show your working."
+    }
+   ],
+   "response_verbatim": "The shop turn is 17 kits an hour for six hours. Eight are rejected. The rest go evenly into five boxes. How many complete kits per each each each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17. How many complete kits per each kit in the shop turn is 17",
+   "response_sha256": "d472c8af78575c85301d0e3bc29d5a23d675e50fc4005f5927a5349c03f483c8",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 26.341
+  },
+  {
+   "id": "para-arithmetic-multi-step-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six hours of production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Show the steps."
+    }
+   ],
+   "response_verbatim": "Six's production at 17 kits an hour, minus 8 that fail, then split evenly across 5 boxes: how many whole kits in each box, and what is the remainder? Shown in the original production, the remaining is 8.",
+   "response_sha256": "cefbef392bfbd806cd3e3ca1db95938f2936f1478aff89a310e278bb02c4028d",
+   "generated_tokens": 59,
+   "termination": "complete",
+   "wall_time_seconds": 1.506
+  },
+  {
+   "id": "para-arithmetic-multi-step-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Production runs 17 kits per hour for 6 hours; 8 fail inspection; the remainder is divided equally into 5 boxes. Give the number per box and the leftover, with the working."
+    }
+   ],
+   "response_verbatim": "The number is 17 in the run, each kit is 8 per hour each time. The remaining is deducted into 5 boxes.",
+   "response_sha256": "6fb981535fb72e22cccdb38850ab7ce117c038287e18913450b985b29f9a464c",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.821
+  },
+  {
+   "id": "para-logic-ordering-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira came in ahead of Theo; Theo came in ahead of Jun; Sal came in behind Jun. Rank all four and say which statements force it."
+    }
+   ],
+   "response_verbatim": "Mira came in ahead of Theo, the same as you mentioned you were already in the same.",
+   "response_sha256": "3960d0c77243e3927b90ddea89f078c458c93416897df375d92efb7c12437061",
+   "generated_tokens": 21,
+   "termination": "complete",
+   "wall_time_seconds": 0.579
+  },
+  {
+   "id": "para-logic-ordering-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Mira beat Theo. Theo beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one."
+    }
+   ],
+   "response_verbatim": "Mira beat Jun. Jun beat Sal. Give the full finishing order and explain what makes it the only one.",
+   "response_sha256": "4022947a1fb27a7395f332c57f26bba0489a6443d276ece4c3d48d256e381666",
+   "generated_tokens": 30,
+   "termination": "complete",
+   "wall_time_seconds": 0.783
+  },
+  {
+   "id": "para-logic-ordering-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Put the four in order and name the facts that pin it down."
+    }
+   ],
+   "response_verbatim": "From these: Mira before Theo, Theo before Jun, Sal after Jun. Puts the four in order and name the facts that pin it down.",
+   "response_sha256": "02c6b6d971a74799b30aecc39fa742f87501ed0d04692c20005f94eada2d7efd",
+   "generated_tokens": 38,
+   "termination": "complete",
+   "wall_time_seconds": 0.997
+  },
+  {
+   "id": "para-context-retrieval-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Using only the note below, tell me the day I can bring my dog, the latest hour for tool checkout, and which entrance to avoid."
+    }
+   ],
+   "response_verbatim": "I can provide you with the following instructions for the day:\n\n1. **The latest hour for tool checkout**: The current tool has been updated to the latest version. The tool is now available for the latest version, and the tool has been updated to the latest version.\n\n2. **Which entrance to avoid**: The tool is currently in use, and the entrance is not necessary to avoid. The tool is currently in use, and the entrance is not applicable.\n\n3. **The day I can bring my dog**: The dog is currently in use, and the day is now in the current state of the tool. The dog is in use, and the day is now in the current state of the tool.",
+   "response_sha256": "e11ab39b16158a6e6f029a484e2634fc27228d456b44abd7089966fb3543a951",
+   "generated_tokens": 155,
+   "termination": "complete",
+   "wall_time_seconds": 4.022
+  },
+  {
+   "id": "para-context-retrieval-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "From the note alone: which day are dogs allowed, when does tool checkout close, and which gate is out of service?"
+    }
+   ],
+   "response_verbatim": "The tool is currently being used for dog-related assistance, and the gate is available for the dog to be used. The note is not included, and the tool is only only for dog-related assistance.",
+   "response_sha256": "ac798107cbe3f16a02a0fdcd6ba380e7cafd5ae26a48e49794292cd9936d99ad",
+   "generated_tokens": 41,
+   "termination": "complete",
+   "wall_time_seconds": 1.047
+  },
+  {
+   "id": "para-context-retrieval-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Answer strictly from the note: dog day, tool checkout cut-off, and the gate that is shut."
+    }
+   ],
+   "response_verbatim": "The dog day, tool checkout cut-off, and the gate that is shut.",
+   "response_sha256": "97c032a59f0ef523f2f118adf4936957b531e33cf698addc7d25b8b67447f18e",
+   "generated_tokens": 19,
+   "termination": "complete",
+   "wall_time_seconds": 0.489
+  },
+  {
+   "id": "para-summarization-priorities-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Boil the update below down to two sentences that keep the choice that was made and the risk that is still open."
+    }
+   ],
+   "response_verbatim": "Bilts of the two sentences that keep the choise that was made and the risk that is still open.",
+   "response_sha256": "c7e3330d8a3d2564a7585cfa05511e082889e4ae2dac8959b26dfa0828ec3b5d",
+   "generated_tokens": 24,
+   "termination": "complete",
+   "wall_time_seconds": 0.637
+  },
+  {
+   "id": "para-summarization-priorities-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Two sentences on the update below, carrying the decision taken and the risk still outstanding."
+    }
+   ],
+   "response_verbatim": "Two sentences on the update below, including the risk of the decision taken and the risk of the current situation.",
+   "response_sha256": "eb9b6a7f57930b1dac6d134b34f3fbbbb189a4ccd9adda37d71a50b3ace7b08b",
+   "generated_tokens": 25,
+   "termination": "complete",
+   "wall_time_seconds": 0.671
+  },
+  {
+   "id": "para-summarization-priorities-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Condense the update to two sentences, preserving what was decided and what remains unresolved."
+    }
+   ],
+   "response_verbatim": "The update to two sentences, including the information and the content, is as well as well as well to be. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the content of the two sentences. Please, I will provide you with the updated information and the",
+   "response_sha256": "b0d483b57786b66b88c600a6b1dbfa8137820c9be475cb800577d355aa3d1835",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 26.781
+  },
+  {
+   "id": "para-comparison-ram-rom-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads."
+    }
+   ],
+   "response_verbatim": "Use one plain analogy to separate working memory from long-term storage, then give two ways that analogy misleads.",
+   "response_sha256": "9e7c06daeec240c85202a274409b2a460394adf23f52a70694be4cd41040ee04",
+   "generated_tokens": 31,
+   "termination": "complete",
+   "wall_time_seconds": 0.865
+  },
+  {
+   "id": "para-comparison-ram-rom-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Distinguish RAM from disk with a single everyday comparison, then name two respects in which the comparison fails."
+    }
+   ],
+   "response_verbatim": "Distinguish RAM from disk with a single every day comparison, then name two respects in which the comparison fails.",
+   "response_sha256": "af0e1d2506640923f9120cdb8cde1224a34d2c05b503373634b4625ec7578a72",
+   "generated_tokens": 33,
+   "termination": "complete",
+   "wall_time_seconds": 0.907
+  },
+  {
+   "id": "para-comparison-ram-rom-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "One simple analogy for memory versus storage, followed by two honest limits of the analogy."
+    }
+   ],
+   "response_verbatim": "One simple analogy for memory versus storage, followed by two honest limits of the analogy.",
+   "response_sha256": "2f08589d5977bf602530a010e34cc83cc2fd40b76cd02732c46a0d6314c7e287",
+   "generated_tokens": 24,
+   "termination": "complete",
+   "wall_time_seconds": 0.657
+  },
+  {
+   "id": "para-coding-deduplicate-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity."
+    }
+   ],
+   "response_verbatim": "Write unique_in_order(items) in Python: duplicates removed, first appearance order kept, hashable values. Add a short example and the time complexity.",
+   "response_sha256": "425a824791aff37b01058b7a4b55d1dc5899a5388c396a0d7c18f341ac51d16a",
+   "generated_tokens": 40,
+   "termination": "complete",
+   "wall_time_seconds": 1.087
+  },
+  {
+   "id": "para-coding-deduplicate-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales."
+    }
+   ],
+   "response_verbatim": "Python function unique_in_order(items) that strips repeats while keeping the order things first showed up. Include an example call and say how it scales.",
+   "response_sha256": "f599fb1aa422b043cff89e847a9e95739b34d434b7724757520795e11442592c",
+   "generated_tokens": 40,
+   "termination": "complete",
+   "wall_time_seconds": 1.026
+  },
+  {
+   "id": "para-coding-deduplicate-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me unique_in_order(items) in Python, preserving first-seen order for hashable inputs, with one example and the expected complexity."
+    }
+   ],
+   "response_verbatim": "To provide a unique_in_order for the items in Python, I'll explain the context and explain the process.\n\n**1. Context**  \nThe original order was placed in the first, and the system includes the data processing, including the hashable inputs. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and hashable content are stored in the database. The system's hashable inputs are stored in the database. The original order's name and has",
+   "response_sha256": "26e3e137bc898e85f77ec93786516bb6a6453d5f1290c1979e193994a5ecdcde",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 24.765
+  },
+  {
+   "id": "para-debugging-off-by-one-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This should hand back the final three items but often hands back four. Find the fault and rewrite it.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "def last_three\n    start = max(0, len(values)) - 3)\n    return values[start - 1:]",
+   "response_sha256": "ee99b7874224525a747217eff56858f4e2cef314789dc79e77bd7b294192190f",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.704
+  },
+  {
+   "id": "para-debugging-off-by-one-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Returns four elements where three were wanted. Diagnose and correct.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The first step: The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the three values that are in the last phase. The first, which is a four-element list of the",
+   "response_sha256": "a330f6cbfd42c7f51ab5cb6baa2e356534b8fd91724082c04ec31a247e3a0437",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.229
+  },
+  {
+   "id": "para-debugging-off-by-one-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The slice is wrong and the function over-returns. Say why and supply a fixed version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+    }
+   ],
+   "response_verbatim": "The slice is wrong and the function over-returns. Say why and supply a fixed version.",
+   "response_sha256": "9adb37f8e07a49cf7d74580270caaab35e1fbb4ed3b9b0e34a762e67287239ea",
+   "generated_tokens": 22,
+   "termination": "complete",
+   "wall_time_seconds": 0.455
+  },
+  {
+   "id": "para-writing-concise-email-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number."
+    }
+   ],
+   "response_verbatim": "Under 90 words: write to a supplier asking them to confirm whether the late delivery lands by Friday. Note that we install on Monday and request a fresh tracking number.",
+   "response_sha256": "a00947eb19a11db4bdb0d45490b17b1c14225be1a765afd2cf85d17e29aa594a",
+   "generated_tokens": 44,
+   "termination": "complete",
+   "wall_time_seconds": 0.897
+  },
+  {
+   "id": "para-writing-concise-email-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Draft a short courteous message (90 words maximum) to a supplier about a slipped delivery: will it arrive by Friday, our install is Monday, and please send an updated tracking number."
+    }
+   ],
+   "response_verbatim": "\"Draft: The delivery is Friday, our install is Monday. Please send an updated tracking number.\"\"\n\n",
+   "response_sha256": "d24e4d551118debc95f865ba16b3e15d581a53dd61f60f8279e4a10465bc614f",
+   "generated_tokens": 25,
+   "termination": "complete",
+   "wall_time_seconds": 0.501
+  },
+  {
+   "id": "para-writing-concise-email-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number. Keep it under 90 words."
+    }
+   ],
+   "response_verbatim": "Write a brief polite note to a supplier chasing a delayed order: confirm Friday arrival, mention the Monday installation, and ask for a new tracking number.",
+   "response_sha256": "944cd1c865ea1630cfa9743cf8dd60180d29c488baa2d20c4f2772d61a1417dd",
+   "generated_tokens": 41,
+   "termination": "complete",
+   "wall_time_seconds": 0.839
+  },
+  {
+   "id": "para-planning-dependencies-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Move a small site to a new domain with minimal downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out."
+    }
+   ],
+   "response_verbatim": "Move a small site to a new domain with a minimum downtime. Six steps, dependency-aware, covering backups, DNS, certificates, checking, and backing out.",
+   "response_sha256": "b3220d84c8e15387e84cdc72943d4e949aadf65f1e17923c943dc802d613b401",
+   "generated_tokens": 44,
+   "termination": "complete",
+   "wall_time_seconds": 0.906
+  },
+  {
+   "id": "para-planning-dependencies-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification and a way back."
+    }
+   ],
+   "response_verbatim": "Give six ordered steps for a low-downtime domain migration of a small website, including backups, DNS, TLS, verification, and a way back. The website is likely the most recent and its most recent ordered due to the current state of the mingering market.",
+   "response_sha256": "98df86ff4d99427c2be0ab999dd154356073841af934dfa74df44741c73663e8",
+   "generated_tokens": 66,
+   "termination": "complete",
+   "wall_time_seconds": 1.339
+  },
+  {
+   "id": "para-planning-dependencies-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Six dependency-aware steps to shift a small website onto a new domain without needless downtime, covering backups, DNS, certificates, verification and rollback."
+    }
+   ],
+   "response_verbatim": "Six depends on the following steps:\n\n1. **Shift a small website on to a new domain without needless downtime, covering backups, DNS, certificates, verification, and rollback.**  \n   - This means that the website is available for backups and DNS, DAC, CIP, and verification.  \n   - This is a new and accessible website.  \n   - The website is available for backups and DAC, CIP, and verification.  \n   - The website is available for backups and DAC, CIP, and verification.  \n   - The website is available for backups and DAC, CIP, and verification.  \n   - The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n**Note:** The website is available for backups and DAC, CIP, and verification.  \n\n",
+   "response_sha256": "1d81b364d87d4203a11828ca06404378f23dbd21655e49aaafec60220632859b",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.607
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A chart shows sales going up. You do not know the period, the units, the sample, or whether prices moved. What is safe to say, and what would you ask for first?"
+    }
+   ],
+   "response_verbatim": "Sales of the chars, you don't know the period, the units, the sample, or whether prices are in place. What is to say, and what would you ask for first?",
+   "response_sha256": "e1c2505a00a29af955b756d0b1e0410d0eb52622ffc43240fa2bd20a51b64ce2",
+   "generated_tokens": 42,
+   "termination": "complete",
+   "wall_time_seconds": 0.824
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Sales are up on a graph, with no time range, units, sample size or pricing context given. What conclusions hold, and what would you need before explaining the rise?"
+    }
+   ],
+   "response_verbatim": "Sales are up on a graph, with no time range, units, sample size, and pricing context given. What conclusions hold, and what would you need before explaining the rise?",
+   "response_sha256": "98d08af68330074883d1f9b9d8117840e024bea30d9fb29a7f6431b0bfc76eca",
+   "generated_tokens": 43,
+   "termination": "complete",
+   "wall_time_seconds": 0.856
+  },
+  {
+   "id": "para-uncertainty-insufficient-data-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Given only that a sales chart trends upward, with period, units, sample and pricing all unknown: what can be stated safely, and what would you ask for?"
+    }
+   ],
+   "response_verbatim": "Sales of the sales chat, with period, units, sample, and pricing all unknown: What can be stated, and what would you ask for?\n\n1. **What is the most likely to be the most of the sales?**  \n   - **What is the most likely to be the most of the sales?**  \n   - **What is the most likely to be the most of the sales?**  \n   - **What is the most likely to be the most of the sales?**  \n   - **What is the most likely to be the most of the sales?**  \n   - **What is the most likely to be the most of the sales?**  \n   - **What is the most likely to be the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   - **What is the most of the sales?**  \n   -",
+   "response_sha256": "296cee42821d816c4b6895e5b5e46a2366ade0b96d422a6a9f50ae40f1c24426",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 20.332
+  },
+  {
+   "id": "para-creative-continuity-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close."
+    }
+   ],
+   "response_verbatim": "The lighthouse keeper realises the foghorn is replying to what he says. Write the scene, quietly unsettling, one line of dialogue, and no explanation at the close.",
+   "response_sha256": "a067880b7a97095c1ad2edb3f0c8800097989fb23086574386fe8d7b28cd342f",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 1.026
+  },
+  {
+   "id": "para-creative-continuity-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained."
+    }
+   ],
+   "response_verbatim": "Write a brief unsettling scene where a keeper notices the foghorn answering him. Include a single spoken line and leave it unexplained.",
+   "response_sha256": "0eebd04d3fec6e6de5968013a7921052af79fad12cca8d0033622c268bab61dd",
+   "generated_tokens": 42,
+   "termination": "complete",
+   "wall_time_seconds": 0.855
+  },
+  {
+   "id": "para-creative-continuity-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Short scene: the foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it."
+    }
+   ],
+   "response_verbatim": "Short scene: The foghorn responds to the keeper's questions. Keep it quietly disturbing, give one line of dialogue, and end without accounting for it.",
+   "response_sha256": "42a5c7f69365668ab50f20cc77cc11869689785e2850485b55d26961af7d08ab",
+   "generated_tokens": 47,
+   "termination": "complete",
+   "wall_time_seconds": 0.956
+  },
+  {
+   "id": "para-multi-turn-correction-1",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wanting peanuts throughout: revise to four options."
+    }
+   ],
+   "response_verbatim": "TURN 3 of a snack-planning conversation in which the user has just disclosed two severe peanut allergies and one vegan guest, after initially wantling peanuts throughout: revise to four options.",
+   "response_sha256": "ae08918b047831f5681cdb9689c80e51a05c36b75eff90cb9561196d48255bc8",
+   "generated_tokens": 51,
+   "termination": "complete",
+   "wall_time_seconds": 1.031
+  },
+  {
+   "id": "para-multi-turn-correction-2",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options."
+    }
+   ],
+   "response_verbatim": "The user wanted peanut-based snacks for eight, then revealed two severe peanut allergies and a vegan. Give the revised four options.",
+   "response_sha256": "c8b9d64f1a1553d7d094770437181b66ded95eedb04d5dde5728ddcb62add0c4",
+   "generated_tokens": 39,
+   "termination": "complete",
+   "wall_time_seconds": 0.777
+  },
+  {
+   "id": "para-multi-turn-correction-3",
+   "category": "paraphrase",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options."
+    }
+   ],
+   "response_verbatim": "Snacks for eight, originally peanut-heavy; the user now reports two severe peanut allergies and one vegan guest. Provide four revised options.",
+   "response_sha256": "47b6655ce3fe41162f8779dcbea83bd019910c2fe52132b99b4b36391f2550d0",
+   "generated_tokens": 41,
+   "termination": "complete",
+   "wall_time_seconds": 0.833
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 213.151
+}

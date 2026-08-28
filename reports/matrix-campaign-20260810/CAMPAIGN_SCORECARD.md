@@ -1,18 +1,36 @@
-# CAMPAIGN_SCORECARD — wave 36, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 37, under the canonical standard and the sealed one
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Rows regenerated at wave 36 from `wave36/campaign-frontier-table.json`, with the
-canonical column read off `wave34/`, `wave35/` and `wave36/canonical-reread-*.json`.
-312 reviewed whole-model children,
-256 holding at least one case,
-221 benchmark rows, and every parent benchmark row
-matching the sealed reference — wave 36's parent row is identical to waves 32, 34 and 35's
+Rows regenerated at wave 37 from `wave37/campaign-frontier-table.json`, with the
+canonical column read off `wave34/`, `wave35/`, `wave36/` and `wave37/canonical-reread-*.json`.
+318 reviewed whole-model children,
+262 holding at least one case,
+228 benchmark rows, and **all 24 parent benchmark rows**
+matching the sealed reference — wave 37's parent row is identical to waves 32, 34, 35 and 36's
 to every reported digit: arc 0.5450, hellaswag_norm 0.5050, piqa_norm 0.6800, winogrande
-0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **964 ledger rows,
-960 verifying, 0 failing.**
+0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **976 ledger rows,
+972 verifying, 0 failing.**
+
+**The frozen review runner is now provably fixed across SIX waves.** One parent-lane
+digest, `865f006e3813712ec202cb23`, over fifteen sealed dossiers from waves 15, 23, 34,
+35, 36 and 37 — `wave37/lane-byte-comparison-wave37.json`. Earlier waves claimed this
+within a wave or across two; this is the first artifact that proves it across the
+campaign's whole reviewed span.
+
+**Wave 37's two frontier moves both land at 0.420779x and both are held by two
+independent children.** `ARCH.V12CL896X09` and its λ1.0 arm read 2/15 sealed and 3/15
+canonically at the campaign floor ratio, moving the sealed 2/15 rung off
+`ARCH.V9CL896` and the canonical 3/15 rung off `ARCH.V9CL896G03`, 0.016570 of stored
+ratio each. **The margin under both is two tokens and `DEEP_RECORD.md` §8.5 states it.**
+
+**`DEEP_RECORD.md` §8 is new and it is where the deep family's laws now live** — the
+corrected +1 table, the non-monotone λ1.0 record, the objective anti-correlation at
+n = 13 ladders, the block-9/block-13 equivalence, the flatness exception and the
+paraphrase result. Two of those laws are corrections to laws earlier notes stated
+wrongly.
 
 **A wave-35 artifact was found corrupt and repaired here rather than worked around.**
 `wave35/wave35-child-index.json` was the shell log of wave 35's own index run written over
@@ -57,7 +75,8 @@ compression artifact carrying no evidence about intelligence in either direction
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | `ARCH.GV12L03` | 0.618813 |
 | 5/15 | `ARCH.V9CL896G10` | **0.437349** | 5 | `ARCH.V8CL1792` | **0.600552** |
 | 4/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | `ARCH.V9CL896G10` | **0.437349** |
-| 3/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | `ARCH.V9CL896G03` | **0.437349** |
+| 3/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | `ARCH.V9CL896G03` | **0.437349** |
+| 2/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | `ARCH.V12CL896X09` | **0.420779** |
 | 2/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V9CL896` | **0.437349** |
 | 1/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V12CL896X13` | **0.420779** |
 
@@ -94,11 +113,18 @@ perplexity 781 and hellaswag_norm 0.3900 while holding zero review cases;
 `ARCH.V9CL896G10` scores 2,371 and 0.3500 while holding four. The two orderings are
 opposite, on the same seven-row table, measured in the same hour.
 
+**WAVE 37 BREAKS THAT RECORD AND IT IS NOT CLOSE.** `ARCH.V12CL896X09` has a lambada
+perplexity of **510,619.94** — an order of magnitude past `ARCH.V12CL896X13`'s
+44,244.13, which was the campaign's previous worst — and it holds **twice as many
+review cases at the identical 96,649,984 parameters**. Its λ1.0 arm is worse still on
+the benchmark (577,203.25) and ties it on the review. If the benchmark column ordered
+the deep family, it would order it backwards.
+
 The eight rung is the only interior rung the two readings agree on:
 `ARCH.V16CL1792` at 0.637073x reads eight either way.
 
-**Twenty-two of the twenty-seven children ever built below half the parent hold at least
-one case on at least one standard**, and `DEEP_RECORD.md` lists all twenty-four.
+**Twenty-eight of the thirty-two children ever built below half the parent hold at least
+one case on at least one standard**, and `DEEP_RECORD.md` lists all of them.
 `ARCH.V19CL896G03` and `ARCH.V20CL896G03` hold **four of fifteen at 0.483x and 0.488x** —
 the supplier summary, the vendor email, the missing-quantities request, and 4:15 p.m.
 pulled off the note. `ARCH.V19X13CL896` and `ARCH.KKTS`, both sealed at **zero**, are not
@@ -117,7 +143,13 @@ edited. It is the frozen-fifteen reading, and it remains the only column any
 ledger row, verdict or seal fires on.
 
 **READ THE REVIEW COLUMN AS AN UPPER BOUND, and wave 33 is the first wave that
-can say by how much.** The sealed fifteen is a reading of one wording of each
+can say by how much. WAVE 37 EXTENDED THAT MEASUREMENT INTO THE DEEP BAND AND THE
+ANSWER THERE IS ZERO.** `ARCH.V14CL896G03` (sealed 3) and `ARCH.V9CL896G10`
+(sealed 4, canonical 5 — the campaign's largest claim) each hold **0 of 39**
+restatements, every scorable lane ABSENT, against the parent's 12 of 39. Two of
+`ARCH.V9CL896G10`'s four sealed lanes are declared unanswerable on that bank and
+the declaration was made before the read, so this does **not** settle the canonical
+5/15 rung — `DEEP_RECORD.md` §8.7 states exactly what it does and does not settle. The sealed fifteen is a reading of one wording of each
 ask. `wave33/robustness-frontier.json` re-asks every sealed-held lane in three
 restatements and counts the ones that still answer:
 

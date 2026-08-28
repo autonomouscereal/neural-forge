@@ -1,0 +1,132 @@
+{
+ "schema": "neural-forge-matrix-wave37-lane-byte-comparison-v1",
+ "purpose": "A lane that decodes byte-identical to another child's lane has that child's verdict on that lane by construction.  Run before any wave-37 count was written.",
+ "missing_dossiers": [],
+ "parent_lane_digest_all_equal": true,
+ "parent_lane_digest": [
+  "865f006e3813712ec202cb23fb2bfdc43890c0b8087fd44989cde71583eaaa70"
+ ],
+ "pairs": [
+  {
+   "a": "ARCH.V14CL896G10",
+   "b": "ARCH.V14CL896",
+   "lanes_compared": 16,
+   "byte_identical": 3,
+   "lanes": [
+    "conversation-natural-greeting",
+    "summarization-priorities",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V14CL896G10",
+   "b": "ARCH.V14CL896G03",
+   "lanes_compared": 16,
+   "byte_identical": 4,
+   "lanes": [
+    "arithmetic-multi-step",
+    "creative-continuity",
+    "instruction-three-actions",
+    "logic-ordering"
+   ]
+  },
+  {
+   "a": "ARCH.V16CL896G10",
+   "b": "ARCH.V16CL896",
+   "lanes_compared": 16,
+   "byte_identical": 3,
+   "lanes": [
+    "arithmetic-multi-step",
+    "conversation-natural-greeting",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V16CL896G10",
+   "b": "ARCH.V16CL896G03",
+   "lanes_compared": 16,
+   "byte_identical": 4,
+   "lanes": [
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "logic-ordering",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "a": "ARCH.V14CL896G10",
+   "b": "ARCH.V16CL896G10",
+   "lanes_compared": 16,
+   "byte_identical": 7,
+   "lanes": [
+    "context-retrieval",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "safety-household-chemical",
+    "uncertainty-insufficient-data",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V12CL896X09",
+   "b": "ARCH.CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V12CL896X09G03",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 2,
+   "lanes": [
+    "logic-ordering",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V12CL896X09G10",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 2,
+   "lanes": [
+    "conversation-natural-greeting",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V12CL896X09G10",
+   "b": "ARCH.V12CL896X09G03",
+   "lanes_compared": 16,
+   "byte_identical": 4,
+   "lanes": [
+    "context-retrieval",
+    "multi-turn-correction",
+    "safety-household-chemical",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V12CL896X09",
+   "b": "ARCH.V12CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.CL896X09",
+   "b": "ARCH.CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V12CL896X09G03",
+   "b": "ARCH.V12CL896X13G03",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  }
+ ]
+}
