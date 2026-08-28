@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wave 29 retention -- REFUSES TO RUN until this wave's own manifest is written.
+"""Wave 30 retention -- REFUSES TO RUN until this wave's own manifest is written.
 
 **A retention manifest is the one artifact in the tree that a blanket rename
 makes ACTIVELY DANGEROUS, and this is the third wave to say so in this file.**
@@ -9,7 +9,7 @@ not exist or, worse, named different children; run as inherited it would have
 deleted every checkpoint that wave built, because a wave-25 child whose tag is
 not in a wave-24 KEEP set is, to this script, a duplicate.  Waves 25 and 26 each
 replaced the inherited body with a refusal and wrote their KEEP set by hand.
-Wave 29 does the same and copies neither: the tags below are written after this
+Wave 30 does the same and copies neither: the tags below are written after this
 wave's reviews are sealed, from the verdicts this wave actually recorded, and the
 run is a DRY RUN first, always, with the delete list printed and read before
 anything is unlinked.
@@ -48,72 +48,64 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave30")
 #: re-derives, drop what one CPU pass rebuilds from a retained source, and state
 #: the deviation whenever the count is not best-five.
 KEEP: dict[str, str] = {
-    "MX30-B75": (
-        "11/15 at 0.742049x BY BLEND -- the only child in the campaign to reach "
-        "eleven with no solve of its own.  1,024 numbers convexly mixed from two "
-        "sealed twins, zero capture, zero GPU, and it ties the deepest eleven"
+    "MX30-V19CL1792": (
+        "7/15 at 0.650769x -- the deepest child this campaign has sealed at >=4, "
+        ">=5, >=6 AND >=7 of fifteen, all four rungs at once, and the frontier "
+        "row every claim in NOTES-MX-AF rests on.  A capture plus fourteen site "
+        "solves plus a vocabulary gather; no citation rebuilds it"
     ),
-    "MX30-BP64": (
-        "10/15, and the row the over-determination law rests on: 64 of 1,024 "
-        "coordinates reproduce the solved twin's whole behaviour, gains and "
-        "LIST-to-SET loss together, while MASK03 holding the top 100 at the prior "
-        "does not prevent the loss"
+    "MX30-CL1792": (
+        "7/15 at 0.856199x -- the body the frontier child is composed onto, and "
+        "the first rung ever built inside the MLP axis's 2,560-to-896 hole.  It "
+        "is also the control for the zero-cost vocabulary composition and for "
+        "both reader-metric arms, so every A/B in section 5 is differenced "
+        "against these bytes"
     ),
-    "MX30-MASK03": (
-        "9/15 -- BELOW both its endpoints, which is the pre-registered #6 "
-        "falsifier firing.  A terminal-gain solve is a GPU pass that nothing "
-        "re-derives from a citation, and this one is differenced against a mask "
-        "written before it ran"
+    "MX30-CL1792M": (
+        "8/15 at 0.856199x, the reader-metric coreset at the solo rung.  Keeping "
+        "it keeps the selection A/B reproducible without re-running a 1,040-second "
+        "build whose selection depends on a metric accumulated from 768 positions "
+        "of the parent's own logits"
     ),
-    "MX30-KKTD": (
-        "0/15 at 0.483001x.  Twenty installed writers solved jointly, 20,480 "
-        "unknowns with real cross-writer blocks, objective improved ten percent "
-        "on held-out and the child lost both cases it had.  A capture plus an "
-        "operator assembly plus a 20,480-square solve; no citation rebuilds it"
+    "MX30-V19CL1792M": (
+        "6/15 at 0.650769x, the composed half of the same A/B.  The two rungs "
+        "disagree in sign and the extension bank refuses both margins, so the "
+        "pair is the evidence and half of it is not evidence"
     ),
-    "MX30-KKTS": (
-        "0/15 by a DIFFERENT failure -- echo on ten of sixteen lanes where the "
-        "diagonal arm produces filler.  Twenty numbers, update norm 0.336, same "
-        "zero: the row that shows the damage is not a function of degrees of "
-        "freedom"
-    ),
-    "MX30-V19MXO3": (
-        "3/15.  The CHASM BRIDGE row, and its build receipt is the only artifact "
-        "carrying the void-arithmetic finding with its arithmetic: every "
-        "parent-shaped base the plan named already folds the embedding, so the "
-        "vocabulary gather displaces that fold rather than stacking with it"
+    "MX30-CL1280": (
+        "4/15 at 0.760331x -- the second rung in the hole, and the one that "
+        "locates where the MLP axis falls.  Two rungs make a slope; one makes a "
+        "point, and the allocator's next fit reads this row"
     ),
 }
 
-#: Tag -> why this checkpoint is NOT worth its bytes.  Every built child must
-#: appear in exactly one of the two mappings or the script refuses.  Written by
-#: hand from THIS wave's sealed verdicts, after package.sh.
 DROP: dict[str, str] = {
-    "MX30-B25": (
-        "10/15.  One CPU pass off two retained wave-28 children, and its finding "
-        "-- the swap is already gone at the nearest interior point -- is a delta "
-        "between sealed reviews whose text is in the packaged dossier"
+    "MX30-CL1792LG": (
+        "7/15 at 0.856199x, and it is NOT A SECOND MEASUREMENT: all sixteen "
+        "response digests are byte-identical to MX30-CL1792's.  Its entire "
+        "finding is that identity plus four numbers -- 0.200287 against 0.200310, "
+        "325.5163 against 325.5198 -- and all of them are in the packaged build "
+        "receipt.  It is one CPU-bounded post-process off a retained child"
     ),
-    "MX30-B50": (
-        "10/15.  The midpoint, same CPU pass, and its contribution is the SHAPE "
-        "of the segment, which is arithmetic over five sealed reviews"
+    "MX30-V19CL1280": (
+        "1/15 at 0.554901x, the allocator's 0.55x recommendation and its own "
+        "EXTRAPOLATES-INTO-THE-GAP flag firing.  One CPU pass -- a vocabulary "
+        "gather -- off retained MX30-CL1280, and its finding is a count that the "
+        "packaged dossier and per-case table carry in full"
     ),
-    "MX30-V19CL896": (
-        "2/15 at 0.483001x.  Rebuilt this wave in one CPU pass off retained "
-        "MX15-CL896 and reproducing wave 28's sealed ratio exactly; it is a "
-        "citation, not bytes, and the two KKT children built from it are kept"
+    "MX30-SR24": (
+        "10/15 at 0.742049x.  One CPU pass over 1,024 numbers off two RETAINED "
+        "wave-28 children, from a coordinate set that is written out in full in "
+        "the packaged attribution artifact.  Reproducible exactly from the "
+        "artifact plus mx30_blend.py --restore --restore-k 24"
     ),
-    "MX30-KKTINF": (
-        "not a reviewed child: the lambda-to-infinity identity rung.  Its whole "
-        "claim IS a digest -- 0fa5175dda6d58ec, byte-identical to its source -- "
-        "and that digest is in the receipt, which is packaged"
-    ),
-    "MX30-V19MXP2": (
-        "2/15.  One CPU pass off a materialization that is itself re-derivable "
-        "from a sealed wave-12 cell; the MXO3 arm is retained and carries the "
-        "same void-arithmetic finding at a deeper base ratio"
+    "MX30-SR64": (
+        "10/15 at 0.742049x, same one CPU pass at k=64 from the same packaged "
+        "coordinate set.  The pair's finding is that both land on the control's "
+        "count with dedup still a set, which is two sealed reviews and not bytes"
     ),
 }
+
 
 
 def main() -> int:
