@@ -56,7 +56,16 @@ def _authenticated_bank(bank_path: Path, seal_path: Path, which: str) -> list[di
     seal = json.loads(seal_path.read_text(encoding="utf-8"))
     if seal.get("schema") != "neural-forge-extension-bank-seal-v1":
         raise SystemExit(f"REFUSED: {seal_path} is not an extension-bank seal")
-    key = {"extension": "bank_sha256", "paraphrase": "paraphrase_sha256"}[which]
+    # WAVE 34 adds `extension2` and adds NOTHING else to this file.  The v2 bank
+    # is a different prompt list under the identical decode path; a new surface
+    # that reimplemented the decode would be a new instrument and not a new bank.
+    # The v1 key is untouched, so every one of the sixty committed v1
+    # observations still authenticates against exactly the digest it did.
+    key = {
+        "extension": "bank_sha256",
+        "extension2": "bank2_sha256",
+        "paraphrase": "paraphrase_sha256",
+    }[which]
     observed = hashlib.sha256(bank_path.read_bytes()).hexdigest()
     if observed != seal[key]:
         raise SystemExit(
@@ -64,7 +73,7 @@ def _authenticated_bank(bank_path: Path, seal_path: Path, which: str) -> list[di
             "A drifted bank is not the frozen bank."
         )
     doc = json.loads(bank_path.read_text(encoding="utf-8"))
-    if which == "extension":
+    if which in ("extension", "extension2"):
         rows = doc["prompts"]
     else:
         rows = [row for lane in doc["triplets"].values() for row in lane]
@@ -80,7 +89,11 @@ def main() -> int:
     ap.add_argument("--deployment", type=Path, required=True)
     ap.add_argument("--bank", type=Path, required=True)
     ap.add_argument("--seal", type=Path, required=True)
-    ap.add_argument("--which", choices=("extension", "paraphrase"), default="extension")
+    ap.add_argument(
+        "--which",
+        choices=("extension", "extension2", "paraphrase"),
+        default="extension",
+    )
     ap.add_argument("--receipt", type=Path, help="the sealed ARCH cell receipt, when there is one")
     ap.add_argument("--child-model", type=Path)
     ap.add_argument("--composed-tensors", type=Path)
