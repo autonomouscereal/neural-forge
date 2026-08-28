@@ -404,9 +404,13 @@ appended the missing 15 behind its own `.MERGED_VERDICTS_ONCE` guard, and the
 authority's pre-wave bytes are a **byte prefix** of the result at both steps
 (1,500,006 of 1,553,089). New digest `48fb010284bdec15…`.
 
-**Seal verification: 28 roots audited against disk, 0 undeclared; 908 rows, 889
-resolve and all 889 verify, 0 failures**, with the same four unresolved rows
-waves 25–32 carry (`CAL.C01.T5.X4` ×3, `COMP.MC.MXO0`).
+**Seal verification: 28 roots audited against disk, 0 undeclared; 908 rows, 904
+resolve and all 904 verify, 0 failures**, with the same four unresolved rows
+waves 25–32 carry (`CAL.C01.T5.X4` ×3, `COMP.MC.MXO0`). Those are the numbers
+from the run **after both merge passes**; this paragraph first carried 889, which
+was the mid-wave figure from the run between them, and the correction is recorded
+rather than silently overwritten because a verification number that moves without
+a reason is exactly the thing the verifier exists to catch.
 
 `sealq.sh` ran **once**, behind `.SEALQ_RAN`; the eight-argument guard fired on
 none of the fifteen. Parent lane calibration re-read blind from `ARCH.BM25`'s own
