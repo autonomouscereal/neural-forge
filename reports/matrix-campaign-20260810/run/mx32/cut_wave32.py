@@ -70,10 +70,20 @@ SRC = Path(__file__).resolve().parent.parent / "mx31"
 DST = Path(__file__).resolve().parent
 
 #: Copied VERBATIM.  Every edit to these is made by hand, once, and read back.
+#:
+#: ``sealq.sh`` BELONGS IN THIS SET AND WAS NOT IN IT.  Wave 32 discovered that
+#: from its own tree: the copy brought wave 31's nineteen seal calls forward with
+#: `mx31`->`mx32` applied and every COUNT intact, onto cell ids in wave 32's
+#: tree, and wave 31's own comment in that file says wave 30's calls were
+#: DELETED rather than renamed and says why.  The calls were removed by hand
+#: before any wave-32 seal was written, and ``audit()`` now asserts the seal
+#: block's marker names this wave.  It is listed here for the next cut, which
+#: reads this dict rather than the paragraph.
 HAND_EDIT = {
     "mx31_verify_seals.py",
     "mx31_retain.py",
     "mx31_build.py",
+    "sealq.sh",
 }
 #: Authored by this wave; the copier never overwrites them.
 AUTHORED_THIS_WAVE = {"cut_wave32.py", "README.md"}
@@ -242,6 +252,21 @@ def audit() -> int:
     for flag in ("--parent-useful-or-partial 12", "--lanes-total 16"):
         if flag not in sv:
             problems.append(f"seal_verdict.sh lost {flag}")
+    # ADDED AFTER THIS WAVE'S OWN CUT MISSED IT.  `sealq.sh` is not in HAND_EDIT,
+    # so the copy brought wave 31's nineteen seal calls forward with the
+    # substitution applied and every COUNT intact, onto cell ids in this wave's
+    # tree.  Nothing downstream would have caught a wrong count -- to
+    # `seal_verdict.sh` a count is a number -- and the only thing that would have
+    # stopped it is that the tags do not exist in `wave32/cells`.  The block is
+    # delimited by a marker naming the wave it belongs to; asserting the marker
+    # names THIS wave turns a copied block into a refusal.
+    seals = (DST / "sealq.sh").read_text(encoding="utf-8")
+    marker = "# --- wave 32 seals are appended below, AFTER the dossiers are read ---"
+    if marker not in seals:
+        problems.append(
+            "sealq.sh does not carry this wave's seal marker, so its seal calls "
+            "are last wave's counts on this wave's cell ids"
+        )
     if problems:
         for p in problems:
             print("AUDIT FAILED:", p, file=sys.stderr)
