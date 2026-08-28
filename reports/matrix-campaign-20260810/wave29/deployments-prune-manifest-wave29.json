@@ -1,0 +1,67 @@
+{
+ "schema": "neural-forge-matrix-wave29-deployments-prune-v1",
+ "policy": "current+1: the deployment the wave ran from is kept, and the one before it is kept so a refusal can be reproduced against the tree that produced it.  Everything older is deleted after its post-wave verification is recorded.",
+ "why_nine_deployments": "Wave 29 cut nine verified deployments where a wave normally cuts one.  Six of them exist because a guard refused -- the bank digest pin on CRLF-versus-LF, the sealer's build-receipt allowlist, the receipt validator twice on missing axis fields, Streams.masks on a second bookkeeping, and the rubric's inline regex flags -- and the estate's rule is that a fix ships as a commit and a verified deployment rather than as an edit to a deployed file.  The cost is upload time; the alternative is a deployment whose bytes are not the commit's, which is the thing the verification exists to prevent.",
+ "kept": [
+  {
+   "deployment": "neural-forge-matrix-3ce98c0e",
+   "reason": "the deployment wave 29 ran its package and retention from; post-wave verified 5,380 files, 0 discrepancies"
+  },
+  {
+   "deployment": "neural-forge-matrix-f7972a1c",
+   "reason": "current-1: the tree the KKT seals ran from"
+  }
+ ],
+ "deleted": [
+  {
+   "deployment": "neural-forge-matrix-18b99225",
+   "mib": 266,
+   "reason": "wave 28's tree, two waves back"
+  },
+  {
+   "deployment": "neural-forge-matrix-49770e9f",
+   "mib": 261,
+   "reason": "wave 27's tree, three waves back"
+  },
+  {
+   "deployment": "neural-forge-matrix-ff9e9568",
+   "mib": 270,
+   "reason": "a wave-29 intermediate, superseded by 27ae37de and then by 3ce98c0e"
+  },
+  {
+   "deployment": "neural-forge-matrix-badef10b",
+   "reason": "wave-29 intermediate, superseded by the CRLF pin fix"
+  },
+  {
+   "deployment": "neural-forge-matrix-609a8e7d",
+   "reason": "wave-29 intermediate, superseded"
+  },
+  {
+   "deployment": "neural-forge-matrix-3de7a9ec",
+   "reason": "wave-29 intermediate, superseded"
+  },
+  {
+   "deployment": "neural-forge-matrix-888e86ad",
+   "reason": "wave-29 intermediate, superseded"
+  },
+  {
+   "deployment": "neural-forge-matrix-e2b68f87",
+   "reason": "wave-29 intermediate, superseded"
+  },
+  {
+   "deployment": "neural-forge-matrix-d3121dcd",
+   "reason": "wave-29 intermediate, superseded"
+  },
+  {
+   "deployment": "neural-forge-matrix-27ae37de",
+   "reason": "wave-29 intermediate, superseded"
+  },
+  {
+   "deployment": "neural-forge-matrix-4eda4c16",
+   "reason": "wave-29 intermediate, superseded"
+  }
+ ],
+ "upload_archives_removed": "deployments/nf-mx29-*.tar.gz",
+ "mib_freed_in_the_final_pass": 797,
+ "root_filesystem_after": "1.1T used of 1.8T, 652G available, 63%"
+}
