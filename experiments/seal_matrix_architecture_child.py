@@ -251,6 +251,28 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave37-blend-build-receipt-v1",
     "neural-forge-matrix-wave37-logit-metric-writer-v1",
     "neural-forge-matrix-wave37-body-blend-build-receipt-v1",
+    # Wave 38 adds NO builder class and NO behavioural edit of any kind, for the
+    # SECOND consecutive wave.  Its four strings are wave 37's four renamed by
+    # `run/mx38/cut_wave38.py`, byte-identical in behaviour to the lines above
+    # them.  This wave builds through `mx38_build.py` (one
+    # `--ff 896 --excise 9 --excise 13` body -- the first MULTI-INDEX excision
+    # since wave 28 and the first ever composed with `--ff`, which is the only
+    # thing about it that is new), `mx38_vocab.py` (the four vocabulary folds on
+    # it and on wave 37's retained block-9 body) and `mx38_termgain.py` (one
+    # deep-family gain arm); the other three are appended with them for wave
+    # 33's stated reason.
+    #
+    # **THESE FOUR ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-38 TREE,
+    # BEFORE ANY GPU RAN.**  Waves 36 and 37 were the first two waves to act on
+    # the paragraph above instead of writing it again, and neither paid a
+    # deployment for this list.  Wave 38 is the third, which is the point at
+    # which two waves stop being a coincidence -- so the sentence can now be
+    # read as the practice rather than as advice: append at the cut, not at the
+    # first seal.
+    "neural-forge-matrix-wave38-standard-shape-child-v1",
+    "neural-forge-matrix-wave38-blend-build-receipt-v1",
+    "neural-forge-matrix-wave38-logit-metric-writer-v1",
+    "neural-forge-matrix-wave38-body-blend-build-receipt-v1",
 )
 
 

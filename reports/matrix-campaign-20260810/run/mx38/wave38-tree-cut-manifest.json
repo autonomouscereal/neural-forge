@@ -1,0 +1,499 @@
+{
+ "schema": "neural-forge-matrix-wave38-tree-cut-v1",
+ "generated_at": "2026-08-28T22:21:31Z",
+ "source_tree": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\matrix-campaign-20260810\\run\\mx37",
+ "destination_tree": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\matrix-campaign-20260810\\run\\mx38",
+ "substitutions_applied": [
+  {
+   "from": "--campaign-wave 37",
+   "to": "--campaign-wave 38"
+  },
+  {
+   "from": "\"campaign_wave\": 37",
+   "to": "\"campaign_wave\": 38"
+  },
+  {
+   "from": "wave37",
+   "to": "wave38"
+  },
+  {
+   "from": "mx37",
+   "to": "mx38"
+  },
+  {
+   "from": "MX37",
+   "to": "MX38"
+  }
+ ],
+ "prose_left_alone": "`wave 37` / `Wave 37` / `WAVE 37` in English are NOT substituted, so a docstring recording what wave 37 measured still says wave 37 did",
+ "hand_edit_set": [
+  "mx37_build.py",
+  "mx37_retain.py",
+  "mx37_verify_seals.py",
+  "sealq.sh"
+ ],
+ "not_carried": [
+  "wave37-tree-cut-manifest.json"
+ ],
+ "authored_this_wave": [
+  "README.md",
+  "cut_wave38.py"
+ ],
+ "behavioural_edits_this_wave": "NONE, for the second consecutive wave.  Wave 38's build list is one --ff 896 --excise 9 --excise 13 body and four post-processes; --ff has existed since wave 15, --excise since wave 16, multi-index excision since wave 17 and the vocabulary gather since wave 25.  Wave 36's composed width x MLP edit is carried unchanged, its five guarding assertions and wave 37's two live-mask assertions are asserted on this wave's copy, and wave 38 adds TWO of its own about the multi-index deletion order and the module re-index.",
+ "files": [
+  {
+   "source": "benchq.sh",
+   "target": "benchq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 1,
+    "MX37": 1
+   }
+  },
+  {
+   "source": "blendq.sh",
+   "target": "blendq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 3,
+    "MX37": 4
+   }
+  },
+  {
+   "source": "bodyblendq.sh",
+   "target": "bodyblendq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 3,
+    "MX37": 3
+   }
+  },
+  {
+   "source": "bodyq.sh",
+   "target": "bodyq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 4,
+    "MX37": 5
+   }
+  },
+  {
+   "source": "cut_wave37.py",
+   "target": "cut_wave38.py",
+   "action": "left alone",
+   "substitutions": {}
+  },
+  {
+   "source": "deploy.py",
+   "target": "deploy.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 2
+   }
+  },
+  {
+   "source": "extq.sh",
+   "target": "extq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 3,
+    "MX37": 2
+   }
+  },
+  {
+   "source": "gainq.sh",
+   "target": "gainq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 3,
+    "MX37": 5
+   }
+  },
+  {
+   "source": "mx37_allocator.py",
+   "target": "mx38_allocator.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "mx37_basereceipt.py",
+   "target": "mx38_basereceipt.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 3
+   }
+  },
+  {
+   "source": "mx37_benchtab.py",
+   "target": "mx38_benchtab.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "mx37_blend.py",
+   "target": "mx38_blend.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 5
+   }
+  },
+  {
+   "source": "mx37_blend_body.py",
+   "target": "mx38_blend_body.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 2,
+    "mx37": 5
+   }
+  },
+  {
+   "source": "mx37_build.py",
+   "target": "mx38_build.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_calibrate.py",
+   "target": "mx38_calibrate.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 4
+   }
+  },
+  {
+   "source": "mx37_campaign_table.py",
+   "target": "mx38_campaign_table.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "mx37_child_index.py",
+   "target": "mx38_child_index.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 3
+   }
+  },
+  {
+   "source": "mx37_condinventory.py",
+   "target": "mx38_condinventory.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 1
+   }
+  },
+  {
+   "source": "mx37_coordsearch.py",
+   "target": "mx38_coordsearch.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 1
+   }
+  },
+  {
+   "source": "mx37_emission.py",
+   "target": "mx38_emission.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 2
+   }
+  },
+  {
+   "source": "mx37_emission_invariant.py",
+   "target": "mx38_emission_invariant.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 1
+   }
+  },
+  {
+   "source": "mx37_emitcoverage.py",
+   "target": "mx38_emitcoverage.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 3,
+    "mx37": 1,
+    "MX37": 2
+   }
+  },
+  {
+   "source": "mx37_extbank2.py",
+   "target": "mx38_extbank2.py",
+   "action": "renamed",
+   "substitutions": {
+    "\"campaign_wave\": 37": 1,
+    "mx37": 6
+   }
+  },
+  {
+   "source": "mx37_extreview.py",
+   "target": "mx38_extreview.py",
+   "action": "renamed",
+   "substitutions": {
+    "\"campaign_wave\": 37": 1
+   }
+  },
+  {
+   "source": "mx37_extrubric2.py",
+   "target": "mx38_extrubric2.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 3
+   }
+  },
+  {
+   "source": "mx37_extscore.py",
+   "target": "mx38_extscore.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "mx37_instrument.py",
+   "target": "mx38_instrument.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 7
+   }
+  },
+  {
+   "source": "mx37_logitsolve.py",
+   "target": "mx38_logitsolve.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 13
+   }
+  },
+  {
+   "source": "mx37_massive_probe.py",
+   "target": "mx38_massive_probe.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "mx37_merge_ledger.py",
+   "target": "mx38_merge_ledger.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "mx37_mforensics.py",
+   "target": "mx38_mforensics.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 13
+   }
+  },
+  {
+   "source": "mx37_pararubric.py",
+   "target": "mx38_pararubric.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 3
+   }
+  },
+  {
+   "source": "mx37_parent_identity.py",
+   "target": "mx38_parent_identity.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_penaltydecode.py",
+   "target": "mx38_penaltydecode.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 1
+   }
+  },
+  {
+   "source": "mx37_percase.py",
+   "target": "mx38_percase.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_read_dossier.py",
+   "target": "mx38_read_dossier.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_report_tables.py",
+   "target": "mx38_report_tables.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_results_matrix.py",
+   "target": "mx38_results_matrix.py",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 1
+   }
+  },
+  {
+   "source": "mx37_retain.py",
+   "target": "mx38_retain.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_retok.py",
+   "target": "mx38_retok.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 7
+   }
+  },
+  {
+   "source": "mx37_retokcensus.py",
+   "target": "mx38_retokcensus.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 1
+   }
+  },
+  {
+   "source": "mx37_termgain.py",
+   "target": "mx38_termgain.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 14
+   }
+  },
+  {
+   "source": "mx37_verify_seals.py",
+   "target": "mx38_verify_seals.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx37_vocab.py",
+   "target": "mx38_vocab.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 2,
+    "mx37": 8
+   }
+  },
+  {
+   "source": "mx37_vocabfloor.py",
+   "target": "mx38_vocabfloor.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 5
+   }
+  },
+  {
+   "source": "package.sh",
+   "target": "package.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 5,
+    "mx37": 4,
+    "MX37": 3
+   }
+  },
+  {
+   "source": "README.md",
+   "target": "README.md",
+   "action": "left alone",
+   "substitutions": {}
+  },
+  {
+   "source": "reviewonly.sh",
+   "target": "reviewonly.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 1,
+    "MX37": 3
+   }
+  },
+  {
+   "source": "reviewq.sh",
+   "target": "reviewq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 1,
+    "MX37": 2
+   }
+  },
+  {
+   "source": "run-bench.sh",
+   "target": "run-bench.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1
+   }
+  },
+  {
+   "source": "seal_and_review.sh",
+   "target": "seal_and_review.sh",
+   "action": "renamed",
+   "substitutions": {
+    "--campaign-wave 37": 1,
+    "wave37": 1,
+    "mx37": 2
+   }
+  },
+  {
+   "source": "seal_verdict.sh",
+   "target": "seal_verdict.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave37": 1,
+    "mx37": 1
+   }
+  },
+  {
+   "source": "sealq.sh",
+   "target": "sealq.sh",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "vocabq.sh",
+   "target": "vocabq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx37": 4,
+    "MX37": 4
+   }
+  },
+  {
+   "source": "wave37-tree-cut-manifest.json",
+   "target": "",
+   "action": "NOT CARRIED",
+   "substitutions": {}
+  }
+ ]
+}
