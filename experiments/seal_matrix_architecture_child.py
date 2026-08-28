@@ -232,6 +232,25 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave36-blend-build-receipt-v1",
     "neural-forge-matrix-wave36-logit-metric-writer-v1",
     "neural-forge-matrix-wave36-body-blend-build-receipt-v1",
+    # Wave 37 adds NO builder class and NO behavioural edit of any kind.  Its
+    # four strings are wave 36's four renamed by `run/mx37/cut_wave37.py`,
+    # byte-identical in behaviour to the lines above them.  This wave builds
+    # through `mx37_build.py` (one `--ff 896 --excise 9` body -- a composition
+    # sealed since wave 35, on a block that is not the last one, which is the
+    # only thing about it that is new), `mx37_vocab.py` (the vocabulary folds on
+    # it and the two rebuilt CL896 rungs) and `mx37_termgain.py` (four
+    # deep-family gain arms); the other three are appended with them for wave
+    # 33's stated reason.
+    #
+    # **THESE FOUR ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-37 TREE,
+    # BEFORE ANY GPU RAN.**  Wave 36 was the first wave to act on the paragraph
+    # above instead of writing it again, and it paid no deployment for this list.
+    # Wave 37 is the second.  Two waves is not yet a habit, so the sentence stays
+    # where the next wave will read it: append at the cut, not at the first seal.
+    "neural-forge-matrix-wave37-standard-shape-child-v1",
+    "neural-forge-matrix-wave37-blend-build-receipt-v1",
+    "neural-forge-matrix-wave37-logit-metric-writer-v1",
+    "neural-forge-matrix-wave37-body-blend-build-receipt-v1",
 )
 
 
