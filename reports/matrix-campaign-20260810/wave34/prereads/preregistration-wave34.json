@@ -1,0 +1,90 @@
+{
+ "schema": "neural-forge-matrix-wave34-preregistration-v1",
+ "purpose": "Every count this wave will build, predicted BEFORE the build and before any dossier is opened, from the allocator refitted on the 920-row ledger.  Wave 34 carries a SECOND prediction column the earlier waves did not: the CANONICAL intelligence count, because the canonical standard is this wave's headline and a headline that is only ever scored after the fact is not a measurement.  A prediction written after a result is not a prediction, so this file is written and committed before the first build is launched.",
+ "written_before": "the first GPU build of wave 34",
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 920,
+  "sha256": "c9f6cbe5971dd122265eb3f940d6430d1a7cef41f6e76fa8b9932c4cc393528b",
+  "identical_in": [
+   "the repository working copy",
+   "the deployment neural-forge-matrix-02dd19c6"
+  ]
+ },
+ "deployment": {
+  "commit": "02dd19c6",
+  "root": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-02dd19c6",
+  "files_declared": 6325,
+  "content_mismatches": 0,
+  "missing": 0,
+  "undeclared_on_disk": 0,
+  "hardlinks": 0
+ },
+ "allocator_refit": {
+  "arithmetic_gate": {"cells_checked": 75, "mismatched": 0},
+  "fitted_pairwise_interference": {"depthxvocab": 4.3965, "mlpxvocab": 0.3969, "depthxmlp": 3.1377},
+  "mean_absolute_error_cases": 2.348,
+  "composed_children_in_fit": 41,
+  "moved_since_wave_31": "mlpxvocab 1.75 -> 0.3969 and depthxmlp 0.8056 -> 3.1377 once waves 31-33's composed rows entered the fit.  The pair the CL896 arm of this build list rides on got BETTER by 1.35 cases and the pair the CL1792X13 arm rides on got WORSE by 2.33.  The allocator's own error bar is +-2.3 cases and it is quoted with every number below."
+ },
+ "axis_deltas_used": {
+  "note": "sealed frozen-fifteen delta against the 12/15 parent, read off the ledger's own solo rungs",
+  "vocab_19456": 2, "vocab_16384": -3, "vocab_12288": -1, "vocab_10240": -2, "vocab_8192": -8,
+  "mlp_1792": -5, "mlp_896": -8, "depth_site13": 1
+ },
+ "back_tests_of_the_model_on_rows_it_will_not_be_scored_on": [
+  {"cell": "ARCH.V8CL896", "predicted": 0, "sealed": 0, "error": 0},
+  {"cell": "ARCH.V16CL896", "predicted": 0.6, "sealed": 1, "error": 0.4},
+  {"cell": "ARCH.V19CL1792X13", "predicted": 2.1, "sealed": 2, "error": 0.1},
+  {"cell": "ARCH.V19CL896", "predicted": 5.6, "sealed": 2, "error": 3.6,
+   "note": "the model's worst miss on this body and it is named here rather than dropped.  K=19,456 is the vocabulary axis's own PEAK solo (+2 against the parent) and it does not carry that peak onto the 896 body at all.  Every CL896 prediction below is therefore quoted with the caveat that the one rung where the model was badly wrong on this body was wrong in the OPTIMISTIC direction."}
+ ],
+ "predictions": [
+  {"cell": "ARCH.CL896", "lane": "B1", "stored_parameters": 158127872, "net_ratio": 0.688431,
+   "predicted_review": 4, "predicted_canonical": 6,
+   "source": "REBUILD of wave 15's sealed body, not a new cell.  Wave 15 sealed 4/15 and the canonical re-read reads 6.  It is built because the vocabulary fold needs a source checkpoint on disk and retention deleted every wave-15 child.  If it reproduces bit-identically it is not reviewed again and not sealed again; if it does not reproduce, it is a NEW body and the sealed cell may not be cited for it."},
+  {"cell": "ARCH.CL1792X13", "lane": "B2", "stored_parameters": 186958592, "net_ratio": 0.813949,
+   "predicted_review": 4, "predicted_canonical": 4,
+   "source": "REBUILD of wave 31's sealed body, same reasoning as B1.  Wave 31 sealed 4/15; the canonical re-read agrees at 4."},
+
+  {"cell": "ARCH.V12CL896", "lane": "C1", "stored_parameters": 103601920, "net_ratio": 0.451045,
+   "predicted_review": 2.6, "predicted_canonical": 1,
+   "source": "allocator: 12 - 1 (vocab 12,288) - 8 (mlp 896) - 0.3969 (mlpxvocab).  THE SECOND-DEEPEST CHILD THE CAMPAIGN HAS EVER BUILT and the deepest with any expectation of signal.  The canonical prediction is deliberately BELOW the sealed prediction and below the CL896 family's flat canonical 2, because the two children deeper than 0.4693 read 1 (V19X13CL896, 0.4527) and 0 (V8CL896, 0.4328) and this one sits between them."},
+  {"cell": "ARCH.V12CL896G01", "lane": "C1", "stored_parameters": 103601920, "net_ratio": 0.451045,
+   "predicted_review": 2.6, "predicted_canonical": 1,
+   "source": "terminal gain lambda 0.1 on V12CL896 at ZERO storage delta.  Wave 33's ladder gained nothing and lost nothing on two sources and LOST one case at lambda 0.1 to a cap hit, so the flat prediction is the source's own count."},
+  {"cell": "ARCH.V12CL896G03", "lane": "C1", "stored_parameters": 103601920, "net_ratio": 0.451045,
+   "predicted_review": 3.6, "predicted_canonical": 3,
+   "source": "terminal gain lambda 0.3.  On the CL896 BODY specifically the G03 arm has been worth +1 sealed twice (V19CL896 2->3, V20CL896 2->3) and +2 canonical twice (2->4 on both).  That body-specific prior is used here in preference to wave 33's flat CL1792 result, and the two priors disagree by a case, which is stated rather than averaged away."},
+  {"cell": "ARCH.V12CL896G10", "lane": "C1", "stored_parameters": 103601920, "net_ratio": 0.451045,
+   "predicted_review": 2.6, "predicted_canonical": 1,
+   "source": "terminal gain lambda 1.0.  Wave 33's most aggressive rung moved nothing on either source."},
+  {"cell": "ARCH.V16CL896G03", "lane": "C1", "stored_parameters": 107796224, "net_ratio": 0.469305,
+   "predicted_review": 2, "predicted_canonical": 4,
+   "source": "the missing arm of a family whose other three members exist: V19CL896G03 and V20CL896G03 are both sealed 3 / canonical 4, and V16CL896 is sealed 1 / canonical 2.  +1 sealed and +2 canonical on the body prior."},
+  {"cell": "ARCH.V10CL896", "lane": "C1", "stored_parameters": 101504768, "net_ratio": 0.441915,
+   "predicted_review": 1.6, "predicted_canonical": 0,
+   "source": "allocator: 12 - 2 (vocab 10,240) - 8 - 0.3969.  THE DEEPEST CHILD THIS CAMPAIGN HAS EVER BUILT WITH AN EXPECTATION OF SIGNAL, and it is built to BRACKET a content death rather than to take a frontier: ARCH.V8CL896 at 0.4328x is one of only three honest content deaths in the estate.  If this holds anything the death is located between K=8,192 and K=10,240; if it holds nothing the bracket closes at 12,288."},
+
+  {"cell": "ARCH.V12CL1792X13", "lane": "C2", "stored_parameters": 132432640, "net_ratio": 0.576563,
+   "predicted_review": 0, "predicted_canonical": 5,
+   "source": "allocator: 12 - 1 - 5 + 1 - 4.3965 - 0.3969 - 3.1377 = -0.9, floored at 0.  ALL THREE PAIR TERMS FIRE.  The sealed model says this triple is dead and the sealed model was right about its sibling: V19CL1792X13 sealed 2.  The canonical prediction of 5 is the wave's actual thesis -- that same sibling reads SIX under the canonical standard because four of its lanes were charged as loops and echoes, and one sealed lane of vocabulary cost is subtracted from it."},
+  {"cell": "ARCH.V8CL1792X13", "lane": "C2", "stored_parameters": 128238336, "net_ratio": 0.558303,
+   "predicted_review": 0, "predicted_canonical": 2,
+   "source": "allocator: 12 - 8 - 5 + 1 - 7.9311, floored at 0.  K=8,192 costs seven sealed lanes against 19,456 on the solo axis, so the canonical prediction takes the sibling's 6 down by four rather than by one."}
+ ],
+ "frontier_claims_at_stake_stated_in_advance": [
+  {"rung": "canonical 1/15", "incumbent": "ARCH.V19X13CL896 at 0.452734", "moves_if": "any V12CL896 arm reads >= 1", "to": 0.451045},
+  {"rung": "canonical 1/15", "incumbent": "ARCH.V19X13CL896 at 0.452734", "moves_if": "ARCH.V10CL896 reads >= 1", "to": 0.441915},
+  {"rung": "canonical 2/15", "incumbent": "ARCH.V16CL896 at 0.469305", "moves_if": "any V12CL896 arm reads >= 2", "to": 0.451045},
+  {"rung": "canonical 3/15 and 4/15", "incumbent": "ARCH.V19CL896G03 at 0.483001", "moves_if": "ARCH.V12CL896G03 reads >= 3 or >= 4", "to": 0.451045},
+  {"rung": "canonical 5/15 and 6/15", "incumbent": "ARCH.V8CL1792 at 0.600552", "moves_if": "ARCH.V12CL1792X13 reads >= 5 or >= 6", "to": 0.576563},
+  {"rung": "canonical 5/15", "incumbent": "ARCH.V8CL1792 at 0.600552", "moves_if": "ARCH.V8CL1792X13 reads >= 5", "to": 0.558303},
+  {"rung": "sealed 1/15", "incumbent": "ARCH.V16CL896 at 0.469305", "moves_if": "any V12CL896 arm seals >= 1", "to": 0.451045}
+ ],
+ "what_this_wave_will_NOT_claim": [
+  "A canonical re-read is an ASSESSMENT of a sealed dossier and never becomes a sealed number.  Every child below is sealed on the frozen fifteen under the frozen protocol first, and read a second time under the canonical standard second, and the two counts are carried side by side everywhere.",
+  "The repetition-penalty decode in lane C3 is a RUNTIME DIAGNOSTIC.  It changes a decode parameter and not a byte of any child, it is never sealed, it never appears in a ledger row, and no fold claim rests on it.",
+  "The v2 extension bank in lane C4 is a candidate instrument under calibration.  If its rank correlation does not beat the retired v1 surface's pooled 0.69 it is reported as no-better and not adopted."
+ ]
+}
