@@ -1,32 +1,44 @@
-# CAMPAIGN_SCORECARD — wave 31
+# CAMPAIGN_SCORECARD — wave 32
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Regenerated at wave 31 from `wave31/campaign-frontier-table.json`.
-269 reviewed whole-model children,
-217 holding at least one case,
-174 benchmark rows, and every parent benchmark row
+Regenerated at wave 32 from `wave32/campaign-frontier-table.json`.
+284 reviewed whole-model children,
+231 holding at least one case,
+184 benchmark rows, and every parent benchmark row
 matching the sealed reference.
 
-**What wave 31 changed about how to read this table.** Six of the fifteen rows
-below are the same body — wave 30's `ARCH.CL1792` at `intermediate_size` 1792 —
-carrying six different vocabulary folds, and they read 5, 6, 7, 7, 7 and 8 of
-fifteen across 18,432 rows of table. On a pre-transition MLP body **the composed
-child reads the body's number, not the vocabulary's**: the same eight K read 14,
-13, 9, 11, 9 and 4 alone. Every ranking in the deep band that was ever explained
-by "which K" needs re-reading as "which body".
+**What wave 32 changed about how to read this table.** Wave 31 wrote here that
+on a pre-transition MLP body *the composed child reads the body's number, not
+the vocabulary's*, and that every deep-band ranking explained by "which K" needed
+re-reading as "which body". Wave 32 composed the same four K onto a body that
+reads **one better alone** — wave 30's `ARCH.CL1792M`, at byte-identical storage
+— and the four rungs read **3, 4, 2, 3** against the plain body's **8, 7, 6, 5**.
+Composed onto a convex blend body they read 3 against a body of 7. **The
+flatness law now has three bodies where it fails and one where it holds, and the
+one where it holds is the body it was discovered on.** It is a fact about
+`ARCH.CL1792`, not a law about composition, and no plan should assume a better
+body composes better.
+
+**Two rows below carry a caveat wave 32 added.** `ARCH.V16CL1792`'s 8/15 at
+0.637073x rides entirely on `creative-continuity`, and wave 32 ran the
+paraphrase triplets on it three waves late: **zero of the three restatements of
+that lane's ask would be graded Partial.** The robust claim at that ratio is
+7/15, which ties `ARCH.V12CL1792` at a shallower depth — so the campaign's
+honest deep frontier is `ARCH.V12CL1792` at **7/15, 0.618813x**. Wave 32 itself
+moved **no** frontier row at any of the fifteen thresholds.
 
 **The second review surface.** ADDENDUM 16.1's 30-prompt extension bank prices
 and orders; it grades nothing. Every count in this file is the frozen fifteen,
-read by hand, exactly as it has been for thirty-one waves. Wave 31's retro-score
-over nineteen sealed children gives Spearman **0.7411**
-against the sealed counts — *VALIDATED: the sealed rank order reproduces on the extension surface* — against wave 30's
-0.6544 `PARTIAL`. It confirms the flatness and it does **not** confirm the
-ordering inside it: the whole `V*CL1792` family reads 7-8 sealed and 8-10 on the
-extension, with a different member at the top of each column. No plan should be
-built on the gaps between those six rows.
+read by hand, exactly as it has been for thirty-two waves. Wave 32's retro-score
+over seventeen sealed children gives Spearman **0.3537** — *SCRAMBLED: the
+sealed ordering does NOT reproduce* — against wave 31's 0.7411 `VALIDATED` and
+wave 30's 0.6544 `PARTIAL`. Its worst-reviewed child, `ARCH.V4CL1792` at 1/15,
+takes the **highest** extension score in the wave at 10/30. Nothing in this file
+fires on that surface, and after three waves reading 0.65, 0.74 and 0.35 it is
+not yet an instrument.
 
 | rank | child | net | review | shape | the character of its failure | READ- dossier |
 |---:|---|---:|---:|---|---|---|
@@ -39,9 +51,9 @@ built on the gaps between those six rows.
 | 7 | `ARCH.V32CL896` | **0.542347** | **2/15** | standard | two cases at 0.542347x with the LARGEST table in the campaign on the smallest MLP: the supplier paragraph is compressed correctly enough to keep the decision and the risk, and the email carries some of its asks.  The context-retrieval lane returns the note verbatim and four lanes fill the cap | `reports/matrix-campaign-20260810/wave27/human-review/READ-V32CL896.txt` |
 | 8 | `ARCH.V19CL1280` | **0.554901** | **1/15** | standard | one case at 0.554901x -- the allocator's 0.55x recommendation firing its own EXTRAPOLATES-INTO-THE-GAP flag, predicted 6.68 and observed one.  The single case is a near-copy of the supplier paragraph that drops the decision; the uncertainty lane fills the cap explaining why IT increased the sales | `reports/matrix-campaign-20260810/wave30/human-review/READ-V19CL1280.txt` |
 | 9 | `ARCH.V19CL1408` | **0.578868** | **1/15** | standard | one case: the summarisation lane reproduces the supplier paragraph, decision and risk intact, and nothing else survives.  Six of sixteen lanes charged, four of them prompt echoes.  The joint-lowest composed reading of the campaign | `reports/matrix-campaign-20260810/wave31/human-review/READ-V19CL1408.txt` |
-| 10 | `ARCH.V8CL1792` | **0.600552** | **5/15** | standard | five cases at 8,192 kept rows -- BELOW the emission-coverage crossing the solo ladder falls off by five cases.  Composed, the same 1,024 rows cost one.  It answers the checkout time, the summary, the email form and the missing quantities; the code and the reasoning lanes are gone | `reports/matrix-campaign-20260810/wave31/human-review/READ-V8CL1792.txt` |
-| 11 | `ARCH.V19CL1536` | **0.602835** | **2/15** | standard | two cases: the supplier summary and the list of missing quantities.  Its multi-turn lane returns the user's own last turn verbatim, which is the wave's cleanest example of a lane that is charged and answered separately | `reports/matrix-campaign-20260810/wave31/human-review/READ-V19CL1536.txt` |
-| 12 | `ARCH.V9CL1792` | **0.605117** | **6/15** | standard | six cases ON the 0.81 coverage crossing.  It writes the second-best email of the wave -- all three named items with the tracking number requested -- gets the garden day right, and instructs the reader to mish their way through the chemical spill | `reports/matrix-campaign-20260810/wave31/human-review/READ-V9CL1792.txt` |
-| 13 | `ARCH.V19CL1792X13` | **0.608519** | **2/15** | standard | the mildest triple, and two cases.  All three interference terms fire at once: 7.0 predicted cases of it against an additive 10.0, and the allocator was right to within one | `reports/matrix-campaign-20260810/wave31/human-review/READ-V19CL1792X13.txt` |
-| 14 | `ARCH.V12CL1792` | **0.618813** | **7/15** | standard | SEVEN cases at 0.618813x, the deepest the campaign has held seven.  Three actions, the garden day, the supplier summary, the email form, the missing quantities and the debugging symptom; it never forms 17 x 6 and its safety lane instructs the hazard itself | `reports/matrix-campaign-20260810/wave31/human-review/READ-V12CL1792.txt` |
-| 15 | `ARCH.V16W896X13` | **0.623329** | **1/15** | standard | three axes; the third step is fatal exactly as L3 says. The one lane it holds is decided by the wave-20 planning calibration rather than answered. | `reports/matrix-campaign-20260810/wave23/human-review/READ-V16W896X13.txt` |
+| 10 | `ARCH.V4CL1792` | **0.582292** | **1/15** | standard | one case: it asks a vendor to confirm the Friday shipment and then offers to supply the tracking number it was told to request. Everything else is word-substitution -- PYTHON FUENN NAMED UNSEIGN_ORG, farmable expenses, a fog that is a type of fog in a discov -- and context-retrieval answers by quoting the question back. Four of sixteen lanes run to the cap | `reports/matrix-campaign-20260810/wave32/human-review/READ-V4CL1792.txt` |
+| 11 | `ARCH.V6CL1792` | **0.591422** | **3/15** | standard | three cases and all three are partial: three distinct household actions, the checkout time and the north gate, and a supplier summary whose risk has become an expiration that may result in a week's cost. The safety lane tells the reader to accidentally mish their way by cleaning the room smellers. Four of sixteen lanes run to the cap | `reports/matrix-campaign-20260810/wave32/human-review/READ-V6CL1792.txt` |
+| 12 | `ARCH.V8CL1792` | **0.600552** | **5/15** | standard | five cases at 8,192 kept rows -- BELOW the emission-coverage crossing the solo ladder falls off by five cases.  Composed, the same 1,024 rows cost one.  It answers the checkout time, the summary, the email form and the missing quantities; the code and the reasoning lanes are gone | `reports/matrix-campaign-20260810/wave31/human-review/READ-V8CL1792.txt` |
+| 13 | `ARCH.V8CL1792M` | **0.600552** | **3/15** | standard | three partials and no Useful: it carries all three named items of the vendor email and then inverts the one that matters, offering the tracking number instead of asking for it; it names Supplier B as the unresolved risk rather than as the decision. The reader-metric twin of a child that reads five, at the same K and the same bytes | `reports/matrix-campaign-20260810/wave32/human-review/READ-V8CL1792M.txt` |
+| 14 | `ARCH.V19CL1536` | **0.602835** | **2/15** | standard | two cases: the supplier summary and the list of missing quantities.  Its multi-turn lane returns the user's own last turn verbatim, which is the wave's cleanest example of a lane that is charged and answered separately | `reports/matrix-campaign-20260810/wave31/human-review/READ-V19CL1536.txt` |
+| 15 | `ARCH.V9CL1792` | **0.605117** | **6/15** | standard | six cases ON the 0.81 coverage crossing.  It writes the second-best email of the wave -- all three named items with the tracking number requested -- gets the garden day right, and instructs the reader to mish their way through the chemical spill | `reports/matrix-campaign-20260810/wave31/human-review/READ-V9CL1792.txt` |
