@@ -117,6 +117,15 @@ BUILD_RECEIPT_SCHEMAS = (
     # every other row.  A new builder gets a line here, not an exemption.
     "neural-forge-matrix-wave29-blend-build-receipt-v1",
     "neural-forge-matrix-wave29-global-kkt-build-receipt-v1",
+    "neural-forge-matrix-wave30-standard-shape-child-v1",
+    "neural-forge-matrix-wave30-blend-build-receipt-v1",
+    # Wave 30 adds one builder class: a last-block writer re-solved in the
+    # reader's own softmax-Hessian metric.  It is a strict post-process on an
+    # already-sealed-shape child -- one tensor replaced, every other byte the
+    # source's, parameter count asserted unchanged against the source's own
+    # receipt -- so it is sealed by this script against the same live-count,
+    # loaded-class and file-digest checks as every other row.
+    "neural-forge-matrix-wave30-logit-metric-writer-v1",
 )
 
 
