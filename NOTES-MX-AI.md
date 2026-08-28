@@ -418,11 +418,14 @@ wiki perplexity carries the *lowest*. Both families sit inside a 3-point and a
 
 ## 9. Estate
 
-**Seven commits, five deployments.** The tree cut and I1; two guard refusals
-answered (the axis-schema crash and the logit-leverage arm); the inventory's
-coverage fix; the seal calls; the wave seal with this note; and the scorecard
-refresh with two artifact corrections. Five carried run-path code or shipped
-artifacts and each became a deployment: `da2f9e73`, `24366f3d`, `e002181e`,
+**Nine commits, five deployments**, and this paragraph is the ninth's whole
+content because wave 32 had to make the same correction and the precedent is to
+make it rather than to let the note and the log disagree. The tree cut and I1;
+two guard refusals answered (the axis-schema crash and the logit-leverage arm);
+the inventory's coverage fix; the seal calls; the wave seal with this note; the
+scorecard refresh with two artifact corrections; the two closing refusals; the
+withdrawal of an unsupported count; and this. Five carried run-path code or
+shipped artifacts and each became a deployment: `da2f9e73`, `24366f3d`, `e002181e`,
 `15ef17ef`, `c3e00fe4`. **Every one verified file by file against the commit's own
 blob digests: 0 content mismatches, 0 missing, 0 undeclared, 0 hardlinks**, five
 times — 6,179 files on the first four and 6,257 on the last. The builds and seals
