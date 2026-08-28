@@ -48,12 +48,12 @@ frontier from `RESULTS_MATRIX_2026-08.md` beside it.
 
 | at least | child (canonical) | net ratio | intel | sealed | sealed-frontier child | sealed net | deepened by |
 |---:|---|---:|---:|---:|---|---:|---:|
-| 14/15 | `ARCH.V19X09` | **0.742049** | 14 | 10 | `ARCH.V19` | 0.794570 | **0.052521** |
-| 13/15 | `ARCH.V18X09` | **0.737484** | 13 | 10 | `ARCH.V18` | 0.790005 | **0.052521** |
-| 12/15 | `ARCH.V18X09` | **0.737484** | 13 | 10 | `ARCH.V18` | 0.790005 | **0.052521** |
-| 11/15 | `ARCH.V18X09` | **0.737484** | 13 | 10 | `ARCH.B75` | 0.742049 | **0.004565** |
-| 10/15 | `ARCH.V8X13GL01` | **0.691832** | 10 | 7 | `ARCH.V18X09` | 0.737484 | **0.045652** |
-| 9/15 | `ARCH.V8X13GL01` | **0.691832** | 10 | 7 | `ARCH.V18X07` | 0.737484 | **0.045652** |
+| 14/15 | `ARCH.V12` | **0.762614** | 14 | 11 | `ARCH.V19` | 0.794570 | **0.031956** |
+| 13/15 | `ARCH.V19X09` | **0.742049** | 13 | 10 | `ARCH.V18` | 0.790005 | **0.047956** |
+| 12/15 | `ARCH.V18X09` | **0.737484** | 12 | 10 | `ARCH.V18` | 0.790005 | **0.052521** |
+| 11/15 | `ARCH.V18X09` | **0.737484** | 12 | 10 | `ARCH.B75` | 0.742049 | **0.004565** |
+| 10/15 | `ARCH.V12X13` | **0.710093** | 10 | 7 | `ARCH.V18X09` | 0.737484 | **0.027391** |
+| 9/15 | `ARCH.V8X13GL01` | **0.691832** | 9 | 7 | `ARCH.V18X07` | 0.737484 | **0.045652** |
 | 8/15 | `ARCH.V16CL1792` | **0.637073** | 8 | 8 | `ARCH.GV16L01` | 0.637073 | — |
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | 5 | `ARCH.GV12L03` | 0.618813 | **0.018261** |
 | 6/15 | `ARCH.V8CL1792` | **0.600552** | 7 | 5 | `ARCH.V9CL1792` | 0.605117 | **0.004565** |
@@ -105,15 +105,15 @@ Across the 188 hand re-read children, 2,835 scored lanes:
 
 | | lanes | share of all lanes | share of the sealed misses |
 |---|---:|---:|---:|
-| **intelligence signal** | **1105** | **39.0%** | — |
+| **intelligence signal** | **1076** | **38.0%** | — |
 | of which sealed Useful/Partial | 894 | 31.5% | — |
-| of which recovered by this re-read | 211 | 7.4% | 10.9% |
+| of which recovered by this re-read | 182 | 6.4% | 9.4% |
 | **artifact-miss** (loop / echo / empty / cap / salad) | **846** | **29.8%** | **43.6%** |
-| **content-miss** (readable and wrong) | **884** | **31.2%** | **45.5%** |
+| **content-miss** (readable and wrong) | **913** | **32.2%** | **47.0%** |
 
 **43.6% of everything this campaign scored as a behavioural failure is a compression
-artifact carrying no evidence about intelligence at all.** A further 10.9% is content
-the sealed review charged as a miss and this re-read reads as an answer. Only 45.5% of
+artifact carrying no evidence about intelligence at all.** A further 9.4% is content
+the sealed review charged as a miss and this re-read reads as an answer. Only 47.0% of
 the sealed misses are the thing Cyril means by a miss: a model that produced readable
 output and got it wrong.
 
@@ -246,19 +246,19 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.W736` | 21 | **0.689220** | 158,309,216 | 1 | **1/15** | 12 | 2 | 0 | holds multi-turn. |
 | `ARCH.W736LS` | 21 | **0.689220** | 158,309,216 | 0 | **0/15** | 14 | 1 | 0 | artifact-dead: 14 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
 | `ARCH.R1` | 16 | **0.689528** | 158,379,776 | 0 | **0/15** | 12 | 3 | 0 | artifact-dead: 12 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
-| `ARCH.V19X13X01` | 28 | **0.689528** | 158,379,776 | 3 | **5/15** | 3 | 7 | +2 | holds 3-actions, summary, debug, planning, uncertainty. |
+| `ARCH.V19X13X01` | 28 | **0.689528** | 158,379,776 | 3 | **4/15** | 3 | 8 | +1 | holds 3-actions, summary, debug, uncertainty. |
 | `ARCH.V19X13X01G03` | 28 | **0.689528** | 158,379,776 | 4 | **4/15** | 3 | 8 | 0 | holds 3-actions, summary, debug, planning. |
 | `ARCH.V19X13X09` | 28 | **0.689528** | 158,379,776 | 5 | **8/15** | 1 | 6 | +3 | eight at 0.6895x, and the seasons lane REJECTS the closer-to-the-Sun account outright -- the correction the lane is built to test. |
 | `ARCH.V8X13` | 24 | **0.691832** | 158,909,184 | 6 | **7/15** | 1 | 7 | +1 | seven; the coding lane sketches the seen-set plus order-list algorithm correctly. |
 | `ARCH.V8X13G` | 24 | **0.691832** | 158,909,184 | 4 | **7/15** | 1 | 7 | +3 | sealed four, reads seven: Saturday and 4:15 together, Supplier B with its one-week risk, and a complete correct dedup loop. |
-| `ARCH.V8X13GL01` | 24 | **0.691832** | 158,909,184 | 7 | **10/15** | 0 | 5 | +3 | TEN at 0.6918x. 17 x 6 = 102 then 102 - 8, the dedup algorithm, and a peanut-FREE vegan option -- the multi-turn correction actually made. |
-| `ARCH.V8X13GL1` | 24 | **0.691832** | 158,909,184 | 6 | **8/15** | 1 | 6 | +2 | eight; it derives Mira -> Theo -> Jun explicitly. |
+| `ARCH.V8X13GL01` | 24 | **0.691832** | 158,909,184 | 7 | **9/15** | 0 | 6 | +2 | nine at 0.6918x: 17 x 6 = 102 then 102 - 8, and the dedup algorithm. Its multi-turn lane names a peanut-free option and then names no food, so it does not count. |
+| `ARCH.V8X13GL1` | 24 | **0.691832** | 158,909,184 | 6 | **7/15** | 1 | 7 | +1 | eight; it derives Mira -> Theo -> Jun explicitly. |
 | `ARCH.V8X13GL03` | 25 | **0.691832** | 158,909,184 | 7 | **9/15** | 0 | 6 | +2 | nine; Saturday plus the closed north gate, and the dedup loop. |
 | `ARCH.V20X13X07` | 26 | **0.694093** | 159,428,352 | 5 | **6/15** | 2 | 7 | +1 | holds greeting, 3-actions, summary, code, email, planning. |
-| `ARCH.V20X13X01` | 27 | **0.694093** | 159,428,352 | 3 | **5/15** | 3 | 7 | +2 | holds 3-actions, summary, debug, planning, uncertainty. |
+| `ARCH.V20X13X01` | 27 | **0.694093** | 159,428,352 | 3 | **4/15** | 3 | 8 | +1 | holds 3-actions, summary, debug, uncertainty. |
 | `ARCH.V20X13X01G03` | 27 | **0.694093** | 159,428,352 | 1 | **3/15** | 3 | 9 | +2 | holds 3-actions, summary, planning. |
 | `ARCH.V9X13` | 27 | **0.696398** | 159,957,760 | 6 | **8/15** | 0 | 7 | +2 | holds greeting, 3-actions, retrieval, summary, code, debug, email, uncertainty. |
-| `ARCH.V12X13` | 25 | **0.710093** | 163,103,488 | 7 | **10/15** | 0 | 5 | +3 | ten at 0.7101x: the RAM/storage contrast, the dedup loop, and a vendor email. |
+| `ARCH.V12X13` | 25 | **0.710093** | 163,103,488 | 7 | **10/15** | 0 | 5 | +3 | TEN at 0.7101x, the deepest ten in the campaign: the RAM/storage contrast, the dedup loop, and a vendor email naming the Monday install. |
 | `ARCH.V18X13KV6JQ` | 27 | **0.716941** | 164,676,352 | 2 | **2/15** | 7 | 6 | 0 | holds greeting, summary. |
 | `ARCH.W768` | 19 | **0.722610** | 165,978,624 | 3 | **3/15** | 11 | 1 | 0 | holds summary, uncertainty, multi-turn. |
 | `ARCH.W768AW100` | 20 | **0.722610** | 165,978,624 | 0 | **0/15** | 15 | 0 | 0 | artifact-dead: 15 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
@@ -280,34 +280,34 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.V32W896` | 25 | **0.731199** | 167,951,488 | 3 | **3/15** | 7 | 5 | 0 | holds summary, email, uncertainty. |
 | `ARCH.V22X13KV6JQ` | 27 | **0.735201** | 168,870,656 | 2 | **2/15** | 5 | 8 | 0 | holds greeting, summary. |
 | `ARCH.V18X07` | 27 | **0.737484** | 169,394,944 | 9 | **10/15** | 0 | 5 | +1 | holds greeting, 3-actions, seasons, retrieval, summary, RAM/ROM, email, planning, uncertainty, creative. |
-| `ARCH.V18X07G03` | 27 | **0.737484** | 169,394,944 | 8 | **10/15** | 0 | 5 | +2 | holds greeting, 3-actions, retrieval, summary, RAM/ROM, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.V18X09` | 27 | **0.737484** | 169,394,944 | 10 | **13/15** | 0 | 2 | +3 | THIRTEEN at 0.7375x. 102 correct, set-based dedup with O(n) named, and four nut-free options against the severe allergy. |
+| `ARCH.V18X07G03` | 27 | **0.737484** | 169,394,944 | 8 | **9/15** | 0 | 6 | +1 | holds greeting, 3-actions, retrieval, summary, RAM/ROM, email, planning, uncertainty, creative. |
+| `ARCH.V18X09` | 27 | **0.737484** | 169,394,944 | 10 | **12/15** | 0 | 3 | +2 | TWELVE at 0.7375x: 102 correct and set-based dedup with O(n) named. Its four 'nut-free' options are nut-free nuts, which is not an option. |
 | `ARCH.V18X09G03` | 27 | **0.737484** | 169,394,944 | 9 | **12/15** | 0 | 3 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative, multi-turn. |
 | `ARCH.V18X13` | 27 | **0.737484** | 169,394,944 | 10 | **12/15** | 0 | 3 | +2 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
 | `ARCH.V18X13G03` | 27 | **0.737484** | 169,394,944 | 10 | **11/15** | 1 | 3 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
-| `ARCH.V19X09` | 28 | **0.742049** | 170,443,520 | 10 | **14/15** | 0 | 1 | +4 | FOURTEEN at 0.7421x -- the deepest fourteen in the campaign under the canonical standard, and the sealed column called it ten. |
+| `ARCH.V19X09` | 28 | **0.742049** | 170,443,520 | 10 | **13/15** | 0 | 2 | +3 | thirteen at 0.7421x with ZERO artifact lanes -- everything it produced was readable. 102, set-based dedup with O(n), a backup-first migration with a test step. |
 | `ARCH.V19X13` | 28 | **0.742049** | 170,443,520 | 10 | **13/15** | 0 | 2 | +3 | holds greeting, 3-actions, seasons, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
-| `ARCH.V19X13G01` | 28 | **0.742049** | 170,443,520 | 11 | **13/15** | 1 | 1 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.V19X13G03` | 28 | **0.742049** | 170,443,520 | 11 | **13/15** | 1 | 1 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.V19X13G01` | 28 | **0.742049** | 170,443,520 | 11 | **12/15** | 1 | 2 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.V19X13G03` | 28 | **0.742049** | 170,443,520 | 11 | **12/15** | 1 | 2 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
 | `ARCH.V19X13G10` | 28 | **0.742049** | 170,443,520 | 10 | **12/15** | 2 | 1 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
-| `ARCH.B25` | 29 | **0.742049** | 170,443,520 | 10 | **13/15** | 0 | 2 | +3 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.B25` | 29 | **0.742049** | 170,443,520 | 10 | **12/15** | 0 | 3 | +2 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
 | `ARCH.B50` | 29 | **0.742049** | 170,443,520 | 10 | **12/15** | 2 | 1 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
-| `ARCH.B75` | 29 | **0.742049** | 170,443,520 | 11 | **13/15** | 1 | 1 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.BP64` | 29 | **0.742049** | 170,443,520 | 10 | **14/15** | 0 | 1 | +4 | fourteen at 0.7421x: three valid derived orderings, the dedup loop, peanut-free options, and a scene with the line 'We're not here for the light.' |
-| `ARCH.MASK03` | 29 | **0.742049** | 170,443,520 | 9 | **12/15** | 0 | 3 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, multi-turn. |
-| `ARCH.SR24` | 30 | **0.742049** | 170,443,520 | 10 | **13/15** | 1 | 1 | +3 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
-| `ARCH.SR64` | 30 | **0.742049** | 170,443,520 | 10 | **12/15** | 1 | 2 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.B75` | 29 | **0.742049** | 170,443,520 | 11 | **12/15** | 1 | 2 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.BP64` | 29 | **0.742049** | 170,443,520 | 10 | **13/15** | 0 | 2 | +3 | thirteen at 0.7421x: three valid derived orderings, the dedup loop, and a scene with the line 'We're not here for the light.' |
+| `ARCH.MASK03` | 29 | **0.742049** | 170,443,520 | 9 | **11/15** | 0 | 4 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
+| `ARCH.SR24` | 30 | **0.742049** | 170,443,520 | 10 | **12/15** | 1 | 2 | +2 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
+| `ARCH.SR64` | 30 | **0.742049** | 170,443,520 | 10 | **11/15** | 1 | 3 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
 | `ARCH.V8` | 24 | **0.744354** | 170,972,928 | 4 | **7/15** | 0 | 8 | +3 | holds greeting, ordering, retrieval, summary, email, uncertainty, multi-turn. |
 | `ARCH.V20X13` | 26 | **0.746614** | 171,492,096 | 10 | **13/15** | 1 | 1 | +3 | holds greeting, 3-actions, seasons, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
-| `ARCH.V20X13G03` | 26 | **0.746614** | 171,492,096 | 11 | **13/15** | 1 | 1 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.V20X13G03` | 26 | **0.746614** | 171,492,096 | 11 | **12/15** | 1 | 2 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
 | `ARCH.V20X07` | 27 | **0.746614** | 171,492,096 | 9 | **10/15** | 0 | 5 | +1 | holds greeting, 3-actions, seasons, retrieval, summary, RAM/ROM, email, planning, uncertainty, creative. |
-| `ARCH.V20X09` | 27 | **0.746614** | 171,492,096 | 9 | **13/15** | 0 | 2 | +4 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.V20X09` | 27 | **0.746614** | 171,492,096 | 9 | **12/15** | 0 | 3 | +3 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative. |
 | `ARCH.V20X09G03` | 27 | **0.746614** | 171,492,096 | 8 | **11/15** | 0 | 4 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative. |
 | `ARCH.V9` | 26 | **0.748919** | 172,021,504 | 9 | **11/15** | 0 | 4 | +2 | holds greeting, 3-actions, ordering, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, multi-turn. |
-| `ARCH.V10` | 25 | **0.753484** | 173,070,080 | 10 | **12/15** | 0 | 3 | +2 | holds greeting, 3-actions, seasons, ordering, retrieval, summary, code, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.V10` | 25 | **0.753484** | 173,070,080 | 10 | **11/15** | 0 | 4 | +1 | holds greeting, 3-actions, seasons, ordering, retrieval, summary, code, email, planning, uncertainty, multi-turn. |
 | `ARCH.W14FF1280` | 15 | **0.760331** | 174,642,944 | 5 | **5/15** | 4 | 6 | 0 | holds greeting, retrieval, summary, email, uncertainty. |
 | `ARCH.CL1280` | 30 | **0.760331** | 174,642,944 | 4 | **5/15** | 4 | 6 | +1 | holds summary, debug, email, planning, uncertainty. |
-| `ARCH.V12` | 25 | **0.762614** | 175,167,232 | 11 | **14/15** | 0 | 1 | +3 | holds greeting, 3-actions, seasons, arithmetic, ordering, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.V12` | 25 | **0.762614** | 175,167,232 | 11 | **14/15** | 0 | 1 | +3 | FOURTEEN at 0.762614x -- the deepest fourteen in the campaign under the canonical standard, and the sealed column called it eleven. 17 x 6 = 102, the dedup loop, and a scene whose growl makes the keeper's breath hitch. |
 | `ARCH.B1536` | 16 | **0.769439** | 176,734,976 | 0 | **0/15** | 13 | 2 | 0 | artifact-dead: 13 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
 | `ARCH.W1536X13` | 16 | **0.769439** | 176,734,976 | 4 | **4/15** | 6 | 5 | 0 | holds greeting, RAM/ROM, email, uncertainty. |
 | `ARCH.V14` | 25 | **0.771744** | 177,264,384 | 9 | **13/15** | 0 | 2 | +4 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative, multi-turn. |
@@ -315,17 +315,17 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.CL1408` | 31 | **0.784298** | 180,147,968 | 3 | **5/15** | 6 | 4 | +2 | holds retrieval, summary, email, planning, uncertainty. |
 | `ARCH.V17` | 27 | **0.785440** | 180,410,112 | 11 | **14/15** | 0 | 1 | +3 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
 | `ARCH.Q01050913` | 19 | **0.789916** | 181,438,208 | 0 | **0/15** | 12 | 3 | 0 | artifact-dead: 12 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
-| `ARCH.V18` | 26 | **0.790005** | 181,458,688 | 13 | **14/15** | 0 | 1 | +1 | fourteen; the creative lane is a complete scene with dialogue -- Keeper Mara and the cracked spectroscope. |
+| `ARCH.V18` | 26 | **0.790005** | 181,458,688 | 13 | **14/15** | 0 | 1 | +1 | fourteen at 0.7900x; the creative lane is a complete scene with dialogue -- Keeper Mara and the cracked spectroscope. |
 | `ARCH.V19` | 27 | **0.794570** | 182,507,264 | 14 | **14/15** | 0 | 1 | 0 | fourteen, the sealed top of the campaign; its one miss is the ordering lane restated rather than solved. |
 | `ARCH.V19MXO3` | 29 | **0.794570** | 182,507,264 | 3 | **5/15** | 2 | 8 | +2 | holds 3-actions, arithmetic, email, planning, uncertainty. |
 | `ARCH.V19MXP2` | 29 | **0.794570** | 182,507,264 | 2 | **3/15** | 4 | 8 | +1 | holds 3-actions, RAM/ROM, email. |
 | `ARCH.V20` | 25 | **0.799135** | 183,555,840 | 13 | **14/15** | 0 | 1 | +1 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
 | `ARCH.V32X13` | 25 | **0.801395** | 184,075,008 | 10 | **13/15** | 1 | 1 | +3 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
-| `ARCH.V32X13G` | 25 | **0.801395** | 184,075,008 | 10 | **13/15** | 0 | 2 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.V32X13GL01` | 25 | **0.801395** | 184,075,008 | 9 | **12/15** | 1 | 2 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, multi-turn. |
-| `ARCH.V32X13GL1` | 25 | **0.801395** | 184,075,008 | 10 | **13/15** | 1 | 1 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.V32X13G03` | 26 | **0.801395** | 184,075,008 | 10 | **13/15** | 0 | 2 | +3 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.V22` | 26 | **0.808265** | 185,652,992 | 13 | **14/15** | 0 | 1 | +1 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.V32X13G` | 25 | **0.801395** | 184,075,008 | 10 | **12/15** | 0 | 3 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.V32X13GL01` | 25 | **0.801395** | 184,075,008 | 9 | **11/15** | 1 | 3 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty. |
+| `ARCH.V32X13GL1` | 25 | **0.801395** | 184,075,008 | 10 | **12/15** | 1 | 2 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.V32X13G03` | 26 | **0.801395** | 184,075,008 | 10 | **12/15** | 0 | 3 | +2 | holds greeting, 3-actions, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
+| `ARCH.V22` | 26 | **0.808265** | 185,652,992 | 13 | **13/15** | 0 | 2 | 0 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
 | `ARCH.CL1536` | 31 | **0.808265** | 185,652,992 | 4 | **4/15** | 9 | 2 | 0 | holds retrieval, summary, email, uncertainty. |
 | `ARCH.CL1792X13` | 31 | **0.813949** | 186,958,592 | 4 | **4/15** | 5 | 6 | 0 | holds retrieval, summary, email, uncertainty. |
 | `ARCH.W896X13` | 19 | **0.815064** | 187,214,592 | 1 | **1/15** | 12 | 2 | 0 | holds summary. |
@@ -335,24 +335,24 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.W896LSKV6JQ` | 22 | **0.841047** | 193,182,848 | 1 | **1/15** | 13 | 1 | 0 | holds summary. |
 | `ARCH.D3` | 16 | **0.842437** | 193,501,952 | 0 | **1/15** | 14 | 0 | +1 | sealed ZERO at 0.8424x and it is not zero: 'The team's decision to B, a 11% cost ... the risk is a potential 1-week expansion' carries the decision, the price delta and the risk. |
 | `ARCH.V32` | 24 | **0.853916** | 196,138,752 | 11 | **14/15** | 0 | 1 | +3 | holds greeting, 3-actions, seasons, arithmetic, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.CL1792` | 30 | **0.856199** | 196,663,040 | 7 | **8/15** | 0 | 7 | +1 | holds 3-actions, retrieval, summary, debug, email, planning, uncertainty, creative. |
-| `ARCH.CL1792LG` | 30 | **0.856199** | 196,663,040 | 7 | **8/15** | 0 | 7 | +1 | holds 3-actions, retrieval, summary, debug, email, planning, uncertainty, creative. |
+| `ARCH.CL1792` | 30 | **0.856199** | 196,663,040 | 7 | **7/15** | 0 | 8 | 0 | holds 3-actions, retrieval, summary, debug, email, uncertainty, creative. |
+| `ARCH.CL1792LG` | 30 | **0.856199** | 196,663,040 | 7 | **7/15** | 0 | 8 | 0 | holds 3-actions, retrieval, summary, debug, email, uncertainty, creative. |
 | `ARCH.CL1792M` | 30 | **0.856199** | 196,663,040 | 8 | **9/15** | 0 | 6 | +1 | holds greeting, 3-actions, retrieval, summary, debug, email, planning, uncertainty, creative. |
 | `ARCH.CL1792ME` | 31 | **0.856199** | 196,663,040 | 2 | **3/15** | 2 | 10 | +1 | holds seasons, retrieval, summary. |
 | `ARCH.CL1792MV` | 31 | **0.856199** | 196,663,040 | 7 | **7/15** | 1 | 7 | 0 | holds greeting, 3-actions, arithmetic, summary, email, planning, uncertainty. |
-| `ARCH.BM25` | 32 | **0.856199** | 196,663,040 | 6 | **8/15** | 0 | 7 | +2 | holds 3-actions, retrieval, summary, debug, email, planning, uncertainty, creative. |
+| `ARCH.BM25` | 32 | **0.856199** | 196,663,040 | 6 | **7/15** | 0 | 8 | +1 | holds 3-actions, retrieval, summary, debug, email, uncertainty, creative. |
 | `ARCH.BM50` | 32 | **0.856199** | 196,663,040 | 4 | **4/15** | 0 | 11 | 0 | holds 3-actions, retrieval, summary, uncertainty. |
 | `ARCH.BM50N` | 32 | **0.856199** | 196,663,040 | 0 | **0/15** | 15 | 0 | 0 | fifteen for fifteen artifact at 0.8562x -- a body that decodes nothing, which is a statement about the fold and not about intelligence. |
 | `ARCH.BM75` | 32 | **0.856199** | 196,663,040 | 2 | **4/15** | 1 | 10 | +2 | holds arithmetic, summary, email, uncertainty. |
 | `ARCH.BMS75` | 32 | **0.856199** | 196,663,040 | 5 | **6/15** | 1 | 8 | +1 | holds greeting, arithmetic, retrieval, summary, email, uncertainty. |
 | `ARCH.BMV3` | 32 | **0.856199** | 196,663,040 | 7 | **7/15** | 0 | 8 | 0 | holds 3-actions, arithmetic, retrieval, summary, email, planning, uncertainty. |
-| `ARCH.BV50` | 32 | **0.856199** | 196,663,040 | 4 | **6/15** | 0 | 9 | +2 | holds 3-actions, retrieval, summary, email, uncertainty, multi-turn. |
+| `ARCH.BV50` | 32 | **0.856199** | 196,663,040 | 4 | **5/15** | 0 | 10 | +1 | holds 3-actions, retrieval, summary, email, uncertainty. |
 | `ARCH.CL1792S` | 32 | **0.856199** | 196,663,040 | 4 | **4/15** | 1 | 10 | 0 | holds 3-actions, retrieval, summary, uncertainty. |
 | `ARCH.W896` | 19 | **0.859023** | 197,311,616 | 4 | **4/15** | 5 | 6 | 0 | holds 3-actions, summary, email, uncertainty. |
 | `ARCH.W896LS` | 21 | **0.859023** | 197,311,616 | 3 | **3/15** | 8 | 4 | 0 | holds summary, planning, uncertainty. |
 | `ARCH.MM896` | 22 | **0.859023** | 197,311,616 | 2 | **2/15** | 12 | 1 | 0 | holds email, planning. |
 | `ARCH.D2` | 16 | **0.894958** | 205,565,696 | 2 | **4/15** | 6 | 5 | +2 | holds retrieval, summary, email, planning. |
-| `ARCH.D2B` | 16 | **0.894958** | 205,565,696 | 6 | **7/15** | 1 | 7 | +1 | holds greeting, 3-actions, retrieval, summary, email, uncertainty, multi-turn. |
+| `ARCH.D2B` | 16 | **0.894958** | 205,565,696 | 6 | **6/15** | 1 | 8 | 0 | holds greeting, 3-actions, retrieval, summary, email, uncertainty. |
 | `ARCH.X13KV6` | 16 | **0.926936** | 212,910,848 | 6 | **7/15** | 1 | 7 | +1 | holds greeting, 3-actions, arithmetic, retrieval, summary, email, uncertainty. |
 | `ARCH.HD16` | 15 | **0.938368** | 215,536,832 | 0 | **0/15** | 13 | 2 | 0 | artifact-dead: 13 of 15 lanes are loop, echo, empty or cap-ride. No readable output, so no evidence either way. |
 | `ARCH.X05A` | 15 | **0.947479** | 217,629,440 | 6 | **6/15** | 4 | 5 | 0 | holds greeting, retrieval, summary, code, planning, uncertainty. |
@@ -362,7 +362,7 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 | `ARCH.X07` | 16 | **0.947479** | 217,629,440 | 11 | **11/15** | 2 | 2 | 0 | holds greeting, 3-actions, seasons, arithmetic, ordering, RAM/ROM, debug, email, planning, uncertainty, creative. |
 | `ARCH.X09` | 16 | **0.947479** | 217,629,440 | 10 | **11/15** | 0 | 4 | +1 | holds greeting, 3-actions, seasons, retrieval, summary, RAM/ROM, code, email, planning, uncertainty, creative. |
 | `ARCH.X11` | 16 | **0.947479** | 217,629,440 | 9 | **10/15** | 0 | 5 | +1 | holds greeting, 3-actions, retrieval, summary, RAM/ROM, email, planning, uncertainty, creative, multi-turn. |
-| `ARCH.X13A` | 16 | **0.947479** | 217,629,440 | 13 | **14/15** | 1 | 0 | +1 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative, multi-turn. |
+| `ARCH.X13A` | 16 | **0.947479** | 217,629,440 | 13 | **13/15** | 1 | 1 | 0 | holds greeting, 3-actions, arithmetic, ordering, retrieval, summary, RAM/ROM, code, debug, email, planning, uncertainty, creative. |
 | `ARCH.X12` | 16 | **0.952057** | 218,680,960 | 0 | **0/15** | 6 | 9 | 0 | 0.9521x and sealed ZERO -- and it is a CONTENT death, not an artifact one: nine readable lanes of confident nonsense plus six lanes of multilingual token salad. |
 | `ARCH.KV6` | 16 | **0.979457** | 224,974,592 | 5 | **7/15** | 3 | 5 | +2 | holds 3-actions, retrieval, summary, debug, email, planning, uncertainty. |
 
@@ -492,34 +492,34 @@ They are not eligible for a frontier claim in this file.
 |---|---:|---:|---:|---:|---|
 | `ARCH.V16X13G` | 0.728353 | 5 | **10** | +5 | **arithmetic** — '17 x 6 = 102' AND '102 - 8 = 94' -- both correct, the whole chain up to the division; **RAM/ROM** — short-term fast/limited vs long-term storage contrast; **code** — seen-set loop; **email** — real email asking the vendor to confirm and to provide an updated tracking number; **creative** — an actual scene with a dialogue line: 'The foghorn is not just a fireshore. It is a memory.' |
 | `ARCH.V19CL1792X13` | 0.608519 | 2 | **6** | +4 | **3-actions** — usable actions: prioritise, set a time per task, review; **retrieval** — '4:15 p.m.' correct and it isolates the gate question; **code** — states the expected O(n) average time correctly; **email** — a real email: Monday install named, updated tracking requested, confirmation asked |
-| `ARCH.V19X09` | 0.742049 | 10 | **14** | +4 | **arithmetic** — '17 x 6 = 102 kits'; **code** — set to track seen items, O(n) stated; **planning** — 'Step 1: Backup the Website' in a six-step plan; **multi-turn** — four nut-free options for the severe peanut allergy and the vegan guest |
-| `ARCH.BP64` | 0.742049 | 10 | **14** | +4 | **ordering** — three valid derived facts: Theo<Jun, Theo<Sal, Mira<Sal; **code** — seen-set; **creative** — scene WITH the dialogue line: 'We're not here for the light.'; **multi-turn** — peanut-free alternatives named explicitly |
-| `ARCH.V20X09` | 0.746614 | 9 | **13** | +4 | **arithmetic** — '17 x 6 = 102 kits'; **code** — set + O(n); **planning** — 'Step 1: Backup the Website'; **multi-turn** — nut-free and vegan options against the severe allergy |
 | `ARCH.V14` | 0.771744 | 9 | **13** | +4 | **seasons** — 'we think Earth is a little bit closer to the Sun? That's a common idea, but Earth actually has its own unique cycle' -- the correction, in the right register; **code** — 'a set to track seen items and a list to maintain the order' with the loop -- correct; **planning** — six-step dependency-aware plan naming backups, DNS, TLS, verification and rollback; **multi-turn** — 'Goal: ensure safety for severe peanut allergy and vegan preferences' |
 | `ARCH.V16` | 0.780874 | 9 | **13** | +4 | **arithmetic** — '17 x 6 = 102' AND '102 - 8 = 94' -- the whole chain up to the division; **code** — set + order list, correct; **planning** — backup-first plan with a rollback and a continuity rationale; **creative** — 'the air smelled of old wood and something else - settling, almost... waiting' -- the requested tone |
 | `ARCH.V16BMV3` | 0.637073 | 3 | **6** | +3 | **retrieval** — 'The latest checkout time is 4:15 p.m.' -- correct; **email** — a real email: Friday confirmation asked for, updated tracking number requested, signed off; **uncertainty** — asks for the time period and the other withheld quantities; invents no cause |
 | `ARCH.V16CL1792M` | 0.637073 | 3 | **6** | +3 | **3-actions** — 'Clean up: take out of work and clean up your space' -- a concrete household action; **arithmetic** — '17 kits/hour x 6 hours = 17 x 6 = 102 kits' -- step one exactly right; **uncertainty** — asks for time range, units, sample size and whether prices changed |
 | `ARCH.V19X13X09` | 0.689528 | 5 | **8** | +3 | **seasons** — 'This cycle is NOT due to Earth being closer to the Sun' -- the misconception correction the lane asks for; **arithmetic** — 'remaining = 17 * 6 - 8' -- the correct expression, then miscomputed; **planning** — six steps, backup first, verification and rollback both named |
 | `ARCH.V8X13G` | 0.691832 | 4 | **7** | +3 | **retrieval** — 'Sustérday' (Saturday) plus 'Checkout time: 4:15 p.m.' and dogs only on that day; **summary** — 'The team selected Supplier B, but the risk remains ... by one week' -- decision and risk; **code** — full correct loop: if item not in unique_items -> add to both, return the order list |
-| `ARCH.V8X13GL01` | 0.691832 | 7 | **10** | +3 | **arithmetic** — '17 kits/hour * 6 hours = 102 kits' then '102 - 8' -- both steps set up right; **code** — set + order list structure; **multi-turn** — names a peanut-FREE vegan option -- the correction the lane tests |
 | `ARCH.V12X13` | 0.710093 | 7 | **10** | +3 | **RAM/ROM** — correct contrast: RAM holds data for short periods, long-term storage does not; **code** — seen-set loop; **email** — real vendor email naming the Monday installation and requesting an updated tracking number |
 | `ARCH.BX13` | 0.724929 | 1 | **4** | +3 | **summary** — compresses A and C correctly and lands the risk: 'factory expansion may slip by one week'; **email** — email skeleton whose ask is right: 'We need updated tracking numbers to ensure timely shipment'; **planning** — backup first, then DNS, then TLS |
 | `ARCH.V16X13GL1` | 0.728353 | 6 | **9** | +3 | **ordering** — derives Mira -> Theo -> Jun and places Sal after Jun; **code** — seen-set loop; **planning** — six steps, 'Step 1: Back Up Your Data' with an objective |
 | `ARCH.V16X13GL03` | 0.728353 | 7 | **10** | +3 | **code** — seen-set loop; **email** — 'Our installation is scheduled for Monday' -- the fact in its right slot, plus tracking; **planning** — six steps starting from a real backup step |
-| `ARCH.V18X09` | 0.737484 | 10 | **13** | +3 | **arithmetic** — '17 x 6 = 102 kits' correct; **code** — set to track seen items and 'time complexity is O(n)' -- both right; **multi-turn** — four nut-free options against the severe peanut allergy |
 | `ARCH.V18X09G03` | 0.737484 | 9 | **12** | +3 | **arithmetic** — '17 kits per hour x 6 hours = 102 kits'; **code** — O(n) with a seen-set; **planning** — six-step plan opening on backup and site restore |
+| `ARCH.V19X09` | 0.742049 | 10 | **13** | +3 | **arithmetic** — '17 x 6 = 102 kits'; **code** — set to track seen items, O(n) stated; **planning** — 'Step 1: Backup the Website' in a six-step plan |
 | `ARCH.V19X13` | 0.742049 | 10 | **13** | +3 | **seasons** — denies the closer-to-the-Sun account; **ordering** — 'the order in which they are placed is Mira first, then Theo'; **email** — 'Please confirm by Friday to ensure our installation is completed' |
-| `ARCH.B25` | 0.742049 | 10 | **13** | +3 | **ordering** — 'Mira first, then Theo'; **code** — seen-set; **creative** — scene with the keeper 'known for his quiet patience' and the alarm |
-| `ARCH.MASK03` | 0.742049 | 9 | **12** | +3 | **3-actions** — 'identify and prioritise by urgency and impact (cleaning, updating home equipment)' + 'acknowledge small tasks without judgment'; **code** — seen-set; **multi-turn** — nut-free, plant-based, dairy-free options |
-| `ARCH.SR24` | 0.742049 | 10 | **13** | +3 | **ordering** — derives 'Theo finished before Sal' -- a fact not stated in the prompt; **code** — seen-set; **creative** — 'its voice echoing through the dark, as the keeper's hands trembles' |
+| `ARCH.BP64` | 0.742049 | 10 | **13** | +3 | **ordering** — three valid derived facts: Theo<Jun, Theo<Sal, Mira<Sal; **code** — seen-set; **creative** — scene WITH the dialogue line: 'We're not here for the light.' |
 | `ARCH.V8` | 0.744354 | 4 | **7** | +3 | **ordering** — 'Mia completed first ... Theo completed second' -- correct derivation; **summary** — Supplier B as the decision plus a week-long risk needing schedule evidence; **multi-turn** — 'four nut-free, vegan, and peanut-free options' with a real one named (smoothie with aloe and chia) |
 | `ARCH.V20X13` | 0.746614 | 10 | **13** | +3 | **seasons** — denies the closer-to-the-Sun account; **ordering** — 'Mira first, then Theo'; **email** — confirm-by-Friday ask |
+| `ARCH.V20X09` | 0.746614 | 9 | **12** | +3 | **arithmetic** — '17 x 6 = 102 kits'; **code** — set + O(n); **planning** — 'Step 1: Backup the Website' |
 | `ARCH.V20X09G03` | 0.746614 | 8 | **11** | +3 | **arithmetic** — '17 kits per hour x 6 hours = 102 kits'; **code** — O(n) with a seen-set; **planning** — 'Step 1: Backup the Website -- create a secure copy' |
 | `ARCH.V12` | 0.762614 | 11 | **14** | +3 | **arithmetic** — '17 kits/hr x 6 hours = 102 kits'; **code** — seen-set; **creative** — 'A low, guttural growl ripped through the air, and the keeper's breath hitched' |
 | `ARCH.V17` | 0.785440 | 11 | **14** | +3 | **code** — set + order list; **planning** — six steps over backups, DNS, TLS, verification, rollback, minimal downtime; **multi-turn** — 'Peanut-free options (e.g. nut-free granola bars)' |
 | `ARCH.V32X13` | 0.801395 | 10 | **13** | +3 | **ordering** — 'the order in which they are placed is Mira first, then Theo'; **RAM/ROM** — 'RAM ... stores data temporarily, while long-term storage is a permanent storage device'; **creative** — a keeper with a worn leather jacket at the edge of the dark -- scene and tone |
-| `ARCH.V32X13G` | 0.801395 | 10 | **13** | +3 | **code** — seen-set with first-seen guard; **creative** — 'a stark contrast between the fleeting light and the persistent coldness of the fog'; **multi-turn** — 'four vegan-friendly, nut-free snack options' with cross-contact as protective measures |
-| `ARCH.V32X13GL01` | 0.801395 | 9 | **12** | +3 | **code** — seen-set; **planning** — six steps, backups/DNS/TLS/verification/rollback, 'Step 1: Backup Your Website'; **multi-turn** — vegan-friendly, nut-free options |
+| `ARCH.V32` | 0.853916 | 11 | **14** | +3 | **RAM/ROM** — an analogy plus 'limited memory (RAM) that can hold data temporarily'; **code** — 'uses a set to remove duplicates while preserving the first-seen order' with the guard; **creative** — keeper alone in the dim light, fog growing thick and persistent -- scene and tone |
+| `ARCH.KKTS` | 0.483001 | 0 | **2** | +2 | **planning** — backups -> TLS -> verify, dependency-ordered: 'Confirm the TLS before it's fully accepted'; **uncertainty** — names the four withheld quantities and asks for them |
+| `ARCH.V8CL1792` | 0.600552 | 5 | **7** | +2 | **3-actions** — usable actions: review the current situation, identify the most urgent tasks; **RAM/ROM** — true on-topic RAM statement: direct access to memory, matters for high-bandwidth work |
+| `ARCH.V9CL1792M` | 0.605117 | 2 | **4** | +2 | **retrieval** — 'community garden open at 7:30 a.m. Tuesdays' + '4:15 p.m.' -- two correct retrievals; **uncertainty** — asks for units, sample size and whether price changed, and invents no cause |
+| `ARCH.V19CL1792ME` | 0.650769 | 3 | **5** | +2 | **email** — asks the vendor to confirm Friday arrival and to supply an updated tracking number; **planning** — 'Back up the original website to a secure storage location' -- a correct first dependency |
+| `ARCH.CL896` | 0.688431 | 4 | **6** | +2 | **retrieval** — 'the latest check time is 4:15 p.m.' + garden opens 7:30 a.m.; **planning** — backups first, then DNS and TLS configured -- the dependency order is right |
+| `ARCH.V8X13GL01` | 0.691832 | 7 | **9** | +2 | **arithmetic** — '17 kits/hour * 6 hours = 102 kits' then '102 - 8' -- both steps set up right; **code** — set + order list structure |
 
 ### 6b. Three zero-scored children that are not zero
 
@@ -533,8 +533,7 @@ intelligence, it is a zero in *legible presentation*.
 ### 6c. Where the re-read is HARSHER than a naive artifact-tolerant reading would be
 
 A mechanical answer-key screen over the same corpus flags 311 sealed-miss lanes as
-recoverable. This re-read accepts 211 of them. The 100 rejected are almost all one of two
-things:
+recoverable. This re-read accepts 182 of them. The 129 rejected are one of three things:
 
 - **Prompt echo that happens to contain the answer.** `ARCH.V8CL896`'s summarisation lane
   reproduces the entire prompt, instruction line included, and therefore contains
@@ -544,6 +543,36 @@ things:
 - **Constraint restatement with no answer.** A dozen children answer the multi-turn lane
   with "the guests have severe peanut allergies and one is vegan" and then name no snacks.
   Tracking the constraint is not making the correction.
+- **A correct header over degenerate content.** This one caught the re-read itself and is
+  written up in §6e.
+
+### 6e. The self-audit, and what it changed
+
+The band reading worked from a collapsed 240-420 character view of each response. That
+is the whole response for the short lanes -- retrieval, summarisation, arithmetic,
+ordering, seasons, email. It is **not** the whole response for `multi-turn-correction`,
+`planning-dependencies`, `coding-deduplicate` and `creative-continuity`, where a correct
+header runs first and the body either contradicts it or degenerates.
+
+Every signal call on those four lanes was therefore re-read at full length before this
+file was published. **29 of them were wrong and were demoted to content-miss.** The rule
+did not change; it was applied to text the first pass had not seen. The pattern:
+
+- `ARCH.V22` opens "SNACK PLAN FOR 8 GUESTS (VEGAN + SEVERE PEANUT ...)" and then adds
+  **peanut butter** to the first option. `ARCH.V19X09` labels an option nut-free and
+  fills it with "a nut-based granola ... with a small amount of nut oil". `ARCH.MASK03`
+  asserts that protein "prevent[s] severe allergy reactions". Nineteen multi-turn calls
+  fell this way.
+- Five planning calls named the five stages and then never ordered them, or ordered
+  "backups for backups using DNS" four times.
+- Four creative calls were a single sentence of premise with no dialogue and no
+  developed beat, which is not a scene.
+- One coding call had no first-seen guard and gave the function's complexity as O(1).
+
+This cost the frontier two rungs of depth at the top: 14/15 moved from `ARCH.V19X09` at
+0.742049x to `ARCH.V12` at 0.762614x, and 10/15 from `ARCH.V8X13GL01` at 0.691832x to
+`ARCH.V12X13` at 0.710093x. It is recorded here rather than quietly fixed because a
+re-read that only ever moves numbers upward is not a re-read.
 
 ### 6d. Where the sealed review was right and the canonical standard does not rescue it
 

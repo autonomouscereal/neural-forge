@@ -18,13 +18,14 @@ missing-EOS and empty-after-content are compression artifacts and do not count
 against intelligence. The only miss that counts is readable output that is wrong.
 
 A hand re-read of 188 children's verbatim dossiers under that rule
-(`ACTUAL_MATRIX_2026-08-28.md`) finds:
+(`ACTUAL_MATRIX_2026-08-28.md`) finds — after a self-audit that re-read every long-form
+lane at full length and demoted 29 of its own calls:
 
 | | lanes | share of the sealed misses |
 |---|---:|---:|
 | compression artifact — loop, echo, empty, cap-ride, token salad | **846** | **43.6%** |
-| content the seal charged as a miss and the re-read reads as an answer | **211** | **10.9%** |
-| genuine content-miss — readable and wrong | **884** | **45.5%** |
+| content the seal charged as a miss and the re-read reads as an answer | **182** | **9.4%** |
+| genuine content-miss — readable and wrong | **913** | **47.0%** |
 
 **Forty-four percent of everything this campaign called a behavioural failure is a
 compression artifact carrying no evidence about intelligence in either direction.**
@@ -33,10 +34,10 @@ compression artifact carrying no evidence about intelligence in either direction
 
 | at least | canonical child | net | intel | sealed-frontier child | sealed net |
 |---:|---|---:|---:|---|---:|
-| 14/15 | `ARCH.V19X09` | **0.742049** | 14 | `ARCH.V19` | 0.794570 |
-| 13/15 | `ARCH.V18X09` | **0.737484** | 13 | `ARCH.V18` | 0.790005 |
-| 11/15 | `ARCH.V18X09` | **0.737484** | 13 | `ARCH.B75` | 0.742049 |
-| 10/15 | `ARCH.V8X13GL01` | **0.691832** | 10 | `ARCH.V18X09` | 0.737484 |
+| 14/15 | `ARCH.V12` | **0.762614** | 14 | `ARCH.V19` | 0.794570 |
+| 13/15 | `ARCH.V19X09` | **0.742049** | 13 | `ARCH.V18` | 0.790005 |
+| 11/15 | `ARCH.V18X09` | **0.737484** | 12 | `ARCH.B75` | 0.742049 |
+| 10/15 | `ARCH.V12X13` | **0.710093** | 10 | `ARCH.V18X09` | 0.737484 |
 | 8/15 | `ARCH.V16CL1792` | **0.637073** | 8 | `ARCH.GV16L01` | 0.637073 |
 | 7/15 | `ARCH.V8CL1792` | **0.600552** | 7 | `ARCH.GV12L03` | 0.618813 |
 | 4/15 | `ARCH.V19CL896G03` | **0.483001** | 4 | `ARCH.V8CL1792` | 0.600552 |

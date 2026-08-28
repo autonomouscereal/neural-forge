@@ -172,11 +172,44 @@ robustness/restatement column is a diagnostic, not a gate.
   `ARCH.V8CL896`'s summarisation lane reproduces the whole prompt, instruction line
   included, and therefore contains "The team selected Supplier B". The answer key fires;
   the re-read scores it an artifact. A child that selects the risk sentence and frames it
-  as the risk has answered. This rule rejected 100 of the screen's 311 hits.
+  as the risk has answered.  Together with the self-audit in §2.4 this rejected 129 of
+  the screen's 311 hits.
 - **Looping after content is free.** `ARCH.GV12L01` gives three practical actions and then
   repeats one of them eighteen times into the cap. The three actions are the finding.
 
-### 2.4 What the re-read is not
+### 2.4 The self-audit, and the 29 calls it reversed
+
+The band reading in step 5 worked from a collapsed 240–420 character view. That is the
+whole response for the short lanes — retrieval, summarisation, arithmetic, ordering,
+seasons, email. It is **not** the whole response for `multi-turn-correction`,
+`planning-dependencies`, `coding-deduplicate` and `creative-continuity`, where a correct
+header runs first and the body either contradicts it or degenerates to nothing.
+
+Every signal call on those four lanes was re-read at full length before publication.
+**29 were wrong and were demoted to content-miss.** The rule did not change; it was
+applied to text the first pass had not seen.
+
+- **Nineteen multi-turn calls.** `ARCH.V22` opens "SNACK PLAN FOR 8 GUESTS (VEGAN +
+  SEVERE PEANUT ...)" and then puts **peanut butter** in the first option. `ARCH.V19X09`
+  labels an option nut-free and fills it with "a nut-based granola ... with a small amount
+  of nut oil". `ARCH.MASK03` asserts that protein "prevent[s] severe allergy reactions".
+  `ARCH.B75`, `ARCH.BP64`, `ARCH.V19X13G01/G03`, `ARCH.V32X13G/G03/GL01/GL1` and
+  `ARCH.V20X13G03` all name the constraint in the header and then emit
+  "protein-based protein-based" with no food in it.
+- **Five planning calls** named the five stages and then never ordered them, or ordered
+  "create backups for backups using DNS" four times (`ARCH.V19X13X01`, `ARCH.V20X13X01`,
+  `ARCH.BM25`, `ARCH.CL1792`, `ARCH.CL1792LG`).
+- **Four creative calls** were a single sentence of premise with no dialogue and no
+  developed beat, which is not a scene (`ARCH.B25`, `ARCH.SR24`, `ARCH.SR64`, `ARCH.V10`).
+- **One coding call** had no first-seen guard and gave the function's complexity as O(1)
+  (`ARCH.V8X13GL1`).
+
+This cost the frontier two rungs of depth at the top: 14/15 moved from `ARCH.V19X09` at
+0.742049x to `ARCH.V12` at 0.762614x, and 10/15 from `ARCH.V8X13GL01` at 0.691832x to
+`ARCH.V12X13` at 0.710093x. It is recorded rather than quietly fixed, because a re-read
+that only ever moves numbers in one direction is not a re-read.
+
+### 2.5 What the re-read is not
 
 It is a hand reading of **one wording** of each ask, exactly like the sealed fifteen.
 Wave 33's robustness probe showed the sealed ordering does not survive rewording. Nothing
@@ -194,11 +227,11 @@ Full tables in `reports/matrix-campaign-20260810/ACTUAL_MATRIX_2026-08-28.md`.
 
 | | lanes | share of all lanes | share of the sealed misses |
 |---|---:|---:|---:|
-| intelligence signal | **1,105** | 39.0% | — |
+| intelligence signal | **1,076** | 38.0% | — |
 | — sealed Useful/Partial | 894 | 31.5% | — |
-| — recovered by this re-read | 211 | 7.4% | **10.9%** |
+| — recovered by this re-read | 182 | 6.4% | **9.4%** |
 | artifact-miss | **846** | 29.8% | **43.6%** |
-| content-miss | **884** | 31.2% | **45.5%** |
+| content-miss | **913** | 32.2% | **47.0%** |
 
 Broken out: 742 loop-or-cap-ride lanes with under ~80 characters of unique text, 85 empty,
 16 whole-response prompt echoes, 3 token salad.
@@ -226,8 +259,9 @@ all, which is a statement about the decode and not about intelligence.
 | child | net | sealed | intel | the response |
 |---|---:|---:|---:|---|
 | `ARCH.V16X13G` | 0.728353 | 5 | **10** | `17 x 6 = 102` and `102 - 8 = 94` both correct; the seen-set dedup loop; a real vendor email; and a lighthouse scene with the line *"The foghorn is not just a fireshore. It is a memory."* |
-| `ARCH.V19X09` | 0.742049 | 10 | **14** | 102 correct, set-based dedup with O(n) named, a backup-first six-step migration, four nut-free options against the severe allergy |
-| `ARCH.BP64` | 0.742049 | 10 | **14** | three valid derived orderings, the dedup loop, peanut-free options, and a scene with *"We're not here for the light."* |
+| `ARCH.V12` | 0.762614 | 11 | **14** | `17 x 6 = 102`, the dedup loop, and a scene whose growl makes the keeper's breath hitch — the deepest fourteen in the campaign |
+| `ARCH.V19X09` | 0.742049 | 10 | **13** | 102 correct, set-based dedup with O(n) named, a backup-first migration with a test step, and zero artifact lanes |
+| `ARCH.BP64` | 0.742049 | 10 | **13** | three valid derived orderings, the dedup loop, and a scene with *"We're not here for the light."* |
 | `ARCH.V19CL1792X13` | 0.608519 | 2 | **6** | 4:15 p.m. off the note, O(n) stated correctly, a real email naming the Monday install, three usable prioritisation actions |
 | `ARCH.V19X13X09` | 0.689528 | 5 | **8** | *"This cycle is **not** due to Earth being closer to the Sun"* — the exact correction the seasons lane is built to test |
 | `ARCH.CL640` | 0.640497 | **0** | **1** | pulls 4:15 p.m. and 7:30 a.m. off the note. Seven of its other lanes are pure loop |
@@ -323,16 +357,16 @@ miss to signal; every other signal lane in the count is a sealed Useful or Parti
 | `ARCH.W736` | 21 | 0.689220 | 1 | **1** | 12 | 2 | — |
 | `ARCH.W736LS` | 21 | 0.689220 | 0 | **0** | 14 | 1 | — |
 | `ARCH.R1` | 16 | 0.689528 | 0 | **0** | 12 | 3 | — |
-| `ARCH.V19X13X01` | 28 | 0.689528 | 3 | **5** | 3 | 7 | 3act, plan |
+| `ARCH.V19X13X01` | 28 | 0.689528 | 3 | **4** | 3 | 8 | 3act |
 | `ARCH.V19X13X01G03` | 28 | 0.689528 | 4 | **4** | 3 | 8 | — |
 | `ARCH.V19X13X09` | 28 | 0.689528 | 5 | **8** | 1 | 6 | seas, arith, plan |
 | `ARCH.V8X13` | 24 | 0.691832 | 6 | **7** | 1 | 7 | code |
 | `ARCH.V8X13G` | 24 | 0.691832 | 4 | **7** | 1 | 7 | retr, summ, code |
-| `ARCH.V8X13GL01` | 24 | 0.691832 | 7 | **10** | 0 | 5 | arith, code, multi |
-| `ARCH.V8X13GL1` | 24 | 0.691832 | 6 | **8** | 1 | 6 | order, code |
+| `ARCH.V8X13GL01` | 24 | 0.691832 | 7 | **9** | 0 | 6 | arith, code |
+| `ARCH.V8X13GL1` | 24 | 0.691832 | 6 | **7** | 1 | 7 | order |
 | `ARCH.V8X13GL03` | 25 | 0.691832 | 7 | **9** | 0 | 6 | retr, code |
 | `ARCH.V20X13X07` | 26 | 0.694093 | 5 | **6** | 2 | 7 | code |
-| `ARCH.V20X13X01` | 27 | 0.694093 | 3 | **5** | 3 | 7 | 3act, plan |
+| `ARCH.V20X13X01` | 27 | 0.694093 | 3 | **4** | 3 | 8 | 3act |
 | `ARCH.V20X13X01G03` | 27 | 0.694093 | 1 | **3** | 3 | 9 | 3act, plan |
 | `ARCH.V9X13` | 27 | 0.696398 | 6 | **8** | 0 | 7 | 3act, code |
 | `ARCH.V12X13` | 25 | 0.710093 | 7 | **10** | 0 | 5 | ram, code, email |
@@ -357,31 +391,31 @@ miss to signal; every other signal lane in the count is a sealed Useful or Parti
 | `ARCH.V32W896` | 25 | 0.731199 | 3 | **3** | 7 | 5 | — |
 | `ARCH.V22X13KV6JQ` | 27 | 0.735201 | 2 | **2** | 5 | 8 | — |
 | `ARCH.V18X07` | 27 | 0.737484 | 9 | **10** | 0 | 5 | seas |
-| `ARCH.V18X07G03` | 27 | 0.737484 | 8 | **10** | 0 | 5 | plan, multi |
-| `ARCH.V18X09` | 27 | 0.737484 | 10 | **13** | 0 | 2 | arith, code, multi |
+| `ARCH.V18X07G03` | 27 | 0.737484 | 8 | **9** | 0 | 6 | plan |
+| `ARCH.V18X09` | 27 | 0.737484 | 10 | **12** | 0 | 3 | arith, code |
 | `ARCH.V18X09G03` | 27 | 0.737484 | 9 | **12** | 0 | 3 | arith, code, plan |
 | `ARCH.V18X13` | 27 | 0.737484 | 10 | **12** | 0 | 3 | seas, email |
 | `ARCH.V18X13G03` | 27 | 0.737484 | 10 | **11** | 1 | 3 | code |
-| `ARCH.V19X09` | 28 | 0.742049 | 10 | **14** | 0 | 1 | arith, code, plan, multi |
+| `ARCH.V19X09` | 28 | 0.742049 | 10 | **13** | 0 | 2 | arith, code, plan |
 | `ARCH.V19X13` | 28 | 0.742049 | 10 | **13** | 0 | 2 | seas, order, email |
-| `ARCH.V19X13G01` | 28 | 0.742049 | 11 | **13** | 1 | 1 | code, multi |
-| `ARCH.V19X13G03` | 28 | 0.742049 | 11 | **13** | 1 | 1 | code, multi |
+| `ARCH.V19X13G01` | 28 | 0.742049 | 11 | **12** | 1 | 2 | code |
+| `ARCH.V19X13G03` | 28 | 0.742049 | 11 | **12** | 1 | 2 | code |
 | `ARCH.V19X13G10` | 28 | 0.742049 | 10 | **12** | 2 | 1 | code, creat |
-| `ARCH.B25` | 29 | 0.742049 | 10 | **13** | 0 | 2 | order, code, creat |
+| `ARCH.B25` | 29 | 0.742049 | 10 | **12** | 0 | 3 | order, code |
 | `ARCH.B50` | 29 | 0.742049 | 10 | **12** | 2 | 1 | code, creat |
-| `ARCH.B75` | 29 | 0.742049 | 11 | **13** | 1 | 1 | code, multi |
-| `ARCH.BP64` | 29 | 0.742049 | 10 | **14** | 0 | 1 | order, code, creat, multi |
-| `ARCH.MASK03` | 29 | 0.742049 | 9 | **12** | 0 | 3 | 3act, code, multi |
-| `ARCH.SR24` | 30 | 0.742049 | 10 | **13** | 1 | 1 | order, code, creat |
-| `ARCH.SR64` | 30 | 0.742049 | 10 | **12** | 1 | 2 | code, creat |
+| `ARCH.B75` | 29 | 0.742049 | 11 | **12** | 1 | 2 | code |
+| `ARCH.BP64` | 29 | 0.742049 | 10 | **13** | 0 | 2 | order, code, creat |
+| `ARCH.MASK03` | 29 | 0.742049 | 9 | **11** | 0 | 4 | 3act, code |
+| `ARCH.SR24` | 30 | 0.742049 | 10 | **12** | 1 | 2 | order, code |
+| `ARCH.SR64` | 30 | 0.742049 | 10 | **11** | 1 | 3 | code |
 | `ARCH.V8` | 24 | 0.744354 | 4 | **7** | 0 | 8 | order, summ, multi |
 | `ARCH.V20X13` | 26 | 0.746614 | 10 | **13** | 1 | 1 | seas, order, email |
-| `ARCH.V20X13G03` | 26 | 0.746614 | 11 | **13** | 1 | 1 | code, multi |
+| `ARCH.V20X13G03` | 26 | 0.746614 | 11 | **12** | 1 | 2 | code |
 | `ARCH.V20X07` | 27 | 0.746614 | 9 | **10** | 0 | 5 | seas |
-| `ARCH.V20X09` | 27 | 0.746614 | 9 | **13** | 0 | 2 | arith, code, plan, multi |
+| `ARCH.V20X09` | 27 | 0.746614 | 9 | **12** | 0 | 3 | arith, code, plan |
 | `ARCH.V20X09G03` | 27 | 0.746614 | 8 | **11** | 0 | 4 | arith, code, plan |
 | `ARCH.V9` | 26 | 0.748919 | 9 | **11** | 0 | 4 | code, multi |
-| `ARCH.V10` | 25 | 0.753484 | 10 | **12** | 0 | 3 | code, creat |
+| `ARCH.V10` | 25 | 0.753484 | 10 | **11** | 0 | 4 | code |
 | `ARCH.W14FF1280` | 15 | 0.760331 | 5 | **5** | 4 | 6 | — |
 | `ARCH.CL1280` | 30 | 0.760331 | 4 | **5** | 4 | 6 | email |
 | `ARCH.V12` | 25 | 0.762614 | 11 | **14** | 0 | 1 | arith, code, creat |
@@ -398,11 +432,11 @@ miss to signal; every other signal lane in the count is a sealed Useful or Parti
 | `ARCH.V19MXP2` | 29 | 0.794570 | 2 | **3** | 4 | 8 | ram |
 | `ARCH.V20` | 25 | 0.799135 | 13 | **14** | 0 | 1 | multi |
 | `ARCH.V32X13` | 25 | 0.801395 | 10 | **13** | 1 | 1 | order, ram, creat |
-| `ARCH.V32X13G` | 25 | 0.801395 | 10 | **13** | 0 | 2 | code, creat, multi |
-| `ARCH.V32X13GL01` | 25 | 0.801395 | 9 | **12** | 1 | 2 | code, plan, multi |
-| `ARCH.V32X13GL1` | 25 | 0.801395 | 10 | **13** | 1 | 1 | code, creat, multi |
-| `ARCH.V32X13G03` | 26 | 0.801395 | 10 | **13** | 0 | 2 | code, plan, multi |
-| `ARCH.V22` | 26 | 0.808265 | 13 | **14** | 0 | 1 | multi |
+| `ARCH.V32X13G` | 25 | 0.801395 | 10 | **12** | 0 | 3 | code, creat |
+| `ARCH.V32X13GL01` | 25 | 0.801395 | 9 | **11** | 1 | 3 | code, plan |
+| `ARCH.V32X13GL1` | 25 | 0.801395 | 10 | **12** | 1 | 2 | code, creat |
+| `ARCH.V32X13G03` | 26 | 0.801395 | 10 | **12** | 0 | 3 | code, plan |
+| `ARCH.V22` | 26 | 0.808265 | 13 | **13** | 0 | 2 | — |
 | `ARCH.CL1536` | 31 | 0.808265 | 4 | **4** | 9 | 2 | — |
 | `ARCH.CL1792X13` | 31 | 0.813949 | 4 | **4** | 5 | 6 | — |
 | `ARCH.W896X13` | 19 | 0.815064 | 1 | **1** | 12 | 2 | — |
@@ -412,24 +446,24 @@ miss to signal; every other signal lane in the count is a sealed Useful or Parti
 | `ARCH.W896LSKV6JQ` | 22 | 0.841047 | 1 | **1** | 13 | 1 | — |
 | `ARCH.D3` | 16 | 0.842437 | 0 | **1** | 14 | 0 | summ |
 | `ARCH.V32` | 24 | 0.853916 | 11 | **14** | 0 | 1 | ram, code, creat |
-| `ARCH.CL1792` | 30 | 0.856199 | 7 | **8** | 0 | 7 | plan |
-| `ARCH.CL1792LG` | 30 | 0.856199 | 7 | **8** | 0 | 7 | plan |
+| `ARCH.CL1792` | 30 | 0.856199 | 7 | **7** | 0 | 8 | — |
+| `ARCH.CL1792LG` | 30 | 0.856199 | 7 | **7** | 0 | 8 | — |
 | `ARCH.CL1792M` | 30 | 0.856199 | 8 | **9** | 0 | 6 | 3act |
 | `ARCH.CL1792ME` | 31 | 0.856199 | 2 | **3** | 2 | 10 | seas |
 | `ARCH.CL1792MV` | 31 | 0.856199 | 7 | **7** | 1 | 7 | — |
-| `ARCH.BM25` | 32 | 0.856199 | 6 | **8** | 0 | 7 | debug, plan |
+| `ARCH.BM25` | 32 | 0.856199 | 6 | **7** | 0 | 8 | debug |
 | `ARCH.BM50` | 32 | 0.856199 | 4 | **4** | 0 | 11 | — |
 | `ARCH.BM50N` | 32 | 0.856199 | 0 | **0** | 15 | 0 | — |
 | `ARCH.BM75` | 32 | 0.856199 | 2 | **4** | 1 | 10 | arith, email |
 | `ARCH.BMS75` | 32 | 0.856199 | 5 | **6** | 1 | 8 | arith |
 | `ARCH.BMV3` | 32 | 0.856199 | 7 | **7** | 0 | 8 | — |
-| `ARCH.BV50` | 32 | 0.856199 | 4 | **6** | 0 | 9 | email, multi |
+| `ARCH.BV50` | 32 | 0.856199 | 4 | **5** | 0 | 10 | email |
 | `ARCH.CL1792S` | 32 | 0.856199 | 4 | **4** | 1 | 10 | — |
 | `ARCH.W896` | 19 | 0.859023 | 4 | **4** | 5 | 6 | — |
 | `ARCH.W896LS` | 21 | 0.859023 | 3 | **3** | 8 | 4 | — |
 | `ARCH.MM896` | 22 | 0.859023 | 2 | **2** | 12 | 1 | — |
 | `ARCH.D2` | 16 | 0.894958 | 2 | **4** | 6 | 5 | retr, plan |
-| `ARCH.D2B` | 16 | 0.894958 | 6 | **7** | 1 | 7 | multi |
+| `ARCH.D2B` | 16 | 0.894958 | 6 | **6** | 1 | 8 | — |
 | `ARCH.X13KV6` | 16 | 0.926936 | 6 | **7** | 1 | 7 | retr |
 | `ARCH.HD16` | 15 | 0.938368 | 0 | **0** | 13 | 2 | — |
 | `ARCH.X05A` | 15 | 0.947479 | 6 | **6** | 4 | 5 | — |
@@ -439,7 +473,7 @@ miss to signal; every other signal lane in the count is a sealed Useful or Parti
 | `ARCH.X07` | 16 | 0.947479 | 11 | **11** | 2 | 2 | — |
 | `ARCH.X09` | 16 | 0.947479 | 10 | **11** | 0 | 4 | seas |
 | `ARCH.X11` | 16 | 0.947479 | 9 | **10** | 0 | 5 | multi |
-| `ARCH.X13A` | 16 | 0.947479 | 13 | **14** | 1 | 0 | multi |
+| `ARCH.X13A` | 16 | 0.947479 | 13 | **13** | 1 | 1 | — |
 | `ARCH.X12` | 16 | 0.952057 | 0 | **0** | 6 | 9 | — |
 | `ARCH.KV6` | 16 | 0.979457 | 5 | **7** | 3 | 5 | plan, unc |
 
