@@ -3,10 +3,10 @@
  "addendum": 16,
  "authored": "2026-08-27",
  "bank_path": "research/lfm2_extension_bank_prompts_v1.json",
- "bank_sha256": "98f7e52510ac1fe1368b8890cba1b525d086f9fdbf0ec22a8a08606cce36cef6",
+ "bank_sha256": "c9d37004c901d757f10760cd6cbb8500e3b1e54cbfa856bc19e602a85595690f",
  "bank_prompts": 30,
  "paraphrase_path": "research/lfm2_paraphrase_triplets_v1.json",
- "paraphrase_sha256": "15e97ea2d7c182065a22a0d33dd66368140beaef35ad8d415e2c6c5c3422e4a3",
+ "paraphrase_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
  "paraphrase_prompts": 45,
  "sealed_pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
  "lint": {

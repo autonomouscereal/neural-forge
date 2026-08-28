@@ -619,9 +619,17 @@ def main() -> int:
             for lane, texts in PARAPHRASES.items()
         },
     }
+    # newline="\n" is LOAD-BEARING, not style.  This workstation's git carries
+    # core.autocrlf=true, so a pack written with the platform default digests as
+    # CRLF here and as LF in the commit -- and the deployment is cut from the
+    # commit with core.autocrlf=false.  The first run of this file sealed the
+    # CRLF bytes, the deployment shipped the LF bytes, and mx29_extreview.py
+    # refused the bank on the digest.  That refusal did its job; the pin is only
+    # worth having if the bytes it pins are the bytes that ship.
     for path, doc in ((args.out_bank, bank_doc), (args.out_paraphrase, para_doc)):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(doc, indent=1, ensure_ascii=True) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(doc, indent=1, ensure_ascii=True) + "\n",
+                        encoding="utf-8", newline="\n")
 
     seal = {
         "schema": "neural-forge-extension-bank-seal-v1",
@@ -648,7 +656,7 @@ def main() -> int:
             "sealed protocol is modified by the mechanism this seal describes."
         ),
     }
-    args.out_seal.write_text(json.dumps(seal, indent=1) + "\n", encoding="utf-8")
+    args.out_seal.write_text(json.dumps(seal, indent=1) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps(seal, indent=1))
     return 0
 
