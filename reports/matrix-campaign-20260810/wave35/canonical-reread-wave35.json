@@ -1,0 +1,152 @@
+{
+ "schema": "neural-forge-matrix-wave35-canonical-reread-v1",
+ "purpose": "The canonical re-read of wave 35's eight new children, done in the same pass as the sealed reading and against the same verbatim dossiers.  It is an ASSESSMENT LAYER: no sealed artifact was modified, no ledger row carries any number in this file, and every sealed count is preserved beside every canonical count.",
+ "standard": {
+  "intelligence_signal": "sealed Useful or Partial, OR a sealed miss whose text carries at least one correct, specific, usable element of what the lane asked, in the child's own words",
+  "artifact_miss": "empty, pure loop, cap-ride with no unique content, indiscriminate prompt copy, or token salad -- never counts against intelligence",
+  "content_miss": "readable, on-register output that is wrong, vacuous, deflecting or a restatement with no answer -- the only miss that is about intelligence",
+  "note_on_the_echo": "unchanged from wave 34: a sealed Partial is signal by the rule above even when the lane is a whole-prompt echo, because the SEAL is what the canonical standard reads against",
+  "THE_ONE_RULE_THIS_WAVE_HAD_TO_STATE": "PLANNING-DEPENDENCIES IS THE LANE WHERE THE TWO STANDARDS SEPARATE MOST OFTEN IN THIS WAVE, and it separates them five times.  Five children name backups, DNS, TLS, verification and rollback correctly and then loop instead of sequencing them.  The frozen protocol seals that a MISS, because wave 23's precedent is that items which are one item repeated do not multiply into steps.  The canonical standard reads it SIGNAL, because five correct, specific, usable elements of what the lane asked are present in the child's own words.  Both readings are applied consistently across all eight children and the disagreement is the single largest source of the sealed-versus-canonical gap in this wave."
+ },
+ "children": [
+  {
+   "cell_id": "ARCH.V12CL896X13", "wave": 35, "net_ratio": 0.420779, "stored_parameters": 96649984,
+   "sealed_useful_or_partial": 1, "canonical_intel": 2, "artifact_miss": 11, "content_miss": 2, "delta": 1,
+   "lanes_flipped_by_the_re_read": ["summarization-priorities"],
+   "per_lane": {
+    "conversation-natural-greeting": "content-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "content-miss",
+    "writing-concise-email": "signal", "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "artifact-miss", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "character": "THE DEEPEST CHILD EVER BUILT, at 42.1 per cent of the parent and below the ARCH.V8CL896 content death, and it holds two.  It writes a vendor email that names the delayed shipment, Friday and the tracking number and asks for information rather than offering it.  Its summarisation lane is the one the two standards split on: it keeps the unresolved risk verbatim -- factory expansion may slip by one week, so proceeding will request weekly schedule evidence -- and DROPS the decision, which is a sealed miss under wave 28's precedent and one correct specific element under the canonical rule."
+  },
+  {
+   "cell_id": "ARCH.V9CL896", "wave": 35, "net_ratio": 0.437349, "stored_parameters": 100456192,
+   "sealed_useful_or_partial": 2, "canonical_intel": 2, "artifact_miss": 12, "content_miss": 1, "delta": 0,
+   "lanes_flipped_by_the_re_read": [],
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "artifact-miss", "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "signal", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "content-miss"
+   },
+   "character": "the child that halves the 0/15 bracket from the surviving side.  It reads the same two lanes as every CL896 child from K=9,216 to K=20,480, and it is the only one of the eight whose planning lane names NONE of the five work items, which is why its canonical count does not exceed its sealed one."
+  },
+  {
+   "cell_id": "ARCH.V10CL896G01", "wave": 35, "net_ratio": 0.441915, "stored_parameters": 101504768,
+   "sealed_useful_or_partial": 2, "canonical_intel": 3, "artifact_miss": 11, "content_miss": 1, "delta": 1,
+   "lanes_flipped_by_the_re_read": ["planning-dependencies"],
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "content-miss", "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "character": "lambda 0.1: the largest update and the best held-out objective on its ladder, and the only arm of the three whose email lane carries none of Friday, the Monday installation or the tracking number."
+  },
+  {
+   "cell_id": "ARCH.V10CL896G03", "wave": 35, "net_ratio": 0.441915, "stored_parameters": 101504768,
+   "sealed_useful_or_partial": 3, "canonical_intel": 4, "artifact_miss": 9, "content_miss": 2, "delta": 1,
+   "lanes_flipped_by_the_re_read": ["planning-dependencies"],
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "content-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "signal", "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "content-miss"
+   },
+   "character": "FOUR CANONICAL AT 0.441915x, the deepest four on the canonical ladder.  Its context-retrieval lane is a CONTENT miss rather than an artifact: it returns the latest checkout time is 4:15 minutes, three times, readable and confidently in the wrong unit."
+  },
+  {
+   "cell_id": "ARCH.V10CL896G10", "wave": 35, "net_ratio": 0.441915, "stored_parameters": 101504768,
+   "sealed_useful_or_partial": 3, "canonical_intel": 4, "artifact_miss": 10, "content_miss": 1, "delta": 1,
+   "lanes_flipped_by_the_re_read": ["planning-dependencies"],
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "content-miss",
+    "writing-concise-email": "signal", "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "character": "lambda 1.0, and it ties lambda 0.3 on both lenses.  Ten of its sixteen lanes are byte-identical to the 0.3 arm, so the tie is a fact about bytes.  Its context-retrieval lane loses 4:15 entirely rather than mis-unitting it, which is why its artifact count is one higher and its content count one lower than the 0.3 arm's on the same total."
+  },
+  {
+   "cell_id": "ARCH.V14CL896", "wave": 35, "net_ratio": 0.460175, "stored_parameters": 105699072,
+   "sealed_useful_or_partial": 2, "canonical_intel": 3, "artifact_miss": 11, "content_miss": 1, "delta": 1,
+   "lanes_flipped_by_the_re_read": ["planning-dependencies"],
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "content-miss",
+    "writing-concise-email": "artifact-miss", "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "character": "the interior rung, and the child with the most cap-rides in its family (seven of sixteen).  Its planning lane names four of the five work items -- backups, TLS misspelled TDLS, verification, rollback -- and drops DNS."
+  },
+  {
+   "cell_id": "ARCH.V14CL896G03", "wave": 35, "net_ratio": 0.460175, "stored_parameters": 105699072,
+   "sealed_useful_or_partial": 3, "canonical_intel": 4, "artifact_miss": 9, "content_miss": 2, "delta": 1,
+   "lanes_flipped_by_the_re_read": ["planning-dependencies"],
+   "per_lane": {
+    "conversation-natural-greeting": "artifact-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "content-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "content-miss",
+    "writing-concise-email": "signal", "planning-dependencies": "signal",
+    "uncertainty-insufficient-data": "signal", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "character": "the second four on the canonical ladder in this wave, one rung shallower than V10CL896G03's.  Its planning lane is the cleanest instance of the split: all five items, correctly spelled, in five identical numbered steps.  Its context-retrieval lane is a content miss that contradicts itself -- 4:15 minutes, then 4:30 minutes, then the information is not available."
+  },
+  {
+   "cell_id": "ARCH.CL896X13", "wave": 35, "net_ratio": 0.658165, "stored_parameters": 151175936,
+   "sealed_useful_or_partial": 1, "canonical_intel": 1, "artifact_miss": 12, "content_miss": 2, "delta": 0,
+   "lanes_flipped_by_the_re_read": [],
+   "per_lane": {
+    "conversation-natural-greeting": "content-miss", "instruction-three-actions": "artifact-miss",
+    "explanation-seasons": "artifact-miss", "arithmetic-multi-step": "artifact-miss",
+    "logic-ordering": "artifact-miss", "context-retrieval": "artifact-miss",
+    "summarization-priorities": "signal", "comparison-ram-rom": "artifact-miss",
+    "coding-deduplicate": "artifact-miss", "debugging-off-by-one": "artifact-miss",
+    "writing-concise-email": "artifact-miss", "planning-dependencies": "artifact-miss",
+    "uncertainty-insufficient-data": "content-miss", "creative-continuity": "artifact-miss",
+    "multi-turn-correction": "artifact-miss"
+   },
+   "character": "the new body.  It is the SHALLOWEST child in this wave at 0.658165x and the joint-weakest on both lenses, which is the whole finding: an excision costs three sealed cases on this body exactly as it costs three on the CL1792 body, and the canonical lens does not soften that.  Its planning lane emits six bold step headings with no step under any of them, which is an artifact rather than a naming of items."
+  }
+ ],
+ "totals": {
+  "children": 8,
+  "sealed_sum": 16,
+  "canonical_sum": 22,
+  "lanes_scored": 120,
+  "signal": 22,
+  "artifact_miss": 85,
+  "content_miss": 13,
+  "note": "85 of 120 lanes -- 70.8 per cent -- are compression artifacts carrying no evidence about intelligence in either direction.  That is far above the campaign-wide 29.8 per cent and it is what the sub-0.47x band looks like: the decode has collapsed almost everywhere, and only 13 lanes in the whole wave are readable-and-wrong."
+ },
+ "the_gap_and_where_it_comes_from": "Six of eight children read one higher canonically than sealed, and in FIVE of those six the single flipped lane is planning-dependencies.  This is the first wave in which the sealed-canonical gap is dominated by ONE lane and one precedent rather than distributed across the artifact class.  It is stated here so a reader can subtract it: strike the planning rule and wave 35's canonical column becomes 17 rather than 22, and the canonical 4/15 rung does not move."
+}

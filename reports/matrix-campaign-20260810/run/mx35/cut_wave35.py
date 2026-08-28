@@ -138,6 +138,22 @@ ALLOWED_HISTORICAL = {
         "the wave-35 header names `mx34_penaltydecode.py` as the single-value "
         "diagnostic this wave widens into a grid; it resolves no path",
     ),
+    # DECLARED AFTER THE GUARD REFUSED, and the refusal was correct.  The estate's
+    # retention rule requires every DROP reason to name WHAT REBUILDS the deleted
+    # child AND FROM WHICH RETAINED SOURCE, and on this wave four of the seven
+    # dropped children rebuild from checkpoints wave 34 retained -- MX34-CL896,
+    # MX34-CL1792X13, MX34-V10CL896.  So the retention file cannot obey the
+    # retention rule without naming a wave-34 child directory.  The reference is
+    # PROSE INSIDE A REASON STRING; the only place this file resolves a path is
+    # its own `W` root and its own `MX35-*` glob, both of which the audit's other
+    # assertions cover.  The count is pinned rather than waived, so a wave that
+    # accidentally reintroduces an executable wave-34 name still gets refused.
+    ("mx35_retain.py", "MX34-"): (
+        6,
+        "the DROP reasons name the wave-34 checkpoints that rebuild the deleted "
+        "children, which the retention rule requires them to do; they are prose "
+        "in a reason string and this file resolves no wave-34 path",
+    ),
 }
 
 
