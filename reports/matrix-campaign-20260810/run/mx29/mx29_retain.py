@@ -47,12 +47,73 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave29")
 #: next wave may argue with: keep the rows carrying a CLAIM no other artifact
 #: re-derives, drop what one CPU pass rebuilds from a retained source, and state
 #: the deviation whenever the count is not best-five.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX29-B75": (
+        "11/15 at 0.742049x BY BLEND -- the only child in the campaign to reach "
+        "eleven with no solve of its own.  1,024 numbers convexly mixed from two "
+        "sealed twins, zero capture, zero GPU, and it ties the deepest eleven"
+    ),
+    "MX29-BP64": (
+        "10/15, and the row the over-determination law rests on: 64 of 1,024 "
+        "coordinates reproduce the solved twin's whole behaviour, gains and "
+        "LIST-to-SET loss together, while MASK03 holding the top 100 at the prior "
+        "does not prevent the loss"
+    ),
+    "MX29-MASK03": (
+        "9/15 -- BELOW both its endpoints, which is the pre-registered #6 "
+        "falsifier firing.  A terminal-gain solve is a GPU pass that nothing "
+        "re-derives from a citation, and this one is differenced against a mask "
+        "written before it ran"
+    ),
+    "MX29-KKTD": (
+        "0/15 at 0.483001x.  Twenty installed writers solved jointly, 20,480 "
+        "unknowns with real cross-writer blocks, objective improved ten percent "
+        "on held-out and the child lost both cases it had.  A capture plus an "
+        "operator assembly plus a 20,480-square solve; no citation rebuilds it"
+    ),
+    "MX29-KKTS": (
+        "0/15 by a DIFFERENT failure -- echo on ten of sixteen lanes where the "
+        "diagonal arm produces filler.  Twenty numbers, update norm 0.336, same "
+        "zero: the row that shows the damage is not a function of degrees of "
+        "freedom"
+    ),
+    "MX29-V19MXO3": (
+        "3/15.  The CHASM BRIDGE row, and its build receipt is the only artifact "
+        "carrying the void-arithmetic finding with its arithmetic: every "
+        "parent-shaped base the plan named already folds the embedding, so the "
+        "vocabulary gather displaces that fold rather than stacking with it"
+    ),
+}
 
 #: Tag -> why this checkpoint is NOT worth its bytes.  Every built child must
 #: appear in exactly one of the two mappings or the script refuses.  Written by
 #: hand from THIS wave's sealed verdicts, after package.sh.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX29-B25": (
+        "10/15.  One CPU pass off two retained wave-28 children, and its finding "
+        "-- the swap is already gone at the nearest interior point -- is a delta "
+        "between sealed reviews whose text is in the packaged dossier"
+    ),
+    "MX29-B50": (
+        "10/15.  The midpoint, same CPU pass, and its contribution is the SHAPE "
+        "of the segment, which is arithmetic over five sealed reviews"
+    ),
+    "MX29-V19CL896": (
+        "2/15 at 0.483001x.  Rebuilt this wave in one CPU pass off retained "
+        "MX15-CL896 and reproducing wave 28's sealed ratio exactly; it is a "
+        "citation, not bytes, and the two KKT children built from it are kept"
+    ),
+    "MX29-KKTINF": (
+        "not a reviewed child: the lambda-to-infinity identity rung.  Its whole "
+        "claim IS a digest -- 0fa5175dda6d58ec, byte-identical to its source -- "
+        "and that digest is in the receipt, which is packaged"
+    ),
+    "MX29-V19MXP2": (
+        "2/15.  One CPU pass off a materialization that is itself re-derivable "
+        "from a sealed wave-12 cell; the MXO3 arm is retained and carries the "
+        "same void-arithmetic finding at a deeper base ratio"
+    ),
+}
 
 
 def main() -> int:
