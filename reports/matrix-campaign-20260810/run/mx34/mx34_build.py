@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Wave 33: nothing, again, and this wave builds nothing with it.
+"""Wave 34: nothing again, and this time the wave DOES build with it.
+
+`cut_wave34.py`'s HAND_EDIT set copied this file byte for byte from
+`mx33_build.py`, and the whole diff is **four schema strings, nine identifier
+references and ONE APPENDED LINE in `BASIS_SCHEMAS_ACCEPTED`** -- wave 33's own
+basis schema, which a blanket rename would have deleted from the accept list
+exactly as wave 22's rename did to wave 21's and wave 30's did to wave 29's.
+Nothing else moved.  The accept list now carries wave 34, 33, 32, 31, 30, 29,
+23, 22, 21 and 20 and 19.
+
+Wave 34 is a canonical-frontier deepening wave and it builds two BODIES with
+this file -- `--ff 896` and `--ff 1792 --excise 13` -- which are then composed
+onto by the vocabulary fold and the terminal-gain post-process.  Wave 33 carried
+this builder without calling it; this wave calls it, so the header above is a
+claim that gets exercised rather than one that gets carried.
+
+Wave 34 adds NO argument, NO selector arm and NO solver change.  Both bodies are
+shapes this builder has already written -- `ARCH.CL896` in wave 15 and
+`ARCH.CL1792X13` in wave 31 -- and the whole point of the wave is that the
+children composed on top of them are comparable to the sealed rungs beside them.
+A builder that changed between the sealed rung and its new sibling would put the
+wave's independent variable inside the tool.
+
+--- wave 33's header ---
+
+Wave 33: nothing, again, and that wave built nothing with it.
 
 `cut_wave33.py`'s HAND_EDIT set copied this file byte for byte from
 `mx32_build.py`, and the whole diff is **five schema strings, eight identifier
@@ -9,7 +34,7 @@ exactly as wave 22's rename did to wave 21's and wave 30's did to wave 29's.
 Nothing else moved.
 
 Wave 33 is an instrument-repair and forensics wave: its GPU spend is the
-terminal-gain solver (`mx33_termgain.py`, a post-process on already-sealed
+terminal-gain solver (`mx34_termgain.py`, a post-process on already-sealed
 bytes) and two decode surfaces.  It builds no standard-shape child at all, so
 this file is carried for the accept list and the schema strings and is not on
 this wave's run path.  It is cut correctly anyway, because a builder that is
@@ -35,7 +60,7 @@ convex blend of three bodies this builder has already written -- `ARCH.CL1792`,
 `ARCH.CL1792M` and `ARCH.CL1792MV` -- and a blend is only a blend of those three
 if the bytes it mixes came out of the same code.  A builder that changed between
 the siblings and the blend would put the wave's independent variable inside the
-tool.  The blend arm lives in `mx33_blend_body.py`, which reads finished
+tool.  The blend arm lives in `mx34_blend_body.py`, which reads finished
 checkpoints and never calls this file.
 
 The header below is kept because the machinery below it is still that machinery.
@@ -87,7 +112,7 @@ solver is not the sealed one.  Wave 22 learned the other half of that lesson the
 expensive way: a blanket rename rewrote the FIRST entry of the basis accept list
 and made wave 21's own sealed bases unreadable.  The list is append-only here.
 
-**What wave 25 adds is a different file.**  `mx33_vocab.py` is the `vocab_size`
+**What wave 25 adds is a different file.**  `mx34_vocab.py` is the `vocab_size`
 axis -- a verbatim row coreset of the tied token table with a closure-corrected
 BPE remap -- and it is a POST-PROCESS on any standard-shape child's own bytes,
 including the ones this builder writes.  It solves nothing, it reads no
@@ -575,7 +600,7 @@ SIDECARS = (
 )
 
 PARENT_PARAMS = 229_693_184
-SCHEMA = "neural-forge-matrix-wave33-standard-shape-child-v1"
+SCHEMA = "neural-forge-matrix-wave34-standard-shape-child-v1"
 #: The parent's residual width, and the head width this wave PINS.  Both are
 #: read back out of the parent's config and checked against these, because the
 #: whole legality argument of the ``hidden_size`` axis rests on the second one
@@ -584,7 +609,7 @@ PARENT_HIDDEN = 1024
 PINNED_HEAD_DIM = 64
 #: The basis artifact's schema.  A width child, and every composition built on
 #: top of it, must be built against the same bytes or the rungs are not a ladder.
-BASIS_SCHEMA = "neural-forge-matrix-wave33-residual-basis-v1"
+BASIS_SCHEMA = "neural-forge-matrix-wave34-residual-basis-v1"
 #: Bases sealed by an EARLIER wave are read here, never rewritten: wave 19's
 #: `E-evidence-pca-768.safetensors` is the alternative basis that wave sealed and
 #: never built against, and building against it is one of this wave's leftovers.
@@ -600,6 +625,7 @@ BASIS_SCHEMA = "neural-forge-matrix-wave33-residual-basis-v1"
 #: append-only for the same reason the seal verifier's root list is.
 BASIS_SCHEMAS_ACCEPTED = (
     BASIS_SCHEMA,
+    "neural-forge-matrix-wave33-residual-basis-v1",
     "neural-forge-matrix-wave32-residual-basis-v1",
     "neural-forge-matrix-wave31-residual-basis-v1",
     "neural-forge-matrix-wave30-residual-basis-v1",
@@ -730,7 +756,7 @@ def load_retok_stream(path: Path) -> dict[str, Any]:
         raise SystemExit(
             f"{path} carries no `stream`.  This is wave 29's metadata-only "
             f"artifact -- it counted the retokenized positions and wrote none of "
-            f"them -- and it is not solvable evidence.  Re-run `mx33_retok.py` "
+            f"them -- and it is not solvable evidence.  Re-run `mx34_retok.py` "
             f"without --meta-only."
         )
     declared = body.get("stream_sha256")
@@ -981,7 +1007,7 @@ READER_METRIC: torch.Tensor | None = None
 def emittable_parent_ids(child_dir: Path) -> set[int]:
     """The parent ids a vocabulary child's table still carries, resolved by STRING.
 
-    The same resolution `mx33_emitcoverage.py` uses, and for the same reason: a
+    The same resolution `mx34_emitcoverage.py` uses, and for the same reason: a
     vocabulary fold renames rows, so comparing two id spaces compares the
     renaming.  A token in the child's table that is not in the parent's is a
     refusal, not a warning.
@@ -1109,7 +1135,7 @@ def metric_column_scales(w2: torch.Tensor, M: torch.Tensor) -> torch.Tensor:
     writer solves** and the reason is algebraic, not empirical: for a
     full-column-rank design and a vanishing anchor, ``argmin ||X W^T - Y||^2_M``
     is ``(X^T X)^-1 X^T Y`` for EVERY positive-definite ``M``.  The metric
-    cancels.  ``mx33_logitsolve.py`` re-solved a last-block writer in the reader
+    cancels.  ``mx34_logitsolve.py`` re-solved a last-block writer in the reader
     metric and moved the weight by 0.34% -- the whole of which is the ridge
     anchor, which is in the Frobenius norm and not in ``M``.
 
@@ -5299,13 +5325,13 @@ def build_width(args: argparse.Namespace, harness: Harness, started: float) -> i
             if not used
         ],
         "solver_path": (
-            "mx33_build.fold_reader/fold_writer (closed-form basis fold, fp64 CPU)"
+            "mx34_build.fold_reader/fold_writer (closed-form basis fold, fp64 CPU)"
             + (
                 " + mx15_build.law_abiding_solve (prior-anchored ridge on every writer)"
                 if args.fold_solve
                 else ""
             )
-            + (" + mx33_build.solve_head_gain (final norm diagonal)" if args.head_gain else "")
+            + (" + mx34_build.solve_head_gain (final norm diagonal)" if args.head_gain else "")
             + (
                 ""
                 if keep_groups is None or args.kv_solve != "joint"
@@ -6116,7 +6142,7 @@ def selector_mode(args: argparse.Namespace) -> int:
     moments = residual_moments(harness, keep_rows=False, selectors=True)
     weights = attribution_case_weights()
     report: dict[str, Any] = {
-        "schema": "neural-forge-matrix-wave33-selector-retention-v1",
+        "schema": "neural-forge-matrix-wave34-selector-retention-v1",
         "parent_forward_calls": harness.forward_calls,
         "selector_report": moments["selector_report"],
         "attribution": weights,
@@ -6260,7 +6286,7 @@ def endpoint_mode(args: argparse.Namespace) -> int:
         return out
 
     report: dict[str, Any] = {
-        "schema": "neural-forge-matrix-wave33-endpoint-retention-v1",
+        "schema": "neural-forge-matrix-wave34-endpoint-retention-v1",
         "parent_forward_calls": harness.forward_calls,
         "endpoints": ends,
         "law": {
@@ -6574,7 +6600,7 @@ def main() -> int:
         "--evidence",
         type=Path,
         help=(
-            "solve against a `mx33_retok.py` RETOKENIZED evidence stream instead "
+            "solve against a `mx34_retok.py` RETOKENIZED evidence stream instead "
             "of the campaign's own token ids -- the plan's #2, RETOK-BODY.  The "
             "twenty-four batches are the same twenty-four batches of the same "
             "text, re-segmented by a vocabulary child's tokenizer and named back "
