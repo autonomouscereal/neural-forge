@@ -107,6 +107,16 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave26-standard-shape-child-v1",
     "neural-forge-matrix-wave27-standard-shape-child-v1",
     "neural-forge-matrix-wave28-standard-shape-child-v1",
+    "neural-forge-matrix-wave29-standard-shape-child-v1",
+    # Wave 29 builds two child classes that are not the width/vocab builder's
+    # output and are still standard-shape directories: a convex blend of two
+    # sealed siblings' terminal diagonals, and a joint terminal re-solve over
+    # every installed writer.  Both overwrite values in place at an unchanged
+    # parameter count, both write their own receipt, and both are sealed by this
+    # script against the same live-count, loaded-class and file-digest checks as
+    # every other row.  A new builder gets a line here, not an exemption.
+    "neural-forge-matrix-wave29-blend-build-receipt-v1",
+    "neural-forge-matrix-wave29-global-kkt-build-receipt-v1",
 )
 
 
