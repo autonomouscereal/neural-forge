@@ -1,0 +1,50 @@
+{
+ "schema": "neural-forge-matrix-wave33-preregistration-v1",
+ "written_at": "2026-08-28",
+ "written_before": "any wave-33 build, any wave-33 decode, and any dossier opened",
+ "why_this_file_exists": "Wave 32 graded seven blends before its own pre-registration existed and said so in its note.  The excuse available there -- that a convex blend moves no axis level, so the allocator cannot price it -- was not good enough, because wave 31 wrote a predicted_review: null entry with UNPRICEABLE and its honest prior stated for exactly that case.  Every gradeable arm this wave runs is priced below, and the arms that are analyses rather than reviews carry a falsifiable prediction instead of a count.",
+ "A1_termgain_ladder": {
+  "arm": "mx33_termgain.py, head-only, lambda-relative 1.0 / 0.3 / 0.1 on two sealed vocabulary children.  Storage delta ZERO on both sources: 1,024 values overwritten in place.",
+  "prior_evidence": "Wave 26 read four ladders and made 0.3 'the rung that never hurts' (V16X13 5/6/7/6/5, V8X13 6/6/7/7/4, V32X13 10/10/10/9/10, V20X13 10/-/11/-/-), which is where the +1 at the 10/15 band comes from.  Wave 27 then built six more arms: 0.3 gained on NONE of them and lost on four, twice while improving its own held-out objective by 23-26 per cent.  Two waves, opposite signs, and the second one had more arms.",
+  "predictions": {
+   "GV12L10": {"source": "ARCH.V12CL1792 7/15 @0.618813x", "lambda": 1.0, "predicted_review": 7},
+   "GV12L03": {"source": "ARCH.V12CL1792 7/15 @0.618813x", "lambda": 0.3, "predicted_review": 7},
+   "GV12L01": {"source": "ARCH.V12CL1792 7/15 @0.618813x", "lambda": 0.1, "predicted_review": 7},
+   "GV16L10": {"source": "ARCH.V16CL1792 8/15 @0.637073x", "lambda": 1.0, "predicted_review": 8},
+   "GV16L03": {"source": "ARCH.V16CL1792 8/15 @0.637073x", "lambda": 0.3, "predicted_review": 8},
+   "GV16L01": {"source": "ARCH.V16CL1792 8/15 @0.637073x", "lambda": 0.1, "predicted_review": 7}
+  },
+  "stated_prior": "Flat at the source's count on five of six rungs, and one case down at the most aggressive rung on the shallower source.  This is a DEFERENTIAL prior to wave 27 over wave 26 because wave 27 had six arms to wave 26's four and its result was the later one.  The allocator has been systematically OPTIMISTIC on every axis it can price itself -- wave 32's four composed rungs went 6/6/5/4 predicted against 3/4/2/3 observed, mean error -2.25, every one in the same direction -- so a flat prior on a zero-storage post-process is the one that is not leaning.",
+  "gate_risk_declared_before_the_run": "Wave 27 recorded that the identity gate REFUSES a width fold, because the objective needs the child's token table to BE the parent's rows at the injected ids.  Both sources here are a vocabulary gather onto an intermediate_size body, so the table should be verbatim parent rows and the gate should read kind 'bytes'.  If either refuses, the refusal is RECORDED as this wave's result on that arm and not routed around."
+ },
+ "A3_paraphrase_robustness": {
+  "arm": "The paraphrase triplet bank (f9ac00e6dd5212f0...), 45 prompts, decoded on four more frontier children and scored with mx33_pararubric.py -- lane-keyed, degeneracy-vetoed, self-tested against its own prompts.  Two of the fifteen lanes are declared UNANSWERABLE, so the denominator is 39 restatements over 13 lanes.",
+  "calibration_already_measured": "PARENT 12/39, ARCH.V12CL1792 2/39, ARCH.V16CL1792 3/39, ARCH.V9CL1792 2/39, ARCH.V8CL1792 3/39, ARCH.V6CL1792 2/39.  These are wave 32's decodes rescored, not new decodes, and they were computed BEFORE these four predictions were written.",
+  "predictions": {
+   "B75": {"sealed_15": 11, "predicted_restatements_of_39": 7},
+   "V19X13G03": {"sealed_15": 11, "predicted_restatements_of_39": 7},
+   "V18X13": {"sealed_15": 10, "predicted_restatements_of_39": 6},
+   "CL1792M": {"sealed_15": 8, "predicted_restatements_of_39": 4}
+  },
+  "stated_prior": "Linear between the two anchors that exist: a 7/15 child reads 2/39 and the 12/15 parent reads 12/39, so roughly one restatement per sealed case above five.  If the four land far below this line the surface is measuring something other than the sealed count; if they land on it, the sealed count and its robustness are the same quantity and the triplets buy resolution rather than a new axis."
+ },
+ "F1_channel_hypothesis": {
+  "hypothesis": "ARCH.CL1792M's uniquely-kept feed-forward channels are more retokenization-sensitive than ARCH.CL1792's, so the vocabulary gather invalidates the M selection specifically.",
+  "predicted_outcome": "NOT SUPPORTED.  Predicted median-sensitivity ratio in [0.90, 1.10].",
+  "stated_prior": "The two selections share 23,015 of 25,088 channels -- 91.7 per cent -- and a 3.5-case mean composition penalty is a large behavioural effect to hang on 8.3 per cent of channels.  If the ratio comes back above 1.10 the hypothesis is a real mechanism and this prediction is wrong in the interesting direction, which is why it is written down."
+ },
+ "A2_conditioning_inventory": {
+  "predicted_outcome": "ZERO solve-bearing sealed children built stale, other than ARCH.CL1792S, which was built stale on purpose in wave 32 as B4's control.",
+  "stated_prior": "conditioned-local has been the default arm of every bodyq invocation since wave 15 and --arm stale was added in wave 32 to answer B4.  If the inventory finds a stale frontier-adjacent row, that is three cases of headroom for one build and the largest cheap gain available; if it finds none, the three-case dividend is already banked everywhere and B4's answer changes nothing about the existing rows.",
+  "falsifier": "any cell whose solve.solver_path is non-null and whose architecture.axes carries max_input_drift exactly 0.0 on any axis, excluding ARCH.CL1792S"
+ },
+ "I1_instrument": {
+  "status": "ALREADY RUN AND NOT PRE-REGISTERED, and that is stated rather than hidden.",
+  "why_it_is_not_a_defect": "I1 reads only artifacts committed in waves 29-32 and produces no count that any frontier claim rides on.  There is no dossier to open blind and no child to grade.  The three hypotheses the wave was dispatched with -- band-confinement, rubric keying, prompt-family contamination -- were named in the dispatch before the analysis ran, which is the pre-registration that applies to it, and all three are reported with the verdict they earned including the two that failed.",
+  "hypotheses_as_dispatched": [
+   "(a) the scramble is confined to the deep/degenerate band",
+   "(b) rubric keying: mechanical grading disagrees with the hand reads",
+   "(c) prompt-family contamination"
+  ]
+ }
+}

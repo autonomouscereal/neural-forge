@@ -154,6 +154,19 @@ BUILD_RECEIPT_SCHEMAS = (
     # combination.  No solve, no capture, no added parameter, one CPU pass, and
     # the parameter count is asserted against the source's own receipt.
     "neural-forge-matrix-wave32-body-blend-build-receipt-v1",
+    # Wave 33 adds NO builder class.  Its four strings are wave 32's four renamed
+    # by `run/mx33/cut_wave33.py`, byte-identical in behaviour to the lines above
+    # them.  The wave builds only through `mx33_termgain.py`, which writes the
+    # standard-shape string; the other three are appended with it because the
+    # rename produces them whether or not this wave calls them, and a string that
+    # exists in the tree and not in this list is a refusal waiting for the wave
+    # that does call it.  The list is append-only for the reason wave 31 stated:
+    # a wave that rewrites the previous wave's string cannot seal a child the
+    # previous wave built.
+    "neural-forge-matrix-wave33-standard-shape-child-v1",
+    "neural-forge-matrix-wave33-blend-build-receipt-v1",
+    "neural-forge-matrix-wave33-logit-metric-writer-v1",
+    "neural-forge-matrix-wave33-body-blend-build-receipt-v1",
 )
 
 
