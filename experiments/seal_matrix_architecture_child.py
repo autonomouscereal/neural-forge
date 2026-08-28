@@ -126,6 +126,17 @@ BUILD_RECEIPT_SCHEMAS = (
     # receipt -- so it is sealed by this script against the same live-count,
     # loaded-class and file-digest checks as every other row.
     "neural-forge-matrix-wave30-logit-metric-writer-v1",
+    # Wave 31 adds NO builder class.  Its three strings are the wave-30 builders
+    # renamed by `run/mx31/cut_wave31.py`: the standard-shape builder, the blend
+    # builder and the logit-metric writer, all three byte-identical in behaviour
+    # to the lines above them.  The list is append-only for the same reason
+    # `mx31_build.BASIS_SCHEMAS_ACCEPTED` is: a wave that rewrites the previous
+    # wave's string cannot seal a child the previous wave built, and this list is
+    # the one place a sealer can refuse a receipt written by a builder nobody
+    # reviewed.  It refused all six of wave 31's first reviews, correctly.
+    "neural-forge-matrix-wave31-standard-shape-child-v1",
+    "neural-forge-matrix-wave31-blend-build-receipt-v1",
+    "neural-forge-matrix-wave31-logit-metric-writer-v1",
 )
 
 
