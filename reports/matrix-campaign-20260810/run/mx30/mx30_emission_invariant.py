@@ -57,10 +57,17 @@ SCHEMA = "neural-forge-matrix-wave30-emission-invariant-v1"
 
 
 def load_probes(pack: Path, limit: int | None) -> list[dict[str, Any]]:
-    rows = [
-        json.loads(line)
-        for line in pack.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+    """`mx29_emission.load_probes` verbatim.
+
+    The pack is a JSON DOCUMENT with a `prompts` array (or a `triplets` map of
+    lanes), not a JSONL stream.  The first draft of this file read it a line at
+    a time and every child in the ladder failed identically on character 1 --
+    which at least failed loudly, on all seven, rather than on some.
+    """
+
+    doc = json.loads(pack.read_text(encoding="utf-8"))
+    rows = doc["prompts"] if "prompts" in doc else [
+        r for lane in doc["triplets"].values() for r in lane
     ]
     return rows[:limit] if limit else rows
 
