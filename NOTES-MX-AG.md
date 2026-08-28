@@ -68,10 +68,16 @@ eight of them because the first two were flat and the flatness was the finding.
 | `V24CL1792` | 24,576 | 0.91915 | 0.673594 | **7/15** | — |
 | `V19CL1792` | 19,456 | 0.90563 | 0.650769 | 7/15 (w30) | 14/15 |
 | `V18CL1792` | 18,432 | 0.89517 | 0.646204 | **7/15** | 13/15 |
-| `V16CL1792` | 16,384 | 0.88 | 0.637073 | **8/15** | 9/15 |
+| `V16CL1792` | 16,384 | *not measured* | 0.637073 | **8/15** | 9/15 |
 | `V12CL1792` | 12,288 | 0.85183 | 0.618813 | **7/15** | 11/15 |
 | `V9CL1792` | 9,216 | **0.81402** | 0.605117 | **6/15** | 9/15 |
 | `V8CL1792` | 8,192 | **0.80049** | 0.600552 | **5/15** | 4/15 |
+
+K = 16,384 has no coverage number because `mx31_emitcoverage.py`'s ladder is the
+set of rungs the campaign has sealed *solo* and `ARCH.V16` is not on it; the
+cell is left empty rather than interpolated, because interpolating a measured
+quantity and printing it in the same column as measurements is how a table stops
+being one.
 
 Read the last two columns against each other. The solo ladder has a summit at
 K = 19,456 (14/15), a shoulder at 18,432 (13/15), a dip to 9/15 at 16,384, a
