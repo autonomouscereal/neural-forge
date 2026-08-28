@@ -44,37 +44,41 @@ from typing import Any
 #   forbid   : no regex may match
 #   min_words: a floor, because a two-word reply is not an answer
 #   ast_fn   : the code must parse and define this function name
+# Every pattern is matched with re.I | re.S already applied, so no pattern
+# carries an inline (?s): Python refuses a global flag that is not at the
+# start of an expression, and an alternation with one on each side of the |
+# is exactly that refusal.  The flags live in one place, at the match site.
 # ---------------------------------------------------------------------------
 RUBRIC: dict[str, dict[str, Any]] = {
     "ext-conversation-moving-week": {"req": [r"\?"], "forbid": [r"\?[^?]*\?"], "min_words": 12},
     "ext-conversation-competing-promises": {"req": [], "forbid": [r"(?m)^\s*(\d[\.\)]|[-*])\s"], "min_words": 15},
     "ext-instruction-two-prose-tips": {"req": [], "forbid": [r"(?m)^\s*(\d[\.\)]|[-*])\s", r"\bwater"], "min_words": 15},
-    "ext-instruction-five-alphabetical": {"req": [r"(?s)1[\.\)].*2[\.\)].*3[\.\)].*4[\.\)].*5[\.\)]"], "forbid": [r"(?s)6[\.\)]"], "min_words": 10},
+    "ext-instruction-five-alphabetical": {"req": [r"1[\.\)].*2[\.\)].*3[\.\)].*4[\.\)].*5[\.\)]"], "forbid": [r"6[\.\)]"], "min_words": 10},
     "ext-explanation-dough-rises": {"req": [r"yeast|ferment", r"carbon dioxide|co2|gas"], "forbid": [], "min_words": 30},
     "ext-explanation-two-tides": {"req": [r"two|both|opposite|far side|other side", r"gravit|pull|tidal force"], "forbid": [], "min_words": 30},
     "ext-arithmetic-fuel-range": {"req": [r"\b486\b", r"\b242\b"], "forbid": [], "min_words": 10},
     "ext-arithmetic-order-of-operations": {"req": [r"\b204\b", r"220\.32|220,32|\b220\b"], "forbid": [], "min_words": 10},
-    "ext-logic-four-seats": {"req": [r"(?s)ada.*bo.*cy.*dee", r"(?s)dee.*ada.*bo.*cy"], "forbid": [], "min_words": 15},
+    "ext-logic-four-seats": {"req": [r"ada.*bo.*cy.*dee", r"dee.*ada.*bo.*cy"], "forbid": [], "min_words": 15},
     "ext-logic-three-switches": {"req": [r"heat|warm|hot|temperature"], "forbid": [], "min_words": 30},
     "ext-context-clinic-note": {"req": [r"11[:.]00|eleven|11 a", r"stick|sticker|validat"], "forbid": [], "min_words": 15},
     "ext-context-conflicting-note": {"req": [r"contradict|conflict|inconsist|two different|both.*and|unclear|does not settle"], "forbid": [], "min_words": 15},
-    "ext-summarization-three-bullets": {"req": [r"(?s)(night|contractor).*(reader|badge).*(november|monday)"], "forbid": [r"cafeteria refit, which everyone keeps asking about"], "min_words": 15},
+    "ext-summarization-three-bullets": {"req": [r"(night|contractor).*(reader|badge).*(november|monday)"], "forbid": [r"cafeteria refit, which everyone keeps asking about"], "min_words": 15},
     "ext-summarization-loudest-is-irrelevant": {"req": [r"tuesday", r"audit|inspect"], "forbid": [], "min_words": 8},
-    "ext-comparison-map-and-traffic": {"req": [r"(?s)(analogy|comparison|like|as if).*(break|fall|limit|imperfect|wrong|fail)"], "forbid": [], "min_words": 40},
+    "ext-comparison-map-and-traffic": {"req": [r"(analogy|comparison|like|as if).*(break|fall|limit|imperfect|wrong|fail)"], "forbid": [], "min_words": 40},
     "ext-comparison-vaccine-antibiotic": {"req": [r"bacteri", r"immun|antibod|vaccin"], "forbid": [], "min_words": 40},
     "ext-coding-group-by-initial": {"req": [r"def\s+group_by_initial", r"lower\(\)", r"append|setdefault|defaultdict"], "forbid": [r"set\(\)"], "min_words": 15, "ast_fn": "group_by_initial"},
     "ext-coding-merge-ranges": {"req": [r"def\s+merge_ranges", r"sort"], "forbid": [], "min_words": 15, "ast_fn": "merge_ranges"},
-    "ext-debugging-mutable-default": {"req": [r"none", r"(?s)default.*(shared|mutable|same|once|persist)"], "forbid": [], "min_words": 20},
-    "ext-debugging-reset-inside-loop": {"req": [r"(?s)(total\s*=\s*0).*(before|outside|above|move)|(?s)(before|outside|above|move).*(total\s*=\s*0)"], "forbid": [], "min_words": 20},
+    "ext-debugging-mutable-default": {"req": [r"none", r"default.*(shared|mutable|same|once|persist)"], "forbid": [], "min_words": 20},
+    "ext-debugging-reset-inside-loop": {"req": [r"(total\s*=\s*0).*(before|outside|above|move)|(before|outside|above|move).*(total\s*=\s*0)"], "forbid": [], "min_words": 20},
     "ext-writing-decline-invitation": {"req": [r"april", r"\?"], "forbid": [], "min_words": 25},
-    "ext-writing-two-audiences": {"req": [r"(?s)four hours.*four hours|(?s)4 hours.*4 hours|(?s)(engineer|technical).*(customer|client)"], "forbid": [], "min_words": 20},
-    "ext-planning-first-bookkeeper": {"req": [r"(?s)1[\.\)].*2[\.\)].*3[\.\)].*4[\.\)].*5[\.\)]", r"undo|revers|cheapest|back out|unwind"], "forbid": [], "min_words": 30},
-    "ext-planning-around-a-freeze": {"req": [r"(?s)1[\.\)].*2[\.\)].*3[\.\)].*4[\.\)].*5[\.\)].*6[\.\)]", r"freeze"], "forbid": [], "min_words": 40},
+    "ext-writing-two-audiences": {"req": [r"four hours.*four hours|4 hours.*4 hours|(engineer|technical).*(customer|client)"], "forbid": [], "min_words": 20},
+    "ext-planning-first-bookkeeper": {"req": [r"1[\.\)].*2[\.\)].*3[\.\)].*4[\.\)].*5[\.\)]", r"undo|revers|cheapest|back out|unwind"], "forbid": [], "min_words": 30},
+    "ext-planning-around-a-freeze": {"req": [r"1[\.\)].*2[\.\)].*3[\.\)].*4[\.\)].*5[\.\)].*6[\.\)]", r"freeze"], "forbid": [], "min_words": 40},
     "ext-uncertainty-two-hospitals": {"req": [r"case mix|casemix|severity|referral|patient population|sicker|complexity"], "forbid": [], "min_words": 30},
     "ext-uncertainty-confident-source": {"req": [r"nine|9 (people|participants)|small (sample|study|trial)|sample size"], "forbid": [], "min_words": 30},
     "ext-creative-returned-glove": {"req": [r"[\"“].+[\"”]|'[^']{6,}'"], "forbid": [], "min_words": 60},
     "ext-creative-no-adjectives": {"req": [], "forbid": [], "min_words": 30},
-    "ext-multiturn-budget-revision": {"req": [r"(?s)1[\.\)].*2[\.\)].*3[\.\)]|(?s)first.*second.*third"], "forbid": [], "min_words": 25},
+    "ext-multiturn-budget-revision": {"req": [r"1[\.\)].*2[\.\)].*3[\.\)]|first.*second.*third"], "forbid": [], "min_words": 25},
     "ext-multiturn-contradiction-flag": {"req": [r"one page|single page|fit|space|too much|cannot|can't|not possible|trade|prioriti|which"], "forbid": [], "min_words": 20},
 }
 
