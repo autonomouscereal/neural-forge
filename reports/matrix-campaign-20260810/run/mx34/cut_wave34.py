@@ -249,6 +249,30 @@ def audit() -> int:
                    "neural-forge-matrix-wave29-residual-basis-v1"):
         if needle not in build:
             problems.append(f"mx34_build.py: BASIS_SCHEMAS_ACCEPTED is missing {needle}")
+    # WAVE 34'S SECOND OWN ADDITION, and it exists because this wave found the
+    # defect by being the first since wave 32 to CALL the builder.  The build
+    # receipt is written under a LITERAL filename, and that literal said
+    # `mx32-build-receipt.json` from wave 32 through wave 33's hand edit, which
+    # retargeted eight module references and five schema strings and missed
+    # these two lines.  Nothing caught it, because the readers that would have --
+    # `bodyq.sh`, `vocabq.sh`, `gainq.sh`, `package.sh`, `seal_and_review.sh` --
+    # are the ones a wave only exercises when it builds a body, and wave 33 built
+    # none.  The write expression is asserted rather than the bare string,
+    # because the header above legitimately names the stale filename in prose.
+    for needle, want, why in (
+        ('(outdir / "mx34-build-receipt.json").write_text', 2,
+         "the builder must write THIS wave's build-receipt filename at both "
+         "export sites, or every exact-name reader in the tree misses it"),
+        ('(outdir / "mx32-build-receipt.json").write_text', 0,
+         "a stale build-receipt filename survived the hand edit, exactly as it "
+         "survived wave 33's"),
+    ):
+        got = build.count(needle)
+        if got != want:
+            problems.append(
+                f"mx34_build.py: {needle!r} appears {got} times, expected {want} "
+                f"-- {why}"
+            )
     for name in ("seal_and_review.sh",):
         body = (DST / name).read_text(encoding="utf-8")
         if "--campaign-wave 34" not in body:

@@ -15,6 +15,20 @@ onto by the vocabulary fold and the terminal-gain post-process.  Wave 33 carried
 this builder without calling it; this wave calls it, so the header above is a
 claim that gets exercised rather than one that gets carried.
 
+**Wave 34's hand edit is one site wider than wave 33's, because wave 33's
+was one site short.**  This file writes its build receipt under a literal
+filename, and that filename has said `mx32-build-receipt.json` since wave 32
+-- through wave 33's hand edit, which retargeted eight module references and
+five schema strings and did not touch these two.  Wave 33 never called this
+builder, so nothing fired.  Wave 34 called it, and `bodyq.sh`'s reproduction
+check -- which looks for `mx34-build-receipt.json` by exact name -- raised
+FileNotFoundError on a build that had otherwise succeeded to the parameter.
+The glob readers (`mx34_vocab.py`, `mx34_termgain.py`, `mx34_blend*.py`,
+`mx34_logitsolve.py`) all match `mx*-build-receipt.json` and would never have
+noticed; the exact-name readers -- `bodyq.sh`, `vocabq.sh`, `gainq.sh`,
+`package.sh` and `seal_and_review.sh --build-receipt` -- all would.  Both
+sites now name this wave.
+
 Wave 34 adds NO argument, NO selector arm and NO solver change.  Both bodies are
 shapes this builder has already written -- `ARCH.CL896` in wave 15 and
 `ARCH.CL1792X13` in wave 31 -- and the whole point of the wave is that the
@@ -5393,7 +5407,7 @@ def build_width(args: argparse.Namespace, harness: Harness, started: float) -> i
         "wall_time_seconds": round(time.time() - started, 1),
         "child_tensors_sha256": file_sha256(outdir / "model.safetensors"),
     }
-    (outdir / "mx32-build-receipt.json").write_text(json.dumps(receipt, indent=1))
+    (outdir / "mx34-build-receipt.json").write_text(json.dumps(receipt, indent=1))
     log(
         f"child {child_parameters:,} parameters = {receipt['net_ratio']:.6f}x "
         f"-> {outdir}  ({receipt['wall_time_seconds']:.0f}s)"
@@ -6037,7 +6051,7 @@ def build(args: argparse.Namespace) -> int:
         "wall_time_seconds": round(time.time() - started, 1),
         "child_tensors_sha256": file_sha256(outdir / "model.safetensors"),
     }
-    (outdir / "mx32-build-receipt.json").write_text(json.dumps(receipt, indent=1))
+    (outdir / "mx34-build-receipt.json").write_text(json.dumps(receipt, indent=1))
     log(
         f"child {child_parameters:,} parameters = {receipt['net_ratio']:.6f}x "
         f"-> {outdir}  ({receipt['wall_time_seconds']:.0f}s)"
