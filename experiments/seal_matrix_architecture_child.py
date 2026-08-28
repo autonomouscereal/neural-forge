@@ -186,6 +186,30 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave34-blend-build-receipt-v1",
     "neural-forge-matrix-wave34-logit-metric-writer-v1",
     "neural-forge-matrix-wave34-body-blend-build-receipt-v1",
+    # Wave 35 adds NO builder class either.  Its four strings are wave 34's four
+    # renamed by `run/mx35/cut_wave35.py`, byte-identical in behaviour to the
+    # lines above them.  This wave builds through `mx35_build.py` (one body),
+    # `mx35_vocab.py` (three vocabulary folds) and `mx35_termgain.py` (the
+    # lambda ladder), and all three write the standard-shape string; the other
+    # three are appended with it for wave 33's stated reason.
+    #
+    # THIS LIST REFUSED WAVE 35's FIRST FOUR REVIEWS TOO, on exactly the four
+    # tags wave 34 was refused on, and it is the SECOND CONSECUTIVE WAVE where
+    # that has cost a whole deployment.  Wave 34 wrote down why the cost is
+    # asymmetric -- the builder's accept list refuses at the TREE CUT for one
+    # line of hand edit, this one refuses at the FIRST SEAL after the GPU work
+    # is already done -- and wave 35 read that paragraph and still did not
+    # pre-empt it, because the cutter's audit checks the builder's list and has
+    # never checked this one.  The audit cannot check it: this file is in the
+    # Codex lane's `experiments/` tree, not in `run/mx35`, so a per-wave cutter
+    # has no standing to assert anything about it.  What a later wave CAN do is
+    # append its four strings in the same commit that cuts its tree, and this
+    # comment is here so the next wave reads that sentence before it burns a
+    # third deployment on the same refusal.
+    "neural-forge-matrix-wave35-standard-shape-child-v1",
+    "neural-forge-matrix-wave35-blend-build-receipt-v1",
+    "neural-forge-matrix-wave35-logit-metric-writer-v1",
+    "neural-forge-matrix-wave35-body-blend-build-receipt-v1",
 )
 
 
