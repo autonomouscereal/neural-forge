@@ -120,6 +120,8 @@ def capture_writers(streams: tg.Streams, model: Any, modules: dict[str, Any],
     ))
     blocks: dict[str, list[torch.Tensor]] = {n: [] for n in list(modules) + ["final"]}
     splits: list[str] = []
+    lengths: list[int] = []
+    indices: list[int] = []
     try:
         for row in streams.rows:
             ids = torch.tensor([row[key]], dtype=torch.long, device=streams.device)
@@ -127,13 +129,24 @@ def capture_writers(streams: tg.Streams, model: Any, modules: dict[str, Any],
             streams.forward_calls += 1
             for name in blocks:
                 blocks[name].append(state[name][0].detach().to(torch.float64).cpu())
-            splits.extend([row["split"]] * int(state["final"].shape[1]))
+            # ONE row per BATCH, expanded to positions by `Streams.masks`.  The
+            # first version of this file appended one split per position and no
+            # indices or lengths at all, and `masks` refused on the missing key --
+            # after both captures had already been paid for.  The bookkeeping is
+            # the same bookkeeping `Streams.capture` keeps, so it is kept the
+            # same way rather than a second way.
+            splits.append(row["split"])
+            lengths.append(int(state["final"].shape[1]))
+            indices.append(row["batch_index"])
+            state.clear()
     finally:
         for handle in handles:
             handle.remove()
     return {
         "rows": {n: torch.cat(v, dim=0) for n, v in blocks.items()},
         "splits": splits,
+        "lengths": lengths,
+        "indices": indices,
     }
 
 
