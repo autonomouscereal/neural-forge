@@ -46,10 +46,21 @@ from typing import Any
 
 HELD = ("Useful", "Partial")
 STALE_MARKERS = ("stale", "parent's own stream", "unfolded parent")
-CONDITIONED_MARKERS = ("sequentially conditioned", "partially built child")
+#: `conditioned capture` on its own is WAVES 16 AND 17's WORDING and the first
+#: run of this file did not carry it, so forty-eight solve-bearing cells came
+#: back unclassified -- including ARCH.X13A at 13/15, the campaign's best
+#: solve-bearing row.  The record was complete; the marker list was not.  The
+#: repair is this line and the third witness below, and the miss is recorded
+#: here because an inventory that silently under-reports its own coverage is
+#: worse than one that refuses.
+CONDITIONED_MARKERS = (
+    "sequentially conditioned",
+    "partially built child",
+    "conditioned capture",
+)
 
 
-def classify_axis(axis: Any) -> dict[str, Any]:
+def classify_axis(axis: Any, conditioned_flag: Any = None) -> dict[str, Any]:
     # Receipts from the campaign's earlier waves carry `axes` entries whose
     # `heldout` is a STRING rather than the per-site mapping the later waves
     # write, and one wave writes the axis itself as a bare string.  An inventory
@@ -59,7 +70,8 @@ def classify_axis(axis: Any) -> dict[str, Any]:
     if not isinstance(axis, dict):
         return {"axis": str(axis)[:60], "evidence_prose": "", "max_input_drift": None,
                 "arm_by_prose": "unstated", "arm_by_drift": "unstated",
-                "witnesses_agree": True, "schema_note": "axis is not a mapping"}
+                "arm_by_flag": "unstated", "witnesses_agree": True,
+                "schema_note": "axis is not a mapping"}
     prose = str(axis.get("evidence") or "")
     low = prose.lower()
     heldout = axis.get("heldout")
@@ -70,13 +82,27 @@ def classify_axis(axis: Any) -> dict[str, Any]:
     by_drift = ("stale" if drift == 0.0
                 else "conditioned" if isinstance(drift, (int, float)) and drift > 0.0
                 else "unstated")
+    # THE THIRD WITNESS.  `evidence.conditioned` is a per-CHILD boolean rather
+    # than a per-axis one, so it is the weakest of the three and is used only
+    # where the other two are silent -- but it is present on every receipt the
+    # campaign has ever written, which the axis prose is not.
+    by_flag = ("conditioned" if conditioned_flag is True
+               else "stale" if conditioned_flag is False else "unstated")
+    spoken = [w for w in (by_prose, by_drift, by_flag) if w != "unstated"]
     return {
         "axis": axis.get("axis"),
         "evidence_prose": prose[:90],
         "max_input_drift": drift,
         "arm_by_prose": by_prose,
         "arm_by_drift": by_drift,
+        "arm_by_flag": by_flag,
+        # The flag is EXCLUDED from the agreement test on purpose: a zero-solve
+        # composition inherits its body's axis prose and carries
+        # `conditioned: false` for its own build, so flag-versus-prose disagrees
+        # on every vocabulary gather in the campaign and would drown the two
+        # disagreements that would actually mean something.
         "witnesses_agree": by_prose == by_drift or "unstated" in (by_prose, by_drift),
+        "classified": bool(spoken),
     }
 
 
@@ -98,7 +124,8 @@ def main() -> int:
         if cases_path.is_file():
             cases = json.loads(cases_path.read_text(encoding="utf-8"))
             sealed = sum(1 for v in cases.values() if v in HELD)
-        axes = [classify_axis(a) for a in (arch.get("axes") or [])]
+        axes = [classify_axis(a, evidence.get("conditioned"))
+                for a in (arch.get("axes") or [])]
         arms = {a["arm_by_drift"] for a in axes} | {a["arm_by_prose"] for a in axes}
         rows.append({
             "cell_id": doc.get("cell_id"),
@@ -113,6 +140,7 @@ def main() -> int:
             "axes": axes,
             "any_axis_stale": any(a["arm_by_drift"] == "stale"
                                   or a["arm_by_prose"] == "stale" for a in axes),
+            "classified": bool(axes) and all(a.get("classified") for a in axes),
             "arms_seen": sorted(arms),
         })
 
@@ -136,6 +164,9 @@ def main() -> int:
         "solve_bearing": len(solve_bearing),
         "zero_solve": len(zero_solve),
         "solve_bearing_with_a_stale_axis": len(stale_solve_bearing),
+        "solve_bearing_classified": sum(1 for r in solve_bearing if r["classified"]),
+        "solve_bearing_unclassifiable": sorted(
+            r["cell_id"] for r in solve_bearing if not r["classified"]),
         "stale_rows": sorted(
             [{k: r[k] for k in ("cell_id", "wave", "tag", "sealed_15", "net_ratio",
                                 "conditioned_flag", "arms_seen")}
@@ -156,6 +187,10 @@ def main() -> int:
 
     print(f"cells read {len(rows)}  solve-bearing {len(solve_bearing)}  "
           f"zero-solve {len(zero_solve)}")
+    print(f"solve-bearing rows CLASSIFIED by at least one witness: "
+          f"{body['solve_bearing_classified']} of {len(solve_bearing)}")
+    if body["solve_bearing_unclassifiable"]:
+        print("  unclassifiable:", ", ".join(body["solve_bearing_unclassifiable"][:12]))
     print(f"solve-bearing rows with a STALE axis: {len(stale_solve_bearing)}")
     for r in body["stale_rows"]:
         print(f"  {r['cell_id']:<26} wave {r['wave']}  sealed {r['sealed_15']}  "
