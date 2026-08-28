@@ -422,6 +422,33 @@ def main() -> int:
                 "cross-writer blocks ARE the downstream cross term that no "
                 "per-component objective can see."
             ),
+            "evidence": {
+                "trace_cache_key": str(tg.mx29_retok.TRACE.name),
+                "retokenized": True,
+                "parent_model_forward_calls": streams.forward_calls,
+                "captures": (
+                    "one child capture of every writer OUTPUT plus the final "
+                    "residual, one parent capture of the final residual, both on "
+                    "the position-aligned id streams"
+                ),
+                "split_authority": "the campaign's sealed fit/held-out batch split",
+                "conditioned": True,
+            },
+            # ZERO.  The gain is absorbed into rows that already exist; the
+            # parameter count is asserted unchanged above and the build refuses
+            # if it moved.
+            "parameters_removed": 0,
+            "heldout": {
+                "relative_sse_at_chosen_lambda": chosen["heldout_relative_sse"],
+                "relative_sse_at_identity_rung": 1.0,
+                "linearisation_error_over_repair": round(lin_error, 6),
+                "note": (
+                    "The held-out number is the OBJECTIVE's, and the rung-0 "
+                    "discriminator beside it is why the objective is not the "
+                    "child: the frozen-gate prediction's error is measured "
+                    "against the size of the repair it made."
+                ),
+            },
         }],
         "wall_time_seconds": round(time.monotonic() - started, 3),
     }
