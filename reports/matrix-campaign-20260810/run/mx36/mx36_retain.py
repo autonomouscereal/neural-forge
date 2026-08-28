@@ -54,11 +54,95 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave36")
 #: keep the rows carrying a CLAIM no other artifact re-derives, drop what one
 #: CPU pass rebuilds from a retained source, and state the deviation whenever
 #: the count is not best-five.
-KEEP: dict[str, str] = {}
+#:
+#: FILLED IN AFTER THIS WAVE'S VERDICTS WERE SEALED.  WAVE 36 KEEPS THREE OF
+#: EIGHT AND STATES THE DEVIATION, because eight checkpoints is not eight
+#: claims: one of them is BYTE-IDENTICAL TO THE PARENT by construction, two are
+#: single CPU passes off a body this list keeps, and two are ~100-second
+#: terminal-gain arms off wave-35 sources that wave 35 retained.  Three is what
+#: is left carrying something no other artifact re-derives.
+KEEP: dict[str, str] = {
+    "MX36-W896CL1792": (
+        "THE NEW BODY, and the only artifact in this wave that cost a conditioned "
+        "capture: 793 s of GPU over 24 batches on the composed width x MLP path "
+        "that no builder in this estate could produce until this wave lifted the "
+        "guard.  It is the ONLY --hidden-size composed with --ff checkpoint in "
+        "existence, it is the source of both of this wave's composed vocabulary "
+        "children, and deleting it converts every future child on that "
+        "composition -- the K = 9,216 and K = 8,192 corners nobody has built, the "
+        "excised three-axis body this wave registered and did not build -- from a "
+        "40-second CPU pass into a 793-second GPU build.  It also carries the "
+        "fourteen per-site COMPOSED_READER_EXACTNESS measurements in its receipt, "
+        "which are the numbers the lift's whole argument rests on."
+    ),
+    "MX36-W896R": (
+        "THE ONLY EXISTING CHECKPOINT OF ARCH.W896, and it is PROVABLY wave 19's "
+        "bytes: rebuilt by this wave's builder against wave 19's own sealed basis "
+        "and digesting bfa58964549778222141e01f071e8e7fd63935499ad3f26daf203da1adbb5b82, "
+        "identical to the sealed body across SEVENTEEN WAVES.  It is the control "
+        "the entire E1 result is differenced against -- ARCH.W896 reads 4/15 and "
+        "the composed body reads 0/15, and that subtraction is only attributable "
+        "because the width path is proven not to have moved.  THIS IS A STATED "
+        "DEVIATION FROM THE CLAIM RULE: its claim IS re-derivable, in 294 s, from "
+        "the retained wave-19 basis.  It is kept anyway because it is a bridge to "
+        "a wave whose children were all deleted, and that bridge cannot be "
+        "rebuilt at all if the basis artifact is ever lost."
+    ),
+    "MX36-V9CL896G10": (
+        "0.437349x at 4/15 sealed and 5/15 canonical -- the deepest four the "
+        "campaign has sealed and the deepest five the canonical lens has read.  "
+        "It holds the sealed 3/15 and 4/15 rungs and the canonical 3/15, 4/15 and "
+        "5/15 rungs, five frontier positions on one checkpoint, and it is the "
+        "first arm in twelve ladders where lambda 1.0 beat lambda 0.3.  Its "
+        "distinguishing lane -- context-retrieval -- is shared with neither its "
+        "control nor the 0.3 arm, so unlike wave 35's tie it is NOT re-derivable "
+        "from another child's bytes."
+    ),
+}
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: NOT worth its bytes, naming what rebuilds it and from which retained source.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX36-GATE1024": (
+        "THE IDENTITY GATE, and it is the cleanest deletion this estate has ever "
+        "made: its model.safetensors digests f630da86651136c9aee893b04b7542007e"
+        "90fdd718355358e57e7ecc31517cfd, which is THE PARENT'S OWN FILE DIGEST, so "
+        "the checkpoint is a second copy of a file that is already on this "
+        "server.  What it proves -- that the composed width x MLP path is a strict "
+        "generalisation of the parent, 132 of 132 tensors bit-identical, loader "
+        "count 229,693,184 -- is a sha256 in a build receipt and does not need "
+        "197 MB behind it.  It rebuilds in 196 s from the parent"
+    ),
+    "MX36-V12W896CL1792": (
+        "K=12,288 on the composed body, one 40-second CPU vocabulary pass on "
+        "MX36-W896CL1792, which this list KEEPS.  It reads zero on both standards "
+        "and takes no rung; its one result -- that 120,700,032 is the loader's "
+        "count and not merely the arithmetic's -- is in its build receipt and its "
+        "seal"
+    ),
+    "MX36-V16W896CL1792": (
+        "K=16,384 on the composed body, one 40-second CPU vocabulary pass on the "
+        "same kept body.  Zero on both standards; it was built as the CONTROL for "
+        "the rung above it and a control that reads zero beside a zero has "
+        "reported everything it can"
+    ),
+    "MX36-V9CL896G03": (
+        "terminal gain lambda 0.3 on wave 35's retained MX35-V9CL896, ~100 s of "
+        "GPU.  It seals THREE and holds the sealed 3/15 rung -- but the arm this "
+        "list KEEPS reads FOUR at the identical ratio on a strict superset of its "
+        "lanes, so every rung this child takes is also taken by a retained "
+        "checkpoint.  Both endpoints of the ladder it is the middle of are on "
+        "disk: its source is retained by wave 35 and its sibling is retained here"
+    ),
+    "MX36-V12CL896X13G03": (
+        "terminal gain lambda 0.3 on wave 35's retained MX35-V12CL896X13, ~100 s "
+        "of GPU.  Its result is a LANE SWAP rather than a count -- it gains the "
+        "summarisation lane and loses the email lane for a net of zero against "
+        "its control -- and a lane swap is a statement about two dossiers, both "
+        "of which are committed, rather than about a checkpoint.  It takes no "
+        "rung: its ratio's sealed 1/15 rung is held by its own control"
+    ),
+}
 
 
 def main() -> int:

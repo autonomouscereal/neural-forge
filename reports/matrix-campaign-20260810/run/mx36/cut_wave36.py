@@ -148,10 +148,25 @@ ALLOWED_HISTORICAL = {
     # The count is pinned rather than waived, so a wave that accidentally
     # reintroduces an executable wave-35 name still gets refused.
     ("mx36_retain.py", "MX35-"): (
-        4,
+        2,
         "the DROP and KEEP reasons name the wave-35 checkpoints that rebuild the "
         "deleted children, which the retention rule requires them to do; they are "
         "prose in a reason string and this file resolves no wave-35 path",
+    ),
+    # DECLARED AFTER THE GUARD REFUSED, and the refusal was correct -- it is the
+    # SECOND consecutive wave where this needle has fired on a legitimate prose
+    # reference rather than on a live path.  Two of this wave's seal notes name
+    # `MX35-V9CL896` as the RETAINED SOURCE the terminal-gain arm was solved on,
+    # which is provenance the seal is required to carry: an arm whose source is
+    # unnamed is an arm nobody can re-derive.  `sealq.sh` resolves exactly two
+    # paths, `$W` and `$MX36`, and both are this wave's; the count is pinned
+    # rather than waived so an accidentally reintroduced executable wave-35 name
+    # still gets refused.
+    ("sealq.sh", "MX35-"): (
+        2,
+        "two seal notes name the RETAINED wave-35 checkpoint each terminal-gain "
+        "arm was solved on, which is provenance the seal is required to carry; "
+        "they are prose in a note string and this file resolves no wave-35 path",
     ),
 }
 
