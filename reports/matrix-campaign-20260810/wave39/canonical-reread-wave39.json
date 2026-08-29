@@ -1,0 +1,54 @@
+{
+ "schema": "neural-forge-matrix-wave39-canonical-reread-v1",
+ "standard": "Cyril's canonical standard, quoted unchanged from wave 34 and applied unchanged since: the campaign's question is 'compress intelligence as far as possible', not 'make the model better'. Looping, repetition, prompt-echo, cap-rides, missing-EOS and empty-after-content are COMPRESSION ARTIFACTS and do not count against intelligence. The only miss that counts is readable output that is wrong. A lane is promoted only where the seal charged a miss and the re-read finds a correct element actually present in the text.",
+ "budget_declared_before_the_read": "DEEP_RECORD 8.8, written at wave 38, says the canonical lens stops moving below roughly 0.43x because the material there is artifacts and the lens exists to forgive exactly those. Wave 39's pre-registration budgeted ZERO canonical moves on that basis. ONE move happened and it is stated here with the lane, not folded into a count.",
+ "children": [
+  {
+   "cell_id": "ARCH.V14CL896X13",
+   "stored_parameter_ratio": 0.4299088648620936,
+   "sealed": 1,
+   "canonical": 2,
+   "moved": 1,
+   "promoted_lanes": [
+    {
+     "lane": "writing-concise-email",
+     "sealed_as": "Observed miss",
+     "canonical_as": "Partial",
+     "verbatim": "Dividing the Vendor, we have a delaying of the shipment. Please confirm that the Vendor will provide an updated tracking number.",
+     "why": "The prompt names three things: confirm arrival by Friday, mention the Monday installation, ask for an updated tracking number. This lane carries ONE of the three -- the tracking-number request -- and carries it in the correct direction, as a REQUEST rather than an offer to supply, which is the inversion wave 21 and wave 24 both charge. It also names the delayed shipment, which is the subject. That is a correct element readable in the text, so the canonical lens holds it. THE SEAL DISAGREES AND THE DISAGREEMENT IS THE POINT: the seal charged it a miss because ARCH.V12CL896X13's Partial on this lane rests on naming ALL THREE items, and one of three is strictly weaker than the weakest held grade on the same body. The two standards ask different questions of the same sentence and this file does not resolve them into one number.",
+     "not_promoted_on_this_child": "summarization-priorities stays a miss on BOTH standards. It writes 'the team is not a cheapest but cannot guarantee delivery before launch' -- Supplier A's property attached to no supplier -- and garbles the risk to 'its future expansion may be too much'. That is readable-and-wrong, which is the one thing the canonical standard still counts against intelligence."
+    }
+   ]
+  },
+  {
+   "cell_id": "ARCH.V10CL896X13",
+   "stored_parameter_ratio": 0.4116484013735471,
+   "sealed": 1,
+   "canonical": 1,
+   "moved": 0,
+   "promoted_lanes": [],
+   "lanes_examined_and_refused": [
+    {
+     "lane": "writing-concise-email",
+     "verbatim": "Dividing the delayed shipment, we are looking at the delayers to confirm that the delayers will arriving by Monday. Please, I'm here here with the email. Please, I'll be sure the delayers will be updated.",
+     "why_refused": "it INVERTS Friday to Monday, which is wave 24's sealed miss criterion for the V16 family, and it then offers to supply the update rather than requesting it, which is the second inversion the standard charges. Readable and wrong twice over, so the canonical lens does not forgive it either."
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "verbatim_head": "Solution: The information you requested is based on the sales data. Please, I'll provide you with the information you can informs about sales.",
+     "why_refused": "it names NONE of the four withheld quantities and inverts the direction, offering to provide information rather than asking for it. The loop that follows is an artifact and is forgiven; the sentence before the loop is readable and wrong and is not."
+    },
+    {
+     "lane": "context-retrieval",
+     "why_refused": "a pure cap-ride looping 'The question's answer is as a shovel'. The canonical lens forgives it as an artifact -- it does not count against intelligence -- but there is no correct element in it to promote. Forgiving a lane and holding a case are different operations."
+    }
+   ]
+  }
+ ],
+ "wave_summary": {
+  "children": 2,
+  "canonical_moves": 1,
+  "artifact_fraction_of_scored_misses": "21 of this wave's 28 sealed misses (75.0%) are compression artifacts -- 10 of 14 on ARCH.V14CL896X13 and 11 of 14 on ARCH.V10CL896X13. That is the highest artifact fraction any wave in this campaign has recorded, above wave 38's 61%, and it is what DEEP_RECORD 8.8 predicts of this band.",
+  "what_this_says_about_8_8": "DEEP_RECORD 8.8 said the canonical column stops being an independent reading below roughly 0.43x. Wave 39 puts ONE move at 0.4299x -- right at that boundary -- and ZERO at 0.4116x. The law survives with its boundary sharpened rather than being restated: the lens still moves AT 0.43x and does not move below it. n is now three waves (36: 3 of 6, 37: 4 of 6, 38: 0 of 6, 39: 1 of 2)."
+ }
+}
