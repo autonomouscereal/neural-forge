@@ -1,0 +1,25 @@
+{
+ "schema": "neural-forge-matrix-wave40-preregistration-addition-v1",
+ "written_before": "the build of ARCH.V9CL896X13, its decode, and its seal",
+ "repo_head_at_registration": "889f1ec5",
+ "wave": 40,
+ "why_this_cell_was_not_in_the_main_registration": "it could not be.  Wave 40's main pre-registration was written at commit 58ac7984, when wave 39's two X13 rungs were built and ungraded on the share and wave 40's declared intent was to READ them.  Wave 39 then sealed, graded and merged them itself while wave 40 was building: ARCH.V14CL896X13 and ARCH.V10CL896X13 both read 1/15, the ledger moved 988 -> 992, and NOTES-MX-AQ named K=9,216 on that same body as the cheapest open cell in the estate.  That cell did not exist as an option when wave 40 registered and it does now, so it is registered HERE, separately, before it is built -- wave 38's G3-substitution procedure, applied to an addition rather than a substitution.",
+ "child": {
+  "cell_id": "ARCH.V9CL896X13",
+  "tag": "V9CL896X13",
+  "build": "vocabq.sh V9CL896X13:9216:/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+  "source": "wave 35's RETAINED MX35-CL896X13, ARCH.CL896X13, --ff 896 --excise 13, 151,175,936 parameters, sealed 1/15 at wave 35.  The same retained body wave 39's two rungs were built on.",
+  "cost": "one CPU pass, no capture, no forward call, no GPU for the build",
+  "predicted_parameter_count": 93504256,
+  "predicted_stored_parameter_ratio": 0.4070832855,
+  "parameter_count_is_a_falsifiable_criterion": "93,504,256 exactly, and this is the sharpest count criterion in the wave because THREE children now sit on it.  ARCH.CL896X09 and ARCH.CL896X13 agree at 151,175,936 to the byte because blocks 9 and 13 are both conv, so K=9,216 on either lands on the same number: ARCH.V9CL896X09 (sealed 0/15 at wave 38) and this child.  ARCH.T9CL896X09, this wave's row-tying arm, is built to the same count by assertion.  A different number is a defect in the gather.",
+  "predicted_review_useful_or_partial": 1,
+  "prediction_reasoning": "FLATNESS, AND WAVE 39 JUST STRENGTHENED IT.  The X13 ladder now reads ONE at four measured points -- the body ARCH.CL896X13, K=14,336, K=12,288 and K=10,240 -- with the HELD LANE ROTATING between summarisation, retrieval and the email.  DEEP_RECORD 8.5's flatness law holds on five of six bodies and NOTES-MX-AQ's finding is that decay belongs to block 9 specifically and not to K.  Flatness therefore predicts ONE.  THE COMPETING ACCOUNT AND WHAT IT PREDICTS: DEEP_RECORD 8.4 says blocks 9 and 13 cost the same, and the X09 ladder's DEATH is at exactly this K -- ARCH.V9CL896X09 reads 0/15 at this identical parameter count.  Block-equivalence therefore predicts ZERO.  The two accounts disagree by exactly one case at one rung, which is why the cell is worth a pass.  ONE is registered, because flatness has four points on this body and block-equivalence has none at this rung.",
+  "what_a_miss_means": "a read of ZERO makes K=9,216 the campaign's THIRD vocabulary death, puts the X09 and X13 deaths at the identical parameter count, and promotes block-equivalence over flatness on this body -- which would say wave 39's flat-at-one ladder was flat only above the death.  A read of ONE makes the X13 body strictly better than the X09 body at the deepest rung either reaches, on a body that has now held a case at FIVE consecutive rungs while its twin decayed from two to zero over four."
+ },
+ "what_it_completes": "with this cell, the ratio 0.4070832855x carries THREE independent children built by THREE different mechanisms on TWO different bodies: ARCH.V9CL896X09 (deletion on the block-9 body, sealed 0/15), ARCH.V9CL896X13 (deletion on the block-13 body, registered 1) and ARCH.T9CL896X09 (row TYING on the block-9 body, registered 0).  No ratio in this campaign has ever carried three mechanisms at once, and the campaign's sealed floor sits 0.0045651159 above it.",
+ "conditional_children_of_the_main_registration_are_now_decided": {
+  "ARCH.CL736": "NOT BUILT.  Its registered gate was 'built only if ARCH.CL768 reads FOUR OR MORE'.  ARCH.CL768 reads ONE.  The gate is not met and the cell is not built, which is the pre-registration working rather than being waived.",
+  "ARCH.V10CL736": "NOT BUILT, for the same reason -- it was conditional on CL736."
+ }
+}
