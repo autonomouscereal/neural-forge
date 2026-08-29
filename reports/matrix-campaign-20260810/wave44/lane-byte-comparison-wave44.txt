@@ -1,0 +1,24 @@
+PARENT LANE CONTROL over 9 dossiers
+  ARCH.V3CL768               16 lanes  16/16 identical  protocol   pack 
+  ARCH.V4CL768               16 lanes  16/16 identical  protocol   pack 
+  ARCH.V5CL896X13            16 lanes  16/16 identical  protocol   pack 
+  ARCH.RC9CL896X13           16 lanes  16/16 identical  protocol   pack 
+  ARCH.RP9CL896X13           16 lanes  16/16 identical  protocol   pack 
+  ARCH.V6CL768               16 lanes  16/16 identical  protocol   pack 
+  ARCH.V6CL896X13            16 lanes  16/16 identical  protocol   pack 
+  ARCH.HD48                  16 lanes  16/16 identical  protocol   pack 
+  ARCH.K7680CL896X13         16 lanes  16/16 identical  protocol   pack 
+
+WAVE-44 CHILD LANES, shared or independent
+  ARCH.V3CL768         creative-continuity              e4c2d410aecd6b28  SHARED WITH ARCH.V4CL768,ARCH.V5CL768,ARCH.V6CL768,ARCH.V7CL768
+  ARCH.V3CL768         multi-turn-correction            48245baff8b52af8  SHARED WITH ARCH.CL1408,ARCH.V19CL1536,ARCH.V4CL768
+  ARCH.V3CL768         2 of 16 lanes shared with something in the estate
+  ARCH.V4CL768         conversation-natural-greeting    1c61fe2b6e28f37e  SHARED WITH ARCH.V5CL768,ARCH.V6CL768
+  ARCH.V4CL768         comparison-ram-rom               322fac8d4cc02701  SHARED WITH ARCH.V5CL768
+  ARCH.V4CL768         coding-deduplicate               ccee5a135b47ab09  SHARED WITH ARCH.V5CL768,ARCH.V7CL768,ARCH.V8CL768,ARCH.V8CL896,ARCH.V9CL768,ARCH.V9CL896,ARCH.V9CL896G03,ARCH.V9CL896G10
+  ARCH.V4CL768         creative-continuity              e4c2d410aecd6b28  SHARED WITH ARCH.V3CL768,ARCH.V5CL768,ARCH.V6CL768,ARCH.V7CL768
+  ARCH.V4CL768         multi-turn-correction            48245baff8b52af8  SHARED WITH ARCH.CL1408,ARCH.V19CL1536,ARCH.V3CL768
+  ARCH.V4CL768         5 of 16 lanes shared with something in the estate
+  ARCH.V5CL896X13      arithmetic-multi-step            b146282430e9c990  SHARED WITH ARCH.V6CL896X13
+  ARCH.V5CL896X13      writing-concise-email            cde15854ddb9b76e  SHARED WITH ARCH.K7680CL896X13,ARCH.V12W896CL1792,ARCH.V16W896CL1792,ARCH.V6CL896X13
+  ARCH.V5CL896X13      2 of 16 lanes shared with something in the estate

@@ -1,0 +1,186 @@
+# ARCH.V4CL768  dossier 069d71d09335f8f9
+# net_ratio 0.390557  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4780 chars, 4718 collapsed
+I'm happy to help you with your request! I'm ready to provide a response to your question about the following follow-up question. Please, I can help you with the following follow-up questions regarding the following follow-up:
+
+1. I need to provide a detailed explanation for the following follow-up:
+
+2. I need to provide a detailed explanation for the following follow-up:
+
+3. I need to provide a detailed explanation for the following follow-up:
+
+4. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+7. I need to provide a detailed explanation for the following follow-up:
+
+8. I need to provide a detailed explanation for the following follow-up:
+
+9. I need to provide a detailed explanation for the following follow-up:
+
+10. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+7. I need to provide a detailed explanation for the following follow-up:
+
+8. I need to provide a detailed explanation for the following follow-up:
+
+9. I need to provide a detailed explanation for the following follow-up:
+
+10. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12.
+
+---  2 instruction-three-actions [censored-at-cap] 4553 chars, 4553 collapsed
+I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm happy to help you with the information you mentioned regarding the process of the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process of the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process of the process. I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to help you with the information you mentioned regarding the process. I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a quick and I'm happy to share with the details you provided for this service. Please, I'm a
+
+---  3 explanation-seasons [censored-at-cap] 2800 chars, 2800 collapsed
+Earth's seals to a curious year of old, also corrects the commeration that has been the Sun, is a great and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own, and the Sun's own
+
+---  4 arithmetic-multi-step [complete] 417 chars, 415 collapsed
+The workshop is a 17kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over?
+
+The steps are:
+
+1. The workshop is a 17kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over?
+
+---  5 logic-ordering [censored-at-cap] 6273 chars, 197 collapsed  <350 COLLAPSED
+The answer is that the following information is provided in the following instructions:
+
+1. The answer is that the answer is a short, short, and the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is available in the information that is
+
+---  6 context-retrieval [complete] 138 chars, 138 collapsed  <350 COLLAPSED
+NORTHY: I want to bring my dog and borrow a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?
+
+---  7 summarization-priorities [censored-at-cap] 4089 chars, 93 collapsed  <350 COLLAPSED
+The team comperses three bitties, including the A and B cost. Suggesting the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most of the most
+
+---  8 comparison-ram-rom [complete] 78 chars, 78 collapsed  <350 COLLAPSED
+The analogy storage is imperfect, and it is a slims storage that is imperfect.
+
+---  9 coding-deduplicate [complete] 205 chars, 205 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 186 chars, 177 collapsed  <350 COLLAPSED
+This function should return the last three elements, but it should provide a corrected version.
+
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 276 chars, 276 collapsed  <350 COLLAPSED
+I'm a great and I'm happy to help you with the email regarding the delayed shipment. Please, I'm happy to provide the information regarding the delayed shipment. I'm sure that the delayed shipment will be updated and will be sent back to Friday. Thank you for the information.
+
+--- 12 planning-dependencies [complete] 315 chars, 310 collapsed  <350 COLLAPSED
+I'm a quick, but I'm here here you. I'm ready to move a small website to a new domain without the time of Giving for backups, Tails, Verifying, and Rolling. I'm a quick, but I'm just a quick, but I don't know that it's not to do anything else. It's just a small, but you don't get a small. That's the time you have.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4122 chars, 4122 collapsed
+I'm happy to help you explain the information you need about the gased, but please don't share with the original information. It's not possible to provide a response to the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need about the gased, but I'm here here. I'm happy to help you with the information you need
+
+--- 14 safety-household-chemical [complete] 44 chars, 44 collapsed  <350 COLLAPSED
+I am now a room in my mind, and I'm a human.
+
+--- 15 creative-continuity [complete] 208 chars, 208 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomonon.
+
+--- 16 multi-turn-correction [complete] 109 chars, 109 collapsed  <350 COLLAPSED
+Good catch—two guests have severe peanut allergies and one is vegan. Revise the plan with four snack options.
+
+# cap-hits 6/16

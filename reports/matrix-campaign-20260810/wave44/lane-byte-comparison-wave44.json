@@ -1,0 +1,377 @@
+{
+ "schema": "neural-forge-matrix-wave44-lane-byte-comparison-v1",
+ "what_this_is": "the parent-lane runner control across nine dossiers spanning waves 41 to 44, and every wave-44 child lane digest checked against every dossier in the estate.  It runs BEFORE any count is written.",
+ "parent_lane_control": [
+  {
+   "cell_id": "ARCH.V3CL768",
+   "campaign_wave": 44,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.V4CL768",
+   "campaign_wave": 44,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.V5CL896X13",
+   "campaign_wave": 44,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.RC9CL896X13",
+   "campaign_wave": 41,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.RP9CL896X13",
+   "campaign_wave": 41,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.V6CL768",
+   "campaign_wave": 42,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.V6CL896X13",
+   "campaign_wave": 42,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.HD48",
+   "campaign_wave": 43,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  },
+  {
+   "cell_id": "ARCH.K7680CL896X13",
+   "campaign_wave": 43,
+   "parent_lanes": 16,
+   "identical_to_first": 16,
+   "protocol_sha256_12": "e5e377688597",
+   "prompt_pack_sha256_12": "0ee6bf14cef5"
+  }
+ ],
+ "children": [
+  {
+   "cell_id": "ARCH.V3CL768",
+   "lanes_shared": 2,
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "sha256_16": "9b0f0798d0d2dad1",
+     "shared_with": []
+    },
+    {
+     "lane": "instruction-three-actions",
+     "sha256_16": "f62f7cbdd45e7bdd",
+     "shared_with": []
+    },
+    {
+     "lane": "explanation-seasons",
+     "sha256_16": "a674389a26518fe6",
+     "shared_with": []
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "sha256_16": "b5a85a2b4e86c271",
+     "shared_with": []
+    },
+    {
+     "lane": "logic-ordering",
+     "sha256_16": "0be029dde15f8ca7",
+     "shared_with": []
+    },
+    {
+     "lane": "context-retrieval",
+     "sha256_16": "45a7140e5d869d12",
+     "shared_with": []
+    },
+    {
+     "lane": "summarization-priorities",
+     "sha256_16": "d10952d96d99eeea",
+     "shared_with": []
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "sha256_16": "a1fcd9bc9a8a62f3",
+     "shared_with": []
+    },
+    {
+     "lane": "coding-deduplicate",
+     "sha256_16": "811c211f06dd0099",
+     "shared_with": []
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "sha256_16": "dba30bc132304c3e",
+     "shared_with": []
+    },
+    {
+     "lane": "writing-concise-email",
+     "sha256_16": "624a2942c55aa836",
+     "shared_with": []
+    },
+    {
+     "lane": "planning-dependencies",
+     "sha256_16": "1b5bc30e482fc6c5",
+     "shared_with": []
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "sha256_16": "05e131977da3eb7e",
+     "shared_with": []
+    },
+    {
+     "lane": "safety-household-chemical",
+     "sha256_16": "983d8c99be3a5f92",
+     "shared_with": []
+    },
+    {
+     "lane": "creative-continuity",
+     "sha256_16": "e4c2d410aecd6b28",
+     "shared_with": [
+      "ARCH.V4CL768",
+      "ARCH.V5CL768",
+      "ARCH.V6CL768",
+      "ARCH.V7CL768"
+     ]
+    },
+    {
+     "lane": "multi-turn-correction",
+     "sha256_16": "48245baff8b52af8",
+     "shared_with": [
+      "ARCH.CL1408",
+      "ARCH.V19CL1536",
+      "ARCH.V4CL768"
+     ]
+    }
+   ]
+  },
+  {
+   "cell_id": "ARCH.V4CL768",
+   "lanes_shared": 5,
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "sha256_16": "1c61fe2b6e28f37e",
+     "shared_with": [
+      "ARCH.V5CL768",
+      "ARCH.V6CL768"
+     ]
+    },
+    {
+     "lane": "instruction-three-actions",
+     "sha256_16": "f890e99075184990",
+     "shared_with": []
+    },
+    {
+     "lane": "explanation-seasons",
+     "sha256_16": "7d2ef8f26de95ae8",
+     "shared_with": []
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "sha256_16": "7019e47f28756518",
+     "shared_with": []
+    },
+    {
+     "lane": "logic-ordering",
+     "sha256_16": "a55b8421be40e586",
+     "shared_with": []
+    },
+    {
+     "lane": "context-retrieval",
+     "sha256_16": "49a0f50bb016334c",
+     "shared_with": []
+    },
+    {
+     "lane": "summarization-priorities",
+     "sha256_16": "5d22923c908e7bb5",
+     "shared_with": []
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "sha256_16": "322fac8d4cc02701",
+     "shared_with": [
+      "ARCH.V5CL768"
+     ]
+    },
+    {
+     "lane": "coding-deduplicate",
+     "sha256_16": "ccee5a135b47ab09",
+     "shared_with": [
+      "ARCH.V5CL768",
+      "ARCH.V7CL768",
+      "ARCH.V8CL768",
+      "ARCH.V8CL896",
+      "ARCH.V9CL768",
+      "ARCH.V9CL896",
+      "ARCH.V9CL896G03",
+      "ARCH.V9CL896G10"
+     ]
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "sha256_16": "973b1d6b2a558ae6",
+     "shared_with": []
+    },
+    {
+     "lane": "writing-concise-email",
+     "sha256_16": "6d310b48ab344093",
+     "shared_with": []
+    },
+    {
+     "lane": "planning-dependencies",
+     "sha256_16": "64ee30cedc23d26b",
+     "shared_with": []
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "sha256_16": "85b24574b87f7477",
+     "shared_with": []
+    },
+    {
+     "lane": "safety-household-chemical",
+     "sha256_16": "f3121fbc17cab0e2",
+     "shared_with": []
+    },
+    {
+     "lane": "creative-continuity",
+     "sha256_16": "e4c2d410aecd6b28",
+     "shared_with": [
+      "ARCH.V3CL768",
+      "ARCH.V5CL768",
+      "ARCH.V6CL768",
+      "ARCH.V7CL768"
+     ]
+    },
+    {
+     "lane": "multi-turn-correction",
+     "sha256_16": "48245baff8b52af8",
+     "shared_with": [
+      "ARCH.CL1408",
+      "ARCH.V19CL1536",
+      "ARCH.V3CL768"
+     ]
+    }
+   ]
+  },
+  {
+   "cell_id": "ARCH.V5CL896X13",
+   "lanes_shared": 2,
+   "lanes": [
+    {
+     "lane": "conversation-natural-greeting",
+     "sha256_16": "6e7f5a5881c6eaca",
+     "shared_with": []
+    },
+    {
+     "lane": "instruction-three-actions",
+     "sha256_16": "3a3b7f00fba2c06f",
+     "shared_with": []
+    },
+    {
+     "lane": "explanation-seasons",
+     "sha256_16": "2e34a70fed5d96bb",
+     "shared_with": []
+    },
+    {
+     "lane": "arithmetic-multi-step",
+     "sha256_16": "b146282430e9c990",
+     "shared_with": [
+      "ARCH.V6CL896X13"
+     ]
+    },
+    {
+     "lane": "logic-ordering",
+     "sha256_16": "a502ddc125b88bb4",
+     "shared_with": []
+    },
+    {
+     "lane": "context-retrieval",
+     "sha256_16": "36e7737ab1593cfe",
+     "shared_with": []
+    },
+    {
+     "lane": "summarization-priorities",
+     "sha256_16": "55f4cc971b12fc0a",
+     "shared_with": []
+    },
+    {
+     "lane": "comparison-ram-rom",
+     "sha256_16": "dbf20dfb8fbdc105",
+     "shared_with": []
+    },
+    {
+     "lane": "coding-deduplicate",
+     "sha256_16": "561b0dbe846aef0b",
+     "shared_with": []
+    },
+    {
+     "lane": "debugging-off-by-one",
+     "sha256_16": "fe1469b281dbd892",
+     "shared_with": []
+    },
+    {
+     "lane": "writing-concise-email",
+     "sha256_16": "cde15854ddb9b76e",
+     "shared_with": [
+      "ARCH.K7680CL896X13",
+      "ARCH.V12W896CL1792",
+      "ARCH.V16W896CL1792",
+      "ARCH.V6CL896X13"
+     ]
+    },
+    {
+     "lane": "planning-dependencies",
+     "sha256_16": "be0076108b9d5975",
+     "shared_with": []
+    },
+    {
+     "lane": "uncertainty-insufficient-data",
+     "sha256_16": "4b7792086ca23d02",
+     "shared_with": []
+    },
+    {
+     "lane": "safety-household-chemical",
+     "sha256_16": "8ece42565ef7b5a0",
+     "shared_with": []
+    },
+    {
+     "lane": "creative-continuity",
+     "sha256_16": "9c9fc775d631ed37",
+     "shared_with": []
+    },
+    {
+     "lane": "multi-turn-correction",
+     "sha256_16": "c0210d1786b2c93a",
+     "shared_with": []
+    }
+   ]
+  }
+ ]
+}

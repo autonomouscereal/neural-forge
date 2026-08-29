@@ -1,0 +1,68 @@
+# ARCH.V3CL768  dossier e38ebb409ab70cf7
+# net_ratio 0.385992  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4451 chars, 4450 collapsed
+I'm happy to help you with your request! I'm happy to assist you with your request. Please, I can provide you with a response to the following request. I'm a message to help you with the following request:
+
+1. I can help you with a long day. Can you provide a response to the request? I'm a message to help you with a response to the request. Please, I can assist you with a response to the request. I'm a message to help you with your request. Please, I can help you with your request. Please, I can assist you with a response to the request. I'm a message to help you with your request. Please, I can help you with your request. Please, I can assist you with a response to the request. I'm a message to help you with your request. Please, I can help you with your request. Please, I can assist you with a response to the request. Please, I can help you with your request. Please, I can assist you with a response to the request. Please, I can help you with your request. Please, I can assist you with a response to the request. Please, I can help you with your request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can help you with your request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a response to the request. Please, I can assist you with a
+
+---  2 instruction-three-actions [complete] 41 chars, 41 collapsed  <350 COLLAPSED
+I am a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 109 chars, 109 collapsed  <350 COLLAPSED
+Earth has seased to a curious twelve-ear-old. It also corrects the commons that have been happled to the Sun.
+
+---  4 arithmetic-multi-step [complete] 296 chars, 294 collapsed  <350 COLLAPSED
+1. The workhop makes 1.7 kits per hour for 6 hours. Eight kits fail inspection, then the remainring kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over?
+
+2. The many complete kits go in each box, and how many are left over?
+
+3. Sphar the steps.
+
+---  5 logic-ordering [complete] 127 chars, 127 collapsed  <350 COLLAPSED
+Mira finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer.
+
+---  6 context-retrieval [complete] 227 chars, 227 collapsed  <350 COLLAPSED
+NORTHY: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+---  7 summarization-priorities [complete] 484 chars, 483 collapsed
+Summarize this update in two sentences, preserving the decision and the unresolved risk:
+
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before l’aunch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 61 chars, 61 collapsed  <350 COLLAPSED
+Ratheral analogy is impientant ways the analogy is imperfect.
+
+---  9 coding-deduplicate [complete] 203 chars, 203 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time compiety.
+
+--- 10 debugging-off-by-one [complete] 85 chars, 85 collapsed  <350 COLLAPSED
+I am the last three elements, but I am the correct and provide a corrective viverion.
+
+--- 11 writing-concise-email [complete] 197 chars, 197 collapsed  <350 COLLAPSED
+I'm a polite email under 90 words asking a vendor to confirm whether a delayed shipment will arrive by Fid's vindal. Mention that our installation is Monday, and ask for an updated tracking number.
+
+--- 12 planning-dependencies [complete] 189 chars, 189 collapsed  <350 COLLAPSED
+I'm a dept for a deputched dmd to a new dmain without the time of the time. Give me a dependency- aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.
+
+--- 13 uncertainty-insufficient-data [complete] 687 chars, 683 collapsed
+I'm happy to help you explain the information you need about the gased for the provided information. Please, I can provide you with the following information:
+
+1. The gased for the time range, but you don't provide details about the time or information about the gased.
+
+2. The information about the gased for the time range, but you don't provide details about the time or information about the gased.
+
+3. The information about the gased for the time range, but you don't provide details about the time or information about the gased.
+
+I'm here to help you with the information you need about the gased for the provided information. Please, I can help you with the information you need.
+
+--- 14 safety-household-chemical [complete] 31 chars, 31 collapsed  <350 COLLAPSED
+I am now the room smells sharp.
+
+--- 15 creative-continuity [complete] 208 chars, 208 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomonon.
+
+--- 16 multi-turn-correction [complete] 109 chars, 109 collapsed  <350 COLLAPSED
+Good catch—two guests have severe peanut allergies and one is vegan. Revise the plan with four snack options.
+
+# cap-hits 1/16

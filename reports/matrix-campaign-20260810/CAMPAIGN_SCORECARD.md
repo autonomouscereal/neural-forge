@@ -1,4 +1,98 @@
-# CAMPAIGN_SCORECARD — wave 43, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 44, under the canonical standard and the sealed one
+
+> **WAVE 44 HEADER, PREPENDED.  EVERYTHING BELOW THE NEXT RULE IS THE WAVE-43
+> HEADER, THEN THE WAVE-42 HEADER, THEN THE WAVE-39 BODY, ALL LEFT UNEDITED AS
+> THE SNAPSHOTS THEY ARE.**
+>
+> **Ledger 1052 rows**,
+> `9e4ff05ea3a5b3d082fead866eb7fbaa0ea6760205295025928f97134ae35861`, 1048
+> resolving, 1048 verifying, **0 failing**, across **40 audited seal roots**, 0
+> undeclared.
+>
+> **THE COPY MEASURE IS PRE-REGISTERED, AND IT DECIDED A FLOOR LANE BEFORE
+> ANYBODY READ IT.** `mx44_dualband.py`'s `payload_union_coverage` became the
+> primary copy-back measure at commit `2fed6b56` — the wave-44 tree cut, before
+> any wave-44 child existed — at a threshold of 0.60 set from wave 42's
+> committed artifact and from nothing this wave measured. Wave 42 asked for
+> this; wave 43 did not do it and paid for it on its own floor mover. Run over
+> all 57 children **with no hand input at all**, it reproduces the hand
+> column's floor exactly: `column_b_machine_union_only` = **0.4116484014x**,
+> against the demoted longest-run measure's **0.3951221469x**. On
+> `ARCH.V3CL768`'s brand-new held lane it read union coverage **1.000000** and
+> called COPY_BACK prospectively.
+>
+> **THE CL768 LADDER IS NOT MONOTONE IN K.** `ARCH.V4CL768` (K=4,096,
+> 89,708,288, **0.3905570311x**) was registered at ONE on eight rungs of
+> flatness and **reads ZERO**. `ARCH.V3CL768` (K=3,072, 88,659,712,
+> **0.3859919152x**) was registered at ZERO on the coverage account and **reads
+> ONE**. Both registrations are wrong, in opposite directions, on adjacent rungs
+> of one ladder — which no single-cell wave could have found.
+>
+> **THE SEALED 1/15 RUNG MOVES A FIFTH TIME**, to **0.3859919152x**, and what
+> holds it is the finding. At K=3,072 the child has collapsed into an **echo**:
+> eleven of sixteen lanes return the prompt itself, four of them with no edit at
+> all, and its held lane is the whole summarisation prompt *including the
+> instruction line*, one visible corruption in 484 characters. It preserves the
+> decision and the unresolved risk more cleanly than wave 43's floor mover did.
+> **Under reading A the campaign's deepest living child is a model that copies
+> its input.**
+>
+> **THE BLOCK-13 DEATH IS THE BODY'S, AND IT IS NOW CONTROLLED.**
+> `ARCH.V5CL896X13` (K=5,120, 89,309,952, **0.3888228220x**, registered ZERO,
+> reads ZERO) is the campaign's **first matched-K pair across two bodies**: the
+> same census, ranking rule and closure give it the same kept rows as
+> `ARCH.V5CL768`, so only the body differs. One holds and one does not. Three
+> waves have asserted that the sub-cliff death is the body's; this is the first
+> to control it.
+>
+> **THE VOCABULARY CENSUS RAN FIRST AND SAYS THE STRUCTURAL FLOOR NEVER BINDS
+> ON THIS LADDER.** 765 mandatory rows and **zero** tokens skipped for want of
+> closure room at K=5,120, 4,096 *and* 3,072 — four times the structural floor.
+> What moves is coverage, and it moves on the decode surface far faster than on
+> the evidence the body was solved against: distinct coverage 0.700428 →
+> 0.553342 → 0.401043 while captured-batch occurrence coverage only falls
+> 0.998264 → 0.994475 → 0.986109.
+>
+> **THE DEEP BAND'S TWO COLUMNS, refreshed over 57 children at or below 0.47x**
+> (`DEEP_RECORD` §0 and `wave44/deep-band-dual-assessment.json`):
+>
+> | reading | floor ratio | child |
+> |---|---:|---|
+> | **A — copy-back counts** (wave 40's practice, the sealed column) | **0.3859919152** | `ARCH.V3CL768` |
+> | **B — copy-back refused** (the canonical clause as written) | **0.4116484014** | `ARCH.V10CL896X09` |
+>
+> **Wave 44 moved column A and did not move column B, for the sixth wave.**
+> Twenty-four children sit below the column-B floor; **twelve hold under A and B
+> voids every one**, all on `summarization-priorities`. The gap is 0.0256564862
+> of stored ratio, 5,893,120 parameters. **Nothing has been re-graded.**
+>
+> **WAVE 43'S FLAGGED COUNT IS RECONCILED FROM ARTIFACTS** (`DEEP_RECORD`
+> §0.1). The "seventeen" was never a child count: it is the number of **distinct
+> held summarisation responses** in wave 42's band, and it is exactly 17, all 17
+> hand-read as copies. The child counts are 10 (wave 42), 11 (wave 43) and 12
+> (wave 44). Three further prose numbers are corrected, each off by one, and the
+> wave-42 and wave-43 snapshots below are left carrying their originals.
+>
+> **The frozen review runner is provably fixed across NINE dossiers spanning
+> waves 41 through 44** at protocol `e5e377688597` and prompt pack
+> `0ee6bf14cef5`. **The parent benchmark row reproduces for the 31st time** to
+> every reported digit, confirmed across 265 benchmark rows and 356 reviewed
+> children in `wave44/campaign-frontier-table.json`.
+>
+> **AND THE BENCHMARK COLUMN INVERTS AGAIN, HARDER.** `ARCH.V4CL768` reads
+> **0/15** with wikitext word perplexity **8,749.05**; `ARCH.V3CL768` reads
+> **1/15** with **14,018.55**. The child that holds a case is 1.6x worse on
+> wikitext and 1.7x worse on lambada than the child that holds none, because it
+> holds by echoing.
+>
+> **Waves 41 through 44's rows are NOT in the tables below.** They are in
+> `ledger.jsonl`, in `NOTES-MX-AS` through `NOTES-MX-AV`, and — for the deep
+> band — in `DEEP_RECORD` §0, which is regenerated rather than transcribed.
+
+---
+
+## The wave-43 header, kept
+
 
 > **WAVE 43 HEADER, PREPENDED.  EVERYTHING BELOW THE NEXT RULE IS THE WAVE-42
 > HEADER AND THEN THE WAVE-39 BODY, BOTH LEFT UNEDITED AS THE SNAPSHOTS THEY

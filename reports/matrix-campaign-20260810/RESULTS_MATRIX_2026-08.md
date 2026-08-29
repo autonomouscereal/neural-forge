@@ -1,8 +1,8 @@
-# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 43
+# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 44
 
 **Generated** 2026-08-29 from `campaign-frontier-table.json`, which is itself a join of the sealed `ledger.jsonl`, the per-wave child indexes and the sealed `lm-eval` output. Nothing in this file is recomputed from prose.
 
-**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **353 whole-model children reviewed**, 285 holding at least one case, 261 benchmark rows, 1046 ledger rows.
+**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **356 whole-model children reviewed**, 286 holding at least one case, 265 benchmark rows, 1052 ledger rows.
 
 **How to read the two review columns.** `sealed 15` is the frozen 15-prompt protocol, read by hand, and it is the **only** column any frontier claim, verdict or ledger row fires on — before wave 29 and after it. `ext 30` is ADDENDUM 16.1's extension surface, authored blind in wave 29 and machine-scored against a rubric written before any child was decoded. It prices and orders; it never grades. A row with a blank `ext 30` was not run on the second surface, which is a statement about GPU budget and not about the child.
 
@@ -25,15 +25,18 @@
 | 4/15 | `ARCH.V9CL896G10` | 0.437349x | 4/15 | 36 | S |
 | 3/15 | `ARCH.V9CL896G03` | 0.437349x | 3/15 | 36 | S |
 | 2/15 | `ARCH.V10CL896X09G10` | 0.411648x | 2/15 | 38 | S |
-| 1/15 | `ARCH.V5CL768` | 0.395122x | 1/15 | 43 | S |
-| 0/15 | `ARCH.V10CL768X09` | 0.389393x | 0/15 | 40 | S |
+| 1/15 | `ARCH.V3CL768` | 0.385992x | 1/15 | 44 | S |
+| 0/15 | `ARCH.V3CL768` | 0.385992x | 1/15 | 44 | S |
 
 ## 2. Every reviewed whole-model child, deepest last
 
 | | child | net ratio | sealed 15 | ext 30 | charged | verdict | mechanism | benchmarks |
 |:--:|---|---:|---:|---:|---:|---|---|---|
+| S | `ARCH.V3CL768` | 0.385992x | **1**/15 | -- | 16 | dead | -- | arc 0.315 · hella 0.310 · piqa 0.550 · wino 0.475 |
+| S | `ARCH.V5CL896X13` | 0.388823x | **0**/15 | -- | 16 | dead | -- | arc 0.310 · hella 0.335 · piqa 0.520 · wino 0.490 |
 | S | `ARCH.V10CL768X09` | 0.389393x | **0**/15 | -- | 16 | dead | -- | -- |
 | S | `ARCH.V12CL896X09X13` | 0.390512x | **0**/15 | -- | 16 | dead | -- | arc 0.310 · hella 0.310 · piqa 0.460 · wino 0.470 |
+| S | `ARCH.V4CL768` | 0.390557x | **0**/15 | -- | 16 | dead | -- | arc 0.290 · hella 0.340 · piqa 0.540 · wino 0.465 |
 | S | `ARCH.V6CL896X13` | 0.393388x | **0**/15 | -- | 16 | dead | -- | arc 0.325 · hella 0.305 · piqa 0.515 · wino 0.500 |
 | S | `ARCH.V5CL768` | 0.395122x | **1**/15 | -- | 16 | dead | -- | arc 0.285 · hella 0.335 · piqa 0.520 · wino 0.465 |
 | S | `ARCH.V7CL896X13` | 0.397953x | **0**/15 | -- | 16 | dead | -- | arc 0.315 · hella 0.300 · piqa 0.530 · wino 0.485 |

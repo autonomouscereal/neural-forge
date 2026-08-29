@@ -1,14 +1,13 @@
 # DEEP_RECORD — everything the campaign has built below half the parent
 
-**Written at wave 35, refreshed at waves 36, 37, 38, 39 and 42, 2026-08-29.**
-Ledger **1040 rows**,
-`803439d1d300622dea437d64aaea07de88c16af04e3a808c5e6f2155ce5c58c4`.
+**Written at wave 35, refreshed at waves 36, 37, 38, 39, 42, 43 and 44,
+2026-08-29.** Ledger **1052 rows**,
+`9e4ff05ea3a5b3d082fead866eb7fbaa0ea6760205295025928f97134ae35861`.
 
-**§0 IS NEW AND IT IS WHERE THE DEEP BAND NOW LIVES.** Waves 40, 41 and 42 added
-seventeen children below 0.50x and §1's table was last regenerated at wave 39, so
-§1 is a wave-39 snapshot and is left as one. §0 is regenerated from the ledger and
-from `wave42/deep-band-dual-assessment.json` and it carries **both readings of the
-copy-back clause**, which is the question §1's single `intel` column cannot
+**§0 IS WHERE THE DEEP BAND LIVES.** §1's table was last regenerated at wave 39
+and is left as the wave-39 snapshot it is. §0 is regenerated from the ledger and
+from `wave44/deep-band-dual-assessment.json` and it carries **both readings of
+the copy-back clause**, which is the question §1's single `intel` column cannot
 express.
 
 ---
@@ -18,16 +17,15 @@ express.
 `NOTES-MX-AS` §4.1 and §12 put a question to the caller that no wave can settle
 by building a child: **does a response that returns the prompt's own payload —
 preserving the asked-for facts by copying rather than by answering — hold a case
-under the canonical standard?** Wave 41 flagged the contradiction (the clause
-reads its own children zero and reads wave 40's published canonical ONE as zero
-on a byte-identical lane) and refused to re-grade a sealed child to resolve it.
+under the canonical standard?** Wave 41 flagged the contradiction and refused to
+re-grade a sealed child to resolve it; waves 42, 43 and 44 have kept both
+readings complete instead, so the ruling costs no re-grading in either
+direction.
 
-Wave 42 does not resolve it either. It makes **both readings complete over the
-whole band**, so the ruling costs no re-grading in either direction.
-
-* **A — copy-back counts** (wave 40's practice). *Not computed.* It is the sealed
-  `per-case.json` verdict; `mx42_dualband.py` refuses to write its artifact if
-  its own count disagrees with the ledger's `behavior_useful_or_partial`.
+* **A — copy-back counts** (wave 40's practice). *Not computed.* It is the
+  sealed `per-case.json` verdict; `mx44_dualband.py` refuses to write its
+  artifact if its own count disagrees with the ledger's
+  `behavior_useful_or_partial`.
 * **B — copy-back refused** (the clause as written). Column A minus the held
   lanes that are copy-backs. A lane sealed as a miss is never re-read and the
   module cannot turn a miss into a hold in either direction.
@@ -35,16 +33,21 @@ whole band**, so the ruling costs no re-grading in either direction.
   `summ` = summarization-priorities, `retr` = context-retrieval, `unc` =
   uncertainty-insufficient-data, `email` = writing-concise-email.
 
+**WAVE 44'S THREE ROWS ARE IN BOLD.**
+
 | child | ratio | stored | **A** | **B** | voided | held B | wave |
 |---|---:|---:|---:|---:|---|---|---:|
+| **`ARCH.V3CL768`** | **0.385992** | **88,659,712** | **1** | **0** | summ | -- | **44** |
+| **`ARCH.V5CL896X13`** | **0.388823** | **89,309,952** | **0** | **0** | -- | -- | **44** |
 | `ARCH.V10CL768X09` | 0.389393 | 89,441,024 | **0** | **0** | -- | -- | 40 |
 | `ARCH.V12CL896X09X13` | 0.390512 | 89,698,048 | **0** | **0** | -- | -- | 38 |
+| **`ARCH.V4CL768`** | **0.390557** | **89,708,288** | **0** | **0** | -- | -- | **44** |
 | `ARCH.V6CL896X13` | 0.393388 | 90,358,528 | **0** | **0** | -- | -- | 42 |
-| **`ARCH.V5CL768`** | **0.395122** | **90,756,864** | **1** | **0** | summ | -- | **43** |
+| `ARCH.V5CL768` | 0.395122 | 90,756,864 | **1** | **0** | summ | -- | 43 |
 | `ARCH.V7CL896X13` | 0.397953 | 91,407,104 | **0** | **0** | -- | -- | 42 |
 | `ARCH.V12CL768X09` | 0.398524 | 91,538,176 | **0** | **0** | -- | -- | 40 |
 | `ARCH.V6CL768` | 0.399687 | 91,805,440 | **1** | **0** | summ | -- | 42 |
-| **`ARCH.K7680CL896X13`** | **0.400236** | **91,931,392** | **0** | **0** | -- | -- | **43** |
+| `ARCH.K7680CL896X13` | 0.400236 | 91,931,392 | **0** | **0** | -- | -- | 43 |
 | `ARCH.V8CL896X13` | 0.402518 | 92,455,680 | **1** | **0** | summ | -- | 41 |
 | `ARCH.V7CL768` | 0.404252 | 92,854,016 | **1** | **0** | summ | -- | 41 |
 | `ARCH.V9CL896X09` | 0.407083 | 93,504,256 | **0** | **0** | -- | -- | 38 |
@@ -96,65 +99,113 @@ whole band**, so the ruling costs no re-grading in either direction.
 
 | reading | ratio | child | what holds |
 |---|---:|---|---|
-| **A — copy-back counts** | **0.3951221469** | `ARCH.V5CL768` | one lane: the source paragraph returned in full |
+| **A — copy-back counts** | **0.3859919152** | `ARCH.V3CL768` | one lane: the whole summarisation prompt returned, instruction line included |
 | **B — copy-back refused** | **0.4116484014** | `ARCH.V10CL896X09` | one lane: `uncertainty-insufficient-data`, which NAMES the four missing variables |
 
-**WAVE 43 MOVED COLUMN A AND DID NOT MOVE COLUMN B.** `ARCH.V5CL768` at
-0.3951221469x holds one case, and its held lane is another verbatim copy of the
-payload, so column B voids it exactly as it voids the ten above it. **The gap is
-now 0.0165262545 of stored ratio — 3,795,968 parameters — and the whole of it is
-one lane read two ways.** Nothing else in the fifty-four children differs between
-the columns. Column B's rung has not moved since wave 38.
+**WAVE 44 MOVED COLUMN A FOR THE FIFTH CONSECUTIVE WAVE AND DID NOT MOVE COLUMN
+B FOR THE SIXTH.** The gap is now **0.0256564862 of stored ratio — 5,893,120
+parameters — and the whole of it is one lane read two ways.** Column B's rung
+has not moved since wave 38.
 
-**WHAT COLUMN B SAYS, STATED PLAINLY, AND RE-COUNTED FROM THE WAVE-43 ARTIFACT.**
-Twenty-one children sit below 0.4116484014x. **Eleven of them hold at least one
-case under column A and column B voids every one**, all on
-`summarization-priorities`, across 0.3951221469x to 0.4088174946x:
-`V5CL768`, `V6CL768`, `V8CL896X13`, `V7CL768`, `V9CL896X13`, `RP9CL896X13`,
-`RR9CL896X13`, `RC9CL896X13`, `V9CL896X13G10`, `V9CL896X13G03`, `V8CL768`.
-Below 0.4116484014x the campaign has **no living child at all** on that reading.
+**THE LADDER IS NOT MONOTONE IN K, AND THE THREE WAVE-44 ROWS SHOW IT.** On the
+CL768 body: `ARCH.V5CL768` (K=5,120) holds one, `ARCH.V4CL768` (K=4,096) holds
+none, `ARCH.V3CL768` (K=3,072) holds one again. Eight consecutive rungs held
+1/15 through eight identical 1,024-row steps; the ninth step kills it and the
+tenth brings it back. Both of wave 44's registrations on that ladder were wrong,
+in opposite directions, on adjacent rungs.
 
-> **A COUNT THAT DOES NOT RECONCILE, FLAGGED RATHER THAN QUIETLY REPLACED.**
-> `NOTES-MX-AT` §10 and the paragraph this one replaces both said **seventeen**
-> children in this band go to zero. Wave 43's artifact measures **eleven** (ten
-> before this wave's own addition), and that agrees with the table immediately
-> above, which has never listed seventeen A≥1 rows in that band. The likeliest
-> reading is that wave 42's seventeen counted hand-read *responses* across its
-> whole band rather than *children* below the column-B floor. Both artifacts are
-> on disk — `wave42/deep-band-dual-assessment.json` and
-> `wave43/deep-band-dual-assessment.json` — and this table is generated from the
-> wave-43 one. A later wave that needs the number should take it from an
-> artifact and not from either prose.
+**AND WHAT COLUMN A'S FLOOR HOLDER ACTUALLY IS.** At K=3,072 `ARCH.V3CL768` has
+collapsed into an **echo**: eleven of sixteen lanes return the prompt itself and
+four of those are the prompt with no edit at all. Its held lane is the whole
+summarisation prompt — *instruction line included* — with one visible corruption
+in 484 characters, and it preserves the decision and the unresolved risk more
+cleanly than `ARCH.V5CL768`'s held lane did one wave earlier. Under reading A
+the campaign's deepest living child is a model that copies its input. That is
+not an argument for either column; it is the fact the ruling is about, and it is
+sharper now than any wave has been able to state it.
 
-**WHAT COLUMN B DOES NOT VOID, AND WHY THE ASK TABLE IS THE LOAD-BEARING PART.**
-Wave 40 sealed a copied SUMMARISATION lane held and a copied RETRIEVAL lane a
-miss, and those are consistent: the summarisation ask is to PRESERVE two facts,
-which a copy does, and the retrieval ask is to SELECT three, which a copy does
-not. So the clause can only reach a PRESERVE lane. The `retr` and `unc` lanes
-that survive column B are real selection — degraded, cap-riding, but naming the
-4:15 p.m. checkout, the 7:30 opening, and the missing time range, units, sample
-size and price change. `mx42_dualband.py` publishes an **anomaly** if column B
-ever voids a lane whose ask is not PRESERVE. **It fired zero times across 52
-children and 69 held lanes.**
+**WHAT COLUMN B SAYS, RE-COUNTED FROM THE WAVE-44 ARTIFACT.** Twenty-four
+children sit below 0.4116484014x. **Twelve of them hold at least one case under
+column A and column B voids every one**, all on `summarization-priorities`,
+across 0.3859919152x to 0.4088174946x. Below 0.4116484014x the campaign has **no
+living child at all** on that reading.
 
-**THE INSTRUMENT'S OWN DEFECT, PUBLISHED.** The pre-registered machine measure
-thresholds the LONGEST CONTIGUOUS common run, and every copy-back here carries
-the word-substitution signature, so each mutation breaks the run: it scored
-`ARCH.RP9CL896X13`'s held lane at **0.153** and called it content. The hand
-reading found it, and `payload_union_coverage` — the union of all common runs —
-reads **0.827 to 0.997** on all seventeen copies against **0.198 to 0.331** for a
-genuine two-sentence summary of the same paragraph. **The union measure decides
-nothing in wave 42**, because it was added after the results were seen; every
-`machine_classification` in the artifact is still the pre-registered measure's and
-the **hand reading** is what voids a lane. There are **22 machine/hand
-disagreements** and they are listed by digest in the artifact. The next wave
-should pre-register the union measure as primary.
+### 0.1 THE COUNT WAVE 43 FLAGGED IS RECONCILED, FROM ARTIFACTS, AND THREE PROSE NUMBERS ARE CORRECTED
 
-**HOW TO CHECK ANY ROW.** `wave42/deep-band-dual-assessment.json` carries, per
+Wave 43 flagged rather than replaced a discrepancy: `NOTES-MX-AT` §10 and the
+wave-42 scorecard header both said **seventeen children** in this band go to
+zero, and wave 43's artifact measured **eleven**. Wave 44 has resolved it by
+measuring every candidate reading against the committed artifacts.
+
+| the number | what wave 42's prose attached it to | what it actually counts, measured |
+|---:|---|---|
+| **17** | "seventeen children" below the column-B floor | the **distinct held `summarization-priorities` RESPONSES** in wave 42's band: exactly 17, all 17 hand-read COPY_BACK |
+| **10** | — | the **children** below the column-B floor holding ≥1 case in wave 42's band |
+| **11** | — | the same count in wave 43's band |
+| **12** | — | the same count in wave 44's band |
+
+So the 17 was never a child count. It is a response count, and it is exact.
+Three further prose numbers are corrected against the same artifacts, none of
+them load-bearing and all of them off by one:
+
+* `wave42/deep-band-dual-assessment.json`'s own `measure_defect_found_by_the_hand_pass`
+  string says *"all sixteen distinct held summarisation responses"*. Measured:
+  **seventeen**.
+* `NOTES-MX-AT` §11.3 says *"the longest-run measure gets 10 of 17 copies
+  right"*. Measured: **11 of 17**.
+* `DEEP_RECORD` §0's previous text said *"22 machine/hand disagreements"* for
+  wave 42 and wave 43's artifact carries **23**.
+
+The union measure's claim in the same sentence — *17 of 17* — is exact:
+every one of those seventeen distinct copies reads union coverage **0.826972 to
+0.997455**, and the threshold wave 44 pre-registered is 0.60.
+
+**Nothing above is a re-grade.** No sealed count, per-case verdict or ledger row
+is touched by this subsection; it corrects prose against artifacts that were
+already on disk, which is what wave 43 asked the next wave to do.
+
+### 0.2 THE COPY MEASURE IS PRE-REGISTERED NOW, AND IT DECIDED THIS WAVE'S OWN FLOOR LANE BEFORE ANYBODY READ IT
+
+`mx44_dualband.py`'s `payload_union_coverage` became the **primary** measure at
+commit `2fed6b56`, the wave-44 tree cut, before any wave-44 child existed. The
+threshold is 0.60, set from `wave42/deep-band-dual-assessment.json` (sha256
+`fe20e916…`, committed at `5af0b035`) and from nothing measured this wave: over
+the 34 distinct summarisation responses in that band the seventeen copies run
+0.826972–0.997455 and everything else sits at 0.483461 or below, so the
+separating interval is **(0.483461, 0.826972)** and any threshold inside it gives
+identical calls.
+
+**Prospectively, on `ARCH.V3CL768`'s brand-new held lane, the machine read union
+coverage 1.000000 and called COPY_BACK with no hand input.** The
+`column_b_machine_union_only` floor over all 57 children is **0.4116484014x** —
+the hand column's floor, reproduced by machine. The
+`column_b_machine_legacy_only` floor is **0.3951221469x**, which is what waves
+42 and 43 would have published had nobody read the dossiers.
+
+Every child sealed before wave 44 carries
+`instrument_reading_is_retrospective: true` in the artifact. That column
+**re-grades nothing**: sealed counts, per-case verdicts and the hand calls waves
+42 and 43 recorded all stand.
+
+**THE INSTRUMENT'S RESIDUAL ERROR HAS ONE MECHANISM AND IT IS MEASURED.** Eight
+held-lane calls still disagree with the hand, and every one is on a lane with
+**no `PAYLOAD_ANCHORS` entry**, so its payload is the whole prompt including the
+instruction text. Seven are `writing-concise-email` UNDER-reads (union 0.461140
+to 0.481865 against a hand COPY_BACK) and one is an
+`uncertainty-insufficient-data` OVER-read (0.693333 on `ARCH.V9CL896G03`, which
+the machine-only pass publishes as an anomaly — a copy-back on a SELECT lane,
+which wave 40's precedents say cannot happen). It is **not fixed this wave**:
+adding the anchor would move seven classifications after the measurement that
+revealed them.
+
+**HOW TO CHECK ANY ROW.** `wave44/deep-band-dual-assessment.json` carries, per
 child per lane: the sealed verdict, the response `sha256` prefix, the lane's ask
 class, the payload character count, the longest common run, both coverage
-fractions, the union coverage, the machine classification and the hand reading.
-`wave42/hand-reading-wave42.json` is the reviewer's 69 calls on their own.
+fractions, the union coverage, the primary classification, the demoted
+longest-run classification, the retrospective flag and the hand reading.
+`wave44/hand-reading-wave44.json` is the reviewer's 72 calls on their own, and
+`wave44/deep-band-dual-assessment-machine.json` is the same pass with no hand
+input at all.
 
 ---
 
