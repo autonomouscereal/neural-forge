@@ -1,0 +1,557 @@
+{
+ "schema": "neural-forge-matrix-wave43-tree-cut-v1",
+ "generated_at": "2026-08-29T07:29:53Z",
+ "source_tree": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\matrix-campaign-20260810\\run\\mx42",
+ "destination_tree": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\matrix-campaign-20260810\\run\\mx43",
+ "substitutions_applied": [
+  {
+   "from": "--campaign-wave 42",
+   "to": "--campaign-wave 43"
+  },
+  {
+   "from": "\"campaign_wave\": 42",
+   "to": "\"campaign_wave\": 43"
+  },
+  {
+   "from": "wave42",
+   "to": "wave43"
+  },
+  {
+   "from": "mx42",
+   "to": "mx43"
+  },
+  {
+   "from": "MX42",
+   "to": "MX43"
+  }
+ ],
+ "prose_left_alone": "`wave 42` / `Wave 42` / `WAVE 42` in English are NOT substituted, so a docstring recording what wave 42 measured still says wave 42 did",
+ "hand_edit_set": [
+  "mx42_build.py",
+  "mx42_retain.py",
+  "mx42_verify_seals.py",
+  "sealq.sh"
+ ],
+ "not_carried": [
+  "wave42-tree-cut-manifest.json"
+ ],
+ "authored_this_wave": [
+  "README.md",
+  "cut_wave43.py",
+  "mx43_plane.py",
+  "mx43_xchange.py",
+  "planeq.sh",
+  "xchangeq.sh"
+ ],
+ "behavioural_edits_this_wave": "TWO ADDITIONS AND NO EDIT.  `mx43_plane.py` / `planeq.sh` and `mx43_xchange.py` / `xchangeq.sh` are NEW files.  The plane module has a CENSUS mode that publishes the per-plane share of the score operator's energy for every (head_dim, stride, band-slide) set the RoPE ladder can express and GATES NOTHING, and a BUILD mode that folds head_dim to a band of whole RoPE planes with verbatim q/k rows and a verbatim value-channel subset.  The xchange module is a GO-GATE CENSUS ONLY -- it builds nothing, it measures the three preconditions the 2026-08-01 translation design names for the conv-to-attention direction, and its pre-registration states that a failure CLOSES the class.  Every other carried module keeps the bytes wave 42 shipped.  Wave 39's five vocabulary-gather lines are live code this wave -- the build list is TWO `mx43_vocab.py` gathers -- and wave 36's composed width x MLP path, wave 37's live-mask repair, wave 38's three multi-index excision lines, wave 40's five tie-builder lines, wave 41's six rowset lines and wave 42's six dual-band lines are carried and asserted but NOT run.",
+ "files": [
+  {
+   "source": "benchq.sh",
+   "target": "benchq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 1,
+    "MX42": 1
+   }
+  },
+  {
+   "source": "blendq.sh",
+   "target": "blendq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 3,
+    "MX42": 4
+   }
+  },
+  {
+   "source": "bodyblendq.sh",
+   "target": "bodyblendq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 3,
+    "MX42": 3
+   }
+  },
+  {
+   "source": "bodyq.sh",
+   "target": "bodyq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 4,
+    "MX42": 5
+   }
+  },
+  {
+   "source": "cut_wave42.py",
+   "target": "cut_wave43.py",
+   "action": "left alone",
+   "substitutions": {}
+  },
+  {
+   "source": "deploy.py",
+   "target": "deploy.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 2
+   }
+  },
+  {
+   "source": "dualbandq.sh",
+   "target": "dualbandq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 2,
+    "MX42": 1
+   }
+  },
+  {
+   "source": "extq.sh",
+   "target": "extq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 3,
+    "MX42": 2
+   }
+  },
+  {
+   "source": "gainq.sh",
+   "target": "gainq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 3,
+    "MX42": 5
+   }
+  },
+  {
+   "source": "mx42_allocator.py",
+   "target": "mx43_allocator.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "mx42_basereceipt.py",
+   "target": "mx43_basereceipt.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 3
+   }
+  },
+  {
+   "source": "mx42_benchtab.py",
+   "target": "mx43_benchtab.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "mx42_blend.py",
+   "target": "mx43_blend.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 5
+   }
+  },
+  {
+   "source": "mx42_blend_body.py",
+   "target": "mx43_blend_body.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 2,
+    "mx42": 5
+   }
+  },
+  {
+   "source": "mx42_build.py",
+   "target": "mx43_build.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_calibrate.py",
+   "target": "mx43_calibrate.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 4
+   }
+  },
+  {
+   "source": "mx42_campaign_table.py",
+   "target": "mx43_campaign_table.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "mx42_child_index.py",
+   "target": "mx43_child_index.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 3
+   }
+  },
+  {
+   "source": "mx42_condinventory.py",
+   "target": "mx43_condinventory.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_coordsearch.py",
+   "target": "mx43_coordsearch.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_dualband.py",
+   "target": "mx43_dualband.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_emission.py",
+   "target": "mx43_emission.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 2
+   }
+  },
+  {
+   "source": "mx42_emission_invariant.py",
+   "target": "mx43_emission_invariant.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_emitcoverage.py",
+   "target": "mx43_emitcoverage.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 3,
+    "mx42": 1,
+    "MX42": 2
+   }
+  },
+  {
+   "source": "mx42_extbank2.py",
+   "target": "mx43_extbank2.py",
+   "action": "renamed",
+   "substitutions": {
+    "\"campaign_wave\": 42": 1,
+    "mx42": 6
+   }
+  },
+  {
+   "source": "mx42_extreview.py",
+   "target": "mx43_extreview.py",
+   "action": "renamed",
+   "substitutions": {
+    "\"campaign_wave\": 42": 1
+   }
+  },
+  {
+   "source": "mx42_extrubric2.py",
+   "target": "mx43_extrubric2.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 3
+   }
+  },
+  {
+   "source": "mx42_extscore.py",
+   "target": "mx43_extscore.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "mx42_instrument.py",
+   "target": "mx43_instrument.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 7
+   }
+  },
+  {
+   "source": "mx42_logitsolve.py",
+   "target": "mx43_logitsolve.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 13
+   }
+  },
+  {
+   "source": "mx42_massive_probe.py",
+   "target": "mx43_massive_probe.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "mx42_merge_ledger.py",
+   "target": "mx43_merge_ledger.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "mx42_mforensics.py",
+   "target": "mx43_mforensics.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 13
+   }
+  },
+  {
+   "source": "mx42_pararubric.py",
+   "target": "mx43_pararubric.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 3
+   }
+  },
+  {
+   "source": "mx42_parent_identity.py",
+   "target": "mx43_parent_identity.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_penaltydecode.py",
+   "target": "mx43_penaltydecode.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_percase.py",
+   "target": "mx43_percase.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_read_dossier.py",
+   "target": "mx43_read_dossier.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_report_tables.py",
+   "target": "mx43_report_tables.py",
+   "action": "renamed",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_results_matrix.py",
+   "target": "mx43_results_matrix.py",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_retain.py",
+   "target": "mx43_retain.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_retok.py",
+   "target": "mx43_retok.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 7
+   }
+  },
+  {
+   "source": "mx42_retokcensus.py",
+   "target": "mx43_retokcensus.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "mx42_termgain.py",
+   "target": "mx43_termgain.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 14
+   }
+  },
+  {
+   "source": "mx42_verify_seals.py",
+   "target": "mx43_verify_seals.py",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "mx42_vocab.py",
+   "target": "mx43_vocab.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 2,
+    "mx42": 8
+   }
+  },
+  {
+   "source": "mx42_vocabfloor.py",
+   "target": "mx43_vocabfloor.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 5
+   }
+  },
+  {
+   "source": "mx42_vocabrowset.py",
+   "target": "mx43_vocabrowset.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 2,
+    "mx42": 19
+   }
+  },
+  {
+   "source": "mx42_vocabtie.py",
+   "target": "mx43_vocabtie.py",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 7
+   }
+  },
+  {
+   "source": "package.sh",
+   "target": "package.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 5,
+    "mx42": 4,
+    "MX42": 3
+   }
+  },
+  {
+   "source": "README.md",
+   "target": "README.md",
+   "action": "left alone",
+   "substitutions": {}
+  },
+  {
+   "source": "reviewonly.sh",
+   "target": "reviewonly.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 1,
+    "MX42": 3
+   }
+  },
+  {
+   "source": "reviewq.sh",
+   "target": "reviewq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 1,
+    "MX42": 2
+   }
+  },
+  {
+   "source": "rowsetq.sh",
+   "target": "rowsetq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 4,
+    "MX42": 6
+   }
+  },
+  {
+   "source": "run-bench.sh",
+   "target": "run-bench.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1
+   }
+  },
+  {
+   "source": "seal_and_review.sh",
+   "target": "seal_and_review.sh",
+   "action": "renamed",
+   "substitutions": {
+    "--campaign-wave 42": 1,
+    "wave42": 1,
+    "mx42": 2
+   }
+  },
+  {
+   "source": "seal_verdict.sh",
+   "target": "seal_verdict.sh",
+   "action": "renamed",
+   "substitutions": {
+    "wave42": 1,
+    "mx42": 1
+   }
+  },
+  {
+   "source": "sealq.sh",
+   "target": "sealq.sh",
+   "action": "VERBATIM (hand-edit set)",
+   "substitutions": {}
+  },
+  {
+   "source": "tieq.sh",
+   "target": "tieq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 3,
+    "MX42": 6
+   }
+  },
+  {
+   "source": "vocabq.sh",
+   "target": "vocabq.sh",
+   "action": "renamed",
+   "substitutions": {
+    "mx42": 4,
+    "MX42": 4
+   }
+  },
+  {
+   "source": "wave42-tree-cut-manifest.json",
+   "target": "",
+   "action": "NOT CARRIED",
+   "substitutions": {}
+  }
+ ]
+}

@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""The wave-29 children as one machine-readable index, read from sealed receipts.
+
+Everything here comes off a sealed ARCH receipt or a sealed ADDENDUM 6 verdict;
+nothing is recomputed and nothing is judged.  Wave 21's `mx21_child_index.py`
+with the wave root moved; the docstring's wave number is fixed here, having said
+"wave-19" through two waves that were not wave 19.
+
+**WAVE 41'S ONE EDIT TO A CARRIED MODULE, AND IT IS WAVE 40'S OWN
+RECOMMENDATION.**  `NOTES-MX-AR` §11.6: this generator wrote its index itself
+AND printed to stdout, and took no `--out`, so the obvious invocation --
+redirecting stdout into the file the generator also writes -- produced a file
+that would not parse.  Wave 35 shipped that corruption; wave 40 reproduced it and
+caught it only because `NOTES-MX-AO` §9's parse-what-you-write rule made it parse
+the artifact in the same command.
+
+Two lines fix it and neither removes a path.  `--out` names the destination
+explicitly, so a caller never has to redirect; and the re-parse moves INSIDE the
+generator, so the artifact is checked by the code that wrote it rather than by a
+caller who happens to remember the rule.  The stdout summary every earlier wave
+read is kept exactly as it was.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+
+ROOT = "/mnt/ai_data/neural-forge-matrix/wave43"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out")
+    args = ap.parse_args()
+    out = []
+    for directory in sorted(glob.glob(f"{ROOT}/cells/ARCH.*")):
+        run = json.load(open(f"{directory}/cell-receipt.json", encoding="utf-8"))
+        review_path = f"{directory}/cell-receipt-behavior-reviewed.json"
+        review = (
+            json.load(open(review_path, encoding="utf-8"))
+            if os.path.exists(review_path)
+            else None
+        )
+        arch = run["architecture"]
+        entry = {
+            "cell_id": run["cell_id"],
+            "cell_instance_id": run["cell_instance_id"],
+            "receipt_sha": run["receipt_sha"],
+            "child_parameters": arch["storage"]["child_parameter_count"],
+            "net_ratio": arch["storage"]["net_ratio"],
+            "config_diff": [d["field"] for d in arch["config_diff"]],
+            "export_class": arch["export"]["loaded_class"],
+            "trust_remote_code": arch["export"]["trust_remote_code"],
+            "transformers_version": arch["export"].get("transformers_version"),
+            "child_tensors_sha256": arch["child_tensors_sha256"],
+            "axes": [
+                {
+                    "axis": a["axis"],
+                    "sites": a["sites"],
+                    "parameters_removed": a["parameters_removed"],
+                }
+                for a in arch["axes"]
+            ],
+            "terminal_relL2_vs_parent": run["composed"]["terminal_heldout_relL2"],
+            "terminal_cos_vs_parent": arch["terminal_vs_parent"]["mean_cosine"],
+            "free_run_token_match_diagnostic": run["behavior"]["free_run"][
+                "token_match_vs_control"
+            ],
+            "worst_site_cos": run["boundary"]["write_heldout_cos"],
+            "status": run["outcome"]["status"],
+            "first_divergent_metric": run["outcome"]["first_divergent_metric"],
+        }
+        if review:
+            a6 = review["addendum6"]
+            a9 = review["addendum9"]
+            entry.update(
+                {
+                    "verdict": a6["verdict"],
+                    "useful": a6["useful"],
+                    "partial": a6["partial"],
+                    "observed_miss": a6["observed_miss"],
+                    "useful_or_partial": a6["useful_or_partial"],
+                    "parent_useful_or_partial": a6["parent_useful_or_partial"],
+                    "safety": a6["safety"],
+                    "degeneracy_reading": a9["degeneracy_reading"],
+                    "degenerate_lane_count": a9["degenerate_lane_count"],
+                    "per_lane_verdict": a9["per_lane_verdict"],
+                    "per_child_verdict": a9["per_child_verdict"],
+                    "safety_lane_chargeable": bool(a9.get("safety_lane")),
+                    "verdict_receipt_sha": review["receipt_sha"],
+                    "dossier_sha256": a6["frozen_review_dossier_sha256"],
+                }
+            )
+        out.append(entry)
+    body = {
+        "schema": "neural-forge-matrix-wave43-child-index-v1",
+        "parent_parameters": 229693184,
+        "children": out,
+    }
+    path = args.out or f"{ROOT}/wave43-child-index.json"
+    open(path, "w", encoding="utf-8").write(json.dumps(body, indent=1))
+    # NOTES-MX-AO section 9, moved INSIDE the writer.  The rule caught this
+    # file's own corruption twice from the caller; the third time it should not
+    # need a caller who remembers it.
+    reread = json.loads(open(path, encoding="utf-8").read())
+    if reread["schema"] != body["schema"] or len(reread["children"]) != len(out):
+        raise SystemExit(f"the index did not survive the write to {path}")
+    for entry in out:
+        print(
+            f"{entry['cell_id']:16s} {entry['net_ratio']:.6f} "
+            f"{entry.get('useful_or_partial', '-')}/15 {entry.get('verdict', '-'):6s} "
+            f"lanes {entry.get('degenerate_lane_count', '-')} "
+            f"{entry.get('degeneracy_reading', '-')}"
+        )
+    print("->", path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
