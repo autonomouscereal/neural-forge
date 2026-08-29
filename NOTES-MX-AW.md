@@ -386,8 +386,8 @@ extension surface decoded through it. **The promise is now a measurement.**
 | `16f443b0` | cut wave 45's tree and PAY THE ANCHOR DEBT AT THE CUT |
 | `3ca5b713` | run the census and the anchor-delta pass, and pre-register the two cells |
 | `b93a2c26` | the two seals |
-| *(this)* | the measurement, the standing-state document, the tables and the dual-column refresh |
-| *(next)* | retention applied, and this file's own estate section closed |
+| `1ade6ade` | the measurement, the standing-state document, the tables and the dual-column refresh |
+| *(this)* | retention applied, and this file's own estate section closed |
 
 **Deployments**, each verified file-by-file against its commit's blob digests:
 
@@ -424,9 +424,38 @@ restarted**, for wave 34's stated reason. The four P40s and the Quadro RTX 8000
 were never touched. All three builds — two cells plus the `V10CL896X09` rebuild —
 were **CPU-only** vocabulary gathers.
 
+**Retention**: `package.sh` ran BEFORE `--plan`, as the rule requires, and
+`--plan` was read before `--apply`.
+
+**KEEP = `MX45-V10CL896X09`, and it is a DEVIATION from the drop rule, argued
+rather than hidden.** By the letter of the rule it should go: it is 25 seconds of
+CPU off a retained source, and *this wave proved that*. It is kept on **wave 40's
+frontier-holder rule, applied to column B's holder for the first time**. That
+rule — *a floor whose child has been deleted is a floor that can only be cited
+and not checked* — has retained column A's holder for five consecutive waves.
+Column B's holder has had **no checkpoint since wave 38**, and wave 38 was right
+to drop it at the time: the dual column did not exist until wave 42, and the
+child was then only a joint holder of a rung another retained checkpoint also
+held. It is now the sole cell behind 0.4116484014x — the number the pending
+copy-back ruling may make *the* floor of the whole campaign — and wave 45
+measured the concrete cost of its absence: the ordered surface could not touch it
+until it was rebuilt. **A ruling that lands on column B should not have to wait
+on a build.**
+
+**DROP = `MX45-V2CL768` and `MX45-V1CL768`**, both one CPU pass off wave 40's
+retained `MX40-CL768`, and in both cases the finding is a reading of committed
+dossier text rather than anything a reader can do with the bytes. **Applied**:
+189,733,004 bytes kept, 348,709,456 deleted, manifest re-parsed OK.
+
 **Disk**: `/mnt/ai_data` 4.5T, **1.7T available**. **The Codex lane was not
 touched** — every commit staged by explicit path, and the 324 uncommitted paths it
 carries are untouched.
+
+**Final state**: both 3090s back to their idle H3-container residents (288 and
+279 MiB) at 0% utilisation, the four P40s at 5 MiB and the Quadro RTX 8000 at
+330 MiB, **no stray `mx45_*` process on the box**, ledger 1,056 rows at
+`d2027831e229d763…` on the share **and in the repository mirror**, one retained
+child on the wave root.
 
 ---
 
