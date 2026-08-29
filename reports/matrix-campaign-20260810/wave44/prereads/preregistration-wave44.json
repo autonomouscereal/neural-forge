@@ -1,0 +1,208 @@
+{
+ "schema": "neural-forge-matrix-wave44-preregistration-v1",
+ "wave": 44,
+ "branch": "codex/lrc-blank-compression",
+ "registered_against_slate": "docs/ROUND3_SLATE_2026-08-28.md and NOTES-MX-AU section 13 items 3 and 5.  Item 3 ordered the union copy measure registered; item 5 named ARCH.V4CL768 (K=4,096, 89,708,288, 0.3905570311x) as the next rung and the only cheap cell that can move the sub-0.40x floor again.",
+ "parent_parameters": 229693184,
+ "ledger_before_this_wave": {
+  "rows": 1046,
+  "sha256": "264884995e0c2b8748fd5da66700e698c2e29cf5df305d8126469bb76db63d18"
+ },
+ "reading_standard": "ADDENDUM 6, frozen 15 + parent lane, parent reference 5 Useful / 7 Partial / 3 miss = 12/15; the parent lane is re-read blind from this wave's FIRST dossier before any child lane is opened, SEVENTEENTH consecutive calibration.  For every child under 0.60x the summarisation lane is read FIRST and written down before any other lane is opened.",
+ "what_this_wave_is": "THE INSTRUMENT WAVE, AND THE END OF THE COLUMN-A LADDER.  Its first deliverable is a MEASURE, not a child: mx44_dualband.py's payload_union_coverage became the primary copy-back measure at commit 2fed6b56, which is the tree cut, before any wave-44 child existed.  Its second is to walk the CL768 vocabulary ladder to its own end -- K=4,096 and K=3,072 -- and to spend ONE review on a matched-K cross-check on the block-13 body that the cliff says is dead.",
+ "ordering_of_this_document": "THE INSTRUMENT IS NOT REGISTERED BY THIS FILE AND SAYS SO.  COPY_BACK_UNION_COVERAGE and the three predictions P1, P2 and P3 were committed at 2fed6b56 in mx44_dualband.py and run/mx44/README.md section 2.1, BEFORE the retrospective pass ran; this document CITES that registration and RECORDS ITS OUTCOME, and the audit trail is 'git show 2fed6b56:reports/matrix-campaign-20260810/run/mx44/README.md'.  The vocabulary census GATES NOTHING and needed no registration to run.  What needs registering is the THREE SEALED COUNTS, and those are registered here, before any of the three children exists.",
+ "instrument_registration_outcome": {
+  "registered_at_commit": "2fed6b56",
+  "registered_in": [
+   "reports/matrix-campaign-20260810/run/mx44/mx44_dualband.py (COPY_BACK_UNION_COVERAGE = 0.60)",
+   "reports/matrix-campaign-20260810/run/mx44/README.md section 2.1 (P1, P2, P3)"
+  ],
+  "threshold": 0.6,
+  "threshold_provenance": "wave42/deep-band-dual-assessment.json, sha256 fe20e9164023fc9a639aa8e1c05617b28d7f4890fc27bc9bea65646d8780602c, committed at 5af0b035.  Over the 34 DISTINCT summarisation responses in that band the seventeen hand-read copies run 0.826972 to 0.997455 and every other distinct response sits at 0.483461 or below.",
+  "P1": {
+   "quantity": "floor_under_copy_back_refused_machine_union_only, no hand input",
+   "registered": "0.4116484014x, ARCH.V10CL896X09",
+   "measured": "0.4116484013735471, ARCH.V10CL896X09, 1 held case",
+   "verdict": "HIT",
+   "what_it_means": "the union measure ALONE, with nobody in the loop, reproduces the column-B floor that until this wave only a human reading could produce.  Wave 43's machine-only pass put that floor at 0.3951221469x and was wrong."
+  },
+  "P2": {
+   "quantity": "floor_under_copy_back_refused_machine_legacy_only, no hand input",
+   "registered": "0.3951221469x, ARCH.V5CL768",
+   "measured": "0.3951221469418962, ARCH.V5CL768, 1 held case",
+   "verdict": "HIT",
+   "what_it_means": "the demoted path is unchanged.  This reproduces wave43/deep-band-dual-assessment-machine.json exactly, which is the regression check that the promotion did not also silently edit the measure it replaced."
+  },
+  "P3": {
+   "quantity": "machine_hand_disagreements on the hand-merged pass",
+   "registered": "3 or fewer, down from wave 43's 23",
+   "measured": 15,
+   "verdict": "MISS",
+   "why_the_registration_was_wrong": "THE THRESHOLD WAS SET ON A METRIC THAT COUNTS A CLASS OF ROW NO MEASURE CHANGE CAN MOVE.  Seven of the fifteen are uncertainty-insufficient-data lanes where the machine says CAP_RIDE and the hand says CONTENT.  Neither label is COPY_BACK, so neither voids anything; the disagreement exists because the machine's label set has five values and the reviewer was only ever asked 'copy or not'.  Those same seven rows are in wave 43's 23.  Registering 3 against a metric with a 7-row floor was a registration defect and it is recorded as one.",
+   "the_number_that_should_have_been_registered": {
+    "quantity": "VOID-CHANGING disagreements -- rows where exactly one of the machine and the hand says COPY_BACK, which are the only rows that can move column B",
+    "legacy_measure_wave43": 16,
+    "union_measure_wave44": 8,
+    "decomposition_legacy": "9 summarisation + 7 writing-concise-email",
+    "decomposition_union": "7 writing-concise-email + 1 uncertainty-insufficient-data",
+    "reading": "the union measure HALVES the void-changing error rate and clears the summarisation lane completely, 9 to 0.  Every summarisation copy in the band is now found by machine."
+   }
+  },
+  "the_named_failure_mode_occurred_once": {
+   "registered_warning": "run/mx44/README.md section 2.1: 'uncertainty-insufficient-data has no payload anchor, so its payload is the whole prompt, and if it or context-retrieval clears 0.60 the machine voids a lane the hand read as CONTENT and the floor collapses.'",
+   "it_happened": "ARCH.V9CL896G03's uncertainty-insufficient-data lane reads union coverage 0.693333 and the machine calls it COPY_BACK against a hand reading of CONTENT.  The machine-only pass published it as an ANOMALY, because it is a copy-back on a SELECT lane, which wave 40's precedents say cannot happen.  Wave 43's artifact fired zero anomalies.",
+   "it_did_not_reach_the_floor": "ARCH.V9CL896G03 is at 0.4373492x, 0.0257 of ratio ABOVE the column-B floor, so P1 survives it.  P1 is HIT, and it is hit with one known false positive above the floor rather than with none."
+  },
+  "the_residual_error_has_ONE_mechanism_and_it_is_measured": {
+   "finding": "ALL EIGHT void-changing errors are on lanes with NO PAYLOAD_ANCHORS ENTRY.  PAYLOAD_ANCHORS covers summarization-priorities, context-retrieval and debugging-off-by-one; a lane with no entry is measured against the concatenation of its user turns, which is the whole prompt INCLUDING the instruction text.",
+   "why_that_produces_both_error_directions": "writing-concise-email UNDER-reads: seven held lanes the hand called copies land at union 0.461140 to 0.481865, because the copied material is the ask and the ask is only about half of the prompt.  uncertainty-insufficient-data OVER-reads: a response that echoes the instruction text scores against instruction text that is in the denominator, which is how 0.693333 happens on a lane that is not a copy of anything.",
+   "NOT_FIXED_THIS_WAVE_AND_WHY": "adding a payload anchor for writing-concise-email would move seven classifications AFTER the measurement that revealed them, which is exactly what wave 42 refused to do and exactly what this wave's whole argument depends on not doing.  The mechanism is measured, published and left for a wave that can register the anchor first.",
+   "what_the_next_wave_should_register": "a PAYLOAD_ANCHORS entry for writing-concise-email and for uncertainty-insufficient-data, registered before the pass that uses them, with the prediction that void-changing disagreements fall from 8 to 0 or 1.  It costs one dict entry each and no GPU."
+  },
+  "retrospective_column": {
+   "artifact_machine_only": "wave44/prereads/deep-band-dual-assessment-machine-wave44.json",
+   "artifact_hand_merged": "wave44/prereads/deep-band-dual-assessment-handmerged-wave44.json",
+   "children_rescored": 54,
+   "waves_covered": [
+    19,
+    23,
+    24,
+    28,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43
+   ],
+   "held_lanes_where_the_two_measures_disagree": 10,
+   "distinct_responses_moved_by_the_promotion": 8,
+   "nothing_is_re_graded": "every one of those 54 children carries instrument_reading_is_retrospective: true.  Sealed counts, per-case verdicts and the hand calls waves 42 and 43 recorded are all untouched and remain authoritative.  Column A is still refused if it disagrees with the ledger.  The estate's column B is unchanged at 0.4116484014x."
+  }
+ },
+ "vocabulary_census": {
+  "status": "RAN FIRST, PUBLISHES, GATES NOTHING",
+  "artifact": "wave44/prereads/vocab-census-cl768-tail-wave44.json",
+  "cross_wave_reproduction": {
+   "claim": "K=5,120 is re-censused here although wave 43 already published it, because a census whose only new rows are the ones it is about to justify is a census with no control in it.",
+   "wave43_value": 0.9853013667936366,
+   "wave44_value": 0.985301,
+   "admitted_by_ranking_both_waves": 3027,
+   "verdict": "reproduces to every published digit"
+  },
+  "the_structural_floor_does_not_bind_anywhere_on_this_ladder": {
+   "mandatory_rows_at_every_rung": 765,
+   "tokens_skipped_because_their_closure_did_not_fit": {
+    "K5120": 0,
+    "K4096": 0,
+    "K3072": 0
+   },
+   "registered_consequence": "THE MERGE-CLOSURE GATE -- the half of the census gate that has NO FLAG and cannot be released -- does not fire at K=3,072, which is four times the structural floor.  So whatever ends this ladder, it is not the closure.  Wave 43 said the axis has room down to about K=1,024 before closure is even a question and this census confirms it two rungs further down."
+  },
+  "what_does_move": {
+   "post_closure_occurrence_coverage": {
+    "K5120": 0.985301,
+    "K4096": 0.971463,
+    "K3072": 0.947327
+   },
+   "post_closure_distinct_coverage": {
+    "K5120": 0.700428,
+    "K4096": 0.553342,
+    "K3072": 0.401043
+   },
+   "captured_batch_occurrence_coverage": {
+    "K5120": 0.998264,
+    "K4096": 0.994475,
+    "K3072": 0.986109
+   },
+   "discretionary_tokens_admitted": {
+    "K5120": 3027,
+    "K4096": 2273,
+    "K3072": 1533
+   },
+   "occurrences_lost_on_the_sealed_corpus": {
+    "K5120": 1640,
+    "K4096": 3184,
+    "K3072": 5877
+   },
+   "registered_reading": "K=3,072 is the FIRST rung on this axis below 0.95 occurrence coverage and the first below 0.50 distinct coverage: three fifths of the distinct tokens the census corpus observes are gone, and the child must spell them out of the 256 mandatory ByteLevel rows instead.  The evidence the BODY was solved on degrades far more slowly -- captured-batch occurrence coverage is still 0.986109 -- so this is a decode-surface loss and not a solve-evidence loss, and the lane it should reach first is the lane that reproduces a specific English paragraph."
+  },
+  "BELOW_FLOOR_is_required_on_all_three_rungs": "post-closure coverage is below 1.000000 at every rung, so the COVERAGE half of wave 25's census gate fires and BELOW_FLOOR=1 releases it.  cut_wave44.py --audit asserts the guard that flag disarms is present.  This is the opposite of wave 43's K=7,680 rung, where coverage was exactly 1.000000 and the guard was exercised armed."
+ },
+ "cells": [
+  {
+   "cell_id": "ARCH.V4CL768",
+   "tag": "V4CL768",
+   "module": "mx44_vocab.py --mode build --k 4096 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768 (wave 40's RETAINED body)",
+   "stored_parameters": 89708288,
+   "stored_ratio": 0.3905570311,
+   "step_from_the_sealed_floor": "-1,024 rows, -1,048,576 parameters, -0.0045651159 of ratio",
+   "two_accounts_that_disagree": "THE FLAT-LADDER ACCOUNT predicts ONE.  The CL768 ladder is EIGHT rungs flat -- the body at 0.6644639834x and V12, V10, V9, V8, V7, V6, V5, all 1/15 across 0.2693 of ratio -- and K has never cost a case on this body in eight consecutive 1,024-row steps.  The held lane every time is summarisation, and what holds it is a COPY of a six-sentence English paragraph; the 256 ByteLevel rows are mandatory at every K, so the child can always spell that paragraph, and the captured-batch occurrence coverage the body was solved against is still 0.994475 here.  THE COVERAGE ACCOUNT predicts ZERO: distinct coverage crosses BELOW 0.60 for the first time on this axis (0.553342 against 0.700428 one rung up), 3,184 sealed-corpus occurrences are lost against 1,640, and a ladder that has never failed has to fail somewhere.",
+   "registered_sealed_count": 1,
+   "registered_on": "the flat-ladder account.  Eight rungs of precedent at exactly this step size, against a coverage number that has been degrading monotonically for eight rungs without ever costing a case.",
+   "registered_canonical_count_under_the_copy_back_clause": 0,
+   "what_it_buys": "if it reads 1 the sub-0.40x floor moves for the FIFTH consecutive wave, to 0.3905570311x, and the ladder is nine rungs flat.  If it reads 0 the campaign has finally located the end of its only flat ladder."
+  },
+  {
+   "cell_id": "ARCH.V3CL768",
+   "tag": "V3CL768",
+   "module": "mx44_vocab.py --mode build --k 3072 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768 (wave 40's RETAINED body)",
+   "stored_parameters": 88659712,
+   "stored_ratio": 0.3859919152,
+   "step_from_the_sealed_floor": "-2,048 rows, -2,097,152 parameters, -0.0091302317 of ratio",
+   "two_accounts_that_disagree": "THE FLAT-LADDER ACCOUNT predicts ONE for the ninth time and it has been right eight times.  THE COVERAGE ACCOUNT predicts ZERO and this is the rung where its numbers finally break: 0.947327 occurrence coverage is the first sub-0.95 rung this axis has ever built, 0.401043 distinct coverage means THREE FIFTHS of the observed vocabulary is gone, and 1,533 discretionary tokens are admitted against the 3,027 that the current floor holder keeps -- half the discretionary vocabulary of the rung that holds the floor.  No wave has ever taken two 1,024-row steps below a living rung on this body at once.",
+   "registered_sealed_count": 0,
+   "registered_on": "THE COVERAGE ACCOUNT, and this is the wave betting AGAINST its own flat ladder for the first time.  The bet is registered rather than hedged: V4CL768 is registered at ONE and V3CL768 at ZERO, so this document names a LOCATION for the end of the ladder and not merely a direction.  If V3 reads 1 the ladder is TEN rungs flat and the axis has room below K=3,072; if V4 reads 0 the end is one rung higher than registered.  Both are falsifiable this wave.",
+   "registered_canonical_count_under_the_copy_back_clause": 0
+  },
+  {
+   "cell_id": "ARCH.V5CL896X13",
+   "tag": "V5CL896X13",
+   "module": "mx44_vocab.py --mode build --k 5120 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13 (wave 35's RETAINED body)",
+   "stored_parameters": 89309952,
+   "stored_ratio": 0.388822822,
+   "two_accounts_that_disagree": "THE CLIFF ACCOUNT predicts ZERO and there is no serious account against it.  The block-13 body reads 1/15 at K=8,192 (ARCH.V8CL896X13) and 0/15 at every rung below it: K=7,680, K=7,168 and K=6,144, three consecutive dead rungs.  This cell sits a fourth rung below the last of them.  The honest prior is zero and the wave says so before it spends the review.",
+   "registered_sealed_count": 0,
+   "registered_on": "the cliff account",
+   "why_spend_a_review_on_a_cell_registered_at_zero": "IT IS THE CAMPAIGN'S FIRST MATCHED-K PAIR ACROSS TWO BODIES.  ARCH.V5CL768 and ARCH.V5CL896X13 are both K=5,120 gathers taken with the same census, the same ranking and the same closure, so their KEPT SETS ARE THE SAME SET and only the body differs.  One holds a case and the other is registered not to.  A confirmed zero makes the death below the block-13 cliff a property of the BODY and not of the vocabulary fold, which is a claim the campaign has asserted for three waves and never controlled.  And it is not a pure control: at 0.3888228220x it sits BELOW ARCH.V5CL768, so a survival would move the column-A floor.",
+   "registered_canonical_count_under_the_copy_back_clause": 0
+  }
+ ],
+ "secondary_registered_predictions": [
+  {
+   "quantity": "child_parameters",
+   "prediction": "89,708,288 / 88,659,712 / 89,309,952 exactly, asserted by the builder before it writes",
+   "why": "an arithmetic prediction the build either lands on or fails; it is the control on every vocabulary rung"
+  },
+  {
+   "quantity": "tokenizer identity across the matched-K pair",
+   "prediction": "MX44-V5CL896X13's tokenizer.json is BYTE-IDENTICAL to wave 43's retained MX43-V5CL768's.  choose_kept depends on the parent vocabulary, the census counts and K, and on nothing about the source model, so two K=5,120 gathers on different bodies must keep the same rows in the same order.",
+   "why": "this is what makes 'matched K' an exact claim rather than a description.  If the two tokenizers differ, the pair is not controlled and the body-versus-vocabulary conclusion cannot be drawn."
+  },
+  {
+   "quantity": "tokens_skipped_because_their_closure_did_not_fit",
+   "prediction": "0 in all three build receipts, matching the census",
+   "why": "the census is only a preread if the build reproduces it"
+  },
+  {
+   "quantity": "the union measure's PROSPECTIVE verdict",
+   "prediction": "if any of the three children holds a case, its held lane is summarization-priorities and the union measure classifies it COPY_BACK at union coverage >= 0.60 WITHOUT a hand reading, so column B stays at 0.4116484014x whatever column A does.",
+   "why": "this is the first prospective use of the instrument this wave registered.  Every held lane below 0.4116484014x in the campaign's history has been a summarisation copy; if a wave-44 child holds something else, or holds a summarisation lane the union measure scores below 0.60, the instrument is wrong on new data and this wave says so."
+  }
+ ],
+ "what_this_wave_will_not_do": [
+  "no PLANE child: wave 43 re-sealed the frequency-band axis with the child that opened it",
+  "no XCHANGE child: closed by its own pre-registered gate at wave 43",
+  "no ALIAS, K4 or K3(c): still blocked behind Cyril's PROBE storage-claim ruling",
+  "no ROWSET Arms A or B: still blocked on a corpus that has not appeared",
+  "no NORM-ESTATE Arm M or S: still needs a solver nobody has authored",
+  "no payload anchor for writing-concise-email: the defect is measured and published this wave and the repair belongs to a wave that can register it first"
+ ]
+}
