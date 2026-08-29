@@ -1,0 +1,149 @@
+{
+ "schema": "neural-forge-matrix-wave45-preregistration-v1",
+ "wave": 45,
+ "branch": "codex/lrc-blank-compression",
+ "registered_against_slate": "NOTES-MX-AV section 12 items 1, 2 and 4 and section 10 item 6.  Item 1 ordered the writing-concise-email PAYLOAD_ANCHORS entry registered BEFORE the pass that uses it; item 2 named ARCH.V2CL768 (K=2,048, 87,611,136, 0.3814268x) as the next rung and said the honest registration has to state which of 'the echo survives' and 'the echo breaks' it is betting on, because the flat-ladder prior is dead; item 4 and section 10 item 6 named the 30-prompt extension surface as the cheapest unclaimed item on the board.",
+ "parent_parameters": 229693184,
+ "ledger_before_this_wave": {
+  "rows": 1052,
+  "sha256": "9e4ff05ea3a5b3d082fead866eb7fbaa0ea6760205295025928f97134ae35861"
+ },
+ "reading_standard": "ADDENDUM 6, frozen 15 + parent lane, parent reference 5 Useful / 7 Partial / 3 miss = 12/15; the parent lane is re-read blind from this wave's FIRST dossier before any child lane is opened, EIGHTEENTH consecutive calibration.  For every child under 0.60x the summarisation lane is read FIRST and written down before any other lane is opened.  Wave 44's adjudication is BINDING and unamended: a response that returns the prompt itself is charged as a degeneracy and is still capable of HOLDING a PRESERVE lane.",
+ "what_this_wave_is": "THE ECHO-DEPTH CLOSE-OUT AND THE TWO NAMED DEBTS.  Its first deliverable was paid at the tree cut, before this document existed: the writing-concise-email payload anchor, with its outcome registered in run/mx45/README.md section 2 before the pass ran.  Its second is to walk the CL768 vocabulary ladder to K=2,048 and K=1,024, which is the closest this campaign has ever built to its own 765-row structural floor, and to ask ONE question -- WHERE DOES EVEN THE COPY DIE?  Its third is the 30-prompt extension surface, declined twice as unordered and ordered now.  Its fourth is a standing-state document.",
+ "ordering_of_this_document": "THE ANCHOR IS NOT REGISTERED BY THIS FILE AND SAYS SO.  PAYLOAD_ANCHORS' fourth entry, the response-side column, and the four predictions P1 through P4 were committed at 16f443b0, which is the tree cut, BEFORE the anchor-delta pass ran; this document CITES that registration and RECORDS ITS OUTCOME, and the audit trail is 'git show 16f443b0:reports/matrix-campaign-20260810/run/mx45/README.md'.  The vocabulary census GATES NOTHING and needed no registration to run.  What needs registering is the TWO SEALED COUNTS, and those are registered here, before either child exists.",
+ "anchor_registration_outcome": {
+  "registered_at_commit": "16f443b0",
+  "registered_in": [
+   "reports/matrix-campaign-20260810/run/mx45/mx45_dualband.py (PAYLOAD_ANCHORS gains writing-concise-email; PAYLOAD_ANCHOR_COUNT = 4; RESPONSE_SIDE_DECIDES_NOTHING = True)",
+   "reports/matrix-campaign-20260810/run/mx45/README.md sections 2, 2.1, 2.2, 3 and 3.1"
+  ],
+  "anchor": ["under 90 words", null],
+  "cut_rule": "the rule the three existing anchors already follow -- strip the leading TASK DIRECTIVE, keep the material the lane supplies.  Applied to a prompt whose directive is 'Draft a polite email under 90 words'.",
+  "artifact": "wave45/anchor-delta-wave45.json, sha256 86ec0540b17490e640518340b5de6c9a18e23ca4a7497fafcaa202b44a8f9a32",
+  "P1": {
+   "quantity": "writing-concise-email void-changing machine-hand disagreements, 57-child band, hand-merged pass",
+   "registered": "stays at 7 -- the ordered anchor does NOT close the rows it was ordered to close",
+   "measured": 7,
+   "verdict": "HIT"
+  },
+  "P2": {
+   "quantity": "total void-changing disagreements",
+   "registered": "stays at 8, NOT the 0-or-1 NOTES-MX-AV section 12.1 predicted",
+   "measured": 8,
+   "verdict": "HIT"
+  },
+  "P3": {
+   "quantity": "both floors under the anchor change",
+   "registered": "unmoved.  Column A 0.3859919152x ARCH.V3CL768, column B 0.4116484014x ARCH.V10CL896X09",
+   "measured": "A 0.3859919152x ARCH.V3CL768, B 0.4116484014x ARCH.V10CL896X09; both machine-only columns also unmoved at 0.4116484014x and 0.3951221469x",
+   "verdict": "HIT"
+  },
+  "P4": {
+   "quantity": "response_union_coverage on the two distinct writing-concise-email responses",
+   "registered": "0.683824 and 0.635714, over 0.60, with no anchor at all",
+   "measured": "0.683824 and 0.635714",
+   "verdict": "HIT"
+  },
+  "the_anchor_is_live_and_that_is_measured_separately": "all 45 lanes in the band that carry a writing-concise-email response move from payload_chars 193 to 157, so the entry is a resolving lookup and not a silent failure.  A registration that predicts no change has to prove the change was applied.",
+  "the_one_move_the_anchor_makes": "EXACTLY ONE machine classification moves in 912 lanes: ARCH.V7CL896X13's writing-concise-email lane, COPY_BACK -> CONTENT at 0.616580 -> 0.528662.  That lane is sealed Observed miss, was never held, and cannot be voided; the child reads 0 on all four columns before and after.  Its response-side number is 0.410345, which agrees with the anchored call, so the single move is toward the other measure and not away from it.",
+  "what_this_means_for_the_named_debt": "THE DEBT IS PAID AND THE DIAGNOSIS BEHIND IT WAS WRONG.  Wave 44's mechanism -- 'the copied material is the ask and the ask is only about half of the prompt' -- is right about the arithmetic and wrong about the repair.  No cut of this prompt turns half of it into 0.60 of itself; the sweep in README section 2.2 shows four defensible cuts agreeing with each other and disagreeing with the hand, and the fifth, first-sentence-only at 0.821429, works by deleting the exact sentence the model failed to copy and is refused in writing.  The residual is a DENOMINATOR defect on PRODUCE lanes.  It is measured, published as a non-deciding column, and NOT promoted this wave.",
+  "what_the_next_wave_should_register": "the response-side column as PRIMARY for PRODUCE lanes only, with the payload-side column kept primary for PRESERVE and SELECT, registered before the pass that uses it, with the prediction that void-changing disagreements fall from 8 to 1.  It costs no GPU.  This wave publishes the first of the two waves of evidence the campaign's own promotion protocol asks for."
+ },
+ "vocabulary_census": {
+  "status": "RAN FIRST, PUBLISHES, GATES NOTHING",
+  "artifact": "wave45/prereads/vocab-census-cl768-tail-wave45.json",
+  "cross_wave_reproduction": {
+   "claim": "K=3,072 is re-censused here although wave 44 already published it, because a census whose only new rows are the ones it is about to justify is a census with no control in it.  Wave 44 made the same argument at K=5,120.",
+   "wave44_values": {"post_closure_occurrence_coverage": 0.947327, "post_closure_distinct_coverage": 0.401043, "admitted_by_ranking": 1533, "merges_retained": 2307, "occurrences_lost": 5877, "skipped_for_closure": 0},
+   "wave45_values": {"post_closure_occurrence_coverage": 0.947327, "post_closure_distinct_coverage": 0.401043, "admitted_by_ranking": 1533, "merges_retained": 2307, "occurrences_lost": 5877, "skipped_for_closure": 0},
+   "verdict": "reproduces to every published digit, including merges_retained, which wave 44 did not compare across waves"
+  },
+  "THE_STRUCTURAL_GATE_FIRES_FOR_THE_FIRST_TIME_ON_THIS_AXIS": {
+   "mandatory_rows_at_every_rung": 765,
+   "the_refusal_line_did_NOT_fire": "K=1,024 exceeds the 765-row mandatory set, so `if mandatory_size > k:` -- the refusal that would have made this wave's second cell a refusal instead of a build -- is reachable and did not fire.  Both rungs are buildable and the gate PERMITS.  This is measured from the census's kept_rows and mandatory_rows and not assumed.",
+   "tokens_skipped_because_their_closure_did_not_fit": {"K3072": 0, "K2048": 1, "K1024": 0},
+   "registered_reading": "THE MERGE-CLOSURE GATE -- the half of the census gate that has NO FLAG and cannot be released -- FIRES AT K=2,048, at one token, and does NOT fire at K=1,024.  Wave 44 registered zero at all three of its rungs and wrote that 'whatever ends this ladder, it is not the closure'.  At K=2,048 the closure is, for one row.  AND IT IS NON-MONOTONE IN K, which no account in this campaign predicts: at K=1,024 the discretionary ranking admits only 138 tokens against 259 free rows, so the closure of every admitted token fits with room to spare, while at K=2,048 the ranking reaches deeper into the merge tree and one candidate's closure does not.  The gate measures RANKING DEPTH against FREE ROWS, not K, and this pair of rungs is the first evidence of that in the estate."
+  },
+  "what_does_move": {
+   "post_closure_occurrence_coverage": {"K3072": 0.947327, "K2048": 0.895980, "K1024": 0.677894},
+   "post_closure_distinct_coverage": {"K3072": 0.401043, "K2048": 0.242227, "K1024": 0.067213},
+   "captured_batch_occurrence_coverage": {"K3072": 0.986109, "K2048": 0.958011, "K1024": 0.760537},
+   "discretionary_tokens_admitted": {"K3072": 1533, "K2048": 827, "K1024": 138},
+   "merges_retained": {"K3072": 2307, "K2048": 1283, "K1024": 259},
+   "occurrences_lost_on_the_sealed_corpus": {"K3072": 5877, "K2048": 11606, "K1024": 35939},
+   "registered_reading": "K=2,048 is the first rung on this axis below 0.90 occurrence coverage and the first below 0.25 distinct coverage.  K=1,024 is the first rung where the SOLVE EVIDENCE degrades with it: captured-batch occurrence coverage has held above 0.95 at every rung this campaign has ever built and falls to 0.760537 here, which is the number wave 44 used to argue that the CL768 losses were a decode-surface loss and not a solve-evidence loss.  At K=1,024 that argument stops being available.  MERGES RETAINED IS THE NUMBER TO WATCH: 2,307 -> 1,283 -> 259, a 44.4 per cent and then an 79.8 per cent cut, and merges are what let a child spell a specific English paragraph in few enough tokens to finish it inside the cap."
+  },
+  "BELOW_FLOOR_is_required_on_both_rungs": "post-closure coverage is below 1.000000 at both rungs, so the COVERAGE half of wave 25's census gate fires and BELOW_FLOOR=1 releases it.  cut_wave45.py --audit asserts the guard that flag disarms is present, and it also asserts the structural refusal `if mandatory_size > k:` this wave built close enough to reach."
+ },
+ "cells": [
+  {
+   "cell_id": "ARCH.V2CL768",
+   "tag": "V2CL768",
+   "module": "mx45_vocab.py --mode build --k 2048 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768 (wave 40's RETAINED body)",
+   "stored_parameters": 87611136,
+   "stored_ratio": 0.3814267993,
+   "step_from_the_sealed_floor": "-1,024 rows, -1,048,576 parameters, -0.0045651159 of ratio below ARCH.V3CL768",
+   "the_question_this_cell_asks": "WHERE DOES EVEN THE COPY DIE?  ARCH.V3CL768 holds one case and what holds it is an ECHO: eleven of sixteen lanes return the prompt itself and the held lane is the whole summarisation prompt INCLUDING the instruction line, 484 characters with one visible corruption.  Column A is therefore not measuring intelligence at this depth; it is measuring ECHO PERSISTENCE, and this cell asks where the echo stops.",
+   "two_accounts_that_disagree": "THE MANDATORY-ROWS ACCOUNT predicts ONE.  The 256 ByteLevel alphabet rows are mandatory at every K, so the child can always SPELL any English text in principle, and the ladder has read 1 at three of its last four rungs (K=5,120: 1, K=4,096: 0, K=3,072: 1).  THE ECHO-BUDGET ACCOUNT predicts ZERO, and it is a claim about TOKENS and not about coverage: an echo is bounded by the generation cap in tokens, merges retained fall 2,307 -> 1,283 (-44.4 per cent), so the same 484-character paragraph must be spelled from shorter pieces and costs more tokens to reach the end of.  ARCH.V3CL768 already had ALL SIXTEEN lanes charged and ONE riding the cap.",
+   "registered_sealed_count": 0,
+   "registered_on": "THE ECHO-BUDGET ACCOUNT, AND THE MECHANISM OF DEATH IS REGISTERED WITH IT SO THE PREDICTION IS NOT ONLY A NUMBER: the summarisation lane is registered to START as an echo and TRUNCATE -- to ride the cap without reaching the decision (Supplier B) and the unresolved risk (the factory expansion slipping by one week).  If it reads 0 by INCOHERENCE instead -- an echo that does not start, or debris -- the count is right and the mechanism is wrong, and this document says which is which before the dossier is opened.",
+   "registered_canonical_count_under_the_copy_back_clause": 0
+  },
+  {
+   "cell_id": "ARCH.V1CL768",
+   "tag": "V1CL768",
+   "module": "mx45_vocab.py --mode build --k 1024 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768 (wave 40's RETAINED body)",
+   "stored_parameters": 86562560,
+   "stored_ratio": 0.3768616835,
+   "step_from_the_sealed_floor": "-2,048 rows, -2,097,152 parameters, -0.0091302317 of ratio below ARCH.V3CL768",
+   "the_gate_permits_and_that_is_measured": "K=1,024 against a 765-row mandatory set leaves 259 discretionary rows.  The census reports kept_rows 1,024 and mandatory_rows 765, so the structural refusal is reachable and does not fire.  THE LAST RUNG ON THIS AXIS THAT THE MANDATORY SET PERMITS AT ALL IS K=768; below that the refusal is the only possible result.",
+   "two_accounts_that_disagree": "THE MANDATORY-ROWS ACCOUNT still predicts ONE for the same reason and this is the rung where its own numbers break: 138 discretionary tokens admitted against ARCH.V3CL768's 1,533, 259 merges against 2,307, and post-closure distinct coverage of 0.067213, meaning ninety-three per cent of the vocabulary the census corpus observes is gone.  THE ECHO-BUDGET ACCOUNT predicts ZERO and adds a second mechanism it has not had before: captured-batch occurrence coverage falls to 0.760537, the first rung in this campaign's history where the evidence the BODY was solved against is itself substantially uncovered, so this is no longer only a decode-surface loss.",
+   "registered_sealed_count": 0,
+   "registered_on": "the echo-budget account, with the coverage account agreeing for the first time on this axis.  BOTH RUNGS ARE REGISTERED AT ZERO, which means this wave is registering that THE ECHO IS ALREADY DEAD ONE RUNG BELOW WHERE IT LAST HELD.  If either reads 1 the ladder is longer than any account here allows and the campaign's deepest living child moves again; if both read 0 the echo's depth is bracketed between 0.3859919152x and 0.3814267993x and column A stops moving.",
+   "registered_canonical_count_under_the_copy_back_clause": 0
+  }
+ ],
+ "secondary_registered_predictions": [
+  {
+   "quantity": "child_parameters",
+   "prediction": "87,611,136 and 86,562,560 exactly, asserted by the builder before it writes",
+   "why": "an arithmetic prediction the build either lands on or fails; it is the control on every vocabulary rung"
+  },
+  {
+   "quantity": "tokens_skipped_because_their_closure_did_not_fit, in the BUILD receipts",
+   "prediction": "1 at K=2,048 and 0 at K=1,024, reproducing the census exactly",
+   "why": "the census is only a preread if the build reproduces it, and this is the first wave whose census reports a NON-ZERO value on this axis.  A build that reports 0 at K=2,048 means the census and the builder disagree about the closure, which would be a defect in the one gate that has no flag."
+  },
+  {
+   "quantity": "the union measure's PROSPECTIVE verdict",
+   "prediction": "if either child holds a case, its held lane is summarization-priorities and the union measure classifies it COPY_BACK at union coverage >= 0.60 WITHOUT a hand reading, so column B stays at 0.4116484014x whatever column A does",
+   "why": "second prospective use of the instrument wave 44 registered.  Every held lane below 0.4116484014x in the campaign's history has been a summarisation copy."
+  },
+  {
+   "quantity": "THE RETENTION PREMISE, TESTED BY DIGEST FOR THE FIRST TIME",
+   "prediction": "MX45-V10CL896X09, rebuilt at K=10,240 off wave 37's RETAINED MX37-CL896X09 by one CPU pass, reproduces wave 38's committed child_tensors_sha256 32ed4000ba7107809ff6a2860de23ede3793bfdbb7b05957cb16d364a52f4c26 EXACTLY, and its child_parameters is 94,552,832 at net_stored_ratio 0.4116484013735471",
+   "why": "the extension surface is ordered on the five frontier children and the column-B FLOOR HOLDER'S CHECKPOINT IS NOT ON DISK -- wave 38 dropped MX38-V10CL896X09 on the ground that it was 'one 40-second CPU vocabulary pass off wave 37's RETAINED MX37-CL896X09'.  Every DROP reason in sixteen waves of retention manifests makes that promise and NO WAVE HAS EVER CASHED ONE.  Rebuilding it to run the ordered surface cashes it, against a digest committed eight waves ago, and the answer is checkable rather than asserted."
+  },
+  {
+   "quantity": "extension-surface rider concordance",
+   "prediction": "the 30-prompt v2 surface, run on the five frontier children, ORDERS them differently from the sealed fifteen.  Specifically: the sealed fifteen read ARCH.V3CL768 (1/15) at or above ARCH.V6CL768 (1/15) and ARCH.V5CL768 (1/15) -- a three-way tie across 0.0137 of stored ratio -- and the extension surface separates them.  ARCH.V12CL896G03 at 4/15 is registered to score HIGHEST of the five on the extension surface too, which is the one place the two instruments are registered to AGREE.",
+   "why": "NOTES-MX-AU section 13 item 2 and NOTES-MX-AV section 12.4: the 15-case instrument is exhausted at this depth and a wave that cannot tell a real +1 from an instrument tick cannot spend GPU rationally.  A surface that reproduces the tie tells us nothing; a surface that breaks it is worth its seven minutes."
+  },
+  {
+   "quantity": "extension-surface REPRODUCTION control",
+   "prediction": "ARCH.V12CL896G03 was already run on the v2 surface by wave 34 (wave34/extension/extension2-V12CL896G03.json).  Re-running it under an eleven-wave-later deployment on the same bank, the same rubric and the same sealed runner reproduces wave 34's machine score EXACTLY.",
+   "why": "this is the only free control the ordered surface has, and it is a decode-path reproduction test across eleven waves that nothing else in this campaign performs.  If it does not reproduce, the extension surface's sixty committed observations from waves 29-34 are not comparable to anything measured now, and that is a bigger finding than any concordance number."
+  }
+ ],
+ "what_this_wave_will_not_do": [
+  "no PLANE child: wave 43 re-sealed the frequency-band axis with the child that opened it",
+  "no XCHANGE child: closed by its own pre-registered gate at wave 43",
+  "no ALIAS, K4 or K3(c): still blocked behind Cyril's PROBE storage-claim ruling",
+  "no ROWSET Arms A or B: still blocked on a corpus that has not appeared",
+  "no NORM-ESTATE Arm M or S: still needs a solver nobody has authored",
+  "no promotion of the response-side copy measure: it is published as a non-deciding column this wave, which is the first of the two waves of published evidence the campaign's own promotion protocol asks for",
+  "no anchor for uncertainty-insufficient-data: the eighth void-changing disagreement is a SELECT lane the machine over-reads at 0.693333, and it is the SAME LANE the column-B floor holder is held on.  An anchor there could move column B, and a wave that has already registered one anchor's outcome should not add a second whose effect it has not priced.  It is left with its price on the record."
+ ]
+}
