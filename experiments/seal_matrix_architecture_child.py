@@ -295,6 +295,28 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave39-blend-build-receipt-v1",
     "neural-forge-matrix-wave39-logit-metric-writer-v1",
     "neural-forge-matrix-wave39-body-blend-build-receipt-v1",
+    # WAVE 40 APPENDS FIVE, and the fifth is the first genuinely new schema this
+    # list has taken since wave 25's vocabulary gather.
+    # `neural-forge-matrix-wave40-tied-vocabulary-child-v1` is written by
+    # `run/mx40/mx40_vocabtie.py`, the row-TYING arm that repairs C1 -- the
+    # estate's worst census kill, closed at wave 14 on a nearest-neighbour cosine
+    # of 0.2977 that compared tying against VERBATIM when the mechanism which
+    # shipped and set the campaign's floor is DELETION.  A tie child is a
+    # standard-shape child in every respect this sealer checks: stock
+    # `Lfm2ForCausalLM`, stock config, a `vocab_size` the loader counts, a
+    # verbatim head asserted with `torch.equal`, and the deletion twin's own
+    # tokenizer byte for byte.  It carries its own schema because its receipt
+    # carries fields no gather receipt has -- the assignment cosine, the cluster
+    # sizes, and the measured refusal of the many-to-one form.
+    #
+    # **THESE FIVE ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-40 TREE,
+    # BEFORE ANY GPU RAN.**  Waves 36 through 39 each did the same and none paid
+    # a deployment for this list; wave 40 is the fifth.
+    "neural-forge-matrix-wave40-standard-shape-child-v1",
+    "neural-forge-matrix-wave40-blend-build-receipt-v1",
+    "neural-forge-matrix-wave40-logit-metric-writer-v1",
+    "neural-forge-matrix-wave40-body-blend-build-receipt-v1",
+    "neural-forge-matrix-wave40-tied-vocabulary-child-v1",
 )
 
 
