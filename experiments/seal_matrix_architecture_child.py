@@ -347,6 +347,31 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave41-body-blend-build-receipt-v1",
     "neural-forge-matrix-wave41-tied-vocabulary-child-v1",
     "neural-forge-matrix-wave41-rowset-vocabulary-child-v1",
+    # WAVE 42 APPENDS SIX, and NONE of them is new.  Wave 42's build list is
+    # three `run/mx42/mx42_vocab.py` gathers -- the schema this list has carried
+    # since wave 25 -- and its one authored module, `run/mx42/mx42_dualband.py`,
+    # WRITES NO CHILD AND NO BUILD RECEIPT.  It reads sealed per-case verdicts
+    # and frozen dossiers and publishes an assessment artifact, so it has
+    # nothing to be accepted here and deliberately asks for nothing.  A module
+    # that produced no checkpoint and still appeared in a build-receipt accept
+    # list would be a claim that it built something.
+    #
+    # The other five are waves 40's and 41's schemas RENAMED and carried, for
+    # the reason wave 33 gave and waves 34 through 41 kept: a list completed
+    # only where it was needed is a list the next wave has to reason about.
+    # `run/mx42/mx42_vocabtie.py`, `run/mx42/mx42_vocabrowset.py`,
+    # `run/mx42/mx42_blend*.py` and `run/mx42/mx42_logitsolve.py` are all in the
+    # tree and none is run this wave, and `run/mx42/README.md` section 3 says so.
+    #
+    # **THESE SIX ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-42 TREE,
+    # BEFORE ANYTHING RAN.**  Waves 36 through 41 each did the same and none
+    # paid a deployment for this list; wave 42 is the seventh.
+    "neural-forge-matrix-wave42-standard-shape-child-v1",
+    "neural-forge-matrix-wave42-blend-build-receipt-v1",
+    "neural-forge-matrix-wave42-logit-metric-writer-v1",
+    "neural-forge-matrix-wave42-body-blend-build-receipt-v1",
+    "neural-forge-matrix-wave42-tied-vocabulary-child-v1",
+    "neural-forge-matrix-wave42-rowset-vocabulary-child-v1",
 )
 
 

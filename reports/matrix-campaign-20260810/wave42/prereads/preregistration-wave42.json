@@ -1,0 +1,115 @@
+{
+ "schema": "neural-forge-matrix-wave42-preregistration-v1",
+ "wave": 42,
+ "branch": "codex/lrc-blank-compression",
+ "registered_against_slate": "docs/ROUND3_SLATE_2026-08-28.md (sha256 1b7562a96d30af919aed70316a340d03041ec3eee1d6241e820c5428271015aa, committed at the wave-41 cut and unedited since)",
+ "parent_parameters": 229693184,
+ "reading_standard": "ADDENDUM 6, frozen 15 + parent lane, parent reference 5 Useful / 7 Partial / 3 miss = 12/15; the parent lane is re-read blind from this wave's FIRST dossier before any child is opened, fifteenth consecutive calibration",
+
+ "one_thing_this_wave_checked_before_it_fixed_its_build_list": {
+  "the_claim_it_inherited": "wave 42 was ordered to build 'the two cheapest open cells: V6CL768 and K=9,216 on CL896X13 -- the flatness-vs-block-equivalence adjudicator, wave 39's cheapest open cell, still unbuilt'.",
+  "what_the_ledger_says": "K=9,216 ON CL896X13 IS BUILT. It is ARCH.V9CL896X13, campaign wave 40, 93,504,256 parameters, 0.4070832855x, and it is in the ledger with a sealed verdict of 1/15. NOTES-MX-AR section 3.1 records it exactly as the adjudicator it was ordered as: 'Two accounts disagreed by exactly one case and flatness won. Block-equivalence predicted zero; wave 39's flat-at-one predicted one. Registered at one, reads one.' It was registered in its own file on the share at 02:34:51.775Z and its build receipt is stamped 02:35:19.827Z.",
+  "consequence": "THE CELL IS DISCHARGED AND CANNOT BE BUILT AGAIN AS AN OPEN CELL. Rebuilding it would spend a frozen review re-reading a sealed result -- the exact thing wave 41's rowset divergence pre-read exists to prevent. This is a SUBSTITUTION REGISTERED WITH ITS CAUSE BEFORE ANYTHING WAS BUILT, in the wave-41 procedure: the cell is replaced by the two block-13 rungs BELOW 0.40x that are genuinely unbuilt, ARCH.V7CL896X13 and ARCH.V6CL896X13. The cheapest open cell in the estate is ARCH.V6CL768 and it is built first, exactly as ordered.",
+  "checkable_from": "reports/matrix-campaign-20260810/ledger.jsonl, cell_id ARCH.V9CL896X13, campaign_wave 40; and /mnt/ai_data/neural-forge-matrix/wave40/cells/ARCH.V9CL896X13/cell-receipt.json"
+ },
+
+ "what_this_wave_builds": {
+  "count": 3,
+  "gpu_bodies": 0,
+  "solves": 0,
+  "captures": 0,
+  "note": "three mx42_vocab.py zero-solve gathers and nothing else. Every rung is a post-process on one sealed child's own bytes: one CPU pass, no capture, no forward call, no basis. BELOW_FLOOR=1 is passed on all three and the guard it disarms -- the COVERAGE half of wave 25's census gate -- is asserted present in cut_wave42.py --audit. The merge-closure assertion is NOT releasable and is not affected."
+ },
+
+ "cells": [
+  {
+   "cell_id": "ARCH.V6CL768",
+   "tag": "V6CL768",
+   "k": 6144,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768 (RETAINED)",
+   "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave40/cells/ARCH.CL768/cell-receipt.json",
+   "stored_parameters": 91805440,
+   "stored_ratio": 0.3996872628,
+   "why_this_cell": "NOTES-MX-AS section 14.3 names it: the cheapest open floor cell in the estate, one CPU pass, and the FIRST CHILD THIS CAMPAIGN HAS EVER BUILT BELOW 0.40x. Its gate was met at wave 41 (V7CL768 reads 1) and budget, not evidence, stopped it; wave 41 recorded that as a deviation rather than as a gate.",
+   "two_accounts_that_disagree": "FLATNESS predicts 1: the CL768 ladder is flat at one over six rungs -- the body at 0.6644639834x and V12/V10/V9/V8/V7 at 0.4271/0.4179/0.4134/0.4088/0.4043 -- and nothing on it has ever read anything but one. THE CENSUS FLOOR predicts 0: 6,144 rows is 765 mandatory rows plus about 5,379 discretionary, the deepest vocabulary any child has carried, and the X09 family died between K=10,240 and K=9,728.",
+   "registered_sealed_count": 1,
+   "registered_on": "flatness. Six rungs is the longest flat ladder in the campaign and it has already survived one rung that block-equivalence predicted dead.",
+   "registered_canonical_count_under_copy_back_counts": 1,
+   "registered_canonical_count_under_copy_back_refused": 0,
+   "registered_held_lane": "summarization-priorities, and NOTHING ELSE. Every child below 0.42x in this campaign holds at most that one lane.",
+   "registered_held_lane_is_a_copy_back": true,
+   "registered_held_lane_digest_relationship": "BYTE-IDENTICAL to ARCH.V7CL768's held lane, sha256 prefix b5c9c35edfad354b. Basis: wave 41 measured that dropping 1,024 rows on this body moved five of sixteen lanes and NOT the held one (V8CL768 shares eleven of sixteen with V9CL768 including the held lane). This is falsifiable and it is the sharper of the two predictions on this child."
+  },
+  {
+   "cell_id": "ARCH.V7CL896X13",
+   "tag": "V7CL896X13",
+   "k": 7168,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13 (RETAINED)",
+   "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave35/cells/ARCH.CL896X13/cell-receipt.json",
+   "stored_parameters": 91407104,
+   "stored_ratio": 0.3979530538,
+   "why_this_cell": "the block-13 lineage is where the floor has moved for two consecutive waves and NOTES-MX-AS section 14.4 says to excise block 13 and stop building X09 rungs. This is the next rung down from the current sealed floor holder ARCH.V8CL896X13 (0.4025181696x), and it is the FIRST BLOCK-13 CHILD BELOW 0.40x.",
+   "two_accounts_that_disagree": "FLATNESS predicts 1: the X13 ladder is flat at one over six rungs -- the body at 0.6581646585x and V14/V12/V10/V9/V8 at 0.4299/0.4208/0.4116/0.4071/0.4025. THE CENSUS FLOOR predicts 0 for the same reason it does on V6CL768.",
+   "registered_sealed_count": 1,
+   "registered_on": "flatness, which has now won this argument twice on this body.",
+   "registered_canonical_count_under_copy_back_counts": 1,
+   "registered_canonical_count_under_copy_back_refused": 0,
+   "registered_held_lane": "summarization-priorities and nothing else.",
+   "registered_held_lane_is_a_copy_back": true,
+   "registered_held_lane_digest_relationship": "BYTE-IDENTICAL to ARCH.V8CL896X13's and therefore to ARCH.V9CL896X13's, sha256 prefix 111e342d9cb5438c. Basis: that digest has survived three consecutive 1,024-row drops on this body unchanged. If it changes here, the estate gains its first NEW held-lane witness on the block-13 ladder since wave 39, and that is a bigger result than the rung."
+  },
+  {
+   "cell_id": "ARCH.V6CL896X13",
+   "tag": "V6CL896X13",
+   "k": 6144,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13 (RETAINED)",
+   "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave35/cells/ARCH.CL896X13/cell-receipt.json",
+   "stored_parameters": 90358528,
+   "stored_ratio": 0.3933879379,
+   "why_this_cell": "the deepest cell in the campaign that is reachable for one CPU pass. 0.3933879379x is BELOW ARCH.V12CL896X09X13 (0.3905124499x, sealed 0) only by 0.0029, and below ARCH.V12CL768X09 (0.3985236932x, sealed 0) -- so this rung enters, from the ALIVE block-13 ladder, a ratio band in which every child ever built is dead.",
+   "gate": "CONDITIONAL: built only if ARCH.V7CL896X13 completes its build. It is NOT conditional on V7CL896X13's REVIEW -- gating a build on a review it has not had is how a wave spends a review to decide whether to spend a review. If V7CL896X13 reads zero, this child is still built and still read, because two rungs bracket a cliff and one rung does not locate anything.",
+   "two_accounts_that_disagree": "FLATNESS predicts 1. THE DEAD-BAND account predicts 0: at 0.3934x this child sits inside the band where ARCH.V12CL768X09 (0.3985x), ARCH.V12CL896X09X13 (0.3905x) and ARCH.V10CL768X09 (0.3894x) all read zero. Those are all THREE-AXIS children and this one is two-axis, which is exactly the distinction wave 41's V7CL768 showed matters at 0.404-0.407.",
+   "registered_sealed_count": 0,
+   "registered_on": "THE DEAD-BAND ACCOUNT, AND THIS IS THE ONE CELL WHERE THIS WAVE REGISTERS AGAINST FLATNESS. Flatness has won twice, but every rung it won on was above 0.40x and this one is 0.0091 below the deepest child that has ever held anything. Registering at one here would make the prediction unfalsifiable-by-construction: a ladder that is flat by assumption never ends. If it reads one, flatness beats the dead band a third time and the campaign's floor moves 0.0091 in one wave.",
+   "registered_canonical_count_under_copy_back_counts": 0,
+   "registered_canonical_count_under_copy_back_refused": 0,
+   "registered_held_lane": "none. If it holds one it will be summarization-priorities by copy, like every other child at this depth.",
+   "registered_held_lane_is_a_copy_back": null
+  }
+ ],
+
+ "the_dual_column_deep_band_assessment": {
+  "what_it_is": "wave42/deep-band-dual-assessment.json, written by run/mx42/mx42_dualband.py, which is this wave's one authored module. Every graded ARCH child at or below 0.47x is read TWICE -- once under wave 40's practice, in which a response that preserves the lane's asked-for facts holds the case whether it summarised them or copied them, and once under the canonical clause as written, in which a lane that returns the prompt's own payload is not credited.",
+  "what_it_is_not": "IT IS NOT A RE-GRADE. Column A is the sealed per-case verdict read off the share, and the module REFUSES to write its artifact if its own count of that file disagrees with the ledger row's sealed behavior_useful_or_partial. Column B is column A minus the held lanes that are copy-backs. No sealed count is edited, no sealed receipt is touched, and no ruling is pre-empted.",
+  "why_now": "NOTES-MX-AS section 4.1 and section 12 put two rulings to Cyril and named the copy-back one as worth more than any cell on the slate, because it decides whether three waves of canonical floor movement are real. This wave's job is to make the ruling cost nothing to apply, in either direction.",
+  "registered_before_it_ran": {
+   "children_in_band_expected": 49,
+   "column_a_floor": "0.3996872628x or 0.3979530538x, whichever of this wave's two registered-at-one children is deeper and reads one -- otherwise 0.4025181696x, ARCH.V8CL896X13, unchanged from wave 41.",
+   "column_b_floor": "0.4116484014x, and the child is ARCH.V10CL896X09 or ARCH.V10CL896X13. THE REGISTERED CLAIM IS THAT COLUMN B READS ZERO FOR EVERY CHILD STRICTLY BELOW 0.4116484014x -- that is, that the deepest surviving NON-COPY case in the estate is at 0.4116x and the entire 0.3894-0.4094 band is copy-backs. Basis: wave 41's canonical re-read found every held case in that band on the summarisation lane and every one of those lanes a copy, and the two children at 0.4116484014x are the deepest whose sealed notes describe a retrieval or uncertainty hold -- lanes whose ask is to SELECT, which a copy cannot satisfy.",
+   "expected_anomaly_count": 0,
+   "what_an_anomaly_would_mean": "the module publishes an anomaly when a held lane is a copy-back on a lane whose ask is NOT preserve. Wave 40's two sealed precedents say that cannot happen -- a copied retrieval sealed as a MISS. A nonzero anomaly count would mean the estate has credited a copy on a SELECT or PRODUCE lane somewhere in the deep band, which would be a defect in the sealed record and not in the clause.",
+   "expected_machine_hand_disagreements": "0 on the held lanes. The threshold is 0.60 payload coverage and the two named precedents score 0.883 (the copied summary, one word mutated) and 0.081 (a genuine summary of the same paragraph); a held lane landing between 0.4 and 0.7 would be a lane the threshold cannot decide and the hand reading would have to."
+  }
+ },
+
+ "what_this_wave_does_not_do_and_why": [
+  "PLANE (slate item #4) IS NOT AUTHORED. Its Stage-1 q/k plane slice with the RMSNorm-denominator ridge and its W_o prior-anchored ridge are a NEW SOLVER, not a driver change. NOTES-MX-AS section 13 item 6 named that as the honest cost of wave 41 and gave authoring time as the reason; the reason has not changed and it is registered here BEFORE the wave rather than reported after it. No plane-energy census was run, so the HD48 retention prediction remains unregistered and the axis is neither opened nor re-sealed.",
+  "XCHANGE (slate item #3) IS NOT AUTHORED, for the same reason and with the same status: not started, no census, nothing claimed either way.",
+  "ROWSET Arms A and B remain blocked on corpus (NOTES-MX-AS section 1.2). No corpus has appeared since.",
+  "ALIAS remains blocked at construction in three constructions (NOTES-MX-AS section 1.1) and sits behind the PROBE storage-claim ruling with K4 and K3(c).",
+  "NORM-ESTATE Arms M and S still need a new solver and are not built. The D-arm grid is not extended: three rungs on one body gave 1/1/0 with the objective improving monotonically and NOTES-MX-AS section 14.6 says a fourth will not say more.",
+  "NO CHILD IS REBUILT TO RE-READ A SEALED RESULT. The one cell this wave was ordered to build that turns out to be sealed is substituted rather than rebuilt, with its cause above."
+ ],
+
+ "estate_discipline_registered": [
+  "explicit-path staging; never push, never rebase",
+  "cut audit run BEFORE anything built: indented pins, ^seal <TAG> count zero at cut time, and WAVE 42'S OWN ADDITION -- an inherited CALIBRATION RESULT is now pinned at zero at cut time too, after this cut found wave 39's calibration paragraph and its named dossier carried verbatim through wave 40's cut AND wave 41's",
+  "parent calibration read blind from this wave's FIRST dossier before any child is opened; runner identity 865f006e3813712ec202cb23, protocol e5e3776885976b1b, prompt pack 0ee6bf14cef5",
+  "one deployment cut at THIS commit builds and seals every child in the wave",
+  "sealq.sh runs ONCE",
+  "PACKAGE BEFORE RETENTION; retention dry-run first",
+  "ledger backed up on the share with sha and cmp before the merge; ONE-pass merge; byte-prefix verified; commit and mirror copy-back",
+  "canonical re-read per child, published as its own artifact",
+  "the Codex lane is not touched"
+ ]
+}
