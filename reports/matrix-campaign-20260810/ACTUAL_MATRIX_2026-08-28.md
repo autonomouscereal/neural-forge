@@ -33,7 +33,7 @@ Two rules earn their keep and are worth naming, because they cut in opposite dir
 
 ## Coverage
 
-- **222 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight, wave 36's six, wave 37's six and wave 38's six, each re-read in the same pass as its own seal)
+- **224 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight, wave 36's six, wave 37's six, wave 38's six and wave 39's two, each re-read in the same pass as its own seal)
 - **188 whole-model children hand re-read** from their verbatim `READ-*.txt` dossiers
   (2,835 scored lanes). Every child that ever appeared on a frontier ladder, the campaign
   scorecard or the wave-33 robustness table is in that set.
@@ -371,6 +371,8 @@ missing-EOS and empty-after-content. All 846 are struck from the intelligence qu
 
 | child | wave | net ratio | stored | sealed | **intel** | artifact | content | Δ | character |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `ARCH.V10CL896X13` | 39 | **0.411648** | 94,552,832 | 1 | **1/15** | 11 | 3 | 0 | wave 39's floor tie: the best summarisation below 0.44x -- all three suppliers, the decision AND the risk, clean English -- on a decode sharing zero of sixteen lanes with the two children already holding this ratio. |
+| `ARCH.V14CL896X13` | 39 | **0.429909** | 98,747,136 | 1 | **2/15** | 10 | 4 | +1 | half its X09 twin's cases at an identical parameter count. The first X13 rung ever to hold retrieval -- 4:15 p.m. between a shovel and a gatalight. The +1 is the email lane, sealed against the child and taken here. |
 | `ARCH.V12CL896X13` | 35 | **0.420779** | 96,649,984 | 1 | **2/15** | 11 | 2 | +1 | wave 35's floor child: a vendor email naming Friday and the tracking number, below the V8CL896 death. |
 | `ARCH.V12CL896X13G03` | 36 | **0.420779** | 96,649,984 | 1 | **1/15** | 11 | 3 | 0 | the gain arm at the floor. It moves a lane SIDEWAYS -- repairs summarisation, loses email to a prompt echo -- for a net of zero sealed and minus one canonical. |
 | `ARCH.V8CL896` | 24 | **0.432784** | 99,407,616 | 0 | **0/15** | 7 | 8 | 0 | the floor. Copies its prompts back verbatim and answers none of them: seven artifact lanes, eight readable-and-empty. The copy path outlived the answer path. |

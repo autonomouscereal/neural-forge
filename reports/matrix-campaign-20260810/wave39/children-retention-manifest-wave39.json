@@ -1,0 +1,22 @@
+{
+ "schema": "neural-forge-matrix-wave39-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave39/children",
+ "built": [
+  "MX39-V10CL896X13",
+  "MX39-V14CL896X13"
+ ],
+ "kept": {},
+ "deleted": {
+  "MX39-V10CL896X13": {
+   "reason": "K=10,240 on ARCH.CL896X13, ONE CPU VOCABULARY PASS off wave 35's RETAINED MX35-CL896X13, which wave 35's own retention keeps and which this wave used twice.  It reads 1/15 at 0.4116484014x and TAKES NO RUNG: the sealed one-of-fifteen rung already sits at that exact ratio and is held by MX38-V10CL896X09G10, which wave 38 retains, so every frontier position these bytes occupy is occupied by a retained checkpoint.  Its result -- that it TIES its X09 twin at an identical 94,552,832 parameters while sharing zero of sixteen lanes with it -- is a statement about two dossiers, and both are committed.  Its one lane, the best summarisation anywhere below 0.44x, is quoted verbatim in its seal, in DEEP_RECORD section 3 and in NOTES-MX-AQ section 4.  It rebuilds in one CPU pass",
+   "bytes": 189732999
+  },
+  "MX39-V14CL896X13": {
+   "reason": "K=14,336 on ARCH.CL896X13, ONE CPU VOCABULARY PASS off the same RETAINED MX35-CL896X13.  It reads 1/15 at 0.4299088649x and TAKES NO RUNG: both rungs it could hold are held 0.018 of stored ratio deeper by children at 0.4116484014x.  It is the row that makes the X09-over-X13 advantage rest on two K values rather than one, and that claim is a pair of counts read off two committed dossiers.  Its canonical-versus-sealed disagreement -- the one call in this wave that is a single lane wide -- is recorded with the sentence quoted in wave39/canonical-reread-wave39.json.  It rebuilds in one CPU pass",
+   "bytes": 198339371
+  }
+ },
+ "bytes_kept": 0,
+ "bytes_deleted": 388072370,
+ "applied": true
+}

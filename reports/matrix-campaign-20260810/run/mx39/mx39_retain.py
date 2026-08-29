@@ -64,11 +64,56 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave39")
 #: CPU pass rebuilds from a retained source, and state the deviation whenever
 #: the count is not best-five.
 KEEP: dict[str, str] = {}
+#: FILLED IN AFTER THIS WAVE'S VERDICTS WERE SEALED.  WAVE 39 KEEPS ZERO OF TWO,
+#: WHICH IS A DEVIATION FROM THE BEST-FIVE HABIT AND IS THE CLAIM RULE APPLIED
+#: RATHER THAN AN OVERSIGHT.  The standing rule is: keep the rows carrying a
+#: CLAIM no other artifact re-derives, drop what one CPU pass rebuilds from a
+#: retained source, and state the deviation whenever the count is not best-five.
+#:
+#: BOTH of this wave's children are ONE CPU VOCABULARY PASS off wave 35's
+#: RETAINED MX35-CL896X13, and neither takes a frontier rung -- one ties the
+#: sealed 1/15 rung that MX38-V10CL896X09G10 already holds at the identical
+#: ratio, and the other is 0.018 of stored ratio shallower than the incumbent
+#: 2/15 row.  Every claim either makes is a claim about TEXT, and the text is in
+#: a committed dossier, a committed per-case file and a sealed verdict.  Nothing
+#: about either child is a claim about BYTES that only a checkpoint can answer,
+#: which is the test wave 38 applied when it kept its multi-index excision body.
+#:
+#: THE ONE CHECKPOINT THIS WAVE'S RESULT DEPENDS ON IS NOT THIS WAVE'S.
+#: MX35-CL896X13 is what both children were built from, what the next open cell
+#: (K=9,216 on that body) will be built from, and what makes wave 39's answer
+#: re-derivable at all.  It is wave 35's keep and this script does not touch it.
 
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: NOT worth its bytes, naming what rebuilds it and from which retained source.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX39-V10CL896X13": (
+        "K=10,240 on ARCH.CL896X13, ONE CPU VOCABULARY PASS off wave 35's "
+        "RETAINED MX35-CL896X13, which wave 35's own retention keeps and which "
+        "this wave used twice.  It reads 1/15 at 0.4116484014x and TAKES NO "
+        "RUNG: the sealed one-of-fifteen rung already sits at that exact ratio "
+        "and is held by MX38-V10CL896X09G10, which wave 38 retains, so every "
+        "frontier position these bytes occupy is occupied by a retained "
+        "checkpoint.  Its result -- that it TIES its X09 twin at an identical "
+        "94,552,832 parameters while sharing zero of sixteen lanes with it -- is "
+        "a statement about two dossiers, and both are committed.  Its one lane, "
+        "the best summarisation anywhere below 0.44x, is quoted verbatim in its "
+        "seal, in DEEP_RECORD section 3 and in NOTES-MX-AQ section 4.  It "
+        "rebuilds in one CPU pass"
+    ),
+    "MX39-V14CL896X13": (
+        "K=14,336 on ARCH.CL896X13, ONE CPU VOCABULARY PASS off the same "
+        "RETAINED MX35-CL896X13.  It reads 1/15 at 0.4299088649x and TAKES NO "
+        "RUNG: both rungs it could hold are held 0.018 of stored ratio deeper "
+        "by children at 0.4116484014x.  It is the row that makes the "
+        "X09-over-X13 advantage rest on two K values rather than one, and that "
+        "claim is a pair of counts read off two committed dossiers.  Its "
+        "canonical-versus-sealed disagreement -- the one call in this wave that "
+        "is a single lane wide -- is recorded with the sentence quoted in "
+        "wave39/canonical-reread-wave39.json.  It rebuilds in one CPU pass"
+    ),
+}
 
 
 def main() -> int:

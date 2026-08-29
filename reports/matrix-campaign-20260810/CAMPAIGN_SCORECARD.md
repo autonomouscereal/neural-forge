@@ -1,24 +1,64 @@
-# CAMPAIGN_SCORECARD — wave 38, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 39, under the canonical standard and the sealed one
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Rows regenerated at wave 38 from `wave38/campaign-frontier-table.json`, with the
-canonical column read off `wave34/` through `wave38/canonical-reread-*.json`.
-**324 reviewed whole-model children,
-265 holding at least one case,
-235 benchmark rows, and all 25 parent benchmark rows**
-matching the sealed reference — wave 38's parent row is identical to waves 32, 34, 35, 36
-and 37's to every reported digit: arc 0.5450, hellaswag_norm 0.5050, piqa_norm 0.6800,
-winogrande 0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **988
-ledger rows, 984 verifying, 0 failing.**
+**THE DEEP BAND WAS REGENERATED FROM THE LEDGER AT WAVE 39, AFTER FIVE WAVES OF SAYING IT
+WAS STALE.** Its rank-1 row had been `ARCH.V16CL896` at 0.469305x since wave 33, and that
+child stopped being the deepest case-holder at wave 34. Fifteen children now sit below it
+holding at least one sealed case and none of them was in the table. The rows are computed
+from `ledger.jsonl` rather than transcribed, and the file now carries **two** tables: the
+regenerated deep band, and the wave-33 record kept unedited as the 0.469305x-and-above
+band it actually is.
 
-**The frozen review runner is now provably fixed across SEVEN waves and TWENTY
-dossiers.** One parent-lane digest, `865f006e3813712ec202cb23`, over twenty sealed
-dossiers from waves 15, 23, 34, 35, 36, 37 and 38 — `wave38/lane-byte-comparison-wave38.json`,
-on protocol `e5e377688597` and prompt pack `0ee6bf14cef5`. This is the strongest form of
-that control the campaign has produced.
+Rows regenerated at wave 39 from `ledger.jsonl` and
+`wave39/campaign-frontier-table.json`, with the canonical column read off `wave34/`
+through `wave39/canonical-reread-*.json`.
+**326 reviewed whole-model children,
+267 holding at least one case,
+238 benchmark rows, and all 26 parent benchmark rows**
+matching the sealed reference — wave 39's parent row is identical to waves 32, 34, 35, 36,
+37 and 38's to every reported digit: arc 0.5450, hellaswag_norm 0.5050, piqa_norm 0.6800,
+winogrande 0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **992
+ledger rows, 988 verifying, 0 failing, across 35 audited seal roots.**
+
+**The frozen review runner is now provably fixed across EIGHT waves and TWENTY-THREE
+dossiers.** One parent-lane digest, `865f006e3813712ec202cb23`, over twenty-three sealed
+dossiers from waves 15, 23, 34, 35, 36, 37, 38 and 39 —
+`wave39/lane-byte-comparison-wave39.json`, on protocol `e5e377688597` and prompt pack
+`0ee6bf14cef5`, with exactly one review surface seen across all of them. This is the
+strongest form of that control the campaign has produced.
+
+**WAVE 39 MOVED NO FRONTIER RUNG AND SAYS SO.** Its two children were built to settle one
+open question, not to go deeper: `ARCH.V14CL896X13` (1/15 at 0.4299088649x) and
+`ARCH.V10CL896X13` (1/15 at 0.4116484014x), two vocabulary folds on wave 35's retained
+block-13 body. The second TIES the sealed 1/15 rung at the floor ratio rather than taking
+it, which puts a **third independent child on 0.4116484014x** and moves nothing.
+
+**The question it settles is the X09-versus-X13 comparison across K, and the answer is
+neither of the two obvious ones.**
+
+| K | `CL896X09` | `CL896X13` | |
+|---:|---:|---:|---|
+| 65,536 (the bodies) | 1 | 1 | tied |
+| **14,336** | **2** | **1** | X09 by one — NEW at wave 39 |
+| 12,288 | **2** | **1** | X09 by one (waves 35 and 37) |
+| **10,240** | **1** | **1** | tied — NEW at wave 39 |
+| 9,216 | **0** | not built | the reason was pre-registered |
+
+The advantage is **not** K-specific — it now rests on two rungs rather than one — and it
+is **not** a uniform law either: it opens at 14,336, holds at 12,288 and **closes at
+10,240**. Both new pairs share **zero of sixteen lanes byte for byte** with their X09
+twins at an identical parameter count, so each comparison is two independent decodes
+disagreeing rather than one recipe read twice.
+
+**And the sharper result is in the lanes.** The X13 ladder reads ONE at all four rungs and
+the lane it holds **changes three times** — summarisation on the body, context-retrieval
+at 14,336, the email at 12,288, summarisation again at 10,240. The X09 ladder does the
+opposite: stable lanes, decaying count. A stable count with an unstable behaviour, against
+an unstable count with stable behaviour, on two bodies that are the same size to the byte
+and differ by one conv block index. `DEEP_RECORD.md` §8.5.
 
 **Wave 38's four frontier moves all land at 0.4116484014x and the sealed 1/15 rung is
 held by two independent children.** `ARCH.V10CL896X09` reads 1/15 on both standards and
@@ -36,9 +76,14 @@ vocabulary rows) on two bodies**, 0.0257 apart, with nothing built inside either
 **`DEEP_RECORD.md` §8 is where the deep family's laws live** — the corrected +1 table, the
 λ1.0 rung result (settled at wave 38 on two bodies), the objective anti-correlation at
 n = 13 ladders, the block-9/block-13 equivalence and the exhausted excision pair, the
-broken flatness law, the paraphrase result, and wave 38's §8.8 on why the canonical lens
-stops moving below 0.43x. Three of those are corrections to laws earlier notes stated
-wrongly.
+flatness law and **wave 39's correction to wave 38's own restatement of it**, the
+paraphrase result, and §8.8 on why the canonical lens stops moving below 0.43x. **Four of
+those are now corrections to laws earlier notes stated wrongly, and the newest correction
+is to a law stated ONE WAVE EARLIER**: wave 38 restated flatness as *a fold is flat in K
+until the body has fewer than two cases to lose, and then it decays*, and named an X13
+ladder as the falsifier. Wave 39 built it. `ARCH.CL896X13` enters its ladder at ONE —
+fewer than two — and does not decay across three further rungs, so the decay belongs to
+block 9 and not to the count.
 
 **A wave-35 artifact was found corrupt and repaired here rather than worked around.**
 `wave35/wave35-child-index.json` was the shell log of wave 35's own index run written over
@@ -87,6 +132,14 @@ compression artifact carrying no evidence about intelligence in either direction
 | 2/15 | `ARCH.V10CL896X09G10` | **0.411648** | 2 | `ARCH.V10CL896X09G10` | **0.411648** |
 | 1/15 | `ARCH.V10CL896X09` | **0.411648** | 1 | `ARCH.V10CL896X09` | **0.411648** |
 | 0/15 | `ARCH.V12CL896X09X13` | **0.390512** | 0 | `ARCH.V12CL896X09X13` | **0.390512** |
+
+**WAVE 39 MOVED NOT ONE OF THESE ROWS, AND THAT WAS PRE-REGISTERED.** Its two children
+were built to settle a comparison, not to go deeper. `ARCH.V10CL896X13` reads 1/15 at
+0.4116484014x — the exact ratio the sealed and canonical 1/15 rungs already sit at — so it
+**ties and does not take**, and the pre-registration said in advance that a tie would be
+reported as a tie. `ARCH.V14CL896X13` reads 1/15 sealed and 2/15 canonically at
+0.4299088649x, which is 0.018 of stored ratio *shallower* than the incumbent 2/15 row.
+Two children, zero rungs, and the wave's result is elsewhere.
 
 **Wave 38 moved four rungs — sealed and canonical 1/15 and 2/15 — all to 0.4116484014x,
 each by 0.0091302317 of stored ratio, and the sealed 1/15 rung is held by two independent
@@ -225,17 +278,68 @@ a null holding the instrument fixed and varying only the population puts wave 32
 thresholds. Every count in this file is the frozen fifteen, read by hand, exactly
 as it has been for thirty-three waves.
 
-**THIS TABLE IS STALE BELOW 0.469305x AND WAVE 38 SAYS SO RATHER THAN PATCHING IT.**
-Its rank-1 row is `ARCH.V16CL896` at 0.469305x, which has not been the deepest
-case-holding child since wave 34. Twelve children built in waves 34 through 38 sit below
-it and eight of them hold at least one case — including the two that now hold the sealed
-1/15 and 2/15 rungs, `ARCH.V10CL896X09` and `ARCH.V10CL896X09G10` at **0.4116484014x**,
-and the deepest child ever built, `ARCH.V12CL896X09X13` at **0.3905124499x**, which holds
-nothing. **The authority for everything below 0.50x is `DEEP_RECORD.md`**, which is
-regenerated every wave and carries all thirty-seven of them with both lenses, benchmarks
-and verbatim highlights. This table is kept as the 0.47x-and-above record it actually is;
-regenerating its ranks is a job for a wave that is willing to re-read the fifteen rows
-below, and no wave since 33 has been.
+## THE DEEP BAND, REGENERATED FROM THE LEDGER AT WAVE 39
+
+**Waves 34 through 38 said this table was stale and wave 38 said so in writing rather
+than patching it. Wave 39 regenerated it.** The rank-1 row below the line used to be
+`ARCH.V16CL896` at 0.469305x, which stopped being the deepest case-holding child at wave
+34 — five waves ago. Fifteen children now sit below it holding at least one sealed case,
+and the table that ranked them had none of them in it.
+
+**These fifteen rows are computed from `ledger.jsonl` (992 rows,
+`dfe27e468f09fc1907b32128090aac6c2cb05ec5946cf24a08a3a999f55d29cc`), not transcribed.**
+Every row is an `ARCH` cell with `standard_shape` true and
+`behavior_useful_or_partial ≥ 1`, deduplicated to its kept receipt against wave 38's
+superseded set, sorted by `stored_parameter_ratio` ascending. The `intel` column is the
+canonical re-read, read off `wave34/` through `wave39/canonical-reread-*.json`. **Ties in
+ratio are broken by sealed count descending, then canonical, then cell id**, and where a
+tie straddles the fifteen-row cut that is stated rather than hidden.
+
+| rank | child | net | review | **intel** | wave | the character of its failure | READ- dossier |
+|---:|---|---:|---:|---:|---:|---|---|
+| 1 | `ARCH.V10CL896X09G10` | **0.411648** | **2/15** | **2/15** | 38 | the deepest TWO the campaign has sealed, and the measurement that made λ1.0 a property of the vocabulary rung rather than of the body. Its uncertainty lane is the strongest in the X09 family — all four withheld quantities AND the correct direction, where every other X09 rung writes *I haven not* | `reports/matrix-campaign-20260810/wave38/human-review/READ-V10CL896X09G10.txt` |
+| 2 | `ARCH.V10CL896X09` | **0.411648** | **1/15** | **1/15** | 38 | the floor, first witness. It holds uncertainty and has lost retrieval: where the two rungs above answer *The latest checkout time is 4:15 PM*, this one answers *I don't get a sholner the question* and loops. Six of sixteen lanes ride the cap | `reports/matrix-campaign-20260810/wave38/human-review/READ-V10CL896X09.txt` |
+| 3 | `ARCH.V10CL896X13` | **0.411648** | **1/15** | **1/15** | 39 | the floor, third witness and the first on the block-13 body — it TIES its X09 twin at an identical 94,552,832 parameters while sharing ZERO of sixteen lanes with it. Its one lane is the best summarisation anywhere below 0.44x: all three suppliers correct, the decision preserved, the risk preserved, clean English, no loop | `reports/matrix-campaign-20260810/wave39/human-review/READ-V10CL896X13.txt` |
+| 4 | `ARCH.V12CL896X09` | **0.420779** | **2/15** | **3/15** | 37 | the first vocabulary fold in the campaign to GAIN a case over its own body, and the gain is two tokens wide: the body stops at two of the four withheld quantities and this child completes all four | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09.txt` |
+| 5 | `ARCH.V12CL896X09G10` | **0.420779** | **2/15** | **3/15** | 37 | the λ1.0 arm that tied its control at the rung where both the rung account and the body account predict zero — the cell that could not separate them, and the reason wave 38 had to build one that could | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09G10.txt` |
+| 6 | `ARCH.V12CL896X09G03` | **0.420779** | **1/15** | **2/15** | 37 | the first terminal-gain arm in this campaign to LOSE a case outright — two to one — while improving its held-out objective by 11 per cent, more than the λ1.0 arm beside it that kept both | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09G03.txt` |
+| 7 | `ARCH.V12CL896X13` | **0.420779** | **1/15** | **2/15** | 35 | the same parameter count as `ARCH.V12CL896X09` TO THE BYTE, one conv block index apart, sharing zero of sixteen lanes and holding half as many cases. It holds the email on the ask; its summarisation keeps the risk and drops the decision | `reports/matrix-campaign-20260810/wave35/human-review/READ-V12CL896X13.txt` |
+| 8 | `ARCH.V12CL896X13G03` | **0.420779** | **1/15** | **1/15** | 36 | the arm that did not add a lane but MOVED one sideways: it gains the summarisation its control missed and loses the email its control held, for a net of zero, on the largest objective improvement any gain arm has recorded (23 per cent) | `reports/matrix-campaign-20260810/wave36/human-review/READ-V12CL896X13G03.txt` |
+| 9 | `ARCH.V14CL896X09` | **0.429909** | **2/15** | **2/15** | 38 | retrieval and uncertainty both held, and one of the two is not its own — its uncertainty lane is byte-identical to `ARCH.V12CL896X09`'s, so that Partial is wave 37's verdict on wave 37's bytes | `reports/matrix-campaign-20260810/wave38/human-review/READ-V14CL896X09.txt` |
+| 10 | `ARCH.V14CL896X13` | **0.429909** | **1/15** | **2/15** | 39 | half its X09 twin's cases at an identical 98,747,136 parameters, sharing zero of sixteen lanes with it. The first time the X13 family has held the retrieval lane. Its summarisation reproduces wave 35's exact failure on this body — Supplier A's property attached to no supplier — on an independent decode | `reports/matrix-campaign-20260810/wave39/human-review/READ-V14CL896X13.txt` |
+| 11 | `ARCH.V9CL896G10` | **0.437349** | **4/15** | **5/15** | 36 | λ1.0's first win in twelve ladders, on a context-retrieval lane it shares byte-identically with neither its control nor the λ0.3 arm, and on the WORST objective of the ladder's two arms. The campaign's largest canonical claim | `reports/matrix-campaign-20260810/wave36/human-review/READ-V9CL896G10.txt` |
+| 12 | `ARCH.V9CL896G03` | **0.437349** | **3/15** | **4/15** | 36 | the λ0.3 arm landing on THREE again, as it does at five of six K values regardless of where its control was: the arm's COUNT is the invariant, not its delta | `reports/matrix-campaign-20260810/wave36/human-review/READ-V9CL896G03.txt` |
+| 13 | `ARCH.V9CL896` | **0.437349** | **2/15** | **2/15** | 35 | one rung above the campaign's first vocabulary death and still holding two — twelve of its fifteen misses are compression artifacts and only one is readable-and-wrong, the cleanest artifact-to-content split in the deep record | `reports/matrix-campaign-20260810/wave35/human-review/READ-V9CL896.txt` |
+| 14 | `ARCH.V10CL896G03` | **0.441915** | **3/15** | **4/15** | 35 | the λ0.3 arm at K = 10,240 landing on three, one of the five entries that make the count the invariant | `reports/matrix-campaign-20260810/wave35/human-review/READ-V10CL896G03.txt` |
+| 15 | `ARCH.V10CL896G10` | **0.441915** | **3/15** | **4/15** | 35 | λ1.0 buying +1 at K = 10,240 on the UNEXCISED body — the row wave 38 differenced its excised twin against to settle that the gain belongs to the rung | `reports/matrix-campaign-20260810/wave35/human-review/READ-V10CL896G10.txt` |
+
+**The fifteen-row cut falls INSIDE the 0.441915x tie and this table says so.** Two more
+children sit at exactly that ratio and are excluded by the row count and not by depth:
+`ARCH.V10CL896` (2/15 sealed, 2/15 canonical, wave 34) and `ARCH.V10CL896G01` (2/15
+sealed, **3/15** canonical, wave 35). `ARCH.V16CL896` — the row that used to rank 1st
+here — is now **27th** by depth among case-holding children.
+
+**Five children below 0.469305x hold nothing on the sealed standard and are correctly
+absent:** `ARCH.V12CL896X09X13` (0.390512, the deepest child ever built),
+`ARCH.V9CL896X09` (0.407083, the campaign's second vocabulary death), `ARCH.V8CL896`
+(0.432784, the first), `ARCH.V19X13CL896` (0.452734, which holds **1/15 canonically** and
+would rank 16th on that standard) and `ARCH.W512` (0.463481, fifteen artifact misses and
+no content miss at all). `ARCH.KKTD` and `ARCH.KKTS` are the same kind of absence one band
+up, at 0.483001. `DEEP_RECORD.md` prices all of them, and §4 there is about why they are
+not the same kind of nothing.
+
+**`DEEP_RECORD.md` remains the authority for everything below 0.50x** — it carries all
+thirty-nine sub-0.5x children with both lenses, benchmarks, verbatim highlights and build
+costs. This table is the ranked view of the same rows and is now generated from the same
+ledger rather than remembered.
+
+## THE 0.469305x-AND-ABOVE RECORD, frozen at wave 33
+
+**No number in the table below was ever edited and none is edited now.** It was the
+campaign's top-fifteen until wave 34 built underneath it; it is kept because its readings
+are still true readings of those fifteen children, and because the wave-33 restatement
+column above refers to rows in it. It is no longer a frontier table and its `rank` column
+is a rank within this band only.
 
 | rank | child | net | review | **intel** | shape | the character of its failure | READ- dossier |
 |---:|---|---:|---:|---:|---|---|---|

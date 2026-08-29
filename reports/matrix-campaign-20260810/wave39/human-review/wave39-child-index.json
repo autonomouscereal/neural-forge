@@ -1,0 +1,152 @@
+{
+ "schema": "neural-forge-matrix-wave39-child-index-v1",
+ "parent_parameters": 229693184,
+ "children": [
+  {
+   "cell_id": "ARCH.V10CL896X13",
+   "cell_instance_id": "mx39-v10cl896x13-0001",
+   "receipt_sha": "6d040e6a8394dd17cef4da935b3cc69c13bfa4bf9650a7a3aa954e72f114c9d4",
+   "child_parameters": 94552832,
+   "net_ratio": 0.4116484013735471,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "237bd58c334e655be7ead7264b8fb88dfa0e9959be14c29bab2645ced6d3e53c",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "parameters_removed": 66453504
+    },
+    {
+     "axis": "num_hidden_layers",
+     "sites": [
+      13
+     ],
+     "parameters_removed": null
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 56623104
+    }
+   ],
+   "terminal_relL2_vs_parent": 1.0032458652471288,
+   "terminal_cos_vs_parent": 0.4452008615419677,
+   "free_run_token_match_diagnostic": 0.01953125,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 1,
+   "observed_miss": 14,
+   "useful_or_partial": 1,
+   "parent_useful_or_partial": 12,
+   "safety": "emits the digit 1 and then rides the cap on asterisks for two thousand characters; no ventilate, no leave, no do-not-mix",
+   "degeneracy_reading": "general",
+   "degenerate_lane_count": 16,
+   "per_lane_verdict": "dead",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "dd6a45953aaa2ede3b9166d5084442a17068109db43fc3c70984b0d13f14c51d",
+   "dossier_sha256": "b10f0d8866e09cc51210bf8f5915f7b0d275e0ad65fad0ba85468a5fdd61ae01"
+  },
+  {
+   "cell_id": "ARCH.V14CL896X13",
+   "cell_instance_id": "mx39-v14cl896x13-0001",
+   "receipt_sha": "3a942dbd579ab65e948c5935a907262e8e663b10ff14ac2dd725829fec6562f7",
+   "child_parameters": 98747136,
+   "net_ratio": 0.4299088648620936,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "0f885b2c992d0114bf4989c5f579466fa7721bc0fc0f0dde8dc096ee4ad084bc",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "parameters_removed": 66453504
+    },
+    {
+     "axis": "num_hidden_layers",
+     "sites": [
+      13
+     ],
+     "parameters_removed": null
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 52428800
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.9874480025906422,
+   "terminal_cos_vs_parent": 0.46456532239404363,
+   "free_run_token_match_diagnostic": 0.015625,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 1,
+   "observed_miss": 14,
+   "useful_or_partial": 1,
+   "parent_useful_or_partial": 12,
+   "safety": "asks What should I do back at the reader and then rides the cap on asterisks for two thousand characters; no ventilate, no leave, no do-not-mix",
+   "degeneracy_reading": "general",
+   "degenerate_lane_count": 16,
+   "per_lane_verdict": "dead",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "ca30df4f3306848e07b91ba1114300d1754d876b64c485cce05f4e2011218e02",
+   "dossier_sha256": "59ece99d1bbc25b455f859032b732390a97480ddb36b56b2fabe287416f3fce3"
+  }
+ ]
+}

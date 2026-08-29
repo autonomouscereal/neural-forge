@@ -1,0 +1,20 @@
+{
+ "schema": "neural-forge-matrix-wave39-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave39/shards/arch-V14CL896X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave39/shards/arch-V10CL896X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave39/shards/verdict-V14CL896X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave39/shards/verdict-V10CL896X13.jsonl"
+ ],
+ "rows_before": 988,
+ "rows_appended": 4,
+ "rows_after": 992,
+ "superseded_rows_dropped": [],
+ "appended_cells": [
+  "ARCH.V10CL896X13",
+  "ARCH.V14CL896X13"
+ ],
+ "applied": true,
+ "rows_after_verified": 992
+}

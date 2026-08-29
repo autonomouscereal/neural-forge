@@ -1,0 +1,33 @@
+{
+ "schema": "neural-forge-matrix-wave39-benchmark-table-v1",
+ "invocation": "limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090",
+ "rows": {
+  "PARENT": {
+   "arc_easy_acc": 0.545,
+   "hellaswag_acc_norm": 0.505,
+   "piqa_acc_norm": 0.68,
+   "winogrande_acc": 0.55,
+   "lambada_acc": 0.46,
+   "lambada_perplexity": 24.391247934692974,
+   "wikitext_word_perplexity": 81.79763262054296
+  },
+  "ARCH.V14CL896X13": {
+   "arc_easy_acc": 0.325,
+   "hellaswag_acc_norm": 0.315,
+   "piqa_acc_norm": 0.545,
+   "winogrande_acc": 0.485,
+   "lambada_acc": 0.09,
+   "lambada_perplexity": 43356.383604804476,
+   "wikitext_word_perplexity": 5345.730323070264
+  },
+  "ARCH.V10CL896X13": {
+   "arc_easy_acc": 0.29,
+   "hellaswag_acc_norm": 0.33,
+   "piqa_acc_norm": 0.5,
+   "winogrande_acc": 0.485,
+   "lambada_acc": 0.095,
+   "lambada_perplexity": 64024.604272692835,
+   "wikitext_word_perplexity": 9005.899903241896
+  }
+ }
+}

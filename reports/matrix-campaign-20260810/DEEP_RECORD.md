@@ -1,7 +1,8 @@
 # DEEP_RECORD — everything the campaign has built below half the parent
 
-**Written at wave 35, refreshed at waves 36, 37 and 38, 2026-08-28.** Ledger 988
-rows, `2beb2c7e966a8f7fe312b8a6d000b266a6bb3dec662cc1408d15da5a22139c7f`.
+**Written at wave 35, refreshed at waves 36, 37, 38 and 39, 2026-08-29.** Ledger
+992 rows,
+`dfe27e468f09fc1907b32128090aac6c2cb05ec5946cf24a08a3a999f55d29cc`.
 
 This is one page and it is the whole sub-0.5x record: every child ever built
 below half of `LFM2.5-230M`'s 229,693,184 parameters, read under **both**
@@ -9,8 +10,8 @@ standards, with its benchmark row, its verbatim highlight, and what it cost to
 make. Nothing here is summarised from a summary — every count traces to a sealed
 receipt and a committed dossier.
 
-**Thirty-seven children exist below 0.50x. Wave 35 built seven, wave 36 built
-three, wave 37 built five and wave 38 built five.**
+**Thirty-nine children exist below 0.50x. Wave 35 built seven, wave 36 built
+three, wave 37 built five, wave 38 built five and wave 39 built two.**
 
 ---
 
@@ -28,12 +29,14 @@ artifacts and never count against intelligence; only readable-and-wrong does.
 | **`ARCH.V9CL896X09`** | **0.407083** | 93,504,256 | **0** | **0** | 7 | **8** | **38** |
 | **`ARCH.V10CL896X09G10`** | **0.411648** | 94,552,832 | **2** | **2** | 6 | 7 | **38** |
 | **`ARCH.V10CL896X09`** | **0.411648** | 94,552,832 | **1** | **1** | 9 | 5 | **38** |
+| **`ARCH.V10CL896X13`** | **0.411648** | 94,552,832 | **1** | **1** | 11 | 3 | **39** |
 | **`ARCH.V12CL896X09`** | **0.420779** | 96,649,984 | **2** | **3** | 6 | 6 | **37** |
 | **`ARCH.V12CL896X09G10`** | **0.420779** | 96,649,984 | **2** | **3** | 6 | 6 | **37** |
 | **`ARCH.V12CL896X09G03`** | **0.420779** | 96,649,984 | **1** | **2** | 8 | 5 | **37** |
 | **`ARCH.V12CL896X13`** | **0.420779** | 96,649,984 | **1** | **2** | 11 | 2 | **35** |
 | **`ARCH.V12CL896X13G03`** | **0.420779** | 96,649,984 | **1** | **1** | 11 | 3 | **36** |
 | **`ARCH.V14CL896X09`** | **0.429909** | 98,747,136 | **2** | **2** | 7 | 6 | **38** |
+| **`ARCH.V14CL896X13`** | **0.429909** | 98,747,136 | **1** | **2** | 10 | 4 | **39** |
 | `ARCH.V8CL896` | 0.432784 | 99,407,616 | 0 | **0** | 7 | 8 | 24 |
 | **`ARCH.V9CL896`** | **0.437349** | 100,456,192 | **2** | **2** | 12 | 1 | **35** |
 | **`ARCH.V9CL896G03`** | **0.437349** | 100,456,192 | **3** | **4** | 9 | 2 | **36** |
@@ -62,11 +65,11 @@ artifacts and never count against intelligence; only readable-and-wrong does.
 | `ARCH.V20CL896` | 0.487566 | 111,990,528 | 2 | **2** | 5 | 8 | 27 |
 | `ARCH.V20CL896G03` | 0.487566 | 111,990,528 | 3 | **4** | 7 | 4 | 28 |
 
-**Thirty of the thirty-seven hold at least one case on at least one standard.**
-The seven that hold nothing on either are `ARCH.V8CL896`, `ARCH.W512`,
-`ARCH.KKTD`, `ARCH.V19X13CL896` and wave 38's `ARCH.V9CL896X09` and
+**Thirty-two of the thirty-nine hold at least one case on at least one
+standard.** The seven that hold nothing on either are `ARCH.V8CL896`,
+`ARCH.W512`, `ARCH.KKTD`, `ARCH.V19X13CL896` and wave 38's `ARCH.V9CL896X09` and
 `ARCH.V12CL896X09X13` — and they are not the same kind of nothing, which §4 is
-about.
+about. Wave 39 added no zero.
 
 `ARCH.CL896X09` (0.658165x, sealed 1, canonical 3) is wave 37's **body** and
 `ARCH.CL896X09X13` (0.627898x, sealed 0, canonical 0) is wave 38's. Neither is
@@ -77,9 +80,15 @@ in this table because neither is a deep child; they are the sources every row at
 `ARCH.CL896X09` plus one λ1.0 arm, and read as a ladder they are the wave's
 result: 2 / 2 / 1 / 0 at K = 14,336 / 12,288 / 10,240 / 9,216.** §8.5.
 
+**Wave 39's two rows are the SAME two rungs on the sibling body, and they are
+the control that ladder never had: 1 / 1 against 2 / 1 at K = 14,336 and 10,240,
+at parameter counts identical to the byte, on decodes sharing ZERO of sixteen
+lanes.** The X13 ladder reads ONE at every rung it has and **the lane it holds
+rotates**. §8.5 again, and it is the section wave 39 rewrites.
+
 ---
 
-## 2. The frontier, and where waves 35 through 38 moved it
+## 2. The frontier, and where waves 35 through 38 moved it (wave 39 moved none)
 
 | rung | before wave 35 | after wave 35 | after wave 36 | after wave 37 | after wave 38 | total Δ |
 |---:|---|---|---|---|---|---:|
@@ -92,6 +101,16 @@ result: 2 / 2 / 1 / 0 at K = 14,336 / 12,288 / 10,240 / 9,216.** §8.5.
 | **canonical 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G01` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | **`ARCH.V12CL896X09` 0.420779** | *unchanged* | **0.030266** |
 | **canonical 4/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | *unchanged* | *unchanged* | 0.013696 |
 | **canonical 5/15** | `ARCH.V8CL1792` 0.600552 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | *unchanged* | *unchanged* | **0.163203** |
+
+**WAVE 39 MOVED NONE OF THESE ROWS AND THAT WAS PRE-REGISTERED, SO THE TABLE
+CARRIES NO WAVE-39 COLUMN.** Its two children exist to settle a comparison, not
+to go deeper. `ARCH.V10CL896X13` reads 1/15 at **0.4116484014x**, which is the
+ratio the sealed and canonical 1/15 rungs already sit at, so it **ties and does
+not take** — and the pre-registration said in advance that a tie would be
+reported as a tie. `ARCH.V14CL896X13` reads 1/15 sealed and 2/15 canonically at
+0.4299088649x, 0.018 of stored ratio shallower than the incumbent 2/15 row.
+**What wave 39 does add to this table is a third independent child on the floor
+ratio**, on a body that shares zero of sixteen lanes with the other two.
 
 **Wave 38 moved four rungs — sealed 1 and 2, canonical 1 and 2 — all to
 0.4116484014x, and all by 0.0091302317 of stored ratio.** `ARCH.V10CL896X09`
@@ -176,6 +195,48 @@ inverted) and **loses retrieval**, which is the lane the ladder sheds first:
 
 > *I don't get a sholner the question. The community gardens are the only only
 > only only only only only in the context of the question.*
+
+**`ARCH.V10CL896X13` (0.4116x, sealed 1, intel 1)** — wave 39's child, the THIRD
+independent holder of the floor ratio and the first on the block-13 body. It ties
+its X09 twin at an identical 94,552,832 parameters while sharing **zero of
+sixteen** lanes with it. **Its one lane is the best summarisation anywhere below
+0.44x:**
+
+> *The team compared three battery suppliers. Supplier A is cheapest but cannot
+> guarantee delivery before launch. Supplier B costs 11 percent more and passed
+> every reliability test. Supplier C can deliver fastest, but two samples
+> overheated. **The team selected Supplier B. The remaining risk is that its
+> factory expansion may slip by one week, so proceeding will request weekly
+> schedule evidence.***
+
+Every fact correct, the **decision** preserved and the **unresolved risk**
+preserved — the two things the prompt asks for — in clean English with no
+substitution and no loop, at 41 per cent of the parent. It is sealed **Partial**
+and not Useful because the ask was two sentences and this is five, and because
+the lane is the update handed back rather than compressed. The precedent is
+exact, it is on this body, and it exists twice: wave 35's `ARCH.CL896X13` and
+wave 36's `ARCH.V12CL896X13G03` both seal near-identical text a Partial — **and
+this child shares zero of sixteen lanes with either**, so it is a third
+independent decode landing on the same content. Its email lane inverts Friday to
+Monday and its retrieval lane rides the cap looping *the question's answer is as
+a shovel*.
+
+**`ARCH.V14CL896X13` (0.4299x, sealed 1, intel 2)** — wave 39's other child, and
+half its X09 twin's cases at an identical 98,747,136 parameters. **The first time
+the X13 family has ever held the retrieval lane:**
+
+> *The question regarding the issue is as a shovel. The question is likely due
+> due to the current situation. **The current checkout time is 4:15 p.m.** The
+> gatalight should be considered due to the current situation.*
+
+Right number, right unit, one of the note's three asks, with the north gate
+become a *gatalight* — the X09 family's own precedent applied unchanged, on a
+body that had never produced it. **Its summarisation reproduces wave 35's exact
+failure on this body on an independent decode**: *the team is not a cheapest but
+cannot guarantee delivery before launch*, which is Supplier A's property attached
+to no supplier, with the risk garbled to *its future expansion may be too much*.
+Its email lane is the wave's one call that is a single lane wide, sealed against
+the child and promoted by the canonical lens — §8.8.
 
 **`ARCH.V12CL896X09` (0.4208x, sealed 2, intel 3)** — wave 37's child, and the
 deepest TWO the campaign had sealed before wave 38, at the same parameter count
@@ -289,10 +350,10 @@ death nor survival — the vocabulary rung and the body do, jointly.
 ## 6. Benchmarks, standard invocation
 
 `limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090`. **The
-parent row is identical to waves 32, 34, 35, 36, 37 and 38's sealed parent rows
-to every reported digit**, which is the check that the harness has not moved. As
-of wave 38 the campaign table carries **25 parent benchmark rows and every one of
-them matches the reference**.
+parent row is identical to waves 32, 34, 35, 36, 37, 38 and 39's sealed parent
+rows to every reported digit**, which is the check that the harness has not
+moved. As of wave 39 the campaign table carries **26 parent benchmark rows and
+every one of them matches the reference**.
 
 | model | ratio | arc_e | hella_n | piqa_n | wino | lambada | lam ppl | wiki wppl |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -301,6 +362,7 @@ them matches the reference**.
 | **`ARCH.V9CL896X09`** | **0.407083** | 0.2750 | 0.2850 | 0.4950 | 0.4800 | 0.0200 | 957858.30 | **7646.69** |
 | **`ARCH.V10CL896X09G10`** | **0.411648** | 0.2800 | 0.3000 | 0.5100 | 0.4700 | 0.0150 | 869133.88 | 5678.69 |
 | **`ARCH.V10CL896X09`** | **0.411648** | 0.2650 | 0.3050 | 0.5050 | 0.4750 | 0.0200 | 779799.42 | **5791.65** |
+| **`ARCH.V10CL896X13`** | **0.411648** | 0.2900 | 0.3300 | 0.5000 | 0.4850 | **0.0950** | **64024.60** | 9005.90 |
 | **`ARCH.V12CL896X09`** | **0.420779** | 0.3050 | 0.3250 | 0.4900 | 0.4600 | 0.0300 | **510619.94** | 4088.27 |
 | **`ARCH.V12CL896X09G03`** | **0.420779** | 0.3200 | 0.3250 | 0.4900 | 0.4650 | 0.0300 | **560296.58** | 3889.33 |
 | **`ARCH.V12CL896X09G10`** | **0.420779** | 0.3300 | 0.3250 | 0.5000 | 0.4500 | 0.0300 | **577203.25** | 4012.09 |
@@ -317,9 +379,41 @@ them matches the reference**.
 | **`ARCH.V14CL896G10`** | 0.460175 | 0.3200 | 0.3500 | 0.4900 | 0.4750 | 0.1050 | 4895.91 | 1181.17 |
 | **`ARCH.V16CL896G10`** | 0.469305 | 0.3350 | 0.3300 | 0.4950 | 0.4700 | 0.0950 | 5004.34 | 1010.72 |
 | **`ARCH.V14CL896X09`** | **0.429909** | 0.3050 | 0.3150 | 0.4950 | 0.4700 | 0.0300 | 398439.22 | **3205.91** |
+| **`ARCH.V14CL896X13`** | **0.429909** | 0.3250 | 0.3150 | 0.5450 | 0.4850 | **0.0900** | **43356.38** | 5345.73 |
 | **`ARCH.CL896X09X13`** | **0.627898** | 0.3550 | 0.3500 | 0.5200 | 0.5000 | 0.0350 | 306921.64 | 2090.87 |
 | `ARCH.CL896X13` | 0.658165 | 0.3350 | 0.3700 | 0.5550 | 0.4800 | 0.0550 | 36821.04 | 1463.15 |
 | **`ARCH.CL896X09`** | 0.658165 | 0.3650 | 0.3650 | 0.5350 | 0.5100 | 0.0600 | 28060.95 | 824.54 |
+
+### 6.1 Wave 39's two rows are the campaign's cleanest benchmark-versus-review inversion, and the two metrics also invert against EACH OTHER
+
+Wave 39 built the exact benchmark control this table never had: **two pairs of
+children at identical parameter counts, on bodies one conv block index apart,
+decoded on lanes that share nothing.** The review says X09 is ahead at 14,336
+and level at 10,240. The benchmark column says something else, twice, and the
+two benchmark metrics do not agree with each other either.
+
+| K | child | sealed | lambada acc | lambada ppl | wikitext wppl |
+|---:|---|---:|---:|---:|---:|
+| 14,336 | `ARCH.V14CL896X09` | **2** | 0.0300 | 398,439.22 | **3,205.91** |
+| 14,336 | `ARCH.V14CL896X13` | **1** | **0.0900** | **43,356.38** | 5,345.73 |
+| 10,240 | `ARCH.V10CL896X09` | **1** | 0.0200 | 779,799.42 | **5,791.65** |
+| 10,240 | `ARCH.V10CL896X13` | **1** | **0.0950** | **64,024.60** | 9,005.90 |
+
+**Lambada prefers X13 by roughly an order of magnitude at BOTH rungs** — 9.2x at
+14,336 and 12.2x on perplexity, 3x and 4.75x on accuracy — while the review reads
+X13 at or below X09 at both. **Wikitext prefers X09 at both rungs**, by 1.67x and
+1.55x. Two rungs, two metrics, two directions, and the direction of each metric is
+*reproduced* at the second rung rather than being one noisy pair.
+
+`ARCH.V14CL896X13` also beats its twin on **every accuracy column in the table**
+— arc_easy 0.3250 against 0.3050, piqa_norm 0.5450 against 0.4950, winogrande
+0.4850 against 0.4700, lambada 0.0900 against 0.0300 — while holding **half** its
+sealed cases at the identical stored ratio.
+
+So the benchmark column does not order the two excision bodies, and this is the
+sharpest available demonstration of it: the confound that usually excuses such a
+disagreement — different sizes, different recipes, different K — is absent by
+construction here. The parameter counts are equal to the byte.
 
 **WAVE 38 TAKES THE PERPLEXITY RECORD AGAIN AND, FOR THE FIRST TIME, AGREES WITH
 THE REVIEW IN ONE PLACE.** `ARCH.V12CL896X09X13`'s lambada perplexity is
@@ -392,8 +486,17 @@ bodies are cheap and reproduce exactly:
 
 On top of those: a vocabulary fold is **one 40-second CPU pass**; a terminal-gain
 arm is **~100 s of GPU at zero storage delta**. So the entire sub-0.47x
-frontier — twenty children — costs under thirteen minutes of GPU plus a few
-minutes of CPU, given the two bodies.
+frontier — twenty-two children — costs under thirteen minutes of GPU plus a few
+minutes of CPU, given the bodies.
+
+**Wave 39 is the cheapest wave this campaign has run and it settled the oldest
+open question in the deep family.** Two CPU vocabulary passes on a body wave 35
+built four waves earlier and has retained since — **zero GPU spent on building
+anything.** The GPU it did use was the frozen review (two decodes, 314 s and
+301 s) and the benchmark column (three rows). That is the argument for the
+retention policy stated as a number: `MX35-CL896X13` cost 296 s of GPU once, and
+four waves later it answered a question no dossier could have answered, because
+the question was about bytes that only exist in a checkpoint.
 
 **Reproduction is not assumed here, it is measured.** Wave 35 rebuilt two
 wave-34 children from retained sources and both came back bit-identical —
@@ -544,6 +647,37 @@ asserts the line and its log string by name, before the build.
 `ARCH.V12CL896X13` share **zero of sixteen lanes byte for byte**, and hold two
 cases and one case respectively at an identical 96,649,984 parameters.
 
+**WAVE 39 MEASURED THAT DIFFERENCE ACROSS K AND IT IS NEITHER AN ACCIDENT NOR A
+LAW.** Until wave 39 the X09-over-X13 gap rested on ONE K value, which
+`NOTES-MX-AP` §2.3 stated as the campaign's cheapest open question. Two CPU
+passes on wave 35's retained `MX35-CL896X13` closed it:
+
+| K | `CL896X09` | `CL896X13` | Δ | parameters (both) | lanes shared |
+|---:|---:|---:|---:|---:|---:|
+| 65,536 (the bodies) | 1 | 1 | 0 | 151,175,936 | **0 / 16** |
+| **14,336** | **2** | **1** | **+1 X09** | 98,747,136 | **0 / 16** |
+| 12,288 | **2** | **1** | **+1 X09** | 96,649,984 | **0 / 16** |
+| **10,240** | **1** | **1** | **0** | 94,552,832 | **0 / 16** |
+| 9,216 | **0** | not built | — | 93,504,256 | — |
+
+**The advantage opens at 14,336, holds at 12,288, and CLOSES at 10,240.** It is
+not K-specific — two rungs is not one — and it is not uniform either. Every row
+of that table is a pair at an identical parameter count sharing **zero of sixteen
+lanes**, so no line of it is one decode counted twice.
+
+**The natural reading is that the advantage is bounded below by the floor rather
+than by the block.** At 10,240 the X09 body has already spent its extra case:
+wave 38 measured it losing retrieval at exactly that rung. The two bodies do not
+converge because X13 improved; they converge because X09 decayed onto X13's
+level. §8.5 is what that costs the flatness law.
+
+**K = 9,216 on `CL896X13` was NOT built and the reason was pre-registered.** Its
+X09 twin reads zero, and an arm differenced against a dead control measures
+nothing — wave 38's own stated reason for substituting its G3 cell. That rung is
+now the interesting one precisely because `ARCH.V10CL896X13` held: it is the one
+cell that would say whether the X13 death also sits at 9,216, and it is one CPU
+pass.
+
 **WAVE 38 COMPOSED THE PAIR AND THERE IS NO HEADROOM.** `ARCH.CL896X09X13` —
 `--ff 896 --excise 9 --excise 13`, 144,224,000 parameters, 0.6278984752x —
 reads **0/15 on both standards**, and its K = 12,288 fold `ARCH.V12CL896X09X13`
@@ -567,7 +701,7 @@ copy-back death at 0.195 of stored ratio *above* it. The fold rides the cap on
 **On this body the excision axis is exhausted**, and a third excision is not
 worth a wave.
 
-### 8.5 The vocabulary fold is flat on FOUR bodies and DECAYS on the fifth — wave 38 broke it
+### 8.5 The vocabulary fold is flat on FIVE bodies and DECAYS on one — wave 38 broke it, wave 39 bounded the break to block 9
 
 Across eleven thousand rows the vocabulary fold does not change a body's count:
 flat at 3 on `ARCH.W896`, flat at 7 on `ARCH.CL1792`, flat at 2 on `ARCH.CL896`
@@ -598,14 +732,57 @@ quantities where every rung above names all four.
 **What this costs the law:** flatness is now a property of four bodies and not of
 the vocabulary axis. The distinguishing feature of `ARCH.CL896X09` is that it is
 the only one of the five that is **already at 1/15 before the fold** — the others
-enter the ladder at 3, 7, 4 and 0 — so the working restatement is *a fold is flat
-in K until the body has fewer than two cases to lose, and then it decays.* That
-is a fit on n = 5 bodies and it should be treated as one.
+enter the ladder at 3, 7, 4 and 0 — so wave 38's working restatement was *a fold
+is flat in K until the body has fewer than two cases to lose, and then it
+decays.*
 
-**What falsifies it:** an X13 ladder. `ARCH.CL896X13` also reads 1 and its
-K = 12,288 fold also reads 1; `V14CL896X13`, `V10CL896X13` and `V9CL896X13` are
-three 40-second CPU passes off wave 35's retained `MX35-CL896X13` and would say
-whether decay-below-two is a property of the *count* or of block 9.
+**Wave 38 named the falsifier and wave 39 built it, and the restatement is
+FALSE.**
+
+`ARCH.CL896X13` enters its ladder at **one** — fewer than two, exactly the
+condition wave 38's restatement says produces decay — and it does not decay:
+
+| K | child | ratio | sealed | canonical | the lane it holds |
+|---:|---|---:|---:|---:|---|
+| 65,536 | `ARCH.CL896X13` | 0.6581646585 | **1** | 1 | summarization-priorities |
+| 14,336 | `ARCH.V14CL896X13` | 0.4299088649 | **1** | 2 | **context-retrieval** |
+| 12,288 | `ARCH.V12CL896X13` | 0.4207786331 | **1** | 2 | **writing-concise-email** |
+| 10,240 | `ARCH.V10CL896X13` | 0.4116484014 | **1** | 1 | **summarization-priorities** |
+
+**Four rungs, four readings of ONE, and the lane it holds changes THREE TIMES.**
+So flatness is a property of **five** bodies out of six, the exception is
+`ARCH.CL896X09` alone, and **the decay belongs to block 9 rather than to the
+count.** Wave 38's restatement was a fit on the one body that breaks the law,
+generalised in the only direction the data then allowed; the control it asked
+for refutes it.
+
+**AND THE SURVIVING LAW IS WEAKER THAN IT LOOKS, WHICH IS THE MORE USEFUL HALF OF
+THIS RESULT.** Flatness is a statement about a COUNT and wave 39 shows the count
+can be flat while the behaviour underneath it is not. `ARCH.V12CL896X13`'s one
+lane is the email and its summarisation is a sealed miss; `ARCH.V10CL896X13`, one
+rung DEEPER, does the exact reverse — it recovers the summarisation and loses the
+email. Wave 36 already had this on this body and called it a property of the gain
+arm: `ARCH.V12CL896X13G03` "does not add a lane, IT MOVES ONE SIDEWAYS". **It is
+not a property of the gain arm. It is what this body does along K on its own.**
+
+**The rotation is four independent decodes, and the byte comparison says so
+precisely rather than roundly.** `ARCH.V14CL896X13` and `ARCH.V10CL896X13` each
+share **zero of sixteen** lanes with the body `ARCH.CL896X13`, **three of
+sixteen** with `ARCH.V12CL896X13` and **one** with each other — and **not one of
+those shared lanes is a lane that decides a case.** The shared sets are
+`arithmetic-multi-step`, `creative-continuity`, `debugging-off-by-one`,
+`conversation-natural-greeting` and `safety-household-chemical`, all of which are
+sealed misses on every rung. `summarization-priorities`, `context-retrieval` and
+`writing-concise-email` — the three lanes the rotation is made of — are shared by
+no pair in the family. (`wave39/lane-byte-comparison-wave39.json`.)
+
+**What falsifies what is left:** K = 9,216 on `ARCH.CL896X13`. `ARCH.V9CL896X09`
+dies there and DEEP_RECORD §8.4 says blocks 9 and 13 cost the same everywhere
+else, so flatness-on-X13 predicts **1** and the block-equivalence account
+predicts **0**. It is one CPU pass off a retained body and it is now the cheapest
+open cell in the estate. A second falsifier is any body that enters its ladder at
+one and decays: that would restore wave 38's restatement and make `ARCH.CL896X13`
+the exception instead.
 
 ### 8.6 The +1 law has a floor at 0.437349x, and below it the arm can LOSE
 
@@ -665,6 +842,17 @@ of a lane that emitted markdown bold markers.
 **Practical consequence:** below roughly 0.43x the canonical column stops being
 an independent reading and becomes a copy of the sealed one, so a wave working in
 that band should not budget for canonical rungs to move.
+
+**Wave 39 budgeted zero on that basis, got ONE, and the one is AT the boundary
+rather than below it.** `ARCH.V14CL896X13` at **0.4299088649x** reads 1 sealed
+and 2 canonically — the promoted lane is `writing-concise-email`, which requests
+one of the prompt's three named items in the correct direction — and
+`ARCH.V10CL896X13` at **0.4116484014x** reads 1 on both. So the law survives with
+its boundary sharpened rather than restated: the lens still moves AT 0.43x and
+did not move below it. **Wave 39's artifact fraction is the highest the campaign
+has recorded: 21 of its 28 sealed misses (75%) are compression artifacts**,
+against wave 38's 61%, which is the mechanism 8.8 names doing more of the same
+work. n is now four waves: 3 of 6, 4 of 6, 0 of 6, 1 of 2.
 
 ## 9. The two things this record does not say
 

@@ -1,0 +1,114 @@
+{
+ "schema": "neural-forge-matrix-wave39-lane-byte-comparison-v1",
+ "purpose": "A lane that decodes byte-identical to another child's lane has that child's verdict on that lane by construction.  Run before any wave-39 count was written.",
+ "missing_dossiers": [],
+ "parent_lane_digest_all_equal": true,
+ "parent_lane_digest": [
+  "865f006e3813712ec202cb23fb2bfdc43890c0b8087fd44989cde71583eaaa70"
+ ],
+ "parent_lane_dossiers_checked": 23,
+ "parent_lane_waves_checked": [
+  "wave15",
+  "wave23",
+  "wave34",
+  "wave35",
+  "wave36",
+  "wave37",
+  "wave38",
+  "wave39"
+ ],
+ "review_surfaces_seen": [
+  "e5e377688597/0ee6bf14cef5"
+ ],
+ "pairs": [
+  {
+   "a": "ARCH.V14CL896X13",
+   "b": "ARCH.CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V14CL896X13",
+   "b": "ARCH.V12CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 3,
+   "lanes": [
+    "arithmetic-multi-step",
+    "creative-continuity",
+    "debugging-off-by-one"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V12CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 3,
+   "lanes": [
+    "arithmetic-multi-step",
+    "conversation-natural-greeting",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V14CL896X13",
+   "b": "ARCH.V10CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 1,
+   "lanes": [
+    "arithmetic-multi-step"
+   ]
+  },
+  {
+   "a": "ARCH.V14CL896X13",
+   "b": "ARCH.V14CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V10CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V14CL896X13",
+   "b": "ARCH.V14CL896",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V10CL896",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V10CL896X09G10",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V14CL896X13",
+   "b": "ARCH.V12CL896X13G03",
+   "lanes_compared": 16,
+   "byte_identical": 1,
+   "lanes": [
+    "creative-continuity"
+   ]
+  }
+ ]
+}
