@@ -317,6 +317,36 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave40-logit-metric-writer-v1",
     "neural-forge-matrix-wave40-body-blend-build-receipt-v1",
     "neural-forge-matrix-wave40-tied-vocabulary-child-v1",
+    # WAVE 41 APPENDS SIX, and the sixth is the second genuinely new schema this
+    # list has taken since wave 25's vocabulary gather.
+    # `neural-forge-matrix-wave41-rowset-vocabulary-child-v1` is written by
+    # `run/mx41/mx41_vocabrowset.py`, the arm that moves WHICH vocabulary rows
+    # are kept rather than how many.  Sixteen waves have moved K and none has
+    # moved the tie-break, although `mx41_vocab.py`'s own docstring records that
+    # the tie-break decides most of the table.  A rowset child is a
+    # standard-shape child in every respect this sealer checks: stock
+    # `Lfm2ForCausalLM`, stock config, a `vocab_size` the loader counts, a
+    # verbatim gather asserted with `torch.equal`, and the deletion twin's
+    # parameter count to the byte, asserted before anything is written.  It
+    # carries its own schema because its receipt carries fields no gather receipt
+    # has -- the arm's key rule, the symmetric difference against the sealed kept
+    # set, the normalised footrule of the whole candidate order, and the identity
+    # gate that says this file's ranker reproduces `choose_kept` exactly.
+    #
+    # The fifth string is wave 40's tie schema RENAMED and carried, for the
+    # reason wave 33 gave: a list completed only where it was needed is a list
+    # the next wave has to reason about.  `run/mx41/mx41_vocabtie.py` is in the
+    # tree and is not run this wave, and `run/mx41/README.md` section 4 says so.
+    #
+    # **THESE SIX ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-41 TREE,
+    # BEFORE ANY GPU RAN.**  Waves 36 through 40 each did the same and none paid
+    # a deployment for this list; wave 41 is the sixth.
+    "neural-forge-matrix-wave41-standard-shape-child-v1",
+    "neural-forge-matrix-wave41-blend-build-receipt-v1",
+    "neural-forge-matrix-wave41-logit-metric-writer-v1",
+    "neural-forge-matrix-wave41-body-blend-build-receipt-v1",
+    "neural-forge-matrix-wave41-tied-vocabulary-child-v1",
+    "neural-forge-matrix-wave41-rowset-vocabulary-child-v1",
 )
 
 

@@ -1,0 +1,205 @@
+{
+ "schema": "neural-forge-matrix-wave41-preregistration-v1",
+ "wave": 41,
+ "branch": "codex/lrc-blank-compression",
+ "registered_against_slate": "docs/ROUND3_SLATE_2026-08-28.md (sha256 1b7562a96d30af919aed70316a340d03041ec3eee1d6241e820c5428271015aa, committed at the cut)",
+ "parent_parameters": 229693184,
+ "reading_standard": "ADDENDUM 6, frozen 15 + parent lane, parent reference 5 Useful / 7 Partial / 3 miss = 12/15; the parent lane is re-read blind from this wave's FIRST dossier before any child is opened, thirteenth consecutive calibration",
+
+ "what_this_wave_measured_before_it_fixed_its_build_list": {
+  "ALIAS_constructibility": {
+   "why_first": "ALIAS is slate item #1 and its whole distinguishing variable is a MANY-TO-ONE encoder: dropped types addressing a surviving row's id, so segmentation and token count are preserved and only type identity degrades. Wave 40 measured that the many-to-one form of C1 does not load on this stack. Wave 41 re-took that measurement on ALIAS's OWN construction, on the real floor child, before writing a builder -- wave 40's procedure, applied to a second class.",
+   "constructions_tried": 4,
+   "result": "ALIAS IS NOT CONSTRUCTIBLE AS A STOCK CHILD ON THIS PARENT. Three failing constructions, three distinct failure modes, all on /mnt/ai_data/neural-forge-matrix/wave40/children/MX40-V9CL896X13.",
+   "A_control_injective": "5 loads, 1 distinct id-to-token digest, 0 errors. The sealed child is deterministic and the probe is sound.",
+   "B_one_alias_in_model_vocab": "5 loads, 4 ERRORS and 1 SUCCESS. `Exception: Error while attempting to unpickle Tokenizer: Token AE-Y-nbsp out of vocabulary at line 1 column 315830`. THE SUCCESS IS THE WORSE HALF: its digest is BYTE-IDENTICAL to the control's, so the alias was silently discarded and a wave that got lucky would have shipped a child indistinguishable from the deletion twin while claiming an alias. Wave 40 recorded 'it does not load'; the truth is it loads about a fifth of the time and lies when it does.",
+   "C_256_aliases_in_model_vocab": "5 loads, 5 errors, TWO different tokens named at FOUR different column offsets -- wave 40's nondeterministic-HashMap signature reproduced at a second construction and a second scale.",
+   "D_alias_in_added_tokens_with_duplicate_id": "5 loads, 1 digest, 0 errors -- and REFUTED ANYWAY. `tokenizers` IGNORES the requested duplicate id and re-ids the added entries at the end of the table: vocab_size 9,214 with len(tokenizer) 9,217 and 9,472. The alias is silently converted into a vocabulary EXTENSION, which is not a fold, and the probe text ' understanding the document' encoded to id 9,420 -- outside the child's own embedding table.",
+   "consequence": "ALIAS ARM-V and ARM-C are NOT BUILT this wave and the class is BLOCKED AT CONSTRUCTION, not closed. It joins K4 (score-bilinear q/k) and K3(c) (Monarch) in the PROBE queue: realisable only with a materialised runtime whose storage claim is arithmetic rather than a loader count. The slate's ALIAS export ruling is therefore MOOT as written -- there is no id-remapped-tokenizer child for Cyril to rule on -- and it is replaced by the standing PROBE storage-claim ask.",
+   "law_effect": "wave 40's NOTES-MX-AR section 11.7 hardens from one construction to THREE, and gains a named silent-failure mode. #12 V-ROUTE and #20 clustered LM head inherit it."
+  },
+  "ROWSET_corpus_audit": {
+   "why": "the slate's Arms A and B rank the discretionary fill by a SECOND census over held-out text 'sealed by hash, disjoint from the frozen 15 AND the 30-prompt extension bank'.",
+   "result": "NO CORPUS IN THIS ESTATE SATISFIES IT, and each fails in its own words.",
+   "lfm2_paraphrase_triplets_v1.json": "purpose field: 'three restatements of each sealed case's ask'. A paraphrase OF the frozen 15; selecting on it is selecting on the review surface.",
+   "lfm2_causal_support_future_manual_review_v1.json": "purpose field: 'never support selection, fitting, training, or an automatic numeric gate'. Contractually barred, and 2,069 characters.",
+   "lfm2_extension_bank_prompts_v1_and_v2.json": "the rider bank. The slate voids any rider whose scoring text overlaps it.",
+   "mapped_donor_calibration.json_and_the_24_captured_batches": "this IS the evidence census that supplies the primary ranking key.",
+   "wikitext_lambada": "the benchmark column; selecting a vocabulary on them contaminates the only external instrument the campaign publishes.",
+   "substitution_registered_here_before_any_build": "Arms A and B are NOT built and stay open. Wave 41 builds the three arms that need no corpus: P (the sealed tie-break run BACKWARDS), R (a seeded permutation, seed 41, reproducible from the receipt), C (the slate's leverage arm verbatim). They bracket the space of orderings -- forward, reverse, random -- rather than sampling two points of it."
+  }
+ },
+
+ "children": [
+  {
+   "tag": "V8CL896X13",
+   "cell_id": "ARCH.V8CL896X13",
+   "builder": "mx41_vocab.py --mode build --k 8192 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+   "stored_parameters": 92455680,
+   "stored_ratio": 0.4025181696292738,
+   "prediction_useful_or_partial": 1,
+   "why": "NOTES-MX-AR section 11.2 names this cell as the next floor cell and states the disagreement: the X13 ladder is flat at ONE through five consecutive rungs (DEEP_RECORD 8.5's flatness law) and the census floor predicts ZERO. Registered at ONE, on flatness, because flatness has now won this exact disagreement once already -- at wave 40's V9CL896X13, where block-equivalence predicted zero and flatness predicted one and the child read one.",
+   "if_it_reads_1": "THE CAMPAIGN FLOOR MOVES from 0.4070832855x to 0.4025181696x on both lenses, a movement of 0.0045651159 of stored ratio, and the X13 ladder is flat at one over SIX rungs.",
+   "if_it_reads_0": "the X13 ladder dies exactly two rungs below where the X09 ladder died, and block choice buys 2,048 rows rather than an axis."
+  },
+  {
+   "tag": "V8CL768",
+   "cell_id": "ARCH.V8CL768",
+   "builder": "mx41_vocab.py --mode build --k 8192 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768",
+   "stored_parameters": 93902592,
+   "stored_ratio": 0.4088174946,
+   "prediction_useful_or_partial": 1,
+   "why": "ARCH.CL768's ladder is flat at ONE across 0.2511 of stored ratio -- CL768 1, V12CL768 1, V10CL768 1, V9CL768 1 -- the deepest flat ladder in the campaign, on a body whose vocabulary axis costs ZERO cases. One more 1,024-row step predicts one."
+  },
+  {
+   "tag": "V7CL768",
+   "cell_id": "ARCH.V7CL768",
+   "builder": "mx41_vocab.py --mode build --k 7168 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768",
+   "stored_parameters": 92854016,
+   "stored_ratio": 0.4042523787,
+   "prediction_useful_or_partial": 1,
+   "why": "THIS IS MLP-QUANTUM's BRACKET ENTRY, ADJUSTED FOR WAVE 40'S FINDING. The slate registers V14CL768X09 as the second-axis entry into the death bracket; wave 40 then sealed ARCH.CL768X09 at 0/15 AS A BODY, so every rung on it must read zero by flatness and the cell cannot distinguish a ratio wall from a dead body. The corrected entry is on the body that is ALIVE: ARCH.CL768, mlp x vocabulary, the pair wave 30's allocator prices at 1.17 cases against the 4.44 every child at this depth has spent, with NO EXCISION AT ALL. 0.4042523787x is 0.0028309068 BELOW the sealed floor rung.",
+   "if_it_reads_1": "THE FLOOR MOVES to 0.4042523787x on a TWO-AXIS child rather than a triple, and the death bracket is NOT a ratio wall -- it is specific to the excised family. L2 promotes to an axis-family statement.",
+   "if_it_reads_0": "the ratio wall gets its first support from a second axis pair, and the CL768 ladder's death is located to within 1,024 rows."
+  },
+  {
+   "tag": "V6CL768",
+   "cell_id": "ARCH.V6CL768",
+   "builder": "mx41_vocab.py --mode build --k 6144 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768",
+   "stored_parameters": 91805440,
+   "stored_ratio": 0.3996872628,
+   "prediction_useful_or_partial": 0,
+   "conditional": "BUILT ONLY IF V7CL768 reads 1 or more. If V7CL768 reads 0 the bracket is located and this cell is not built; the gate is stated here so a substitution afterwards would be visible.",
+   "why": "below 0.40x. The deepest child the campaign has ever built, ARCH.V10CL768X09 at 0.3893934615x, holds nothing, and wave 31 was refused three times by the census floor in this K region. Registered at ZERO against the flatness law, which is the disagreement that makes it worth a review.",
+   "if_it_reads_1": "the first child under 0.40x to hold anything, and the flatness law survives a rung the census floor says it should not."
+  },
+  {
+   "tag": "RP9CL896X13",
+   "cell_id": "ARCH.RP9CL896X13",
+   "builder": "mx41_vocabrowset.py --mode build --arm P --k 9216 --expect-parameters 93504256 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+   "stored_parameters": 93504256,
+   "stored_ratio": 0.4070832855,
+   "control": "ARCH.V9CL896X13, sealed 1/15, SAME body, SAME K, SAME parameter count to the byte",
+   "prediction_useful_or_partial": 1,
+   "why": "the sealed tie-break run BACKWARDS. Registered at ONE -- i.e. at NO CHANGE -- because DEEP_RECORD 8.5's flatness and wave 40's T9CL896X09 both say the rows the decode visits are the high-ranked ones, and both orderings keep the mandatory set and the observed-token census identically. A pulse to 2 or a drop to 0 would be the first evidence in sixteen waves that WHICH rows are kept matters at fixed K."
+  },
+  {
+   "tag": "RR9CL896X13",
+   "cell_id": "ARCH.RR9CL896X13",
+   "builder": "mx41_vocabrowset.py --mode build --arm R --k 9216 --expect-parameters 93504256 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+   "stored_parameters": 93504256,
+   "stored_ratio": 0.4070832855,
+   "control": "ARCH.V9CL896X13, sealed 1/15",
+   "prediction_useful_or_partial": 1,
+   "why": "a seeded permutation, seed 41, reproducible from the receipt alone. It sits between the sealed order and its reverse, so the three arms bracket the ordering space rather than sampling it."
+  },
+  {
+   "tag": "RC9CL896X13",
+   "cell_id": "ARCH.RC9CL896X13",
+   "builder": "mx41_vocabrowset.py --mode build --arm C --k 9216 --expect-parameters 93504256 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+   "stored_parameters": 93504256,
+   "stored_ratio": 0.4070832855,
+   "control": "ARCH.V9CL896X13, sealed 1/15",
+   "prediction_useful_or_partial": 0,
+   "why": "THE SLATE'S OWN PRE-REGISTERED FAILURE, BUILT RATHER THAN SKIPPED. NOTES-MX-M section 2.3: wave 9's row-norm ordering reached 2.34 per cent coverage at M=4,096, and a leverage key s_r = e_r'(E'E)e_r is that key's second cousin -- it ranks by embedding magnitude under the reader metric, which is not a frequency signal at all. Registered BELOW its control, at zero. Built last of the three arms."
+  },
+  {
+   "tag": "V95CL896X09",
+   "cell_id": "ARCH.V95CL896X09",
+   "builder": "mx41_vocab.py --mode build --k 9728 --below-floor",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave37/children/MX37-CL896X09",
+   "stored_parameters": 94028544,
+   "stored_ratio": 0.4093658434,
+   "prediction_useful_or_partial": 0,
+   "why": "BISECT's bracket midpoint. Nothing has ever been built INSIDE either 1,024-row death bracket, because 1,024 is the LADDER's step and not a measured quantum. The X09 ladder reads 1 at K=10,240 and 0 at K=9,216; this is the 256-step midpoint. Registered at ZERO because the X09 family decays one case per two rungs and the interior of a decaying bracket is more likely to be at its lower value than its upper.",
+   "if_it_reads_1": "the floor of the X09 family moves to 0.4093658434x and 'quantized' was the LADDER; the sequential rule then descends in 256-row steps and halts after two consecutive zeros. A single 1/15 interior survival must be TWINNED by a ROWSET arm at the same K before any floor-move claim.",
+   "if_it_reads_0": "the cliff is real and located to within 512 rows on this family."
+  },
+  {
+   "tag": "V9CL896X13G10",
+   "cell_id": "ARCH.V9CL896X13G10",
+   "builder": "mx41_termgain.py --lambda-relative 1.0 (terminal diagonal only)",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-V9CL896X13",
+   "stored_parameters": 93504256,
+   "stored_ratio": 0.4070832855,
+   "storage_delta": "ZERO. 1,024 values overwritten in place; no tensor added, no shape or config change.",
+   "prediction_useful_or_partial": 2,
+   "why": "NORM-ESTATE, and the only repeatable +1 the estate has. ARCH.V10CL896X09 reads 1/15 and its G10 twin reads 2/15 at an identical parameter count. This applies that mechanism to the NEW floor child. NEVER QUOTED AS A RATIO RESULT -- the storage delta is zero by construction.",
+   "if_it_reads_2": "the SEALED 2/15 rung moves from 0.4116484014x to 0.4070832855x, which is a floor movement on the second lens at zero storage cost, and the +1 mechanism is repeatable on a third body."
+  },
+  {
+   "tag": "V9CL896X13G29",
+   "cell_id": "ARCH.V9CL896X13G29",
+   "builder": "mx41_termgain.py --block-gains --lambda-relative 1.0 (29 diagonals, conditioned in depth order)",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-V9CL896X13",
+   "stored_parameters": 93504256,
+   "stored_ratio": 0.4070832855,
+   "storage_delta": "ZERO. 1,024 + 30,464 values overwritten in place.",
+   "prediction_useful_or_partial": 1,
+   "why": "the slate's NORM-ESTATE Arm D at its full-diagonal granularity, which is the HAZARD side of the wave-29 free-parameter grid: 30,464 unknowns is above the filler count wave 29 measured. Registered at ONE -- no better than the source -- because the estate's only repeatable gain is at the TERMINAL site and L8 says the diagonal arm lands three at 5 of 6 K at ONE of 39 sites.",
+   "if_it_beats_G10": "L8 is not a terminal-site law and the whole 0.42-0.60 canonical frontier is re-run free."
+  },
+  {
+   "tag": "V9CL896X13G03",
+   "cell_id": "ARCH.V9CL896X13G03",
+   "builder": "mx41_termgain.py --lambda-relative 0.3 (terminal diagonal only)",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-V9CL896X13",
+   "stored_parameters": 93504256,
+   "stored_ratio": 0.4070832855,
+   "storage_delta": "ZERO",
+   "prediction_useful_or_partial": 1,
+   "conditional": "BUILT ONLY IF G10 and G29 both complete. Third rung of the lambda ladder, which is what runs when the objective does not get to choose.",
+   "why": "wave 26 made 0.3 'the rung that never hurts' off four ladders; wave 27 built six more arms and 0.3 gained on NONE and lost on four, twice while improving its own held-out objective by 23-26 per cent. Registered at one, below G10's two."
+  }
+ ],
+
+ "not_built_this_wave_and_why": [
+  {"item": "ALIAS (slate #1), both arms", "reason": "BLOCKED AT CONSTRUCTION by this wave's own four-construction probe, recorded above. Not closed; moved to the PROBE queue with K4 and K3(c)."},
+  {"item": "ROWSET Arms A and B (slate #2)", "reason": "BLOCKED ON CORPUS by this wave's own audit, recorded above. Not closed; re-proposable the moment a corpus exists that is real text, disjoint from the frozen 15 and the rider bank, and not contractually barred from selection."},
+  {"item": "V14CL768X09 (slate #6 as written)", "reason": "wave 40 sealed ARCH.CL768X09 at 0/15 as a BODY, so by the flatness law every rung on it reads zero and the cell cannot distinguish a ratio wall from a dead body. The axis-independence question is entered instead on the LIVE CL768 body at V7CL768, which is below the floor and needs no 320-second body rebuild. Stated as a substitution with its cause, not a waiver."},
+  {"item": "XCHANGE (slate #3)", "reason": "its Stage-1 multi-plane attention construction and Stage-2 alternating W_v/W_o solve are a new solver, not a driver change. NOT STARTED this wave; no census was run, so nothing about it is claimed either way."},
+  {"item": "PLANE (slate #4)", "reason": "same: the d-unknown q/k layernorm ridge against cached pre-softmax logits is a new solver. NOT STARTED; the plane-energy census that would pre-register its rung was not run, so the HD48 prediction remains unregistered."},
+  {"item": "NORM-ESTATE Arms M and S (slate #7)", "reason": "moment-match and 27-scalar-per-endpoint need a new solver in mx41_termgain.py. The grid therefore straddles the wave-29 free-parameter hazard on its HAZARD SIDE ONLY, and a null on the D arms does not by itself close the estate. Named here rather than discovered in the reading."},
+  {"item": "ROWSET-LANE (slate #8)", "reason": "its steering corpus is the same corpus the ROWSET audit above found does not exist."},
+  {"item": "SC-CORESET (slate #9)", "reason": "research probe, adjudication-gated, and a new solver besides."}
+ ],
+
+ "interpretation_matrix_as_it_can_still_fire": {
+  "note": "the slate's matrix binds ALIAS x ROWSET. ALIAS is blocked at construction, so the two rows that need an ALIAS outcome CANNOT FIRE this wave and are recorded as unfired rather than resolved.",
+  "rows_that_cannot_fire": [
+   "ALIAS pulses, ROWSET null -> death is re-segmentation, not row identity",
+   "ROWSET pulses, ALIAS null -> death is row identity, not segmentation"
+  ],
+  "rows_that_can_fire": [
+   "ROWSET P, R and C all read the control -> row identity is INERT at fixed K under forward, reverse and random orderings; future vocabulary waves argue only about how many rows, never which. L2's quantization claim gets its first support.",
+   "any ROWSET arm moves a case -> WHICH rows are kept matters at fixed K, and the 1,024-row bracket is a tie-break artifact rather than information. Requires 30-prompt extension-bank concordance before any floor claim.",
+   "BISECT interior pulse -> the floor moves in 0.0011413 steps and 'quantized' was the ladder.",
+   "V7CL768 alive AND V95CL896X09 dead -> the death bracket is NOT a ratio wall; it is a property of the excised-triple family, and the mlp x vocabulary pair reaches below it. L2 becomes an axis-family statement.",
+   "V7CL768 dead AND V95CL896X09 dead -> first support for a RATIO wall from a second axis pair at a second body.",
+   "V8CL896X13 alive -> the floor moves on block choice for the second consecutive wave and the X13 ladder is flat at one over six rungs."
+  ]
+ },
+
+ "controls": {
+  "parent_calibration": "re-read blind from this wave's FIRST dossier before any child is opened; must reproduce 5 Useful / 7 Partial / 3 miss = 12/15 or nothing is graded",
+  "runner_identity": "mx41_parent_identity.py must read lane 865f006e3813712ec202cb23, protocol e5e3776885976b1b, prompt pack 0ee6bf14cef5 on every dossier",
+  "lane_byte_comparison": "runs BEFORE any count is written; every pair of this wave's children and every child against its sealed control",
+  "rowset_identity_gate": "mx41_vocabrowset.py's ranker with the SEALED key must reproduce mx41_vocab.choose_kept element for element, on every build",
+  "rowset_count_gate": "--expect-parameters 93504256, asserted before anything is written",
+  "divergence_preread": "publishes how many rows each arm moves at fixed K; an arm at zero symmetric difference IS the sealed child and is not built"
+ },
+
+ "ledger_state_at_registration": {
+  "rows": 1014,
+  "sha256": "c0aa462fb9c2f15c1029a78d3cfcc5eb329ee66769f1b9086fc9f483d5671c1a",
+  "seal_roots": 36,
+  "verified": "1010 of 1014 resolve and verify, 4 historically unresolved"
+ }
+}
