@@ -57,6 +57,16 @@ All three registered acceptance criteria for the G2 body were met exactly:
 that the body ENDS ON `full_attention`** — which no `CL896` body in this estate
 does. `ARCH.CL896X09X13` is structurally unlike anything the campaign has sealed.
 
+**The `[mx32]` in that log line is a carried cosmetic defect and not a wrong
+deployment.** The builder's log prefix has said `[mx32]` since wave 32's cut;
+wave 37's log said it too and `NOTES-MX-AO` quotes it. Every receipt, schema
+string and filename in the wave is wave 38's — `mx38-build-receipt.json`,
+`neural-forge-matrix-wave38-standard-shape-child-v1`, `code_identity.repo_head =
+4eaf5a18` — and the audit pins both receipt write sites at the wave-38 name. It
+is wave 17's `[mx16]` defect, seventh issue, still cosmetic, still not fixed
+because fixing it in a wave that makes no behavioural edit would be a behavioural
+edit.
+
 ---
 
 ## 2. F1: the X09 ladder is not flat, it decays, and the decay is monotone
@@ -334,7 +344,7 @@ one to two orders of magnitude. **Nothing in the deep zone is a usable model.**
 | `f822cd03` | cut wave 38's tree, make no behavioural edit for the second wave running, **and append the sealer's four accept strings in the same commit** |
 | `4eaf5a18` | pre-register wave 38 |
 | `3cc92960` | the six seals and the G3 substitution's own pre-registration |
-| *(this one)* | the measurement, the retention and the docs |
+| `4036759b` | the measurement, the retention and the docs |
 
 **Deployments**, each verified file-by-file against its commit's blob digests:
 
