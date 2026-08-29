@@ -432,6 +432,21 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave44-tied-vocabulary-child-v1",
     "neural-forge-matrix-wave44-rowset-vocabulary-child-v1",
     "neural-forge-matrix-wave44-rope-band-child-v1",
+    # WAVE 45'S SEVEN, APPENDED IN THE COMMIT THAT CUT THE WAVE-45 TREE, BEFORE
+    # ANYTHING RAN.  Wave 45's build list is TWO `mx45_vocab.py` gathers, so
+    # only the standard-shape string can fire; the other six are waves 40
+    # through 44's schemas renamed and carried, for the reason wave 33 gave and
+    # waves 34 through 44 kept.  `cut_wave45.py --audit` reads THIS file and
+    # refuses the cut if any of the seven is missing, so the ninth wave to
+    # append at the cut is the third whose append is verified by code rather
+    # than by prose.
+    "neural-forge-matrix-wave45-standard-shape-child-v1",
+    "neural-forge-matrix-wave45-blend-build-receipt-v1",
+    "neural-forge-matrix-wave45-logit-metric-writer-v1",
+    "neural-forge-matrix-wave45-body-blend-build-receipt-v1",
+    "neural-forge-matrix-wave45-tied-vocabulary-child-v1",
+    "neural-forge-matrix-wave45-rowset-vocabulary-child-v1",
+    "neural-forge-matrix-wave45-rope-band-child-v1",
 )
 
 
