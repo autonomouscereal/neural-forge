@@ -273,6 +273,28 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave38-blend-build-receipt-v1",
     "neural-forge-matrix-wave38-logit-metric-writer-v1",
     "neural-forge-matrix-wave38-body-blend-build-receipt-v1",
+    # Wave 39 adds NO builder class.  Its four strings are wave 38's four renamed
+    # by `run/mx39/cut_wave39.py`, byte-identical in behaviour to the lines above
+    # them.  **This wave builds through `mx39_vocab.py` and nothing else** -- two
+    # vocabulary folds on `MX35-CL896X13`, the block-13 body wave 35 built,
+    # sealed and retains -- so the only one of these four strings a wave-39
+    # receipt can carry is the first.  The other three are appended with it for
+    # wave 33's stated reason: a list that is completed only where it was needed
+    # is a list the next wave has to reason about.
+    #
+    # Wave 39's ONE non-mechanical edit is `mx39_build.py`'s log prefix, a file
+    # this wave never executes; it is stated in `run/mx39/README.md` §4 and it
+    # cannot reach this sealer.
+    #
+    # **THESE FOUR ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-39 TREE,
+    # BEFORE ANY GPU RAN.**  Waves 36, 37 and 38 each did the same and none paid
+    # a deployment for this list; wave 39 is the fourth, and four waves is long
+    # enough that the sentence can stop being advice: append at the cut, not at
+    # the first seal.
+    "neural-forge-matrix-wave39-standard-shape-child-v1",
+    "neural-forge-matrix-wave39-blend-build-receipt-v1",
+    "neural-forge-matrix-wave39-logit-metric-writer-v1",
+    "neural-forge-matrix-wave39-body-blend-build-receipt-v1",
 )
 
 
