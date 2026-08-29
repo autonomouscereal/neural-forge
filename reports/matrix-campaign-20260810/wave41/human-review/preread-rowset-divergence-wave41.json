@@ -1,0 +1,61 @@
+{
+ "schema": "neural-forge-matrix-wave41-rowset-divergence-preread-v1",
+ "purpose": "how many rows each candidate re-ranking actually moves at fixed K.  Publishes and GATES NOTHING; it exists so a wave does not spend a frozen review on an arm whose kept set is the sealed child's",
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+ "rungs": [
+  {
+   "k": 9216,
+   "sealed_kept_rows": 9216,
+   "arms": {
+    "SEALED": {
+     "kept_rows_sealed": 9216,
+     "kept_rows_arm": 9216,
+     "rows_only_in_sealed": 0,
+     "rows_only_in_arm": 0,
+     "symmetric_difference": 0,
+     "jaccard": 1.0,
+     "normalised_footrule_vs_parent_id_order": 0.0,
+     "claim": "symmetric_difference is how many rows this arm actually moved at fixed K.  If it is ZERO the arm IS the sealed child and a null says nothing about selection; the footrule is how far the arm's whole candidate ORDER is from the sealed one, which is nonzero even when the kept set is not",
+     "rows_added_by_topup": 0,
+     "observed_tokens_admitted_by_ranking": 4633
+    },
+    "P": {
+     "kept_rows_sealed": 9216,
+     "kept_rows_arm": 9216,
+     "rows_only_in_sealed": 1638,
+     "rows_only_in_arm": 1638,
+     "symmetric_difference": 3276,
+     "jaccard": 0.6981757877280266,
+     "normalised_footrule_vs_parent_id_order": 0.8412102891633884,
+     "claim": "symmetric_difference is how many rows this arm actually moved at fixed K.  If it is ZERO the arm IS the sealed child and a null says nothing about selection; the footrule is how far the arm's whole candidate ORDER is from the sealed one, which is nonzero even when the kept set is not",
+     "rows_added_by_topup": 0,
+     "observed_tokens_admitted_by_ranking": 4423
+    },
+    "R": {
+     "kept_rows_sealed": 9216,
+     "kept_rows_arm": 9216,
+     "rows_only_in_sealed": 1504,
+     "rows_only_in_arm": 1504,
+     "symmetric_difference": 3008,
+     "jaccard": 0.7194029850746269,
+     "normalised_footrule_vs_parent_id_order": 0.5601666676694913,
+     "claim": "symmetric_difference is how many rows this arm actually moved at fixed K.  If it is ZERO the arm IS the sealed child and a null says nothing about selection; the footrule is how far the arm's whole candidate ORDER is from the sealed one, which is nonzero even when the kept set is not",
+     "rows_added_by_topup": 0,
+     "observed_tokens_admitted_by_ranking": 4518
+    },
+    "C": {
+     "kept_rows_sealed": 9216,
+     "kept_rows_arm": 9216,
+     "rows_only_in_sealed": 1726,
+     "rows_only_in_arm": 1726,
+     "symmetric_difference": 3452,
+     "jaccard": 0.6845183695850849,
+     "normalised_footrule_vs_parent_id_order": 0.676124135767845,
+     "claim": "symmetric_difference is how many rows this arm actually moved at fixed K.  If it is ZERO the arm IS the sealed child and a null says nothing about selection; the footrule is how far the arm's whole candidate ORDER is from the sealed one, which is nonzero even when the kept set is not",
+     "rows_added_by_topup": 0,
+     "observed_tokens_admitted_by_ranking": 4524
+    }
+   }
+  }
+ ]
+}

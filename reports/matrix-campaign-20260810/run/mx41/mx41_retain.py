@@ -64,12 +64,83 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave41")
 #: keep the rows carrying a CLAIM no other artifact re-derives, drop what one
 #: CPU pass rebuilds from a retained source, and state the deviation whenever
 #: the count is not best-five.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX41-V8CL896X13": (
+        "THE FRONTIER HOLDER.  1/15 at 0.4025181696x, the campaign's sealed and "
+        "canonical 1/15 rung, moved this wave from 0.4070832855x.  A frontier "
+        "holder is retained on principle -- wave 40's rule, kept: the next "
+        "wave's floor cell is graded against it, and a floor whose child has "
+        "been deleted is a floor that can only be cited and not checked.  It is "
+        "also the child whose held lane is byte-identical to its control's, "
+        "which is a claim a future wave may want to re-run rather than re-read"
+    ),
+    "MX41-V7CL768": (
+        "THE DEEPEST TWO-AXIS CHILD IN THE CAMPAIGN and the ONLY NEW HELD-LANE "
+        "WITNESS IN THIS WAVE.  1/15 at 0.4042523787x on mlp x vocabulary with "
+        "NO EXCISION, held-lane sha256 b5c9c35edfad354b, shared with no other "
+        "dossier in the estate.  Its claim -- that the 0.404 to 0.407 death "
+        "band is NOT a ratio wall, because a two-axis child is alive inside it "
+        "while three-axis children at the same depth are not -- is re-derivable "
+        "from no other retained artifact.  Its body MX40-CL768 is retained, so "
+        "this is the one rung on that ladder worth its own bytes"
+    ),
+}
 
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: NOT worth its bytes, naming what rebuilds it and from which retained source.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX41-V8CL768": (
+        "1/15 at 0.4088174946x, and eleven of its sixteen lanes are byte-"
+        "identical to ARCH.V9CL768's, so it re-reads a decode the estate "
+        "already holds.  REBUILT BY one CPU pass: vocabq.sh "
+        "V8CL768:8192:<MX40-CL768>, off wave 40's RETAINED MX40-CL768"
+    ),
+    "MX41-V95CL896X09": (
+        "0/15 at 0.4093658434x.  Its finding -- the X09 cliff is in the upper "
+        "half of the bracket -- is fully carried by the sealed cell receipt and "
+        "the ledger row; the checkpoint adds nothing a reader can use.  REBUILT "
+        "BY one CPU pass: vocabq.sh V95CL896X09:9728:<MX37-CL896X09>, off wave "
+        "37's RETAINED MX37-CL896X09"
+    ),
+    "MX41-RP9CL896X13": (
+        "1/15 at 0.4070832855x, the arm P rowset child.  REBUILT BY one CPU "
+        "pass: rowsetq.sh RP9CL896X13:P:9216:93504256:<MX35-CL896X13>, off wave "
+        "35's RETAINED MX35-CL896X13, and the arm is deterministic so the "
+        "rebuild is the same bytes"
+    ),
+    "MX41-RR9CL896X13": (
+        "1/15 at 0.4070832855x, the arm R rowset child.  Its permutation is "
+        "SEEDED and the seed is in its receipt, so the rebuild is reproducible "
+        "from the receipt alone.  REBUILT BY one CPU pass: rowsetq.sh "
+        "RR9CL896X13:R:9216:93504256:<MX35-CL896X13>, off wave 35's RETAINED "
+        "MX35-CL896X13"
+    ),
+    "MX41-RC9CL896X13": (
+        "1/15 at 0.4070832855x, the arm C rowset child.  REBUILT BY one CPU "
+        "pass: rowsetq.sh RC9CL896X13:C:9216:93504256:<MX35-CL896X13>, off wave "
+        "35's RETAINED MX35-CL896X13.  All three arms are dropped together "
+        "BECAUSE their result is that they are indistinguishable from their "
+        "control on the review, and the three sealed receipts carry the row-"
+        "movement numbers that ARE the result"
+    ),
+    "MX41-V9CL896X13G10": (
+        "1/15 at 0.4070832855x, ZERO storage delta.  REBUILT BY one GPU pass of "
+        "about two minutes: gainq.sh <gpu> V9CL896X13G10:<MX40-V9CL896X13>:1.0, "
+        "off wave 40's RETAINED MX40-V9CL896X13"
+    ),
+    "MX41-V9CL896X13G29": (
+        "0/15 at 0.4070832855x, ZERO storage delta, and the arm that DESTROYED "
+        "its source's one case while improving its own objective.  That finding "
+        "is carried entirely by the two sealed receipts and the update_scale and "
+        "relSSE numbers in them.  REBUILT BY one GPU pass: gainq.sh <gpu> "
+        "V9CL896X13G29:<MX40-V9CL896X13>:1.0:29"
+    ),
+    "MX41-V9CL896X13G03": (
+        "1/15 at 0.4070832855x, ZERO storage delta.  REBUILT BY one GPU pass: "
+        "gainq.sh <gpu> V9CL896X13G03:<MX40-V9CL896X13>:0.3"
+    ),
+}
 
 
 def main() -> int:

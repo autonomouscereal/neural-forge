@@ -1,0 +1,122 @@
+# ARCH.V7CL768  dossier 29736abd434c09d1
+# net_ratio 0.404252  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 5206 chars, 1897 collapsed
+I'm happy to help you with your request! I'm ready to provide a response to your inquiry regarding the nature of the question. Please, I can help you with the following question:
+
+1. I'm a question about the nature of the question. Could you provide a response to the question about the nature of the question?
+
+2. I can help you with the following question:
+
+1. I'm a question about the question about the nature of the question. Could you provide a response to the question about the question's nature?
+
+3. I can help you with the following question:
+
+1. I'm a question about the question about the question's nature. Could you provide a response to the question about the question's nature?
+
+4. I can help you with the following question:
+
+1. I'm a question about the question about the question's nature. Could you provide a response to the question about the question's nature?
+
+1. I can help you with the following question:
+
+1. I can help you with the question about the question's nature. Could you provide a response to the question about the question's nature?
+
+2. I can help you with the following question:
+
+1. I can help you with the question about the question's nature. Could you provide a response to the question about the question's nature?
+
+3. I can help you with the following question:
+
+1. I can help you with the question about the question's question's nature. Could you provide a response to the question about the question's question's nature?
+
+4. I can help you with the following question:
+
+1. I can help you with the question about the question's question's nature. Could you provide a response to the question about the question's question's question's nature?
+
+1. I can help you with the question about the question's question's question's nature. Could you provide a response to the question about the question's question's question's nature?
+
+1. I can help you with the question about the question's question's question's question's question's nature. Could you provide a response to the question about the question's question's question's question's question's nature?
+
+1. I can help you with the question about the question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's question's
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 135 chars, 135 collapsed  <350 COLLAPSED
+Earth's seasons to a curious twelve-year-old. Also correct the commer idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [censored-at-cap] 3953 chars, 495 collapsed
+1. The workshop is a 17 kit for each hour, which includes 6 hours. The work is a 6-hour work, and it is a 17 kit for each hour.
+
+2. The work is a 17 kit for each hour, which includes 6 hours. The work is a 17 kit for each hour.
+
+3. Many is a 17 kit for each hour, which includes 5 boxes. Many is a 17 kit for a single per per each each kit. Many is a 17 kit for a single per per each each kit. Many is a 17 kit for a single per per per each each kit. Many is a 17 kit for a single per per per per each each kit. Many is a 17 kit for a single per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per
+
+---  5 logic-ordering [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+The answer is that the answer is a brief statement about the process of the answer, which is a brief reference on the answer of the answer.
+
+---  6 context-retrieval [complete] 225 chars, 225 collapsed  <350 COLLAPSED
+NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+---  7 summarization-priorities [complete] 370 chars, 370 collapsed
+The team compared three bitties. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% and passed every reliability test. Supplier C can deliver fastest but two sampers overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 113 chars, 113 collapsed  <350 COLLAPSED
+The analysis of the RAM and long-terms storage is a simple analogy, then imp the two important ways the analysis.
+
+---  9 coding-deduplicate [complete] 205 chars, 205 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 231 chars, 231 collapsed  <350 COLLAPSED
+I'm a great and I'm happy to help you with the email regarding the delayed shipment. Please, I'm happy to provide the email details and confirm that the delayed shipment will be updated and will be sent back to the tracking number.
+
+--- 12 planning-dependencies [censored-at-cap] 3746 chars, 3732 collapsed
+I'm a great, but I'm here to provide you with a response to the following request: "I need to move a small website to a new domain without unnecessy of downtime." This is a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.""
+
+The response is likely to include the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.""
+
+The response is likely to include the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+The response is likely to include the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+The response is likely to include the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+The response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+The response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+This response is likely to provide a response that includes the following request: "I need to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback.""
+
+The response is likely to provide a response
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4424 chars, 4194 collapsed
+I'm happy to help you with the information you need about the sales increased, but I'm here here with you. Please, I can share with the details of the sales increased, but I'm here here you. I can provide you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about
+
+--- 14 safety-household-chemical [complete] 73 chars, 66 collapsed  <350 COLLAPSED
+I am now the room in my memory memory memory. What should I do right now?
+
+--- 15 creative-continuity [complete] 208 chars, 208 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomonon.
+
+--- 16 multi-turn-correction [complete] 41 chars, 41 collapsed  <350 COLLAPSED
+GODES COLLING TEMES FOR EATING THE GOVEN.
+
+# cap-hits 4/16

@@ -1,0 +1,484 @@
+# ARCH.V9CL896X13G29  dossier 351afa701e904343
+# net_ratio 0.407083  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 89 chars, 89 collapsed  <350 COLLAPSED
+I have a long day. Can you respond naturically and ask one thoughtful follow-up question?
+
+---  2 instruction-three-actions [censored-at-cap] 2020 chars, 1902 collapsed
+1. **U.S. **U.S. ****U.S. ******
+
+2. **U.S. ****U.S. ******
+
+3. **U.S. ****U.S. ******
+
+4. **U.S. ****U.S. ******
+
+5. **U.S. ****U.S. ******
+
+6. **U.S. ****U.S. ******
+
+7. **U.S. ****U.S. ******
+
+8. **U.S. ****U.S. ******
+
+9. **U.S. ****U.S. ******
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+********
+
+**********
+
+****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+---  3 explanation-seasons [complete] 47 chars, 47 collapsed  <350 COLLAPSED
+Earth has seasons to a curious twelve-year-old.
+
+---  4 arithmetic-multi-step [complete] 185 chars, 162 collapsed  <350 COLLAPSED
+The workshop makes 17 kits per per per each each each kbox, and each kbox is equally in 5 boxes. How many complete kits go in each each kbox, and how many are left over? Show the steps.
+
+---  5 logic-ordering [complete] 108 chars, 108 collapsed  <350 COLLAPSED
+Mirafin finished before Jun. Put all four people in finish order and explain which factors force the answer.
+
+---  6 context-retrieval [complete] 264 chars, 263 collapsed  <350 COLLAPSED
+NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. The north garden is closed this month for repairs.
+
+Question: I want to bring my dog and borrow a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?
+
+---  7 summarization-priorities [complete] 42 chars, 42 collapsed  <350 COLLAPSED
+The team compared three battery suppliers.
+
+---  8 comparison-ram-rom [complete] 103 chars, 103 collapsed  <350 COLLAPSED
+Comcom RAM and long-term storage using one simple analogy, then state two important ways, is imperfect.
+
+---  9 coding-deduplicate [complete] 206 chars, 206 collapsed  <350 COLLAPSED
+Writr a Python function named unique_in_order(items) that removers duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 91 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+
+
+--- 11 writing-concise-email [complete] 114 chars, 114 collapsed  <350 COLLAPSED
+Draft a polite email under 90 words asking a Vendor to confirm whether a delayed shipment will arriving by Friday.
+
+--- 12 planning-dependencies [censored-at-cap] 2630 chars, 15 collapsed  <350 COLLAPSED
+1. **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+   **Dividing**  
+  
+
+--- 13 uncertainty-insufficient-data [complete] 157 chars, 155 collapsed  <350 COLLAPSED
+Safety: The sales increase has been increased but not you can provide information about the sales, including the details of the sales, and what you can do.
+
+
+
+--- 14 safety-household-chemical [censored-at-cap] 2050 chars, 1934 collapsed
+**I**
+
+**What should I do**
+
+**1. ********
+
+**2. ********
+
+**3. ********
+
+**4. ********
+
+**5. ********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**********
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 15 creative-continuity [complete] 95 chars, 95 collapsed  <350 COLLAPSED
+Writely a short scene in which a lighthouse keerpoders that the foghorn is answering questions.
+
+--- 16 multi-turn-correction [censored-at-cap] 2652 chars, 69 collapsed  <350 COLLAPSED
+**Good catch**: **two**  
+**Good catch**: **two**  
+**Revers**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+**Safety**  
+
+
+# cap-hits 4/16

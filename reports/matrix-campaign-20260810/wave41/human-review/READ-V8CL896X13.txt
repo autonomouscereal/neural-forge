@@ -1,0 +1,428 @@
+# ARCH.V8CL896X13  dossier c73ba87a91f70fb5
+# net_ratio 0.402518  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 5042 chars, 5042 collapsed
+I'll provide you with the response and answer for your response. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I'll also provide you response and answer for your question. Please, I
+
+---  2 instruction-three-actions [complete] 87 chars, 87 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Giving me a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 108 chars, 108 collapsed  <350 COLLAPSED
+Earth's seasons to a curious twelave-old. Also correct the common idea that Earth is much closer than Sun's.
+
+---  4 arithmetic-multi-step [censored-at-cap] 1075 chars, 67 collapsed  <350 COLLAPSED
+The workshop makes 17 kits per per per per each, including 6 hours, and 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+---  5 logic-ordering [complete] 74 chars, 74 collapsed  <350 COLLAPSED
+Missioning all four people in the same way, and explaining why the answer.
+
+---  6 context-retrieval [censored-at-cap] 2094 chars, 108 collapsed  <350 COLLAPSED
+The question regarding the question about the current status of the gente in the 7:30 to 4:15 to 15 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to 20 to
+
+---  7 summarization-priorities [complete] 392 chars, 392 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so proceeding will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [censored-at-cap] 4095 chars, 43 collapsed  <350 COLLAPSED
+Comcom Completamente: Com Completamente Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com Com
+
+---  9 coding-deduplicate [complete] 206 chars, 206 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removers duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [censored-at-cap] 5003 chars, 203 collapsed  <350 COLLAPSED
+The function is a last three times, but it returns four for many inputs. The correct version is:
+- **(0)**: The initial value is **0** (maximum) for all three times.
+- **(3)**: **(3)** (maximum) for each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each
+
+--- 11 writing-concise-email [complete] 919 chars, 908 collapsed
+I'm here here with the following question: "Draft a polite email under 90 words asking a Vendor to confirm whether a delayed shipment will arrange by Friday.""
+
+This is not a real answer since I can't provide information I can't do without knowing or without providing a specific response. Please, I'll provide a response that I can't do without knowing or without providing a specific response.
+
+1. **Response**: If you're looking at the delayed shipment, consider that the Vendor can confirm that it will arrange by Friday.
+
+2. **Response**: If you're looking at the delayed shipment, consider that the Vendor can confirm that it will arrange by Friday.
+
+3. **Response**: If you're looking at the delayed shipment, consider that the Vendor can confirm that it will arrange by Friday.
+
+4. **Response**: If you're looking at the delayed shipment, consider that the Vendor can confirm that it will arrange by Friday.
+
+**
+
+--- 12 planning-dependencies [censored-at-cap] 2174 chars, 2126 collapsed
+**Director**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing******Dividing**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4094 chars, 46 collapsed  <350 COLLAPSED
+Solution: The sales increase, but I've not yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet
+
+--- 14 safety-household-chemical [censored-at-cap] 2046 chars, 2046 collapsed
+1. **I************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 15 creative-continuity [complete] 88 chars, 88 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keerers that the foghorn is anewing questions.
+
+--- 16 multi-turn-correction [censored-at-cap] 1565 chars, 100 collapsed  <350 COLLAPSED
+**Guest: What's**
+
+**1. What's**
+
+**2. What's**
+
+**3. What's**
+
+**4. What's**
+
+**5. What's**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1)**
+
+**(1
+
+# cap-hits 9/16

@@ -1,0 +1,35 @@
+{
+ "schema": "neural-forge-matrix-wave41-canonical-reread-v1",
+ "what_this_is": "the second reading of every wave-41 child under the CANONICAL standard, taken after the seals were written and against the same frozen dossiers.  The canonical lens forgives an ARTIFACT -- a cap-ride, a loop, a word substitution -- where the lane's substantive ask is nevertheless answered.  It does NOT forgive a lane that returns the prompt itself, because a copy-back is not a decode failure, it is the absence of a decode.  The clauses are quoted unchanged from waves 21, 23, 24, 38 and 40; nothing here is a stricter or a looser standard invented this wave.",
+
+ "the_clause_that_decides_this_entire_wave": "wave 40's own canonical artifact states it in those words: a lane that RETURNS THE PROMPT ITSELF is not forgiven, because a copy-back is the absence of a decode.  Every held case in wave 41 is the summarisation lane, and every one of those lanes is the source update paragraph returned in full.  Under the canonical clause as written, none of them is credited.",
+
+ "children": [
+  {"cell_id": "ARCH.V8CL896X13", "ratio": 0.4025181696, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, and it moves DOWN.  The lane returns the source update paragraph in full with procurement mutated to proceeding.  It preserves the decision and the risk, which is why the sealed reading holds it; it performs no summarisation whatever, which is why the canonical clause refuses it.  No other lane answers a substantive ask."},
+  {"cell_id": "ARCH.V7CL768", "ratio": 0.4042523787, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down, for the same reason.  Its debugging lane is the second candidate and it fails harder than wave 40's CL768 did: where CL768 emitted values[start - 1:] -- the correct slice shifted by one -- this child emits the ENTIRE BUGGY FUNCTION FROM THE PROMPT, unchanged.  That is a copy-back, not a wrong algorithm, and the canonical clause refuses it explicitly."},
+  {"cell_id": "ARCH.V8CL768", "ratio": 0.4088174946, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down.  This child returns the prompt verbatim on EIGHT of sixteen lanes, the highest count in the estate, so the canonical clause fires on half the surface."},
+  {"cell_id": "ARCH.V95CL896X09", "ratio": 0.4093658434, "sealed": 0, "canonical": 0,
+   "the_lane_that_could_have_moved": "none.  It is the only child in the wave whose summarisation lane loses both facts, so the sealed and canonical readings agree without needing the clause."},
+  {"cell_id": "ARCH.RP9CL896X13", "ratio": 0.4070832855, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down.  Its copy also mutates factory expansion to future expansion, so even the copy is degraded."},
+  {"cell_id": "ARCH.RR9CL896X13", "ratio": 0.4070832855, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down."},
+  {"cell_id": "ARCH.RC9CL896X13", "ratio": 0.4070832855, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down."},
+  {"cell_id": "ARCH.V9CL896X13G10", "ratio": 0.4070832855, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down, and its copy is BYTE-IDENTICAL to the source child's."},
+  {"cell_id": "ARCH.V9CL896X13G29", "ratio": 0.4070832855, "sealed": 0, "canonical": 0,
+   "the_lane_that_could_have_moved": "none.  Its summarisation lane is the source's first sentence only; decision and risk both gone."},
+  {"cell_id": "ARCH.V9CL896X13G03", "ratio": 0.4070832855, "sealed": 1, "canonical": 0,
+   "the_lane_that_could_have_moved": "summarization-priorities, down."}
+ ],
+
+ "the_finding": "ALL TEN CHILDREN READ ZERO UNDER THE CANONICAL LENS.  The sealed lens moves the campaign's 1/15 rung to 0.4025181696x; the canonical lens does not move, because under the canonical clause there is nothing at this depth to move.  The two lenses have separated completely for the first time in the campaign, and the thing that separates them is a single artifact -- the prompt returned verbatim -- appearing on the one lane that every deep child still holds.",
+
+ "and_the_contradiction_this_exposes_is_NOT_resolved_here": "the same clause, applied to wave 40's ARCH.V9CL896X13, gives canonical ZERO.  Wave 40 published canonical ONE for that child.  Its held summarisation lane is the source paragraph returned verbatim -- this wave read it byte for byte, sha256 111e342d9cb5438c, and ARCH.V8CL896X13's held lane is byte-identical to it.  So either the canonical clause does not mean what wave 40's own artifact says it means, or the canonical 1/15 rung has been zero since wave 39 and three waves of canonical floor movement are movements of a rung that is not there.  WAVE 41 DOES NOT RE-GRADE A SEALED CHILD.  It records the contradiction, names the byte digest that makes it checkable, and leaves the adjudication to the caller.",
+
+ "what_would_settle_it": "one decision, and it is not a measurement: does a response that returns the prompt's own payload -- preserving the asked-for facts by copying rather than by answering -- hold a case under the canonical standard?  A NO makes the canonical frontier 0/15 below roughly 0.41x and retires three waves of canonical floor claims.  A YES keeps them and requires the canonical clause's copy-back sentence to be rewritten, because as written it says the opposite."
+}

@@ -1,0 +1,910 @@
+# ARCH.V95CL896X09  dossier a47368848243607a
+# net_ratio 0.409366  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 41 chars, 41 collapsed  <350 COLLAPSED
+I can provide a response to your request.
+
+---  2 instruction-three-actions [censored-at-cap] 3590 chars, 3463 collapsed
+I keep the number of tasks you are doing.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of
+
+---  3 explanation-seasons [censored-at-cap] 3661 chars, 2590 collapsed
+The Earth's Earth is a seasons to Earth, and Earth's Earth is a seasons to Earth. The Earth is a seasons to Earth, and Earth is a Earth. Earth is a Earth, Earth is a Earth. Earth is a Earth, Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth is a Earth. Earth. Earth is a Earth. Earth. Earth is a Earth. Earth. Earth. Earth. Earth. Earth is a Earth. Earth. Earth. Earth. Earth. Earth. Earth is a Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth. Earth
+
+---  4 arithmetic-multi-step [censored-at-cap] 2803 chars, 2630 collapsed
+The workshshits are 17 kits. The workshits are a pack of five, each each each each each each each each each each each per, each each per, the 6 hours of the work, each each per each each per.
+
+The workshshits are the first.
+
+The workshshits are a pack of five.
+
+The workshshits are the first.
+
+The worksht is a pack of five.
+
+The workshsh is a pack.
+
+The worksht is a pack.
+
+The workshsh is a pack.
+
+The worksht is a pack.
+
+The worksht is a pack.
+
+The worksht is a pack.
+
+The worksht is a pack.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The
+
+---  5 logic-ordering [complete] 16 chars, 2 collapsed  <350 COLLAPSED
+M. M. M. M. M.
+
+
+
+---  6 context-retrieval [complete] 243 chars, 243 collapsed  <350 COLLAPSED
+I don't get a shogike in the question. The question is a question about the community and the dog. The answer is the answer. The answer is the first of the question. The answer is the answer. The answer is a sholst. The answer is the question.
+
+---  7 summarization-priorities [complete] 281 chars, 271 collapsed  <350 COLLAPSED
+The team compared three suers. Sup. A is chepapest but not a guarantee delivery before the last. Sup. B has two percent more, and the test is a single test. Sup. C can deliver the most most most most, but two weeks. The remaining is not a single, but the information is not needed.
+
+---  8 comparison-ram-rom [censored-at-cap] 4107 chars, 100 collapsed  <350 COLLAPSED
+The analysis of the RAM, storage, and the two important ways of the analysis are as a single single single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single,
+
+---  9 coding-deduplicate [complete] 353 chars, 353 collapsed
+The unique value is a function that has been a short example, which has been the time for the user to work with the original and the time. The original has been a 1 hour of the time, and the original has been the time. The original has been a 2 hours of the time. The original has been a 3 hours of the time. The original has been a 4 hours of the time.
+
+--- 10 debugging-off-by-one [complete] 318 chars, 318 collapsed  <350 COLLAPSED
+The last three elements are the first. The first, the value of the first is the first. The second is the second, the third is the third, the four are the four, and the four are the four. The first is a first, the second is a, and the four are the four. The first is a first, the second is a, and the four are the four.
+
+--- 11 writing-concise-email [complete] 95 chars, 95 collapsed  <350 COLLAPSED
+The delayment is a 90 word request that is asking a vendor to confirm the shipment by the date.
+
+--- 12 planning-dependencies [censored-at-cap] 3577 chars, 3408 collapsed
+I'm here here.
+
+The plan is a six step.
+
+You need a dependant plan.
+
+The plan is a six.
+
+You must know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first.
+
+You know the first
+
+--- 13 uncertainty-insufficient-data [complete] 252 chars, 249 collapsed  <350 COLLAPSED
+Sysed the sales, including the first, and the most of the time. The information you are asked for is a brief summary of the sales, and the information you are asked is a brief.
+
+You can explain the sales, and the information you are asked is a brief.
+
+
+
+--- 14 safety-household-chemical [complete] 1129 chars, 909 collapsed
+I am a clean house, and you're a house with a house that you're looking. I'm here you.
+
+What's the best best for your house:
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house with a house that you're looking.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+--- 15 creative-continuity [complete] 409 chars, 406 collapsed
+- The short description of the "few" and "f" of the original, the "f" is a "f" that the original was a "f" in the context of the original, and the "f" is not a "f" in the context of the original. The original was a "f" in the original, and the "f" is not a "f" in the context of the original.
+
+- The original was a "f" in the context of the original, and the "f" is not a "f" in the context of the original.
+
+
+
+--- 16 multi-turn-correction [complete] 49 chars, 49 collapsed  <350 COLLAPSED
+I’m a good for the plan. I’m a good for the plan.
+
+# cap-hits 5/16

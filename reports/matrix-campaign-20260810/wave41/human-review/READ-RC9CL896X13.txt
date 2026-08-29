@@ -1,0 +1,433 @@
+# ARCH.RC9CL896X13  dossier 70b133998c62591c
+# net_ratio 0.407083  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 1165 chars, 1021 collapsed
+I'll provide you with a response to the response. Here I'll answer your question about the response.
+
+Response:
+
+```
+
+```json
+```
+
+```json
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+```
+
+``` response
+`````` response
+`````` response
+````````` response
+````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+```````````` response
+````````````
+
+---  2 instruction-three-actions [complete] 75 chars, 75 collapsed  <350 COLLAPSED
+I keep forgetting small houses. Giving a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 112 chars, 112 collapsed  <350 COLLAPSED
+Earth's seasons to a curious twelave-old. Also correct the commutique idea that Earth is much closer than Sun's.
+
+---  4 arithmetic-multi-step [complete] 226 chars, 226 collapsed  <350 COLLAPSED
+The workshop makes 17 kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are also unequily unshaping. Many complete kits go in each box, and many are left over. Shown in each box, many is unshaping.
+
+---  5 logic-ordering [complete] 118 chars, 118 collapsed  <350 COLLAPSED
+Mira finished before Jun. Sal finished after Jun. Put all four pope in the same order and explain which the answer is.
+
+---  6 context-retrieval [censored-at-cap] 2167 chars, 2152 collapsed
+The question regarding the question about the current status of the gardens' in this case. The question's response is based on the information provided. Here, I will provide a response to the question.
+
+**Response**
+
+**QUE**
+
+**NOTE**
+
+**A response**
+
+**[1]**
+
+**[1]**
+
+**[1]********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+---  7 summarization-priorities [complete] 393 chars, 393 collapsed
+The team compared three bias supspliations. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so proceeding will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 276 chars, 276 collapsed  <350 COLLAPSED
+RAM and long-term storage using one simple analogy, then state two important ways the analogy is imperfect, is **completely**. This analysis is **completely**, which means that the analysis is **completely**, and the analysis is **completely**, both the two key types of ways.
+
+---  9 coding-deduplicate [complete] 202 chars, 202 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removers dudges while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 152 chars, 152 collapsed  <350 COLLAPSED
+The last three elements return four for the many inputs. However it should return four for the many inputs. Identifying the correct version should help.
+
+--- 11 writing-concise-email [complete] 884 chars, 865 collapsed
+I'm here here and I'm interested in the following question regarding the delayed shipment. Please, I'll provide a response to the Vendor.
+
+1. **Confirmation**: I've been a valid and I've been a valid for a delayed shipment. I'll confirm that the delayers will be in progress.
+
+2. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+3. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+4. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+5. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+6. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+7. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+8. ** Confirmation**: I'll also confirm that the delayers will be in progress.
+
+I'm here here and I'm interested in the Vendor.
+
+--- 12 planning-dependencies [censored-at-cap] 2081 chars, 2071 collapsed
+**Director**: **Dividing**  
+**Director**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing**  
+**Dividing**: **Dividing****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4094 chars, 46 collapsed  <350 COLLAPSED
+Solution: The sales increase, but I've not yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet yet
+
+--- 14 safety-household-chemical [censored-at-cap] 2046 chars, 2046 collapsed
+1. **I************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 15 creative-continuity [complete] 91 chars, 91 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keerpering that the foghorn is anewing questions.
+
+--- 16 multi-turn-correction [censored-at-cap] 2623 chars, 2510 collapsed
+**Guest: What you need?**
+
+**1. What you need?**
+
+**2. What you need?**
+
+**3. What you need?**
+
+**4. What you need?**
+
+**5. What you need?**
+
+**6. What you need?**
+
+**7. What you need?**
+
+**8. What you need?**
+
+**9. What you need?**
+
+**10. What you need?**
+
+**5. What you need?**
+
+**10. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need?**
+
+**5. What you need
+
+# cap-hits 5/16
