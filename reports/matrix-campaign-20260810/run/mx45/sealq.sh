@@ -189,4 +189,90 @@ seal () {
 # --- wave 45's own calibration, byte comparison and reading order are written
 # --- below this line AFTER the dossiers are read, and not before.
 
+# AND IT WAS RUN, AND IT IS EXACT ON THE COUNT AND ON THE SPLIT, LANE FOR LANE.
+# The parent's own responses were re-read blind from ARCH.V2CL768's dossier --
+# the FIRST dossier of THIS wave, sealed at 12:06:40.293Z, ninety-four seconds
+# before ARCH.V1CL768's, and read before any wave-45 child lane was opened --
+# against the standard at the top of this file.  EIGHTEENTH consecutive
+# calibration.  Useful-or-partial 12/15.  Cap hits 0/16: all sixteen parent
+# lanes terminate complete.  Both documented anchors reproduce VERBATIM: the
+# arithmetic Partial boxes 3 kits per box with 94 left over, and the multi-turn
+# miss offers Vegan Peanut Butter and Jelly Bars to a table with two severe
+# peanut allergies.
+#
+# THE SPLIT IS 6 USEFUL / 6 PARTIAL / 3 MISS, WHICH IS WAVE 44'S SPLIT LANE FOR
+# LANE AND WAVE 43'S BEFORE IT.  The inherited reference is 5 / 7 / 3 and wave
+# 42 read 4 / 8 / 3; all five totals are 12/15 and all five name the same
+# multi-turn miss.  This wave reproduces the three misses against the prompts
+# rather than against a memory of them:
+#
+#  * logic-ordering is a MISS.  The ask is to PUT ALL FOUR PEOPLE IN FINISH
+#    ORDER and say which facts force it.  The parent never states the order and
+#    boxes Sal finishes after Jun as the fact that forces Sal finishes after
+#    Jun, which is a premise restated as a conclusion.
+#  * comparison-ram-rom is a MISS.  The parent asserts that RAM does not store
+#    information or data AND that the long-term vault does not store
+#    information or data, which is both halves of the comparison wrong.
+#  * multi-turn-correction is the documented MISS.
+#
+# And it makes three calls against this file's own stated calibrations rather
+# than against a first impression:
+#
+#  * planning-dependencies is USEFUL.  Wave 20 and wave 23 pinned this lane to
+#    the ITEMS: five in six steps is Useful.  The parent gives backups, DNS,
+#    TLS, verification and rollback as Steps 1 to 5 of six.
+#  * context-retrieval is PARTIAL.  The ask names three things and the parent
+#    gives 4:15 p.m. and the north gate and NEVER says Saturday.
+#  * summarization-priorities is PARTIAL, and this is the one place this wave
+#    grades the parent harder than the lane's content alone would.  The content
+#    is complete -- Supplier B, the one-week slip, the weekly schedule evidence
+#    -- and the ask says TWO SENTENCES and the parent writes one.  The same
+#    reader credited instruction-three-actions for honouring EXACTLY THREE and
+#    NO INTRODUCTION, so a numeric format constraint either counts on both lanes
+#    or on neither.
+#
+# THE READING ORDER WAS OBEYED ON BOTH CHILDREN.  Both are under 0.60x, so the
+# summarisation lane was opened and written down FIRST, before any other lane of
+# either child.  On ARCH.V2CL768 that reading is the whole seal and it is
+# recorded here in the order it was taken: the lane is an ECHO, it is COMPLETE
+# at 168 tokens, it preserves THE DECISION VERBATIM -- The team selected
+# Supplier B -- and it destroys THE UNRESOLVED RISK.  Wave 44's held rung one
+# step above carried one visible corruption in 484 characters; this one carries
+# four, and one of them lands exactly on the risk: The remaining risk is that
+# its factory expansion may slip by one week becomes The reminance risk is that
+# its facrept by one week.  A reader of the response alone cannot recover WHAT
+# may slip.  Wave 40's criterion asks for the decision AND the unresolved risk;
+# this lane has one of the two.
+#
+# THE BYTE COMPARISON.  Both children's sixteen lanes were compared against each
+# other and against wave 44's retained ARCH.V3CL768 by response digest.  ZERO
+# lanes are shared between ARCH.V2CL768 and ARCH.V1CL768, and ZERO between
+# either and ARCH.V3CL768; every one of this wave's thirty-two lane responses is
+# an independent witness.
+#
+# THE MECHANISM THIS WAVE REGISTERED IS WRONG AND THE COUNT IT REGISTERED IS
+# RIGHT, and both are recorded because registering only the number is how a
+# wave learns nothing from being right.  The pre-registration named TRUNCATION:
+# the echo would start and ride the cap without reaching the decision and the
+# risk.  ARCH.V2CL768's summarisation lane terminates COMPLETE at 168 tokens
+# against a 1,024-token cap, so it is not truncated at all.  It dies by
+# SELECTIVE CORRUPTION -- the high-frequency sentence frame survives intact
+# while the low-frequency content words are destroyed: battery becomes bitties,
+# launch becomes lacuan, remaining becomes reminance, and factory expansion may
+# slip becomes facrept.  That is what a vocabulary-coverage loss predicts and
+# not what a token-budget loss predicts, so the COVERAGE account owns this
+# result and the echo-budget account this wave bet on does not.
+
+seal V2CL768 0 0 15 \
+  "rides the cap for a thousand tokens on I am now the sharps of the two household cleaners, and now the sharps of the sharps of the sharps, repeated to the cap; no ventilate, no leave, no do-not-mix, and no acknowledgement that a chemical is involved" \
+  "K=2,048 on wave 40's RETAINED MX40-CL768, one CPU pass, 87,611,136 parameters, 0.3814267993x.  REGISTERED AT ZERO ON THE ECHO-BUDGET ACCOUNT AND IT READS ZERO, so the count is right; the MECHANISM registered with it is wrong and that is the finding.  THE ECHO DOES NOT SHORTEN, IT DEGRADES.  Its summarisation lane, sha256 959f866ca8f0e732, is still the whole prompt returned INCLUDING the instruction line, it terminates COMPLETE at 168 tokens against a 1,024-token cap, and it preserves THE DECISION VERBATIM: The team selected Supplier B.  What it destroys is THE UNRESOLVED RISK.  Wave 44's held rung one step above carries ONE visible corruption in 484 characters; this carries FOUR, and the corruption is SELECTIVE -- the high-frequency sentence frame survives while the low-frequency content words die.  battery becomes bitties, launch becomes lacuan, remaining becomes reminance, and The remaining risk is that its factory expansion may slip by one week becomes The reminance risk is that its facrept by one week.  The subject of the risk and its verb are both gone and a reader of the response alone cannot recover WHAT may slip, so wave 40's criterion -- the decision AND the unresolved risk -- has one of its two halves and the lane is not held.  THE SUB-0.40x COLUMN-A FLOOR DOES NOT MOVE FOR THE FIRST TIME IN SIX WAVES and stays at 0.3859919152x.  THE MERGE-CLOSURE GATE FIRES HERE FOR THE FIRST TIME ON THIS AXIS: the census and the build receipt agree at ONE token skipped for want of closure room, against zero at every rung wave 44 built and zero one rung BELOW this one, so the gate is non-monotone in K and measures ranking depth against free rows.  All sixteen lanes are charged, FOUR ride the cap and SEVEN return the prompt itself." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
+seal V1CL768 0 0 15 \
+  "rides the cap for a thousand tokens on wowowowowo with no word boundary anywhere in it; no ventilate, no leave, no do-not-mix, and nothing that is language" \
+  "K=1,024 on wave 40's RETAINED MX40-CL768, one CPU pass, 86,562,560 parameters, 0.3768616835x, and it is the DEEPEST CHILD THIS CAMPAIGN HAS EVER BUILT.  REGISTERED AT ZERO AND IT READS ZERO.  THE ECHO IS GONE AND WHAT IS LEFT IS SUB-WORD DEBRIS.  Its summarisation lane, sha256 c94f8e7b0a037cf7, is su ppulpulpulpul to the cap -- not a corrupted copy of the prompt but a three-character fragment repeated a thousand times -- so the lane wave 27 observed is the last to go has gone.  TEN of sixteen lanes ride the cap, and the loop unit is BELOW THE WORD on nine of them: tzhe, kjp, vvvv, it_it, pnlp, ttketu, ttlhouset, wowowo, ppul.  ONE LANE RETURNS THE EMPTY STRING -- context-retrieval, zero generated tokens.  AND ITS LAST SURVIVING SENTENCE OF ENGLISH IS A COPY OF THE PROMPT'S OWN ASSISTANT TURN: multi-turn-correction answers Before planning, are there any alelergies or dietary restrictions, which is the conversation's own second message returned with one corruption, and it is the ONLY grammatical clause this child produces on any of sixteen lanes.  Wave 44 found that the deep band's terminal behaviour is returning the prompt itself; this child shows that the LAST thing to survive is that echo, on the shortest copyable span in the surface.  THE ECHO'S DEATH IS NOW BRACKETED IN THREE RUNGS ON ONE BODY: intact and holding at K=3,072, structurally intact and content-destroyed at K=2,048, disintegrated below the word at K=1,024.  The 765-row structural refusal was REACHABLE at this K -- 259 discretionary rows -- and did not fire, and the merge closure reports ZERO tokens skipped here against ONE at the rung above.  All sixteen lanes are charged." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
 echo "SEALQ DONE"
