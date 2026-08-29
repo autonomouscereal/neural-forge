@@ -74,6 +74,20 @@ an inherited calibration RESULT, the named dossier and the stale counter are
 cannot be true before the wave has taken the measurement.* The wave writes its
 own after it reads.
 
+**And those three pins are LITERAL, which is not enough, and the file says so.**
+They name wave 39's exact sentence, exact dossier and exact counter, so they
+catch the carry that happened and would **not** catch the same defect worded
+differently — wave 42's own calibration paragraph opens with different words and
+none of the three fires on it. So the audit also carries the **general** pin,
+which is the seal-call pin's shape applied to prose: the marker block ends with a
+**sentinel line** saying the wave's own calibration is written below it after the
+dossiers are read, and at cut time the only thing that may follow that line is
+blank lines and the closing `echo`. **Verified in both directions**: on
+`run/mx42/sealq.sh` as shipped — which is exactly what a wave-43 cut would
+inherit — the sentinel pin reports **78 residue lines and refuses**; on the same
+file reconstructed at cut time it reports zero. The three literal needles are
+kept beside it as the named regression.
+
 ### 2.2 One addition, no edit to a carried module
 
 `mx42_dualband.py` and `dualbandq.sh` are new and they **build nothing**. Every
@@ -440,10 +454,14 @@ and column B is a published subtraction from it.
    gets 10 of 17 copies right; the union measure gets 17 of 17 with a margin of
    0.5 between the classes. Wave 42 could not use it without tuning to an answer;
    wave 43 can, by registering it first.
-4. **A PIN THAT COUNTS CALLS DOES NOT COUNT CLAIMS.** §2.1. Wave 42's own
-   addition covers `sealq.sh`'s calibration result; **the same class of defect
-   has not been audited anywhere else in the tree**, and the natural next place
-   to look is every docstring that states a *number* rather than a *rule*.
+4. **A PIN THAT COUNTS CALLS DOES NOT COUNT CLAIMS.** §2.1. Wave 42 added both
+   a literal pin (the three wave-39 needles, kept as the named regression) and a
+   **general** one (nothing but blank lines and the closing `echo` may follow the
+   calibration sentinel at cut time). **The general pin is the one that matters
+   and the wave-43 cut will be the first to exercise it** — it already reports 78
+   residue lines against `run/mx42/sealq.sh` as shipped. **The same class of
+   defect has not been audited anywhere else in the tree**, and the natural next
+   place to look is every docstring that states a *number* rather than a *rule*.
 5. **`ARCH.V6CL768` IS THE ONLY NEW HELD-LANE WITNESS SINCE WAVE 41's
    `ARCH.V7CL768`**, and both are on the CL768 body. Every held lane on block 13
    is one decode read at four sizes.

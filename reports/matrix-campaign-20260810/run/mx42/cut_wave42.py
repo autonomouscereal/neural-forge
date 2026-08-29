@@ -481,6 +481,40 @@ def audit() -> int:
             problems.append(
                 f"sealq.sh carries {needle!r} x{hits} at cut time, expected 0 -- {why}"
             )
+    # AND THE THREE NEEDLES ABOVE ARE LITERAL, WHICH IS NOT ENOUGH, AND THIS FILE
+    # SAYS SO RATHER THAN PRETENDING OTHERWISE.  They name wave 39's exact
+    # sentence, its exact dossier and its exact counter, so they catch the carry
+    # that actually happened and they would NOT catch the same defect worded
+    # differently -- wave 42's own calibration paragraph, for instance, opens
+    # with different words and none of the three would fire on it.
+    #
+    # THE GENERAL PIN IS THE SENTINEL, and it is the seal-call pin's shape
+    # applied to prose: the marker block ends with a line that says the wave's
+    # own calibration is written BELOW it after the dossiers are read, and at
+    # cut time the only thing that may follow that line is blank lines and the
+    # closing echo.  Anything else is last wave's reading, whatever it says.
+    sentinel = ("# --- wave 42's own calibration, byte comparison and reading order "
+                "are written\n# --- below this line AFTER the dossiers are read, and "
+                "not before.\n")
+    if sentinel not in seals:
+        problems.append(
+            "sealq.sh is missing the calibration sentinel.  Without it there is "
+            "no line to measure 'what this wave has not written yet' against, "
+            "and the three literal needles above are the only protection -- "
+            "which is exactly the protection that failed for two waves"
+        )
+    else:
+        tail = seals.split(sentinel, 1)[1]
+        residue = [line for line in tail.splitlines()
+                   if line.strip() and line.strip() != 'echo "SEALQ DONE"']
+        if residue:
+            problems.append(
+                f"sealq.sh carries {len(residue)} line(s) of prose or code after "
+                "the calibration sentinel at cut time, expected 0.  Everything "
+                "below that line is a reading THIS wave has not taken yet, so at "
+                "the cut it can only be last wave's.  First line: "
+                f"{residue[0].strip()[:80]!r}"
+            )
     if not (DST / "gainq.sh").is_file():
         problems.append("gainq.sh is missing: the terminal-gain solver has no driver")
     if not (DST / "tieq.sh").is_file():
