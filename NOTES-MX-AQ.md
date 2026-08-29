@@ -381,7 +381,49 @@ paragraph exists so a later wave reading GPU numbers does not attribute either t
 allocation or its release to the matrix campaign; the two-wave standing allocation
 `NOTES-MX-AP` §8 recorded is now gone, and this wave did not do it.
 
-**The Codex lane was not touched.**
+**The Codex lane was not touched**, and it stands at the same 324 uncommitted
+paths it stood at when this wave started.
+
+### 7.1 WAVE 40 WAS CUT ON THIS BRANCH WHILE WAVE 39 WAS STILL RUNNING, AND ITS `sealq.sh` CARRIES WAVE 39'S SEAL CALLS
+
+Three commits that are not wave 39's landed between wave 39's seals and wave 39's
+measurement: `efbc2586` (an unbuilt-inventory audit), `a8df1922` (wave 40's tree
+cut) and `58ac7984` (wave 40's pre-registration). **Nothing of wave 39's was
+disturbed** — the only wave-40 commit touching a shared path is the accept-list
+append to `experiments/seal_matrix_architecture_child.py`, which appended five
+wave-40 strings *after* wave 39's four rather than over them, and the only diff in
+`run/mx39/` across those commits is wave 39's own retention edit.
+
+**But wave 40's cut inherited wave 39's seal calls and did not delete them, and
+its audit did not notice.**
+
+```
+run/mx40/sealq.sh:101  # --- wave 40 seals are appended below, AFTER the dossiers are read ---
+run/mx40/sealq.sh:175  seal V14CL896X13 0 1 14 \
+run/mx40/sealq.sh:180  seal V10CL896X13 0 1 14 \
+```
+
+`run/mx40/cut_wave40.py` §2 states *"this is the FIRST cut where it arrives
+carrying a marker and NO seal calls."* **That is not what is in the file.** Both
+of wave 39's calls are there with every count intact, underneath a marker that
+correctly names wave 40.
+
+**This is the exact defect wave 32 added the marker assertion to prevent, and it
+shows the assertion has a hole.** The check proves the marker was rewritten; it
+does not prove the inherited calls were deleted. Wave 32's account — *"nineteen
+seal calls forward with the substitution applied and every COUNT intact"* — is
+reproduced here with the marker check passing.
+
+**Nothing is currently mis-sealed.** Wave 39's two children are sealed under
+`--campaign-wave 39` in `wave39/cells`, both receipts are in the ledger and both
+verify. If wave 40 runs that file, those two calls resolve against
+`wave40/cells/ARCH.V14CL896X13/cell-receipt.json`, which does not exist, so it
+errors instead of sealing — **which is luck, and is the same luck wave 32
+recorded relying on.**
+
+**Wave 39 did not edit wave 40's tree.** That is another wave's live lane and
+editing it mid-flight is how two agents corrupt one file. It is reported here
+instead, and §9 item 9 says what the assertion should be.
 
 ---
 
@@ -440,7 +482,24 @@ wave's sealed receipts, verdicts and dossiers, and the Codex lane.
 7. **`sealq.sh` has now refused seven consecutive cuts.** It has never once
    arrived clean. Treat the hand-edit set as load-bearing rather than as
    ceremony.
-8. **The retention policy paid for itself with a number this wave.**
+8. **`sealq.sh`'s marker assertion has a hole and wave 40 is standing in it.**
+   The check proves the marker was rewritten; it does not prove the inherited
+   seal calls were deleted, and `run/mx40/sealq.sh` currently carries wave 39's
+   two calls with counts intact under a correct wave-40 marker (§7.1). **The
+   assertion a cut needs is that the number of `^seal <TAG>` lines is ZERO at
+   cut time**, not that a comment string changed. That is one line in the audit
+   and it would have refused this. A wave that appends its own seals later is
+   unaffected, because the check runs at the cut.
+9. **This branch now has two waves running on it at once.** Wave 40 was cut,
+   pre-registered and committed while wave 39 was between its seals and its
+   measurement. Nothing collided this time — the accept list appends, the trees
+   are disjoint, and the shared docs were touched by only one wave — but that
+   was not designed, it was luck of ordering. Before the next concurrent wave:
+   agree who owns `CAMPAIGN_SCORECARD.md`, `DEEP_RECORD.md`, `ACTUAL_MATRIX`,
+   `RESULTS_MATRIX` and `ledger.jsonl`, because those five are the paths where
+   two waves editing at once produces a silent wrong number rather than a
+   conflict.
+10. **The retention policy paid for itself with a number this wave.**
    `MX35-CL896X13` cost 296 s of GPU once and four waves later answered a question
    no dossier could answer, because the question was about bytes. Wave 39 spent
    **zero GPU on building anything.**
