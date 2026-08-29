@@ -96,6 +96,7 @@ is a mode and not a by-product.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import shutil
@@ -113,7 +114,13 @@ PARENT_PARAMS = mx43_build.PARENT_PARAMS
 ATTENTION_LAYERS = mx43_build.ATTENTION_LAYERS
 SIDECARS = mx43_build.SIDECARS
 LAMBDA_LADDER = mx43_build.LAMBDA_LADDER
-SCHEMA = "neural-forge-matrix-wave43-standard-shape-child-v1"
+#: ITS OWN SCHEMA, for wave 40's stated reason and wave 41's: a receipt that
+#: carries fields no other receipt has gets its own string in the sealer's
+#: append-only accept list, so a reader can tell from the string what the
+#: artifact is.  This one carries the band, the ladder, the per-plane retention,
+#: the per-site kept-plane logit share and the value-channel subsets, and no
+#: gather receipt or blend receipt has any of those.
+SCHEMA = "neural-forge-matrix-wave43-rope-band-child-v1"
 CENSUS_SCHEMA = "neural-forge-matrix-wave43-plane-energy-census-v1"
 PARENT_HEAD_DIM = 64
 #: The child's ``rope_theta`` is ``theta^(m*d/64)`` and its linear factor is
@@ -645,6 +652,31 @@ def export(
     return sum(int(v.numel()) for v in state.values())
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 22), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def directory_sha256(directory: Path) -> str:
+    """Every file in the child directory, name and bytes, in sorted order.
+
+    `mx43_vocab.py:202`'s helper, reproduced rather than imported because that
+    module opens a tokenizer at import time and this one has no business doing
+    so.  Reproduced EXACTLY, so the two waves' digests are comparable.
+    """
+
+    digest = hashlib.sha256()
+    for path in sorted(p for p in directory.rglob("*") if p.is_file()):
+        digest.update(str(path.relative_to(directory)).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(file_sha256(path).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def attention_parameters(head_dim: int, config: dict[str, Any]) -> int:
     """One attention block's parameter count at a head width, from the config alone."""
 
@@ -860,22 +892,75 @@ def main() -> int:
     if factor is not None and written["rope_parameters"].get("rope_type") != "linear":
         raise SystemExit("a slid band was built and the written config does not slide")
 
+    # THE RECEIPT IS A CONTRACT WITH `experiments/seal_matrix_architecture_child.py`
+    # AND THE CONTRACT IS READ FROM THAT FILE, NOT REMEMBERED.  It requires
+    # `child_parameters` (checked against the loader's own count),
+    # `parent_parameters` (checked against the parent's), `axes` (non-empty, and
+    # every entry carrying all nine of `matrix_cell_receipt._ARCHITECTURE_AXIS_FIELDS`),
+    # and it checks `child_tensors_sha256` when it is present.  Wave 43's first
+    # attempt wrote `parameters` instead of `child_parameters` and had no `axes`
+    # at all; the sealer refused, which is the refusal working.
+    solve_note = (
+        "q/k rows and v channels VERBATIM; q/k layernorm diagonals by one plain "
+        "normal-equation prior-anchored ridge per side in head_dim unknowns "
+        "against the cached pre-softmax logits, target = the parent's own logit "
+        "restricted to the kept planes; out_proj by a prior-anchored ridge on "
+        "the exact column subset of the sealed context, with NO ATTENTION REPLAY"
+    )
     receipt = {
         "schema": SCHEMA,
         "tag": args.tag,
+        "builder": "mx43_plane.py",
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "arm": "rope-frequency-band (verbatim rows, two gain ridges, one writer ridge)",
         "axis": "rope-frequency-band",
         "module": "mx43_plane.py (PLANE, ROUND3 slate 3.4)",
-        "solve": (
-            "q/k rows and v channels VERBATIM; q/k layernorm diagonals by one "
-            "plain normal-equation prior-anchored ridge per side in head_dim "
-            "unknowns against the cached pre-softmax logits, target = the "
-            "parent's own logit restricted to the kept planes; out_proj by a "
-            "prior-anchored ridge on the exact column subset of the sealed "
-            "context, with NO ATTENTION REPLAY"
-        ),
+        "solve": solve_note,
         "parent": str(PARENT),
+        "parent_model": str(PARENT),
         "parent_parameters": PARENT_PARAMS,
+        "child_model": str(args.child),
+        "child_parameters": int(live),
+        "child_tensors_sha256": file_sha256(args.child / "model.safetensors"),
+        "child_directory_sha256": directory_sha256(args.child),
+        "net_stored_ratio": int(live) / PARENT_PARAMS,
+        "excised": [],
+        "residual_basis": None,
+        "passed_through": [
+            "hidden_size", "intermediate_size", "num_hidden_layers",
+            "num_attention_heads", "num_key_value_heads", "vocab_size",
+        ],
+        "axes": [{
+            "axis": "head_dim",
+            "kind": "attention-width",
+            "sites": list(ATTENTION_LAYERS),
+            "config_fields": ["head_dim", "rope_parameters"],
+            "selection": (
+                "whole RoPE planes on the (stride, slide) band %d..%d -- the only "
+                "RoPE-exact selection, because the child's own ladder is forced by "
+                "its config -- plus a per-KV-group verbatim value-channel subset "
+                "scored E[|ctx_c|] * ||W_o[:, c]||_2, ties broken on the channel "
+                "index" % (planes[0], planes[-1])),
+            "solve": solve_note,
+            "evidence": (
+                "sequentially conditioned capture through the prefix already "
+                "folded; the target within each site is the parent's own local "
+                "behaviour"),
+            "parameters_removed": int(PARENT_PARAMS - live),
+            "heldout": {
+                "median_logit_relL2_prior": float(
+                    sorted(r["held_logit_relL2_prior"] for r in records)[len(records) // 2]),
+                "median_logit_relL2_solved": float(
+                    sorted(r["held_logit_relL2_solved"] for r in records)[len(records) // 2]),
+                "min_kept_plane_logit_share": min(
+                    r["held_kept_plane_logit_share"] for r in records),
+                "median_cos": float(sorted(r["cos"] for r in records)[len(records) // 2]),
+                "min_cos": min(r["cos"] for r in records),
+                "max_update_scale": max(r["update_scale"] for r in records),
+                "per_site": records,
+            },
+        }],
         "parameters": int(live),
         "expected_parameters": int(expected_parameters),
         "ratio": int(live) / PARENT_PARAMS,
@@ -894,6 +979,7 @@ def main() -> int:
         "compute_capability": capability,
         "forward_calls": harness.forward_calls,
         "seconds": time.time() - started,
+        "elapsed_seconds": time.time() - started,
         "plane_energy_census": census,
     }
     (args.child / "mx43-build-receipt.json").write_text(json.dumps(receipt, indent=1))

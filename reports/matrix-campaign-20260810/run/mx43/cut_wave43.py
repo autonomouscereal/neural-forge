@@ -328,6 +328,47 @@ def audit() -> int:
                    "neural-forge-matrix-wave29-residual-basis-v1"):
         if needle not in build:
             problems.append(f"mx43_build.py: BASIS_SCHEMAS_ACCEPTED is missing {needle}")
+    # ------------------------------------------------------------------------
+    # WAVE 43'S ADDITION, AND IT IS A DEFECT THIS WAVE PAID FOR BEFORE IT FIXED
+    # IT.  There are TWO append-only accept lists in this campaign and the cut
+    # audit only ever asserted one.  `BASIS_SCHEMAS_ACCEPTED` lives in the
+    # builder and is checked above; the SEALER's `BUILD_RECEIPT_SCHEMAS` lives in
+    # `experiments/seal_matrix_architecture_child.py`, is OUTSIDE the tree the
+    # cutter copies, and every wave since 36 has appended to it by hand at the
+    # cut with nothing but a README paragraph standing behind the claim.
+    #
+    # Wave 43's README said the append had happened.  It had not.  The sealer
+    # refused all three of this wave's reviews on the first invocation, exactly
+    # as it refused wave 35's four (commit dcfa0c9c, "after it refused four
+    # reviews again"), and this wave paid wave 35's extra deployment.  Nothing
+    # was mis-sealed -- the refusal fires before a cell receipt or a ledger shard
+    # exists -- but a prose claim is not a check, and this is the check.
+    sealer = (Path(__file__).resolve().parents[4]
+              / "experiments" / "seal_matrix_architecture_child.py")
+    if not sealer.is_file():
+        problems.append(
+            f"{sealer} is missing: the sealer's own accept list cannot be audited "
+            "and the only thing standing behind this wave's append would be prose"
+        )
+    else:
+        body = sealer.read_text(encoding="utf-8")
+        for needle in ("neural-forge-matrix-wave43-standard-shape-child-v1",
+                       "neural-forge-matrix-wave43-blend-build-receipt-v1",
+                       "neural-forge-matrix-wave43-logit-metric-writer-v1",
+                       "neural-forge-matrix-wave43-body-blend-build-receipt-v1",
+                       "neural-forge-matrix-wave43-tied-vocabulary-child-v1",
+                       "neural-forge-matrix-wave43-rowset-vocabulary-child-v1",
+                       "neural-forge-matrix-wave43-rope-band-child-v1",
+                       "neural-forge-matrix-wave42-standard-shape-child-v1",
+                       "neural-forge-matrix-wave41-standard-shape-child-v1",
+                       "neural-forge-matrix-wave40-tied-vocabulary-child-v1"):
+            if needle not in body:
+                problems.append(
+                    f"seal_matrix_architecture_child.py: BUILD_RECEIPT_SCHEMAS is "
+                    f"missing {needle}.  This list is append-only and lives "
+                    "OUTSIDE the cut tree; a wave that forgets it gets every "
+                    "review refused after the builds have already run"
+                )
     # WAVE 34'S ADDITION, CARRIED AND WIDENED BY ONE LINE EACH WAVE.
     for needle, want, why in (
         ('(outdir / "mx43-build-receipt.json").write_text', 2,
@@ -723,7 +764,10 @@ def audit() -> int:
             print("AUDIT FAILED:", p, file=sys.stderr)
         return 1
     print("audit: no wave-42 identifier survived; TEN seal roots declared; "
-          "the accept list kept fifteen basis schemas; the drivers name wave 43; "
+          "the builder's accept list kept fifteen basis schemas AND THE SEALER'S "
+          "OWN BUILD_RECEIPT_SCHEMAS -- the second append-only list, outside the "
+          "cut tree, which no earlier cut audit ever checked -- carries all seven "
+          "of this wave's strings; the drivers name wave 43; "
           "sealq.sh carries this wave's marker, ZERO seal calls and ZERO lines "
           "after the calibration sentinel; gainq.sh, tieq.sh, rowsetq.sh, "
           "dualbandq.sh, planeq.sh and xchangeq.sh exist; both extension "

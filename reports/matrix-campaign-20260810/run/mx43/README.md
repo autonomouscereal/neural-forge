@@ -68,9 +68,31 @@ deleted by hand. The three literal needles (wave 39's exact sentence, its exact
 dossier, its exact counter) are **kept as the named regression** and reported
 zero, which is what they should report once the general pin has done the work.
 
-**4. The sealer's accept list was appended IN THE SAME COMMIT AS THIS CUT.**
-Waves 36 through 42 appended at the cut and paid no extra deployment; wave 43 is
-the eighth.
+**4. THE SEALER'S ACCEPT LIST WAS NOT APPENDED AT THE CUT, AND THIS PARAGRAPH IS
+THE CORRECTION OF THE ONE THAT SAID IT WAS.** Waves 36 through 42 appended
+`experiments/seal_matrix_architecture_child.py`'s `BUILD_RECEIPT_SCHEMAS` in the
+same commit that cut the tree and paid no extra deployment. Wave 43's README
+claimed the same and it was false: the append had not been made. The sealer
+refused **all three** of this wave's reviews on the first invocation — exactly as
+it refused wave 35's four, commit `dcfa0c9c`, *"after it refused four reviews
+again"* — and wave 43 paid the extra deployment wave 35 paid.
+
+Nothing was mis-sealed. The refusal is fail-closed and fires before a cell
+receipt or a ledger shard exists, so the cost was one deployment and one rebuild
+and not a bad row. What actually failed is structural and is now fixed: **there
+are TWO append-only accept lists in this campaign and the cut audit only ever
+asserted one.** `BASIS_SCHEMAS_ACCEPTED` lives in the builder, inside the tree
+the cutter copies, and `cut_wave43.py --audit` has asserted it since wave 31.
+`BUILD_RECEIPT_SCHEMAS` lives in `experiments/`, **outside** the cut tree, and
+the only thing standing behind seven waves of hand-appending it was a paragraph
+like this one. `cut_wave43.py --audit` now asserts it by name, ten strings deep.
+
+The same commit also fixed a second defect of the same family: `mx43_plane.py`'s
+build receipt was written from memory rather than from
+`seal_matrix_architecture_child.py`'s actual contract, so it carried
+`parameters` where the sealer reads `child_parameters` and carried no `axes` at
+all. Both refusals are the refusals working; both are recorded here rather than
+quietly repaired.
 
 ---
 

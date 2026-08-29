@@ -372,6 +372,38 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave42-body-blend-build-receipt-v1",
     "neural-forge-matrix-wave42-tied-vocabulary-child-v1",
     "neural-forge-matrix-wave42-rowset-vocabulary-child-v1",
+    # WAVE 43 APPENDS SEVEN, and the seventh is the third genuinely new schema
+    # this list has ever carried.  `run/mx43/mx43_plane.py` builds a RoPE
+    # frequency-band child: the attention block keeps whole rotation planes on a
+    # (stride, slide) band with q/k rows and value channels VERBATIM, and two
+    # gain vectors and one writer are re-solved.  It carries its own schema for
+    # wave 40's and wave 41's stated reason -- its receipt carries the band, the
+    # ladder, the per-plane retention, the per-site kept-plane logit share and
+    # the per-KV-group value-channel subsets, and no gather, tie, rowset or blend
+    # receipt has any of those.  The other six are waves 40's, 41's and 42's
+    # schemas RENAMED and carried, for the reason wave 33 gave and waves 34
+    # through 42 kept: a list completed only where it was needed is a list the
+    # next wave has to reason about.
+    #
+    # **AND WAVE 43 DID NOT APPEND THESE AT THE CUT, WHICH IS THE WHOLE POINT OF
+    # THIS PARAGRAPH.**  `run/mx43/README.md` was written claiming the append had
+    # happened "in the same commit as this cut", and it had not.  The sealer
+    # refused all three of wave 43's reviews on the first invocation -- exactly
+    # as it refused wave 35's four, commit dcfa0c9c, "after it refused four
+    # reviews again" -- and wave 43 paid the extra deployment wave 35 paid.
+    # Nothing was mis-sealed: the refusal is fail-closed and fires before a cell
+    # receipt or a ledger shard is written.  What failed is that the cut audit
+    # asserts `BASIS_SCHEMAS_ACCEPTED` in the builder and says nothing about THIS
+    # list, so a prose claim in a README was the only thing standing behind it.
+    # `cut_wave43.py --audit` now asserts this list by name, which is the fix
+    # that makes the eighth wave's append a check instead of a habit.
+    "neural-forge-matrix-wave43-standard-shape-child-v1",
+    "neural-forge-matrix-wave43-blend-build-receipt-v1",
+    "neural-forge-matrix-wave43-logit-metric-writer-v1",
+    "neural-forge-matrix-wave43-body-blend-build-receipt-v1",
+    "neural-forge-matrix-wave43-tied-vocabulary-child-v1",
+    "neural-forge-matrix-wave43-rowset-vocabulary-child-v1",
+    "neural-forge-matrix-wave43-rope-band-child-v1",
 )
 
 
