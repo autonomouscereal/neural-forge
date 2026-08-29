@@ -1,0 +1,324 @@
+{
+ "schema": "neural-forge-matrix-wave43-xchange-stage1-posthoc-v1",
+ "status": "POST-HOC.  NOT PART OF THE GO-GATE AND IT DOES NOT MOVE ITS VERDICT.",
+ "why_it_exists": "the go-gate's registered STAGE1_PLANE_SETS stop at eight planes, so 'no plane set can concentrate' is a stronger claim than the registration measured.  This extension publishes the sixteen- and thirty-two-plane numbers and the design document's own free-amplitude construction so the claim is checkable rather than extrapolated.  It publishes either way.  It confirms.",
+ "what_the_gate_already_decided_without_it": "G1 fails at all EIGHT conv sites independently of Stage 1, so the conjunction and the class closure do not rest on this file.",
+ "gamma_cap_used": 10.718704223632812,
+ "gamma_cap_definition": "the median over (site, sequence, head) of each block's own 99th percentile of |pre-softmax logit| on the parent, from the sealed go-gate run",
+ "registered_threshold_it_is_measured_against": 0.9,
+ "unit_amplitude_phase_aligned": {
+  "2 lowest-index planes": {
+   "planes": [
+    0,
+    1
+   ],
+   "worst_lag_band_mass": 0.00778617856907953,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9994949753066305,
+     "band_mass_at_gamma_cap": 0.007787910553528688
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9994949753066305,
+     "band_mass_at_gamma_cap": 0.007786178623949895
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9994949753066305,
+     "band_mass_at_gamma_cap": 0.00778617856907953
+    }
+   }
+  },
+  "4 lowest-index planes": {
+   "planes": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "worst_lag_band_mass": 0.05207516525542622,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9779504975510357,
+     "band_mass_at_gamma_cap": 0.052407779459930734
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9779504975510357,
+     "band_mass_at_gamma_cap": 0.05207752634068554
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9779504975510357,
+     "band_mass_at_gamma_cap": 0.05207516525542622
+    }
+   }
+  },
+  "8 lowest-index planes (the deepest REGISTERED set)": {
+   "planes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "worst_lag_band_mass": 0.2779360692780486,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.8981836556509535,
+     "band_mass_at_gamma_cap": 0.30896247668772686
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.8981836556509535,
+     "band_mass_at_gamma_cap": 0.27992964268211207
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.8981836556509535,
+     "band_mass_at_gamma_cap": 0.2779360692780486
+    }
+   }
+  },
+  "12 lowest-index planes": {
+   "planes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ],
+   "worst_lag_band_mass": 0.34311587220372347,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9320526699084609,
+     "band_mass_at_gamma_cap": 0.4264352618465344
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9320526699084609,
+     "band_mass_at_gamma_cap": 0.35363909539833727
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9320526699084609,
+     "band_mass_at_gamma_cap": 0.34311587220372347
+    }
+   }
+  },
+  "16 lowest-index planes": {
+   "planes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "worst_lag_band_mass": 0.3192940490820559,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9490378476602012,
+     "band_mass_at_gamma_cap": 0.41788702869076355
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9490378476602012,
+     "band_mass_at_gamma_cap": 0.3364617354844661
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9490378476602012,
+     "band_mass_at_gamma_cap": 0.3192940490820559
+    }
+   }
+  },
+  "24 lowest-index planes": {
+   "planes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+   ],
+   "worst_lag_band_mass": 0.14834605338738893,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9660251957845811,
+     "band_mass_at_gamma_cap": 0.17385956148498874
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9660251957845811,
+     "band_mass_at_gamma_cap": 0.15512231258821432
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9660251957845811,
+     "band_mass_at_gamma_cap": 0.14834605338738893
+    }
+   }
+  },
+  "all 32 planes": {
+   "planes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+   ],
+   "worst_lag_band_mass": 0.052024150726972376,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9745188968114441,
+     "band_mass_at_gamma_cap": 0.055366084376040195
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9745188968114441,
+     "band_mass_at_gamma_cap": 0.05312843618499765
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9745188968114441,
+     "band_mass_at_gamma_cap": 0.052024150726972376
+    }
+   }
+  },
+  "8 planes spread 0..28 by 4": {
+   "planes": [
+    0,
+    4,
+    8,
+    12,
+    16,
+    20,
+    24,
+    28
+   ],
+   "worst_lag_band_mass": 0.032149616172599156,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9405020317912149,
+     "band_mass_at_gamma_cap": 0.032852788987565745
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9405020317912149,
+     "band_mass_at_gamma_cap": 0.032292326671807994
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9405020317912149,
+     "band_mass_at_gamma_cap": 0.032149616172599156
+    }
+   }
+  },
+  "16 planes spread 0..30 by 2": {
+   "planes": [
+    0,
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14,
+    16,
+    18,
+    20,
+    22,
+    24,
+    26,
+    28,
+    30
+   ],
+   "worst_lag_band_mass": 0.04577318303895104,
+   "per_lag": {
+    "0": {
+     "largest_competitor_over_peak": 0.9645943692839472,
+     "band_mass_at_gamma_cap": 0.047917458225129175
+    },
+    "1": {
+     "largest_competitor_over_peak": 0.9645943692839472,
+     "band_mass_at_gamma_cap": 0.0463971957411527
+    },
+    "2": {
+     "largest_competitor_over_peak": 0.9645943692839472,
+     "band_mass_at_gamma_cap": 0.04577318303895104
+    }
+   }
+  }
+ },
+ "design_document_least_squares_all_32_planes": {
+  "0": {
+   "raw_peak": 0.00979132283161094,
+   "largest_competitor_over_peak": 0.9665740619205689,
+   "band_mass_at_gamma_cap": 0.2405924830671687
+  },
+  "1": {
+   "raw_peak": 0.009194947396388722,
+   "largest_competitor_over_peak": 1.0216757268565841,
+   "band_mass_at_gamma_cap": 0.16794688250448192
+  },
+  "2": {
+   "raw_peak": 0.008567322580567652,
+   "largest_competitor_over_peak": 0.9967264548165735,
+   "band_mass_at_gamma_cap": 0.11728457426408619
+  }
+ },
+ "gamma_required_for_band_mass_0_90_at_the_best_construction": 671.759206537853,
+ "gamma_required_over_the_parents_measured_cap": 62.67168050562911,
+ "the_finding": "MORE PLANES DO NOT RESCUE IT AND THE DESIGN DOCUMENT'S OWN CONSTRUCTION IS WORSE THAN UNIT AMPLITUDES.  The best worst-lag band mass over every configuration tried is 0.3431 at twelve planes, against a registered threshold of 0.90, and it DECREASES beyond twelve because the HIGH-index planes traverse less than a hundredth of a radian across the window (plane 24 moves 0.0083 radians end to end) and contribute a near constant that flattens the peak.  To reach 0.90 the pre-softmax score range would have to be 671.8 against the parent's measured 10.72 -- a factor of 63."
+}

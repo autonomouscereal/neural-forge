@@ -170,13 +170,18 @@ Wave 43's build list is **two `mx43_vocab.py` gathers** — `V5CL768` and
 vocabulary-gather lines are live code this wave and are pinned at their indented
 form.
 
+Carried and **run**: `mx43_dualband.py`, on this wave's own children. The
+dual-column discipline is standing until Cyril rules on the copy-back clause, so
+a wave that seals a held lane and does not run the reader has published one
+column, not two.
+
 Carried and **not run**: `mx43_build.py` (wave 36's composed width × MLP path,
 wave 37's live-mask repair, wave 38's descending-order excision), and
-`mx43_vocabtie.py`, `mx43_vocabrowset.py`, `mx43_termgain.py` and
-`mx43_dualband.py` with their drivers. Their load-bearing lines are still pinned.
-Wave 39 was criticised for asserting lines in a file it never opened; the answer
-is not to drop the pins when the file is dormant — it is to say which is which,
-which is what this section does.
+`mx43_vocabtie.py`, `mx43_vocabrowset.py` and `mx43_termgain.py` with their
+drivers. Their load-bearing lines are still pinned. Wave 39 was criticised for
+asserting lines in a file it never opened; the answer is not to drop the pins
+when the file is dormant — it is to say which is which, which is what this
+section does.
 
 **NORM-ESTATE is still not authored, ALIAS is still blocked on the PROBE storage
 ruling, and ROWSET Arms A and B are still blocked on a corpus.** None of those
