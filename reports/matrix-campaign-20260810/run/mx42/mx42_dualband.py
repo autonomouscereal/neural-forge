@@ -76,6 +76,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import sys
@@ -83,6 +84,30 @@ import time
 from pathlib import Path
 
 SCHEMA = "neural-forge-matrix-wave42-deep-band-dual-assessment-v1"
+
+#: WHAT THE FIRST PASS OF THIS MODULE MEASURED WRONG, RECORDED HERE RATHER THAN
+#: FIXED SILENTLY.  ``COPY_BACK_PAYLOAD_COVERAGE`` is applied to the LONGEST
+#: CONTIGUOUS common run, and every copy-back in this estate carries the
+#: word-substitution signature -- a copy of the six-sentence source paragraph
+#: with one to five words mutated.  Each mutation BREAKS the run.  The wave-42
+#: machine pass therefore scored ARCH.V7CL768's held lane at 0.427 and
+#: ARCH.RP9CL896X13's at 0.153 and called both CONTENT, and the hand reading of
+#: all sixteen distinct held summarisation responses in the band found every one
+#: of them to be the source paragraph returned in full.
+#:
+#: ``payload_union_coverage`` is the repair: the union of ALL common runs of at
+#: least ``UNION_MIN_BLOCK`` characters, as a fraction of the payload.  On the
+#: same lanes it reads 0.827 to 0.982 for the copies and 0.198 to 0.331 for a
+#: genuine two-sentence summary of the same paragraph.
+#:
+#: **IT DECIDES NOTHING IN THIS WAVE AND IT IS NOT A THRESHOLD.**  It was added
+#: after the results were seen, so letting it move a classification would be
+#: tuning an instrument to an answer.  ``classify`` is untouched and the
+#: pre-registered longest-run measure still produces every
+#: ``machine_classification`` in the artifact; the union number is published
+#: beside it as a description, and the HAND READING is what voids a held lane.
+#: The next wave should pre-register the union measure as primary.
+UNION_MIN_BLOCK = 8
 
 #: The clause under adjudication, quoted from wave 40's canonical artifact and
 #: re-quoted by wave 41.  It is never paraphrased in this file.
@@ -210,6 +235,24 @@ def longest_common_substring_length(a: str, b: str) -> int:
         else:
             hi = mid - 1
     return lo
+
+
+def union_coverage(payload: str, response: str) -> float:
+    """Fraction of the payload covered by ALL common runs, not just the longest.
+
+    DESCRIPTIVE ONLY in wave 42.  See ``UNION_MIN_BLOCK``'s note: this was added
+    after the pre-registered longest-run measure was found to under-report a
+    copy that carries the word-substitution signature, so it is published and it
+    changes no classification.
+    """
+
+    p, r = normalise(payload), normalise(response)
+    if not p or not r:
+        return 0.0
+    matcher = difflib.SequenceMatcher(None, p, r, autojunk=False)
+    covered = sum(b.size for b in matcher.get_matching_blocks()
+                  if b.size >= UNION_MIN_BLOCK)
+    return min(1.0, covered / len(p))
 
 
 def lane_payload(lane_id: str, prompt_messages: list) -> str:
@@ -369,6 +412,8 @@ def main() -> int:
                 "longest_common_run_chars": lcs,
                 "payload_coverage": round(pay_cov, 6),
                 "response_coverage": round(resp_cov, 6),
+                "payload_union_coverage": round(
+                    union_coverage(payload, resp.get("response_verbatim", "")), 6),
                 "machine_classification": classification,
                 "hand_reading": hand_call,
                 "held_under_copy_back_counts": sealed_verdict in ("Useful", "Partial"),
@@ -454,6 +499,27 @@ def main() -> int:
             "response.  Both fractions are published per lane so any threshold "
             "can be re-applied from this artifact without re-running anything."
         ),
+        "measure_defect_found_by_the_hand_pass": (
+            "THE PRE-REGISTERED MEASURE UNDER-REPORTS.  It uses the LONGEST "
+            "CONTIGUOUS common run, and every copy-back in this estate carries "
+            "the word-substitution signature -- the six-sentence source "
+            "paragraph with one to five words mutated -- and each mutation "
+            "BREAKS the run.  The machine pass scored ARCH.V7CL768's held lane "
+            "at 0.427 and ARCH.RP9CL896X13's at 0.153 and called both CONTENT; "
+            "the hand reading of all sixteen distinct held summarisation "
+            "responses in this band found every one of them to be the source "
+            "paragraph returned in full.  payload_union_coverage is the repair "
+            "-- the union of all common runs of at least 8 characters -- and on "
+            "the same lanes it reads 0.827 to 0.982 for the copies against "
+            "0.198 to 0.331 for a genuine two-sentence summary of the same "
+            "paragraph.  IT DECIDES NOTHING HERE: it was added after the "
+            "results were seen, so letting it move a classification would be "
+            "tuning an instrument to an answer.  Every machine_classification "
+            "in this artifact is still the pre-registered longest-run measure's, "
+            "and the HAND READING is what voids a held lane.  The next wave "
+            "should pre-register the union measure as primary."
+        ),
+        "union_measure_minimum_block_characters": UNION_MIN_BLOCK,
         "lane_ask_table": LANE_ASK,
         "payload_anchors": {k: list(v) for k, v in PAYLOAD_ANCHORS.items()},
         "max_ratio": args.max_ratio,

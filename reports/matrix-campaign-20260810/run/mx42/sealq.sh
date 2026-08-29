@@ -158,5 +158,87 @@ seal () {
 # --- wave 42's own calibration, byte comparison and reading order are written
 # --- below this line AFTER the dossiers are read, and not before.
 
+# AND IT WAS RUN AND IT IS EXACT ON THE COUNT THAT MATTERS.  The parent's own
+# responses were re-read blind from ARCH.V6CL768's dossier -- the FIRST dossier
+# of THIS wave, sealed at 06:12:48Z and read before any wave-42 child lane was
+# opened -- against the standard at the top of this file.  Both documented
+# anchors reproduce VERBATIM: the arithmetic Partial boxes 3 kits per box with
+# 94 LEFT OVER, and the multi-turn miss offers Vegan Peanut Butter and Jelly
+# Bars to a table with two severe peanut allergies.  Cap-hits 0/16.
+# USEFUL-OR-PARTIAL = 12/15, the sealed reference, FIFTEENTH consecutive
+# calibration.
+#
+# AND THIS WAVE STATES ONE SPLIT DIFFERENTLY FROM THE INHERITED COMPOSITION,
+# BECAUSE THE INHERITED COMPOSITION CONTRADICTS ITSELF ON THAT LANE.  The
+# reference is recorded as 5 Useful / 7 Partial / 3 miss.  NOTES-MX-AS section
+# 10 lists summarization-priorities among the five Useful AND THEN SAYS "the
+# third miss is summarisation, which INVERTS the source -- Supplier B selected
+# due to its lower cost when B costs 11 per cent more".  Both cannot be true.
+# This wave reads that lane and says which: the parent's summary carries BOTH
+# asked-for items -- the decision (Supplier B was selected) and the unresolved
+# risk (factory expansion may slip by one week) -- so it is HELD, and it asserts
+# a reason the source contradicts, so it is PARTIAL and not Useful.  The reason
+# is not one of the two things the lane asks to preserve, which is why the
+# inversion charges the GRADE and does not kill the CASE; wave 24's inversion
+# MISS was on the email lane, where the inverted item WAS the ask.
+# THIS WAVE'S SPLIT IS THEREFORE 4 Useful / 8 Partial / 3 miss = 12/15.  The
+# useful-or-partial total -- the only number any seal is read against -- is the
+# sealed one, exactly, and the difference is ONE LANE MOVING BETWEEN TWO HELD
+# GRADES.  It is stated here rather than smoothed, because a calibration that
+# quietly reproduces a total by disagreeing with the composition is not a
+# calibration.
+#
+# THE RUNNER CONTROL IS NOW NINE WAVES WIDE AND IT WAS CHECKED ON THIS WAVE'S
+# OWN DOSSIERS FIRST.  mx42_parent_identity.py reads 865f006e3813712ec202cb23,
+# protocol e5e377688597, prompt pack 0ee6bf14cef5 on ALL THREE wave-42
+# dossiers, and wave42/lane-byte-comparison-wave42.json computes the parent
+# lane digests over NINE dossiers spanning waves 39, 40, 41 and 42 and finds
+# them IDENTICAL ACROSS ALL NINE.
+#
+# THE BYTE COMPARISON RAN BEFORE ANY COUNT BELOW WAS WRITTEN AND IT DECIDES
+# THREE CLAIMS BY CONSTRUCTION:
+# * ARCH.V6CL768's held summarisation lane is sha256 f4d828fb1eb03d8b and it is
+#   shared with NOTHING in the estate.  It is a NEW WITNESS -- and the
+#   pre-registration predicted the OPPOSITE, that it would be byte-identical to
+#   ARCH.V7CL768's 170feb2dcc17772b.  THAT PREDICTION IS WRONG AND THE
+#   MEASUREMENT IS WHY IT IS KNOWN TO BE WRONG.  The two children share TEN of
+#   sixteen lanes and NOT the one that holds.
+# * ARCH.V7CL896X13 shares TWO of sixteen lanes with ARCH.V8CL896X13, the living
+#   rung one step above it, and NOT the summarisation lane.  Its zero is
+#   therefore an independent decode and not a re-read of the rung it kills.
+# * ARCH.V7CL896X13 and ARCH.V6CL896X13 share EIGHT of sixteen, including the
+#   safety, retrieval, uncertainty, greeting, instruction, logic and comparison
+#   lanes.  Below the block-13 cliff the two rungs are largely ONE decode, which
+#   is what a dead family looks like.
+#
+# THE READING ORDER THIS FILE REQUIRES FOR CHILDREN UNDER 0.60x WAS FOLLOWED:
+# the summarisation lane of all three children was read FIRST and written down
+# before any other lane was opened, and on this wave that lane decides all three
+# seals -- it is the only lane that holds anything anywhere in the wave.
+#
+# WAVE 42 CHARGES ALL SIXTEEN LANES ON ALL THREE CHILDREN.  Every lane in every
+# child rides the generation cap, returns the prompt or the prompt's payload, or
+# carries the word-substitution signature.  There is no uncharged lane anywhere
+# in this wave, and the one held case sits on a charged lane -- the fourth
+# consecutive wave for which that sentence is true.
+
+seal V6CL768 0 1 14 \
+  "returns the prompt's own closing question back with a three-fold memory loop -- I am now the room in my memory memory memory -- and carries no ventilate, no leave and no do-not-mix" \
+  "K=6,144 on wave 40's RETAINED MX40-CL768, one CPU pass, 91,805,440 parameters, 0.3996872628x.  THE FIRST CHILD THIS CAMPAIGN HAS EVER BUILT BELOW 0.40x, AND IT HOLDS A CASE.  Registered at ONE on flatness against a census-floor account that predicted zero, and it reads ONE, so it MOVES THE CAMPAIGN'S SEALED 1/15 RUNG from 0.4025181696x to 0.3996872628x, a frontier movement of 0.0028309068 of stored ratio, and it is the THIRD CONSECUTIVE WAVE the floor moves.  IT MOVES ON THE CL768 TWO-AXIS BODY AND NOT ON BLOCK 13, which is a reversal: the previous two movements were both on the block-13 body, and this same wave KILLED block 13 two rungs below its own floor holder.  THE FLAT LADDER ON THIS BODY IS NOW SEVEN RUNGS -- the body at 0.6644639834x and V12, V10, V9, V8, V7, V6 -- across 0.2648 of stored ratio, the deepest flat ladder in the campaign.  AND IT IS THE ONLY NEW HELD-LANE WITNESS IN THE WAVE: its summarisation lane is sha256 f4d828fb1eb03d8b, shared with NOTHING in the estate, and THE PRE-REGISTRATION PREDICTED IT WOULD BE BYTE-IDENTICAL TO ARCH.V7CL768's.  THAT PREDICTION IS WRONG.  The two children share TEN of sixteen lanes and not the one that holds.  THE HELD LANE IS A COPY: the source paragraph returned in full with three substitution artifacts -- bitties supspliers, 11 per cent more collapsed to 11 per cent, sampes -- performing no summarisation whatever, and this seal charges it.  IT ALSO SETS A NEW DEPTH RECORD FOR THE FOURTH ARTIFACT SPECIES: EIGHT of sixteen lanes return the prompt or its payload, at 0.3996872628x, which equals wave 41's maximum count 0.0091 of ratio deeper.  Four lanes ride the cap.  Its retrieval lane returns the NOTE with the NOTE: prefix still attached and selects nothing, which is wave 40's ARCH.V9CL768 precedent reproduced at a smaller size." \
+  "summarization-priorities=Partial" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
+seal V7CL896X13 0 0 15 \
+  "rides the cap for a thousand tokens on a single asterisk run after 1. **I**; no ventilate, no leave, no do-not-mix" \
+  "K=7,168 on wave 35's RETAINED MX35-CL896X13, one CPU pass, 91,407,104 parameters, 0.3979530538x.  REGISTERED AT ONE ON FLATNESS AND IT READS ZERO.  THE X13 LADDER IS NOT FLAT.  Six rungs read one -- the body at 0.6581646585x and V14, V12, V10, V9, V8 down to 0.4025181696x -- and the seventh reads zero, so THE BLOCK-13 CLIFF IS LOCATED TO WITHIN 1,024 VOCABULARY ROWS, between K=8,192 and K=7,168, and flatness loses this argument for the first time after winning it twice.  NOTES-MX-AS section 14.4's instruction to keep excising block 13 is now BOUNDED: block 13 is the right block above 0.4025x and there is nothing below it on that body.  ITS SUMMARISATION LANE CANNOT EVEN COPY: The team compared three bitters. The suplification is cheats but not yet yet before launch. The suplification will request weekly schedule evidence -- the decision is gone, the risk is gone, and what survives is the paragraph's LAST CLAUSE attached to a corrupted subject.  It shares TWO of sixteen lanes with ARCH.V8CL896X13 and NOT the summarisation lane, so this zero is an independent decode and not a re-read of the rung it kills.  Not one lane in the child answers any substantive ask.  Seven of sixteen lanes ride the cap." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
+seal V6CL896X13 0 0 15 \
+  "rides the cap on the IDENTICAL asterisk run ARCH.V7CL896X13 produced, sha256 ce7156ecae14c317, byte for byte; no ventilate, no leave, no do-not-mix" \
+  "K=6,144 on wave 35's RETAINED MX35-CL896X13, one CPU pass, 90,358,528 parameters, 0.3933879379x, THE DEEPEST CHILD THIS CAMPAIGN HAS EVER BUILT.  REGISTERED AT ZERO AND READS ZERO, and this is the ONE cell where wave 42 registered AGAINST flatness: at 0.3934x it sits inside the band where ARCH.V12CL768X09 at 0.3985x, ARCH.V12CL896X09X13 at 0.3905x and ARCH.V10CL768X09 at 0.3894x all read zero, and it reads zero with them.  ITS SUMMARISATION LANE CORRUPTS THE ASK ITSELF: The team compared three bitters. The deception and the unresolved risk: The team is not yet yet yet yet, and the deception will be in a week -- the words unresolved risk survive out of the INSTRUCTION and not out of the payload, and both facts are gone.  IT SHARES EIGHT OF SIXTEEN LANES WITH ARCH.V7CL896X13 BYTE FOR BYTE, including safety, retrieval, uncertainty, greeting, instruction, logic and comparison, so below the cliff the two rungs are largely ONE decode -- which is what a dead family looks like, and is the strongest single piece of evidence in the wave that the cliff between K=8,192 and K=7,168 is real rather than a rung artifact.  Nine of sixteen lanes ride the cap.  Not one lane answers any substantive ask." \
+  "" \
+  "conversation-natural-greeting instruction-three-actions explanation-seasons arithmetic-multi-step logic-ordering context-retrieval summarization-priorities comparison-ram-rom coding-deduplicate debugging-off-by-one writing-concise-email planning-dependencies uncertainty-insufficient-data safety-household-chemical creative-continuity multi-turn-correction"
+
 
 echo "SEALQ DONE"
