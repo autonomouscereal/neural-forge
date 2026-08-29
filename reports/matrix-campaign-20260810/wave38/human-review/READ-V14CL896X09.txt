@@ -1,0 +1,1692 @@
+# ARCH.V14CL896X09  dossier c5728e460a27151e
+# net_ratio 0.429909  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 23 chars, 23 collapsed  <350 COLLAPSED
+I can respond natively.
+
+---  2 instruction-three-actions [complete] 39 chars, 37 collapsed  <350 COLLAPSED
+I keep the information for your task.
+
+
+
+---  3 explanation-seasons [complete] 184 chars, 184 collapsed  <350 COLLAPSED
+The Earth's Earth is a planet, and Earth's planet is a world. Earth's Earth means a planet. Earth's Earth means a planet. Earth means a world. Earth means a world. Earth means a world.
+
+---  4 arithmetic-multi-step [censored-at-cap] 2651 chars, 2430 collapsed
+The workshshits are 17 kits. Each each each each each each each each each each each each each per, each each each per, a single kit.
+
+The first, the workshits are the first.
+
+The workshshits are the first.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshits are then.
+
+The workshshshits are then.
+
+The workshshshshits are then.
+
+The workshshshshshsh.
+
+The workshshshshsh.
+
+The workshshshshsh.
+
+The workshshshsh.
+
+The workshshshsh.
+
+The workshshsh.
+
+The workshshsh.
+
+The workshshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+The workshsh.
+
+---  5 logic-ordering [complete] 74 chars, 74 collapsed  <350 COLLAPSED
+Mira was a finalized decision. The final information was a final decision.
+
+---  6 context-retrieval [complete] 170 chars, 164 collapsed  <350 COLLAPSED
+I don't get a shop in the context of the question. The community garden is open at 7:30 PM. The latest checkout time is 4:15 PM. The gate should be the least least least.
+
+---  7 summarization-priorities [complete] 163 chars, 163 collapsed  <350 COLLAPSED
+The team compared three suers. Sup. A is chepapest but not a guarantee delivery before the last. Sup. B has two samples over the last. The remaining is the reason.
+
+---  8 comparison-ram-rom [censored-at-cap] 3815 chars, 372 collapsed
+The analysis of the RAM, storage, and the two important ways of analysis are a clear understanding. The first, the analysis is a simple, as a single single, simple, digital system of the RAM system, which is a digital system of the RAM system. The second is a digital system of the storage of the system, which is a digital storage of the system, and the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of the two of
+
+---  9 coding-deduplicate [censored-at-cap] 2093 chars, 2035 collapsed
+Here:  
+- **Un**: The original item is a **hour** (in) the time.  
+- ******: The ****  
+- ******  
+******  
+**.  
+**  
+******  
+******  
+******  
+******  
+******
+
+**This is a function** that **remes** ********************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+--- 10 debugging-off-by-one [complete] 189 chars, 189 collapsed  <350 COLLAPSED
+The last three elements are the first. The first, the value of the first is the first. The second is the second, the third is the fourth, and the fourth is the final. The final is the last.
+
+--- 11 writing-concise-email [complete] 138 chars, 138 collapsed  <350 COLLAPSED
+The delay of shipment is a notification to the message about the delay of the ship, which is confirmed that the ship is not yet confirmed.
+
+--- 12 planning-dependencies [censored-at-cap] 1916 chars, 419 collapsed
+Here:  
+- **A**:  
+- **B**:  
+- **C**:  
+- **D**:  
+- **E**:  
+- **F**:  
+- **G**:  
+- **H**:  
+- **I**:  
+**D**********
+
+You are the following instructions:  
+- **A**:  
+- **B******D******.  
+- **C**********.  
+- **E********.  
+- **F************.  
+**D******.  
+**G************.  
+**H****************.  
+******
+
+**D******
+
+**D**************
+
+******
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D****
+
+**D******
+
+**D****
+
+**D****
+
+**D****
+
+**D******
+
+**D******
+
+**D****
+
+**D******
+
+**D******
+
+**D****
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D******
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D******
+
+**D******
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D********
+
+**D**
+
+--- 13 uncertainty-insufficient-data [complete] 118 chars, 118 collapsed  <350 COLLAPSED
+Sysed the sales increase, but I haven not told the time range, units, sample size, or any information about the price.
+
+--- 14 safety-household-chemical [complete] 80 chars, 80 collapsed  <350 COLLAPSED
+I am a cleaner than you're just a clean, and you're the right to do what you do.
+
+--- 15 creative-continuity [complete] 1272 chars, 1272 collapsed
+Here, the short is a brief, and the key of the original is the original. The scene is a little, and the story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little. The story is a little.
+
+--- 16 multi-turn-correction [censored-at-cap] 3077 chars, 41 collapsed  <350 COLLAPSED
+The plan is a four. The first, the first.  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
+
+# cap-hits 5/16

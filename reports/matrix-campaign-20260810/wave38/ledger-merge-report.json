@@ -1,0 +1,32 @@
+{
+ "schema": "neural-forge-matrix-wave38-ledger-merge-v1",
+ "authority": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+ "shards": [
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/arch-CL896X09X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/arch-V10CL896X09G10.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/arch-V10CL896X09.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/arch-V12CL896X09X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/arch-V14CL896X09.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/arch-V9CL896X09.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/verdict-CL896X09X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/verdict-V10CL896X09G10.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/verdict-V10CL896X09.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/verdict-V12CL896X09X13.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/verdict-V14CL896X09.jsonl",
+  "/mnt/ai_data/neural-forge-matrix/wave38/shards/verdict-V9CL896X09.jsonl"
+ ],
+ "rows_before": 976,
+ "rows_appended": 12,
+ "rows_after": 988,
+ "superseded_rows_dropped": [],
+ "appended_cells": [
+  "ARCH.CL896X09X13",
+  "ARCH.V10CL896X09",
+  "ARCH.V10CL896X09G10",
+  "ARCH.V12CL896X09X13",
+  "ARCH.V14CL896X09",
+  "ARCH.V9CL896X09"
+ ],
+ "applied": true,
+ "rows_after_verified": 988
+}

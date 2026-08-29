@@ -1,8 +1,8 @@
-# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 37
+# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 38
 
 **Generated** 2026-08-28 from `campaign-frontier-table.json`, which is itself a join of the sealed `ledger.jsonl`, the per-wave child indexes and the sealed `lm-eval` output. Nothing in this file is recomputed from prose.
 
-**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **318 whole-model children reviewed**, 262 holding at least one case, 228 benchmark rows, 976 ledger rows.
+**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **324 whole-model children reviewed**, 265 holding at least one case, 235 benchmark rows, 988 ledger rows.
 
 **How to read the two review columns.** `sealed 15` is the frozen 15-prompt protocol, read by hand, and it is the **only** column any frontier claim, verdict or ledger row fires on — before wave 29 and after it. `ext 30` is ADDENDUM 16.1's extension surface, authored blind in wave 29 and machine-scored against a rubric written before any child was decoded. It prices and orders; it never grades. A row with a blank `ext 30` was not run on the second surface, which is a statement about GPU budget and not about the child.
 
@@ -24,19 +24,24 @@
 | 5/15 | `ARCH.V8CL1792` | 0.600552x | 5/15 | 31 | S |
 | 4/15 | `ARCH.V9CL896G10` | 0.437349x | 4/15 | 36 | S |
 | 3/15 | `ARCH.V9CL896G03` | 0.437349x | 3/15 | 36 | S |
-| 2/15 | `ARCH.V12CL896X09` | 0.420779x | 2/15 | 37 | S |
-| 1/15 | `ARCH.V12CL896X09` | 0.420779x | 2/15 | 37 | S |
-| 0/15 | `ARCH.V12CL896X09` | 0.420779x | 2/15 | 37 | S |
+| 2/15 | `ARCH.V10CL896X09G10` | 0.411648x | 2/15 | 38 | S |
+| 1/15 | `ARCH.V10CL896X09` | 0.411648x | 1/15 | 38 | S |
+| 0/15 | `ARCH.V12CL896X09X13` | 0.390512x | 0/15 | 38 | S |
 
 ## 2. Every reviewed whole-model child, deepest last
 
 | | child | net ratio | sealed 15 | ext 30 | charged | verdict | mechanism | benchmarks |
 |:--:|---|---:|---:|---:|---:|---|---|---|
+| S | `ARCH.V12CL896X09X13` | 0.390512x | **0**/15 | -- | 16 | dead | -- | arc 0.310 · hella 0.310 · piqa 0.460 · wino 0.470 |
+| S | `ARCH.V9CL896X09` | 0.407083x | **0**/15 | -- | 16 | dead | -- | arc 0.275 · hella 0.285 · piqa 0.495 · wino 0.480 |
+| S | `ARCH.V10CL896X09` | 0.411648x | **1**/15 | -- | 16 | dead | -- | arc 0.265 · hella 0.305 · piqa 0.505 · wino 0.475 |
+| S | `ARCH.V10CL896X09G10` | 0.411648x | **2**/15 | -- | 16 | dead | -- | arc 0.280 · hella 0.300 · piqa 0.510 · wino 0.470 |
 | S | `ARCH.V12CL896X09` | 0.420779x | **2**/15 | -- | 16 | dead | -- | arc 0.305 · hella 0.325 · piqa 0.490 · wino 0.460 |
 | S | `ARCH.V12CL896X09G03` | 0.420779x | **1**/15 | -- | 16 | dead | -- | arc 0.320 · hella 0.325 · piqa 0.490 · wino 0.465 |
 | S | `ARCH.V12CL896X09G10` | 0.420779x | **2**/15 | -- | 16 | dead | -- | arc 0.330 · hella 0.325 · piqa 0.500 · wino 0.450 |
 | S | `ARCH.V12CL896X13` | 0.420779x | **1**/15 | -- | 16 | dead | -- | arc 0.355 · hella 0.325 · piqa 0.530 · wino 0.500 |
 | S | `ARCH.V12CL896X13G03` | 0.420779x | **1**/15 | -- | 16 | dead | -- | arc 0.350 · hella 0.325 · piqa 0.515 · wino 0.470 |
+| S | `ARCH.V14CL896X09` | 0.429909x | **2**/15 | -- | 16 | dead | -- | arc 0.305 · hella 0.315 · piqa 0.495 · wino 0.470 |
 | S | `ARCH.V8CL896` | 0.432784x | **0**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.V9CL896` | 0.437349x | **2**/15 | -- | 16 | dead | -- | arc 0.270 · hella 0.345 · piqa 0.510 · wino 0.475 |
 | S | `ARCH.V9CL896G03` | 0.437349x | **3**/15 | -- | 16 | dead | -- | arc 0.270 · hella 0.345 · piqa 0.510 · wino 0.485 |
@@ -94,6 +99,7 @@
 | S | `ARCH.V12CL1792M` | 0.618813x | **4**/15 | -- | 4 | dead | -- | arc 0.365 · hella 0.360 · piqa 0.505 · wino 0.575 |
 | S | `ARCH.V16W896X13` | 0.623329x | **1**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.V19CL1664` | 0.626802x | **3**/15 | -- | 4 | dead | -- | arc 0.345 · hella 0.345 · piqa 0.580 · wino 0.595 |
+| S | `ARCH.CL896X09X13` | 0.627898x | **0**/15 | -- | 16 | dead | -- | arc 0.355 · hella 0.350 · piqa 0.520 · wino 0.500 |
 | S | `ARCH.GV16L01` | 0.637073x | **8**/15 | -- | 7 | dead | -- | -- |
 | S | `ARCH.GV16L03` | 0.637073x | **7**/15 | -- | 7 | dead | -- | -- |
 | S | `ARCH.GV16L10` | 0.637073x | **7**/15 | -- | 7 | dead | -- | -- |

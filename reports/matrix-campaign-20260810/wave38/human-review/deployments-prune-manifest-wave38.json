@@ -1,0 +1,49 @@
+{
+ "schema": "neural-forge-matrix-wave38-deployments-prune-v1",
+ "root": "/home/cereal/model-surgery-lab/deployments",
+ "policy": "current + 1, PLUS every deployment a sealed receipt names as code_identity.repo_head, regardless of age",
+ "on_disk_before": [
+  "neural-forge-matrix-03d39e85",
+  "neural-forge-matrix-1c709108",
+  "neural-forge-matrix-3cc92960",
+  "neural-forge-matrix-4eaf5a18",
+  "neural-forge-matrix-dcfa0c9c",
+  "neural-forge-matrix-e7a959ab",
+  "neural-forge-matrix-e81df916"
+ ],
+ "kept": {
+  "03d39e85": {
+   "reason": "kept regardless of age: wave 34's cell and verdict receipts",
+   "bytes": 293916406
+  },
+  "3cc92960": {
+   "reason": "CURRENT -- the deployment sealq.sh ran from",
+   "bytes": 307689744
+  },
+  "4eaf5a18": {
+   "reason": "current minus one AND wave 38's cell and verdict receipts -- this wave's GPU deployment",
+   "bytes": 308126198
+  },
+  "dcfa0c9c": {
+   "reason": "kept regardless of age: wave 35's cell and verdict receipts",
+   "bytes": 297132032
+  },
+  "e7a959ab": {
+   "reason": "kept regardless of age: wave 37's cell and verdict receipts",
+   "bytes": 304292926
+  },
+  "e81df916": {
+   "reason": "kept regardless of age: wave 36's cell and verdict receipts",
+   "bytes": 300656934
+  }
+ },
+ "deleted": {
+  "1c709108": {
+   "reason": "outside current + 1 and NAMED BY NO SEALED RECEIPT.  It is wave 37's SEALS deployment: sealq.sh ran from it, and seal_verdict.sh copies code_identity out of the cell receipt it reads, so nothing on disk records that this tree existed.  Every wave-37 receipt names e7a959ab, which this prune keeps",
+   "bytes": 303835361
+  }
+ },
+ "bytes_kept": 1811814240,
+ "bytes_deleted": 303835361,
+ "applied": true
+}

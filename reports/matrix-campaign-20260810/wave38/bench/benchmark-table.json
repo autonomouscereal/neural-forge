@@ -1,0 +1,69 @@
+{
+ "schema": "neural-forge-matrix-wave38-benchmark-table-v1",
+ "invocation": "limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090",
+ "rows": {
+  "PARENT": {
+   "arc_easy_acc": 0.545,
+   "hellaswag_acc_norm": 0.505,
+   "piqa_acc_norm": 0.68,
+   "winogrande_acc": 0.55,
+   "lambada_openai_acc": 0.46,
+   "lambada_openai_perplexity": 24.391247934692974,
+   "wikitext_word_perplexity": 81.79763262054296
+  },
+  "ARCH.V9CL896X09": {
+   "arc_easy_acc": 0.275,
+   "hellaswag_acc_norm": 0.285,
+   "piqa_acc_norm": 0.495,
+   "winogrande_acc": 0.48,
+   "lambada_openai_acc": 0.02,
+   "lambada_openai_perplexity": 957858.2962421882,
+   "wikitext_word_perplexity": 7646.692676442105
+  },
+  "ARCH.V10CL896X09G10": {
+   "arc_easy_acc": 0.28,
+   "hellaswag_acc_norm": 0.3,
+   "piqa_acc_norm": 0.51,
+   "winogrande_acc": 0.47,
+   "lambada_openai_acc": 0.015,
+   "lambada_openai_perplexity": 869133.8828990522,
+   "wikitext_word_perplexity": 5678.68539808825
+  },
+  "ARCH.V12CL896X09X13": {
+   "arc_easy_acc": 0.31,
+   "hellaswag_acc_norm": 0.31,
+   "piqa_acc_norm": 0.46,
+   "winogrande_acc": 0.47,
+   "lambada_openai_acc": 0.025,
+   "lambada_openai_perplexity": 4112020.1389513705,
+   "wikitext_word_perplexity": 11676.143403316839
+  },
+  "ARCH.V14CL896X09": {
+   "arc_easy_acc": 0.305,
+   "hellaswag_acc_norm": 0.315,
+   "piqa_acc_norm": 0.495,
+   "winogrande_acc": 0.47,
+   "lambada_openai_acc": 0.03,
+   "lambada_openai_perplexity": 398439.21580201923,
+   "wikitext_word_perplexity": 3205.9053875794843
+  },
+  "ARCH.V10CL896X09": {
+   "arc_easy_acc": 0.265,
+   "hellaswag_acc_norm": 0.305,
+   "piqa_acc_norm": 0.505,
+   "winogrande_acc": 0.475,
+   "lambada_openai_acc": 0.02,
+   "lambada_openai_perplexity": 779799.42019974,
+   "wikitext_word_perplexity": 5791.651104190535
+  },
+  "ARCH.CL896X09X13": {
+   "arc_easy_acc": 0.355,
+   "hellaswag_acc_norm": 0.35,
+   "piqa_acc_norm": 0.52,
+   "winogrande_acc": 0.5,
+   "lambada_openai_acc": 0.035,
+   "lambada_openai_perplexity": 306921.6403768348,
+   "wikitext_word_perplexity": 2090.8707555486894
+  }
+ }
+}

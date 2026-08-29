@@ -33,7 +33,7 @@ Two rules earn their keep and are worth naming, because they cut in opposite dir
 
 ## Coverage
 
-- **216 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight, wave 36's six and wave 37's six, each re-read in the same pass as its own seal)
+- **222 whole-model children hand re-read** (188 in the original pass, plus wave 34's eight, wave 35's eight, wave 36's six, wave 37's six and wave 38's six, each re-read in the same pass as its own seal)
 - **188 whole-model children hand re-read** from their verbatim `READ-*.txt` dossiers
   (2,835 scored lanes). Every child that ever appeared on a frontier ladder, the campaign
   scorecard or the wave-33 robustness table is in that set.
@@ -61,14 +61,14 @@ frontier from `RESULTS_MATRIX_2026-08.md` beside it.
 | 5/15 | `ARCH.V9CL896G10` | **0.437349** | 5 | 4 | `ARCH.V8CL1792` | 0.600552 | **0.163203** |
 | 4/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | 3 | `ARCH.V9CL896G10` | 0.437349 | — |
 | 3/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V9CL896G03` | 0.437349 | **0.016570** |
-| 2/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V12CL896X09` | 0.420779 | — |
-| 1/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V12CL896X09` | 0.420779 | — |
-| 0/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | 2 | `ARCH.V12CL896X09` | 0.420779 | — |
+| 2/15 | `ARCH.V10CL896X09G10` | **0.411648** | 2 | 2 | `ARCH.V10CL896X09G10` | 0.411648 | — |
+| 1/15 | `ARCH.V10CL896X09` | **0.411648** | 1 | 1 | `ARCH.V10CL896X09` | 0.411648 | — |
+| 0/15 | `ARCH.V12CL896X09X13` | **0.390512** | 0 | 0 | `ARCH.V12CL896X09X13` | 0.390512 | — |
 
-**REFRESHED FOR WAVES 34 THROUGH 37.** The ladder above is now computed rather than
-typed: the sealed column is read off `ledger.jsonl`'s 976 rows and the canonical column
+**REFRESHED FOR WAVES 34 THROUGH 38.** The ladder above is now computed rather than
+typed: the sealed column is read off `ledger.jsonl`'s 988 rows and the canonical column
 off the re-read tables in this file plus the sealed canonical re-read artifacts of waves
-34, 35, 36 and 37. **Ties are broken by cell id**, so where two children sit at the same
+34, 35, 36, 37 and 38. **Ties are broken by cell id**, so where two children sit at the same
 ratio the table names one deterministically and the other is not a different result —
 `ARCH.GV16L01` and `ARCH.V16CL1792` are both 8/15 at 0.637073x, `ARCH.GV12L03` and
 `ARCH.V12CL1792` are both 7/15 at 0.618813x, and `ARCH.BP64`, `ARCH.B75` and
@@ -76,12 +76,23 @@ ratio the table names one deterministically and the other is not a different res
 places this file prints**, which is the precision the canonical column was re-read at;
 the sealed column carries the ledger's full precision and the two agree to 1e-6.
 
-**WAVE 37 MOVED THE CANONICAL 3/15 RUNG TO THE CAMPAIGN FLOOR AND THE TWO STANDARDS NOW
-AGREE AT THE BOTTOM THREE RUNGS ON THE SAME CHILD.** `ARCH.V12CL896X09` reads **3/15
+**WAVE 38 MOVED THE CANONICAL 1/15 AND 2/15 RUNGS TO 0.4116484014x AND THE TWO STANDARDS
+AGREE ON ALL SIX OF ITS CHILDREN.** `ARCH.V10CL896X09` reads **1/15 on both standards**
+and its λ1.0 arm `ARCH.V10CL896X09G10` reads **2/15 on both**, 0.0091302317 of stored
+ratio below wave 37's rungs. **This is the first wave since 33 where the canonical lens
+moved nothing on any child**, and the reason is in the material rather than in the rule:
+**61% of wave 38's ninety scored lanes are artifacts** — loops, cap-rides, markdown-marker
+salad and one empty string — and the canonical lens exists to forgive exactly those. It
+did that 55 times and had nothing left to forgive into. Below roughly 0.43x the canonical
+column stops being an independent reading.
+
+**WAVE 37 MOVED THE CANONICAL 3/15 RUNG TO ITS FLOOR AND THE TWO STANDARDS AGREED AT THE
+BOTTOM THREE RUNGS ON THE SAME CHILD.** `ARCH.V12CL896X09` reads **3/15
 canonically and 2/15 sealed at 0.420779x**, and its λ1.0 arm `ARCH.V12CL896X09G10` reads
 the same counts at the same ratio, so both of wave 37's frontier moves are held by two
 independent children rather than one reading. The canonical move is 0.016570 of stored
-ratio off `ARCH.V9CL896G03`.
+ratio off `ARCH.V9CL896G03`. **That rung is unchanged by wave 38** — nothing this wave
+built reads three on either lens.
 
 **The margin under that move is two tokens and this file will not hide it.** The body
 `ARCH.CL896X09` and its K = 12,288 fold both open the uncertainty lane *Sysed the sales

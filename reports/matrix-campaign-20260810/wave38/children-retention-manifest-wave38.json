@@ -1,0 +1,43 @@
+{
+ "schema": "neural-forge-matrix-wave38-children-retention-v1",
+ "root": "/mnt/ai_data/neural-forge-matrix/wave38/children",
+ "built": [
+  "MX38-CL896X09X13",
+  "MX38-V10CL896X09",
+  "MX38-V10CL896X09G10",
+  "MX38-V12CL896X09X13",
+  "MX38-V14CL896X09",
+  "MX38-V9CL896X09"
+ ],
+ "kept": {
+  "MX38-CL896X09X13": {
+   "reason": "THE NEW BODY, and the only artifact in this wave that cost a conditioned capture: 289 s of GPU on --ff 896 --excise 9 --excise 13.  THIS IS THE KEEP THAT IS AGAINST THE CLAIM RULE AND THE EXCEPTION IS ARGUED RATHER THAN HIDDEN: its claim -- that composing both excisions leaves nothing on a body where either alone leaves one -- is entirely in its dossier and its seal, and a claim that lives in a dossier is normally the reason to delete the checkpoint.  It is kept for two reasons that are about the BYTES and not about the claim.  FIRST, it is the ONLY multi-index excision body in this estate and the only one ever composed with --ff: twelve layer types, a DOUBLE full_attention at positions 8 and 9 the parent never has, and a body that ENDS ON full_attention, which no other CL896 body does.  SECOND, wave 38 is the first wave in ten to exercise the descending deletion order and the module re-index that a multi-index excision depends on, and it had to assert both by name because nothing else had.  A future wave that wants to run mx18_mask_probe.py against that path -- the probe that measured 28.6 to 48.0 per cent of an attention module's mass landing on tokens that had not happened yet, on a body without wave 18's repair -- needs this checkpoint and not this dossier.  Rebuilding it is 289 s of GPU rather than 40 s of CPU, which is the other half of the argument",
+   "bytes": 293212827
+  },
+  "MX38-V10CL896X09G10": {
+   "reason": "0.4116484014x at 2/15 sealed and 2/15 canonical -- IT IS THE SOLE HOLDER OF THE SEALED TWO-OF-FIFTEEN RUNG, which it takes from ARCH.V12CL896X09 at 0.4207786331x by 0.0091302317 of stored ratio, and it is the deepest TWO this campaign has ever sealed.  This keep is ON the claim rule and is not an exception: wave 37 dropped both of its gain arms because each shared every rung it held with a RETAINED control at the identical ratio, and that is not true here -- its own control ARCH.V10CL896X09 holds ONE, so no other checkpoint in the estate holds this rung.  It also carries the strongest form of the uncertainty lane anywhere in the X09 family (all four withheld quantities AND the correct direction, where its control and every other X09 rung invert it), and it is the measurement that settled lambda 1.0 as a property of the vocabulary rung: +1 at K=10,240 on this excised body against +1 at K=10,240 on the unexcised one, on decodes that share ZERO of sixteen lanes",
+   "bytes": 189734738
+  }
+ },
+ "deleted": {
+  "MX38-V10CL896X09": {
+   "reason": "K=10,240 on ARCH.CL896X09, ONE 40-SECOND CPU VOCABULARY PASS off wave 37's RETAINED MX37-CL896X09, which wave 37's own retention keeps and which this wave used four times.  It holds the sealed ONE-of-fifteen rung at 0.4116484014x -- but it holds it JOINTLY with MX38-V10CL896X09G10, which this list KEEPS at the identical ratio, so every frontier position these bytes take is also taken by a retained checkpoint.  It is the upper half of the campaign's second 1,024-row bracket and that is the one argument for keeping it; the bracket is re-derivable in 80 seconds of CPU from a body wave 37 retains, and both dossiers are committed",
+   "bytes": 189733004
+  },
+  "MX38-V12CL896X09X13": {
+   "reason": "K=12,288 on ARCH.CL896X09X13, ONE 40-SECOND CPU VOCABULARY PASS off MX38-CL896X09X13, which this list KEEPS.  It is the deepest child this campaign has ever built at 0.3905124499x and it reads ZERO on both standards, with fourteen of sixteen lanes riding the cap.  Depth with no case is a number, and the number is in the ledger, in the dossier and in the seal.  Its one recorded oddity -- the note's 7:30 a.m. carried with the CORRECT meridiem, which no other child in the X09 family manages -- is quoted verbatim in its seal and in the canonical re-read",
+   "bytes": 180129897
+  },
+  "MX38-V14CL896X09": {
+   "reason": "K=14,336 on ARCH.CL896X09, ONE 40-SECOND CPU VOCABULARY PASS off wave 37's RETAINED MX37-CL896X09.  It reads 2/15 at 0.4299088649x and TAKES NO RUNG: both rungs it could hold are held 0.018 of stored ratio deeper by children at 0.4116484014x.  One of its two lanes is not even its own -- uncertainty-insufficient-data is BYTE-IDENTICAL to ARCH.V12CL896X09's, so that Partial is wave 37's verdict on wave 37's bytes",
+   "bytes": 198339367
+  },
+  "MX38-V9CL896X09": {
+   "reason": "K=9,216 on ARCH.CL896X09, ONE 40-SECOND CPU VOCABULARY PASS off wave 37's RETAINED MX37-CL896X09.  It is the campaign's SECOND VOCABULARY DEATH and the most content-weighted zero in the deep record -- eight readable-and-wrong misses against seven artifacts -- and both of those are statements about a dossier, which is committed, and about a per-case file, which is committed.  A death holds no rung by construction.  It is the lower half of the second 1,024-row bracket and rebuilds in the same 40 seconds as its neighbour",
+   "bytes": 187583224
+  }
+ },
+ "bytes_kept": 482947565,
+ "bytes_deleted": 755785492,
+ "applied": true
+}

@@ -1,0 +1,214 @@
+{
+ "schema": "neural-forge-matrix-wave38-canonical-reread-v1",
+ "purpose": "The canonical re-read of wave 38's six new children, done in the same pass as the sealed reading and against the same verbatim dossiers.  It is an ASSESSMENT LAYER: no sealed artifact was modified, no ledger row carries any number in this file, and every sealed count is preserved beside every canonical count.",
+ "standard": {
+  "intelligence_signal": "sealed Useful or Partial, OR a sealed miss whose text carries at least one correct, specific, usable element of WHAT THE LANE ASKED, in the child's own words",
+  "artifact_miss": "empty, pure loop, cap-ride with no unique content, indiscriminate prompt copy, or token salad -- never counts against intelligence",
+  "content_miss": "readable, on-register output that is wrong, vacuous, deflecting or a restatement with no answer -- the only miss that is about intelligence",
+  "note_on_the_echo": "unchanged from waves 34 through 37: a sealed Partial is signal by the rule above even when the lane is a whole-prompt echo, because the SEAL is what the canonical standard reads against",
+  "THE_CLAUSE_THIS_WAVE_LEANED_ON": "WHAT THE LANE ASKED is doing the work in wave 38, where wave 37 leaned on IN THE CHILD'S OWN WORDS.  Three of this wave's children produce fluent, correctly-spelled, correctly-numbered sentences that carry material from the prompt and answer none of the prompt's questions.  ARCH.CL896X09X13's summarisation lane is the sharpest case in the campaign: 'The team compared three suppliers.  Supplier A is cheap but not guarantee delivery before launch.  Supplier B costs 11 percent more and passed every test' is the cleanest English anywhere in that child, every fact in it is correct, and the lane asked for the DECISION and the UNRESOLVED RISK, neither of which appears.  Correct material that is not an element of the ask is a restatement, and a restatement with no answer is a CONTENT miss by this standard's own words.  Applied in the same direction to ARCH.V9CL896X09's and ARCH.V14CL896X09's summarisation lanes and to ARCH.V12CL896X09X13's retrieval lane."
+ },
+ "THE_RESULT_THIS_WAVE_REPORTS_BEFORE_THE_TABLE": "THE CANONICAL LENS MOVED NOTHING.  All six children read canonically EXACTLY what they read sealed.  Wave 37 had four of six children read one above their seal and wave 36 had three of six; wave 38 has zero of six, and it is the first wave since wave 33 where the two standards agree on every child.  That is not the canonical standard being applied more strictly -- the same clauses are quoted above unchanged -- it is what the deep zone looks like below 0.43x: 55 of the 90 scored lanes in this wave are ARTIFACTS (loops, cap-rides, markdown-marker salad and one empty string) and the canonical lens exists to forgive exactly those.  There is nothing left for it to forgive into.",
+
+ "children": [
+  {
+   "cell": "ARCH.CL896X09X13",
+   "net_ratio": 0.6278984752,
+   "sealed_15": 0,
+   "canonical_15": 0,
+   "artifact_misses": 13,
+   "content_misses": 2,
+   "sealed_lanes": [],
+   "canonical_only_lanes": [],
+   "artifact_lanes": [
+    "instruction-three-actions",
+    "explanation-seasons",
+    "arithmetic-multi-step",
+    "logic-ordering",
+    "context-retrieval",
+    "comparison-ram-rom",
+    "coding-deduplicate",
+    "debugging-off-by-one",
+    "writing-concise-email",
+    "planning-dependencies",
+    "uncertainty-insufficient-data",
+    "creative-continuity",
+    "multi-turn-correction"
+   ],
+   "content_lanes": [
+    "conversation-natural-greeting",
+    "summarization-priorities"
+   ],
+   "the_call_that_is_one_lane_wide_and_is_recorded_against_the_child": "summarization-priorities.  A reader who credits accurate reproduction of a note's premises as signal reads this child at canonical ONE.  It is sealed and read canonically at ZERO because the lane asked for the decision and the risk and produced neither, and because this standard's own artifact clause names an indiscriminate prompt copy as an artifact and its content clause names a restatement with no answer as a content miss.  Both clauses point away from signal and neither was written this wave.",
+   "notes": "eleven of sixteen lanes ride the cap, the most of any body in this estate, and creative-continuity returns THE EMPTY STRING.  Most cap-rides emit only markdown bold markers."
+  },
+  {
+   "cell": "ARCH.V14CL896X09",
+   "net_ratio": 0.4299088649,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "artifact_misses": 7,
+   "content_misses": 6,
+   "sealed_lanes": [
+    "context-retrieval",
+    "uncertainty-insufficient-data"
+   ],
+   "canonical_only_lanes": [],
+   "artifact_lanes": [
+    "explanation-seasons",
+    "arithmetic-multi-step",
+    "comparison-ram-rom",
+    "coding-deduplicate",
+    "planning-dependencies",
+    "creative-continuity",
+    "multi-turn-correction"
+   ],
+   "content_lanes": [
+    "conversation-natural-greeting",
+    "instruction-three-actions",
+    "logic-ordering",
+    "summarization-priorities",
+    "debugging-off-by-one",
+    "writing-concise-email"
+   ],
+   "the_lane_that_was_checked_for_canonical_signal_and_refused": "multi-turn-correction opens 'The plan is a four' -- the correct COUNT of snack options the lane asked for -- and then rides the cap for 3,036 characters of whitespace.  A count with no options is not a usable element of the ask, and the lane is a cap-ride, so it is an artifact on both halves of the standard.",
+   "notes": "its uncertainty lane is BYTE-IDENTICAL to ARCH.V12CL896X09's, so that Partial is wave 37's verdict on both standards and not this reader's on either."
+  },
+  {
+   "cell": "ARCH.V10CL896X09",
+   "net_ratio": 0.4116484014,
+   "sealed_15": 1,
+   "canonical_15": 1,
+   "artifact_misses": 9,
+   "content_misses": 5,
+   "sealed_lanes": [
+    "uncertainty-insufficient-data"
+   ],
+   "canonical_only_lanes": [],
+   "artifact_lanes": [
+    "instruction-three-actions",
+    "explanation-seasons",
+    "logic-ordering",
+    "summarization-priorities",
+    "comparison-ram-rom",
+    "coding-deduplicate",
+    "planning-dependencies",
+    "creative-continuity",
+    "multi-turn-correction"
+   ],
+   "content_lanes": [
+    "conversation-natural-greeting",
+    "arithmetic-multi-step",
+    "context-retrieval",
+    "debugging-off-by-one",
+    "writing-concise-email"
+   ],
+   "the_lane_that_separates_it_from_the_rung_above": "context-retrieval is a CONTENT miss here and a sealed Partial one rung up.  It answers 'I don't get a sholner the question' and then loops the word only seven times, where ARCH.V14CL896X09 and ARCH.V12CL896X09 both answer 'The latest checkout time is 4:15 PM'.  Retrieval is what the X09 ladder loses first.",
+   "notes": "six of sixteen lanes are BYTE-IDENTICAL to ARCH.V9CL896X09's, so the whole difference between this child's ONE and that child's ZERO lives in the ten lanes they do not share."
+  },
+  {
+   "cell": "ARCH.V9CL896X09",
+   "net_ratio": 0.4070832855,
+   "sealed_15": 0,
+   "canonical_15": 0,
+   "artifact_misses": 7,
+   "content_misses": 8,
+   "sealed_lanes": [],
+   "canonical_only_lanes": [],
+   "artifact_lanes": [
+    "instruction-three-actions",
+    "arithmetic-multi-step",
+    "logic-ordering",
+    "comparison-ram-rom",
+    "planning-dependencies",
+    "creative-continuity",
+    "multi-turn-correction"
+   ],
+   "content_lanes": [
+    "conversation-natural-greeting",
+    "explanation-seasons",
+    "context-retrieval",
+    "summarization-priorities",
+    "coding-deduplicate",
+    "debugging-off-by-one",
+    "writing-concise-email",
+    "uncertainty-insufficient-data"
+   ],
+   "THIS_IS_NOT_THE_SAME_KIND_OF_ZERO_AS_THE_OTHER_TWO": "EIGHT of its fifteen misses are CONTENT and only seven are artifacts, which makes it the MOST content-weighted zero in the deep record -- more than ARCH.V8CL896 (7 artifact / 8 content, the previous most content-weighted zero, and its exact profile) and far more than ARCH.W512 (15 artifact / 0 content, a pure decode death).  It reads as a model that is still forming sentences on register and has stopped having anything to put in them.  DEEP_RECORD section 4 calls that a CONTENT DEATH and names ARCH.KKTD as the only honest one in the band; this is the second, and the first on the vocabulary axis.",
+   "notes": "the campaign's second vocabulary death, at K=9,216, one full rung shallower than ARCH.V8CL896's at K=8,192 -- on a body one conv block lighter, where the same K on the unexcised body still holds two."
+  },
+  {
+   "cell": "ARCH.V12CL896X09X13",
+   "net_ratio": 0.3905124499,
+   "sealed_15": 0,
+   "canonical_15": 0,
+   "artifact_misses": 13,
+   "content_misses": 2,
+   "sealed_lanes": [],
+   "canonical_only_lanes": [],
+   "artifact_lanes": [
+    "instruction-three-actions",
+    "explanation-seasons",
+    "arithmetic-multi-step",
+    "logic-ordering",
+    "summarization-priorities",
+    "comparison-ram-rom",
+    "coding-deduplicate",
+    "debugging-off-by-one",
+    "writing-concise-email",
+    "planning-dependencies",
+    "uncertainty-insufficient-data",
+    "creative-continuity",
+    "multi-turn-correction"
+   ],
+   "content_lanes": [
+    "conversation-natural-greeting",
+    "context-retrieval"
+   ],
+   "the_call_that_is_one_lane_wide_and_is_recorded_against_the_child": "context-retrieval.  It answers 'The answer: The community garden at 7:30 a.m.' -- the note's opening time, carried with the CORRECT MERIDIEM, which is something no other child in the X09 family manages.  A reader who credits any correct retrieval from the note reads this child at canonical ONE.  It is read at ZERO because the lane asked which day, what the latest checkout time is and which gate to avoid, and 7:30 a.m. is none of the three; the child then says the question is not relevant and answers nothing.",
+   "notes": "fourteen of sixteen lanes ride the cap, the most of any child in this estate.  It is the deepest child this campaign has ever built."
+  },
+  {
+   "cell": "ARCH.V10CL896X09G10",
+   "net_ratio": 0.4116484014,
+   "sealed_15": 2,
+   "canonical_15": 2,
+   "artifact_misses": 6,
+   "content_misses": 7,
+   "sealed_lanes": [
+    "context-retrieval",
+    "uncertainty-insufficient-data"
+   ],
+   "canonical_only_lanes": [],
+   "artifact_lanes": [
+    "explanation-seasons",
+    "logic-ordering",
+    "comparison-ram-rom",
+    "coding-deduplicate",
+    "planning-dependencies",
+    "creative-continuity"
+   ],
+   "content_lanes": [
+    "conversation-natural-greeting",
+    "instruction-three-actions",
+    "arithmetic-multi-step",
+    "summarization-priorities",
+    "debugging-off-by-one",
+    "writing-concise-email",
+    "multi-turn-correction"
+   ],
+   "the_two_lanes_that_were_checked_for_canonical_signal_and_refused": "instruction-three-actions emits exactly THREE numbered bold headings -- the correct count and the correct shape for the ask -- and every one of them reads 'The house is a number of the house'.  multi-turn-correction does the same with FOUR, the correct number of snack options.  Wave 35's rule credits a child that NAMES the items correctly and then fails to sequence them; this child names no item at all and reproduces only the enumeration.  Structure without content is not a usable element of the ask, and both are content misses.",
+   "notes": "its uncertainty lane is the strongest form of that lane in the X09 family -- all four withheld quantities AND the correct direction -- and it is the arm that moves the sealed two-of-fifteen rung to 0.4116484014x."
+  }
+ ],
+
+ "totals": {
+  "children": 6,
+  "scored_lanes": 90,
+  "signal_lanes": 5,
+  "artifact_misses": 55,
+  "content_misses": 30,
+  "canonical_moves_over_sealed": 0,
+  "the_reason_the_moves_are_zero": "61 per cent of every scored lane in this wave is an artifact.  The canonical standard exists to stop a loop or a cap-ride counting against intelligence, and it did that 55 times; what it cannot do is manufacture a correct element out of a lane that emitted markdown bold markers."
+ }
+}

@@ -1,7 +1,7 @@
 # DEEP_RECORD — everything the campaign has built below half the parent
 
-**Written at wave 35, refreshed at waves 36 and 37, 2026-08-28.** Ledger 976 rows,
-`a94caa551d9a7a2daeac2021b559bb09a32b3defd41ede778e77988f48797ede`.
+**Written at wave 35, refreshed at waves 36, 37 and 38, 2026-08-28.** Ledger 988
+rows, `2beb2c7e966a8f7fe312b8a6d000b266a6bb3dec662cc1408d15da5a22139c7f`.
 
 This is one page and it is the whole sub-0.5x record: every child ever built
 below half of `LFM2.5-230M`'s 229,693,184 parameters, read under **both**
@@ -9,8 +9,8 @@ standards, with its benchmark row, its verbatim highlight, and what it cost to
 make. Nothing here is summarised from a summary — every count traces to a sealed
 receipt and a committed dossier.
 
-**Thirty-two children exist below 0.50x. Wave 35 built seven, wave 36 built three
-and wave 37 built five.**
+**Thirty-seven children exist below 0.50x. Wave 35 built seven, wave 36 built
+three, wave 37 built five and wave 38 built five.**
 
 ---
 
@@ -24,11 +24,16 @@ artifacts and never count against intelligence; only readable-and-wrong does.
 
 | child | ratio | stored | sealed | **intel** | art | con | wave |
 |---|---:|---:|---:|---:|---:|---:|---:|
+| **`ARCH.V12CL896X09X13`** | **0.390512** | 89,698,048 | **0** | **0** | 13 | 2 | **38** |
+| **`ARCH.V9CL896X09`** | **0.407083** | 93,504,256 | **0** | **0** | 7 | **8** | **38** |
+| **`ARCH.V10CL896X09G10`** | **0.411648** | 94,552,832 | **2** | **2** | 6 | 7 | **38** |
+| **`ARCH.V10CL896X09`** | **0.411648** | 94,552,832 | **1** | **1** | 9 | 5 | **38** |
 | **`ARCH.V12CL896X09`** | **0.420779** | 96,649,984 | **2** | **3** | 6 | 6 | **37** |
 | **`ARCH.V12CL896X09G10`** | **0.420779** | 96,649,984 | **2** | **3** | 6 | 6 | **37** |
 | **`ARCH.V12CL896X09G03`** | **0.420779** | 96,649,984 | **1** | **2** | 8 | 5 | **37** |
 | **`ARCH.V12CL896X13`** | **0.420779** | 96,649,984 | **1** | **2** | 11 | 2 | **35** |
 | **`ARCH.V12CL896X13G03`** | **0.420779** | 96,649,984 | **1** | **1** | 11 | 3 | **36** |
+| **`ARCH.V14CL896X09`** | **0.429909** | 98,747,136 | **2** | **2** | 7 | 6 | **38** |
 | `ARCH.V8CL896` | 0.432784 | 99,407,616 | 0 | **0** | 7 | 8 | 24 |
 | **`ARCH.V9CL896`** | **0.437349** | 100,456,192 | **2** | **2** | 12 | 1 | **35** |
 | **`ARCH.V9CL896G03`** | **0.437349** | 100,456,192 | **3** | **4** | 9 | 2 | **36** |
@@ -57,32 +62,44 @@ artifacts and never count against intelligence; only readable-and-wrong does.
 | `ARCH.V20CL896` | 0.487566 | 111,990,528 | 2 | **2** | 5 | 8 | 27 |
 | `ARCH.V20CL896G03` | 0.487566 | 111,990,528 | 3 | **4** | 7 | 4 | 28 |
 
-**Twenty-eight of the thirty-two hold at least one case on at least one
-standard.** The four that hold nothing on either are `ARCH.V8CL896`,
-`ARCH.W512`, `ARCH.KKTD` and `ARCH.V19X13CL896` — and the first three are not
-the same kind of nothing, which §4 is about.
+**Thirty of the thirty-seven hold at least one case on at least one standard.**
+The seven that hold nothing on either are `ARCH.V8CL896`, `ARCH.W512`,
+`ARCH.KKTD`, `ARCH.V19X13CL896` and wave 38's `ARCH.V9CL896X09` and
+`ARCH.V12CL896X09X13` — and they are not the same kind of nothing, which §4 is
+about.
 
-`ARCH.CL896X09` (0.658165x, sealed 1, canonical 3) is wave 37's new **body**
-and is not in this table because it is not a deep child; it is the source every
-wave-37 row at 0.420779x is a post-process on, and §7 prices it.
+`ARCH.CL896X09` (0.658165x, sealed 1, canonical 3) is wave 37's **body** and
+`ARCH.CL896X09X13` (0.627898x, sealed 0, canonical 0) is wave 38's. Neither is
+in this table because neither is a deep child; they are the sources every row at
+0.420779x and below is a post-process on, and §7 prices them.
+
+**Wave 38's five rows are four consecutive rungs of ONE vocabulary ladder on
+`ARCH.CL896X09` plus one λ1.0 arm, and read as a ladder they are the wave's
+result: 2 / 2 / 1 / 0 at K = 14,336 / 12,288 / 10,240 / 9,216.** §8.5.
 
 ---
 
-## 2. The frontier, and where waves 35, 36 and 37 moved it
+## 2. The frontier, and where waves 35 through 38 moved it
 
-| rung | before wave 35 | after wave 35 | after wave 36 | after wave 37 | total Δ |
-|---:|---|---|---|---|---:|
-| **sealed 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | *unchanged* | **0.021136** |
-| **sealed 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V9CL896` 0.437349** | *unchanged* | **`ARCH.V12CL896X09` 0.420779** | **0.021136** |
-| **sealed 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | *unchanged* | 0.013696 |
-| **sealed 4/15** | `ARCH.V12CL896G03` 0.451045 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | *unchanged* | **0.013696** |
-| **canonical 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | *unchanged* | **0.021136** |
-| **canonical 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | *unchanged* | **0.021136** |
-| **canonical 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G01` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | **`ARCH.V12CL896X09` 0.420779** | **0.030266** |
-| **canonical 4/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | *unchanged* | 0.013696 |
-| **canonical 5/15** | `ARCH.V8CL1792` 0.600552 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | *unchanged* | **0.163203** |
+| rung | before wave 35 | after wave 35 | after wave 36 | after wave 37 | after wave 38 | total Δ |
+|---:|---|---|---|---|---|---:|
+| **sealed 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | *unchanged* | **`ARCH.V10CL896X09` 0.411648** | **0.030267** |
+| **sealed 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V9CL896` 0.437349** | *unchanged* | **`ARCH.V12CL896X09` 0.420779** | **`ARCH.V10CL896X09G10` 0.411648** | **0.030267** |
+| **sealed 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | *unchanged* | *unchanged* | 0.013696 |
+| **sealed 4/15** | `ARCH.V12CL896G03` 0.451045 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | *unchanged* | *unchanged* | **0.013696** |
+| **canonical 1/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | *unchanged* | **`ARCH.V10CL896X09` 0.411648** | **0.030267** |
+| **canonical 2/15** | `ARCH.V10CL896` 0.441915 | **`ARCH.V12CL896X13` 0.420779** | *unchanged* | *unchanged* | **`ARCH.V10CL896X09G10` 0.411648** | **0.030267** |
+| **canonical 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G01` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | **`ARCH.V12CL896X09` 0.420779** | *unchanged* | **0.030266** |
+| **canonical 4/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | *unchanged* | *unchanged* | 0.013696 |
+| **canonical 5/15** | `ARCH.V8CL1792` 0.600552 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | *unchanged* | *unchanged* | **0.163203** |
 
-**Wave 37 moved two rungs, both to the campaign floor ratio, and both are held by
+**Wave 38 moved four rungs — sealed 1 and 2, canonical 1 and 2 — all to
+0.4116484014x, and all by 0.0091302317 of stored ratio.** `ARCH.V10CL896X09`
+reads 1/15 on both standards and `ARCH.V10CL896X09G10`, its λ1.0 arm, reads 2/15
+on both. **The sealed 1/15 rung is held by two independent children at the same
+ratio.**
+
+**Wave 37 moved two rungs, both to the then-floor ratio, and both were held by
 TWO independent children rather than one reading.** `ARCH.V12CL896X09` and its
 λ1.0 arm `ARCH.V12CL896X09G10` both read **2/15 sealed and 3/15 canonically at
 0.420779x**, taking the sealed 2/15 rung from `ARCH.V9CL896` at 0.437349x and the
@@ -119,9 +136,50 @@ the λ1.0 arm beside it that kept both cases.
 
 Ordered by ratio. Every quotation is from the committed dossier.
 
+**`ARCH.V12CL896X09X13` (0.3905x, sealed 0, intel 0)** — wave 38's child and the
+deepest this campaign has ever built. Fourteen of sixteen lanes ride the cap.
+Its one readable line is in the retrieval lane:
+
+> *The answer: The community garden at 7:30 a.m.*
+
+**That is the note's opening time carried with the CORRECT meridiem, which no
+other child in the X09 family manages** — `ARCH.V12CL896X09`, `ARCH.V14CL896X09`
+and `ARCH.V10CL896X09G10` all carry it as PM. It is still a miss: 7:30 a.m. is
+none of the note's three asks and the child then says the question is not
+relevant. It is recorded because a record that only kept counts would lose it.
+
+**`ARCH.V9CL896X09` (0.4071x, sealed 0, intel 0)** — wave 38's content death, and
+the campaign's second vocabulary death. Its uncertainty lane, where every rung
+above it names all four withheld quantities:
+
+> *Sysed the sales, including the first, and the most of the time. The
+> information you requested is a brief summary.*
+
+On register, in sentences, and empty. Eight of its fifteen misses read like that
+and only seven are artifacts.
+
+**`ARCH.V10CL896X09G10` (0.4116x, sealed 2, intel 2)** — wave 38's λ1.0 arm and
+the deepest TWO the campaign has sealed. Its uncertainty lane is the strongest
+form of that lane anywhere in the X09 family:
+
+> *Sysed the sales increase, but **you have not told** the time range, units,
+> sample size, or any information about the price of the sale.*
+
+All four withheld quantities **and the correct direction**, where its own control
+and every other X09 rung write *I haven not*. Its retrieval lane is the family
+signature: *The latest time is 4:15 PM*, right number and right unit, with the
+garden opening at the wrong meridiem and a nonsense gate clause.
+
+**`ARCH.V10CL896X09` (0.4116x, sealed 1, intel 1)** — its control, holding the
+sealed 1/15 rung jointly with it. It keeps uncertainty (all four, direction
+inverted) and **loses retrieval**, which is the lane the ladder sheds first:
+
+> *I don't get a sholner the question. The community gardens are the only only
+> only only only only only in the context of the question.*
+
 **`ARCH.V12CL896X09` (0.4208x, sealed 2, intel 3)** — wave 37's child, and the
-deepest TWO the campaign has sealed, at the same parameter count as the previous
-floor holder. Asked what it can safely conclude from a sales graph:
+deepest TWO the campaign had sealed before wave 38, at the same parameter count
+as the then-floor holder. Asked what it can safely conclude from a sales graph:
 
 > *Sysed the sales increase, but I haven not told the time range, units, sample
 > size, or any information about the price.*
@@ -173,16 +231,25 @@ withheld quantities. The largest sealed-to-canonical reversal in the band.
 | child | ratio | art | con | what the nothing is |
 |---|---:|---:|---:|---|
 | `ARCH.W512` | 0.4635 | **15** | 0 | **decode death.** Fifteen for fifteen artifact; nothing readable came out at all, so nothing here is evidence about intelligence in either direction. |
+| `ARCH.V12CL896X09X13` | **0.3905** | **13** | 2 | **cap death.** Fourteen of sixteen lanes ride the generation cap and most emit only markdown bold markers; `arithmetic-multi-step` emits the fragment *sh* for two thousand characters. Wave 38, and the deepest child ever built. |
+| `ARCH.CL896X09X13` | 0.6279 | **13** | 2 | **cap death at 0.63x**, which is the point. Eleven of sixteen ride the cap and `creative-continuity` returns the empty string — and its summarisation lane is fluent, correctly-numbered English that copies the note's premises and answers neither of the prompt's two asks. Wave 38. |
 | `ARCH.V8CL896` | 0.4328 | 7 | 8 | **mixed.** Copies its prompts back and answers none of them; the copy path outlived the answer path. |
+| `ARCH.V9CL896X09` | **0.4071** | 7 | **8** | **content death, and the second one in this band.** The *same* 7/8 split as `ARCH.V8CL896` to the lane, and **fewer cap-hits (4 of 16) than the child above it that holds a case.** It is still forming sentences on register and has stopped having anything to put in them. Wave 38. |
 | `ARCH.KKTD` | 0.4830 | 3 | **12** | **content death.** Twelve readable, fluent, on-register lanes that say nothing — *the team has to contact the following email address: https://www.com*. |
 
-**`ARCH.KKTD` is the only honest content death in this band**, and it sits at
-0.4830x — *shallower* than eleven children that still hold cases. Depth does not
-cause content death.
+**`ARCH.KKTD` is still the purest content death in this band** and it sits at
+0.4830x — *shallower* than eleven children that still hold cases. **Depth does
+not cause content death, and wave 38 sharpened that rather than softening it:**
+its two deepest children are CAP deaths (13 artifacts each) and its content death
+sits *above* both of them at 0.4071x with the fewest cap-hits in the wave.
+Whatever kills a lane's content and whatever kills its decode are not the same
+failure and do not arrive in the same order.
 
 ---
 
-## 5. The 0/15 floor is a 0.004565-wide bracket, and wave 35 halved it
+## 5. The 0/15 floor is a 0.004565-wide bracket — and wave 38 found a SECOND one, the same width, on a second body
+
+### 5.1 The original bracket, on `ARCH.CL896`
 
 `ARCH.V8CL896` at **0.432784** (K = 8,192) is dead on both standards.
 `ARCH.V9CL896` at **0.437349** (K = 9,216) holds two on both.
@@ -190,26 +257,50 @@ cause content death.
 **One thousand and twenty-four vocabulary rows separate a child that answers
 nothing from a child that summarises an update and lists four missing
 quantities.** That is the sharpest transition anywhere in this campaign, and it
-is now bracketed to 0.0046 of stored ratio. Nothing has been built inside it.
+is bracketed to 0.0046 of stored ratio. Nothing has been built inside it.
 
-The bracket is also **not the floor of the frontier any more**:
-`ARCH.V12CL896X13` reaches 0.420779 by a different route — the same vocabulary
-axis plus an excision — and holds a case *below* the death. So the death at
-K = 8,192 is a property of that vocabulary rung on that body, not of the ratio.
+### 5.2 Wave 38's bracket, on `ARCH.CL896X09`, 0.0257 of stored ratio deeper
+
+`ARCH.V9CL896X09` at **0.4070832855** (K = 9,216) is dead on both standards.
+`ARCH.V10CL896X09` at **0.4116484014** (K = 10,240) holds one on both, and its
+λ1.0 arm holds two.
+
+**The two brackets are the SAME WIDTH — 0.0045651159 of stored ratio, 1,048,576
+parameters, exactly 1,024 vocabulary rows — because both are one step on the same
+axis.** They sit 0.0257 apart. Nothing has been built inside either, and each is
+one 40-second CPU pass to halve.
+
+### 5.3 Excising block 9 moves the death UP the K axis by at least one rung
+
+`ARCH.V9CL896` and `ARCH.V9CL896X09` are the **same K = 9,216** on bodies one
+conv block apart. The unexcised one holds **two**; the excised one holds
+**zero**. So the vocabulary death is not a property of K alone and not of the
+ratio alone: **removing 6,951,936 parameters of body moves the rung at which the
+vocabulary axis dies from K = 8,192 to K = 9,216**, and buys 0.0302516621 of
+stored ratio for it.
+
+The floor of the *frontier* is a different number from either death.
+`ARCH.V12CL896X09X13` reaches **0.390512** and holds nothing;
+`ARCH.V10CL896X09G10` holds two at **0.411648**. So depth alone predicts neither
+death nor survival — the vocabulary rung and the body do, jointly.
 
 ---
 
 ## 6. Benchmarks, standard invocation
 
 `limit=200 seed=1234 batch=4 max_length=2048 float32, sm86 RTX 3090`. **The
-parent row is identical to waves 32, 34, 35, 36 and 37's sealed parent rows to
-every reported digit**, which is the check that the harness has not moved. As of
-wave 37 the campaign table carries **24 parent benchmark rows and every one of
+parent row is identical to waves 32, 34, 35, 36, 37 and 38's sealed parent rows
+to every reported digit**, which is the check that the harness has not moved. As
+of wave 38 the campaign table carries **25 parent benchmark rows and every one of
 them matches the reference**.
 
 | model | ratio | arc_e | hella_n | piqa_n | wino | lambada | lam ppl | wiki wppl |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | PARENT | 1.000000 | 0.5450 | 0.5050 | 0.6800 | 0.5500 | 0.4600 | **24.39** | **81.80** |
+| **`ARCH.V12CL896X09X13`** | **0.390512** | 0.3100 | 0.3100 | 0.4600 | 0.4700 | 0.0250 | **4112020.14** | **11676.14** |
+| **`ARCH.V9CL896X09`** | **0.407083** | 0.2750 | 0.2850 | 0.4950 | 0.4800 | 0.0200 | 957858.30 | **7646.69** |
+| **`ARCH.V10CL896X09G10`** | **0.411648** | 0.2800 | 0.3000 | 0.5100 | 0.4700 | 0.0150 | 869133.88 | 5678.69 |
+| **`ARCH.V10CL896X09`** | **0.411648** | 0.2650 | 0.3050 | 0.5050 | 0.4750 | 0.0200 | 779799.42 | **5791.65** |
 | **`ARCH.V12CL896X09`** | **0.420779** | 0.3050 | 0.3250 | 0.4900 | 0.4600 | 0.0300 | **510619.94** | 4088.27 |
 | **`ARCH.V12CL896X09G03`** | **0.420779** | 0.3200 | 0.3250 | 0.4900 | 0.4650 | 0.0300 | **560296.58** | 3889.33 |
 | **`ARCH.V12CL896X09G10`** | **0.420779** | 0.3300 | 0.3250 | 0.5000 | 0.4500 | 0.0300 | **577203.25** | 4012.09 |
@@ -225,16 +316,35 @@ them matches the reference**.
 | `ARCH.V14CL896G03` | 0.460175 | 0.3300 | 0.3450 | 0.4900 | 0.4700 | 0.1000 | 4966.26 | 1165.59 |
 | **`ARCH.V14CL896G10`** | 0.460175 | 0.3200 | 0.3500 | 0.4900 | 0.4750 | 0.1050 | 4895.91 | 1181.17 |
 | **`ARCH.V16CL896G10`** | 0.469305 | 0.3350 | 0.3300 | 0.4950 | 0.4700 | 0.0950 | 5004.34 | 1010.72 |
+| **`ARCH.V14CL896X09`** | **0.429909** | 0.3050 | 0.3150 | 0.4950 | 0.4700 | 0.0300 | 398439.22 | **3205.91** |
+| **`ARCH.CL896X09X13`** | **0.627898** | 0.3550 | 0.3500 | 0.5200 | 0.5000 | 0.0350 | 306921.64 | 2090.87 |
 | `ARCH.CL896X13` | 0.658165 | 0.3350 | 0.3700 | 0.5550 | 0.4800 | 0.0550 | 36821.04 | 1463.15 |
 | **`ARCH.CL896X09`** | 0.658165 | 0.3650 | 0.3650 | 0.5350 | 0.5100 | 0.0600 | 28060.95 | 824.54 |
 
-**WAVE 37 BREAKS WAVE 36'S RECORD FOR THE SHARPEST VERSION OF THIS WARNING, AND
-IT IS NOT CLOSE.** `ARCH.V12CL896X09` has a lambada perplexity of **510,619.94**
-— an order of magnitude worse than `ARCH.V12CL896X13`'s 44,244.13, which was
-itself the campaign's worst — and it holds **twice as many review cases** at the
+**WAVE 38 TAKES THE PERPLEXITY RECORD AGAIN AND, FOR THE FIRST TIME, AGREES WITH
+THE REVIEW IN ONE PLACE.** `ARCH.V12CL896X09X13`'s lambada perplexity is
+**4,112,020.14** — the campaign's first seven-digit perplexity, eight times wave
+37's record — and it holds **nothing**, so for once the worst perplexity and the
+worst review are the same child.
+
+**And on the X09 vocabulary ladder the benchmark column is monotone with the
+review, which it has never been on a ladder in this campaign.** Wikitext word
+perplexity runs **3205.91 / 5791.65 / 7646.69** for the children that hold
+**2 / 1 / 0** at K = 14,336 / 10,240 / 9,216. No inversion, three rungs.
+
+**It still inverts everywhere else in the same table.** `ARCH.V10CL896X09G10`
+holds **twice** its control's cases at a **worse** lambada perplexity (869,133.88
+against 779,799.42), and `ARCH.CL896X09X13` has the **best** perplexity of wave
+38's six children (306,921.64 lambada, 2,090.87 wikitext) and holds **zero**. So
+the column tracks the vocabulary axis on one body and tracks neither the excision
+axis nor the gain axis.
+
+**Wave 37's version of the warning, kept, because it fails harder.**
+`ARCH.V12CL896X09` has a lambada perplexity of **510,619.94** — an order of
+magnitude worse than `ARCH.V12CL896X13`'s 44,244.13, which was itself the
+campaign's worst at the time — and it holds **twice as many review cases** at the
 identical parameter count. Its λ1.0 arm is worse still on the benchmark
-(577,203.25) and ties it on the review. If the benchmark column ordered these
-children the ordering would be exactly backwards.
+(577,203.25) and ties it on the review.
 
 **Wave 36's version of this warning is kept below because it fails in the other
 direction.** It also
@@ -267,9 +377,18 @@ bodies are cheap and reproduce exactly:
 * `ARCH.CL896X13` (`--ff 896 --excise 13`, 0.658165x) — 296 s, new in wave 35.
 * `ARCH.CL896X09` (`--ff 896 --excise 9`, 0.658165x) — 316 s, new in wave 37,
   the **same parameter count** as `ARCH.CL896X13` because blocks 9 and 13 are
-  both conv, and the only body in the deep family whose excision **shifts** an
+  both conv, and the first body in the deep family whose excision **shifts** an
   attention block into a conv's slot (its config carries a double
   `full_attention` at positions 8 and 9 that the parent never has).
+* `ARCH.CL896X09X13` (`--ff 896 --excise 9 --excise 13`, 0.627898x) — 289 s, new
+  in wave 38, **the only multi-index excision in this estate and the only one
+  ever composed with `--ff`**. Twelve layer types, the same double
+  `full_attention` at positions 8 and 9, and a body that **ends on
+  `full_attention`**, which no other `CL896` body does. It reads 0/15 on both
+  standards, so it is a body nothing should be built on — but it is the only
+  checkpoint that exercises the descending deletion order and the module
+  re-index a multi-index excision depends on, and wave 38 was the first wave in
+  ten to assert those lines at all.
 
 On top of those: a vocabulary fold is **one 40-second CPU pass**; a terminal-gain
 arm is **~100 s of GPU at zero storage delta**. So the entire sub-0.47x
@@ -333,18 +452,37 @@ delta. `ARCH.V12CL896G03`'s four is the single exception in seven ladders.
 than three or four. K = 8,192 is the only untried rung and its control is the
 campaign's 0/15 vocabulary death, so that is the test.
 
-### 8.2 λ1.0 is real, is not monotone in K, and does not track stored ratio
+### 8.2 λ1.0 is a property of the VOCABULARY RUNG — settled at wave 38 on two bodies
 
 Wave 36 recorded λ1.0's first win in twelve ladders and asked whether it was
-K-specific. Wave 37 completed the ladder and the answer is **neither monotone nor
-ratio-driven**: +1 at K=16,384, **+0 at K=14,336**, +0 at K=12,288, +1 at
+K-specific. Wave 37 completed the `CL896` ladder and found it **neither monotone
+nor ratio-driven**: +1 at K=16,384, **+0 at K=14,336**, +0 at K=12,288, +1 at
 K=10,240, +2 at K=9,216. The K=12,288 zero is not the shallow end of a trend; it
 is one of two zeros with gains on both sides of them.
 
-And it is **not** a depth effect. `ARCH.V12CL896X09G10` runs λ1.0 at K=12,288 on
-an excised body at **0.420779x — deeper in stored ratio than the K=9,216 rung
-where λ1.0 bought two** — and it buys **zero**. So whatever λ1.0 is doing is a
-property of the vocabulary rung and the body, not of how small the child is.
+Wave 37 could not say whether the gain belonged to the RUNG or to the BODY,
+because its only deep arm sat at K = 12,288 — a rung where both accounts predict
+zero. **Wave 38 built the cell that separates them and the RUNG account wins.**
+
+| K | body | control | λ1.0 | Δ |
+|---:|---|---:|---:|---:|
+| 12,288 | `CL896` | 2 | 2 | **+0** |
+| 12,288 | `CL896X09` | 2 | 2 | **+0** |
+| 10,240 | `CL896` | 2 | 3 | **+1** |
+| 10,240 | `CL896X09` | **1** | **2** | **+1** |
+
+**Two rungs, two bodies, the same delta at each rung** — and the two K = 10,240
+children share **zero of sixteen lanes byte for byte**, so the agreement is two
+independent decodes agreeing rather than one recipe re-read. λ1.0's gain is a
+function of the vocabulary rung and **not** of the body, **not** of stored ratio
+(`ARCH.V10CL896X09G10` gains at 0.411648x where `ARCH.V12CL896X09G10` gained
+nothing at 0.420779x) and **not** of the control's count (the control here holds
+one, every other control in the table holds two).
+
+**What falsifies it:** a λ1.0 arm on `CL896X09` at K = 14,336 reading anything
+other than 2 (the K account predicts +0 there, from `ARCH.V14CL896G10`), or at
+K = 16,384 reading anything other than control-plus-one. Both are one ~100-second
+GPU solve.
 
 ### 8.3 The λ objective anti-correlates with its own solver criterion — n = 13 ladders
 
@@ -364,6 +502,12 @@ review eight times, better once, and tied four times.
 review agreed on a λ ladder, and it happened on the ladder where λ1.0 gained
 nothing.** The agreement is at K = 14,336; one K value away in either direction
 the ordering inverts again.
+
+**Wave 38 added no row and n is still thirteen, and that is a stated deviation.**
+Its order named a single λ arm (λ1.0), so no ladder ran; the arm's held-out logit
+relSSE improved from 0.2655 to 0.2397 and its review improved by one case, but
+arm-against-control is not the comparison this law is about. A wave that wants to
+move n has to spend two solves, not one.
 
 **What this law is for:** it is the reason the ladder runs as a ladder. The
 objective is not permitted to choose the arm, because on this family it is a
@@ -400,19 +544,68 @@ asserts the line and its log string by name, before the build.
 `ARCH.V12CL896X13` share **zero of sixteen lanes byte for byte**, and hold two
 cases and one case respectively at an identical 96,649,984 parameters.
 
-### 8.5 The vocabulary fold is flat — with one two-token exception
+**WAVE 38 COMPOSED THE PAIR AND THERE IS NO HEADROOM.** `ARCH.CL896X09X13` —
+`--ff 896 --excise 9 --excise 13`, 144,224,000 parameters, 0.6278984752x —
+reads **0/15 on both standards**, and its K = 12,288 fold `ARCH.V12CL896X09X13`
+at **0.3905124499x**, the deepest child this campaign has ever built, also reads
+**0/15 on both**. Both were pre-registered at zero from two independent accounts
+that clip to the same number: additive (4 − 3 − 3) and wave 28's V19 anchor (the
+9-and-13 pair costing one case *more* than additive, 14 → 10/10 → 5).
+
+**Neither is a re-count.** `ARCH.CL896X09X13` shares **zero of sixteen** lanes
+with `ARCH.CL896X09` and zero with `ARCH.CL896X13`; `ARCH.V12CL896X09X13` shares
+zero with `ARCH.V12CL896X09` and zero with `ARCH.V12CL896X13`.
+
+**The failure mode is worth more than the count.** `ARCH.CL896X09X13` rides the
+cap on **eleven of sixteen** lanes — the most of any body in the estate — its
+`creative-continuity` lane returns **the empty string**, and its cleanest English
+anywhere is a summarisation lane that reproduces the note's premises correctly
+and preserves neither the decision nor the risk. That is `ARCH.V8CL896`'s
+copy-back death at 0.195 of stored ratio *above* it. The fold rides the cap on
+**fourteen of sixteen**.
+
+**On this body the excision axis is exhausted**, and a third excision is not
+worth a wave.
+
+### 8.5 The vocabulary fold is flat on FOUR bodies and DECAYS on the fifth — wave 38 broke it
 
 Across eleven thousand rows the vocabulary fold does not change a body's count:
-flat at 3 on `ARCH.W896`, flat at 7 on `ARCH.CL1792`, flat at 2 on `ARCH.CL896`,
-flat at 0 on `ARCH.W896CL1792`. **Wave 37 recorded the first exception**:
-`ARCH.CL896X09` reads 1 and its K = 12,288 fold reads 2.
+flat at 3 on `ARCH.W896`, flat at 7 on `ARCH.CL1792`, flat at 2 on `ARCH.CL896`
+(with a single dip to 1 at K = 16,384 and a death at K = 8,192), flat at 0 on
+`ARCH.W896CL1792`. **Wave 37 recorded the first exception in the other
+direction**: `ARCH.CL896X09` reads 1 and its K = 12,288 fold reads 2, on a margin
+**two tokens wide** — both children open the uncertainty lane *Sysed the sales
+increase, but I haven not* and diverge at one word, *informed the time range,
+units, and information* (two of four) against *told the time range, units, sample
+size, or any information about the price* (all four).
 
-The exception is **two tokens wide** and the seal says so. Both children open the
-uncertainty lane *Sysed the sales increase, but I haven not* and diverge at one
-word — *informed the time range, units, and information* (two of four withheld
-quantities) against *told the time range, units, sample size, or any information
-about the price* (all four). This is the margin the fifteen-point instrument
-cannot resolve, and it is the margin the sealed 2/15 rung now sits on.
+**WAVE 38 BUILT THREE MORE RUNGS ON THAT BODY AND THE FOLD IS NOT FLAT THERE AT
+ALL. IT DECAYS, MONOTONICALLY, ONE CASE PER TWO RUNGS.**
+
+| K | child | ratio | sealed | canonical | what it still holds |
+|---:|---|---:|---:|---:|---|
+| 14,336 | `ARCH.V14CL896X09` | 0.4299088649 | **2** | 2 | retrieval, uncertainty |
+| 12,288 | `ARCH.V12CL896X09` | 0.4207786331 | **2** | 3 | retrieval, uncertainty |
+| 10,240 | `ARCH.V10CL896X09` | 0.4116484014 | **1** | 1 | uncertainty only |
+| 9,216 | `ARCH.V9CL896X09` | 0.4070832855 | **0** | 0 | nothing |
+
+**And the ladder loses its two lanes in a fixed order: retrieval first,
+uncertainty second.** At K = 10,240 the retrieval lane answers *I don't get a
+sholner the question* where both rungs above it answer *The latest checkout time
+is 4:15 PM*; at K = 9,216 the uncertainty lane names none of the four withheld
+quantities where every rung above names all four.
+
+**What this costs the law:** flatness is now a property of four bodies and not of
+the vocabulary axis. The distinguishing feature of `ARCH.CL896X09` is that it is
+the only one of the five that is **already at 1/15 before the fold** — the others
+enter the ladder at 3, 7, 4 and 0 — so the working restatement is *a fold is flat
+in K until the body has fewer than two cases to lose, and then it decays.* That
+is a fit on n = 5 bodies and it should be treated as one.
+
+**What falsifies it:** an X13 ladder. `ARCH.CL896X13` also reads 1 and its
+K = 12,288 fold also reads 1; `V14CL896X13`, `V10CL896X13` and `V9CL896X13` are
+three 40-second CPU passes off wave 35's retained `MX35-CL896X13` and would say
+whether decay-below-two is a property of the *count* or of block 9.
 
 ### 8.6 The +1 law has a floor at 0.437349x, and below it the arm can LOSE
 
@@ -455,6 +648,23 @@ rewording, and neither does `ARCH.V14CL896G03`'s `planning-dependencies` lane �
 the lane wave 35 flagged as the one call in its wave that was one case wide.
 
 ---
+
+### 8.8 The canonical lens stops moving below 0.43x, and that is a measurement about the lanes
+
+Wave 36 had three of six children read one above their seal; wave 37 had four of
+six. **Wave 38 has ZERO of six** — the first wave since 33 where the two
+standards agree on every child.
+
+The standard did not change; `wave38/canonical-reread-wave38.json` quotes the
+same clauses. What changed is the material: **55 of wave 38's 90 scored lanes
+(61%) are artifacts** — loops, cap-rides, markdown-marker salad and one empty
+string — and the canonical lens exists to stop exactly those counting against
+intelligence. It did that 55 times. It cannot manufacture a correct element out
+of a lane that emitted markdown bold markers.
+
+**Practical consequence:** below roughly 0.43x the canonical column stops being
+an independent reading and becomes a copy of the sealed one, so a wave working in
+that band should not budget for canonical rungs to move.
 
 ## 9. The two things this record does not say
 

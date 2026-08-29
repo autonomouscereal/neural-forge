@@ -1,0 +1,470 @@
+{
+ "schema": "neural-forge-extension-bank-prompts-v1",
+ "surface": "extension-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  Thirty prompts, two per sealed capability lane, authored blind from the L12 taxonomy without opening any sealed child reading.  This surface PRICES AND ORDERS.  It grades nothing and gates nothing: every frontier claim, ARCH verdict and ledger row continues to fire on the sealed fifteen only, forever.",
+ "authored": "2026-08-27",
+ "lanes": [
+  "conversation-natural-greeting",
+  "instruction-three-actions",
+  "explanation-seasons",
+  "arithmetic-multi-step",
+  "logic-ordering",
+  "context-retrieval",
+  "summarization-priorities",
+  "comparison-ram-rom",
+  "coding-deduplicate",
+  "debugging-off-by-one",
+  "writing-concise-email",
+  "planning-dependencies",
+  "uncertainty-insufficient-data",
+  "creative-continuity",
+  "multi-turn-correction"
+ ],
+ "off_ladder_prompts": 10,
+ "prompts": [
+  {
+   "id": "ext-conversation-moving-week",
+   "lane": "conversation-natural-greeting",
+   "category": "conversation",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "I finally finished moving apartments this weekend and I am wrecked but relieved. Talk to me like a person would, and ask me exactly one question that would actually be useful to me right now."
+    }
+   ],
+   "context": "One coherent human-register reply and exactly one useful question. More than one question is a miss."
+  },
+  {
+   "id": "ext-conversation-competing-promises",
+   "lane": "conversation-natural-greeting",
+   "category": "conversation",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "A colleague just asked me to read her draft tonight, but I already told my sister I would help her with something at the same time. Respond the way a friend would. Do not give me a numbered list and do not tell me what to choose."
+    }
+   ],
+   "context": "Register and restraint, not difficulty: warmth, no list, no verdict. A numbered list is a miss; picking for the user is a miss."
+  },
+  {
+   "id": "ext-instruction-two-prose-tips",
+   "lane": "instruction-three-actions",
+   "category": "instruction-following",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Give me two ways to keep houseplants alive while I am away for a fortnight. Write them as ordinary sentences rather than a list, and do not use the word 'water' anywhere in your reply."
+    }
+   ],
+   "context": "Exactly two ideas, prose form, and the banned token absent. Any list marker is a miss; the banned token is a miss."
+  },
+  {
+   "id": "ext-instruction-five-alphabetical",
+   "lane": "instruction-three-actions",
+   "category": "instruction-following",
+   "step": "B",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Name exactly five pieces of information a library checkout record has to hold. Number them, put them in alphabetical order by the name you give each one, and write nothing before or after the numbered lines."
+    }
+   ],
+   "context": "Count, ordering and the no-preamble constraint all at once. Four or six items is a miss; unsorted is a miss; a preamble is a miss."
+  },
+  {
+   "id": "ext-explanation-dough-rises",
+   "lane": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Explain to a curious ten-year-old what makes bread dough puff up. Then say plainly whether the oven's heat is what produces the bubbles in the first place, and if it is not, say what the oven actually does to them."
+    }
+   ],
+   "context": "Yeast producing carbon dioxide before baking; the oven expands and sets gas that is already there. A reply that credits the oven with making the gas is a miss."
+  },
+  {
+   "id": "ext-explanation-two-tides",
+   "lane": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "step": "B",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "A friend is convinced that a high tide happens only on the side of our planet that the Moon is over. Describe what is actually going on, and be specific about what his picture leaves out."
+    }
+   ],
+   "context": "Two bulges from the difference in pull across the planet; roughly two high tides a day. Naming only the near-side bulge is a miss."
+  },
+  {
+   "id": "ext-arithmetic-fuel-range",
+   "lane": "arithmetic-multi-step",
+   "category": "reasoning",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "A van covers 9 kilometres on a litre of fuel and carries 54 litres when full. How far does one full load take it? Over a journey of 1,700 kilometres, how many full loads are used up completely, and how many kilometres are left after those? Work through it."
+    }
+   ],
+   "context": "486 km per load; three loads used completely (1,458 km); 242 km remaining. Correct chain with a botched remainder is Partial."
+  },
+  {
+   "id": "ext-arithmetic-order-of-operations",
+   "lane": "arithmetic-multi-step",
+   "category": "reasoning",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "A chair is marked 240 dollars. A discount of 15 percent comes off, and then a tax of 8 percent is added to what is left. What does the buyer pay? And would the buyer pay a different amount if the tax had been added before the discount came off? Work through it and justify the second answer."
+    }
+   ],
+   "context": "204 then 220.32. The second answer is no, and the justification is that the two multipliers commute. Getting 220.32 but claiming the order matters is Partial."
+  },
+  {
+   "id": "ext-logic-four-seats",
+   "lane": "logic-ordering",
+   "category": "reasoning",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Four people take the four seats of a single row, numbered one to four from the left. Ada sits somewhere left of Bo. Cy sits in the seat immediately right of Bo. Dee has one of the two end seats. Give every seating that fits all three statements, and say which statement rules out the most seatings."
+    }
+   ],
+   "context": "Exactly two seatings: Ada-Bo-Cy-Dee and Dee-Ada-Bo-Cy. One seating found is Partial; three or more is a miss."
+  },
+  {
+   "id": "ext-logic-three-switches",
+   "lane": "logic-ordering",
+   "category": "reasoning",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Three switches in a hallway each control one of three lamps in a closed room. You can work the switches as long as you like, but you may open the room once and only once. Set out a procedure that tells you which switch belongs to which lamp, and name the physical property the procedure leans on."
+    }
+   ],
+   "context": "Leave one on long enough to warm its lamp, switch it off, turn a second on, enter: lit, warm, cold. The property is residual heat. A procedure with no third distinguishing signal is a miss."
+  },
+  {
+   "id": "ext-context-clinic-note",
+   "lane": "context-retrieval",
+   "category": "context-use",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: The walk-in clinic takes patients from 8:00 until 11:30 on weekday mornings. Blood draws stop thirty minutes before the morning session ends. The pharmacy counter inside the building keeps its own hours. Parking in the rear lot needs a validation sticker from reception.\n\nQuestion: I want a blood draw and then to pick up a prescription on a Wednesday, and I am driving. What time do I need to be there, and is there anything I should sort out at reception?"
+    }
+   ],
+   "context": "Arrive before 11:00 for the draw; a validation sticker from reception for the rear lot; the pharmacy's hours are NOT settled by the note and the reply must say so. Inventing pharmacy hours is a miss."
+  },
+  {
+   "id": "ext-context-conflicting-note",
+   "lane": "context-retrieval",
+   "category": "context-use",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "system",
+     "content": "Answer from the supplied note alone. If the note does not settle something, say that it does not."
+    },
+    {
+     "role": "user",
+     "content": "NOTE: All returns are accepted within 30 days of purchase. Items bought on sale may be returned within 14 days. Sale items are final and cannot be returned. Store credit is issued for anything returned without a receipt.\n\nQuestion: I bought a discounted lamp 20 days ago and I have the receipt. Can I return it?"
+    }
+   ],
+   "context": "The note contradicts itself on sale items (14 days versus final sale). The correct behaviour is to NAME the conflict rather than resolve it silently. Picking either branch without flagging it is a miss."
+  },
+  {
+   "id": "ext-summarization-three-bullets",
+   "lane": "summarization-priorities",
+   "category": "summarization",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Reduce the following to exactly three bullets, one naming who is affected, one naming what changes, and one naming when it takes effect. Do not carry over any sentence unchanged.\n\nFacilities circulated a note this week after a long consultation with the two night shifts. Badge readers on the loading dock have been intermittent since the spring. Rather than replace them piecemeal, the whole dock will move to the same reader model already used at the main entrance. Contractors and night-shift staff are the ones who use that entrance after hours. The changeover is booked for the second week of November, and the old badges stop working that Monday. The cafeteria refit, which everyone keeps asking about, is unrelated and has not been scheduled."
+    }
+   ],
+   "context": "Who: contractors and night-shift staff. What: dock badge readers replaced with the main-entrance model, old badges stop working. When: second week of November / that Monday. Carrying a sentence verbatim is charged as copying."
+  },
+  {
+   "id": "ext-summarization-loudest-is-irrelevant",
+   "lane": "summarization-priorities",
+   "category": "summarization",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Give me one sentence that carries the operative fact of this message, in your own words.\n\nI cannot BELIEVE what happened at the depot this morning, it was absolutely unbelievable, the whole yard was chaos, people shouting, forklifts everywhere, honestly the worst I have seen it in eleven years of doing this job. Anyway the reason I am writing is that the inspection has been moved from Thursday to Tuesday and nobody has told the third-party auditor yet."
+    }
+   ],
+   "context": "The operative fact is the date change to Tuesday and the un-notified auditor. A summary of the chaos is a miss: the loudest span is not the point."
+  },
+  {
+   "id": "ext-comparison-map-and-traffic",
+   "lane": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Set a road atlas beside a live traffic report. Explain how they differ using a comparison of your own devising, then name two places where your own comparison breaks down."
+    }
+   ],
+   "context": "A usable comparison (durable structure versus perishable state) plus two genuine limitations of the comparison itself, not two more differences."
+  },
+  {
+   "id": "ext-comparison-vaccine-antibiotic",
+   "lane": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "step": "B",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Someone believes a vaccine and an antibiotic are two names for roughly the same thing. Lay out how each actually does its job, and give the single clearest case where mixing the two up would do real harm."
+    }
+   ],
+   "context": "Prophylactic immune training versus treating an established bacterial infection; the clearest harm case is expecting either to substitute for the other. One mechanism only is Partial."
+  },
+  {
+   "id": "ext-coding-group-by-initial",
+   "lane": "coding-deduplicate",
+   "category": "coding",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called group_by_initial(words) that returns a dictionary whose keys are lowercase first letters and whose values are the words beginning with that letter, each value keeping the order the words arrived in. Show one call and what it returns."
+    }
+   ],
+   "context": "Valid Python, lowercased key, per-key order preserved, and an example whose stated output actually matches the code. A dict of sets is a miss for the same reason the sealed dedup lane is."
+  },
+  {
+   "id": "ext-coding-merge-ranges",
+   "lane": "coding-deduplicate",
+   "category": "coding",
+   "step": "B",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called merge_ranges(pairs) that takes a list of (start, end) tuples and returns the merged, non-overlapping ranges in ascending order of start. Ranges that only touch at an endpoint count as overlapping. Show one call with its result and state the time complexity."
+    }
+   ],
+   "context": "Sort then sweep; touching ranges merged; O(n log n) stated. Forgetting the sort is a miss; correct sweep with a wrong complexity claim is Partial."
+  },
+  {
+   "id": "ext-debugging-mutable-default",
+   "lane": "debugging-off-by-one",
+   "category": "debugging",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "This helper is supposed to start from an empty basket every time it is called with no basket, but after a few calls it starts returning things the caller never put in. Say what is wrong and give a corrected version.\n\ndef add_item(item, basket=[]):\n    basket.append(item)\n    return basket"
+    }
+   ],
+   "context": "The default list is created once at definition and shared across calls; the fix is a None sentinel. Naming the symptom without the shared-default cause is Partial."
+  },
+  {
+   "id": "ext-debugging-reset-inside-loop",
+   "lane": "debugging-off-by-one",
+   "category": "debugging",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "This runs without error and returns a plausible number, but the number is wrong for every input with more than one row. Say what is wrong and give a corrected version.\n\ndef total_units(rows):\n    for row in rows:\n        total = 0\n        total += row['units']\n    return total"
+    }
+   ],
+   "context": "The accumulator is re-initialised on every iteration, so only the last row survives; the fix moves the initialisation above the loop. Off-ladder because nothing raises: the code is quietly wrong."
+  },
+  {
+   "id": "ext-writing-decline-invitation",
+   "lane": "writing-concise-email",
+   "category": "writing",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a reply of under 70 words turning down an invitation to speak on the 4th of March because you will be out of the country, offering a date in April instead, and finding out who else has been asked to sit on the panel."
+    }
+   ],
+   "context": "All three moves present -- decline with reason, concrete April alternative, question about the other panellists -- inside the length. Offering to tell them who is on the panel inverts the ask and is Partial."
+  },
+  {
+   "id": "ext-writing-two-audiences",
+   "lane": "writing-concise-email",
+   "category": "writing",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Here is the situation: a nightly export finished four hours late because a disk filled up, and no data was lost. Write the same status in one sentence twice, once for the engineer who will fix it and once for the customer who noticed. The facts may not change between the two versions."
+    }
+   ],
+   "context": "Two single sentences, register differs, facts identical. Softening 'four hours late' into 'a short delay' for the customer changes a fact and is a miss."
+  },
+  {
+   "id": "ext-planning-first-bookkeeper",
+   "lane": "planning-dependencies",
+   "category": "planning",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Lay out five steps for taking on one part-time bookkeeper, ordered so that no step depends on anything that comes after it, and mark the one step that would be cheapest to undo if it turned out to be a mistake."
+    }
+   ],
+   "context": "Five ordered steps with real dependencies and exactly one step marked as the cheapest to reverse. Five steps with no marking is Partial."
+  },
+  {
+   "id": "ext-planning-around-a-freeze",
+   "lane": "planning-dependencies",
+   "category": "planning",
+   "step": "B",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Our team is under a change freeze from the 10th to the 20th. A database index change has to be live by the 25th. Give six steps that get it there, and finish by saying what you would do differently if the freeze were extended by a week."
+    }
+   ],
+   "context": "Six steps that respect the frozen window plus a stated contingency for the extension. Six steps with no contingency is Partial; ignoring the freeze is a miss."
+  },
+  {
+   "id": "ext-uncertainty-two-hospitals",
+   "lane": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "One hospital publishes a higher post-operative death rate than another nearby. How much does that on its own tell me about which hospital is better, and what would you need to find out before you would be willing to say?"
+    }
+   ],
+   "context": "Case mix and referral patterns named, no causal verdict, and concrete missing quantities requested. Concluding either hospital is better is a miss."
+  },
+  {
+   "id": "ext-uncertainty-confident-source",
+   "lane": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "An article written with total confidence says a supplement cures tiredness, and it cites one trial with nine participants. How far should that shift what I believe, and what specifically would change your answer?"
+    }
+   ],
+   "context": "Confidence of prose is not evidence; nine participants is a weak base; names what would move it (size, control, pre-registration, replication). Deferring to the article's confidence is a miss."
+  },
+  {
+   "id": "ext-creative-returned-glove",
+   "lane": "creative-continuity",
+   "category": "creative-writing",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Here is a scene to write: a child hands a dropped glove back to a stranger, and something about that stranger is very slightly off. Keep the tone warm rather than frightening, include one line of spoken dialogue, and stop before anybody explains anything."
+    }
+   ],
+   "context": "Continuity, the requested warm register, one dialogue line, no explanation at the end. Explaining the oddity is a miss."
+  },
+  {
+   "id": "ext-creative-no-adjectives",
+   "lane": "creative-continuity",
+   "category": "creative-writing",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write six sentences about a market at first light. Use no adjectives at all -- let the verbs and the nouns carry it. Keep it concrete."
+    }
+   ],
+   "context": "Six sentences, coherent scene, and the constraint actually held. Off-ladder: this is a constraint-under-generation test, not a knowledge test. Two or three adjectives is Partial; adjective-laden prose is a miss."
+  },
+  {
+   "id": "ext-multiturn-budget-revision",
+   "lane": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "step": "A",
+   "off_ladder": false,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Help me pick gear for a two-night hike. I was going to buy the lightest of everything."
+    },
+    {
+     "role": "assistant",
+     "content": "Before we start, what is your budget and what is the forecast where you are going?"
+    },
+    {
+     "role": "user",
+     "content": "Two hundred pounds total, and it is going to rain both nights. Give me three items in priority order with that in mind."
+    }
+   ],
+   "context": "Exactly three items, ordered, priced against the stated total, and weather-appropriate. Ignoring either constraint is a miss; three items with no ordering is Partial."
+  },
+  {
+   "id": "ext-multiturn-contradiction-flag",
+   "lane": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "step": "B",
+   "off_ladder": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Draft a policy note for our staff handbook. It must fit on one printed page."
+    },
+    {
+     "role": "assistant",
+     "content": "Understood. What has to be covered?"
+    },
+    {
+     "role": "user",
+     "content": "Every one of these, in full, each with two worked examples: expenses, travel booking, overtime, remote work, equipment, data handling, and the complaints procedure. Still one page."
+    }
+   ],
+   "context": "The two requirements cannot both hold. The correct move is to say so and ask which gives way, not to silently truncate or silently overrun. Producing seven full sections is a miss; producing a page that drops topics without saying so is a miss."
+  }
+ ]
+}

@@ -1,35 +1,43 @@
-# CAMPAIGN_SCORECARD — wave 37, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 38, under the canonical standard and the sealed one
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line
 character of its failure and the path to its verbatim dossier.
 
-Rows regenerated at wave 37 from `wave37/campaign-frontier-table.json`, with the
-canonical column read off `wave34/`, `wave35/`, `wave36/` and `wave37/canonical-reread-*.json`.
-318 reviewed whole-model children,
-262 holding at least one case,
-228 benchmark rows, and **all 24 parent benchmark rows**
-matching the sealed reference — wave 37's parent row is identical to waves 32, 34, 35 and 36's
-to every reported digit: arc 0.5450, hellaswag_norm 0.5050, piqa_norm 0.6800, winogrande
-0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **976 ledger rows,
-972 verifying, 0 failing.**
+Rows regenerated at wave 38 from `wave38/campaign-frontier-table.json`, with the
+canonical column read off `wave34/` through `wave38/canonical-reread-*.json`.
+**324 reviewed whole-model children,
+265 holding at least one case,
+235 benchmark rows, and all 25 parent benchmark rows**
+matching the sealed reference — wave 38's parent row is identical to waves 32, 34, 35, 36
+and 37's to every reported digit: arc 0.5450, hellaswag_norm 0.5050, piqa_norm 0.6800,
+winogrande 0.5500, lambada 0.4600, lambada ppl 24.39, wikitext word ppl 81.80. **988
+ledger rows, 984 verifying, 0 failing.**
 
-**The frozen review runner is now provably fixed across SIX waves.** One parent-lane
-digest, `865f006e3813712ec202cb23`, over fifteen sealed dossiers from waves 15, 23, 34,
-35, 36 and 37 — `wave37/lane-byte-comparison-wave37.json`. Earlier waves claimed this
-within a wave or across two; this is the first artifact that proves it across the
-campaign's whole reviewed span.
+**The frozen review runner is now provably fixed across SEVEN waves and TWENTY
+dossiers.** One parent-lane digest, `865f006e3813712ec202cb23`, over twenty sealed
+dossiers from waves 15, 23, 34, 35, 36, 37 and 38 — `wave38/lane-byte-comparison-wave38.json`,
+on protocol `e5e377688597` and prompt pack `0ee6bf14cef5`. This is the strongest form of
+that control the campaign has produced.
 
-**Wave 37's two frontier moves both land at 0.420779x and both are held by two
-independent children.** `ARCH.V12CL896X09` and its λ1.0 arm read 2/15 sealed and 3/15
-canonically at the campaign floor ratio, moving the sealed 2/15 rung off
-`ARCH.V9CL896` and the canonical 3/15 rung off `ARCH.V9CL896G03`, 0.016570 of stored
-ratio each. **The margin under both is two tokens and `DEEP_RECORD.md` §8.5 states it.**
+**Wave 38's four frontier moves all land at 0.4116484014x and the sealed 1/15 rung is
+held by two independent children.** `ARCH.V10CL896X09` reads 1/15 on both standards and
+its λ1.0 arm `ARCH.V10CL896X09G10` reads 2/15 on both, moving sealed and canonical 1/15
+and 2/15 by 0.0091302317 of stored ratio each.
 
-**`DEEP_RECORD.md` §8 is new and it is where the deep family's laws now live** — the
-corrected +1 table, the non-monotone λ1.0 record, the objective anti-correlation at
-n = 13 ladders, the block-9/block-13 equivalence, the flatness exception and the
-paraphrase result. Two of those laws are corrections to laws earlier notes stated
+**And the wave's result is the two rungs BELOW that, which are dead.** The block-9
+vocabulary ladder reads **2 / 2 / 1 / 0** at K = 14,336 / 12,288 / 10,240 / 9,216, so the
+flatness law (`DEEP_RECORD.md` §8.5) is broken on that body and broken monotonically. The
+zero at K = 9,216 is the campaign's **second vocabulary death** and it sits one full rung
+*shallower* than the first, on a body one conv block lighter — so the campaign now has
+**two 0/15 brackets of identical width (0.0045651159 of stored ratio, exactly 1,024
+vocabulary rows) on two bodies**, 0.0257 apart, with nothing built inside either.
+
+**`DEEP_RECORD.md` §8 is where the deep family's laws live** — the corrected +1 table, the
+λ1.0 rung result (settled at wave 38 on two bodies), the objective anti-correlation at
+n = 13 ladders, the block-9/block-13 equivalence and the exhausted excision pair, the
+broken flatness law, the paraphrase result, and wave 38's §8.8 on why the canonical lens
+stops moving below 0.43x. Three of those are corrections to laws earlier notes stated
 wrongly.
 
 **A wave-35 artifact was found corrupt and repaired here rather than worked around.**
@@ -76,9 +84,25 @@ compression artifact carrying no evidence about intelligence in either direction
 | 5/15 | `ARCH.V9CL896G10` | **0.437349** | 5 | `ARCH.V8CL1792` | **0.600552** |
 | 4/15 | `ARCH.V9CL896G03` | **0.437349** | 4 | `ARCH.V9CL896G10` | **0.437349** |
 | 3/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | `ARCH.V9CL896G03` | **0.437349** |
-| 2/15 | `ARCH.V12CL896X09` | **0.420779** | 3 | `ARCH.V12CL896X09` | **0.420779** |
-| 2/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V9CL896` | **0.437349** |
-| 1/15 | `ARCH.V12CL896X13` | **0.420779** | 2 | `ARCH.V12CL896X13` | **0.420779** |
+| 2/15 | `ARCH.V10CL896X09G10` | **0.411648** | 2 | `ARCH.V10CL896X09G10` | **0.411648** |
+| 1/15 | `ARCH.V10CL896X09` | **0.411648** | 1 | `ARCH.V10CL896X09` | **0.411648** |
+| 0/15 | `ARCH.V12CL896X09X13` | **0.390512** | 0 | `ARCH.V12CL896X09X13` | **0.390512** |
+
+**Wave 38 moved four rungs — sealed and canonical 1/15 and 2/15 — all to 0.4116484014x,
+each by 0.0091302317 of stored ratio, and the sealed 1/15 rung is held by two independent
+children.** `ARCH.V10CL896X09` reads 1 on both standards and its λ1.0 arm reads 2 on both.
+**It is the first wave since 33 in which the canonical lens moved nothing on any child**,
+and `DEEP_RECORD.md` §8.8 says why: 61% of the wave's scored lanes are artifacts, and the
+canonical lens exists to forgive exactly those.
+
+**Wave 38's own result is the two rungs below that, which are dead**, and one settled
+account. The block-9 vocabulary ladder reads **2 / 2 / 1 / 0** across K, breaking the
+flatness law monotonically; `ARCH.V9CL896X09` is the campaign's second vocabulary death
+and sits one rung *shallower* than the first on a body one conv block lighter; the
+block-9 + block-13 excision pair reads **zero on both halves**, exhausting that axis; and
+λ1.0's gain is now settled as a property of the **vocabulary rung** — +1 at K = 10,240 on
+both the excised and unexcised bodies, +0 at K = 12,288 on both, on decodes that share
+zero of sixteen lanes.
 
 **Wave 36 moved two SEALED rungs and three CANONICAL ones, and one of the canonical moves
 is the largest in the campaign's record.** `ARCH.V9CL896G10` — the terminal-gain arm at
@@ -200,6 +224,18 @@ a null holding the instrument fixed and varying only the population puts wave 32
 89th, on a 90% interval of 0.31–0.79 — wider than the gap between the scorer's own
 thresholds. Every count in this file is the frozen fifteen, read by hand, exactly
 as it has been for thirty-three waves.
+
+**THIS TABLE IS STALE BELOW 0.469305x AND WAVE 38 SAYS SO RATHER THAN PATCHING IT.**
+Its rank-1 row is `ARCH.V16CL896` at 0.469305x, which has not been the deepest
+case-holding child since wave 34. Twelve children built in waves 34 through 38 sit below
+it and eight of them hold at least one case — including the two that now hold the sealed
+1/15 and 2/15 rungs, `ARCH.V10CL896X09` and `ARCH.V10CL896X09G10` at **0.4116484014x**,
+and the deepest child ever built, `ARCH.V12CL896X09X13` at **0.3905124499x**, which holds
+nothing. **The authority for everything below 0.50x is `DEEP_RECORD.md`**, which is
+regenerated every wave and carries all thirty-seven of them with both lenses, benchmarks
+and verbatim highlights. This table is kept as the 0.47x-and-above record it actually is;
+regenerating its ranks is a job for a wave that is willing to re-read the fifteen rows
+below, and no wave since 33 has been.
 
 | rank | child | net | review | **intel** | shape | the character of its failure | READ- dossier |
 |---:|---|---:|---:|---:|---|---|---|

@@ -1,0 +1,41 @@
+{
+ "schema": "neural-forge-matrix-wave38-preregistration-supplement-v1",
+ "purpose": "Wave 38's G3 was conditional and the condition FAILED.  This file records the substitution, its reasoning and its prediction BEFORE the substitute is built, so the substitute is a pre-registered cell and not a second attempt at a wave that had already missed.",
+ "written_before": "the G3 gain solve, and after the three G1 dossiers were read and before any G1 seal was written",
+ "supplements": "preregistration-wave38.json, section F3_the_lambda_1p0_rung_versus_body_separation",
+
+ "the_condition_and_why_it_failed": {
+  "the_order": "G3 -- the G10 arm on the floor: V9CL896X09G10 if G1's V9X09 shows any signal.",
+  "what_G1_read": "ARCH.V9CL896X09 at 0.4070832855x reads ZERO of fifteen.  Every lane is a loop, a cap-hit or readable nonsense; its uncertainty lane names none of the four withheld quantities, its retrieval lane answers none of the note's three asks, its summarisation lane preserves neither the decision nor the risk, and its email lane is a restatement of the instruction with no Friday, no Monday and no tracking number.",
+  "so_the_condition_is_unmet": "A terminal-gain arm on a dead control measures nothing: the ladder is a DIFFERENCE against its control's count, and a difference against zero on a child whose every lane is degenerate cannot distinguish a solve that helped from a solve that did nothing.  ARCH.V9CL896X09G10 is NOT BUILT and this file is the record of that decision rather than a silent omission."
+ },
+
+ "the_substitution": {
+  "what": "ARCH.V10CL896X09G10 -- terminal gain lambda 1.0 at K = 10,240 on the block-9 body, zero storage delta, 0.4116484014x.",
+  "why_it_answers_THE_SAME_QUESTION": "F3's question is whether lambda 1.0's gain is a property of the vocabulary RUNG or of the BODY.  It needs a rung where the two accounts disagree, on the excised body, with a LIVE control.  K = 9,216 was chosen because lambda 1.0 buys TWO there on the CL896 body; K = 10,240 is the next rung up, lambda 1.0 buys ONE there on the CL896 body (ARCH.V10CL896 2 -> ARCH.V10CL896G10 3, wave 35), and ARCH.V10CL896X09 holds ONE case -- a live control.  The two accounts still disagree, so the cell still separates them.",
+  "what_it_gives_up": "the magnitude.  K = 9,216 would have tested a +2 prediction and this tests a +1, so a null result here is weaker evidence for the body account than a null at K = 9,216 would have been.  That is stated rather than glossed: the substitute is a smaller lever on the same hinge.",
+  "what_it_does_NOT_do": "it does not rescue the frontier prediction F3 made.  The registered FOUR at 0.4070832855x is dead with its control and no wave-38 cell can take the sealed 3/15 or 4/15 rungs."
+ },
+
+ "prediction": {
+  "ARCH.V10CL896X09G10": {
+   "K": 10240,
+   "lambda": 1.0,
+   "ratio": 0.4116484014,
+   "control_reads": 1,
+   "registered": 2,
+   "reasoning": "the K account, which is the account both existing deep data points are consistent with: lambda 1.0 bought ZERO at K=12,288 on the X09 body and ZERO at K=12,288 on the CL896 body, and it buys +1 at K=10,240 on the CL896 body.  Registered as control PLUS ONE.",
+   "the_alternative_reading": "ONE, the body account -- the excised body refuses the gain at every rung.",
+   "what_a_two_would_mean": "a sealed 2/15 at 0.4116484014x, taking the sealed two-of-fifteen rung from ARCH.V12CL896X09 at 0.4207786331x by 0.0091302317 of stored ratio.",
+   "what_a_one_would_mean": "lambda 1.0 buys nothing anywhere on the block-9 body, at two rungs where it buys +0 and +1 respectively on the unexcised one, and the body account wins on n = 2."
+  }
+ },
+
+ "the_G1_result_this_file_is_written_after_and_does_not_change": {
+  "ARCH.V14CL896X09": "2/15 at 0.4299088649x -- pre-registered at 2, HIT",
+  "ARCH.V12CL896X09": "2/15 at 0.4207786331x -- wave 37's, unchanged",
+  "ARCH.V10CL896X09": "1/15 at 0.4116484014x -- pre-registered at 2, MISS by one",
+  "ARCH.V9CL896X09": "0/15 at 0.4070832855x -- pre-registered at 2, MISS by two",
+  "the_answer_to_the_waves_first_question": "The X09 ladder is NOT flat across K.  It DECAYS MONOTONICALLY: 2, 2, 1, 0 at K = 14,336 / 12,288 / 10,240 / 9,216.  DEEP_RECORD section 8.5's flatness law is broken on this body, in the direction of death, and the break is monotone rather than noisy."
+ }
+}

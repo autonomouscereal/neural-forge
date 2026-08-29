@@ -1,0 +1,161 @@
+{
+ "schema": "neural-forge-matrix-wave38-preregistration-v1",
+ "purpose": "Every count this wave will build, predicted BEFORE the build and before any dossier is read.  Wave 38 closes the last symmetric corners of the deep-family map: the block-9 body's vocabulary ladder at the three K values that never had one, the block-9 + block-13 excision pair at depth, and the one cell that can separate lambda 1.0's K account from its body account.",
+ "written_before": "the first GPU run of wave 38",
+ "pre_registration_hit_rate_so_far": "Wave 36 hit 1 of 6, wave 37 hit 4 of 6, and wave 37's note said the improvement does not mean predictions at the floor have stopped being noise-dominated -- two of its four hits were on arms predicted to do nothing.  This file expects to miss on at least the two children below 0.41x.  It is written anyway, because a prediction that is only written when it is safe is not a prediction.",
+ "ledger": {
+  "path": "/mnt/ai_data/neural-forge-matrix/ledger.jsonl",
+  "rows": 976,
+  "sha256": "a94caa551d9a7a2daeac2021b559bb09a32b3defd41ede778e77988f48797ede",
+  "identical_in": [
+   "the repository",
+   "the share"
+  ]
+ },
+ "deployment": {
+  "commit": "f822cd03",
+  "note": "the tree cut and the sealer's four accept strings, in ONE commit, for the THIRD consecutive wave; NO behavioural edit anywhere in the tree, for the SECOND consecutive wave",
+  "audit": "cut_wave38.py --audit passes: no wave-37 identifier survived, six seal roots declared, the accept list carries ten basis schemas, sealq.sh carries this wave's marker (sixth consecutive refusal), and the three lines this wave's DOUBLE excision depends on are asserted at their indented form"
+ },
+
+ "parameter_arithmetic": {
+  "note": "EXACT, not fitted.  Derived from the parent's own config (14 blocks: 6 full_attention at indices 2/4/6/8/10/12, 8 conv at 0/1/3/5/7/9/11/13; heads 16, kv 8, head_dim 64, vocab 65,536, intermediate 2,560, hidden 1,024) by the same closed form mx38_build.predicted_parameters uses, plus the vocabulary fold's own term.  Cross-checked against the parent's 229,693,184, against ARCH.CL896's 158,127,872, against ARCH.CL896X09 and ARCH.CL896X13's shared 151,175,936 and against ARCH.V12CL896X09's 96,649,984 before it was applied to anything new.",
+  "the_vocabulary_fold_term": "a K-row gather removes exactly (65,536 - K) * 1,024 parameters from its body, which is why V12CL896X13 and V12CL896X09 agree to the byte on bodies that agree to the byte.",
+  "cross_checks_that_must_hold_at_export": [
+   "ARCH.CL896X09X13 loader count == 144,224,000 == 0.6278984752x -- blocks 9 and 13 are BOTH conv, so the second excision costs exactly what the first did",
+   "ARCH.V9CL896X09 loader count == 93,504,256 == 0.4070832855x",
+   "ARCH.V10CL896X09 loader count == 94,552,832 == 0.4116484014x",
+   "ARCH.V14CL896X09 loader count == 98,747,136 == 0.4299088649x",
+   "ARCH.V12CL896X09X13 loader count == 89,698,048 == 0.3905124499x -- the DEEPEST child this campaign has ever built, 0.030 of stored ratio below the current floor",
+   "ARCH.V9CL896X09G10 carries ZERO storage delta from ARCH.V9CL896X09"
+  ],
+  "the_orders_estimates_were_right_this_time": "Wave 38 was dispatched with ~0.407x / ~0.412x / ~0.430x / ~0.390x and the closed form gives 0.407083 / 0.411648 / 0.429909 / 0.390512.  Wave 37's dispatch was wrong by 0.006 and the correction turned a new rung into a controlled pair; this wave's is not, so nothing is re-framed."
+ },
+
+ "the_one_code_path_this_wave_leans_on_that_nobody_has_checked": {
+  "what": "--excise with TWO indices, composed with --ff.",
+  "why_it_is_a_risk": "Wave 28 was the last wave to build a multi-index excision and no wave has ever composed one with --ff.  Three lines carry it and none has been asserted: (1) the deletion loop must run in DESCENDING index order, or the second del addresses a list the first already shortened -- this wave's own pair (9, 13) would raise rather than lie, but --excise 9 --excise 11 in ascending order would delete block 9 and then whatever block 12 used to be, silently, at a correct-looking parameter count and depth; (2) and (3) every surviving module's layer_idx must be rewritten to its NEW position, because Lfm2Attention and the conv block both address the KV cache and the conv state by that integer, and two excisions renumber a longer tail than one does.",
+  "and_wave_37s_dependency_is_load_bearing_twice_over": "Lfm2Model picks each block's mask by POSITION in config.layer_types.  With blocks 9 AND 13 gone, blocks 10-12 shift down one slot and a full_attention block lands in a conv's index.  mx18_mask_probe.py measured the cost of not re-deriving that list: 0.0000 future attention mass with block 13 alone excised, 28.6% to 48.0% once anything shifts.",
+  "asserted_before_the_build_not_after": "cut_wave38.py --audit pins all four lines at one occurrence each, at their INDENTED form so the wave-38 header quoting them cannot satisfy the count with the code deleted.",
+  "acceptance_criteria_registered_in_advance": [
+   "the build log carries: [mx38] excised blocks [9, 13]; child depth 12; config.layer_types re-derived (12 entries) so the live mask follows the live block",
+   "the exported config carries 12 layer_types reading conv conv full_attention conv full_attention conv full_attention conv full_attention full_attention conv full_attention -- a DOUBLE full_attention at positions 8 and 9 that the parent never has, and a body that ENDS on full_attention, which no CL896 body in this estate does",
+   "the loader count is 144,224,000"
+  ]
+ },
+
+ "F1_the_X09_ladder_across_K": {
+  "question": "Wave 37 built ONE vocabulary rung on the block-9 body -- K=12,288 -- and it read TWO where its body read ONE, the first vocabulary fold in this campaign to gain a case over its own body, on a margin two tokens wide.  Does the X09-over-X13 advantage hold across K, and does anything hold signal BELOW 0.42x?",
+  "the_law_being_tested": "DEEP_RECORD section 8.5, the flatness law: across eleven thousand rows the vocabulary fold does not change a body's count -- flat at 3 on ARCH.W896, flat at 7 on ARCH.CL1792, flat at 2 on ARCH.CL896, flat at 0 on ARCH.W896CL1792.  Its operative form for prediction is FLAT ACROSS K ON ONE BODY.  ARCH.V12CL896X09 reads 2, so the law says every other X09 rung reads 2.",
+  "what_would_break_it": "any X09 rung reading anything other than two.  The CL896 body's own ladder already has one dip (K=16,384 reads 1 where every other rung reads 2) and one death (K=8,192 reads 0), so flatness on this axis has known exceptions and this is a test rather than a formality.",
+  "children": {
+   "ARCH.V14CL896X09": {
+    "K": 14336,
+    "ratio": 0.4299088649,
+    "registered": 2,
+    "reasoning": "the flatness law, on the rung FURTHEST from the floor and therefore the safest of the three.  Its control on the unexcised body, ARCH.V14CL896, also reads 2.",
+    "the_alternative_reading": "ONE, the body's own count, if the K=12,288 +1 was a property of that rung rather than of the body."
+   },
+   "ARCH.V10CL896X09": {
+    "K": 10240,
+    "ratio": 0.4116484014,
+    "registered": 2,
+    "reasoning": "the flatness law.  Its control on the unexcised body, ARCH.V10CL896, reads 2.  A read of two here is the FIRST case this campaign holds below 0.42x.",
+    "the_alternative_reading": "ONE."
+   },
+   "ARCH.V9CL896X09": {
+    "K": 9216,
+    "ratio": 0.4070832855,
+    "registered": 2,
+    "reasoning": "the flatness law, applied at the rung one step above the K=8,192 vocabulary death.  This is the prediction the wave is least confident in and it is registered at two anyway rather than hedged: the law says two, the body it is folded from holds one, and the rung below it on the UNEXCISED body is where the campaign's only vocabulary death sits.",
+    "the_alternative_reading": "ONE or ZERO.  A read of zero would be the second vocabulary death in the campaign and would bracket it on a second body."
+   }
+  },
+  "what_this_answers_either_way": "The X09-across-K answer.  If all three read two, the block-9 body carries two cases across a 5,120-row span of K down to 0.4071x and the wave-37 result was not a K=12,288 accident.  If they read one, the two-token +1 was specific to that rung and the sealed 2/15 frontier stands where wave 37 left it."
+ },
+
+ "F2_the_excision_pair_at_depth": {
+  "question": "The pair law has never been tested on a deep body.  Blocks 9 and 13 are four apart; wave 17 measured that farther-apart pairs cost LESS (distance 2 gives 2/15, 2/15, 4/15; distance 4 gives 6/15, 6/15; distance 12 gives 7/15, monotone across two anchors) and wave 28 INVERTED it on a vocabulary base: ARCH.V19X13X09 (four apart) reads 5/15 and ARCH.V19X13X01 (twelve apart) reads 3/15, both at 0.689528x.",
+  "the_additive_account": "On the CL896 body: ARCH.CL896 reads 4 (wave 15), ARCH.CL896X09 reads 1 (wave 37), ARCH.CL896X13 reads 1 (wave 35).  Each single excision costs THREE (DEEP_RECORD section 8.4).  Additive says 4 - 3 - 3 = -2, which clips to ZERO.",
+  "the_super_additive_account": "Wave 28's V19 anchor: V19 reads 14 at 0.794570x, V19X13 reads 10, V19X09 reads 10 (each -4), and the pair reads 5 -- a joint cost of NINE where the solo costs sum to eight.  One case worse than additive.  Applied here: 4 - 7 = -3, which also clips to ZERO.",
+  "children": {
+   "ARCH.CL896X09X13": {
+    "ratio": 0.6278984752,
+    "registered": 0,
+    "reasoning": "both accounts clip to zero and there is no third account.  A body that reads zero is not automatically a content death -- DEEP_RECORD section 4 -- and the artifact/content split will be reported whichever way the count lands.",
+    "the_alternative_reading": "ONE, if the two excisions kill overlapping rather than disjoint lanes.  ARCH.CL896X09's one lane is context-retrieval; ARCH.CL896X13's one lane is NOT context-retrieval, and two bodies that share zero of sixteen lanes byte for byte have no reason to fail on the same one.  That is an argument FOR zero, and it is why zero is what is registered."
+   },
+   "ARCH.V12CL896X09X13": {
+    "K": 12288,
+    "ratio": 0.3905124499,
+    "registered": 0,
+    "reasoning": "the flatness law applied to a body registered at zero.  ARCH.W896CL1792 is the campaign's precedent for a fold that is flat at ZERO.",
+    "the_alternative_reading": "ONE, on the wave-37 exception -- the ONLY vocabulary fold in this campaign that gained a case over its own body did so on the block-9 body, and this child is a vocabulary fold on a block-9 body.  If it reads one it takes the sealed AND canonical 1/15 rungs from 0.420779x to 0.390512x, a 0.030266 move, which would be the largest single-wave frontier move since wave 35.",
+    "note": "this is the DEEPEST child this campaign has ever attempted, 42% smaller than the parent's half and 0.030 of stored ratio below the current floor."
+   }
+  },
+  "what_this_answers_either_way": "Whether the pair law survives a body that is already at 1/15 from either excision alone.  A zero says the deep zone has no headroom for a second excision; a one says the excision axis composes further than the count arithmetic predicts, on the one body where the vocabulary fold has already been seen to gain."
+ },
+
+ "F3_the_lambda_1p0_rung_versus_body_separation": {
+  "question": "Wave 37 concluded that lambda 1.0's advantage is a property of the vocabulary rung AND the body, not of stored ratio.  It could not separate rung from body, because its only deep arm was at K=12,288 on the X09 body -- and K=12,288 is a rung where lambda 1.0 buys ZERO on the CL896 body too.  Wave 38's G3 is the one cell that separates them: lambda 1.0 at K=9,216 on the X09 body.",
+  "the_record_this_extends": {
+   "K=16,384 ARCH.V16CL896": "control 1 -> 2  (+1)",
+   "K=14,336 ARCH.V14CL896": "control 2 -> 2  (+0)",
+   "K=12,288 ARCH.V12CL896": "control 2 -> 2  (+0)",
+   "K=10,240 ARCH.V10CL896": "control 2 -> 3  (+1)",
+   "K=9,216  ARCH.V9CL896": "control 2 -> 4  (+2)",
+   "K=12,288 on X09 ARCH.V12CL896X09": "control 2 -> 2  (+0)  <-- AGREES with the CL896 body at the same K"
+  },
+  "the_two_accounts": {
+   "the_K_account": "lambda 1.0's gain is a function of the vocabulary rung alone.  The one deep data point AGREES with it: +0 at K=12,288 on both bodies.  It predicts +2 at K=9,216 on the X09 body.",
+   "the_body_account": "lambda 1.0's gain needs the unexcised CL896 body, and the X09 body's +0 at K=12,288 is the body refusing rather than the rung.  It predicts +0."
+  },
+  "children": {
+   "ARCH.V9CL896X09G10": {
+    "K": 9216,
+    "lambda": 1.0,
+    "ratio": 0.4070832855,
+    "registered": 4,
+    "reasoning": "the K account, because it is the account the single existing deep data point is consistent with.  Registered as the control's count PLUS TWO: if ARCH.V9CL896X09 reads 2 as F1 registers, this arm reads 4.",
+    "the_alternative_reading": "TWO, the body account.",
+    "what_a_four_would_mean": "a sealed 4/15 at 0.4070832855x, against the current sealed 4/15 record of ARCH.V9CL896G10 at 0.437349x -- a 0.030266 move on the deepest rung of the frontier that has ever moved.  It would also be the deepest THREE and the deepest TWO.",
+    "conditional": "BUILT ONLY IF ARCH.V9CL896X09 HOLDS AT LEAST ONE CASE.  A gain arm on a dead control measures nothing, and the order says so."
+   }
+  },
+  "the_solver_criterion_is_not_permitted_to_choose": "DEEP_RECORD section 8.3: across thirteen ladders the arm with the better held-out logit relSSE has read WORSE on the frozen review eight times, better once and tied four times.  The objective will be recorded for this arm and it will not decide anything."
+ },
+
+ "counts_registered_in_one_place": {
+  "ARCH.CL896X09X13": 0,
+  "ARCH.V14CL896X09": 2,
+  "ARCH.V10CL896X09": 2,
+  "ARCH.V9CL896X09": 2,
+  "ARCH.V12CL896X09X13": 0,
+  "ARCH.V9CL896X09G10": 4
+ },
+
+ "frontier_movements_that_would_follow_if_every_prediction_HELD": {
+  "sealed_1/15": "0.420779 -> unchanged (V12CL896X09X13 registered at zero)",
+  "sealed_2/15": "0.420779 -> 0.4070832855 by ARCH.V9CL896X09, a 0.013695 move",
+  "sealed_3/15": "0.437349 -> 0.4070832855 by ARCH.V9CL896X09G10, a 0.030266 move",
+  "sealed_4/15": "0.437349 -> 0.4070832855 by ARCH.V9CL896X09G10, a 0.030266 move",
+  "canonical": "the canonical re-read is a separate lens and is not predicted here; wave 37's canonical counts ran one above sealed on four of six children and equal on two, and that offset is an observation rather than a rule"
+ },
+
+ "declared_limits_before_the_read": [
+  "THE INSTRUMENT CANNOT RESOLVE THE MARGIN IT IS BEING ASKED ABOUT.  Wave 37's +1 at K=12,288 was TWO TOKENS wide -- one word in one lane.  Three more rungs of the same ladder are three more chances for a two-token margin to decide a frontier rung, and every seal this wave writes on a one-case margin will name the alternative reading in the seal, as wave 37's did.",
+  "THE PARAPHRASE SURFACE STILL CANNOT ADJUDICATE THE CANONICAL 5/15 RUNG.  DEEP_RECORD section 8.7: mx38_pararubric.py declares context-retrieval and summarization-priorities UNANSWERABLE on bank v1 because their restatements say 'the note below' and carry no note.  Those are two of ARCH.V9CL896G10's four sealed lanes.  Nothing in this wave changes that and this wave does not claim to.",
+  "PREDICTIONS AT THE FLOOR ARE NOISE-DOMINATED.  Wave 36 hit 1 of 6; wave 37 hit 4 of 6 and said so was not a trend.  Four of this wave's six children sit below 0.43x and two below 0.41x.",
+  "ARCH.CL896's 4/15 IS A WAVE-15 READING.  The reading standard was restated in waves 19-24 and ARCH.CL896 has not been re-read under it.  Every additive prediction in F2 rests on that 4, and if it is stale the pair prediction is built on a number from an older instrument.  This is stated here rather than discovered in the discussion of the result."
+ ],
+
+ "method_commitments": [
+  "PARENT CALIBRATION FIRST: the parent's own responses re-read blind from this wave's FIRST dossier against sealq.sh's standard, and they must reproduce 5 Useful / 7 Partial / 3 misses = 12/15 with both signature defects present.  Eleventh consecutive.  If it does not reproduce, nothing is graded.",
+  "THE RUNNER CONTROL: mx38_parent_identity.py must read 865f006e3813712ec202cb23 -- the wave-17 anchor -- on every wave-38 dossier.",
+  "THE BYTE COMPARISON RUNS BEFORE ANY COUNT IS WRITTEN, and any lane a wave-38 child shares byte-for-byte with an already-sealed child takes that child's verdict by construction rather than by this reader.",
+  "sealq.sh RUNS ONCE.",
+  "EVERY ARTIFACT IS PARSED IN THE COMMAND THAT WRITES IT -- NOTES-MX-AO section 9.  cut_wave38.py already does it for the tree-cut manifest and mx38_retain.py has been given the same read-back.",
+  "gainq.sh DERIVES ITS SOURCE CELL RECEIPT FROM THE SOURCE PATH, which is correct for a wave-38 cell and wrong for a rebuilt one.  Wave 38's one gain arm is solved on a wave-38 cell, so gainq.sh is used unchanged; if that changes, the solver is called directly with the receipt named explicitly, as wave 37 did."
+ ]
+}

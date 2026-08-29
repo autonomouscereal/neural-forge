@@ -1,0 +1,174 @@
+{
+ "schema": "neural-forge-matrix-wave38-lane-byte-comparison-v1",
+ "purpose": "A lane that decodes byte-identical to another child's lane has that child's verdict on that lane by construction.  Run before any wave-38 count was written.",
+ "missing_dossiers": [],
+ "parent_lane_digest_all_equal": true,
+ "parent_lane_digest": [
+  "865f006e3813712ec202cb23fb2bfdc43890c0b8087fd44989cde71583eaaa70"
+ ],
+ "parent_lane_dossiers_checked": 20,
+ "parent_lane_waves_checked": [
+  "wave15",
+  "wave23",
+  "wave34",
+  "wave35",
+  "wave36",
+  "wave37",
+  "wave38"
+ ],
+ "pairs": [
+  {
+   "a": "ARCH.V9CL896X09",
+   "b": "ARCH.CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X09",
+   "b": "ARCH.CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V14CL896X09",
+   "b": "ARCH.CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 1,
+   "lanes": [
+    "logic-ordering"
+   ]
+  },
+  {
+   "a": "ARCH.V9CL896X09",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X09",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 2,
+   "lanes": [
+    "conversation-natural-greeting",
+    "debugging-off-by-one"
+   ]
+  },
+  {
+   "a": "ARCH.V14CL896X09",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 2,
+   "lanes": [
+    "arithmetic-multi-step",
+    "uncertainty-insufficient-data"
+   ]
+  },
+  {
+   "a": "ARCH.V9CL896X09",
+   "b": "ARCH.V10CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 6,
+   "lanes": [
+    "comparison-ram-rom",
+    "logic-ordering",
+    "multi-turn-correction",
+    "planning-dependencies",
+    "safety-household-chemical",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X09",
+   "b": "ARCH.V14CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V9CL896X09",
+   "b": "ARCH.V9CL896",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X09",
+   "b": "ARCH.V10CL896",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V14CL896X09",
+   "b": "ARCH.V14CL896",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X09G10",
+   "b": "ARCH.V10CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 2,
+   "lanes": [
+    "coding-deduplicate",
+    "conversation-natural-greeting"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X09G10",
+   "b": "ARCH.V10CL896G10",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X09G10",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 1,
+   "lanes": [
+    "conversation-natural-greeting"
+   ]
+  },
+  {
+   "a": "ARCH.V12CL896X09X13",
+   "b": "ARCH.CL896X09X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.CL896X09X13",
+   "b": "ARCH.CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.CL896X09X13",
+   "b": "ARCH.CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V12CL896X09X13",
+   "b": "ARCH.V12CL896X09",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V12CL896X09X13",
+   "b": "ARCH.V12CL896X13",
+   "lanes_compared": 16,
+   "byte_identical": 0,
+   "lanes": []
+  }
+ ]
+}
