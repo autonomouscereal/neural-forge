@@ -404,6 +404,34 @@ BUILD_RECEIPT_SCHEMAS = (
     "neural-forge-matrix-wave43-tied-vocabulary-child-v1",
     "neural-forge-matrix-wave43-rowset-vocabulary-child-v1",
     "neural-forge-matrix-wave43-rope-band-child-v1",
+    # WAVE 44 APPENDS SEVEN, and NONE of them is new.  Wave 44's build list is
+    # three `run/mx44/mx44_vocab.py` gathers -- the schema this list has carried
+    # since wave 25 -- and its ONE behavioural change is an edit inside
+    # `run/mx44/mx44_dualband.py`, which builds no child, writes no build
+    # receipt and never opens a model, so it has nothing to be accepted here and
+    # deliberately asks for nothing.  The other six are waves 40 through 43's
+    # schemas RENAMED and carried, for the reason wave 33 gave and waves 34
+    # through 43 kept: a list completed only where it was needed is a list the
+    # next wave has to reason about.  `run/mx44/mx44_vocabtie.py`,
+    # `mx44_vocabrowset.py`, `mx44_blend*.py`, `mx44_logitsolve.py`,
+    # `mx44_plane.py` and `mx44_xchange.py` are all in the tree and none is run
+    # this wave, and `run/mx44/README.md` section 3 says so.
+    #
+    # **THESE SEVEN ARE APPENDED IN THE SAME COMMIT THAT CUT THE WAVE-44 TREE,
+    # BEFORE ANYTHING RAN.**  Wave 43 is the one wave since 35 that did not, and
+    # it paid a whole deployment when the sealer refused all three of its
+    # reviews after the GPU work was already done.  It also added the check that
+    # makes this an assertion instead of a habit: `cut_wave44.py --audit` reads
+    # THIS file and refuses the cut if any of the seven strings above is
+    # missing, so the eighth wave to append at the cut is the second wave whose
+    # append is verified by code.
+    "neural-forge-matrix-wave44-standard-shape-child-v1",
+    "neural-forge-matrix-wave44-blend-build-receipt-v1",
+    "neural-forge-matrix-wave44-logit-metric-writer-v1",
+    "neural-forge-matrix-wave44-body-blend-build-receipt-v1",
+    "neural-forge-matrix-wave44-tied-vocabulary-child-v1",
+    "neural-forge-matrix-wave44-rowset-vocabulary-child-v1",
+    "neural-forge-matrix-wave44-rope-band-child-v1",
 )
 
 
