@@ -1,6 +1,6 @@
 # NOTES-MX-AV — wave 44: the instrument wave. The union copy measure is pre-registered and reproduces the hand column with nobody in the loop, and the CL768 ladder ends at K=4,096 and then comes back at K=3,072
 
-Branch `codex/lrc-blank-compression`. Five commits, five deployments, three
+Branch `codex/lrc-blank-compression`. Five commits, four deployments, three
 graded children, ledger 1046 → 1052.
 
 **The one-line version.** The measure wave 42 asked for and wave 43 did not
@@ -416,8 +416,8 @@ the first time in the campaign that has been true. `column_b_machine_union_only`
 | `2fed6b56` | cut wave 44's tree and PRE-REGISTER the union copy measure as primary |
 | `165a1555` | run the census and the retrospective pass, and pre-register the three cells |
 | `a020ccd1` | the three seals |
-| *(this)* | the measurement, the tables and the dual-column doc refresh |
-| *(next)* | retention applied, and this file's own estate section closed |
+| `9c317999` | the measurement, the tables and the dual-column doc refresh |
+| *(this)* | retention applied, and this file's own estate section closed |
 
 **Deployments**, each verified file-by-file against its commit's blob digests:
 
@@ -426,9 +426,18 @@ the first time in the campaign that has been true. `column_b_machine_union_only`
 | `2fed6b56` | 7721 | 0 | 0 | 0 | 0 |
 | `165a1555` | 7726 | 0 | 0 | 0 | 0 |
 | `a020ccd1` | 7726 | 0 | 0 | 0 | 0 |
+| `9c317999` | 7773 | 0 | 0 | 0 | 0 |
 
-**Five deployments for five commits, which is the campaign's normal rate, and
-NONE of them is avoidable.** The extra commit against waves 40–42's four is the
+**FOUR deployments for five commits.** The retention commit gets none, exactly
+as wave 43's did: `mx44_retain.py`'s `KEEP`/`DROP` mapping is written after the
+verdicts are sealed, so it cannot be inside the deployment the wave was measured
+from, and cutting a sixth deployment to run one CPU pass would be a deployment
+whose only content is a decision. The edited file was uploaded to
+`/home/cereal/nf-mx44/mx44_retain.py` and run from there, which leaves every
+verified deployment tree untouched — asserting that is why `deploy.py --verify`
+reports `undeclared_on_disk` at all.
+
+**Four deployments for five commits, and NONE of the four is avoidable.** The extra commit against waves 40–42's four is the
 same structural one wave 43 had and `env.sh` states it: the census and the
 retrospective pass must RUN before the predictions they make possible can be
 registered, so the code commit and the pre-registration commit cannot be the same
@@ -450,9 +459,36 @@ for wave 34's stated reason. The four P40s and the Quadro RTX 8000 were never
 touched; index 6 read 330 MiB throughout and this wave issued no command against
 it. All three builds were **CPU-only** vocabulary gathers.
 
-**Disk**: `/mnt/ai_data` 4.5T. **The Codex lane was not touched** — 324
-uncommitted paths before the wave and 324 after, and every commit staged by
-explicit path.
+**Retention**: `package.sh` ran BEFORE `--plan`, as the rule requires, and
+`--plan` was read before `--apply`. KEEP = `MX44-V3CL768` (the frontier holder,
+the wave's only new deep-band held-lane witness at `d10952d96d99eeea`, and the
+subject of §4.2's adjudication — a reader who wants to overturn that call needs
+the bytes). DROP = `MX44-V4CL768` and `MX44-V5CL896X13`, both one CPU pass off a
+retained source, and in the second case the matched-K claim survives the deletion
+because it is carried by two committed build receipts and a tokenizer digest
+rather than by the checkpoint. **Applied**: 177,578,215 bytes kept, 358,711,554
+deleted, manifest re-parsed OK.
+
+**THE SECONDARY PREDICTIONS, GRADED 4 OF 4.** Parameter counts landed exactly
+(89,708,288 / 88,659,712 / 89,309,952). `tokens_skipped_because_their_closure_did_not_fit`
+is 0 in all three build receipts, matching the census. The union measure's
+prospective verdict hit — `ARCH.V3CL768`'s held summarisation lane at union
+coverage 1.000000, called COPY_BACK by machine, column B unmoved. And the
+tokenizer-identity prediction hit **exactly**: `MX44-V5CL896X13`'s
+`tokenizer.json` is byte-identical to wave 43's retained `MX43-V5CL768`'s at
+sha256 `041435dd8361647e`, and every vocabulary receipt field agrees, while the
+tensors differ. That is what makes "matched K" an exact claim instead of a
+description. (`special_tokens_map.json` is absent from both children, so the
+third file in that comparison is vacuous and is reported as vacuous.)
+
+**Disk**: `/mnt/ai_data` 4.5T, **1.7T available**. **The Codex lane was not
+touched** — every commit staged by explicit path, and the 324 uncommitted paths
+it carried are untouched.
+
+**Final state**: both 3090s back to their idle H3-container residents (288 and
+279 MiB) at 0% utilisation, the four P40s at 5 MiB and the Quadro RTX 8000 at 330
+MiB, **no stray `mx44_*` process on the box**, ledger 1052 rows at
+`9e4ff05ea3a5b3d0…`, one retained child on the wave root.
 
 ---
 
