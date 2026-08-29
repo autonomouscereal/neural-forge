@@ -14,10 +14,17 @@ than restating the argument.
 1. ``SRC`` is the wave-39 tree, the substitution list moves one wave, and the
    forbidden list moves with it.
 2. ``HAND_EDIT`` is the same four files.  ``sealq.sh`` arrives VERBATIM carrying
-   wave 39's marker, and ``--audit`` REFUSES until it is replaced by hand.
-   Eighth consecutive cut where that protection has had work to do -- and note
-   that this is the FIRST cut where it arrives carrying a marker and NO seal
-   calls, because **wave 39 never graded its two children.**  See §5.
+   wave 39's marker AND wave 39's two seal calls with every count intact, and
+   ``--audit`` REFUSES until both are replaced by hand.  Eighth consecutive cut
+   where that protection has had work to do -- **and the first where it was not
+   enough.**  The marker assertion is one line at the top; the calls are anywhere
+   below it, so a hand edit that rewrites the marker and misses the calls PASSES,
+   and on this wave it did: ``seal V14CL896X13`` and ``seal V10CL896X13`` sat
+   under a rewritten wave-40 marker until a peer wave found them.  They would
+   have errored rather than mis-sealed, because no wave-40 receipt carries those
+   tags, but "it errors" is not the protection.  **``audit()`` now pins the seal
+   CALL COUNT at zero at cut time**, which is wave 39's own recommendation, and
+   both calls are deleted.
 3. ``AUTHORED_THIS_WAVE`` is FOUR files -- this cutter, the README, and the two
    files that are wave 40's one behavioural addition.  Waves 35 through 39
    declared two; this wave declares four and says why below.
@@ -108,8 +115,9 @@ docstring that records what wave 39 measured still says wave 39 measured it.
 * ``mx39_verify_seals.py`` -- the rename turns ``wave39/cells`` into
   ``wave40/cells`` and thereby DELETES last wave's seal root.  Copied verbatim;
   ONE APPENDED LINE by hand.  35 declared roots become 36, ``wave39/cells``
-  still declared.  **And wave 39's cells exist**: it sealed two children and
-  never graded them, so its root is not an empty formality this wave.
+  still declared.  **And wave 39's cells exist and are graded**: that wave sealed
+  its two children, read them at 1/15 each and merged four ledger rows while wave
+  40 was building, so wave 40's merge starts from 992 rows and not 988.
 * ``mx39_retain.py`` -- an inherited ``KEEP`` set names last wave's children and
   everything unnamed is DELETED.  Copied verbatim; ``KEEP`` and ``DROP`` emptied
   by hand, the wave root, glob, schema and manifest name retargeted by hand.
@@ -130,6 +138,7 @@ writes it** -- `NOTES-MX-AO` §9's rule, obeyed by the first file wave 40 writes
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 import time
@@ -433,6 +442,30 @@ def audit() -> int:
         problems.append(
             "sealq.sh does not carry this wave's seal marker, so its seal calls "
             "are last wave's counts on this wave's cell ids"
+        )
+    # WAVE 40 ADDS THE PIN THE MARKER ASSERTION WAS NOT, AND IT ADDS IT BECAUSE
+    # THIS WAVE'S OWN CUT NEEDED IT.  Waves 33 through 39 each deleted last
+    # wave's seal calls by hand and the marker assertion was treated as the thing
+    # that forced them out.  It is not: the marker is ONE line at the top and the
+    # calls are anywhere below it, so a hand edit that rewrites the marker and
+    # misses the calls passes.  That is exactly what happened here -- wave 39's
+    # V14CL896X13 and V10CL896X13 calls, counts intact, sat under a rewritten
+    # wave-40 marker and this audit said nothing.  They would have ERRORED rather
+    # than mis-sealed, because no wave-40 receipt carries those tags, but "it
+    # errors" is not a protection and a peer wave found them, not this file.
+    #
+    # THE PIN IS AT CUT TIME AND THAT IS THE WHOLE POINT.  `--audit` runs
+    # immediately after the cut and before anything builds, when the correct
+    # number of seal calls is ZERO; the wave then appends its own after it reads
+    # its dossiers, and does not re-run this.  `seal () {` is the function
+    # definition and is not a call, so the needle requires an identifier char.
+    calls = re.findall(r"(?m)^seal [A-Za-z0-9]", seals)
+    if calls:
+        problems.append(
+            f"sealq.sh carries {len(calls)} seal CALL(s) at cut time, expected 0. "
+            "A verbatim copy brings last wave's calls forward with every count "
+            "intact, and rewriting the marker above them does not remove them. "
+            "This is wave 39's recommendation and wave 40's own defect"
         )
     if not (DST / "gainq.sh").is_file():
         problems.append("gainq.sh is missing: the terminal-gain solver has no driver")
