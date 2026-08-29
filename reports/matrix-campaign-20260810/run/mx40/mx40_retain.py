@@ -63,12 +63,85 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave40")
 #: keep the rows carrying a CLAIM no other artifact re-derives, drop what one
 #: CPU pass rebuilds from a retained source, and state the deviation whenever
 #: the count is not best-five.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX40-CL1728": (
+        "618 s of conditioned GPU solve, and the base a next wave needs.  It is "
+        "the body under ARCH.V19CL1728, which reads 4/15 at 0.6387852066x with "
+        "ZERO of sixteen lanes riding the cap -- the best-behaved child below "
+        "0.65x in three waves -- and it is one end of the campaign's largest "
+        "single mlp transition, 1728 to 1792, worth three cases over 64 "
+        "channels.  A CL1760 rung splits that transition and needs this body "
+        "beside it to be a comparison rather than a reading"
+    ),
+    "MX40-CL768": (
+        "371 s of conditioned GPU solve, and the body under the deepest FLAT "
+        "vocabulary ladder in the campaign: ARCH.CL768, ARCH.V12CL768, "
+        "ARCH.V10CL768 and ARCH.V9CL768 all read 1/15 across 0.2511 of stored "
+        "ratio.  Any further rung on that ladder -- K = 8,192 is the obvious one "
+        "-- is a 40-second CPU pass off THIS directory and a 371-second GPU "
+        "solve without it"
+    ),
+    "MX40-V9CL896X13": (
+        "THE CAMPAIGN'S SEALED AND CANONICAL 1/15 FLOOR CHILD at 0.4070832855x. "
+        "A frontier holder is retained on principle: the next wave's V8CL896X13 "
+        "is graded against it, and a floor whose child has been deleted is a "
+        "floor that can only be cited, not checked.  It is 178M"
+    ),
+}
 
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: NOT worth its bytes, naming what rebuilds it and from which retained source.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX40-CL768X09": (
+        "0/15 at 0.6359097186x, and both of its own rungs read 0/15 too, so the "
+        "whole arm is dead.  REBUILT BY: bodyq.sh <gpu> CL768X09:NEW -- --ff 768 "
+        "--excise 9, 318 s of GPU from the parent, no retained source needed"
+    ),
+    "MX40-V12CL768": (
+        "1/15 at 0.4270779580x.  REBUILT BY one CPU pass: vocabq.sh "
+        "V12CL768:12288:<MX40-CL768>, off THIS WAVE'S RETAINED MX40-CL768"
+    ),
+    "MX40-V10CL768": (
+        "1/15 at 0.4179477263x.  REBUILT BY one CPU pass: vocabq.sh "
+        "V10CL768:10240:<MX40-CL768>, off THIS WAVE'S RETAINED MX40-CL768"
+    ),
+    "MX40-V9CL768": (
+        "1/15 at 0.4133826104x, and it is ABOVE the floor so it holds no rung.  "
+        "REBUILT BY one CPU pass: vocabq.sh V9CL768:9216:<MX40-CL768>, off THIS "
+        "WAVE'S RETAINED MX40-CL768"
+    ),
+    "MX40-V12CL768X09": (
+        "0/15 at 0.3985236932x.  REBUILT BY a 318 s GPU rebuild of CL768X09 "
+        "(which is dropped above) plus one CPU pass.  That is stated rather than "
+        "hidden: this child's rebuild is NOT free, and it is dropped anyway "
+        "because a zero at a depth already witnessed by a deeper zero buys "
+        "nothing a receipt does not"
+    ),
+    "MX40-V10CL768X09": (
+        "0/15 at 0.3893934615x -- THE DEEPEST CHILD THIS CAMPAIGN HAS BUILT, and "
+        "it is dropped, which is the retention policy working rather than "
+        "sentiment losing.  It holds nothing; its dossier, cell receipt, "
+        "per-case reading and build receipt all ship in the human-review "
+        "package, so every claim made about it stays checkable.  REBUILT BY a "
+        "318 s GPU rebuild of CL768X09 plus one CPU pass"
+    ),
+    "MX40-T9CL896X09": (
+        "0/15 at 0.4070832855x, the C1 row-tying arm.  REBUILT BY one CPU pass: "
+        "tieq.sh T9CL896X09:9216:512:93504256:<wave37 MX37-CL896X09>, off WAVE "
+        "37'S RETAINED MX37-CL896X09, which wave 37 kept and which is still on "
+        "the share.  Its whole result -- fifteen of sixteen lanes byte-identical "
+        "to its deletion twin -- is a comparison between two DOSSIERS, and both "
+        "dossiers are retained"
+    ),
+    "MX40-V19CL1728": (
+        "4/15 at 0.6387852066x, the wave's best deep child.  REBUILT BY one CPU "
+        "pass: vocabq.sh V19CL1728:19456:<MX40-CL1728>, off THIS WAVE'S RETAINED "
+        "MX40-CL1728.  It is dropped rather than kept precisely BECAUSE its body "
+        "is kept: a 40-second rebuild off a retained source is the cheapest "
+        "checkpoint in the estate"
+    ),
+}
 
 
 def main() -> int:

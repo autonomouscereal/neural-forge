@@ -278,7 +278,34 @@ a null holding the instrument fixed and varying only the population puts wave 32
 thresholds. Every count in this file is the frozen fifteen, read by hand, exactly
 as it has been for thirty-three waves.
 
-## THE DEEP BAND, REGENERATED FROM THE LEDGER AT WAVE 39
+## WAVE 40: THE FLOOR MOVED, AND IT MOVED ON A BLOCK CHOICE
+
+**The sealed and canonical 1/15 rungs are now `ARCH.V9CL896X13` at
+0.4070832855x**, taken from 0.4116484014x — 0.0045651159 of stored ratio. It is
+the first floor movement in this campaign produced by *which block was excised*
+rather than by a deeper rung: at **93,504,256 parameters, identical to the
+byte**, the block-13 body holds one case and the block-9 body
+(`ARCH.V9CL896X09`, wave 38) holds none.
+
+**The deepest child this campaign has ever built is now `ARCH.V10CL768X09` at
+0.3893934615x**, and it holds nothing, exactly as registered.
+
+**Three children now sit at 0.4070832855x, by two mechanisms on two bodies**,
+and only one of them is alive:
+
+| child | body | mechanism | sealed |
+|---|---|---|---:|
+| `ARCH.V9CL896X09` | `--ff 896 --excise 9` | vocabulary DELETION, K=9,216 | **0/15** |
+| `ARCH.T9CL896X09` | `--ff 896 --excise 9` | vocabulary row **TYING**, 512 shared rows | **0/15** |
+| `ARCH.V9CL896X13` | `--ff 896 --excise 13` | vocabulary DELETION, K=9,216 | **1/15** |
+
+**C1 — vocabulary row tying, the estate's worst census kill — is now closed by a
+built child and a frozen review.** `ARCH.T9CL896X09` shares **fifteen of sixteen
+lanes byte for byte** with the deletion twin it was built to beat.
+
+---
+
+## THE DEEP BAND, REGENERATED FROM THE LEDGER AT WAVE 40
 
 **Waves 34 through 38 said this table was stale and wave 38 said so in writing rather
 than patching it. Wave 39 regenerated it.** The rank-1 row below the line used to be
@@ -286,32 +313,32 @@ than patching it. Wave 39 regenerated it.** The rank-1 row below the line used t
 34 — five waves ago. Fifteen children now sit below it holding at least one sealed case,
 and the table that ranked them had none of them in it.
 
-**These fifteen rows are computed from `ledger.jsonl` (992 rows,
-`dfe27e468f09fc1907b32128090aac6c2cb05ec5946cf24a08a3a999f55d29cc`), not transcribed.**
+**These fifteen rows are computed from `ledger.jsonl` (1014 rows,
+`c0aa462fb9c2f15c1029a78d3cfcc5eb329ee66769f1b9086fc9f483d5671c1a`), not transcribed.**
 Every row is an `ARCH` cell with `standard_shape` true and
 `behavior_useful_or_partial ≥ 1`, deduplicated to its kept receipt against wave 38's
 superseded set, sorted by `stored_parameter_ratio` ascending. The `intel` column is the
-canonical re-read, read off `wave34/` through `wave39/canonical-reread-*.json`. **Ties in
+canonical re-read, read off `wave34/` through `wave40/canonical-reread-*.json`. **Ties in
 ratio are broken by sealed count descending, then canonical, then cell id**, and where a
 tie straddles the fifteen-row cut that is stated rather than hidden.
 
 | rank | child | net | review | **intel** | wave | the character of its failure | READ- dossier |
 |---:|---|---:|---:|---:|---:|---|---|
-| 1 | `ARCH.V10CL896X09G10` | **0.411648** | **2/15** | **2/15** | 38 | the deepest TWO the campaign has sealed, and the measurement that made λ1.0 a property of the vocabulary rung rather than of the body. Its uncertainty lane is the strongest in the X09 family — all four withheld quantities AND the correct direction, where every other X09 rung writes *I haven not* | `reports/matrix-campaign-20260810/wave38/human-review/READ-V10CL896X09G10.txt` |
-| 2 | `ARCH.V10CL896X09` | **0.411648** | **1/15** | **1/15** | 38 | the floor, first witness. It holds uncertainty and has lost retrieval: where the two rungs above answer *The latest checkout time is 4:15 PM*, this one answers *I don't get a sholner the question* and loops. Six of sixteen lanes ride the cap | `reports/matrix-campaign-20260810/wave38/human-review/READ-V10CL896X09.txt` |
-| 3 | `ARCH.V10CL896X13` | **0.411648** | **1/15** | **1/15** | 39 | the floor, third witness and the first on the block-13 body — it TIES its X09 twin at an identical 94,552,832 parameters while sharing ZERO of sixteen lanes with it. Its one lane is the best summarisation anywhere below 0.44x: all three suppliers correct, the decision preserved, the risk preserved, clean English, no loop | `reports/matrix-campaign-20260810/wave39/human-review/READ-V10CL896X13.txt` |
-| 4 | `ARCH.V12CL896X09` | **0.420779** | **2/15** | **3/15** | 37 | the first vocabulary fold in the campaign to GAIN a case over its own body, and the gain is two tokens wide: the body stops at two of the four withheld quantities and this child completes all four | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09.txt` |
-| 5 | `ARCH.V12CL896X09G10` | **0.420779** | **2/15** | **3/15** | 37 | the λ1.0 arm that tied its control at the rung where both the rung account and the body account predict zero — the cell that could not separate them, and the reason wave 38 had to build one that could | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09G10.txt` |
-| 6 | `ARCH.V12CL896X09G03` | **0.420779** | **1/15** | **2/15** | 37 | the first terminal-gain arm in this campaign to LOSE a case outright — two to one — while improving its held-out objective by 11 per cent, more than the λ1.0 arm beside it that kept both | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09G03.txt` |
-| 7 | `ARCH.V12CL896X13` | **0.420779** | **1/15** | **2/15** | 35 | the same parameter count as `ARCH.V12CL896X09` TO THE BYTE, one conv block index apart, sharing zero of sixteen lanes and holding half as many cases. It holds the email on the ask; its summarisation keeps the risk and drops the decision | `reports/matrix-campaign-20260810/wave35/human-review/READ-V12CL896X13.txt` |
-| 8 | `ARCH.V12CL896X13G03` | **0.420779** | **1/15** | **1/15** | 36 | the arm that did not add a lane but MOVED one sideways: it gains the summarisation its control missed and loses the email its control held, for a net of zero, on the largest objective improvement any gain arm has recorded (23 per cent) | `reports/matrix-campaign-20260810/wave36/human-review/READ-V12CL896X13G03.txt` |
-| 9 | `ARCH.V14CL896X09` | **0.429909** | **2/15** | **2/15** | 38 | retrieval and uncertainty both held, and one of the two is not its own — its uncertainty lane is byte-identical to `ARCH.V12CL896X09`'s, so that Partial is wave 37's verdict on wave 37's bytes | `reports/matrix-campaign-20260810/wave38/human-review/READ-V14CL896X09.txt` |
-| 10 | `ARCH.V14CL896X13` | **0.429909** | **1/15** | **2/15** | 39 | half its X09 twin's cases at an identical 98,747,136 parameters, sharing zero of sixteen lanes with it. The first time the X13 family has held the retrieval lane. Its summarisation reproduces wave 35's exact failure on this body — Supplier A's property attached to no supplier — on an independent decode | `reports/matrix-campaign-20260810/wave39/human-review/READ-V14CL896X13.txt` |
-| 11 | `ARCH.V9CL896G10` | **0.437349** | **4/15** | **5/15** | 36 | λ1.0's first win in twelve ladders, on a context-retrieval lane it shares byte-identically with neither its control nor the λ0.3 arm, and on the WORST objective of the ladder's two arms. The campaign's largest canonical claim | `reports/matrix-campaign-20260810/wave36/human-review/READ-V9CL896G10.txt` |
-| 12 | `ARCH.V9CL896G03` | **0.437349** | **3/15** | **4/15** | 36 | the λ0.3 arm landing on THREE again, as it does at five of six K values regardless of where its control was: the arm's COUNT is the invariant, not its delta | `reports/matrix-campaign-20260810/wave36/human-review/READ-V9CL896G03.txt` |
-| 13 | `ARCH.V9CL896` | **0.437349** | **2/15** | **2/15** | 35 | one rung above the campaign's first vocabulary death and still holding two — twelve of its fifteen misses are compression artifacts and only one is readable-and-wrong, the cleanest artifact-to-content split in the deep record | `reports/matrix-campaign-20260810/wave35/human-review/READ-V9CL896.txt` |
-| 14 | `ARCH.V10CL896G03` | **0.441915** | **3/15** | **4/15** | 35 | the λ0.3 arm at K = 10,240 landing on three, one of the five entries that make the count the invariant | `reports/matrix-campaign-20260810/wave35/human-review/READ-V10CL896G03.txt` |
-| 15 | `ARCH.V10CL896G10` | **0.441915** | **3/15** | **4/15** | 35 | λ1.0 buying +1 at K = 10,240 on the UNEXCISED body — the row wave 38 differenced its excised twin against to settle that the gain belongs to the rung | `reports/matrix-campaign-20260810/wave35/human-review/READ-V10CL896G10.txt` |
+| 1 | `ARCH.V9CL896X13` | **0.407083** | **1/15** | **1/15** | 40 | **the campaign's floor, and the first one taken by a BLOCK CHOICE.** K=9,216 on wave 35's block-13 body, at the exact parameter count where the block-9 body is DEAD. Its one lane is summarisation and it is byte-identical to `ARCH.V10CL896X13`'s, so it is wave 39's decode read 1,048,576 parameters smaller rather than a second witness. Nine of sixteen lanes ride the cap | `reports/matrix-campaign-20260810/wave40/human-review/READ-V9CL896X13.txt` |
+| 2 | `ARCH.V10CL896X09G10` | **0.411648** | **2/15** | **2/15** | 38 | the deepest TWO the campaign has sealed — still true after wave 40, which moved the ONE rung and not the TWO — and the measurement that made λ1.0 a property of the vocabulary rung rather than of the body. Its uncertainty lane is the strongest in the X09 family — all four withheld quantities AND the correct direction, where every other X09 rung writes *I haven not* | `reports/matrix-campaign-20260810/wave38/human-review/READ-V10CL896X09G10.txt` |
+| 3 | `ARCH.V10CL896X09` | **0.411648** | **1/15** | **1/15** | 38 | the 0.411648x band, first witness (it was the floor from wave 38 until wave 40 took it). It holds uncertainty and has lost retrieval: where the two rungs above answer *The latest checkout time is 4:15 PM*, this one answers *I don't get a sholner the question* and loops. Six of sixteen lanes ride the cap | `reports/matrix-campaign-20260810/wave38/human-review/READ-V10CL896X09.txt` |
+| 4 | `ARCH.V10CL896X13` | **0.411648** | **1/15** | **1/15** | 39 | the 0.411648x band, third witness and the first on the block-13 body — it TIES its X09 twin at an identical 94,552,832 parameters while sharing ZERO of sixteen lanes with it. Its one lane is the best summarisation anywhere below 0.44x: all three suppliers correct, the decision preserved, the risk preserved, clean English, no loop | `reports/matrix-campaign-20260810/wave39/human-review/READ-V10CL896X13.txt` |
+| 5 | `ARCH.V9CL768` | **0.413383** | **1/15** | **1/15** | 40 | the deepest child holding a case with **no excision at all** — `--ff 768` plus K=9,216, the mlp x vocabulary pair wave 30 prices at 1.17 cases. Its retrieval lane returns the source NOTE verbatim, which contains all three answers and answers none of them; its held lane is byte-identical to `ARCH.V10CL768`'s | `reports/matrix-campaign-20260810/wave40/human-review/READ-V9CL768.txt` |
+| 6 | `ARCH.V10CL768` | **0.417948** | **1/15** | **1/15** | 40 | the cleanest summarisation any child below 0.42x has produced — every fact, the decision, the unresolved risk, and *procurement* spelled correctly. Four further lanes return the prompt itself | `reports/matrix-campaign-20260810/wave40/human-review/READ-V10CL768.txt` |
+| 7 | `ARCH.V12CL896X09` | **0.420779** | **2/15** | **3/15** | 37 | the first vocabulary fold in the campaign to GAIN a case over its own body, and the gain is two tokens wide: the body stops at two of the four withheld quantities and this child completes all four | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09.txt` |
+| 8 | `ARCH.V12CL896X09G10` | **0.420779** | **2/15** | **3/15** | 37 | the λ1.0 arm that tied its control at the rung where both the rung account and the body account predict zero — the cell that could not separate them, and the reason wave 38 had to build one that could | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09G10.txt` |
+| 9 | `ARCH.V12CL896X09G03` | **0.420779** | **1/15** | **2/15** | 37 | the first terminal-gain arm in this campaign to LOSE a case outright — two to one — while improving its held-out objective by 11 per cent, more than the λ1.0 arm beside it that kept both | `reports/matrix-campaign-20260810/wave37/human-review/READ-V12CL896X09G03.txt` |
+| 10 | `ARCH.V12CL896X13` | **0.420779** | **1/15** | **2/15** | 35 | the same parameter count as `ARCH.V12CL896X09` TO THE BYTE, one conv block index apart, sharing zero of sixteen lanes and holding half as many cases. It holds the email on the ask; its summarisation keeps the risk and drops the decision | `reports/matrix-campaign-20260810/wave35/human-review/READ-V12CL896X13.txt` |
+| 11 | `ARCH.V12CL896X13G03` | **0.420779** | **1/15** | **1/15** | 36 | the arm that did not add a lane but MOVED one sideways: it gains the summarisation its control missed and loses the email its control held, for a net of zero, on the largest objective improvement any gain arm has recorded (23 per cent) | `reports/matrix-campaign-20260810/wave36/human-review/READ-V12CL896X13G03.txt` |
+| 12 | `ARCH.V12CL768` | **0.427078** | **1/15** | **2/15** | 40 | the deepest child the CANONICAL lens still moves, which brackets §8.8's boundary to 0.0092 of stored ratio. Its email asks the vendor to confirm and names the tracking number inside a loop, which wave 21's the-ask criterion credits. Its held summarisation lane is the only one on the CL768 ladder not shared with another rung | `reports/matrix-campaign-20260810/wave40/human-review/READ-V12CL768.txt` |
+| 13 | `ARCH.V14CL896X09` | **0.429909** | **2/15** | **2/15** | 38 | retrieval and uncertainty both held, and one of the two is not its own — its uncertainty lane is byte-identical to `ARCH.V12CL896X09`'s, so that Partial is wave 37's verdict on wave 37's bytes | `reports/matrix-campaign-20260810/wave38/human-review/READ-V14CL896X09.txt` |
+| 14 | `ARCH.V14CL896X13` | **0.429909** | **1/15** | **2/15** | 39 | half its X09 twin's cases at an identical 98,747,136 parameters, sharing zero of sixteen lanes with it. The first time the X13 family has held the retrieval lane. Its summarisation reproduces wave 35's exact failure on this body — Supplier A's property attached to no supplier — on an independent decode | `reports/matrix-campaign-20260810/wave39/human-review/READ-V14CL896X13.txt` |
+| 15 | `ARCH.V9CL896G10` | **0.437349** | **4/15** | **5/15** | 36 | λ1.0's first win in twelve ladders, on a context-retrieval lane it shares byte-identically with neither its control nor the λ0.3 arm, and on the WORST objective of the ladder's two arms. The campaign's largest canonical claim | `reports/matrix-campaign-20260810/wave36/human-review/READ-V9CL896G10.txt` |
 
 **The fifteen-row cut falls INSIDE the 0.441915x tie and this table says so.** Two more
 children sit at exactly that ratio and are excluded by the row count and not by depth:

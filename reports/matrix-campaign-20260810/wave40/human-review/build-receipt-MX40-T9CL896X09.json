@@ -1,0 +1,601 @@
+{
+ "schema": "neural-forge-matrix-wave40-tied-vocabulary-child-v1",
+ "built_at": "2026-08-29T02:06:54Z",
+ "builder": "mx40_vocabtie.py",
+ "tag": "T9CL896X09",
+ "arm": "vocab-row-TYING, injective realisation (zero-solve, closed form)",
+ "repairs_census_kill": {
+  "item": "C1 -- vocabulary-axis row tying",
+  "killed_at": "wave 14, on a nearest-neighbour cosine of 0.2977 over a 4,096-row sample of the post-12,288 tail (wave14/NOTES-MX-R.md:65-74)",
+  "why_the_kill_does_not_hold": "the comparison was tie against VERBATIM.  The mechanism that shipped and set this campaign's floor is DELETION, and a deleted row is a worse stand-in for its members than a 0.30-cosine tied one.  The comparison that decides the class was never run",
+  "the_kill_statistic_is_now_the_instrument": "the same nearest-neighbour cosine is this child's assignment rule, so the number that closed the class supplies the structure and is then read against a behavioural verdict"
+ },
+ "many_to_one_probe": {
+  "what_was_tried": "C1 as literally specified: a tokenizer.json whose model.vocab maps several distinct tail tokens onto one row id, so the tail keeps its merges and its positions and addresses a shared row",
+  "result": "REFUSED AT LOAD by tokenizers 0.22.2 / transformers 5.12.1",
+  "error": "Exception: Error while attempting to unpickle Tokenizer: Token `...` out of vocabulary -- raised from AutoTokenizer.from_pretrained through copy.deepcopy(tokenizer_object).__setstate__",
+  "and_the_refusal_itself_is_nondeterministic": "five loads of the identical file named three different tokens at four different column offsets, which is the Rust HashMap id->token inverse being built in a nondeterministic order.  Had it loaded, decode of a tied id would have been a non-function across processes",
+  "consequence": "the many-to-one form of C1 is not a stock-loadable child on this stack at all, so it cannot be frozen-reviewed and cannot be sealed.  The INJECTIVE form below is what is built, and it is the better controlled comparison anyway: it changes c rows of one tensor and nothing else"
+ },
+ "source_model": "/mnt/ai_data/neural-forge-matrix/wave37/children/MX37-CL896X09",
+ "source_config_vocab_size": 65536,
+ "source_tensors_sha256": "85c014f24f8ca1ad9a47ddefec909f2e670219a773bdc4a5302cb3d5e2ed0e48",
+ "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave37/cells/ARCH.CL896X09/cell-receipt.json",
+ "child_model": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-T9CL896X09",
+ "child_tensors_sha256": "b378b7d1c3931ea4cf2200a6868707b86b4889bdf63899327ed8c61e0cced956",
+ "child_tokenizer_sha256": "a09fd5a72f6d66c63df9949448b8bc4834bb6f1728365d3c26e9c5651da86e3a",
+ "child_directory_sha256": "0bf6278bfc3b453de34840dc975129d6acba1e9cee5625709d6d8ae827ffc88a",
+ "child_parameters": 93504256,
+ "parent_parameters": 229693184,
+ "net_stored_ratio": 0.40708328550141043,
+ "expected_parameters_asserted": 93504256,
+ "excised": [
+  9
+ ],
+ "residual_basis": null,
+ "axes": [
+  {
+   "axis": "intermediate_size",
+   "kind": "mlp",
+   "sites": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    10,
+    11,
+    12,
+    13
+   ],
+   "config_fields": [
+    "intermediate_size",
+    "block_ff_dim"
+   ],
+   "selection": "pivoted-Cholesky coreset of real channels; w1/w3 rows verbatim",
+   "selection_metric_census": null,
+   "solve": "prior-anchored ridge on w2, lambda ladder to update_scale<=1.0, arm=conditioned-local",
+   "evidence": "sequentially conditioned capture through the partially built child",
+   "parameters_removed": 66453504,
+   "heldout": {
+    "median_cos": 0.8912465572357178,
+    "min_cos": 0.851695082343288,
+    "median_relL2": 0.4473024010658264,
+    "max_input_drift": 0.6421508176361428,
+    "per_site": [
+     {
+      "layer": 0,
+      "position": 0,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.0,
+      "identity_check": 0.0032252167569195157,
+      "selection_first8": [
+       0,
+       1,
+       3,
+       6,
+       7,
+       8,
+       10,
+       15
+      ],
+      "vs_local_target_cos": 0.9084244802658782,
+      "vs_local_target_relL2": 0.440364167134263,
+      "update_scale": 0.8522631426986339,
+      "lambda_relative": 0.1,
+      "free_solve_update_scale": 1.4846774842675305,
+      "relL2": 0.440364167134263,
+      "cos": 0.9084244802658782,
+      "cos_p05": 0.7235578869668717
+     },
+     {
+      "layer": 1,
+      "position": 1,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.3586417366926788,
+      "identity_check": 0.0032673895279107545,
+      "selection_first8": [
+       2,
+       4,
+       5,
+       6,
+       7,
+       8,
+       11,
+       15
+      ],
+      "vs_local_target_cos": 0.8839091469673708,
+      "vs_local_target_relL2": 0.49277976583114497,
+      "update_scale": 0.9877503455833974,
+      "lambda_relative": 0.01,
+      "free_solve_update_scale": 1.0836357269162227,
+      "relL2": 0.49277976583114497,
+      "cos": 0.8839091469673708,
+      "cos_p05": 0.7128849228547126
+     },
+     {
+      "layer": 2,
+      "position": 2,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.44799699672075854,
+      "identity_check": 0.00337032256877952,
+      "selection_first8": [
+       11,
+       15,
+       16,
+       19,
+       23,
+       24,
+       29,
+       33
+      ],
+      "vs_local_target_cos": 0.851695082343288,
+      "vs_local_target_relL2": 0.5468909987098683,
+      "update_scale": 0.9274337746225182,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.9274337746225182,
+      "relL2": 0.5468909987098683,
+      "cos": 0.851695082343288,
+      "cos_p05": 0.6977691199416558
+     },
+     {
+      "layer": 3,
+      "position": 3,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.47901133133357066,
+      "identity_check": 0.0034020135918997555,
+      "selection_first8": [
+       0,
+       1,
+       2,
+       7,
+       9,
+       16,
+       21,
+       23
+      ],
+      "vs_local_target_cos": 0.8714451445072378,
+      "vs_local_target_relL2": 0.501690937365556,
+      "update_scale": 0.7980421787617225,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7980421787617225,
+      "relL2": 0.501690937365556,
+      "cos": 0.8714451445072378,
+      "cos_p05": 0.757358344529948
+     },
+     {
+      "layer": 4,
+      "position": 4,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.4576537587330857,
+      "identity_check": 0.003384380145242197,
+      "selection_first8": [
+       0,
+       1,
+       4,
+       6,
+       7,
+       9,
+       11,
+       15
+      ],
+      "vs_local_target_cos": 0.865801485668398,
+      "vs_local_target_relL2": 0.4833373619743678,
+      "update_scale": 0.7786552864990453,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7786552864990453,
+      "relL2": 0.4833373619743678,
+      "cos": 0.865801485668398,
+      "cos_p05": 0.7580005319127957
+     },
+     {
+      "layer": 5,
+      "position": 5,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.47125525353086517,
+      "identity_check": 0.008193446080699518,
+      "selection_first8": [
+       1,
+       4,
+       5,
+       6,
+       7,
+       10,
+       13,
+       18
+      ],
+      "vs_local_target_cos": 0.8808870490669689,
+      "vs_local_target_relL2": 0.07768669116010811,
+      "update_scale": 0.6794568704897316,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6794568704897316,
+      "relL2": 0.07768669116010811,
+      "cos": 0.8808870490669689,
+      "cos_p05": 0.786662971058407
+     },
+     {
+      "layer": 6,
+      "position": 6,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.439811689963113,
+      "identity_check": 0.003602993781521821,
+      "selection_first8": [
+       8,
+       9,
+       12,
+       15,
+       19,
+       22,
+       23,
+       24
+      ],
+      "vs_local_target_cos": 0.8964622693067061,
+      "vs_local_target_relL2": 0.4473024008705501,
+      "update_scale": 0.7185679626059558,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7185679626059558,
+      "relL2": 0.4473024008705501,
+      "cos": 0.8964622693067061,
+      "cos_p05": 0.8154713652951289
+     },
+     {
+      "layer": 7,
+      "position": 7,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.43664551976343974,
+      "identity_check": 0.0036724359999483207,
+      "selection_first8": [
+       3,
+       5,
+       6,
+       10,
+       20,
+       25,
+       27,
+       31
+      ],
+      "vs_local_target_cos": 0.9060232591587994,
+      "vs_local_target_relL2": 0.4060557433209563,
+      "update_scale": 0.6758960892360804,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.6758960892360804,
+      "relL2": 0.4060557433209563,
+      "cos": 0.9060232591587994,
+      "cos_p05": 0.8188025591688053
+     },
+     {
+      "layer": 8,
+      "position": 8,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.4171730413894893,
+      "identity_check": 0.00371513099531934,
+      "selection_first8": [
+       0,
+       4,
+       6,
+       7,
+       8,
+       9,
+       12,
+       13
+      ],
+      "vs_local_target_cos": 0.891246584213986,
+      "vs_local_target_relL2": 0.45895891085677937,
+      "update_scale": 0.7585810616050357,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.7585810616050357,
+      "relL2": 0.45895891085677937,
+      "cos": 0.891246584213986,
+      "cos_p05": 0.817582686195563
+     },
+     {
+      "layer": 10,
+      "position": 9,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.6421508176361428,
+      "identity_check": 0.0036157058250682666,
+      "selection_first8": [
+       0,
+       3,
+       8,
+       9,
+       16,
+       17,
+       18,
+       20
+      ],
+      "vs_local_target_cos": 0.943834341318812,
+      "vs_local_target_relL2": 0.32642791456376996,
+      "update_scale": 0.743377170710141,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.743377170710141,
+      "relL2": 0.32642791456376996,
+      "cos": 0.943834341318812,
+      "cos_p05": 0.8938242894637355
+     },
+     {
+      "layer": 11,
+      "position": 10,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.6129829347994892,
+      "identity_check": 0.003745112190102678,
+      "selection_first8": [
+       4,
+       13,
+       15,
+       28,
+       39,
+       41,
+       47,
+       53
+      ],
+      "vs_local_target_cos": 0.8874919788535076,
+      "vs_local_target_relL2": 0.4539174831013585,
+      "update_scale": 0.8379590879786919,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8379590879786919,
+      "relL2": 0.4539174831013585,
+      "cos": 0.8874919788535076,
+      "cos_p05": 0.7747793038374451
+     },
+     {
+      "layer": 12,
+      "position": 11,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.5848301287294677,
+      "identity_check": 0.00347262701934049,
+      "selection_first8": [
+       4,
+       5,
+       8,
+       9,
+       10,
+       18,
+       19,
+       20
+      ],
+      "vs_local_target_cos": 0.9552337522494171,
+      "vs_local_target_relL2": 0.2917807277697195,
+      "update_scale": 0.8238033940704618,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8238033940704618,
+      "relL2": 0.2917807277697195,
+      "cos": 0.9552337522494171,
+      "cos_p05": 0.87475659256011
+     },
+     {
+      "layer": 13,
+      "position": 12,
+      "keep": 896,
+      "arm": "conditioned-local",
+      "selection_metric": null,
+      "selection_scales": null,
+      "input_drift_vs_parent": 0.6146307176383836,
+      "identity_check": 0.0030532954856579454,
+      "selection_first8": [
+       2,
+       6,
+       12,
+       14,
+       26,
+       32,
+       35,
+       38
+      ],
+      "vs_local_target_cos": 0.9711581597697311,
+      "vs_local_target_relL2": 0.22761674666311726,
+      "update_scale": 0.8968371708355686,
+      "lambda_relative": 1e-06,
+      "free_solve_update_scale": 0.8968371708355686,
+      "relL2": 0.22761674666311726,
+      "cos": 0.9711581597697311,
+      "cos_p05": 0.9167346984424156
+     }
+    ]
+   }
+  },
+  {
+   "axis": "num_hidden_layers",
+   "kind": "block",
+   "sites": [
+    9
+   ],
+   "config_fields": [
+    "num_hidden_layers",
+    "layer_types"
+   ],
+   "selection": "F-EXCISE: whole blocks deleted",
+   "solve": "absorbed by every downstream conditioned solve",
+   "evidence": "conditioned capture",
+   "parameters_removed": null,
+   "heldout": {
+    "note": "a deleted block has no local write to score"
+   }
+  },
+  {
+   "axis": "vocab_size",
+   "kind": "token-interface (TIED, not deleted)",
+   "sites": [
+    "model.embed_tokens.weight (tied to lm_head)"
+   ],
+   "config_fields": [
+    "vocab_size",
+    "bos_token_id",
+    "eos_token_id",
+    "pad_token_id"
+   ],
+   "selection": "the deletion arm's own kept set at K=9216, chosen by mx40_vocab.choose_kept on the same two-stream census -- imported and called, not reimplemented.  Of those 9216 rows, the 8704 highest-ranked are kept VERBATIM and the 512 lowest-ranked non-mandatory rows are spent as SHARED rows.  The mandatory set (509 added/special tokens, 256 ByteLevel alphabet rows and the transitive closure of both) is excluded from the tie rows by construction",
+   "solve": "NONE, and the head is still torch.equal to the source's own bytes.  Each tie row is the closed-form weighted centroid of itself and the dropped tokens nearest to it in cosine, weight 1 + census count, accumulated in fp64 and cast back. Exactly 512 of 9216 rows differ from the source, asserted",
+   "evidence": "the sealed corpus, for a token OCCURRENCE census only, and the source table's own rows for the cosine assignment; no activation, no capture, no forward pass",
+   "parameters_removed": 57671680,
+   "heldout": "not applicable: nothing is fitted.  The tokenizer is the deletion twin's, so segmentation, coverage and tokens-per-byte are controlled to the byte and the only difference between the two children is the values in 512 rows"
+  }
+ ],
+ "tying": {
+  "k": 9216,
+  "tie_rows": 512,
+  "verbatim_head_rows": 8704,
+  "rows_that_differ_from_the_source": 512,
+  "dropped_ids_placed": 55186,
+  "dropped_ids_total": 55186,
+  "dead_parent_rows_not_placed": 1134,
+  "assignment_rule": "nearest tie row by cosine on the SOURCE table's own rows; torch.max returns the first maximal index so the tie-break is the lowest tie-row index and the assignment is deterministic",
+  "assignment_cosine": {
+   "median": 0.18163325637578964,
+   "mean": 0.20384304053173913,
+   "min": 0.054510608315467834,
+   "max": 0.8441351056098938,
+   "wave14_census_median_for_comparison": 0.2977,
+   "note": "wave 14 measured a median nearest-neighbour cosine of 0.2977 over a 4,096-row sample of the post-12,288 tail against the KEPT set, and closed the class on it.  The number here is against the TIE ROWS only, which is a smaller and lower-ranked target set, so it is expected to be lower, not higher.  It is published so the kill statistic and this child's structure can be read together"
+  },
+  "cluster_sizes": {
+   "min": 11,
+   "median": 71.0,
+   "mean": 107.78515625,
+   "max": 7416,
+   "empty": 0
+  },
+  "shared_row_form": "weighted centroid, w = 1 + census count, fp64 accumulation, cast back to the table dtype.  The minimiser of the weighted sum of squared distances to the members, which is the closed form FOLD_CLASS_CRITIQUE C1 specified",
+  "merge_list_entries": 8486,
+  "merge_list_independently_rederived": 8486
+ },
+ "vocabulary": {
+  "k": 9216,
+  "kept_rows": 9216,
+  "mandatory_rows": 765,
+  "mandatory_rule": "all 509 added/special tokens, all 256 ByteLevel alphabet tokens, and the transitive merge-tree closure of both",
+  "ranking_rule": "(-census_count, parent_token_id)",
+  "observed_tokens_admitted_by_ranking": 4633,
+  "tokens_skipped_because_their_closure_did_not_fit": 0,
+  "dead_parent_rows_dropped": 1134,
+  "sealed_corpus": {
+   "path": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5/mapped_donor_calibration.json",
+   "file_sha256": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+   "rows": 256,
+   "token_positions": 67583
+  },
+  "sealed_corpus_coverage_donor_mapped": {
+   "occurrences": 67583,
+   "occurrences_covered": 67583,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 2030,
+   "distinct_covered": 2030,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "sealed_corpus_coverage_canonical": {
+   "occurrences": 43992,
+   "occurrences_covered": 43992,
+   "occurrence_coverage": 1.0,
+   "distinct_tokens": 4806,
+   "distinct_covered": 4806,
+   "distinct_coverage": 1.0,
+   "occurrences_lost": 0
+  },
+  "below_census_floor": false,
+  "merge_closure": {
+   "kept_rows": 9216,
+   "unproducible_kept_tokens": 0,
+   "first_unproducible": [],
+   "intact": true
+  },
+  "lossless_on_text_and_agreement": {
+   "sealed_corpus": {
+    "rows": 256,
+    "rows_lossless_on_text": 256,
+    "rows_segmented_exactly_as_parent": 256,
+    "parent_positions": 43992,
+    "parent_positions_whose_token_was_dropped": 0,
+    "positions_agreeing": 43992,
+    "position_agreement": 1.0
+   },
+   "frozen_review_prompts": {
+    "rows": 16,
+    "rows_lossless_on_text": 16,
+    "rows_segmented_exactly_as_parent": 0,
+    "parent_positions": 726,
+    "parent_positions_whose_token_was_dropped": 152,
+    "positions_agreeing": 38,
+    "position_agreement": 0.05234159779614325
+   },
+   "claim": "decode(child_encode(t)) == t for every t, and the id->token map is a FUNCTION -- asserted across two independently loaded tokenizers, because the many-to-one form of this class is not"
+  },
+  "tokens_per_byte": {
+   "sealed_corpus": {
+    "utf8_bytes": 187896,
+    "parent_tokens": 43992,
+    "child_tokens": 43992,
+    "parent_tokens_per_byte": 0.23412951845701876,
+    "child_tokens_per_byte": 0.23412951845701876,
+    "sequence_length_ratio": 1.0
+   },
+   "frozen_review_prompts": {
+    "utf8_bytes": 3401,
+    "parent_tokens": 726,
+    "child_tokens": 924,
+    "parent_tokens_per_byte": 0.21346662746251102,
+    "child_tokens_per_byte": 0.2716847985886504,
+    "sequence_length_ratio": 1.2727272727272727
+   }
+  }
+ },
+ "identity_gate": {
+  "kind": "bytes-on-the-head",
+  "assertion": "torch.equal(head_rows, source_table[head_ids]) over the 8704 verbatim rows, and exactly 512 rows differ from the source in the whole table",
+  "passed": true
+ },
+ "evidence": {
+  "trace_cache_key": "2dec87acc15822082be4da0bed0ba939a06d293eb3b87321ddaf383ae61a56ff",
+  "fit_rows": 0,
+  "heldout_rows": 0,
+  "parent_model_forward_calls": 0,
+  "split_authority": "not consumed: this arm solves nothing",
+  "conditioned": false
+ },
+ "solve": {
+  "gradients": 0,
+  "optimizer_steps": 0,
+  "closed_form": "weighted centroid per tie row"
+ },
+ "elapsed_seconds": 76.48237804602832
+}

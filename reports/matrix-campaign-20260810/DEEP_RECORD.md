@@ -88,7 +88,7 @@ rotates**. §8.5 again, and it is the section wave 39 rewrites.
 
 ---
 
-## 2. The frontier, and where waves 35 through 38 moved it (wave 39 moved none)
+## 2. The frontier, and where waves 35 through 40 moved it (wave 39 moved none)
 
 | rung | before wave 35 | after wave 35 | after wave 36 | after wave 37 | after wave 38 | total Δ |
 |---:|---|---|---|---|---|---:|
@@ -101,6 +101,35 @@ rotates**. §8.5 again, and it is the section wave 39 rewrites.
 | **canonical 3/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G01` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | **`ARCH.V12CL896X09` 0.420779** | *unchanged* | **0.030266** |
 | **canonical 4/15** | `ARCH.V12CL896G03` 0.451045 | `ARCH.V10CL896G03` 0.441915 | **`ARCH.V9CL896G03` 0.437349** | *unchanged* | *unchanged* | 0.013696 |
 | **canonical 5/15** | `ARCH.V8CL1792` 0.600552 | *unchanged* | **`ARCH.V9CL896G10` 0.437349** | *unchanged* | *unchanged* | **0.163203** |
+
+### 2.0 WAVE 40 MOVED THE SEALED 1/15 RUNG, AND IT MOVED IT ON A BLOCK CHOICE
+
+| rung | after wave 39 | **after wave 40** | Δ |
+|---:|---|---|---:|
+| **sealed 1/15** | `ARCH.V10CL896X09` / `ARCH.V10CL896X09G10` / `ARCH.V10CL896X13` 0.4116484014 | **`ARCH.V9CL896X13` 0.4070832855** | **0.0045651159** |
+| **canonical 1/15** | 0.4116484014 | **`ARCH.V9CL896X13` 0.4070832855** | **0.0045651159** |
+| sealed 2/15 | `ARCH.V10CL896X09G10` 0.4116484014 | *unchanged* | — |
+| sealed 3/15 · 4/15 | 0.437349 | *unchanged* | — |
+
+**This is the first floor movement in the campaign that comes from a BLOCK
+CHOICE rather than from a deeper rung, and it falsifies §8.4 at depth.**
+`ARCH.V9CL896X13` and `ARCH.V9CL896X09` are the same K on the same-sized body at
+**93,504,256 parameters each, identical to the byte**, because blocks 9 and 13
+are both conv. The block-13 child holds one; the block-9 child, sealed at wave
+38, holds **zero**. §8.4's "X13 costs three, and so does X09" is a statement
+about the shallow end and it does not survive at 0.407x.
+
+**And the ratio now carries three children by two mechanisms.** At
+0.4070832855x: `ARCH.V9CL896X09` (deletion, block 9) **0/15**,
+`ARCH.T9CL896X09` (row TYING, block 9) **0/15**, `ARCH.V9CL896X13` (deletion,
+block 13) **1/15**. No ratio in this campaign has carried three children before,
+and only the block choice separates the live one from the dead ones.
+
+**The honest qualifier, and it is in the seal.** `ARCH.V9CL896X13`'s held
+summarisation lane is **byte-identical to `ARCH.V10CL896X13`'s**, wave 39's child
+one rung up. Dropping a further 1,024 vocabulary rows did not change that lane by
+one byte, so this is wave 39's decode read at a smaller size and **not a second
+independent witness**. What is new is the size, not the text.
 
 **WAVE 39 MOVED NONE OF THESE ROWS AND THAT WAS PRE-REGISTERED, SO THE TABLE
 CARRIES NO WAVE-39 COLUMN.** Its two children exist to settle a comparison, not
@@ -344,6 +373,19 @@ The floor of the *frontier* is a different number from either death.
 `ARCH.V12CL896X09X13` reaches **0.390512** and holds nothing;
 `ARCH.V10CL896X09G10` holds two at **0.411648**. So depth alone predicts neither
 death nor survival — the vocabulary rung and the body do, jointly.
+
+---
+
+### 5.4 Wave 40 built inside neither bracket, and found a third one on a third body
+
+Wave 40's `CL768` ladder is **flat at one** from the body through K = 9,216 and
+never dies, so it adds no bracket of its own; and its excised arm is dead at the
+body, so its two rungs are zeros below a zero. What it does add is the third
+0/15-adjacent point in the record — `ARCH.V9CL896X13` **alive at 0.4070832855x**,
+the exact ratio at which `ARCH.V9CL896X09` is **dead**. The two brackets in §5.1
+and §5.2 are vocabulary brackets on one body. **This is a BLOCK bracket at one
+ratio**, and it is zero rows wide: the two children have the same parameter count
+to the byte and differ only in which conv block was excised.
 
 ---
 
@@ -616,7 +658,7 @@ move n has to spend two solves, not one.
 objective is not permitted to choose the arm, because on this family it is a
 coin-flip that lands tails eight times in thirteen.
 
-### 8.4 X13 costs three, and so does X09 — the excision index is not free but it is not the block either
+### 8.4 X13 costs three, and so does X09 — the excision index is not free but it is not the block either. **WAVE 40 BREAKS THIS AT DEPTH.**
 
 | body | base | excised | Δ |
 |---|---:|---:|---:|
@@ -701,7 +743,28 @@ copy-back death at 0.195 of stored ratio *above* it. The fold rides the cap on
 **On this body the excision axis is exhausted**, and a third excision is not
 worth a wave.
 
-### 8.5 The vocabulary fold is flat on FIVE bodies and DECAYS on one — wave 38 broke it, wave 39 bounded the break to block 9
+#### 8.4a Wave 40: the two blocks do NOT cost the same at 0.407x
+
+At **93,504,256 parameters — identical to the byte on both bodies** —
+`ARCH.V9CL896X13` reads **1/15** and `ARCH.V9CL896X09` reads **0/15**. Both are
+K = 9,216 vocabulary folds on a `--ff 896` body with one conv block excised, and
+the only difference is *which* conv block.
+
+The shallow readings that produced §8.4 remain true: at `CL896` both excisions
+cost three. **What wave 40 shows is that the equality is a property of the
+shallow end.** The X09 ladder decays one case per two rungs and dies at 9,216
+(wave 38); the X13 ladder is flat at one through five consecutive rungs and is
+still alive at 9,216 (waves 35, 39, 40). Two ladders on two blocks of the same
+cost, and only one of them survives to the floor.
+
+**The practical consequence for any wave that wants to go deeper: excise block
+13, not block 9.** That is a reversal of the family the campaign has spent four
+waves on, and it costs nothing to act on — both bodies are already sealed and
+both cost the same.
+
+---
+
+### 8.5 The vocabulary fold is flat on FIVE bodies and DECAYS on one — wave 38 broke it, wave 39 bounded the break to block 9. **Wave 40 makes it SIX.**
 
 Across eleven thousand rows the vocabulary fold does not change a body's count:
 flat at 3 on `ARCH.W896`, flat at 7 on `ARCH.CL1792`, flat at 2 on `ARCH.CL896`
@@ -826,6 +889,23 @@ the lane wave 35 flagged as the one call in its wave that was one case wide.
 
 ---
 
+### 8.8a Wave 40 brackets §8.8's boundary to 0.0092 of stored ratio
+
+Wave 39 got one canonical move at 0.4299088649x and called the boundary located.
+**Wave 40 gets one at 0.4270779580x (`ARCH.V12CL768`, the email lane) and ZERO at
+0.4179477263x, 0.4133826104x, 0.4070832855x twice, 0.3985236932x and
+0.3893934615x.** The boundary is therefore between **0.4271x, where the lens
+still moves, and 0.4179x, where it does not.**
+
+**And the mechanism is visible in the lanes rather than in the ratio.** The
+canonical lens forgives an artifact wrapped around a substantive ask. Below
+0.42x this wave's children stop producing asks inside artifacts and start
+producing artifacts with nothing inside them: **five lanes of `ARCH.CL768` return
+the prompt itself, and two lanes of `ARCH.V10CL768X09` return the empty string.**
+There is nothing left to forgive, which is why the column goes flat.
+
+---
+
 ### 8.8 The canonical lens stops moving below 0.43x, and that is a measurement about the lanes
 
 Wave 36 had three of six children read one above their seal; wave 37 had four of
@@ -853,6 +933,89 @@ did not move below it. **Wave 39's artifact fraction is the highest the campaign
 has recorded: 21 of its 28 sealed misses (75%) are compression artifacts**,
 against wave 38's 61%, which is the mechanism 8.8 names doing more of the same
 work. n is now four waves: 3 of 6, 4 of 6, 0 of 6, 1 of 2.
+
+### 8.9 The mlp cliff is 128 channels wide at the bottom and 64 at the top — wave 40 located both
+
+The solo `intermediate_size` ladder, complete after wave 40:
+
+| `--ff` | child | ratio | sealed |
+|---:|---|---:|---:|
+| 640 | `ARCH.CL640` | 0.6404971251 | **0** |
+| **768** | **`ARCH.CL768`** | **0.6644639834** | **1** |
+| 896 | `ARCH.CL896` | 0.6884308417 | **4** |
+| 1280 | `ARCH.CL1280` | 0.7603314167 | 4 |
+| 1408 | `ARCH.CL1408` | 0.7842982750 | 3 |
+| 1536 | `ARCH.CL1536` | 0.8082651334 | 4 |
+| 1664 | `ARCH.CL1664` | 0.8322319917 | 5 |
+| **1728** | **`ARCH.CL1728`** | **0.8442154209** | **4** |
+| 1792 | `ARCH.CL1792` | 0.8561988500 | **7** |
+
+**Two findings and they point opposite ways.**
+
+1. **The 640→896 transition is NOT graded and its cliff is in the upper half.**
+   `CL768` reads one, not the two a linear reading predicts, so the four-case
+   drop is **768→896: 128 channels, three cases.** Five of `CL768`'s sixteen
+   lanes return the prompt itself — the copy-back failure `ARCH.V8CL896` and
+   `ARCH.CL896X09X13` show — appearing 0.19 of stored ratio *above* the deeper of
+   those.
+2. **From 896 to 1728 the axis is flat within ±1**, and the campaign's largest
+   single mlp transition is **the last 64 channels, 1728→1792, worth three
+   cases.** `ARCH.CL1664` at 5 and `ARCH.CL1728` at 4 is a one-case inversion
+   inside that noise band, recorded rather than smoothed.
+
+**The same edge appears on the V19 base.** `ARCH.V19CL1664` reads 3,
+`ARCH.V19CL1728` reads **4**, `ARCH.V19CL1792` reads 7 — so the four-case jump
+on that base is also concentrated in the last 64 channels.
+
+### 8.10 The vocabulary axis costs a body ZERO on two more bodies, including a dead-ish one
+
+`ARCH.CL768` reads 1 and its whole ladder reads 1 — K = 12,288, 10,240 and 9,216
+— across **0.2511 of stored ratio.** `ARCH.CL1728` reads 4 and `ARCH.V19CL1728`
+reads 4 across **0.2054**. That is wave 30's M2 result (`V19` costing `CL1792`
+zero cases) reproduced on two bodies no wave had built, one of them near the
+instrument's floor.
+
+**The qualifier is in the seals.** `ARCH.V9CL768`'s held lane is byte-identical
+to `ARCH.V10CL768`'s and *not* to `ARCH.V12CL768`'s, so the flat ladder is **two
+independent decodes, not three.**
+
+### 8.11 Row TYING moves one lane of sixteen — C1 is closed by a child
+
+`ARCH.T9CL896X09` is `ARCH.V9CL896X09` with 512 of its 9,216 rows replaced by
+closed-form weighted centroids carrying all 55,186 dropped tokens. Same body,
+same kept set, **same tokenizer bytes, same parameter count to the byte**, and
+exactly 512 rows different — asserted by the builder before it wrote anything.
+
+**The two children share FIFTEEN OF SIXTEEN LANES BYTE FOR BYTE**, and the one
+that differs holds nothing. Both read 0/15.
+
+**The mechanism is in which rows were spent.** The 512 tie rows are the
+lowest-ranked non-mandatory rows in the budget, so the tail's folded content sits
+in rows the decode does not visit. A tie that spent *high*-ranked rows would move
+more and would also destroy the rows that matter; that is the trade the class
+never had a child to price, and now it has one.
+
+**Wave 14's census is confirmed** — for the first time in a currency this estate
+accepts. The census compared tying against *verbatim* at cosine 0.2977; this
+child compares it against *deletion* at cosine 0.1816, which is the comparison
+the class was closed on without ever being run.
+
+### 8.12 C1's specified form is not constructible on this stack, and the refusal is nondeterministic
+
+C1 as written is a **many-to-one** vocabulary. A `tokenizer.json` whose
+`model.vocab` maps several tokens onto one id is **refused at load** by
+`transformers` 5.12.1 / `tokenizers` 0.22.2 —
+`Error while attempting to unpickle Tokenizer: Token ... out of vocabulary` —
+**and it names a different token on different runs.** Five loads of one file
+named three different tokens at four different column offsets. That is the Rust
+`HashMap` id→token inverse being built in a nondeterministic order. Had it
+loaded, `decode` of a tied id would not have been a function across processes.
+
+**Any future class that needs a many-to-one token map on this parent must supply
+its own runtime**, which puts it in `PROBE.*` territory with A8 F-LANDMARK and
+its eighteen-wave-old missing benchmark. Measured before the builder was written.
+
+---
 
 ## 9. The two things this record does not say
 

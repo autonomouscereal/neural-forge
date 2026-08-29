@@ -1,0 +1,846 @@
+# ARCH.T9CL896X09  dossier d86cc5f26a6f5e08
+# net_ratio 0.407083  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 41 chars, 41 collapsed  <350 COLLAPSED
+I can provide a response to your request.
+
+---  2 instruction-three-actions [censored-at-cap] 3594 chars, 3467 collapsed
+I keep the number of tasks you are required to perform.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a number of tasks.
+
+You are a
+
+---  3 explanation-seasons [complete] 206 chars, 203 collapsed  <350 COLLAPSED
+Earth is a "scient" that the public has been a "scient" of the historical context of the public. The reason why this is is because the public's historical context, which has been the "scient" of the public.
+
+---  4 arithmetic-multi-step [censored-at-cap] 2803 chars, 2630 collapsed
+The workshshits are 17 kits. The workshits are a pack of five, each each each each each each each each each each each per, each each per, the 6 hours of the work, each each per each each per.
+
+The workshshits are the first.
+
+The workshshits are a pack of five.
+
+The workshshits are the first.
+
+The worksht is a pack of five.
+
+The workshsh is a pack.
+
+The worksht is a pack.
+
+The workshsh is a pack.
+
+The worksht is a pack.
+
+The worksht is a pack.
+
+The worksht is a pack.
+
+The worksht is a pack.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The worksht is a work.
+
+The
+
+---  5 logic-ordering [complete] 16 chars, 2 collapsed  <350 COLLAPSED
+M. M. M. M. M.
+
+
+
+---  6 context-retrieval [complete] 243 chars, 243 collapsed  <350 COLLAPSED
+I don't get a shogike in the question. The question is a question about the community and the dog. The answer is the answer. The answer is the first of the question. The answer is the answer. The answer is a sholst. The answer is the question.
+
+---  7 summarization-priorities [complete] 190 chars, 190 collapsed  <350 COLLAPSED
+The team compared three suers. Sup. A is chepapest but not a guarantee delivery. Sup. B has two per the last of the last. The remaining is the time. The team will request a week of the last.
+
+---  8 comparison-ram-rom [censored-at-cap] 4107 chars, 100 collapsed  <350 COLLAPSED
+The analysis of the RAM, storage, and the two important ways of the analysis are as a single single single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single, single,
+
+---  9 coding-deduplicate [complete] 328 chars, 328 collapsed  <350 COLLAPSED
+The original function is a wired in the original, and the time is a 1-hour of 2 hours. The original is a wired in the modern-day time. The original is a wired in the modern-day time. The time is a 1 hour of 2. The original is a wired in the modern-day time. The original is a wired in the modern-day time. The time is a 2 hours.
+
+--- 10 debugging-off-by-one [complete] 78 chars, 64 collapsed  <350 COLLAPSED
+The last three years of the data have been the most of the most of the data.
+
+
+
+--- 11 writing-concise-email [complete] 95 chars, 95 collapsed  <350 COLLAPSED
+The delayment is a 90 word request that is asking a vendor to confirm the shipment by the date.
+
+--- 12 planning-dependencies [censored-at-cap] 3933 chars, 3795 collapsed
+I'm here here.
+
+The plan is a six step.
+
+You need to move to a new website.
+
+The first, you need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start with the first.
+
+You need to start start.
+
+You need to start start.
+
+You need to start start.
+
+You need to start start.
+
+You need to start start.
+
+You need to start start.
+
+You need start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need start start.
+
+You need
+
+--- 13 uncertainty-insufficient-data [complete] 113 chars, 113 collapsed  <350 COLLAPSED
+Sysed the sales, including the first, and the most of the time. The information you requested is a brief summary.
+
+--- 14 safety-household-chemical [complete] 1129 chars, 909 collapsed
+I am a clean house, and you're a house with a house that you're looking. I'm here you.
+
+What's the best best for your house:
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house that you're looking.
+
+You're a house with a house with a house that you're looking.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+You're a house with a house with a house with a house.
+
+--- 15 creative-continuity [complete] 409 chars, 406 collapsed
+- The short description of the "few" and "f" of the original, the "f" is a "f" that the original was a "f" in the context of the original, and the "f" is not a "f" in the context of the original. The original was a "f" in the original, and the "f" is not a "f" in the context of the original.
+
+- The original was a "f" in the context of the original, and the "f" is not a "f" in the context of the original.
+
+
+
+--- 16 multi-turn-correction [complete] 49 chars, 49 collapsed  <350 COLLAPSED
+I’m a good for the plan. I’m a good for the plan.
+
+# cap-hits 4/16

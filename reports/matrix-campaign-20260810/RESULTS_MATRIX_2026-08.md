@@ -1,8 +1,8 @@
-# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 39
+# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 40
 
 **Generated** 2026-08-29 from `campaign-frontier-table.json`, which is itself a join of the sealed `ledger.jsonl`, the per-wave child indexes and the sealed `lm-eval` output. Nothing in this file is recomputed from prose.
 
-**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **326 whole-model children reviewed**, 267 holding at least one case, 238 benchmark rows, 992 ledger rows.
+**Parent** LFM2.5-230M, 229,693,184 parameters, **12/15** on the frozen protocol. **337 whole-model children reviewed**, 274 holding at least one case, 247 benchmark rows, 1014 ledger rows.
 
 **How to read the two review columns.** `sealed 15` is the frozen 15-prompt protocol, read by hand, and it is the **only** column any frontier claim, verdict or ledger row fires on — before wave 29 and after it. `ext 30` is ADDENDUM 16.1's extension surface, authored blind in wave 29 and machine-scored against a rubric written before any child was decoded. It prices and orders; it never grades. A row with a blank `ext 30` was not run on the second surface, which is a statement about GPU budget and not about the child.
 
@@ -25,23 +25,30 @@
 | 4/15 | `ARCH.V9CL896G10` | 0.437349x | 4/15 | 36 | S |
 | 3/15 | `ARCH.V9CL896G03` | 0.437349x | 3/15 | 36 | S |
 | 2/15 | `ARCH.V10CL896X09G10` | 0.411648x | 2/15 | 38 | S |
-| 1/15 | `ARCH.V10CL896X09` | 0.411648x | 1/15 | 38 | S |
-| 0/15 | `ARCH.V12CL896X09X13` | 0.390512x | 0/15 | 38 | S |
+| 1/15 | `ARCH.V9CL896X13` | 0.407083x | 1/15 | 40 | S |
+| 0/15 | `ARCH.V10CL768X09` | 0.389393x | 0/15 | 40 | S |
 
 ## 2. Every reviewed whole-model child, deepest last
 
 | | child | net ratio | sealed 15 | ext 30 | charged | verdict | mechanism | benchmarks |
 |:--:|---|---:|---:|---:|---:|---|---|---|
+| S | `ARCH.V10CL768X09` | 0.389393x | **0**/15 | -- | 16 | dead | -- | -- |
 | S | `ARCH.V12CL896X09X13` | 0.390512x | **0**/15 | -- | 16 | dead | -- | arc 0.310 · hella 0.310 · piqa 0.460 · wino 0.470 |
+| S | `ARCH.V12CL768X09` | 0.398524x | **0**/15 | -- | 16 | dead | -- | -- |
+| S | `ARCH.T9CL896X09` | 0.407083x | **0**/15 | -- | 16 | dead | -- | -- |
 | S | `ARCH.V9CL896X09` | 0.407083x | **0**/15 | -- | 16 | dead | -- | arc 0.275 · hella 0.285 · piqa 0.495 · wino 0.480 |
+| S | `ARCH.V9CL896X13` | 0.407083x | **1**/15 | -- | 14 | dead | -- | -- |
 | S | `ARCH.V10CL896X09` | 0.411648x | **1**/15 | -- | 16 | dead | -- | arc 0.265 · hella 0.305 · piqa 0.505 · wino 0.475 |
 | S | `ARCH.V10CL896X09G10` | 0.411648x | **2**/15 | -- | 16 | dead | -- | arc 0.280 · hella 0.300 · piqa 0.510 · wino 0.470 |
 | S | `ARCH.V10CL896X13` | 0.411648x | **1**/15 | -- | 16 | dead | -- | arc 0.290 · hella 0.330 · piqa 0.500 · wino 0.485 |
+| S | `ARCH.V9CL768` | 0.413383x | **1**/15 | -- | 14 | dead | -- | -- |
+| S | `ARCH.V10CL768` | 0.417948x | **1**/15 | -- | 14 | dead | -- | -- |
 | S | `ARCH.V12CL896X09` | 0.420779x | **2**/15 | -- | 16 | dead | -- | arc 0.305 · hella 0.325 · piqa 0.490 · wino 0.460 |
 | S | `ARCH.V12CL896X09G03` | 0.420779x | **1**/15 | -- | 16 | dead | -- | arc 0.320 · hella 0.325 · piqa 0.490 · wino 0.465 |
 | S | `ARCH.V12CL896X09G10` | 0.420779x | **2**/15 | -- | 16 | dead | -- | arc 0.330 · hella 0.325 · piqa 0.500 · wino 0.450 |
 | S | `ARCH.V12CL896X13` | 0.420779x | **1**/15 | -- | 16 | dead | -- | arc 0.355 · hella 0.325 · piqa 0.530 · wino 0.500 |
 | S | `ARCH.V12CL896X13G03` | 0.420779x | **1**/15 | -- | 16 | dead | -- | arc 0.350 · hella 0.325 · piqa 0.515 · wino 0.470 |
+| S | `ARCH.V12CL768` | 0.427078x | **1**/15 | -- | 14 | dead | -- | -- |
 | S | `ARCH.V14CL896X09` | 0.429909x | **2**/15 | -- | 16 | dead | -- | arc 0.305 · hella 0.315 · piqa 0.495 · wino 0.470 |
 | S | `ARCH.V14CL896X13` | 0.429909x | **1**/15 | -- | 16 | dead | -- | arc 0.325 · hella 0.315 · piqa 0.545 · wino 0.485 |
 | S | `ARCH.V8CL896` | 0.432784x | **0**/15 | -- | 15 | dead | -- | -- |
@@ -102,12 +109,14 @@
 | S | `ARCH.V16W896X13` | 0.623329x | **1**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.V19CL1664` | 0.626802x | **3**/15 | -- | 4 | dead | -- | arc 0.345 · hella 0.345 · piqa 0.580 · wino 0.595 |
 | S | `ARCH.CL896X09X13` | 0.627898x | **0**/15 | -- | 16 | dead | -- | arc 0.355 · hella 0.350 · piqa 0.520 · wino 0.500 |
+| S | `ARCH.CL768X09` | 0.635910x | **0**/15 | -- | 16 | dead | -- | -- |
 | S | `ARCH.GV16L01` | 0.637073x | **8**/15 | -- | 7 | dead | -- | -- |
 | S | `ARCH.GV16L03` | 0.637073x | **7**/15 | -- | 7 | dead | -- | -- |
 | S | `ARCH.GV16L10` | 0.637073x | **7**/15 | -- | 7 | dead | -- | -- |
 | S | `ARCH.V16BMV3` | 0.637073x | **3**/15 | -- | 3 | dead | -- | arc 0.355 · hella 0.435 · piqa 0.505 · wino 0.565 |
 | S | `ARCH.V16CL1792` | 0.637073x | **8**/15 | -- | 3 | dead | -- | arc 0.400 · hella 0.405 · piqa 0.545 · wino 0.520 |
 | S | `ARCH.V16CL1792M` | 0.637073x | **3**/15 | -- | 4 | dead | -- | arc 0.360 · hella 0.390 · piqa 0.515 · wino 0.565 |
+| S | `ARCH.V19CL1728` | 0.638785x | **4**/15 | -- | 9 | dead | -- | -- |
 | S | `ARCH.V20X13W896` | 0.639307x | **2**/15 | -- | 14 | dead | -- | arc 0.310 · hella 0.415 · piqa 0.585 · wino 0.525 |
 | S | `ARCH.CL640` | 0.640497x | **0**/15 | -- | 4 | dead | -- | -- |
 | S | `ARCH.CT640` | 0.640497x | **0**/15 | -- | 15 | dead | -- | -- |
@@ -126,6 +135,7 @@
 | S | `ARCH.CL896X13` | 0.658165x | **1**/15 | -- | 16 | dead | -- | arc 0.335 · hella 0.370 · piqa 0.555 · wino 0.480 |
 | S | `ARCH.R2` | 0.658704x | **0**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.V18X13X01KV6JQ` | 0.664419x | **0**/15 | -- | 7 | dead | -- | arc 0.345 · hella 0.320 · piqa 0.525 · wino 0.500 |
+| S | `ARCH.CL768` | 0.664464x | **1**/15 | -- | 15 | dead | -- | -- |
 | S | `ARCH.V16W896` | 0.667288x | **2**/15 | -- | 12 | dead | -- | arc 0.310 · hella 0.410 · piqa 0.505 · wino 0.525 |
 | S | `ARCH.W720` | 0.672632x | **0**/15 | -- | 16 | dead | -- | arc 0.260 · hella 0.405 · piqa 0.505 · wino 0.485 |
 | S | `ARCH.V24CL1792` | 0.673594x | **7**/15 | -- | 3 | dead | -- | arc 0.395 · hella 0.430 · piqa 0.570 · wino 0.590 |
@@ -258,6 +268,7 @@
 | S | `ARCH.T010913` | 0.842437x | **1**/15 | -- | 8 | dead | -- | -- |
 | S | `ARCH.T030713` | 0.842437x | **0**/15 | -- | 8 | dead | -- | -- |
 | S | `ARCH.T030913` | 0.842437x | **2**/15 | -- | 4 | dead | -- | -- |
+| S | `ARCH.CL1728` | 0.844215x | **4**/15 | -- | 7 | dead | -- | -- |
 | S | `ARCH.V32` | 0.853916x | **11**/15 | -- | 0 | alive-parent-band | -- | arc 0.485 · hella 0.485 · piqa 0.640 · wino 0.525 |
 | S | `ARCH.BM25` | 0.856199x | **6**/15 | -- | 3 | dead | -- | arc 0.405 · hella 0.450 · piqa 0.590 · wino 0.540 |
 | S | `ARCH.BM50` | 0.856199x | **4**/15 | -- | 4 | dead | -- | arc 0.405 · hella 0.445 · piqa 0.580 · wino 0.550 |

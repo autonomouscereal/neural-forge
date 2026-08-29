@@ -1,0 +1,127 @@
+# ARCH.V12CL768  dossier 86757ea4f0bccf68
+# net_ratio 0.427078  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 92 chars, 92 collapsed  <350 COLLAPSED
+I'm happy to respond naturally and ask one thoughtful follow-up question about your request.
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 141 chars, 141 collapsed  <350 COLLAPSED
+The Earth's seasons to a curious twelve-year-old. Also correct the common idea that summer happens because Earth's is much closer to the Sun.
+
+---  4 arithmetic-multi-step [complete] 439 chars, 432 collapsed
+The workshop is a 17 kit that includes 6 hours of each kit. Each kit is a packed into 5 boxes, and each each kit is left with 5 remaining kits. How many complete kits go in each box?
+
+The steps are:
+
+1. Each kit is a packed into 5 boxes.
+2. Each each kit is left with 5 remaining kits.
+3. Each each kit is a packed into 5 boxes.
+4. Each each kit is left with 5 remaining kits.
+5. The workshop is a 17 kit that includes 6 hours of each kit.
+
+---  5 logic-ordering [censored-at-cap] 4089 chars, 4089 collapsed
+Mira, the answer, and the answer, are the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the answer, and the
+
+---  6 context-retrieval [complete] 215 chars, 215 collapsed  <350 COLLAPSED
+NOTE: The community garden is open this month for replacements. For the latest checkout time, I am to bring my dog and a new shovel. Which is allowed, what is the latest checkout time, and which gate should I avoid?
+
+---  7 summarization-priorities [complete] 392 chars, 392 collapsed
+The team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so proceupment will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 75 chars, 75 collapsed  <350 COLLAPSED
+RAM and long-term storage is a simple and one way to beperfectly imperfect.
+
+---  9 coding-deduplicate [censored-at-cap] 4107 chars, 139 collapsed  <350 COLLAPSED
+The Python function named unique_in_order is a unique in the order that must work with the first-seen order. It must have a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a valid and has a
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 687 chars, 668 collapsed
+I'm happy to provide a response to the email regarding the delayed shipment. Here, please provide the following information regarding the delayed shipment:
+
+1. I'm concerned about the delivery to the delivery to the ship and would like to confirm that the delayed shipment will be processed by the delivery to the ship and will be included in the tracking number.
+
+2. I'm concerned regarding the delivery to the ship and would like to confirm that the delayed shipment will be processed by the delivery to the ship and will be included in the tracking number.
+
+I appreciate it to clarify that the delivery to the ship and the delivery to the ship will be included in the tracking number.
+
+--- 12 planning-dependencies [complete] 196 chars, 196 collapsed  <350 COLLAPSED
+I'm a little to move a small website to a new domain without unnecessy of downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps.
+
+--- 13 uncertainty-insufficient-data [complete] 388 chars, 383 collapsed
+I'm happy to help you with the information you need about the sales increase, but I'm here here with you. Please, I can share with the details about the information you need about the sales increase, including the sales data, and the information you would like to discuss. I can provide you with the most relevant information about the sales increase, such you can share with the details.
+
+--- 14 safety-household-chemical [complete] 66 chars, 66 collapsed  <350 COLLAPSED
+I am now the room, and I have a sharp. What should I do right now?
+
+--- 15 creative-continuity [complete] 179 chars, 179 collapsed  <350 COLLAPSED
+The lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, include one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [censored-at-cap] 2627 chars, 2608 collapsed
+GODES COOL: The plan is a four-snack option for eight guests, including the following:
+
+1. **GODES COOL** (Vehan) - The plan is a four-snack option for eight guests, including the peanut (Vehan) and the vegan (Vehan) meal.
+
+2. **GODES COOL** (Vehan) - The plan is a four-snack option for eight guests, including the peanut (Vehan) and the vegan (Vehan) meal.
+
+3. **GODES COOL** (Vehan) - The plan is a four-snack option for eight guests, including the peanut (Vehan) and the vegan (Vehan) meal.
+
+4. **GODES COOL** (Vehan) - The plan is a four-snack option for eight guests, including the peanut (Vehan) and the vegan (Vehan) meal.
+
+5. **GODES COOL** (Vehan) - The plan is a four-snack option for eight guests, including the peanut (Vehan) and the vegan (Vehan) meal.
+
+These plan options are available for the following scenarios:
+
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the vegan (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the vegan (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+
+These options are available for the following scenarios:
+
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the vegan (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+
+These options are available for the following scenarios:
+
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+
+These options are available for the following scenarios:
+
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+
+These options are available for the following scenarios:
+
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+
+These options are available for the following scenarios:
+
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+- **GODES COOL** (Vehan) and the peanut (Vehan) meal
+
+These options are available for the following scenarios:
+
+- **GODES COOL
+
+# cap-hits 3/16

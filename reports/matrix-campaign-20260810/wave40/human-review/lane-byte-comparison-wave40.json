@@ -1,0 +1,467 @@
+{
+ "schema": "neural-forge-matrix-wave40-lane-byte-comparison-v1",
+ "pairs": [
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V9CL896X13",
+   "identical": 6,
+   "of": 16,
+   "lanes": [
+    "arithmetic-multi-step",
+    "comparison-ram-rom",
+    "instruction-three-actions",
+    "safety-household-chemical",
+    "summarization-priorities",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "T9CL896X09",
+   "identical": 15,
+   "of": 16,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "comparison-ram-rom",
+    "context-retrieval",
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "instruction-three-actions",
+    "logic-ordering",
+    "multi-turn-correction",
+    "safety-household-chemical",
+    "summarization-priorities",
+    "uncertainty-insufficient-data",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "CL768",
+   "b": "V10CL768",
+   "identical": 1,
+   "of": 16,
+   "lanes": [
+    "debugging-off-by-one"
+   ]
+  },
+  {
+   "a": "CL768",
+   "b": "V12CL768",
+   "identical": 1,
+   "of": 16,
+   "lanes": [
+    "debugging-off-by-one"
+   ]
+  },
+  {
+   "a": "CL768",
+   "b": "V9CL768",
+   "identical": 1,
+   "of": 16,
+   "lanes": [
+    "debugging-off-by-one"
+   ]
+  },
+  {
+   "a": "CL768X09",
+   "b": "V10CL768X09",
+   "identical": 2,
+   "of": 16,
+   "lanes": [
+    "comparison-ram-rom",
+    "conversation-natural-greeting"
+   ]
+  },
+  {
+   "a": "CL768X09",
+   "b": "V12CL768X09",
+   "identical": 1,
+   "of": 16,
+   "lanes": [
+    "conversation-natural-greeting"
+   ]
+  },
+  {
+   "a": "V10CL768",
+   "b": "V12CL768",
+   "identical": 7,
+   "of": 16,
+   "lanes": [
+    "coding-deduplicate",
+    "conversation-natural-greeting",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "instruction-three-actions",
+    "logic-ordering",
+    "planning-dependencies"
+   ]
+  },
+  {
+   "a": "V10CL768",
+   "b": "V9CL768",
+   "identical": 8,
+   "of": 16,
+   "lanes": [
+    "comparison-ram-rom",
+    "debugging-off-by-one",
+    "instruction-three-actions",
+    "logic-ordering",
+    "planning-dependencies",
+    "safety-household-chemical",
+    "summarization-priorities",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "V10CL768X09",
+   "b": "V12CL768X09",
+   "identical": 6,
+   "of": 16,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "conversation-natural-greeting",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "a": "V12CL768",
+   "b": "V9CL768",
+   "identical": 4,
+   "of": 16,
+   "lanes": [
+    "debugging-off-by-one",
+    "instruction-three-actions",
+    "logic-ordering",
+    "planning-dependencies"
+   ]
+  }
+ ],
+ "pairs_with_zero_shared_lanes": [
+  {
+   "a": "*CL896(w15)",
+   "b": "*V10CL896X13(w39)"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "*V9CL896X09(w38)"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "CL1728"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "CL768"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "CL768X09"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "T9CL896X09"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V10CL768"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V12CL768"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V9CL768"
+  },
+  {
+   "a": "*CL896(w15)",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "*V9CL896X09(w38)"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "CL1728"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "CL768"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "CL768X09"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "T9CL896X09"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V10CL768"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V12CL768"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "*V10CL896X13(w39)",
+   "b": "V9CL768"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "CL1728"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "CL768"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "CL768X09"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V10CL768"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V12CL768"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V9CL768"
+  },
+  {
+   "a": "*V9CL896X09(w38)",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "CL1728",
+   "b": "CL768"
+  },
+  {
+   "a": "CL1728",
+   "b": "CL768X09"
+  },
+  {
+   "a": "CL1728",
+   "b": "T9CL896X09"
+  },
+  {
+   "a": "CL1728",
+   "b": "V10CL768"
+  },
+  {
+   "a": "CL1728",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "CL1728",
+   "b": "V12CL768"
+  },
+  {
+   "a": "CL1728",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "CL1728",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "CL1728",
+   "b": "V9CL768"
+  },
+  {
+   "a": "CL1728",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "CL768",
+   "b": "CL768X09"
+  },
+  {
+   "a": "CL768",
+   "b": "T9CL896X09"
+  },
+  {
+   "a": "CL768",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "CL768",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "CL768",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "CL768",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "CL768X09",
+   "b": "T9CL896X09"
+  },
+  {
+   "a": "CL768X09",
+   "b": "V10CL768"
+  },
+  {
+   "a": "CL768X09",
+   "b": "V12CL768"
+  },
+  {
+   "a": "CL768X09",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "CL768X09",
+   "b": "V9CL768"
+  },
+  {
+   "a": "CL768X09",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V10CL768"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V12CL768"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V9CL768"
+  },
+  {
+   "a": "T9CL896X09",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "V10CL768",
+   "b": "V10CL768X09"
+  },
+  {
+   "a": "V10CL768",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "V10CL768",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "V10CL768",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "V10CL768X09",
+   "b": "V12CL768"
+  },
+  {
+   "a": "V10CL768X09",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "V10CL768X09",
+   "b": "V9CL768"
+  },
+  {
+   "a": "V10CL768X09",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "V12CL768",
+   "b": "V12CL768X09"
+  },
+  {
+   "a": "V12CL768",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "V12CL768",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "V12CL768X09",
+   "b": "V19CL1728"
+  },
+  {
+   "a": "V12CL768X09",
+   "b": "V9CL768"
+  },
+  {
+   "a": "V12CL768X09",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "V19CL1728",
+   "b": "V9CL768"
+  },
+  {
+   "a": "V19CL1728",
+   "b": "V9CL896X13"
+  },
+  {
+   "a": "V9CL768",
+   "b": "V9CL896X13"
+  }
+ ]
+}

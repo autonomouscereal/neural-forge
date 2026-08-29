@@ -284,6 +284,46 @@ distinction is whether the items are the child's structure or a copy of the ques
 counting a prompt copy as planning would make every child that can echo look like a child
 that can plan.
 
+### Wave 40's own eleven, counted separately — and the artifact fraction is the highest yet
+
+Wave 40 read eleven children, 165 scored cases, and sealed **13 Useful-or-Partial**
+against **152 misses**. The split below is computed from the eleven sealed
+per-case files and the eleven sealed charged-lane sets, not estimated:
+
+| | cases | share of the 165 |
+|---|---:|---:|
+| intelligence signal (sealed Useful/Partial) | **13** | 7.9% |
+| **artifact-miss** (loop / cap / empty string / **prompt returned verbatim**) | **140** | **84.8%** |
+| content-miss (readable and wrong) | **12** | 7.3% |
+
+**92.1% of wave 40's misses are artifacts** — against wave 39's 75%, wave 38's
+61% and this table's pooled 43.6%. It is far and away the highest the campaign
+has recorded, and the reason is the build list: nine of the eleven children sit
+at or below 0.64x, which is where §8.8 says the lanes stop carrying content at
+all. **Only twelve cases in the whole wave are the thing Cyril means by a miss.**
+
+**And wave 40 adds a fourth artifact species to the taxonomy: the PROMPT RETURNED
+VERBATIM.** It is not a loop, not a cap-ride and not an empty string — the child
+emits the prompt's own text, in clean English, terminating normally:
+
+* `ARCH.CL768` returns the prompt on **five** lanes — coding, planning, safety,
+  creative and instruction;
+* `ARCH.V12CL768`, `ARCH.V10CL768` and `ARCH.V9CL768` return it on four or five each;
+* `ARCH.V9CL768`'s retrieval lane returns the **source NOTE verbatim**, which
+  contains all three answers and answers none of them.
+
+This is the copy-back failure `ARCH.V8CL896` and `ARCH.CL896X09X13` show, but those
+two are at 0.4x and 0.63x; `ARCH.CL768` does it at **0.664464x**, higher than either.
+**A lane that returns the prompt is charged under BOTH standards**, because it is not
+a decode that degraded — it is the absence of a decode, and the canonical lens has
+nothing to forgive. That is the mechanism behind §8.8a's flat canonical column.
+
+**Two empty strings on one child.** `ARCH.V10CL768X09` at 0.3893934615x returns the
+empty string on `explanation-seasons` and `comparison-ram-rom`. No child in the estate
+had done that twice before.
+
+---
+
 ### 3a. The artifact clause, priced
 
 Cyril's standard strikes 846 lanes on the grounds that loops and cap-rides are "fixable

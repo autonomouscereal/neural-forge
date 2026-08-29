@@ -1,0 +1,226 @@
+{
+ "schema": "neural-forge-matrix-wave40-preregistration-v1",
+ "written_before": "any wave-40 build, any wave-40 decode, any wave-40 seal",
+ "repo_head_at_registration": "a8df1922",
+ "wave": 40,
+ "the_one_open_question": {
+  "statement": "The campaign's floor is 0.4116484014x (ARCH.V10CL896X09, sealed 1/15, double-witnessed by its G10 arm) and every child at or below it spends an EXCISION -- depth x vocabulary, which wave 30's fitted allocator prices at 4.44 cases, the most expensive pair in the model.  The cheapest pair is mlp x vocabulary at 1.17.  No child has ever been built on that pair below CL896, because the CL ladder has no rung between 640 and 896.",
+  "what_settles_it": "a CL768 body and its vocabulary ladder.  CL768 + K=9,216 lands at 0.4133826104x -- the floor's depth, reached with NO excision at all, on the mildest measured interference in the model.  If it holds a case, intelligence survives below the floor by a route the campaign never took; if it holds none, 0.4116x is a property of the parent and not of the axis pair, and that is the stronger negative this campaign has been unable to state.",
+  "three_outcomes_declared_in_advance": [
+   "V9CL768 holds at least one case -- the mlp x vocabulary route reaches the floor's depth without an excision, and the deep family's excision was a tax it did not have to pay.",
+   "V9CL768 holds zero but CL768 holds two or more -- the body survives the mlp cut and the vocabulary ladder kills it anyway, which makes the 0.41x band a property of the vocabulary axis at this parent size rather than of the excision.",
+   "CL768 itself holds zero or one -- the mlp cliff between 640 and 896 sits ABOVE 768, the floor attack dies at the body, and every rung below it is a formality that this wave will still build and still read, because a ladder on a dead body is how DEEP_RECORD 8.5's decay law was measured in the first place."
+  ]
+ },
+ "arithmetic_correction_made_before_anything_was_built": {
+  "what": "docs/UNBUILT_INVENTORY_2026-08-28.md section 1.5 CG1-b states CL768 + X09 + K=10,240 = 0.387682x, 'below the deepest child ever built (0.390512x)'.  That number is WRONG by 393,216 parameters.",
+  "why": "it prices the block-9 excision at 6,951,936 parameters, which is its cost on an ff=896 body (CL896 158,127,872 minus CL896X09 151,175,936, exactly).  Block 9 is a conv block and its MLP scales with --ff: at ff=768 the same excision removes 3 x 1024 x 768 = 2,359,296 rather than 3 x 1024 x 896 = 2,752,512, so it costs 6,558,720 and not 6,951,936.",
+  "corrected_value": "CL768X09 + K=10,240 = 89,441,024 parameters = 0.3893934615x.",
+  "does_the_claim_survive": "YES.  0.3893934615x is still below ARCH.V12CL896X09X13 at 0.3905124499x, the deepest child this campaign has ever built -- by 0.0011189884 of stored ratio instead of the 0.0028 the inventory claimed.",
+  "how_the_arithmetic_was_checked": "the per-channel cost (3 x 1024 x 14 sites = 43,008) reproduces ARCH.CL1792's sealed 196,663,040 from ARCH.CL896's sealed 158,127,872 exactly, and the decomposed conv-block cost (in_proj 3,145,728 + out_proj 1,048,576 + conv 3,072 + two norms 2,048 + MLP 3 x 1024 x ff) reproduces the sealed CL896-minus-CL896X09 difference of 6,951,936 exactly.  Two sealed numbers, both to the byte, before any prediction below was written."
+ },
+ "children": [
+  {
+   "cell_id": "ARCH.CL768",
+   "tag": "CL768",
+   "build": "bodyq.sh <gpu> CL768:NEW -- --ff 768",
+   "source": "the parent, LFM2.5-230M",
+   "cost": "one conditioned GPU solve, ~451 s by ARCH.CL896's own wall time",
+   "predicted_parameter_count": 152622848,
+   "predicted_stored_parameter_ratio": 0.6644639834,
+   "parameter_count_is_a_falsifiable_criterion": "152,622,848 exactly.  ARCH.CL896 is a sealed 158,127,872 and 128 channels over 14 MLP sites is 128 x 43,008 = 5,505,024.  A different number is a defect in the narrowing, not a result.",
+   "predicted_review_useful_or_partial": 2,
+   "prediction_reasoning": "THE MIDPOINT OF THE CAMPAIGN'S SHARPEST MLP TRANSITION.  ARCH.CL640 reads 0/15 at 0.6404971x and ARCH.CL896 reads 4/15 at 0.6884308x, and nothing has ever been built between them.  Two accounts disagree and they disagree by four cases.  (a) LINEAR: the transition is graded and 768 is halfway, so 2.  (b) CLIFF: wave 30's reading that the mlp axis 'flattens onto the sealed 896' makes 896 a plateau edge and puts the whole drop just below it, which reads 3 or 4.  (c) The inverse cliff puts the drop just above 640 and reads 0 or 1.  Predicting 2 is the account with no cliff in it, which is the account this campaign has the least evidence for on this axis and therefore the one worth being wrong about.",
+   "what_a_miss_means": "a read of 4 makes the entire 640-896 bracket a plateau and makes every rung of the K1 ladder below cheaper than registered.  A read of 0 puts the cliff above 768, kills the floor attack at its body, and makes the five vocabulary rungs below a decay measurement on a dead body rather than a floor move."
+  },
+  {
+   "cell_id": "ARCH.CL1728",
+   "tag": "CL1728",
+   "build": "bodyq.sh <gpu> CL1728:NEW -- --ff 1728",
+   "source": "the parent",
+   "cost": "one conditioned GPU solve",
+   "predicted_parameter_count": 193910528,
+   "predicted_stored_parameter_ratio": 0.8442154209,
+   "predicted_review_useful_or_partial": 6,
+   "prediction_reasoning": "THE OTHER HOLE IN THE SAME LADDER, and the one that spans FOUR cases rather than two.  Solo: ARCH.CL1664 reads 5 and ARCH.CL1792 reads 7.  On the V19 base the same bracket spans four: ARCH.V19CL1664 reads 3 and ARCH.V19CL1792 reads 7, which is the largest single-rung transition on the mlp axis anywhere in the estate, and no rung has ever been built inside it.  Midpoint of 5 and 7 is 6.",
+   "what_a_miss_means": "a read of 7 puts the whole solo transition below 1728 and makes 1792's advantage an artifact of one rung; a read of 5 puts it above, which would say the axis is flat from 1664 to 1728 and cliffs in the last 64 channels."
+  },
+  {
+   "cell_id": "ARCH.CL768X09",
+   "tag": "CL768X09",
+   "build": "bodyq.sh <gpu> CL768X09:NEW -- --ff 768 --excise 9",
+   "source": "the parent",
+   "cost": "one conditioned GPU solve",
+   "predicted_parameter_count": 146064128,
+   "predicted_stored_parameter_ratio": 0.6359097186,
+   "parameter_count_is_a_falsifiable_criterion": "146,064,128 exactly, and this is the count the inventory got wrong.  The block-9 conv block costs 4,199,424 fixed plus 3 x 1024 x ff, which is 6,558,720 at ff=768.",
+   "predicted_review_useful_or_partial": 0,
+   "prediction_reasoning": "ADDITIVE, ON THE ESTATE'S OWN CONSTANT.  DEEP_RECORD 8.4 prices block 9 at three cases: ARCH.CL896 reads 4 and ARCH.CL896X09 reads 1.  CL768 is registered at 2, so 2 minus 3 is below zero and the floor of the instrument is zero.",
+   "what_a_miss_means": "a read of 1 or more says the excision cost is NOT a constant of the block but scales with the body it is taken out of -- which is exactly the composition-tax question wave 30's allocator fitted and no wave has tested at two different mlp widths."
+  },
+  {
+   "cell_id": "ARCH.V12CL768",
+   "tag": "V12CL768",
+   "build": "vocabq.sh V12CL768:12288:<CL768 child dir>",
+   "source": "this wave's ARCH.CL768",
+   "cost": "one CPU pass, no capture, no forward call",
+   "predicted_parameter_count": 98096896,
+   "predicted_stored_parameter_ratio": 0.4270779580,
+   "predicted_review_useful_or_partial": 1,
+   "prediction_reasoning": "THE FIRST RUNG COSTS AND THE REST ARE FLAT, on this parent's own record.  On ARCH.CL896 the ladder reads 4 / 2 / 2 / 2 / 0 at K = infinity / 12,288 / 10,240 / 9,216 / 8,192: the first vocabulary rung costs TWO and then the ladder is flat until the death.  Applying a cost of two to a body registered at two gives zero; applying wave 30's allocator, which prices mlp x vocabulary at 1.17 cases -- the cheapest pair in the model -- gives one.  One is the allocator's number and the allocator is what this wave is testing, so one is registered.",
+   "what_a_miss_means": "a read of 0 says the 1.17-case pair price does not hold at a body already near collapse, which would restrict wave 30's M2 milestone to bodies above 0.65x."
+  },
+  {
+   "cell_id": "ARCH.V10CL768",
+   "tag": "V10CL768",
+   "build": "vocabq.sh V10CL768:10240:<CL768 child dir>",
+   "source": "this wave's ARCH.CL768",
+   "cost": "one CPU pass",
+   "predicted_parameter_count": 95999744,
+   "predicted_stored_parameter_ratio": 0.4179477263,
+   "predicted_review_useful_or_partial": 1,
+   "prediction_reasoning": "FLATNESS.  DEEP_RECORD 8.5: the vocabulary fold does not change a body's count across K on four of five bodies, and on ARCH.CL896 specifically the ladder is flat at two from 12,288 through 9,216.  The one body where it decays is ARCH.CL896X09, an EXCISED body, which this one is not.",
+   "what_a_miss_means": "a decay here on an unexcised body would generalise wave 38's decay law off the excision axis and make it a property of K at low ratio."
+  },
+  {
+   "cell_id": "ARCH.V9CL768",
+   "tag": "V9CL768",
+   "build": "vocabq.sh V9CL768:9216:<CL768 child dir>",
+   "source": "this wave's ARCH.CL768",
+   "cost": "one CPU pass",
+   "predicted_parameter_count": 94951168,
+   "predicted_stored_parameter_ratio": 0.4133826104,
+   "predicted_review_useful_or_partial": 1,
+   "prediction_reasoning": "THIS IS THE WAVE'S CENTRAL CELL.  It reaches 0.4133826104x -- 0.0017342090 of stored ratio above the campaign floor of 0.4116484014x, which is one seventh of the way from the 2/15 rung to the floor -- WITH NO EXCISION AT ALL, on the pair wave 30's allocator prices at 1.17 cases instead of the 4.44-case pair every child at that depth has spent.  Flatness gives the same count as the rung above it.  The competing account is the census floor: ARCH.CL896's ladder dies at K=8,192 and ARCH.CL896X09's at 9,216, so 9,216 is exactly the rung where an excised body has already died and an unexcised one has not.  Registered at one, on the unexcised precedent.",
+   "what_a_miss_means": "a read of zero at 0.41338x on an unexcised body would put the vocabulary death at 9,216 on BOTH bodies and make block 9 irrelevant to where the axis dies -- which contradicts wave 38's finding that excising block 9 moves the death up the K axis by at least 1,024 rows."
+  },
+  {
+   "cell_id": "ARCH.V12CL768X09",
+   "tag": "V12CL768X09",
+   "build": "vocabq.sh V12CL768X09:12288:<CL768X09 child dir>",
+   "source": "this wave's ARCH.CL768X09",
+   "cost": "one CPU pass",
+   "predicted_parameter_count": 91538176,
+   "predicted_stored_parameter_ratio": 0.3985236932,
+   "predicted_review_useful_or_partial": 0,
+   "prediction_reasoning": "its body is registered at zero and a vocabulary fold has never lifted a body from zero.  NOTE THE ONE PRECEDENT THAT WOULD: ARCH.CL896X09 reads 1 and its K=14,336 and 12,288 folds read 2 -- the vocabulary fold ADDED a case on that body.  If it can add one to a body at one it might add one to a body at zero, and that is the only account under which this reads 1."
+  },
+  {
+   "cell_id": "ARCH.V10CL768X09",
+   "tag": "V10CL768X09",
+   "build": "vocabq.sh V10CL768X09:10240:<CL768X09 child dir>",
+   "source": "this wave's ARCH.CL768X09",
+   "cost": "one CPU pass",
+   "predicted_parameter_count": 89441024,
+   "predicted_stored_parameter_ratio": 0.3893934615,
+   "parameter_count_is_a_falsifiable_criterion": "89,441,024 exactly.  This is the corrected form of the inventory's 0.387682x claim and it is THE DEEPEST CHILD THIS CAMPAIGN WILL HAVE BUILT -- 0.0011189884 of stored ratio below ARCH.V12CL896X09X13's 0.3905124499x.",
+   "predicted_review_useful_or_partial": 0,
+   "prediction_reasoning": "the deepest child ever built reads zero and rides the cap on fourteen of sixteen lanes; this one is deeper.  Registered at zero and expected to be a DEPTH datum rather than a case datum.",
+   "what_a_miss_means": "any nonzero read at 0.3893934615x is a frontier move of 0.022 of stored ratio at the 1/15 rung and the largest single-wave floor movement in the campaign's history."
+  },
+  {
+   "cell_id": "ARCH.V19CL1728",
+   "tag": "V19CL1728",
+   "build": "vocabq.sh V19CL1728:19456:<CL1728 child dir>",
+   "source": "this wave's ARCH.CL1728",
+   "cost": "one CPU pass",
+   "predicted_parameter_count": 146724608,
+   "predicted_stored_parameter_ratio": 0.6387852066,
+   "predicted_review_useful_or_partial": 5,
+   "prediction_reasoning": "THE FOUR-CASE EDGE IS ON THIS BASE, NOT ON THE SOLO ONE.  ARCH.V19CL1664 reads 3 and ARCH.V19CL1792 reads 7, and K=19,456 is the summit rung where the vocabulary axis costs ZERO on CL1792 (7 solo, 7 folded).  Midpoint of 3 and 7 is 5.",
+   "what_a_miss_means": "a read of 7 or 3 locates the edge to a 64-channel bracket in one pass, which is finer than the mlp axis has ever been resolved."
+  },
+  {
+   "cell_id": "ARCH.T9CL896X09",
+   "tag": "T9CL896X09",
+   "build": "tieq.sh T9CL896X09:9216:512:93504256:/mnt/ai_data/neural-forge-matrix/wave37/children/MX37-CL896X09",
+   "source": "wave 37's RETAINED MX37-CL896X09, ARCH.CL896X09, --ff 896 --excise 9, 151,175,936 parameters, sealed 1/15 at wave 37",
+   "cost": "one CPU pass, no capture, no forward call",
+   "predicted_parameter_count": 93504256,
+   "predicted_stored_parameter_ratio": 0.4070832855,
+   "parameter_count_is_a_falsifiable_criterion": "93,504,256 -- EXACTLY ARCH.V9CL896X09's count, and the builder refuses if it is not.  The control is byte-exact: same body, same K, same tokenizer bytes, same parameter count, and 512 rows different.",
+   "predicted_review_useful_or_partial": 0,
+   "prediction_reasoning": "THIS IS THE C1 CENSUS-KILL REPAIR AND ITS CONTROL IS A SEALED ZERO.  ARCH.V9CL896X09 reads 0/15 sealed and 0/15 canonically at this exact ratio -- the campaign's second vocabulary death, and the most content-weighted zero in the deep record (eight of fifteen misses readable-and-wrong).  The honest prior is that no evidence-side or weight-side change on this campaign's record has ever priced more than one case, and wave 14's own measurement says the tail's nearest-neighbour cosine is 0.2977, so the shared rows are poor stand-ins in absolute terms.  Registered at ZERO.  WHAT MAKES IT WORTH A PASS ANYWAY: the comparison has never been run.  The 0.2977 was measured against VERBATIM and this child's control is DELETION, which is strictly worse than a 0.30-cosine stand-in, and the class was closed on the wrong comparison at the exact axis and the exact rung where this campaign's floor is set.",
+   "what_a_miss_means": "a read of one or more at 0.4070832855x does three things at once: it moves the campaign's sealed floor down by 0.0045651159 of stored ratio, it falsifies the wave-14 census on a built child, and it makes tie-vs-delete a live axis on 29.2% of the model.  A read of zero closes C1 LEGITIMATELY for the first time -- by a child and a frozen review, which is what ADDENDUM 11 requires and what the census was not."
+  }
+ ],
+ "conditional_children": [
+  {
+   "cell_id": "ARCH.CL736",
+   "condition": "built only if ARCH.CL768 reads FOUR OR MORE -- the inventory's own gate is 'CL736 if CL768 shows >= 4/15 solo-equivalent vitality'.",
+   "predicted_parameter_count": 151246592,
+   "predicted_stored_parameter_ratio": 0.6584722688,
+   "predicted_review_useful_or_partial": 3,
+   "why_conditional": "CL736's only reason to exist is that CL736 + K=10,240 = 94,623,488 = 0.4119560117x, which is the campaign floor to four decimals with NO excision.  If CL768 is already dead the rung measures a dead body at a shallower depth and buys nothing the CL768 ladder does not."
+  },
+  {
+   "cell_id": "ARCH.V10CL736",
+   "condition": "built only if ARCH.CL736 is built.",
+   "predicted_parameter_count": 94623488,
+   "predicted_stored_parameter_ratio": 0.4119560117,
+   "predicted_review_useful_or_partial": 2,
+   "why_conditional": "it is the cell that would tie the campaign floor on the cheapest axis pair in the model."
+  }
+ ],
+ "wave_39s_two_orphans": {
+  "what": "wave 39 built ARCH.V14CL896X13 and ARCH.V10CL896X13, sealed both cell receipts, generated both frozen dossiers and both ledger shards, and then STOPPED.  No verdict was written, no ledger row was merged, no note was published, and the repository HEAD carries wave 39's pre-registration and no wave-39 measurement.",
+  "what_wave_40_does": "reads both dossiers against the same standard as its own children and seals their verdicts under their OWN wave-39 cell receipts, so the ledger rows say campaign_wave 39.  Wave 40 claims the READING and not the children.",
+  "why": "they are two 40-second passes that answer what NOTES-MX-AP called 'the cheapest open question in the estate' -- whether the X09-over-X13 advantage is a law of the block or of the rung -- and the GPU decode has already been paid for.  Leaving a paid-for dossier ungraded is the same waste as not building it.",
+  "prediction_is_NOT_offered": "wave 39 registered them at 1 and 1 in its own pre-registration, which is on disk at wave39/prereads/preregistration-wave39.json and at repo commit c448503a.  Wave 40 does not re-register them and will score them against WAVE 39'S registrations, because a wave that predicts a dossier it can already read is not predicting."
+ },
+ "wave_level_predictions": [
+  {
+   "claim": "THE SEALED 1/15 RUNG MOVES ONLY IF V9CL768 OR T9CL896X09 HOLDS.",
+   "reasoning": "the sealed 1/15 rung is 0.4116484014x.  V9CL768 at 0.4133826104x is ABOVE it and cannot move it even at one case; V10CL768 at 0.4179477263x likewise.  The only cells in this wave that can move the 1/15 rung are T9CL896X09 (0.4070832855x), V12CL768X09 (0.3985236932x) and V10CL768X09 (0.3893934615x), and all three are registered at zero.  If the frontier does not move this wave, that is the registered outcome and not a disappointment."
+  },
+  {
+   "claim": "the canonical lens moves nothing on any child below 0.43x.",
+   "reasoning": "DEEP_RECORD 8.8, written at wave 38: below roughly 0.43x the canonical column stops being an independent reading.  Wave 38 read zero of six above their seals.  Seven of this wave's ten core children are below 0.43x."
+  },
+  {
+   "claim": "every parameter count lands EXACTLY as registered, and the two that are new arithmetic are the ones to check first.",
+   "reasoning": "152,622,848 and 146,064,128 are derived rather than copied, and 146,064,128 is the count the published inventory got wrong by 393,216.  A different number means the per-channel or the per-block decomposition is wrong, and both were validated against sealed counts before this file was written."
+  },
+  {
+   "claim": "T9CL896X09's median assignment cosine reads BELOW wave 14's 0.2977.",
+   "reasoning": "wave 14 measured nearest-neighbour cosine against the whole KEPT set at K=12,288.  This child measures against 512 TIE ROWS only -- a smaller, lower-ranked target set at a smaller K -- so the number must be lower.  Registering it stops a low cosine being read afterwards as a surprise or as a defect."
+  },
+  {
+   "claim": "the tie child's tokenizer.json is BYTE-IDENTICAL to what the deletion arm would write at K=9,216 on the same source.",
+   "reasoning": "it is written by the deletion arm's own remapped_tokenizer, called and not copied, and the merge count is independently re-derived and compared.  If the two disagree the builder refuses."
+  }
+ ],
+ "stated_deviations": [
+  {
+   "deviation": "K4 -- the score-bilinear joint q/k lead -- is NOT built this wave and no partial version of it is.",
+   "why": "the order funds it 'if budget'.  It has no module, no driver and no precedent in this tree, and its exact-4x storage claim cannot be realised in a stock checkpoint on this parent: contracting head_dim for q and k alone is not a stock config axis when v shares it, and zero-padding is on the kill list.  It is therefore a research probe with a materialised dense export whose storage claim is arithmetic rather than a loader count, and a probe of that shape costs a module, a driver, a build and a review.  Wave 40 spends that budget on the ten core children and the C1 repair instead, and says so here rather than reporting the omission afterwards."
+  },
+  {
+   "deviation": "K3(b) -- the ORTHO-PAIR soft arm on the living pair -- is NOT built.",
+   "why": "its base, ARCH.X07KV6JQC, is a wave-17-to-22 child and is not on the share; no retention manifest kept it.  The arm needs that body, a conditioned capture through it and a re-solve, which is a body build plus a capture plus a solve plus a review -- not the 'zero storage delta, one build' the inventory prices it at, because the inventory prices the SOLVE and not the reconstruction of the base.  This is recorded as a cost correction to the inventory, not as a decision that the class is closed.  Its registration still says build regardless of census, and it still stands."
+  },
+  {
+   "deviation": "K3(c) -- Monarch's first cell -- is NOT built.",
+   "why": "same shape of problem as K4.  A Monarch factorisation is not expressible in a stock Lfm2ForCausalLM config, so the child is either a custom-module research probe (ADDENDUM 12: no ARCH id, no loader ratio, and A8 F-LANDMARK has been stuck in exactly that state for eighteen waves for want of a loader) or a materialised dense export whose storage claim is arithmetic.  Wave 40 does not have the budget to do that properly AND read ten children, and doing it improperly would add a tenth unpriced probe to an estate whose problem is unpriced probes."
+  },
+  {
+   "deviation": "DEEP_RECORD 8.3's n stays at thirteen.",
+   "why": "no lambda ladder runs this wave.  Wave 38 said a wave that wants to move n has to spend two solves; wave 40 spends none on that axis and says so rather than counting an arm."
+  },
+  {
+   "deviation": "the benchmark ladder covers the parent and a SUBSET of children, not all ten.",
+   "why": "standard invocation, parent FIRST, as every wave since 32.  The subset is named in the note and is chosen to cover both new bodies, the K1 ladder's three depths and the tie child beside its deletion control, because a benchmark column that does not carry the controlled pair cannot be read against the review."
+  }
+ ],
+ "gpu_state_at_registration": {
+  "rtx_3090_index_0_mib": 288,
+  "rtx_3090_index_4_mib": 279,
+  "quadro_rtx_8000_index_6_mib": 330,
+  "note": "the Quadro's 45,212 MiB standing allocation, recorded across waves 37, 38 and 39 as belonging to something outside this campaign, is GONE: index 6 reads 330 MiB at this wave's preflight.  Wave 40 did not release it and issues no command against index 6.  It is recorded here so a later reader does not attribute either the allocation or its disappearance to the matrix campaign.  The two 3090s carry an idle-holding H3 ComfyUI container at ~280 MiB each and are not restarted, for wave 34's stated reason.  The four P40s read 5 MiB each and are never touched."
+ },
+ "ledger_at_registration": {
+  "rows": 988,
+  "sha256": "2beb2c7e966a8f7fe312b8a6d000b266a6bb3dec662cc1408d15da5a22139c7f",
+  "note": "unchanged since wave 38.  Wave 39 built, sealed and reviewed two children and merged nothing."
+ }
+}

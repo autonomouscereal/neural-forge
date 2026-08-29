@@ -1,0 +1,380 @@
+# ARCH.CL768  dossier b3fe091a8ca1f84c
+# net_ratio 0.664464  config_diff ['block_ff_dim', 'intermediate_size']
+
+---  1 conversation-natural-greeting [complete] 71 chars, 71 collapsed  <350 COLLAPSED
+I'm sorry, thank thank! It's a great day, and I'm honored to honor you.
+
+---  2 instruction-three-actions [complete] 799 chars, 765 collapsed
+1. **Forging**: Take a few hours of a few minutes to ensure that the task is completed before the task is done.  
+   - **Forging**: The task is completed before the task is finished.  
+   - **Forging**: The task is completed before the task is finished.  
+
+2. **Forging**: Take a few hours of a few minutes to ensure that the task is completed before the task is finished.  
+   - **Forging**: The task is completed before the task is finished.  
+   - **Forging**: The task is completed before the task is finished.  
+
+3. **Forging**: Take a few hours of a few minutes to ensure that the task is completed before the task is finished.  
+   - **Forging**: The task is completed before the task is finished.  
+
+These tasks are essential to ensure that the task is completed before the task is finished.
+
+---  3 explanation-seasons [censored-at-cap] 1544 chars, 1544 collapsed
+Earth's Earth is a 4-5-10-20-30-25-20-30-25-20-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-30-
+
+---  4 arithmetic-multi-step [censored-at-cap] 1175 chars, 1122 collapsed
+The workshop is a workshop that includes 17 kits per a per hour for 6 hours. Each kit is packed into 5 boxes, and each each box in each each each each each each each each each per per per = 6 per/per/per = 6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6/6
+
+---  5 logic-ordering [complete] 52 chars, 52 collapsed  <350 COLLAPSED
+Mira finished before Theo. Theo finished before Jun.
+
+---  6 context-retrieval [complete] 277 chars, 277 collapsed  <350 COLLAPSED
+The question is a question about the following issue: "I want to bring my dog and borrow a shovel." This is a direct answer to the question, which is a reminder on the user's time. The question is a direct answer to the user's time, which is 7:30 a.m. Tuesday through Saturday.
+
+---  7 summarization-priorities [complete] 1987 chars, 1343 collapsed
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each each
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of each of each of each of each of each of each of each of each of each of each of each of each of each of each of each of each of each
+
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of a single per of the each of of the each of of each of of each of of each of of each of of each of of each of of each of of each of of each
+
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of a single per of the each of of the each of of each of of each of of each of of each of of each
+
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of a single per of the each of of the each of of each of of each of of each of of each
+
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of a single per of the each of of the each of of each of of each of of each
+
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of a single per of the each of of the each of of each of of each
+
+
+Summ, the team compares three suppliers: A and B. The supplier, A is cheapest but cannot guarantee delivery before launch, and B costs 11% of a single per of the each of of the each of of each of of each
+
+
+---  8 comparison-ram-rom [censored-at-cap] 3962 chars, 3817 collapsed
+Here, we are comparing RAM and storage together together. What is the same analogy? How do we know?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+What is the same analogy?
+
+
+
+---  9 coding-deduplicate [complete] 190 chars, 190 collapsed  <350 COLLAPSED
+The Python function named unique_in_order removes duplicates while preserving first-seen order. It must work with hashable values. Includes one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 354 chars, 354 collapsed
+I'm sorry, but I'm sorry that the email is being a message to a vendor for a delayed shipment, and I'm sorry that the tracking number is available for you to confirm the shipment. Please, I'll provide a response to the email, but I'm sorry that the message is not intended to be sent to the recipient. Instead, I'll send you a direct reply to the vendor.
+
+--- 12 planning-dependencies [complete] 318 chars, 318 collapsed  <350 COLLAPSED
+I'm sorry, but please don't provide information regarding the following ethical guidelines and instructions. Please, I'm sorry for your request to move a small website to a new domain without unnecessary downtime. I'm sorry for your request to cover backups, DNS, TLS, verification, and rollback. Keep it to six steps.
+
+--- 13 uncertainty-insufficient-data [complete] 407 chars, 407 collapsed
+I'm sorry, but I'm sorry for you to share with the information about the graph, which is a key source of information about the sales increase. The graph itself is a sales increase, but it's not enough to provide details about the time range, units, sample size, or price changes. Let me explain the information you need to share with the graph, which is a key source of information about the sales increase.
+
+--- 14 safety-household-chemical [complete] 71 chars, 71 collapsed  <350 COLLAPSED
+I'm sorry, it's the room that smells sharp. What should I do right now?
+
+--- 15 creative-continuity [complete] 177 chars, 177 collapsed  <350 COLLAPSED
+Lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomenon.
+
+--- 16 multi-turn-correction [censored-at-cap] 4111 chars, 584 collapsed
+I'm sorry, thank thankest. It's been a great job, but I'm sorry for you to take this responsibility. I'm sorry that the plan is safe and enjoyable. Please, I'm happy to help you with the plan. I'll provide you with the four snacks you should consider.
+
+First, you should consider the first, because you have a very strong and strong personality. That's a great job, but it's too too too too too too too too too too too too. That's vegan. I'll help you with the plan.
+
+Here are four snacks you should consider:
+
+1. **First**: You should consider the first, because you have a strong personality. That's a great job, but it's too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too too
+
+# cap-hits 4/16

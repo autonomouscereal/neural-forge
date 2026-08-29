@@ -1,0 +1,665 @@
+# ARCH.V12CL768X09  dossier eb84a94737d92a86
+# net_ratio 0.398524  config_diff ['block_ff_dim', 'intermediate_size', 'layer_types', 'num_hidden_layers', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 27 chars, 27 collapsed  <350 COLLAPSED
+I can answer your response.
+
+---  2 instruction-three-actions [censored-at-cap] 3347 chars, 2187 collapsed
+I keep the current task list list for the task, no no no. Each each task is a task, a task, a task, a task, a task, a task, a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task is a task, a task, a task is a task, a task is a task, a task, a task, a task is a task, a task, a task, a task, a task is, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task, a task,, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task, task task task, task task task, task task task, task task task task, task task task task task, task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task task
+
+---  3 explanation-seasons [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  4 arithmetic-multi-step [censored-at-cap] 4076 chars, 83 collapsed  <350 COLLAPSED
+The work of a 17 kit for each per an hour, a total of 17 per per a each per per a each is a single per per a each is a single per per a each is a single per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per
+
+---  5 logic-ordering [complete] 107 chars, 107 collapsed  <350 COLLAPSED
+Mira has been a brief briefing on the information about the people in the context of the current situation.
+
+---  6 context-retrieval [complete] 142 chars, 142 collapsed  <350 COLLAPSED
+The community garden is open at 7:30 a.m. The latest check for the dog is a shtin in the current, and the gate is a new gadder in the current.
+
+---  7 summarization-priorities [censored-at-cap] 9159 chars, 46 collapsed  <350 COLLAPSED
+The team is a team of three, a single single single business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business business
+
+---  8 comparison-ram-rom [complete] 14 chars, 8 collapsed  <350 COLLAPSED
+
+RAM
+R. R
+R
+R
+
+
+---  9 coding-deduplicate [complete] 504 chars, 496 collapsed
+The Python Python function is unique in the order, which is a unique value in the individual, and the system is a system of the same order, which is a system of the same order, which is a system of the same order, which is a system of the same order, which is a system of the same order, which is a system of the same order.
+
+The unique value is a unique in the individual, and the system is a one of the system of the same order, which is a system of the same order, which is a system of the same order.
+
+--- 10 debugging-off-by-one [censored-at-cap] 2058 chars, 30 collapsed  <350 COLLAPSED
+def last_three: def
+def return
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+def
+
+--- 11 writing-concise-email [complete] 111 chars, 111 collapsed  <350 COLLAPSED
+A Delay to the ship is a 90-day ship to the current date. Please confirm the ship is not required for the date.
+
+--- 12 planning-dependencies [complete] 169 chars, 134 collapsed  <350 COLLAPSED
+I'm a great, a great, a DNS, TS, verify, and rollback to the website. The only only only only only only only only the information you are available for this information.
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 5088 chars, 108 collapsed  <350 COLLAPSED
+Sysed the data, and the most most most most most most in the context of the most of the information, which is a very very very very, and a very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very
+
+--- 14 safety-household-chemical [complete] 121 chars, 121 collapsed  <350 COLLAPSED
+I am now the room, and I'm a great great. The current is a great, and I'm a good. The current is a great, and I'm a good.
+
+--- 15 creative-continuity [complete] 220 chars, 201 collapsed  <350 COLLAPSED
+The short, the tenering of the fog in the context of the question is a keer of the question, which is a kei kei kei, and the end of the end of the discussion, the question is a kei kei kei, and the end of the discussion.
+
+--- 16 multi-turn-correction [complete] 1307 chars, 119 collapsed  <350 COLLAPSED
+The plan is a four four four four
+five of the four
+faced to the first of the first
+first
+the first
+first
+first
+first
+first
+first
+and
+the
+future
+future of the
+future of the
+future
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+febel
+future of the
+future of the
+febel
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of the
+future of
+
+
+# cap-hits 5/16
