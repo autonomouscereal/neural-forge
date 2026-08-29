@@ -1,11 +1,5 @@
 {
- "ARCH.V8CL896X13": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V7CL768": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V9CL896X13": {
+ "ARCH.RC9CL896X13": {
   "summarization-priorities": "COPY_BACK"
  },
  "ARCH.RP9CL896X13": {
@@ -14,75 +8,8 @@
  "ARCH.RR9CL896X13": {
   "summarization-priorities": "COPY_BACK"
  },
- "ARCH.RC9CL896X13": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V9CL896X13G10": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V9CL896X13G03": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V8CL768": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V10CL896X09": {
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V10CL896X09G10": {
-  "context-retrieval": "CONTENT",
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V10CL896X13": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V9CL768": {
-  "summarization-priorities": "COPY_BACK"
- },
  "ARCH.V10CL768": {
   "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V12CL896X13": {
-  "writing-concise-email": "CONTENT"
- },
- "ARCH.V12CL896X13G03": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V12CL896X09": {
-  "context-retrieval": "CONTENT",
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V12CL896X09G03": {
-  "context-retrieval": "CONTENT"
- },
- "ARCH.V12CL896X09G10": {
-  "context-retrieval": "CONTENT",
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V12CL768": {
-  "summarization-priorities": "COPY_BACK"
- },
- "ARCH.V14CL896X09": {
-  "context-retrieval": "CONTENT",
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V14CL896X13": {
-  "context-retrieval": "CONTENT"
- },
- "ARCH.V9CL896": {
-  "summarization-priorities": "COPY_BACK",
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V9CL896G03": {
-  "summarization-priorities": "COPY_BACK",
-  "writing-concise-email": "COPY_BACK",
-  "uncertainty-insufficient-data": "CONTENT"
- },
- "ARCH.V9CL896G10": {
-  "context-retrieval": "CONTENT",
-  "summarization-priorities": "COPY_BACK",
-  "writing-concise-email": "COPY_BACK",
-  "uncertainty-insufficient-data": "CONTENT"
  },
  "ARCH.V10CL896": {
   "summarization-priorities": "COPY_BACK",
@@ -102,7 +29,24 @@
   "writing-concise-email": "COPY_BACK",
   "uncertainty-insufficient-data": "CONTENT"
  },
+ "ARCH.V10CL896X09": {
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V10CL896X09G10": {
+  "context-retrieval": "CONTENT",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V10CL896X13": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V12CL768": {
+  "summarization-priorities": "COPY_BACK"
+ },
  "ARCH.V12CL896": {
+  "summarization-priorities": "COPY_BACK",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V12CL896G01": {
   "summarization-priorities": "COPY_BACK",
   "uncertainty-insufficient-data": "CONTENT"
  },
@@ -112,13 +56,26 @@
   "writing-concise-email": "COPY_BACK",
   "uncertainty-insufficient-data": "CONTENT"
  },
- "ARCH.V12CL896G01": {
-  "summarization-priorities": "COPY_BACK",
-  "uncertainty-insufficient-data": "CONTENT"
- },
  "ARCH.V12CL896G10": {
   "summarization-priorities": "COPY_BACK",
   "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V12CL896X09": {
+  "context-retrieval": "CONTENT",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V12CL896X09G03": {
+  "context-retrieval": "CONTENT"
+ },
+ "ARCH.V12CL896X09G10": {
+  "context-retrieval": "CONTENT",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V12CL896X13": {
+  "writing-concise-email": "CONTENT"
+ },
+ "ARCH.V12CL896X13G03": {
+  "summarization-priorities": "COPY_BACK"
  },
  "ARCH.V14CL896": {
   "summarization-priorities": "COPY_BACK",
@@ -133,6 +90,13 @@
   "summarization-priorities": "COPY_BACK",
   "uncertainty-insufficient-data": "CONTENT"
  },
+ "ARCH.V14CL896X09": {
+  "context-retrieval": "CONTENT",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V14CL896X13": {
+  "context-retrieval": "CONTENT"
+ },
  "ARCH.V16CL896": {
   "summarization-priorities": "COPY_BACK"
  },
@@ -144,5 +108,44 @@
  "ARCH.V16CL896G10": {
   "summarization-priorities": "COPY_BACK",
   "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V6CL768": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V7CL768": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V8CL768": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V8CL896X13": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V9CL768": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V9CL896": {
+  "summarization-priorities": "COPY_BACK",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V9CL896G03": {
+  "summarization-priorities": "COPY_BACK",
+  "writing-concise-email": "COPY_BACK",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V9CL896G10": {
+  "context-retrieval": "CONTENT",
+  "summarization-priorities": "COPY_BACK",
+  "writing-concise-email": "COPY_BACK",
+  "uncertainty-insufficient-data": "CONTENT"
+ },
+ "ARCH.V9CL896X13": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V9CL896X13G03": {
+  "summarization-priorities": "COPY_BACK"
+ },
+ "ARCH.V9CL896X13G10": {
+  "summarization-priorities": "COPY_BACK"
  }
 }

@@ -1,8 +1,145 @@
 # DEEP_RECORD — everything the campaign has built below half the parent
 
-**Written at wave 35, refreshed at waves 36, 37, 38 and 39, 2026-08-29.** Ledger
-992 rows,
-`dfe27e468f09fc1907b32128090aac6c2cb05ec5946cf24a08a3a999f55d29cc`.
+**Written at wave 35, refreshed at waves 36, 37, 38, 39 and 42, 2026-08-29.**
+Ledger **1040 rows**,
+`803439d1d300622dea437d64aaea07de88c16af04e3a808c5e6f2155ce5c58c4`.
+
+**§0 IS NEW AND IT IS WHERE THE DEEP BAND NOW LIVES.** Waves 40, 41 and 42 added
+seventeen children below 0.50x and §1's table was last regenerated at wave 39, so
+§1 is a wave-39 snapshot and is left as one. §0 is regenerated from the ledger and
+from `wave42/deep-band-dual-assessment.json` and it carries **both readings of the
+copy-back clause**, which is the question §1's single `intel` column cannot
+express.
+
+---
+
+## 0. THE DUAL-COLUMN DEEP BAND — PENDING A RULING, AND COMPLETE EITHER WAY
+
+`NOTES-MX-AS` §4.1 and §12 put a question to the caller that no wave can settle
+by building a child: **does a response that returns the prompt's own payload —
+preserving the asked-for facts by copying rather than by answering — hold a case
+under the canonical standard?** Wave 41 flagged the contradiction (the clause
+reads its own children zero and reads wave 40's published canonical ONE as zero
+on a byte-identical lane) and refused to re-grade a sealed child to resolve it.
+
+Wave 42 does not resolve it either. It makes **both readings complete over the
+whole band**, so the ruling costs no re-grading in either direction.
+
+* **A — copy-back counts** (wave 40's practice). *Not computed.* It is the sealed
+  `per-case.json` verdict; `mx42_dualband.py` refuses to write its artifact if
+  its own count disagrees with the ledger's `behavior_useful_or_partial`.
+* **B — copy-back refused** (the clause as written). Column A minus the held
+  lanes that are copy-backs. A lane sealed as a miss is never re-read and the
+  module cannot turn a miss into a hold in either direction.
+* **voided** names the lanes column B removes; **held B** names what survives.
+  `summ` = summarization-priorities, `retr` = context-retrieval, `unc` =
+  uncertainty-insufficient-data, `email` = writing-concise-email.
+
+| child | ratio | stored | **A** | **B** | voided | held B | wave |
+|---|---:|---:|---:|---:|---|---|---:|
+| `ARCH.V10CL768X09` | 0.389393 | 89,441,024 | **0** | **0** | -- | -- | 40 |
+| `ARCH.V12CL896X09X13` | 0.390512 | 89,698,048 | **0** | **0** | -- | -- | 38 |
+| `ARCH.V6CL896X13` | 0.393388 | 90,358,528 | **0** | **0** | -- | -- | 42 |
+| `ARCH.V7CL896X13` | 0.397953 | 91,407,104 | **0** | **0** | -- | -- | 42 |
+| `ARCH.V12CL768X09` | 0.398524 | 91,538,176 | **0** | **0** | -- | -- | 40 |
+| `ARCH.V6CL768` | 0.399687 | 91,805,440 | **1** | **0** | summ | -- | 42 |
+| `ARCH.V8CL896X13` | 0.402518 | 92,455,680 | **1** | **0** | summ | -- | 41 |
+| `ARCH.V7CL768` | 0.404252 | 92,854,016 | **1** | **0** | summ | -- | 41 |
+| `ARCH.V9CL896X09` | 0.407083 | 93,504,256 | **0** | **0** | -- | -- | 38 |
+| `ARCH.T9CL896X09` | 0.407083 | 93,504,256 | **0** | **0** | -- | -- | 40 |
+| `ARCH.V9CL896X13` | 0.407083 | 93,504,256 | **1** | **0** | summ | -- | 40 |
+| `ARCH.RP9CL896X13` | 0.407083 | 93,504,256 | **1** | **0** | summ | -- | 41 |
+| `ARCH.RR9CL896X13` | 0.407083 | 93,504,256 | **1** | **0** | summ | -- | 41 |
+| `ARCH.RC9CL896X13` | 0.407083 | 93,504,256 | **1** | **0** | summ | -- | 41 |
+| `ARCH.V9CL896X13G10` | 0.407083 | 93,504,256 | **1** | **0** | summ | -- | 41 |
+| `ARCH.V9CL896X13G29` | 0.407083 | 93,504,256 | **0** | **0** | -- | -- | 41 |
+| `ARCH.V9CL896X13G03` | 0.407083 | 93,504,256 | **1** | **0** | summ | -- | 41 |
+| `ARCH.V8CL768` | 0.408817 | 93,902,592 | **1** | **0** | summ | -- | 41 |
+| `ARCH.V95CL896X09` | 0.409366 | 94,028,544 | **0** | **0** | -- | -- | 41 |
+| `ARCH.V10CL896X09` | 0.411648 | 94,552,832 | **1** | **1** | -- | unc | 38 |
+| `ARCH.V10CL896X09G10` | 0.411648 | 94,552,832 | **2** | **2** | -- | retr/unc | 38 |
+| `ARCH.V10CL896X13` | 0.411648 | 94,552,832 | **1** | **0** | summ | -- | 39 |
+| `ARCH.V9CL768` | 0.413383 | 94,951,168 | **1** | **0** | summ | -- | 40 |
+| `ARCH.V10CL768` | 0.417948 | 95,999,744 | **1** | **0** | summ | -- | 40 |
+| `ARCH.V12CL896X13` | 0.420779 | 96,649,984 | **1** | **1** | -- | email | 35 |
+| `ARCH.V12CL896X13G03` | 0.420779 | 96,649,984 | **1** | **0** | summ | -- | 36 |
+| `ARCH.V12CL896X09` | 0.420779 | 96,649,984 | **2** | **2** | -- | retr/unc | 37 |
+| `ARCH.V12CL896X09G03` | 0.420779 | 96,649,984 | **1** | **1** | -- | retr | 37 |
+| `ARCH.V12CL896X09G10` | 0.420779 | 96,649,984 | **2** | **2** | -- | retr/unc | 37 |
+| `ARCH.V12CL768` | 0.427078 | 98,096,896 | **1** | **0** | summ | -- | 40 |
+| `ARCH.V14CL896X09` | 0.429909 | 98,747,136 | **2** | **2** | -- | retr/unc | 38 |
+| `ARCH.V14CL896X13` | 0.429909 | 98,747,136 | **1** | **1** | -- | retr | 39 |
+| `ARCH.V8CL896` | 0.432784 | 99,407,616 | **0** | **0** | -- | -- | 24 |
+| `ARCH.V9CL896` | 0.437349 | 100,456,192 | **2** | **1** | summ | unc | 35 |
+| `ARCH.V9CL896G03` | 0.437349 | 100,456,192 | **3** | **1** | summ/email | unc | 36 |
+| `ARCH.V9CL896G10` | 0.437349 | 100,456,192 | **4** | **2** | summ/email | retr/unc | 36 |
+| `ARCH.V10CL896` | 0.441915 | 101,504,768 | **2** | **1** | summ | unc | 34 |
+| `ARCH.V10CL896G01` | 0.441915 | 101,504,768 | **2** | **1** | summ | unc | 35 |
+| `ARCH.V10CL896G03` | 0.441915 | 101,504,768 | **3** | **1** | summ/email | unc | 35 |
+| `ARCH.V10CL896G10` | 0.441915 | 101,504,768 | **3** | **1** | summ/email | unc | 35 |
+| `ARCH.V12CL896` | 0.451045 | 103,601,920 | **2** | **1** | summ | unc | 34 |
+| `ARCH.V12CL896G03` | 0.451045 | 103,601,920 | **4** | **2** | summ/email | retr/unc | 34 |
+| `ARCH.V12CL896G01` | 0.451045 | 103,601,920 | **2** | **1** | summ | unc | 34 |
+| `ARCH.V12CL896G10` | 0.451045 | 103,601,920 | **2** | **1** | summ | unc | 34 |
+| `ARCH.V19X13CL896` | 0.452734 | 103,990,016 | **0** | **0** | -- | -- | 28 |
+| `ARCH.V14CL896` | 0.460175 | 105,699,072 | **2** | **1** | summ | unc | 35 |
+| `ARCH.V14CL896G03` | 0.460175 | 105,699,072 | **3** | **1** | summ/email | unc | 35 |
+| `ARCH.V14CL896G10` | 0.460175 | 105,699,072 | **2** | **1** | summ | unc | 37 |
+| `ARCH.W512` | 0.463481 | 106,458,368 | **0** | **0** | -- | -- | 19 |
+| `ARCH.V16CL896` | 0.469305 | 107,796,224 | **1** | **0** | summ | -- | 23 |
+| `ARCH.V16CL896G03` | 0.469305 | 107,796,224 | **3** | **1** | summ/email | unc | 34 |
+| `ARCH.V16CL896G10` | 0.469305 | 107,796,224 | **2** | **1** | summ | unc | 37 |
+
+**THE TWO FLOORS.**
+
+| reading | ratio | child | what holds |
+|---|---:|---|---|
+| **A — copy-back counts** | **0.3996872628** | `ARCH.V6CL768` | one lane: the source paragraph returned in full |
+| **B — copy-back refused** | **0.4116484014** | `ARCH.V10CL896X09` | one lane: `uncertainty-insufficient-data`, which NAMES the four missing variables |
+
+**The gap is 0.0119611386 of stored ratio — 2,747,392 parameters — and the whole
+of it is one lane read two ways.** Nothing else in the fifty-two children differs
+between the columns.
+
+**WHAT COLUMN B SAYS, STATED PLAINLY.** Under the clause as written **every held
+case between 0.3934x and 0.4094x is voided**: seventeen children, and each one
+holds on `summarization-priorities`, and every one of those lanes is the
+six-sentence source paragraph returned in full — read by hand, all **seventeen
+distinct responses** in the band, six of them with the instruction line still
+attached. Below 0.4116484014x the campaign has **no living child at all** on that
+reading, and the rung has not moved since wave 38.
+
+**WHAT COLUMN B DOES NOT VOID, AND WHY THE ASK TABLE IS THE LOAD-BEARING PART.**
+Wave 40 sealed a copied SUMMARISATION lane held and a copied RETRIEVAL lane a
+miss, and those are consistent: the summarisation ask is to PRESERVE two facts,
+which a copy does, and the retrieval ask is to SELECT three, which a copy does
+not. So the clause can only reach a PRESERVE lane. The `retr` and `unc` lanes
+that survive column B are real selection — degraded, cap-riding, but naming the
+4:15 p.m. checkout, the 7:30 opening, and the missing time range, units, sample
+size and price change. `mx42_dualband.py` publishes an **anomaly** if column B
+ever voids a lane whose ask is not PRESERVE. **It fired zero times across 52
+children and 69 held lanes.**
+
+**THE INSTRUMENT'S OWN DEFECT, PUBLISHED.** The pre-registered machine measure
+thresholds the LONGEST CONTIGUOUS common run, and every copy-back here carries
+the word-substitution signature, so each mutation breaks the run: it scored
+`ARCH.RP9CL896X13`'s held lane at **0.153** and called it content. The hand
+reading found it, and `payload_union_coverage` — the union of all common runs —
+reads **0.827 to 0.997** on all seventeen copies against **0.198 to 0.331** for a
+genuine two-sentence summary of the same paragraph. **The union measure decides
+nothing in wave 42**, because it was added after the results were seen; every
+`machine_classification` in the artifact is still the pre-registered measure's and
+the **hand reading** is what voids a lane. There are **22 machine/hand
+disagreements** and they are listed by digest in the artifact. The next wave
+should pre-register the union measure as primary.
+
+**HOW TO CHECK ANY ROW.** `wave42/deep-band-dual-assessment.json` carries, per
+child per lane: the sealed verdict, the response `sha256` prefix, the lane's ask
+class, the payload character count, the longest common run, both coverage
+fractions, the union coverage, the machine classification and the hand reading.
+`wave42/hand-reading-wave42.json` is the reviewer's 69 calls on their own.
+
+---
 
 This is one page and it is the whole sub-0.5x record: every child ever built
 below half of `LFM2.5-230M`'s 229,693,184 parameters, read under **both**

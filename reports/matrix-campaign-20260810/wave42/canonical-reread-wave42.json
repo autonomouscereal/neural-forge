@@ -1,0 +1,48 @@
+{
+ "schema": "neural-forge-matrix-wave42-canonical-reread-v1",
+ "what_this_is": "the second reading of every wave-42 child under the CANONICAL standard, taken after the seals were written and against the same frozen dossiers.  The canonical lens forgives an ARTIFACT -- a cap-ride, a loop, a word substitution -- where the lane's substantive ask is nevertheless answered.  It does NOT forgive a lane that returns the prompt itself, because a copy-back is not a decode failure, it is the absence of a decode.  The clauses are quoted unchanged from waves 21, 23, 24, 38, 40 and 41; nothing here is a stricter or a looser standard invented this wave.",
+ "and_this_wave_does_not_leave_it_at_a_sentence": "wave 41 recorded that the clause reads all ten of its children zero and that the same clause reads wave 40's published canonical ONE as zero on a byte-identical lane, and left the adjudication open.  Wave 42 makes both readings COMPLETE over the whole deep band rather than arguing about them: wave42/deep-band-dual-assessment.json publishes 52 children, 0.3894x to 0.4693x, with column A the sealed per-case verdict and column B the same verdict minus the held lanes that are copy-backs, per lane, with the response digest on every row.",
+ "children": [
+  {
+   "cell_id": "ARCH.V6CL768",
+   "ratio": 0.3996872628,
+   "sealed": 1,
+   "canonical": 0,
+   "held_lane_sha256_16": "f4d828fb1eb03d8b",
+   "the_lane_that_could_have_moved": "summarization-priorities, and it moves DOWN.  The lane returns the source update paragraph in full with three substitution artifacts -- bitties supspliers, 11 per cent more collapsed to 11 per cent, sampes.  It preserves the decision and the risk, which is why the sealed reading holds it; it performs no summarisation whatever, which is why the canonical clause refuses it.  NO OTHER LANE ANSWERS A SUBSTANTIVE ASK: eight of sixteen return the prompt or its payload, including a retrieval lane that hands back the NOTE with the NOTE: prefix still attached, and four ride the cap."
+  },
+  {
+   "cell_id": "ARCH.V7CL896X13",
+   "ratio": 0.3979530538,
+   "sealed": 0,
+   "canonical": 0,
+   "held_lane_sha256_16": null,
+   "the_lane_that_could_have_moved": "none.  Its summarisation lane loses both facts and keeps only the paragraph's last clause attached to a corrupted subject, so the sealed and canonical readings agree without needing the clause.  This is the second child in the campaign that CANNOT EVEN COPY, after wave 41's ARCH.V95CL896X09."
+  },
+  {
+   "cell_id": "ARCH.V6CL896X13",
+   "ratio": 0.3933879379,
+   "sealed": 0,
+   "canonical": 0,
+   "held_lane_sha256_16": null,
+   "the_lane_that_could_have_moved": "none.  Its summarisation lane echoes the INSTRUCTION -- the words unresolved risk survive out of the ask and not out of the payload -- and both facts are gone.  Third child that cannot even copy, and the deepest child the campaign has built."
+  }
+ ],
+ "the_two_rungs_this_wave_leaves": {
+  "sealed_and_copy_back_counts": {
+   "ratio": 0.3996872628,
+   "cell_id": "ARCH.V6CL768",
+   "stored_parameters": 91805440,
+   "what_it_means": "under wave 40's practice -- a response that preserves the lane's asked-for facts holds the case whether it summarised them or copied them -- the campaign's 1/15 rung is now BELOW 0.40x for the first time, and it moved 0.0028309068 this wave."
+  },
+  "canonical_and_copy_back_refused": {
+   "ratio": 0.4116484014,
+   "cell_id": "ARCH.V10CL896X09",
+   "stored_parameters": 94552832,
+   "what_it_means": "under the clause as written, EVERY held case between 0.3934x and 0.4094x is voided, because every one of them is the summarisation lane and every one of those lanes is the source paragraph returned in full.  The deepest surviving case is ARCH.V10CL896X09's uncertainty lane at 0.4116484014x -- a lane whose ask is to SELECT what is missing, which a copy cannot do, and which names the time range, units, sample size and price change.  The rung has not moved since wave 38."
+  },
+  "the_gap": 0.0119611386,
+  "the_gap_is_one_lane_read_two_ways": "0.0119611386 of stored ratio, 2,747,392 parameters, and the entire difference is whether a returned source paragraph holds the summarisation case.  Nothing else in the band differs between the two columns."
+ },
+ "what_this_wave_did_not_do": "it did not re-grade a sealed child, edit a sealed receipt, or pick a column.  ADDENDUM 9's two independent readings are both published in full; the ruling in NOTES-MX-AS section 12 chooses which one the campaign quotes, and either choice now costs zero re-grading."
+}

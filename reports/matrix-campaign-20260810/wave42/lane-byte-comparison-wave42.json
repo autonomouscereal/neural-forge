@@ -1,0 +1,431 @@
+{
+ "schema": "neural-forge-matrix-wave42-lane-byte-comparison-v1",
+ "what_this_is": "byte identity of child responses per lane, computed BEFORE any wave-42 count was written.  A count difference between two children that share a lane by bytes is not two independent decodes on that lane.",
+ "parent_lane_digests_identical_across_all_dossiers": true,
+ "protocol_per_dossier": {
+  "ARCH.V6CL768": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V7CL896X13": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V6CL896X13": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V7CL768": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V8CL768": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V8CL896X13": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V9CL768": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V9CL896X13": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ],
+  "ARCH.V10CL896X13": [
+   "e5e377688597",
+   "0ee6bf14cef5"
+  ]
+ },
+ "held_lane_digests": {
+  "ARCH.V10CL896X13": "e84b75540611dcf9",
+  "ARCH.V6CL768": "f4d828fb1eb03d8b",
+  "ARCH.V6CL896X13": "2cbb3ae41d464222",
+  "ARCH.V7CL768": "170feb2dcc17772b",
+  "ARCH.V7CL896X13": "3823843e49001dc4",
+  "ARCH.V8CL768": "a0c20c5b5ca553f2",
+  "ARCH.V8CL896X13": "e84b75540611dcf9",
+  "ARCH.V9CL768": "a0c20c5b5ca553f2",
+  "ARCH.V9CL896X13": "e84b75540611dcf9"
+ },
+ "pairs": [
+  {
+   "a": "ARCH.V8CL768",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 11,
+   "of": 16,
+   "summarisation_shared": true,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "context-retrieval",
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "instruction-three-actions",
+    "multi-turn-correction",
+    "planning-dependencies",
+    "summarization-priorities",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V7CL768",
+   "identical_lanes": 10,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "comparison-ram-rom",
+    "context-retrieval",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "instruction-three-actions",
+    "logic-ordering",
+    "multi-turn-correction",
+    "safety-household-chemical",
+    "uncertainty-insufficient-data"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V7CL896X13",
+   "identical_lanes": 8,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "comparison-ram-rom",
+    "context-retrieval",
+    "conversation-natural-greeting",
+    "instruction-three-actions",
+    "logic-ordering",
+    "multi-turn-correction",
+    "safety-household-chemical",
+    "uncertainty-insufficient-data"
+   ]
+  },
+  {
+   "a": "ARCH.V8CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 7,
+   "of": 16,
+   "summarisation_shared": true,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "creative-continuity",
+    "multi-turn-correction",
+    "planning-dependencies",
+    "safety-household-chemical",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 6,
+   "of": 16,
+   "summarisation_shared": true,
+   "lanes": [
+    "arithmetic-multi-step",
+    "comparison-ram-rom",
+    "instruction-three-actions",
+    "safety-household-chemical",
+    "summarization-priorities",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V8CL768",
+   "identical_lanes": 6,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "coding-deduplicate",
+    "context-retrieval",
+    "debugging-off-by-one",
+    "instruction-three-actions",
+    "logic-ordering",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V8CL768",
+   "identical_lanes": 5,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "context-retrieval",
+    "debugging-off-by-one",
+    "instruction-three-actions",
+    "logic-ordering",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 4,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "coding-deduplicate",
+    "context-retrieval",
+    "debugging-off-by-one",
+    "instruction-three-actions"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V8CL896X13",
+   "identical_lanes": 3,
+   "of": 16,
+   "summarisation_shared": true,
+   "lanes": [
+    "arithmetic-multi-step",
+    "safety-household-chemical",
+    "summarization-priorities"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 3,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "context-retrieval",
+    "debugging-off-by-one",
+    "instruction-three-actions"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V8CL896X13",
+   "identical_lanes": 2,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "instruction-three-actions",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V8CL896X13",
+   "identical_lanes": 2,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "instruction-three-actions",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V6CL896X13",
+   "identical_lanes": 1,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V7CL896X13",
+   "identical_lanes": 1,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 1,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 1,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": [
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V6CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V7CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V8CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V10CL896X13",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V6CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V7CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V8CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V7CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V8CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V7CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V8CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V8CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V8CL768",
+   "b": "ARCH.V8CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V8CL768",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V8CL896X13",
+   "b": "ARCH.V9CL768",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V9CL768",
+   "b": "ARCH.V9CL896X13",
+   "identical_lanes": 0,
+   "of": 16,
+   "summarisation_shared": false,
+   "lanes": []
+  }
+ ]
+}

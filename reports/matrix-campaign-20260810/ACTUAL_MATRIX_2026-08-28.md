@@ -1,4 +1,34 @@
-# THE ACTUAL MATRIX — Neural Forge fold campaign, re-read 2026-08-28
+# THE ACTUAL MATRIX — Neural Forge fold campaign, re-read 2026-08-28, amended at wave 42
+
+> **WAVE 42 AMENDMENT, PREPENDED.  The body below is the 2026-08-28 hand re-read
+> and no line of it is edited.**
+>
+> **The canonical re-read this file performs has an unresolved clause in it, and
+> waves 41 and 42 are what surfaced it.** This file forgives an artifact — a
+> loop, a cap-ride, a missing EOS — where intelligence is nevertheless retained.
+> It does not say what to do with a lane that returns **the prompt's own
+> payload**, and wave 40's canonical artifact does: *a copy-back is not a decode
+> failure, it is the absence of a decode.*
+>
+> **Every held case in the campaign between 0.3934x and 0.4094x is such a lane.**
+> Seventeen children, all holding on `summarization-priorities`, and all
+> seventeen distinct responses are the six-sentence source paragraph returned in
+> full — read by hand at wave 42, six of them with the instruction line still
+> attached.
+>
+> So the deep band has **two** canonical readings and this file's `intel` column
+> gives only one of them. `DEEP_RECORD` §0 and
+> `wave42/deep-band-dual-assessment.json` carry both, per child and per lane,
+> with the response digest on every row:
+>
+> | reading | floor | child | what holds |
+> |---|---:|---|---|
+> | copy-back counts | **0.3996872628x** | `ARCH.V6CL768` | the source paragraph, returned |
+> | copy-back refused | **0.4116484014x** | `ARCH.V10CL896X09` | `uncertainty-insufficient-data`, which NAMES what is missing |
+>
+> **Nothing in this file was re-graded to produce that.** The ruling in
+> `NOTES-MX-AS` §12 decides which column the campaign quotes.
+
 
 **What this file is.** A hand re-read of every reviewed whole-model child's verbatim
 dossier against Cyril's canonical standard, which supersedes prior grading

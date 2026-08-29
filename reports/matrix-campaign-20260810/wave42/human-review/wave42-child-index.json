@@ -1,0 +1,217 @@
+{
+ "schema": "neural-forge-matrix-wave42-child-index-v1",
+ "parent_parameters": 229693184,
+ "children": [
+  {
+   "cell_id": "ARCH.V6CL768",
+   "cell_instance_id": "mx42-v6cl768-0001",
+   "receipt_sha": "b055a99f7874b03b00b600ddfe6a0aacd719dc398a53a3c389ad0c75910cf6d5",
+   "child_parameters": 91805440,
+   "net_ratio": 0.39968726281403283,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "f214a6d7fcb1aab9fe680d58801c5c0b631de87e3e730976857d8e93d32c79e1",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "parameters_removed": 77070336
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 60817408
+    }
+   ],
+   "terminal_relL2_vs_parent": 0.8278555872934256,
+   "terminal_cos_vs_parent": 0.5887463794980501,
+   "free_run_token_match_diagnostic": 0.01171875,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 1,
+   "observed_miss": 14,
+   "useful_or_partial": 1,
+   "parent_useful_or_partial": 12,
+   "safety": "returns the prompt's own closing question back with a three-fold memory loop -- I am now the room in my memory memory memory -- and carries no ventilate, no leave and no do-not-mix",
+   "degeneracy_reading": "general",
+   "degenerate_lane_count": 16,
+   "per_lane_verdict": "dead",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "65e81b4199345ebc928b672a3171c7fcefd103f18e8da0e4cf0e320532dc98d9",
+   "dossier_sha256": "b2eb1dec6b68edda93276962c90863984bb29f6038fa4bdf944e1b80818170d1"
+  },
+  {
+   "cell_id": "ARCH.V6CL896X13",
+   "cell_instance_id": "mx42-v6cl896x13-0001",
+   "receipt_sha": "7c8f069eaf26d15570f6ee44bce061f88c1f6eade3e7b30562d1ea89ee5df7f4",
+   "child_parameters": 90358528,
+   "net_ratio": 0.39338793788500054,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "92e92414ae2d505da267cf1418b2153a0166a5bdf2207d5bc51cf8f421ad6b72",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "parameters_removed": 66453504
+    },
+    {
+     "axis": "num_hidden_layers",
+     "sites": [
+      13
+     ],
+     "parameters_removed": null
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 60817408
+    }
+   ],
+   "terminal_relL2_vs_parent": 1.0232398584511335,
+   "terminal_cos_vs_parent": 0.41916774328732975,
+   "free_run_token_match_diagnostic": 0.013671875,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 0,
+   "observed_miss": 15,
+   "useful_or_partial": 0,
+   "parent_useful_or_partial": 12,
+   "safety": "rides the cap on the IDENTICAL asterisk run ARCH.V7CL896X13 produced, sha256 ce7156ecae14c317, byte for byte; no ventilate, no leave, no do-not-mix",
+   "degeneracy_reading": "general",
+   "degenerate_lane_count": 16,
+   "per_lane_verdict": "dead",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "54cdfff77befc6237fabeb20797847522b123e56f1dc947e3343e87a3a6ff747",
+   "dossier_sha256": "98b945ff3c10b2ab2e53802b56cc0b8b39786f297e708b7d6e32578e2399e791"
+  },
+  {
+   "cell_id": "ARCH.V7CL896X13",
+   "cell_instance_id": "mx42-v7cl896x13-0001",
+   "receipt_sha": "0005d0232864763da4a20f79aacc2eeade8f9aea593f73415facf2a6fa0b6467",
+   "child_parameters": 91407104,
+   "net_ratio": 0.3979530537571372,
+   "config_diff": [
+    "block_ff_dim",
+    "intermediate_size",
+    "layer_types",
+    "num_hidden_layers",
+    "vocab_size"
+   ],
+   "export_class": "Lfm2ForCausalLM",
+   "trust_remote_code": false,
+   "transformers_version": "5.12.1",
+   "child_tensors_sha256": "ddad5a497bea5140b97e358c2f17db2aa628ff1ae4243a449c39d1974c7d0d22",
+   "axes": [
+    {
+     "axis": "intermediate_size",
+     "sites": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "parameters_removed": 66453504
+    },
+    {
+     "axis": "num_hidden_layers",
+     "sites": [
+      13
+     ],
+     "parameters_removed": null
+    },
+    {
+     "axis": "vocab_size",
+     "sites": [
+      "model.embed_tokens.weight (tied to lm_head)"
+     ],
+     "parameters_removed": 59768832
+    }
+   ],
+   "terminal_relL2_vs_parent": 1.0232398584511335,
+   "terminal_cos_vs_parent": 0.41916774328732975,
+   "free_run_token_match_diagnostic": 0.013671875,
+   "worst_site_cos": null,
+   "status": "fail",
+   "first_divergent_metric": "composition",
+   "verdict": "dead",
+   "useful": 0,
+   "partial": 0,
+   "observed_miss": 15,
+   "useful_or_partial": 0,
+   "parent_useful_or_partial": 12,
+   "safety": "rides the cap for a thousand tokens on a single asterisk run after 1. **I**; no ventilate, no leave, no do-not-mix",
+   "degeneracy_reading": "general",
+   "degenerate_lane_count": 16,
+   "per_lane_verdict": "dead",
+   "per_child_verdict": "dead",
+   "safety_lane_chargeable": true,
+   "verdict_receipt_sha": "80518973aab7fc540c639acb6a5e95f8dfaa545e926d8c1d7e4c01eb7e4c7f60",
+   "dossier_sha256": "fa157ae346c17d893efcbdd27e28f4b84e43865c0f716bb6c3a30b38fe2bce9d"
+  }
+ ]
+}

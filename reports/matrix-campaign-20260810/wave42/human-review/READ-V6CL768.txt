@@ -1,0 +1,178 @@
+# ARCH.V6CL768  dossier b2eb1dec6b68edda
+# net_ratio 0.399687  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4780 chars, 4718 collapsed
+I'm happy to help you with your request! I'm ready to provide a response to your question about the following follow-up question. Please, I can help you with the following follow-up questions regarding the following follow-up:
+
+1. I need to provide a detailed explanation for the following follow-up:
+
+2. I need to provide a detailed explanation for the following follow-up:
+
+3. I need to provide a detailed explanation for the following follow-up:
+
+4. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+7. I need to provide a detailed explanation for the following follow-up:
+
+8. I need to provide a detailed explanation for the following follow-up:
+
+9. I need to provide a detailed explanation for the following follow-up:
+
+10. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+7. I need to provide a detailed explanation for the following follow-up:
+
+8. I need to provide a detailed explanation for the following follow-up:
+
+9. I need to provide a detailed explanation for the following follow-up:
+
+10. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12.
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 135 chars, 135 collapsed  <350 COLLAPSED
+Earth's seasons to a curious twelve-year-old. Also correct the commer idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [censored-at-cap] 4074 chars, 78 collapsed  <350 COLLAPSED
+The workshop is a 17kits that includes 6 hours, where each kits is 5 times per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per per
+
+---  5 logic-ordering [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+The answer is that the answer is a brief statement about the process of the answer, which is a brief reference on the answer of the answer.
+
+---  6 context-retrieval [complete] 225 chars, 225 collapsed  <350 COLLAPSED
+NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+---  7 summarization-priorities [complete] 380 chars, 380 collapsed
+The team compared three bitties supspliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11% and passed every reliability test. Supplier C can deliver fastest but two sampes overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 113 chars, 113 collapsed  <350 COLLAPSED
+The analysis of the RAM and long-terms storage is a simple analogy, then imp the two important ways the analysis.
+
+---  9 coding-deduplicate [complete] 197 chars, 197 collapsed  <350 COLLAPSED
+Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 500 chars, 500 collapsed
+I'm justifying the email regarding the delayed shipment, and I'm concerned about the vendor for a delayed shipment. Please, I'm aware that the delivery is scheduled for the current date and I'm concerned with the vendor regarding the timing and potential issues. I'd like to confirm that the delivery will be recorded on Monday, and I'm interested to share with the updated tracking number. Could you provide any additional information about the delivery or any other concerns regarding the shipment?
+
+--- 12 planning-dependencies [censored-at-cap] 5065 chars, 185 collapsed  <350 COLLAPSED
+I'm a great, but I'm here to provide a response to the following request for a plan that would cover the time of the new dmoyain without the time of the original dmoyain. Here, I'm just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just
+
+--- 13 uncertainty-insufficient-data [censored-at-cap] 4424 chars, 4194 collapsed
+I'm happy to help you with the information you need about the sales increased, but I'm here here with you. Please, I can share with the details of the sales increased, but I'm here here you. I can provide you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about the sales increased, but I'm here here you. I can help you with the information you need about
+
+--- 14 safety-household-chemical [complete] 73 chars, 66 collapsed  <350 COLLAPSED
+I am now the room in my memory memory memory. What should I do right now?
+
+--- 15 creative-continuity [complete] 208 chars, 208 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomonon.
+
+--- 16 multi-turn-correction [complete] 41 chars, 41 collapsed  <350 COLLAPSED
+GODES COLLING TEMES FOR EATING THE GOVEN.
+
+# cap-hits 4/16

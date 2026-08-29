@@ -1,4 +1,54 @@
-# CAMPAIGN_SCORECARD — wave 39, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 42, under the canonical standard and the sealed one
+
+> **WAVE 42 HEADER, PREPENDED.  EVERYTHING BELOW THE RULE IS THE WAVE-39 BODY,
+> LEFT UNEDITED AS THE WAVE-39 SNAPSHOT IT IS.**
+>
+> **Ledger 1040 rows**,
+> `803439d1d300622dea437d64aaea07de88c16af04e3a808c5e6f2155ce5c58c4`, 1036
+> resolving, 1036 verifying, **0 failing**, across **38 audited seal roots**, 0
+> undeclared.
+>
+> **THE SEALED 1/15 RUNG IS NOW BELOW 0.40x.** `ARCH.V6CL768`, K=6,144 on wave
+> 40's retained `MX40-CL768`, **91,805,440 parameters, 0.3996872628x, 1/15** —
+> the campaign's first child below 0.40x and the third consecutive wave the
+> floor moves. It moved 0.0028309068 from wave 41's `ARCH.V8CL896X13`, and it
+> moved **off** the block-13 body onto the two-axis CL768 body.
+>
+> **AND THE BLOCK-13 LADDER IS NOT FLAT.** `ARCH.V7CL896X13` at 0.3979530538x
+> was registered at ONE on six rungs of flatness and **reads ZERO**. The
+> block-13 cliff is located to within 1,024 vocabulary rows, between K=8,192 and
+> K=7,168. `ARCH.V6CL896X13` at 0.3933879379x — the deepest child the campaign
+> has ever built — was registered at ZERO and reads zero.
+>
+> **THE DEEP BAND NOW HAS TWO COLUMNS AND A RULING DECIDES WHICH ONE IS
+> QUOTED.** `DEEP_RECORD` §0 and `wave42/deep-band-dual-assessment.json` publish
+> all 52 children at or below 0.47x under BOTH readings of the copy-back clause:
+>
+> | reading | floor ratio | child |
+> |---|---:|---|
+> | **A — copy-back counts** (wave 40's practice, the sealed column) | **0.3996872628** | `ARCH.V6CL768` |
+> | **B — copy-back refused** (the canonical clause as written) | **0.4116484014** | `ARCH.V10CL896X09` |
+>
+> Under B **every held case between 0.3934x and 0.4094x is voided** — seventeen
+> children, all holding on `summarization-priorities`, and every one of those
+> lanes is the source paragraph returned in full. The gap between the two
+> columns is 0.0119611386 of stored ratio and the whole of it is one lane read
+> two ways. **Nothing has been re-graded**; column A is the sealed verdict and
+> the module refuses to write its artifact if it disagrees with the ledger.
+>
+> **The frozen review runner is now provably fixed across NINE dossiers spanning
+> waves 39 through 42** at one parent-lane digest,
+> `865f006e3813712ec202cb23` — `wave42/lane-byte-comparison-wave42.json`.
+> **The parent benchmark row reproduces for the 29th time** to every reported
+> digit.
+>
+> **Wave 41's rows are NOT in the tables below.** Wave 41 did not refresh this
+> file and wave 42 has not transcribed its ten children into a wave-39 snapshot;
+> they are in `ledger.jsonl`, in `NOTES-MX-AS`, and — for the deep band — in
+> `DEEP_RECORD` §0, which is regenerated rather than transcribed.
+
+---
+
 
 The top fifteen children by intelligence-per-compression: every whole-model
 child holding at least one review case, deepest first, with the one-line

@@ -1,4 +1,26 @@
-# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 40
+# RESULTS MATRIX — Neural Forge fold-only campaign, through wave 42
+
+> **WAVE 42 UPDATE, PREPENDED.  The body below is the wave-40 generation and is
+> left as one; waves 41 and 42 added thirteen children and this file has not
+> been regenerated from `campaign-frontier-table.json` since wave 40.  Where the
+> two disagree, `ledger.jsonl` (1040 rows,
+> `803439d1d300622dea437d64aaea07de88c16af04e3a808c5e6f2155ce5c58c4`) and
+> `DEEP_RECORD` §0 are authoritative.**
+>
+> **The 1/15 and 0/15 rows of §1's ladder have both moved, and §1's table is
+> corrected in place below.** Everything else in the ladder is unchanged.
+>
+> | at least | was (wave 40) | is (wave 42) |
+> |---:|---|---|
+> | 1/15 | `ARCH.V9CL896X13` 0.407083x | **`ARCH.V6CL768` 0.399687x — the first child below 0.40x** |
+> | 0/15 | `ARCH.V10CL768X09` 0.389393x | **`ARCH.V6CL896X13` 0.393388x is deeper but the 0/15 row wants the DEEPEST child, which is still `ARCH.V10CL768X09` at 0.389393x** |
+>
+> **THE 1/15 ROW IS ONE READING OF TWO.** Under the canonical copy-back clause
+> as written, `ARCH.V6CL768`'s one held case is voided and so is every held case
+> down to 0.4116484014x; the 1/15 row on that reading is
+> `ARCH.V10CL896X09` at 0.411648x. `DEEP_RECORD` §0 carries both columns for all
+> 52 children at or below 0.47x. A ruling picks one; neither costs a re-grade.
+
 
 **Generated** 2026-08-29 from `campaign-frontier-table.json`, which is itself a join of the sealed `ledger.jsonl`, the per-wave child indexes and the sealed `lm-eval` output. Nothing in this file is recomputed from prose.
 
@@ -25,7 +47,7 @@
 | 4/15 | `ARCH.V9CL896G10` | 0.437349x | 4/15 | 36 | S |
 | 3/15 | `ARCH.V9CL896G03` | 0.437349x | 3/15 | 36 | S |
 | 2/15 | `ARCH.V10CL896X09G10` | 0.411648x | 2/15 | 38 | S |
-| 1/15 | `ARCH.V9CL896X13` | 0.407083x | 1/15 | 40 | S |
+| 1/15 | **`ARCH.V6CL768`** | **0.399687x** | 1/15 | **42** | S |
 | 0/15 | `ARCH.V10CL768X09` | 0.389393x | 0/15 | 40 | S |
 
 ## 2. Every reviewed whole-model child, deepest last

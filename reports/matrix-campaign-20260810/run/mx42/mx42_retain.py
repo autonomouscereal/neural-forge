@@ -64,12 +64,48 @@ W = Path("/mnt/ai_data/neural-forge-matrix/wave42")
 #: keep the rows carrying a CLAIM no other artifact re-derives, drop what one
 #: CPU pass rebuilds from a retained source, and state the deviation whenever
 #: the count is not best-five.
-KEEP: dict[str, str] = {}
+KEEP: dict[str, str] = {
+    "MX42-V6CL768": (
+        "THE FRONTIER HOLDER, AND THE CAMPAIGN'S FIRST CHILD BELOW 0.40x.  1/15 "
+        "at 0.3996872628x, which is the sealed rung this wave moved from "
+        "0.4025181696x.  A frontier holder is retained on principle -- wave "
+        "40's rule, kept for the third wave: the next wave's floor cell is "
+        "graded against it, and a floor whose child has been deleted is a floor "
+        "that can only be cited and not checked.  It is ALSO the only new "
+        "held-lane witness in the wave, sha256 f4d828fb1eb03d8b, shared with "
+        "nothing in the estate and NOT byte-identical to ARCH.V7CL768's as the "
+        "pre-registration predicted -- a claim a later wave may want to re-run "
+        "rather than re-read"
+    ),
+    "MX42-V7CL896X13": (
+        "THE CLIFF CHILD.  0/15 at 0.3979530538x, the rung that ends six waves "
+        "of a flat block-13 ladder and locates the block-13 cliff to within "
+        "1,024 vocabulary rows, between K=8,192 and K=7,168.  Retained because "
+        "the NEXT thing anyone will want on that body is an interior rung -- "
+        "K=7,680 halves this bracket for one CPU pass -- and a bisection whose "
+        "upper endpoint has been deleted is a bisection that has to rebuild its "
+        "own bracket before it can start.  Its retained twin MX35-CL896X13 "
+        "rebuilds it, but the point of keeping it is that the comparison the "
+        "next wave makes is against these bytes and not against a rebuild"
+    ),
+}
 
 
 #: Written after the reviews, never inherited.  Tag -> why this checkpoint is
 #: NOT worth its bytes, naming what rebuilds it and from which retained source.
-DROP: dict[str, str] = {}
+DROP: dict[str, str] = {
+    "MX42-V6CL896X13": (
+        "0/15 at 0.3933879379x.  It is the deepest child the campaign has ever "
+        "built and that is exactly why it is not worth its bytes: its finding "
+        "-- that the band below the block-13 cliff is dead, and that it shares "
+        "EIGHT of sixteen lanes with MX42-V7CL896X13 -- is carried entirely by "
+        "the sealed cell receipt, the per-case file and "
+        "wave42/lane-byte-comparison-wave42.json, and nothing a reader can do "
+        "with the checkpoint adds to it.  REBUILT BY one CPU pass: vocabq.sh "
+        "V6CL896X13:6144:<MX35-CL896X13>, off wave 35's RETAINED "
+        "MX35-CL896X13, with BELOW_FLOOR=1"
+    ),
+}
 
 
 def main() -> int:
