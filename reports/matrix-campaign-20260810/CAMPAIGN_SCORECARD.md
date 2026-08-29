@@ -1,3 +1,81 @@
+# CAMPAIGN_SCORECARD — wave 45, under the canonical standard and the sealed one
+
+> **WAVE 45 HEADER, PREPENDED.  EVERYTHING BELOW THE NEXT RULE IS THE WAVE-44
+> HEADER, THEN THE WAVE-43 HEADER, THEN THE WAVE-42 HEADER, THEN THE WAVE-39
+> BODY, ALL LEFT UNEDITED AS THE SNAPSHOTS THEY ARE.**
+>
+> **Ledger 1056 rows**,
+> `d2027831e229d763a251ca602655c729a4432645bed43a9ba2e4a8824ef211ea`, 1052
+> resolving, 1052 verifying, **0 failing**, across **41 audited seal roots**, 0
+> undeclared.
+>
+> **THE CL768 LADDER IS CLOSED AT THE BOTTOM AND COLUMN A DID NOT MOVE FOR THE
+> FIRST TIME IN SIX WAVES.** `ARCH.V2CL768` (K=2,048, 87,611,136,
+> **0.3814267993x**) and `ARCH.V1CL768` (K=1,024, 86,562,560,
+> **0.3768616835x**) were both registered at ZERO and both **read ZERO**.
+> K=768 is the last rung the 765-row mandatory set permits at all, and the
+> structural refusal was reachable at K=1,024 — 259 discretionary rows — and did
+> not fire, so the axis ends by measurement and not by refusal.
+>
+> **THE ECHO DOES NOT SHORTEN, IT DEGRADES — AND THE MECHANISM THIS WAVE
+> REGISTERED WAS WRONG WHILE ITS COUNTS WERE RIGHT.** The pre-registration named
+> TRUNCATION. `ARCH.V2CL768`'s summarisation lane terminates **complete at 168
+> tokens** against a 1,024-token cap, so it is not truncated at all: it is still
+> the whole prompt returned including the instruction line, it preserves the
+> decision **verbatim** — *The team selected Supplier B* — and it destroys the
+> unresolved risk. The corruption is **selective**: the high-frequency sentence
+> frame survives while low-frequency content words die. *battery* → *bitties*,
+> *launch* → *lacuan*, and *The remaining risk is that its factory expansion may
+> slip by one week* → *The reminance risk is that its facrept by one week*. That
+> is a vocabulary-coverage loss, not a token-budget loss.
+>
+> **THE ECHO'S DEATH IS NOW BRACKETED IN THREE RUNGS ON ONE BODY**: intact and
+> holding at K=3,072, structurally intact and content-destroyed at K=2,048,
+> disintegrated **below the word** at K=1,024, where ten of sixteen lanes ride
+> the cap on sub-word loop units, one returns the empty string, and the only
+> grammatical clause the child produces on any lane is a copy of the prompt's own
+> assistant turn.
+>
+> **THE ANCHOR DEBT IS PAID AND THE DIAGNOSIS BEHIND IT WAS WRONG.** The
+> `writing-concise-email` payload anchor `NOTES-MX-AV` §12.1 ordered was added at
+> the wave-45 **tree cut**, with its outcome registered before the pass: it does
+> **not** close the seven rows it was ordered to close. Void-changing
+> machine–hand disagreements stay at **8**, all four floors are unmoved, and
+> exactly one machine classification moves in 912 lanes — on a lane sealed
+> *Observed miss*, which can never be voided. The residual is a **DENOMINATOR**
+> defect on PRODUCE lanes; the response-side column reads **0.683824** and
+> **0.635714** on the same two responses with no anchor at all, and it is
+> published and **decides nothing**.
+>
+> **THE 15-CASE INSTRUMENT IS NOT MEASURING LANGUAGE MODELLING AT THIS DEPTH,
+> AND SIX RUNGS NOW SAY SO.** Wikitext word perplexity on the CL768 body is
+> **strictly monotone in K** — 5,035 / 6,657 / 8,749 / 14,019 / 31,968 / 961,032
+> at K = 6,144 / 5,120 / 4,096 / 3,072 / 2,048 / 1,024 — while the sealed count
+> reads 1, 1, 0, 1, 0, 0.
+>
+> **THE 30-PROMPT EXTENSION SURFACE RAN, AND THE TWO INSTRUMENTS INVERT AT THE
+> TOP OF THE FRONTIER.** `ARCH.V12CL896G03` (4/15, the shallowest of the five)
+> is charged on **14 of 30** extension prompts; `ARCH.V10CL896X09` (1/15, the
+> column-B floor holder, deeper) is charged on **2**. Its cross-wave
+> reproduction control is exact: wave 34's parent and `ARCH.V12CL896G03` rows
+> reproduce **every scored field and all 60 per-response digests** eleven waves
+> and three deployments later.
+>
+> **THE RETENTION PROMISE IS CASHED FOR THE FIRST TIME IN SIXTEEN WAVES.**
+> `ARCH.V10CL896X09`'s checkpoint was dropped by wave 38 on the promise that it
+> is one CPU pass off a retained source. Wave 45 needed it, rebuilt it, and the
+> rebuild reproduces wave 38's committed `child_tensors_sha256` **and**
+> `child_directory_sha256` exactly.
+>
+> | reading | ratio | child |
+> |---|---:|---|
+> | **A — copy-back counts** (wave 40's practice, the sealed column) | **0.3859919152** | `ARCH.V3CL768` |
+> | **B — copy-back refused** (the canonical clause as written) | **0.4116484014** | `ARCH.V10CL896X09` |
+>
+> **Both rulings are still pending. See `STANDING_STATE_2026-08-29.md`.**
+
+---
+
 # CAMPAIGN_SCORECARD — wave 44, under the canonical standard and the sealed one
 
 > **WAVE 44 HEADER, PREPENDED.  EVERYTHING BELOW THE NEXT RULE IS THE WAVE-43

@@ -95,6 +95,39 @@ direction.
 | `ARCH.V16CL896G03` | 0.469305 | 107,796,224 | **3** | **1** | summ/email | unc | 34 |
 | `ARCH.V16CL896G10` | 0.469305 | 107,796,224 | **2** | **1** | summ | unc | 37 |
 
+**THE TWO FLOORS, AS OF WAVE 45.**
+
+| reading | ratio | child | what holds |
+|---|---:|---|---|
+| **A — copy-back counts** | **0.3859919152** | `ARCH.V3CL768` | one lane: the whole summarisation prompt returned, instruction line included |
+| **B — copy-back refused** | **0.4116484014** | `ARCH.V10CL896X09` | one lane: `uncertainty-insufficient-data`, which NAMES the four missing variables |
+
+**NEITHER COLUMN MOVED IN WAVE 45, AND COLUMN A HOLDING STILL IS THE NEWS.**
+Waves 40 through 44 moved column A five consecutive times. Wave 45 registered
+both remaining rungs of the CL768 ladder at ZERO and both read ZERO, so the gap
+stays at **0.0256564862 of stored ratio — 5,893,120 parameters — and the whole
+of it is one lane read two ways.** Column B's rung has not moved since wave 38.
+
+**WHAT COLUMN A IS MEASURING IS NOW BRACKETED RATHER THAN ASSERTED.** Three
+rungs of one body, one 1,024-row step apart:
+
+| rung | K | ratio | sealed | the summarisation lane |
+|---|---:|---:|---:|---|
+| `ARCH.V3CL768` | 3,072 | 0.3859919152 | **1/15** | echo intact, one corruption in 484 chars, **holds** |
+| `ARCH.V2CL768` | 2,048 | 0.3814267993 | 0/15 | echo intact and complete at 168 tokens; decision verbatim, **risk destroyed** |
+| `ARCH.V1CL768` | 1,024 | 0.3768616835 | 0/15 | **sub-word debris**, `su ppulpulpul` to the cap |
+
+The echo dies by **selective corruption**, not by truncation: the sentence frame
+survives and the low-frequency content words do not. Column A measures **echo
+persistence**, and this is the measurement that says so.
+
+**AND THE BENCHMARK COLUMN ORDERS THESE RUNGS WHEN THE SEALED COLUMN CANNOT.**
+Wikitext word perplexity is strictly monotone in K over six rungs — 5,035 /
+6,657 / 8,749 / 14,019 / 31,968 / 961,032 — while the sealed count reads
+1, 1, 0, 1, 0, 0.
+
+---
+
 **THE TWO FLOORS.**
 
 | reading | ratio | child | what holds |

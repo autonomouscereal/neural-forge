@@ -1,0 +1,175 @@
+{
+ "schema": "neural-forge-matrix-wave45-rider-concordance-v1",
+ "generated_at": "2026-08-29T12:24:25Z",
+ "what_this_is": "THE DEBT NOTES-MX-AV SECTION 10.6 DECLINED TWICE, PAID.  The 30-prompt ADDENDUM 16.1 extension surface, run on the five children of the standing frontier set under the IDENTICAL sealed decode path, and reported beside the sealed fifteen.  It is a SECOND COORDINATE and never a verdict: ADDENDUM 16.1 sentence 2 stands, no ledger row is generated from it, and no frontier claim fires on it.",
+ "surface": "extension2 (v2 bank, 30 prompts, rubric committed with the bank before any decode)",
+ "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "parent_row": {
+  "extension2_held_of_30": 5,
+  "extension2_charged_prompts_of_30": 2,
+  "note": "the parent itself holds 5 of 30 on this rubric.  It is a deliberately LOW-RESOLUTION machine instrument that under-credits good answers phrased unusually, which is acceptable for ORDERING children and unacceptable for grading one -- exactly the split ADDENDUM 16.1 draws."
+ },
+ "REPRODUCTION_CONTROL": {
+  "claim": "wave 34 already ran this surface on ARCH.V12CL896G03 and on the parent.  Re-running them ELEVEN WAVES LATER, under a different deployment, on the same bank, the same rubric and the same sealed runner, is the only free control this ordered surface has -- and it is a decode-path reproduction test across eleven waves that nothing else in this campaign performs.",
+  "registered": "reproduces EXACTLY",
+  "PARENT": {
+   "wave34": [
+    30,
+    5,
+    2,
+    1,
+    0,
+    3,
+    2
+   ],
+   "wave45": [
+    30,
+    5,
+    2,
+    1,
+    0,
+    3,
+    2
+   ],
+   "fields": [
+    "prompts",
+    "held",
+    "charged_prompts",
+    "lanes_with_a_hold",
+    "lanes_both",
+    "held_A",
+    "held_B"
+   ]
+  },
+  "V12CL896G03": {
+   "wave34": [
+    30,
+    0,
+    14,
+    0,
+    0,
+    0,
+    0
+   ],
+   "wave45": [
+    30,
+    0,
+    14,
+    0,
+    0,
+    0,
+    0
+   ],
+   "fields": [
+    "prompts",
+    "held",
+    "charged_prompts",
+    "lanes_with_a_hold",
+    "lanes_both",
+    "held_A",
+    "held_B"
+   ]
+  },
+  "per_response_digest_agreement": {
+   "PARENT": "30/30",
+   "V12CL896G03": "30/30"
+  },
+  "verdict": "HIT -- every scored field and all 60 per-response digests identical"
+ },
+ "table": [
+  {
+   "tag": "V12CL896G03",
+   "cell_id": "ARCH.V12CL896G03",
+   "campaign_wave": 34,
+   "stored_parameter_ratio": 0.4510448163755699,
+   "stored_parameter_count": 103601920,
+   "sealed_fifteen_useful_or_partial": 4,
+   "sealed_verdict": "dead",
+   "extension2_held_of_30": 0,
+   "extension2_charged_prompts_of_30": 14,
+   "extension2_lanes_with_a_hold": 0,
+   "checkpoint": "retained on disk"
+  },
+  {
+   "tag": "V10CL896X09",
+   "cell_id": "ARCH.V10CL896X09",
+   "campaign_wave": 38,
+   "stored_parameter_ratio": 0.4116484013735471,
+   "stored_parameter_count": 94552832,
+   "sealed_fifteen_useful_or_partial": 1,
+   "sealed_verdict": "dead",
+   "extension2_held_of_30": 0,
+   "extension2_charged_prompts_of_30": 2,
+   "extension2_lanes_with_a_hold": 0,
+   "checkpoint": "REBUILT BY WAVE 45 from wave 37's retained MX37-CL896X09; wave 38 dropped it and the rebuild reproduces its sealed child_tensors_sha256 exactly"
+  },
+  {
+   "tag": "V6CL768",
+   "cell_id": "ARCH.V6CL768",
+   "campaign_wave": 42,
+   "stored_parameter_ratio": 0.39968726281403283,
+   "stored_parameter_count": 91805440,
+   "sealed_fifteen_useful_or_partial": 1,
+   "sealed_verdict": "dead",
+   "extension2_held_of_30": 0,
+   "extension2_charged_prompts_of_30": 19,
+   "extension2_lanes_with_a_hold": 0,
+   "checkpoint": "retained on disk"
+  },
+  {
+   "tag": "V5CL768",
+   "cell_id": "ARCH.V5CL768",
+   "campaign_wave": 43,
+   "stored_parameter_ratio": 0.3951221469418962,
+   "stored_parameter_count": 90756864,
+   "sealed_fifteen_useful_or_partial": 1,
+   "sealed_verdict": "dead",
+   "extension2_held_of_30": 1,
+   "extension2_charged_prompts_of_30": 19,
+   "extension2_lanes_with_a_hold": 1,
+   "checkpoint": "retained on disk"
+  },
+  {
+   "tag": "V3CL768",
+   "cell_id": "ARCH.V3CL768",
+   "campaign_wave": 44,
+   "stored_parameter_ratio": 0.38599191519762294,
+   "stored_parameter_count": 88659712,
+   "sealed_fifteen_useful_or_partial": 1,
+   "sealed_verdict": "dead",
+   "extension2_held_of_30": 0,
+   "extension2_charged_prompts_of_30": 16,
+   "extension2_lanes_with_a_hold": 0,
+   "checkpoint": "retained on disk"
+  }
+ ],
+ "ordering_by_the_sealed_fifteen": [
+  "V12CL896G03",
+  "V3CL768",
+  "V5CL768",
+  "V6CL768",
+  "V10CL896X09"
+ ],
+ "ordering_by_extension_holds": [
+  "V5CL768",
+  "V10CL896X09",
+  "V12CL896G03",
+  "V3CL768",
+  "V6CL768"
+ ],
+ "ordering_by_extension_degeneracy_least_first": [
+  "V10CL896X09",
+  "V12CL896G03",
+  "V3CL768",
+  "V6CL768",
+  "V5CL768"
+ ],
+ "registered_prediction_graded": {
+  "registered": "the extension surface ORDERS the five differently from the sealed fifteen, breaking the three-way 1/15 tie across V3CL768, V5CL768 and V6CL768; and ARCH.V12CL896G03 at 4/15 scores HIGHEST of the five on the extension surface too, which is the one place the two instruments are registered to AGREE.",
+  "the_tie_break": "PARTIAL HIT.  The three-way 1/15 tie is broken on the HELD column -- V5CL768 holds 1 of 30 and V3CL768 and V6CL768 hold 0 -- but V3CL768 and V6CL768 remain tied at 0 held.  On the DEGENERACY column all three separate: 16, 19 and 19 charged.",
+  "the_agreement_point": "MISS, AND IT IS THE FINDING.  ARCH.V12CL896G03 does NOT score highest.  It holds 0 of 30 while ARCH.V5CL768, which reads 1/15 against its 4/15, holds 1 of 30.",
+  "verdict": "MISS on the agreement point, PARTIAL HIT on the tie-break"
+ },
+ "THE_INVERSION": "THE TWO INSTRUMENTS INVERT AT THE TOP OF THE FRONTIER, AND THE DEGENERACY COLUMN IS WHERE IT IS LOUDEST.  On the sealed fifteen ARCH.V12CL896G03 is the best child of the five by a factor of four -- 4/15 against 1/15 for three of the others -- and it is also the SHALLOWEST at 0.4510448164x.  On the extension surface it is charged on 14 of 30 prompts while ARCH.V10CL896X09, which is DEEPER at 0.4116484014x and reads 1/15, is charged on only 2.  That is a SEVENFOLD difference in degeneracy running the OPPOSITE way to the sealed column, on the two children the standing state names as the top of column B and the top of the graded band.  A wave that wants to order these two children now has two instruments that disagree about which is better, and neither is a verdict on the other.",
+ "WHAT_THIS_DOES_NOT_LICENCE": "Nothing here re-grades anything.  The sealed fifteen decide every count, every verdict and every floor in this campaign, and this column is published so that the NEXT wave can price a one-case margin before it spends GPU on one -- which is the only thing NOTES-MX-AU section 13 item 2 asked it for."
+}

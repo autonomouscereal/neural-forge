@@ -1,0 +1,490 @@
+{
+ "schema": "neural-forge-lfm2-matrix-extension-surface-dossier-v1",
+ "surface": "extension2-v1",
+ "purpose": "ADDENDUM 16.1 second review surface.  This file PRICES AND ORDERS.  It carries no verdict, no count and no gate; the sealed fifteen remain the only judge of any frontier claim.",
+ "generated_at": "2026-08-29T12:18:58Z",
+ "label": "V3CL768",
+ "campaign_wave": 45,
+ "cell_id": "ARCH.V3CL768",
+ "cell_instance_id": "mx44-v3cl768-0001",
+ "receipt_sha256": "8f5a0fabf679d9b651314c40852e8dcbb10aa0410df57373aa0130efee84586f",
+ "bank_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-b93a2c26/research/lfm2_extension_bank_prompts_v2.json",
+ "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "seal_path": "/home/cereal/model-surgery-lab/deployments/neural-forge-matrix-b93a2c26/reports/matrix-campaign-20260810/extension-bank-seal-v2.json",
+ "seal_sha256": "d7b91717fa11a4523ce423f24095128533732cb8b11c74be2fe481a1c9895ba1",
+ "prompt_count": 30,
+ "device_compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+ "dtype": "float32",
+ "maximum_new_tokens": 1024,
+ "child_tokenizer": "/mnt/ai_data/neural-forge-matrix/wave44/children/MX44-V3CL768",
+ "child_responses": [
+  {
+   "id": "ext2-conversation-dead-battery",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "My car battery died in the supermarket car park last night and I waited two hours for the roadside crew. Reply the way a friend would, in plain sentences. Ask me exactly one thing, and do not give me a list."
+    }
+   ],
+   "response_verbatim": "I'm a happy to share with the same information as you mentioned. Let me provide a detailed response to the following request:\n\n1. I would be a thing in the supermarket car park last night and I would be a friend sent to the roadside crew. I would be a thing, and not give me a list.\n\nPlease understand that this request is not subject to any legal regulations or concerns. I'm happy to provide information regarding the same information as you mentioned.",
+   "response_sha256": "a1f5973c1f50f520e97c7d03985673b4f96a7e54f0fdb516d52265ff00e78afb",
+   "generated_tokens": 109,
+   "termination": "complete",
+   "wall_time_seconds": 2.568
+  },
+  {
+   "id": "ext2-conversation-two-promises",
+   "category": "conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "I said yes to covering a shift on Saturday and then remembered I already promised my daughter I would take her to her swim meet the same morning. Talk to me like a person, not like a helpdesk. Do not tell me which one to pick and do not give me options as a list. Ask exactly one thing."
+    }
+   ],
+   "response_verbatim": "I am to cover a shift on Saturday and then remembered I already promise my daudder I would take her to her swim meet the same mordin. Talk to me like a person, not like a helpdesk. Do not tell me which one to pick and do not give me options as a list.",
+   "response_sha256": "ae14adf79f863648f03ba3dec44678e8163403946e70045ddf1f59d3bf4d1b9b",
+   "generated_tokens": 80,
+   "termination": "complete",
+   "wall_time_seconds": 1.537
+  },
+  {
+   "id": "ext2-instruction-first-week",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write exactly three numbered steps someone should take in their first week at a new job to work out who owns what. Number them 1, 2 and 3. Each step must be different from the other two and each must name a specific thing to do."
+    }
+   ],
+   "response_verbatim": "1. **Number**: The first step is to ensure that the job is completed with the necessary steps to start the process.\n\n2. **Number**: The second step is to ensure that the job is completed with the necessary steps to the final step.\n\n3. **Number**: The third step is to ensure that the job is completed with the necessary steps to the final step.\n\n**Explicitations**: The first and third steps are to ensure that the job is completed with the necessary steps to the final step.",
+   "response_sha256": "eeb6471405c09ac9e91008142004aed1b1ff63287eff05d65678ba2ca62829ee",
+   "generated_tokens": 115,
+   "termination": "complete",
+   "wall_time_seconds": 2.169
+  },
+  {
+   "id": "ext2-instruction-power-restored",
+   "category": "instruction-following",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "The mains supply to a small office has just come back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about ringing the electricity company, and do not add a fourth item."
+    }
+   ],
+   "response_verbatim": "The mains to a small office has just back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about reing the electricity company, and do not add a fourth item.",
+   "response_sha256": "bb95f91b4656ecb03a336b719035cc02eb0b9244e26cb9b8531cb085b4f29dcf",
+   "generated_tokens": 71,
+   "termination": "complete",
+   "wall_time_seconds": 1.346
+  },
+  {
+   "id": "ext2-explanation-second-tide",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A friend says high tide happens because the moon pulls the water up on the side facing it, so there should be one high tide a day. There are two. Explain in plain language what actually causes the second one. Do not use equations."
+    }
+   ],
+   "response_verbatim": "Friend says high tide happens because the moon pulls the water up on the side facing it, so there should be one high tide a day. There are two. Explicitly in plain language what actually causes the second one.",
+   "response_sha256": "fae48c6797db0283f72ed46301fa38d5740eb31e45224476fc141808743ed211",
+   "generated_tokens": 66,
+   "termination": "complete",
+   "wall_time_seconds": 1.257
+  },
+  {
+   "id": "ext2-explanation-blue-then-red",
+   "category": "knowledge-explanation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Someone tells me the sky is blue because it reflects the ocean. Explain why that is wrong and why the same sky turns red at sunset. Your answer has to account for both colours with a single mechanism."
+    }
+   ],
+   "response_verbatim": "I'm a happy to share with the information you provided regarding the sky. It's why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same chore is why the same ch",
+   "response_sha256": "92e8b7f8077f7a5169595300e08577a3e8a8f9d900b7cbad73c37840e68c1cd0",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.11
+  },
+  {
+   "id": "ext2-arithmetic-bolt-bags",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A workshop has 7 crates with 24 bolts in each. 19 bolts are damaged and thrown out. The rest are packed into bags of 8. How many full bags are there, and how many bolts are left over?"
+    }
+   ],
+   "response_verbatim": "A workshop has 7 crates with 24 bolts in each. 19 bolts are damaged and thrown out. The rest are packed into bags of 8. How many full bags are there, and how many bolts are left over?",
+   "response_sha256": "d1ea95848d7ada891e4979a14c69fec17f3814a3474349781b1df007e1a52200",
+   "generated_tokens": 65,
+   "termination": "complete",
+   "wall_time_seconds": 1.23
+  },
+  {
+   "id": "ext2-arithmetic-faulty-run",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A machine makes 45 parts an hour and runs for 6 hours. A fault then spoils 20 per cent of everything made so far. After the fault it runs 3 more hours at 30 parts an hour. How many good parts are there at the end? Give the number immediately after the fault as well."
+    }
+   ],
+   "response_verbatim": "Give the number immediately after the fault as well.",
+   "response_sha256": "3f2e9d007a061fbee7e289e1373a960fc84fdb91ddbf7b30299780d7589de074",
+   "generated_tokens": 13,
+   "termination": "complete",
+   "wall_time_seconds": 0.27
+  },
+  {
+   "id": "ext2-logic-shelf-order",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Four books sit on a shelf. The atlas is somewhere to the left of the ledger. The ledger is to the left of the manual. The primer is to the right of the manual. Give the left-to-right order of all four."
+    }
+   ],
+   "response_verbatim": "Fulls are the left of the manual. The manual is to the right of the man.",
+   "response_sha256": "f5255f0547466ef6e1120f33c22e3c5f800d10cedf47d499372f4f5d08ac6900",
+   "generated_tokens": 23,
+   "termination": "complete",
+   "wall_time_seconds": 0.456
+  },
+  {
+   "id": "ext2-logic-relay-finish",
+   "category": "reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Five runners finish a relay leg. Dara finishes before Erin. Fitz finishes after Erin. Gil finishes before Dara. Hana finishes immediately after Erin. Give the finishing order for all five, first to last."
+    }
+   ],
+   "response_verbatim": "Five runners finish a relay leg. Dara finishes before Erin. Gil finishes before Darach. Hanthe finishes immediately after Erin.",
+   "response_sha256": "23cf66e918a2a4a606c2965bbc0d902f21e3b28ca3c37aa52e9834ff9f32763a",
+   "generated_tokens": 50,
+   "termination": "complete",
+   "wall_time_seconds": 0.946
+  },
+  {
+   "id": "ext2-context-workshop-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "NOTICE - Riverside Workshop. The tool cage opens at 7:30 a.m. and the last checkout is 4:15 p.m. Bench 3 is reserved for welding on Tuesdays and Thursdays. The side door is locked after 6 p.m.; use the main gate. Visitors sign the yellow book, never the blue one.\n\nUsing only the notice above, and in no more than two sentences: what is the last time a tool can be checked out, and which book does a visitor sign?"
+    }
+   ],
+   "response_verbatim": "NotiC is the last time, and the book is a visitor sign.",
+   "response_sha256": "56e283da678c26a338c4ed4f562aaaa384cad4bda69d87f8ef8e1b8a40f6dd3a",
+   "generated_tokens": 18,
+   "termination": "complete",
+   "wall_time_seconds": 0.36
+  },
+  {
+   "id": "ext2-context-clinic-notice",
+   "category": "context-use",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "CLINIC NOTICE. Walk-in hours are 9 a.m. to 12 p.m. on Monday, Wednesday and Friday. Blood tests are taken only between 8 a.m. and 10 a.m., and only on days that have walk-in hours. The pharmacy counter closes at 3 p.m. every weekday. The ambulance bay is not a car park.\n\nFrom the notice only: a patient wants a blood test on Thursday morning. Say whether they can, and if they cannot, give the next day they can and the window."
+    }
+   ],
+   "response_verbatim": "From the notice only: a patient wants a blood test on Thur's day mordin. Say whether they can, and if they cannot, give the next day they can and the window.",
+   "response_sha256": "a59ab063fbca8fb1df5da067ba8040cb5c784c1365efe62bca7d6dc62ff1859b",
+   "generated_tokens": 45,
+   "termination": "complete",
+   "wall_time_seconds": 0.856
+  },
+  {
+   "id": "ext2-summary-vendor-choice",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Read this and reply in no more than three sentences, naming the decision that was made and the one risk that is still open.\n\nThe team compared three logging vendors. Kestrel is cheapest but stores data outside the EU. Marlin costs 40 per cent more and keeps data in Dublin. Osprey was ruled out for lacking single sign-on. The team chose Marlin. Legal has not yet confirmed whether the Dublin site satisfies the new retention rule, and the contract has to be signed by 14 November."
+    }
+   ],
+   "response_verbatim": "Kestrel is cheapest but stores data outside the EU. Marlin is cheapest but stores data in Dublin. Osprey was ruled out for lacking single sign-on. The team has not yet confirmed whether the Dublin site was still the new retain and the contract has to be signed by 14 November.",
+   "response_sha256": "f12306cf5ccd84616577db6c7193a9a42d40fd2a3d298af8a51e1eef76a53c09",
+   "generated_tokens": 91,
+   "termination": "complete",
+   "wall_time_seconds": 1.71
+  },
+  {
+   "id": "ext2-summary-friday-backlog",
+   "category": "summarization",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Summarise the following in at most four short lines. Name the single item that has to happen first and the single item that can wait, and say why for each.\n\nBacklog for Friday: (a) the certificate on the payments gateway expires on Sunday; (b) the marketing site needs a new hero image; (c) two customers report duplicate invoices; (d) the staging database needs a version bump before the next release, which is in three weeks."
+    }
+   ],
+   "response_verbatim": "Fid's Sling: The Sling is a new image in the market, and two customers report it needs a vase before the next release.",
+   "response_sha256": "f41248597694eae8dde7da1eacf9bf63e54152caec6609f8921a95cf5a2c3f86",
+   "generated_tokens": 34,
+   "termination": "complete",
+   "wall_time_seconds": 0.655
+  },
+  {
+   "id": "ext2-comparison-cache-memory",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between a processor cache and main memory to somebody who has never opened a computer, using one everyday comparison. Then say two specific ways your comparison would mislead them."
+    }
+   ],
+   "response_verbatim": "Explicit the difference between a processor cache and main memory to somebody who has never opened a computer, using one everyday comparison. Then say two specific ways your comparison would mislead them.",
+   "response_sha256": "294498c1edaaf361776259ea095c157ffeec05e02dfb233b55546232ef539c9b",
+   "generated_tokens": 61,
+   "termination": "complete",
+   "wall_time_seconds": 1.144
+  },
+  {
+   "id": "ext2-comparison-bandwidth-latency",
+   "category": "conceptual-comparison",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between bandwidth and latency to a person who has never used a computer. You may not use any comparison involving roads, traffic, pipes or water. Then give two specific ways your comparison breaks down."
+    }
+   ],
+   "response_verbatim": "You may not use any involvings of the same reason for a compi-er.",
+   "response_sha256": "abf3b12967e4b1c9daeb8913a500fd45aa9d9c0d8139ea2fa52b0a4eaca9e691",
+   "generated_tokens": 19,
+   "termination": "complete",
+   "wall_time_seconds": 0.361
+  },
+  {
+   "id": "ext2-coding-collapse-runs",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called collapse_runs(items) that returns a new list with consecutive duplicates collapsed to a single element and everything else kept. collapse_runs([1, 1, 2, 1, 1, 3]) must return [1, 2, 1, 3]. Do not import itertools."
+    }
+   ],
+   "response_verbatim": "Write a Python function called collapse_runs(items) that returns a new list with consecurate dutched to a single element and everything else kept. collapse_runs(1, 2, 1, 3) must return [1, 2, 1, 3]. Do not import itertools.",
+   "response_sha256": "853064d9be422f1408288746414fb51f0a3709039d2b8b61402547a19137d87b",
+   "generated_tokens": 94,
+   "termination": "complete",
+   "wall_time_seconds": 1.764
+  },
+  {
+   "id": "ext2-coding-first-unique",
+   "category": "coding",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function first_unique(items) that returns the first element appearing exactly once, in the original order, or None when there is no such element. first_unique(['a', 'b', 'a', 'c', 'b']) must return 'c'. Count in a single pass and do not sort."
+    }
+   ],
+   "response_verbatim": "Write a Python function first_unique(items) that returns the first element, in the original order, or None when there is no such element. First, the original order must return the exactly, or None when the original order is not part of the original order.",
+   "response_sha256": "8eb156bafa427500c88cdac47174190e978a3196a37b1255070786415b589088",
+   "generated_tokens": 70,
+   "termination": "complete",
+   "wall_time_seconds": 1.302
+  },
+  {
+   "id": "ext2-debug-tail-slice",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This function is meant to return the last n items of a list but it returns one too many. Fix it and say in one sentence what was wrong.\n\ndef tail(items, n):\n    return items[len(items) - n - 1:]"
+    }
+   ],
+   "response_verbatim": "Fis",
+   "response_sha256": "51b772ccee52c641cea6c3c9e055b313f6195ef651cdda71943ea188d19862be",
+   "generated_tokens": 2,
+   "termination": "complete",
+   "wall_time_seconds": 0.059
+  },
+  {
+   "id": "ext2-debug-adjacent-pairs",
+   "category": "debugging",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "This is meant to return every adjacent pair from a list. On [1, 2, 3] it should give [(1, 2), (2, 3)] but it raises IndexError. Fix it and name the exact bound that is wrong.\n\ndef pairs(values):\n    out = []\n    for i in range(len(values)):\n        out.append((values[i], values[i + 1]))\n    return out"
+    }
+   ],
+   "response_verbatim": "I am to return every adjacent pair from a list. On [1, 2, 3] it should give [(1, 2), (2, 3)], but it should remain IndexError. Fliely it and name the exact range that is warged.",
+   "response_sha256": "76f6c84b49a05b5932a420a674c636c4e49f488c04a7c5dddd4f55d7b00c789c",
+   "generated_tokens": 69,
+   "termination": "complete",
+   "wall_time_seconds": 1.306
+  },
+  {
+   "id": "ext2-email-wrong-colour",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a short email to a shop. The facts: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thursday. Ask them to confirm which address to bring it to. Keep it under 120 words."
+    }
+   ],
+   "response_verbatim": "Write a short email to a shop. The facts: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thurts. Ask them to confirm which address to bring it to. Keep it under 120 words.",
+   "response_sha256": "ce06523beedea426520135dc43e551236a5e214c9785f480a5932e72d4ea3d3c",
+   "generated_tokens": 79,
+   "termination": "complete",
+   "wall_time_seconds": 1.478
+  },
+  {
+   "id": "ext2-email-reschedule",
+   "category": "writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write an email to a client moving Tuesday's review to the following Monday at 10:00. Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday. Apologise no more than once, and keep it under 130 words."
+    }
+   ],
+   "response_verbatim": "Write an email to a client movings Tuesday's review to the following Monday at 10:00. Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Fiday. Apologise no more than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than than",
+   "response_sha256": "ae9c670638a9efbaf4fc0f014754fe4e6b3dc3c247c93921ccb6c188a2e93c4a",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.183
+  },
+  {
+   "id": "ext2-planning-office-move",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "A four-person team is moving to a new office next Friday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancelling the old cleaning contract, and a check on the first morning that everything works. Number them 1 to 5."
+    }
+   ],
+   "response_verbatim": "Fadjust the team to a new office next Friaday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancellating the old cleaning contract, and a check on the first morining that everything works. Number them 1 to 5.",
+   "response_sha256": "daf31a4c260172b807725364610b061df1ad0430ae56c8796e7a922be379c187",
+   "generated_tokens": 96,
+   "termination": "complete",
+   "wall_time_seconds": 1.847
+  },
+  {
+   "id": "ext2-planning-db-cutover",
+   "category": "planning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Write a numbered plan of exactly six steps to move a live customer database to a new host overnight. It has to cover a verified backup, a read-only freeze, the data copy, a connection switch, a smoke check, and a way back if the check fails. The freeze may not be the first step and the backup may not be the last."
+    }
+   ],
+   "response_verbatim": "Write a numbered plan of exactly six steps to move a live customer database to a new host overnight. It has to cover a verified backup, a read-only freezep, the data copy, a connection switch, a smoke check, and a way back if the check fails. The freezep may not be the first step and the backup may not be the last.",
+   "response_sha256": "ff9a244a3143bf1a6c7997160e959a1d8a3579c539f3e5509b0b7fa99d26c607",
+   "generated_tokens": 101,
+   "termination": "complete",
+   "wall_time_seconds": 1.957
+  },
+  {
+   "id": "ext2-uncertainty-churn-jump",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Our churn went from 3 per cent to 5 per cent. Should we cut the price? Answer by naming what you would need to know before answering, and say the one thing you can already say safely."
+    }
+   ],
+   "response_verbatim": "Our churn went from 3 per cent to 5 per cent. Should we cut the price? Answer by naming what you would need to know before answering, and say the one thing you can already say safely.",
+   "response_sha256": "9dffb1474a3b9581c731cfab1059698a2604a8ad726b2f6877d1dd8fb1614e01",
+   "generated_tokens": 62,
+   "termination": "complete",
+   "wall_time_seconds": 1.227
+  },
+  {
+   "id": "ext2-uncertainty-first-hour",
+   "category": "epistemic-reasoning",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Variant B got 12 sign-ups and variant A got 8 in the first hour of an A/B test. My co-founder wants to ship B this afternoon. Write the reply."
+    }
+   ],
+   "response_verbatim": "Varit B got 12 sign-ups and varit A got 8 in the first hour of an A/B test. My co-founder want to ship B this afternoon. Write the reply.",
+   "response_sha256": "22f9028c30867712e6bcf92a7d64d905b4f74267db86e2b91935b358bd1bd8c1",
+   "generated_tokens": 57,
+   "termination": "complete",
+   "wall_time_seconds": 1.082
+  },
+  {
+   "id": "ext2-creative-cold-cellar",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this, keeping the same three things going: the cellar is colder than it should be, the tenant upstairs keeps moving furniture at night, and the narrator counts things to stay calm. Write one more paragraph and include exactly one line of spoken dialogue in quotation marks."
+    }
+   ],
+   "response_verbatim": "Continue this, keeping the same three things going: the cellar is colder than it should be, the tenant upstairs keeps moving furniture at night, and the narrator counts things to stay calm. Write one more paragraph and include exactly one line of spoken dialogue in quotation marks.",
+   "response_sha256": "e3c8a4a82f13d332e5d544adb0b4b3be384e84bdc7cfed32df621c61daed8a29",
+   "generated_tokens": 102,
+   "termination": "complete",
+   "wall_time_seconds": 1.904
+  },
+  {
+   "id": "ext2-creative-own-handwriting",
+   "category": "creative-writing",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Continue this without resolving it: a night keeper finds a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boat is overdue. Write one more paragraph, include one line of spoken dialogue in quotation marks, and do not explain who wrote the note."
+    }
+   ],
+   "response_verbatim": "Continue this without resolving it: a night keeper finds a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boreat is overdue. Write one more paragraph, include one line of spoken dialogue in quotation marks, and not explain who wrote the note.",
+   "response_sha256": "6b6f3ea67522334ff1111d723ec294f00d9a744e6c34dcb090d52e415fe9e92d",
+   "generated_tokens": 104,
+   "termination": "complete",
+   "wall_time_seconds": 1.961
+  },
+  {
+   "id": "ext2-multiturn-venue-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Suggest four venues for a thirty-person team dinner in a city centre."
+    },
+    {
+     "role": "assistant",
+     "content": "1. The Iron Grill - steakhouse, private room.\n2. Marea - seafood, terrace.\n3. Casa Nova - Italian, set menus.\n4. The Smokehouse - barbecue, long tables."
+    },
+    {
+     "role": "user",
+     "content": "Two of the group are vegetarian and one uses a wheelchair. Redo the list of four with that in mind and say what changed."
+    }
+   ],
+   "response_verbatim": "1. The Irk - steakhouse, steakhour.\n\n2. The mkj - mkj, mkj.\n\n3. The cahi - cahi, cahi.\n\n4. The sg - sg, sg.\n\n5. The tg - tg, tg.",
+   "response_sha256": "080935a757c55693f26f5d28e89d283526c33584f25d4678a644ef15a59c93dc",
+   "generated_tokens": 77,
+   "termination": "complete",
+   "wall_time_seconds": 1.452
+  },
+  {
+   "id": "ext2-multiturn-dinner-revision",
+   "category": "multi-turn-conversation",
+   "prompt_messages": [
+    {
+     "role": "user",
+     "content": "Give me three weeknight dinners I can cook in under twenty-five minutes."
+    },
+    {
+     "role": "assistant",
+     "content": "1. Chicken stir-fry with rice.\n2. Salmon and couscous.\n3. Carbonara."
+    },
+    {
+     "role": "user",
+     "content": "I should have said: no fish, no pork, and my partner does not eat gluten. Give three replacements and say why each one works."
+    }
+   ],
+   "response_verbatim": "1. I'm a job job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job in the job. I'm not a part of the service. I'm a job",
+   "response_sha256": "8be4e5fd59c8e5f67789eb5dac87831159f02035bed99bad47575b8340cd2fda",
+   "generated_tokens": 1024,
+   "termination": "censored-at-cap",
+   "wall_time_seconds": 19.564
+  }
+ ],
+ "parent_responses": [],
+ "wall_time_seconds": 107.991
+}

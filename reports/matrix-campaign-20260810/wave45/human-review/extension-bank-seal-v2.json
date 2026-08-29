@@ -1,0 +1,28 @@
+{
+ "schema": "neural-forge-extension-bank-seal-v1",
+ "addendum": 16,
+ "authored": "2026-08-28",
+ "supersedes": null,
+ "why_a_second_file": "The v1 seal is NOT edited.  Sixty committed v1 observations across waves 29-32 authenticate against `extension-bank-seal.json` exactly as they always have, and a key appended to that file would change its digest and therefore change what those observations were bound to.  The v2 bank gets its own seal file instead.",
+ "bank2_path": "research/lfm2_extension_bank_prompts_v2.json",
+ "bank2_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "bank2_prompts": 30,
+ "rubric2_path": "reports/matrix-campaign-20260810/run/mx34/mx34_extrubric2.py",
+ "rubric2_sha256": "fc7564d7f0ebc9344ee02eb359d39f6d13edc5127df2915c70328a3ce540cfe9",
+ "sealed_pack_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+ "lint": {
+  "ngram_disjointness_n": 7,
+  "ngram_collisions_vs_sealed_pack": 0,
+  "ngram_collisions_vs_extension_v1": 0,
+  "ngram_collisions_vs_paraphrase_triplets": 0,
+  "lanes_covered": 15,
+  "prompts_per_lane": 2,
+  "difficulty_staggered_A_B": true,
+  "reference_answers_reachable": "30/30",
+  "prompts_carrying_an_external_reference": 0,
+  "prompts_with_an_unexplained_assistant_turn": 0,
+  "self_answer_tokens_found": 0
+ },
+ "rubric_sealed_before_any_decode": "The rubric was authored and committed in the same commit as the bank, BEFORE any child decoded a single v2 prompt.  Wave 33 retired the v1 verdict string because a rubric that can be tuned after seeing the responses prices nothing; this pair is frozen in advance and its self-test runs on every invocation.",
+ "binding": "This bank is a SECOND surface and a CANDIDATE instrument.  The sealed fifteen remain the only judge of any frontier claim, verdict, count or ledger row.  No file of the sealed protocol is modified by the mechanism this seal describes.  Adoption of this surface requires it to be shown, on a population with real spread, to rank better than the retired v1 surface's pooled rho of 0.6926; a surface that cannot be shown to do so is reported as no-better and not adopted."
+}

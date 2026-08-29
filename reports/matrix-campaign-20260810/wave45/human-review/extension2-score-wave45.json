@@ -1,0 +1,1941 @@
+{
+ "schema": "neural-forge-matrix-wave45-extension2-score-v1",
+ "purpose": "The extension-v2 surface's machine score.  Prompt-keyed, content-required, degeneracy-vetoed, difficulty-staggered, and self-tested against its own prompts on every invocation.  It prices and orders; it is never a grade and never a gate.",
+ "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+ "prompt_rules": 30,
+ "children": [
+  {
+   "label": "PARENT",
+   "cell_id": null,
+   "surface": "extension2-v1",
+   "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "prompts": 30,
+   "held": 5,
+   "charged_prompts": 2,
+   "lanes_with_a_hold": 1,
+   "lanes_both": 0,
+   "held_A": 3,
+   "held_B": 2,
+   "lanes": [
+    {
+     "lane": "unknown",
+     "held": 5,
+     "of": 30,
+     "charged": 2,
+     "which": [
+      "ext2-instruction-first-week",
+      "ext2-arithmetic-faulty-run",
+      "ext2-summary-vendor-choice",
+      "ext2-comparison-bandwidth-latency",
+      "ext2-planning-office-move"
+     ]
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "ext2-conversation-dead-battery",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 8,
+     "reason": "missing \\?; short (8 words)"
+    },
+    {
+     "id": "ext2-conversation-two-promises",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 8,
+     "reason": "missing \\?; missing \\b(tough|hard|awful|rough|stuck|bind|torn|cl; short (8 words)"
+    },
+    {
+     "id": "ext2-instruction-first-week",
+     "lane": "unknown",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 97,
+     "reason": "held"
+    },
+    {
+     "id": "ext2-instruction-power-restored",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 33,
+     "reason": "missing \\b(server|computer|fridge|freezer|router|ala"
+    },
+    {
+     "id": "ext2-explanation-second-tide",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 25,
+     "reason": "missing \\b(inertia|centrifugal|weaker|weakest|less|l; missing \\b(far side|opposite side|other side|away fr; short (25 words); charged: echo"
+    },
+    {
+     "id": "ext2-explanation-blue-then-red",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 173,
+     "reason": "missing \\b(longer path|more atmosphere|thicker|great"
+    },
+    {
+     "id": "ext2-arithmetic-bolt-bags",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 95,
+     "reason": "missing \\b5\\b"
+    },
+    {
+     "id": "ext2-arithmetic-faulty-run",
+     "lane": "unknown",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 138,
+     "reason": "held"
+    },
+    {
+     "id": "ext2-logic-shelf-order",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 12,
+     "reason": "missing \\bprimer\\b[^.]{0,40}\\b(last|fourth|4th|right; order atlas>ledger>manual>primer not present"
+    },
+    {
+     "id": "ext2-logic-relay-finish",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 62,
+     "reason": "missing \\bfitz\\b[^.]{0,40}\\b(last|fifth|5th)\\b|\\b(la; order gil>dara>erin>hana>fitz not present"
+    },
+    {
+     "id": "ext2-context-workshop-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 19,
+     "reason": "missing 4:?15"
+    },
+    {
+     "id": "ext2-context-clinic-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 25,
+     "reason": "missing \\b10\\b; missing \\bthursday\\b[^.]{0,60}\\b(no|not|cannot|can'?"
+    },
+    {
+     "id": "ext2-summary-vendor-choice",
+     "lane": "unknown",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 49,
+     "reason": "held"
+    },
+    {
+     "id": "ext2-summary-friday-backlog",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 21,
+     "reason": "missing \\b(certificat\\w*|gateway)\\b[^.]{0,60}\\b(firs; missing \\b(hero|image|marketing)\\b[^.]{0,60}\\b(wait|"
+    },
+    {
+     "id": "ext2-comparison-cache-memory",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 201,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|workto; missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe"
+    },
+    {
+     "id": "ext2-comparison-bandwidth-latency",
+     "lane": "unknown",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 224,
+     "reason": "held"
+    },
+    {
+     "id": "ext2-coding-collapse-runs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 99,
+     "reason": "missing (\\[-1\\]|\\bprev\\w*\\b|\\blast\\b|\\bprevious\\b|zi"
+    },
+    {
+     "id": "ext2-coding-first-unique",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 102,
+     "reason": "missing \\b(count|counts|counter|tally|freq\\w*|occurr"
+    },
+    {
+     "id": "ext2-debug-tail-slice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 7,
+     "reason": "missing items\\[-\\s*n\\s*:\\]|items\\[len\\(items\\)\\s*-\\s; short (7 words)"
+    },
+    {
+     "id": "ext2-debug-adjacent-pairs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 53,
+     "reason": "missing range\\(\\s*len\\(values\\)\\s*-\\s*1\\s*\\)|range\\(; missing \\b(last|final|bound|index|out of range|index"
+    },
+    {
+     "id": "ext2-email-wrong-colour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 57,
+     "reason": "missing \\bthursday\\b"
+    },
+    {
+     "id": "ext2-email-reschedule",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 57,
+     "reason": "missing \\bmonday\\b; missing \\b(10:?00|10 ?a\\.?m|ten)\\b"
+    },
+    {
+     "id": "ext2-planning-office-move",
+     "lane": "unknown",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 127,
+     "reason": "held"
+    },
+    {
+     "id": "ext2-planning-db-cutover",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 124,
+     "reason": "missing \\b(dns|connection.string|endpoint|cname|conn; missing \\b(roll ?back|revert|back out|undo|fail ?bac; forbidden (?m)^\\s*7[.)]\\s"
+    },
+    {
+     "id": "ext2-uncertainty-churn-jump",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 27,
+     "reason": "missing \\?|\\b(would ask|ask|request|find out|check)\\; short (27 words)"
+    },
+    {
+     "id": "ext2-uncertainty-first-hour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 9,
+     "reason": "missing \\b(sample|sample size|underpowered|significa; missing \\b(not|don'?t|do not|wait|hold|too early|pre; missing \\b(how long|run it|more data|longer|another ; short (9 words)"
+    },
+    {
+     "id": "ext2-creative-cold-cellar",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 54,
+     "reason": "missing \\b(cellar|basement)\\b; missing \\b(count\\w*|number\\w*|tally|one,? two|counti; short (54 words)"
+    },
+    {
+     "id": "ext2-creative-own-handwriting",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 65,
+     "reason": "short (65 words)"
+    },
+    {
+     "id": "ext2-multiturn-venue-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 39,
+     "reason": "forbidden inside the items: \\bthe iron grill\\b; forbidden inside the items: \\bthe smokehouse\\b; charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-dinner-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 200,
+     "reason": "order 1>2>3 not present; fewer than 3 DISTINCT numbered items"
+    }
+   ]
+  },
+  {
+   "label": "V10CL896X09",
+   "cell_id": "ARCH.V10CL896X09",
+   "surface": "extension2-v1",
+   "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "prompts": 30,
+   "held": 0,
+   "charged_prompts": 2,
+   "lanes_with_a_hold": 0,
+   "lanes_both": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "lanes": [
+    {
+     "lane": "unknown",
+     "held": 0,
+     "of": 30,
+     "charged": 2,
+     "which": []
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "ext2-conversation-dead-battery",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 26,
+     "reason": "missing \\?; missing \\b(rough|awful|miserable|horrible|stressful|"
+    },
+    {
+     "id": "ext2-conversation-two-promises",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 11,
+     "reason": "missing \\?; missing \\b(tough|hard|awful|rough|stuck|bind|torn|cl; short (11 words)"
+    },
+    {
+     "id": "ext2-instruction-first-week",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 33,
+     "reason": "missing \\b(ask|read|shadow|meet|introduce|schedul\\w*; order 1>2>3 not present; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-instruction-power-restored",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 20,
+     "reason": "missing \\b(check|verif\\w*|inspect|restart|reboot|swi; missing \\b(server|computer|fridge|freezer|router|ala; order 1>2>3 not present; short (20 words); fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-explanation-second-tide",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 25,
+     "reason": "missing \\b(inertia|centrifugal|weaker|weakest|less|l; missing \\b(far side|opposite side|other side|away fr; short (25 words)"
+    },
+    {
+     "id": "ext2-explanation-blue-then-red",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 17,
+     "reason": "missing \\b(scatter|scatters|scattered|scattering|ray; missing \\b(short\\w* wavelength|shorter|blue light|sm; missing \\b(longer path|more atmosphere|thicker|great; missing \\b(not|isn'?t|does not|doesn'?t|nothing to d; short (17 words)"
+    },
+    {
+     "id": "ext2-arithmetic-bolt-bags",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 24,
+     "reason": "missing \\b149\\b; missing \\b18\\b; missing \\b5\\b"
+    },
+    {
+     "id": "ext2-arithmetic-faulty-run",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 33,
+     "reason": "missing \\b216\\b; missing \\b306\\b"
+    },
+    {
+     "id": "ext2-logic-shelf-order",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 50,
+     "reason": "missing \\bprimer\\b[^.]{0,40}\\b(last|fourth|4th|right; order atlas>ledger>manual>primer not present"
+    },
+    {
+     "id": "ext2-logic-relay-finish",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 6,
+     "reason": "missing \\bfitz\\b[^.]{0,40}\\b(last|fifth|5th)\\b|\\b(la; order gil>dara>erin>hana>fitz not present; short (6 words)"
+    },
+    {
+     "id": "ext2-context-workshop-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 28,
+     "reason": "missing \\byellow\\b"
+    },
+    {
+     "id": "ext2-context-clinic-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 37,
+     "reason": "missing \\bfriday\\b; missing \\b10\\b; missing \\bthursday\\b[^.]{0,60}\\b(no|not|cannot|can'?"
+    },
+    {
+     "id": "ext2-summary-vendor-choice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 28,
+     "reason": "missing \\b(chose|chosen|selected|picked|decision|wen"
+    },
+    {
+     "id": "ext2-summary-friday-backlog",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 52,
+     "reason": "missing \\b(hero|image|marketing)\\b[^.]{0,60}\\b(wait|"
+    },
+    {
+     "id": "ext2-comparison-cache-memory",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 36,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|workto; missing \\b(cache)\\b; missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe; missing \\b(two|second|secondly|another|also|both)\\b; short (36 words)"
+    },
+    {
+     "id": "ext2-comparison-bandwidth-latency",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 34,
+     "reason": "missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe; missing \\b(bandwidth|throughput|how much|amount|volu; missing \\b(latency|delay|how long|time before|waitin; missing \\b(two|second|secondly|another|also|both)\\b; short (34 words)"
+    },
+    {
+     "id": "ext2-coding-collapse-runs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 512,
+     "reason": "missing def\\s+collapse_runs; missing (\\[-1\\]|\\bprev\\w*\\b|\\blast\\b|\\bprevious\\b|zi; no parsable def collapse_runs; charged: cap,loop"
+    },
+    {
+     "id": "ext2-coding-first-unique",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 16,
+     "reason": "missing def\\s+first_unique; missing \\b(count|counts|counter|tally|freq\\w*|occurr; missing \\bNone\\b; no parsable def first_unique"
+    },
+    {
+     "id": "ext2-debug-tail-slice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 16,
+     "reason": "missing items\\[-\\s*n\\s*:\\]|items\\[len\\(items\\)\\s*-\\s; missing \\b(off.by.one|one too many|extra|minus one|s"
+    },
+    {
+     "id": "ext2-debug-adjacent-pairs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 20,
+     "reason": "missing range\\(\\s*len\\(values\\)\\s*-\\s*1\\s*\\)|range\\(; missing \\b(last|final|bound|index|out of range|index"
+    },
+    {
+     "id": "ext2-email-wrong-colour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 14,
+     "reason": "missing \\b7734\\b; missing \\brefund\\w*\\b; missing \\bthursday\\b; missing \\b(address|where|which branch|which shop|whi; missing \\b(dear|hello|hi\\b|good morning|good afterno; short (14 words)"
+    },
+    {
+     "id": "ext2-email-reschedule",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 33,
+     "reason": "missing \\bmonday\\b; missing \\bwednesday\\b; missing \\bfriday\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno; missing \\?|\\b(reply|confirm|let me know|get back|res; short (33 words)"
+    },
+    {
+     "id": "ext2-planning-office-move",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 34,
+     "reason": "missing \\b(rack|server)\\b; missing \\b(clean\\w*|contract|cancel\\w*)\\b; missing \\b(check|verif\\w*|test\\w*|confirm\\w*)\\b; order 1>2>3>4>5 not present; short (34 words); fewer than 5 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-planning-db-cutover",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 26,
+     "reason": "missing \\b(freeze|read.only|readonly|lock\\w*)\\b; missing \\b(copy|transfer|replicat\\w*|restor\\w*|migra; missing \\b(dns|connection.string|endpoint|cname|conn; missing \\b(roll ?back|revert|back out|undo|fail ?bac; order 1>2>3>4>5>6 not present; short (26 words); fewer than 6 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-uncertainty-churn-jump",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "words": 97,
+     "reason": "missing \\b(cohort|segment\\w*|sample size|how many cu; missing \\b(cannot|can'?t|not enough|insufficient|no ; missing \\?|\\b(would ask|ask|request|find out|check)\\; charged: loop"
+    },
+    {
+     "id": "ext2-uncertainty-first-hour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 3,
+     "reason": "missing \\b(sample|sample size|underpowered|significa; missing \\b(not|don'?t|do not|wait|hold|too early|pre; missing \\b(how long|run it|more data|longer|another ; short (3 words)"
+    },
+    {
+     "id": "ext2-creative-cold-cellar",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 30,
+     "reason": "missing \\b(count\\w*|number\\w*|tally|one,? two|counti; missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (30 words)"
+    },
+    {
+     "id": "ext2-creative-own-handwriting",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 11,
+     "reason": "missing \\b(note|paper|handwriting|writing|script)\\b; missing \\b(fog|mist|haze)\\b; missing \\b(boat|supply|ship|vessel|tender)\\b; short (11 words)"
+    },
+    {
+     "id": "ext2-multiturn-venue-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing \\b(wheelchair|step.free|accessib\\w*|level ac; missing \\b(chang\\w*|swapp\\w*|replac\\w*|instead|dropp; order 1>2>3>4 not present; short (15 words); fewer than 4 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-multiturn-dinner-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 2,
+     "reason": "missing \\b(gluten.free|gluten free|no gluten|without; missing \\b(because|works|since|avoids|contains no|fr; order 1>2>3 not present; short (2 words); fewer than 3 DISTINCT numbered items"
+    }
+   ]
+  },
+  {
+   "label": "V12CL896G03",
+   "cell_id": "ARCH.V12CL896G03",
+   "surface": "extension2-v1",
+   "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "prompts": 30,
+   "held": 0,
+   "charged_prompts": 14,
+   "lanes_with_a_hold": 0,
+   "lanes_both": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "lanes": [
+    {
+     "lane": "unknown",
+     "held": 0,
+     "of": 30,
+     "charged": 14,
+     "which": []
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "ext2-conversation-dead-battery",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 3,
+     "reason": "missing \\?; missing \\b(rough|awful|miserable|horrible|stressful|; short (3 words)"
+    },
+    {
+     "id": "ext2-conversation-two-promises",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 36,
+     "reason": "missing \\?; missing \\b(tough|hard|awful|rough|stuck|bind|torn|cl"
+    },
+    {
+     "id": "ext2-instruction-first-week",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 200,
+     "reason": "missing \\b(ask|read|shadow|meet|introduce|schedul\\w*; forbidden (?m)^\\s*4[.)]\\s; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-instruction-power-restored",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 48,
+     "reason": "missing \\b(check|verif\\w*|inspect|restart|reboot|swi; missing \\b(server|computer|fridge|freezer|router|ala; forbidden \\b(electricity company|utility company|power; order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-explanation-second-tide",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 20,
+     "reason": "missing \\b(inertia|centrifugal|weaker|weakest|less|l; missing \\b(far side|opposite side|other side|away fr; short (20 words)"
+    },
+    {
+     "id": "ext2-explanation-blue-then-red",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 37,
+     "reason": "missing \\b(scatter|scatters|scattered|scattering|ray; missing \\b(short\\w* wavelength|shorter|blue light|sm; missing \\b(longer path|more atmosphere|thicker|great; missing \\b(not|isn'?t|does not|doesn'?t|nothing to d; short (37 words)"
+    },
+    {
+     "id": "ext2-arithmetic-bolt-bags",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 41,
+     "reason": "missing \\b149\\b; missing \\b18\\b; missing \\b5\\b"
+    },
+    {
+     "id": "ext2-arithmetic-faulty-run",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 35,
+     "reason": "missing \\b216\\b; missing \\b306\\b"
+    },
+    {
+     "id": "ext2-logic-shelf-order",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 35,
+     "reason": "missing \\bprimer\\b[^.]{0,40}\\b(last|fourth|4th|right; charged: echo"
+    },
+    {
+     "id": "ext2-logic-relay-finish",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 18,
+     "reason": "missing \\bfitz\\b[^.]{0,40}\\b(last|fifth|5th)\\b|\\b(la; order gil>dara>erin>hana>fitz not present"
+    },
+    {
+     "id": "ext2-context-workshop-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 51,
+     "reason": "missing \\byellow\\b"
+    },
+    {
+     "id": "ext2-context-clinic-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 17,
+     "reason": "missing \\bfriday\\b; missing \\b10\\b; missing \\bthursday\\b[^.]{0,60}\\b(no|not|cannot|can'?; charged: echo"
+    },
+    {
+     "id": "ext2-summary-vendor-choice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 62,
+     "reason": "charged: echo"
+    },
+    {
+     "id": "ext2-summary-friday-backlog",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 40,
+     "reason": "missing \\b(certificat\\w*|gateway)\\b[^.]{0,60}\\b(firs; missing \\b(hero|image|marketing)\\b[^.]{0,60}\\b(wait|"
+    },
+    {
+     "id": "ext2-comparison-cache-memory",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "words": 172,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|workto; missing \\b(cache)\\b; missing \\b(main memory|ram|memory)\\b; missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe; missing \\b(two|second|secondly|another|also|both)\\b; charged: loop"
+    },
+    {
+     "id": "ext2-comparison-bandwidth-latency",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 34,
+     "reason": "missing \\b(bandwidth|throughput|how much|amount|volu; missing \\b(latency|delay|how long|time before|waitin; forbidden \\b(road|roads|traffic|highway|motorway|freew; short (34 words)"
+    },
+    {
+     "id": "ext2-coding-collapse-runs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 512,
+     "reason": "missing def\\s+collapse_runs; missing (\\[-1\\]|\\bprev\\w*\\b|\\blast\\b|\\bprevious\\b|zi; no parsable def collapse_runs; charged: cap,loop"
+    },
+    {
+     "id": "ext2-coding-first-unique",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 512,
+     "reason": "missing def\\s+first_unique; missing \\b(count|counts|counter|tally|freq\\w*|occurr; missing \\bNone\\b; no parsable def first_unique; charged: cap,loop"
+    },
+    {
+     "id": "ext2-debug-tail-slice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 10,
+     "reason": "missing items\\[-\\s*n\\s*:\\]|items\\[len\\(items\\)\\s*-\\s; short (10 words)"
+    },
+    {
+     "id": "ext2-debug-adjacent-pairs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 11,
+     "reason": "missing range\\(\\s*len\\(values\\)\\s*-\\s*1\\s*\\)|range\\(; missing \\b(last|final|bound|index|out of range|index; short (11 words)"
+    },
+    {
+     "id": "ext2-email-wrong-colour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 38,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "ext2-email-reschedule",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 21,
+     "reason": "missing \\bmonday\\b; missing \\b(10:?00|10 ?a\\.?m|ten)\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno; short (21 words); charged: echo"
+    },
+    {
+     "id": "ext2-planning-office-move",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 57,
+     "reason": "order 1>2>3>4>5 not present; fewer than 5 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-planning-db-cutover",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 57,
+     "reason": "missing \\b(freeze|read.only|readonly|lock\\w*)\\b; missing \\b(dns|connection.string|endpoint|cname|conn; missing \\b(roll ?back|revert|back out|undo|fail ?bac"
+    },
+    {
+     "id": "ext2-uncertainty-churn-jump",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 1021,
+     "reason": "missing \\b(cohort|segment\\w*|sample size|how many cu; missing \\b(cannot|can'?t|not enough|insufficient|no ; missing \\?|\\b(would ask|ask|request|find out|check)\\; charged: cap,loop"
+    },
+    {
+     "id": "ext2-uncertainty-first-hour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 29,
+     "reason": "missing \\b(sample|sample size|underpowered|significa; missing \\b(not|don'?t|do not|wait|hold|too early|pre; missing \\b(how long|run it|more data|longer|another ; short (29 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-cold-cellar",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 38,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (38 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-own-handwriting",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 70,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'"
+    },
+    {
+     "id": "ext2-multiturn-venue-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 27,
+     "reason": "missing \\b(vegetarian|plant.based|meat.free|veggie|v; missing \\b(wheelchair|step.free|accessib\\w*|level ac; missing \\b(chang\\w*|swapp\\w*|replac\\w*|instead|dropp; forbidden inside the items: \\bthe iron grill\\b; forbidden inside the items: \\bthe smokehouse\\b; short (27 words); charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-dinner-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 11,
+     "reason": "missing \\b(because|works|since|avoids|contains no|fr; forbidden inside the items: \\bsalmon\\b; forbidden inside the items: \\bcarbonara\\b; short (11 words)"
+    }
+   ]
+  },
+  {
+   "label": "V3CL768",
+   "cell_id": "ARCH.V3CL768",
+   "surface": "extension2-v1",
+   "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "prompts": 30,
+   "held": 0,
+   "charged_prompts": 16,
+   "lanes_with_a_hold": 0,
+   "lanes_both": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "lanes": [
+    {
+     "lane": "unknown",
+     "held": 0,
+     "of": 30,
+     "charged": 16,
+     "which": []
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "ext2-conversation-dead-battery",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 83,
+     "reason": "missing \\?; missing \\b(rough|awful|miserable|horrible|stressful|; forbidden (?m)^\\s*(\\d[.)]|[-*\u2022])\\s"
+    },
+    {
+     "id": "ext2-conversation-two-promises",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 54,
+     "reason": "missing \\?; missing \\b(tough|hard|awful|rough|stuck|bind|torn|cl; charged: echo"
+    },
+    {
+     "id": "ext2-instruction-first-week",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 85,
+     "reason": "missing \\b(ask|read|shadow|meet|introduce|schedul\\w*; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-instruction-power-restored",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 46,
+     "reason": "missing \\b(check|verif\\w*|inspect|restart|reboot|swi; missing \\b(server|computer|fridge|freezer|router|ala; forbidden \\b(electricity company|utility company|power; order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-explanation-second-tide",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 39,
+     "reason": "missing \\b(inertia|centrifugal|weaker|weakest|less|l; missing \\b(far side|opposite side|other side|away fr; short (39 words); charged: echo"
+    },
+    {
+     "id": "ext2-explanation-blue-then-red",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 853,
+     "reason": "missing \\b(scatter|scatters|scattered|scattering|ray; missing \\b(short\\w* wavelength|shorter|blue light|sm; missing \\b(longer path|more atmosphere|thicker|great; missing \\b(not|isn'?t|does not|doesn'?t|nothing to d; charged: cap,loop"
+    },
+    {
+     "id": "ext2-arithmetic-bolt-bags",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 38,
+     "reason": "missing \\b149\\b; missing \\b18\\b; missing \\b5\\b; charged: echo"
+    },
+    {
+     "id": "ext2-arithmetic-faulty-run",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 9,
+     "reason": "missing \\b216\\b; missing \\b306\\b; short (9 words); charged: echo"
+    },
+    {
+     "id": "ext2-logic-shelf-order",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 16,
+     "reason": "missing \\bprimer\\b[^.]{0,40}\\b(last|fourth|4th|right; order atlas>ledger>manual>primer not present"
+    },
+    {
+     "id": "ext2-logic-relay-finish",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 19,
+     "reason": "missing \\bfitz\\b[^.]{0,40}\\b(last|fifth|5th)\\b|\\b(la; order gil>dara>erin>hana>fitz not present"
+    },
+    {
+     "id": "ext2-context-workshop-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 12,
+     "reason": "missing 4:?15; missing \\byellow\\b"
+    },
+    {
+     "id": "ext2-context-clinic-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 31,
+     "reason": "missing \\bfriday\\b; missing \\b10\\b; missing \\bthursday\\b[^.]{0,60}\\b(no|not|cannot|can'?; charged: echo"
+    },
+    {
+     "id": "ext2-summary-vendor-choice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 50,
+     "reason": "missing \\b(chose|chosen|selected|picked|decision|wen"
+    },
+    {
+     "id": "ext2-summary-friday-backlog",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 23,
+     "reason": "missing \\b(certificat\\w*|gateway)\\b[^.]{0,60}\\b(firs; missing \\b(hero|image|marketing)\\b[^.]{0,60}\\b(wait|"
+    },
+    {
+     "id": "ext2-comparison-cache-memory",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 32,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|workto; short (32 words); charged: echo"
+    },
+    {
+     "id": "ext2-comparison-bandwidth-latency",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 13,
+     "reason": "missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe; missing \\b(bandwidth|throughput|how much|amount|volu; missing \\b(latency|delay|how long|time before|waitin; missing \\b(two|second|secondly|another|also|both)\\b; short (13 words)"
+    },
+    {
+     "id": "ext2-coding-collapse-runs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 36,
+     "reason": "missing def\\s+collapse_runs; missing (\\[-1\\]|\\bprev\\w*\\b|\\blast\\b|\\bprevious\\b|zi; forbidden \\bitertools\\b; no parsable def collapse_runs"
+    },
+    {
+     "id": "ext2-coding-first-unique",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 43,
+     "reason": "missing def\\s+first_unique; missing \\b(count|counts|counter|tally|freq\\w*|occurr; no parsable def first_unique"
+    },
+    {
+     "id": "ext2-debug-tail-slice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 1,
+     "reason": "missing items\\[-\\s*n\\s*:\\]|items\\[len\\(items\\)\\s*-\\s; missing \\b(off.by.one|one too many|extra|minus one|s; short (1 words)"
+    },
+    {
+     "id": "ext2-debug-adjacent-pairs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 36,
+     "reason": "missing range\\(\\s*len\\(values\\)\\s*-\\s*1\\s*\\)|range\\("
+    },
+    {
+     "id": "ext2-email-wrong-colour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 49,
+     "reason": "missing \\bthursday\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "ext2-email-reschedule",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "echo",
+      "loop"
+     ],
+     "words": 988,
+     "reason": "missing \\bfriday\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno; long (988 words); charged: cap,echo,loop"
+    },
+    {
+     "id": "ext2-planning-office-move",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 55,
+     "reason": "order 1>2>3>4>5 not present; fewer than 5 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-planning-db-cutover",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 62,
+     "reason": "missing \\b(dns|connection.string|endpoint|cname|conn; missing \\b(roll ?back|revert|back out|undo|fail ?bac; order 1>2>3>4>5>6 not present; fewer than 6 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-uncertainty-churn-jump",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 37,
+     "reason": "missing \\b(cohort|segment\\w*|sample size|how many cu; short (37 words); charged: echo"
+    },
+    {
+     "id": "ext2-uncertainty-first-hour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 29,
+     "reason": "missing \\b(sample|sample size|underpowered|significa; missing \\b(not|don'?t|do not|wait|hold|too early|pre; missing \\b(how long|run it|more data|longer|another ; short (29 words)"
+    },
+    {
+     "id": "ext2-creative-cold-cellar",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 47,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (47 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-own-handwriting",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 54,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (54 words); charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-venue-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 30,
+     "reason": "missing \\b(vegetarian|plant.based|meat.free|veggie|v; missing \\b(wheelchair|step.free|accessib\\w*|level ac; missing \\b(chang\\w*|swapp\\w*|replac\\w*|instead|dropp; fewer than 4 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-multiturn-dinner-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 782,
+     "reason": "missing \\b(gluten.free|gluten free|no gluten|without; missing \\b(because|works|since|avoids|contains no|fr; order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: cap,loop"
+    }
+   ]
+  },
+  {
+   "label": "V5CL768",
+   "cell_id": "ARCH.V5CL768",
+   "surface": "extension2-v1",
+   "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "prompts": 30,
+   "held": 1,
+   "charged_prompts": 19,
+   "lanes_with_a_hold": 1,
+   "lanes_both": 0,
+   "held_A": 1,
+   "held_B": 0,
+   "lanes": [
+    {
+     "lane": "unknown",
+     "held": 1,
+     "of": 30,
+     "charged": 19,
+     "which": [
+      "ext2-context-workshop-notice"
+     ]
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "ext2-conversation-dead-battery",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 80,
+     "reason": "missing \\b(rough|awful|miserable|horrible|stressful|; forbidden (?m)^\\s*(\\d[.)]|[-*\u2022])\\s"
+    },
+    {
+     "id": "ext2-conversation-two-promises",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 58,
+     "reason": "missing \\?; missing \\b(tough|hard|awful|rough|stuck|bind|torn|cl; charged: echo"
+    },
+    {
+     "id": "ext2-instruction-first-week",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 90,
+     "reason": "missing \\b(ask|read|shadow|meet|introduce|schedul\\w*; fewer than 3 DISTINCT numbered items"
+    },
+    {
+     "id": "ext2-instruction-power-restored",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 47,
+     "reason": "missing \\b(check|verif\\w*|inspect|restart|reboot|swi; missing \\b(server|computer|fridge|freezer|router|ala; forbidden \\b(electricity company|utility company|power; order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-explanation-second-tide",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "words": 132,
+     "reason": "missing \\b(inertia|centrifugal|weaker|weakest|less|l; missing \\b(far side|opposite side|other side|away fr; charged: loop"
+    },
+    {
+     "id": "ext2-explanation-blue-then-red",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 37,
+     "reason": "missing \\b(scatter|scatters|scattered|scattering|ray; missing \\b(short\\w* wavelength|shorter|blue light|sm; missing \\b(longer path|more atmosphere|thicker|great; missing \\b(not|isn'?t|does not|doesn'?t|nothing to d; short (37 words)"
+    },
+    {
+     "id": "ext2-arithmetic-bolt-bags",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 47,
+     "reason": "missing \\b149\\b; missing \\b18\\b; missing \\b5\\b"
+    },
+    {
+     "id": "ext2-arithmetic-faulty-run",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 26,
+     "reason": "missing \\b216\\b; missing \\b306\\b"
+    },
+    {
+     "id": "ext2-logic-shelf-order",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 918,
+     "reason": "missing \\bprimer\\b[^.]{0,40}\\b(last|fourth|4th|right; order atlas>ledger>manual>primer not present; charged: cap,loop"
+    },
+    {
+     "id": "ext2-logic-relay-finish",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 14,
+     "reason": "missing \\bfitz\\b[^.]{0,40}\\b(last|fifth|5th)\\b|\\b(la; order gil>dara>erin>hana>fitz not present; short (14 words)"
+    },
+    {
+     "id": "ext2-context-workshop-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": true,
+     "charged": [],
+     "words": 50,
+     "reason": "held"
+    },
+    {
+     "id": "ext2-context-clinic-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 26,
+     "reason": "missing \\bfriday\\b; missing \\b10\\b; missing \\bthursday\\b[^.]{0,60}\\b(no|not|cannot|can'?"
+    },
+    {
+     "id": "ext2-summary-vendor-choice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 58,
+     "reason": "missing \\b(chose|chosen|selected|picked|decision|wen; charged: echo"
+    },
+    {
+     "id": "ext2-summary-friday-backlog",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 36,
+     "reason": "missing \\b(certificat\\w*|gateway)\\b[^.]{0,60}\\b(firs; missing \\b(hero|image|marketing)\\b[^.]{0,60}\\b(wait|; charged: echo"
+    },
+    {
+     "id": "ext2-comparison-cache-memory",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 31,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|workto; short (31 words); charged: echo"
+    },
+    {
+     "id": "ext2-comparison-bandwidth-latency",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 1016,
+     "reason": "missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe; missing \\b(latency|delay|how long|time before|waitin; missing \\b(two|second|secondly|another|also|both)\\b; charged: cap,loop"
+    },
+    {
+     "id": "ext2-coding-collapse-runs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 46,
+     "reason": "missing def\\s+collapse_runs; missing (\\[-1\\]|\\bprev\\w*\\b|\\blast\\b|\\bprevious\\b|zi; no parsable def collapse_runs"
+    },
+    {
+     "id": "ext2-coding-first-unique",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 38,
+     "reason": "missing def\\s+first_unique; missing \\b(count|counts|counter|tally|freq\\w*|occurr; no parsable def first_unique"
+    },
+    {
+     "id": "ext2-debug-tail-slice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 25,
+     "reason": "missing items\\[-\\s*n\\s*:\\]|items\\[len\\(items\\)\\s*-\\s; missing \\b(off.by.one|one too many|extra|minus one|s; charged: echo"
+    },
+    {
+     "id": "ext2-debug-adjacent-pairs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing range\\(\\s*len\\(values\\)\\s*-\\s*1\\s*\\)|range\\(; missing \\b(last|final|bound|index|out of range|index"
+    },
+    {
+     "id": "ext2-email-wrong-colour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 49,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "ext2-email-reschedule",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "echo",
+      "loop"
+     ],
+     "words": 994,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; long (994 words); charged: cap,echo,loop"
+    },
+    {
+     "id": "ext2-planning-office-move",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 58,
+     "reason": "order 1>2>3>4>5 not present; fewer than 5 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-planning-db-cutover",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 62,
+     "reason": "missing \\b(dns|connection.string|endpoint|cname|conn; missing \\b(roll ?back|revert|back out|undo|fail ?bac; order 1>2>3>4>5>6 not present; fewer than 6 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-uncertainty-churn-jump",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "missing \\b(cohort|segment\\w*|sample size|how many cu; missing \\?|\\b(would ask|ask|request|find out|check)\\; short (20 words); charged: echo"
+    },
+    {
+     "id": "ext2-uncertainty-first-hour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 29,
+     "reason": "missing \\b(sample|sample size|underpowered|significa; missing \\b(not|don'?t|do not|wait|hold|too early|pre; missing \\b(how long|run it|more data|longer|another ; short (29 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-cold-cellar",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 47,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (47 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-own-handwriting",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 55,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (55 words); charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-venue-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 37,
+     "reason": "missing \\b(vegetarian|plant.based|meat.free|veggie|v; missing \\b(wheelchair|step.free|accessib\\w*|level ac; missing \\b(chang\\w*|swapp\\w*|replac\\w*|instead|dropp; forbidden inside the items: \\bthe iron grill\\b; forbidden inside the items: \\bthe smokehouse\\b; charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-dinner-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "loop"
+     ],
+     "words": 412,
+     "reason": "missing \\b(gluten.free|gluten free|no gluten|without; missing \\b(because|works|since|avoids|contains no|fr; charged: loop"
+    }
+   ]
+  },
+  {
+   "label": "V6CL768",
+   "cell_id": "ARCH.V6CL768",
+   "surface": "extension2-v1",
+   "bank_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "prompts": 30,
+   "held": 0,
+   "charged_prompts": 19,
+   "lanes_with_a_hold": 0,
+   "lanes_both": 0,
+   "held_A": 0,
+   "held_B": 0,
+   "lanes": [
+    {
+     "lane": "unknown",
+     "held": 0,
+     "of": 30,
+     "charged": 19,
+     "which": []
+    }
+   ],
+   "per_prompt": [
+    {
+     "id": "ext2-conversation-dead-battery",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 1006,
+     "reason": "missing \\?; missing \\b(rough|awful|miserable|horrible|stressful|; long (1006 words); charged: cap,loop"
+    },
+    {
+     "id": "ext2-conversation-two-promises",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 25,
+     "reason": "missing \\?; missing \\b(tough|hard|awful|rough|stuck|bind|torn|cl"
+    },
+    {
+     "id": "ext2-instruction-first-week",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 342,
+     "reason": "missing \\b(ask|read|shadow|meet|introduce|schedul\\w*; order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: cap,loop"
+    },
+    {
+     "id": "ext2-instruction-power-restored",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 47,
+     "reason": "missing \\b(check|verif\\w*|inspect|restart|reboot|swi; missing \\b(server|computer|fridge|freezer|router|ala; forbidden \\b(electricity company|utility company|power; order 1>2>3 not present; fewer than 3 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-explanation-second-tide",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing \\b(inertia|centrifugal|weaker|weakest|less|l; missing \\b(far side|opposite side|other side|away fr; short (15 words)"
+    },
+    {
+     "id": "ext2-explanation-blue-then-red",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 26,
+     "reason": "missing \\b(scatter|scatters|scattered|scattering|ray; missing \\b(short\\w* wavelength|shorter|blue light|sm; missing \\b(longer path|more atmosphere|thicker|great; missing \\b(not|isn'?t|does not|doesn'?t|nothing to d; short (26 words)"
+    },
+    {
+     "id": "ext2-arithmetic-bolt-bags",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 47,
+     "reason": "missing \\b149\\b; missing \\b18\\b; missing \\b5\\b"
+    },
+    {
+     "id": "ext2-arithmetic-faulty-run",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 12,
+     "reason": "missing \\b216\\b; missing \\b306\\b"
+    },
+    {
+     "id": "ext2-logic-shelf-order",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 15,
+     "reason": "missing \\bprimer\\b[^.]{0,40}\\b(last|fourth|4th|right; order atlas>ledger>manual>primer not present"
+    },
+    {
+     "id": "ext2-logic-relay-finish",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 14,
+     "reason": "missing \\bfitz\\b[^.]{0,40}\\b(last|fifth|5th)\\b|\\b(la; order gil>dara>erin>hana>fitz not present; short (14 words)"
+    },
+    {
+     "id": "ext2-context-workshop-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 437,
+     "reason": "missing 4:?15; missing \\byellow\\b; long (437 words); charged: cap,loop"
+    },
+    {
+     "id": "ext2-context-clinic-notice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 30,
+     "reason": "missing \\bfriday\\b; missing \\b10\\b; missing \\bthursday\\b[^.]{0,60}\\b(no|not|cannot|can'?; charged: echo"
+    },
+    {
+     "id": "ext2-summary-vendor-choice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 56,
+     "reason": "missing \\b(chose|chosen|selected|picked|decision|wen; charged: echo"
+    },
+    {
+     "id": "ext2-summary-friday-backlog",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 135,
+     "reason": "missing \\b(certificat\\w*|gateway)\\b[^.]{0,60}\\b(firs; missing \\b(hero|image|marketing)\\b[^.]{0,60}\\b(wait|; long (135 words)"
+    },
+    {
+     "id": "ext2-comparison-cache-memory",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 1023,
+     "reason": "missing \\b(desk|workbench|bench|table|counter|workto; missing \\b(cache)\\b; missing \\b(mislead\\w*|break\\w*|fail\\w*|wrong|imperfe; missing \\b(two|second|secondly|another|also|both)\\b; charged: cap,loop"
+    },
+    {
+     "id": "ext2-comparison-bandwidth-latency",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 20,
+     "reason": "missing \\b(bandwidth|throughput|how much|amount|volu; missing \\b(latency|delay|how long|time before|waitin; forbidden \\b(road|roads|traffic|highway|motorway|freew; short (20 words); charged: echo"
+    },
+    {
+     "id": "ext2-coding-collapse-runs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 47,
+     "reason": "missing def\\s+collapse_runs; missing (\\[-1\\]|\\bprev\\w*\\b|\\blast\\b|\\bprevious\\b|zi; no parsable def collapse_runs"
+    },
+    {
+     "id": "ext2-coding-first-unique",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 19,
+     "reason": "missing def\\s+first_unique; missing \\b(count|counts|counter|tally|freq\\w*|occurr; no parsable def first_unique; charged: echo"
+    },
+    {
+     "id": "ext2-debug-tail-slice",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 11,
+     "reason": "missing items\\[-\\s*n\\s*:\\]|items\\[len\\(items\\)\\s*-\\s; missing \\b(off.by.one|one too many|extra|minus one|s; short (11 words)"
+    },
+    {
+     "id": "ext2-debug-adjacent-pairs",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 50,
+     "reason": "missing range\\(\\s*len\\(values\\)\\s*-\\s*1\\s*\\)|range\\(; charged: echo"
+    },
+    {
+     "id": "ext2-email-wrong-colour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 49,
+     "reason": "missing \\b(dear|hello|hi\\b|good morning|good afterno; charged: echo"
+    },
+    {
+     "id": "ext2-email-reschedule",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "cap",
+      "loop"
+     ],
+     "words": 1007,
+     "reason": "missing \\bmonday\\b; missing \\b(10:?00|10 ?a\\.?m|ten)\\b; missing \\bwednesday\\b; missing \\bfriday\\b; missing \\b(dear|hello|hi\\b|good morning|good afterno; missing \\?|\\b(reply|confirm|let me know|get back|res; long (1007 words); charged: cap,loop"
+    },
+    {
+     "id": "ext2-planning-office-move",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 58,
+     "reason": "order 1>2>3>4>5 not present; fewer than 5 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-planning-db-cutover",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 62,
+     "reason": "missing \\b(dns|connection.string|endpoint|cname|conn; missing \\b(roll ?back|revert|back out|undo|fail ?bac; order 1>2>3>4>5>6 not present; fewer than 6 DISTINCT numbered items; charged: echo"
+    },
+    {
+     "id": "ext2-uncertainty-churn-jump",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 34,
+     "reason": "missing \\b(cohort|segment\\w*|sample size|how many cu; missing \\?|\\b(would ask|ask|request|find out|check)\\; short (34 words); charged: echo"
+    },
+    {
+     "id": "ext2-uncertainty-first-hour",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 29,
+     "reason": "missing \\b(sample|sample size|underpowered|significa; missing \\b(not|don'?t|do not|wait|hold|too early|pre; missing \\b(how long|run it|more data|longer|another ; short (29 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-cold-cellar",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 47,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (47 words); charged: echo"
+    },
+    {
+     "id": "ext2-creative-own-handwriting",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 55,
+     "reason": "missing [\\\"\u201c][^\\\"\u201d]{4,}[\\\"\u201d]|'[^']{6,}'; short (55 words); charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-venue-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [
+      "echo"
+     ],
+     "words": 37,
+     "reason": "missing \\b(vegetarian|plant.based|meat.free|veggie|v; missing \\b(wheelchair|step.free|accessib\\w*|level ac; missing \\b(chang\\w*|swapp\\w*|replac\\w*|instead|dropp; forbidden inside the items: \\bthe iron grill\\b; forbidden inside the items: \\bthe smokehouse\\b; charged: echo"
+    },
+    {
+     "id": "ext2-multiturn-dinner-revision",
+     "lane": "unknown",
+     "scored": true,
+     "held": false,
+     "charged": [],
+     "words": 69,
+     "reason": "missing \\b(because|works|since|avoids|contains no|fr; forbidden inside the items: \\bsalmon\\b; forbidden inside the items: \\bcarbonara\\b; forbidden inside the items: \\bcouscous\\b"
+    }
+   ]
+  }
+ ]
+}

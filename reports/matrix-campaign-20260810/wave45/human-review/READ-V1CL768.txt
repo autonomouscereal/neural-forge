@@ -1,0 +1,318 @@
+# ARCH.V1CL768  dossier fc3f2744e7ca274a
+# net_ratio 0.376862  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [complete] 31 chars, 31 collapsed  <350 COLLAPSED
+- hi! I ha datatatatatatat, hi!
+
+---  2 instruction-three-actions [censored-at-cap] 1435 chars, 21 collapsed  <350 COLLAPSED
+gide tketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttketu ttk
+
+---  3 explanation-seasons [censored-at-cap] 1707 chars, 27 collapsed  <350 COLLAPSED
+sumerh eeser tzhe ssan tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe tzhe
+
+---  4 arithmetic-multi-step [censored-at-cap] 1028 chars, 16 collapsed  <350 COLLAPSED
+kits phele
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+kjp
+k
+
+---  5 logic-ordering [complete] 99 chars, 49 collapsed  <350 COLLAPSED
+ju nu sal finished after
+ju nu sal finished after
+ju nu sal finished after
+ju nu sal finished after
+
+---  6 context-retrieval [complete] 0 chars, 0 collapsed  <350 COLLAPSED
+
+
+---  7 summarization-priorities [censored-at-cap] 1535 chars, 1535 collapsed
+su ppulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulpulp
+
+---  8 comparison-ram-rom [complete] 71 chars, 71 collapsed  <350 COLLAPSED
+simple analogy, then state two important ways the analogy is imperfect.
+
+---  9 coding-deduplicate [censored-at-cap] 1025 chars, 1025 collapsed
+wrk tpvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
+--- 10 debugging-off-by-one [censored-at-cap] 1538 chars, 1535 collapsed
+   start_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it_it
+
+--- 11 writing-concise-email [censored-at-cap] 2081 chars, 2081 collapsed
+firrere a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm whether a delayed shipment will arirve by 9.0 words asking a vendor to confirm
+
+--- 12 planning-dependencies [censored-at-cap] 1284 chars, 19 collapsed  <350 COLLAPSED
+say a dpapan pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp pnlp p
+
+--- 13 uncertainty-insufficient-data [complete] 154 chars, 154 collapsed  <350 COLLAPSED
+saysales increased, units, sa mple
+says, sa mphep
+says, sa mphep
+says, sa mphep
+says, sa mphep
+says, sa mphep
+says, sa mphep
+says, sa mphep
+says, sa mphep
+
+--- 14 safety-household-chemical [censored-at-cap] 2047 chars, 2047 collapsed
+wowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowowow
+
+--- 15 creative-continuity [censored-at-cap] 1461 chars, 21 collapsed  <350 COLLAPSED
+kjetlh ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlhouset ttlh
+
+--- 16 multi-turn-correction [complete] 66 chars, 66 collapsed  <350 COLLAPSED
+Before planning, are there any alelergies or dietary restrictions?
+
+# cap-hits 10/16

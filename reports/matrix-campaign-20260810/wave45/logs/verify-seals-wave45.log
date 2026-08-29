@@ -1,0 +1,11 @@
+roots audited against disk: 41 present, 0 undeclared
+ledger rows                    1056
+  resolve to a receipt on disk 1052
+  seal verifies                1052
+  seal fails                   0
+  do not resolve               4
+    - CAL.C01.T5.X4 3871e23bbb23400f8c92577229cf459b 9b0cc7b841a5
+    - CAL.C01.T5.X4 d0e0fdafc12d412e91fa07e7b41a0d43 a9eef18a3639
+    - CAL.C01.T5.X4 c9fcf7bd48304c6fa7b6b31b1a9d8a04 c079146235cd
+    - COMP.MC.MXO0 0aa6af93e3324948bc71b90c804f7937 020d98736586
+waves represented              Counter({5: 120, 1: 64, 2: 62, 3: 61, 16: 53, 27: 46, 17: 42, 31: 38, 28: 34, 7: 30, 32: 30, 18: 28, 6: 26, 8: 24, 25: 24, 15: 22, 40: 22, 9: 20, 24: 20, 41: 20, 26: 18, 29: 18, 30: 18, 20: 16, 34: 16, 35: 16, 4: 15, 13: 14, 19: 14, 33: 12, 36: 12, 37: 12, 38: 12, 10: 10, 11: 10, 21: 10, 23: 10, 22: 6, 42: 6, 43: 6, 44: 6, 12: 5, 39: 4, 45: 4})

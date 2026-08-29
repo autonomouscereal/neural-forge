@@ -1,0 +1,682 @@
+{
+ "schema": "neural-forge-matrix-wave45-anchor-delta-v1",
+ "generated_at": "2026-08-29T11:54:35Z",
+ "what_this_is": "THE LABELLED RE-CLASSIFICATION DELTA of wave 45's ONE anchor addition, measured over the identical 57-child band with the identical hand reading. Wave 44's artifact is the BEFORE and nothing in it is edited or re-graded.",
+ "before": "wave44/deep-band-dual-assessment.json (3 anchors)",
+ "after": "wave45/prereads/deep-band-dual-assessment-handmerged-wave45.json (4 anchors)",
+ "anchor_added": {
+  "lane": "writing-concise-email",
+  "anchor": [
+   "under 90 words",
+   null
+  ],
+  "registered_at_commit": "16f443b0",
+  "registered_in": "run/mx45/README.md section 2"
+ },
+ "lanes_compared": 912,
+ "lanes_whose_payload_slice_moved": 45,
+ "lanes_whose_machine_classification_moved": 1,
+ "classification_moves": [
+  {
+   "cell_id": "ARCH.V7CL896X13",
+   "lane": "writing-concise-email",
+   "was": "COPY_BACK",
+   "now": "CONTENT"
+  }
+ ],
+ "coverage_moves": [
+  {
+   "cell_id": "ARCH.RC9CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.103627,
+   "union_now": 0.127389,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.022857
+  },
+  {
+   "cell_id": "ARCH.RP9CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.290155,
+   "union_now": 0.356688,
+   "machine_was": "CAP_RIDE",
+   "machine_now": "CAP_RIDE",
+   "hand": "",
+   "response_union_coverage": 0.011923
+  },
+  {
+   "cell_id": "ARCH.RR9CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.103627,
+   "union_now": 0.127389,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.022857
+  },
+  {
+   "cell_id": "ARCH.T9CL896X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.243523,
+   "union_now": 0.235669,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.494737
+  },
+  {
+   "cell_id": "ARCH.V10CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.041451,
+   "union_now": 0.0,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.097561
+  },
+  {
+   "cell_id": "ARCH.V10CL768X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.202073,
+   "union_now": 0.197452,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.393939
+  },
+  {
+   "cell_id": "ARCH.V10CL896G01",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.082902,
+   "union_now": 0.076433,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.145455
+  },
+  {
+   "cell_id": "ARCH.V10CL896G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.481865,
+   "union_now": 0.477707,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.683824
+  },
+  {
+   "cell_id": "ARCH.V10CL896G10",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.481865,
+   "union_now": 0.477707,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.683824
+  },
+  {
+   "cell_id": "ARCH.V10CL896X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.243523,
+   "union_now": 0.235669,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.494737
+  },
+  {
+   "cell_id": "ARCH.V10CL896X09G10",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.093264,
+   "union_now": 0.11465,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.227848
+  },
+  {
+   "cell_id": "ARCH.V10CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.186528,
+   "union_now": 0.229299,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.176471
+  },
+  {
+   "cell_id": "ARCH.V12CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.310881,
+   "union_now": 0.33121,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.087719
+  },
+  {
+   "cell_id": "ARCH.V12CL768X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.046632,
+   "union_now": 0.057325,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.081081
+  },
+  {
+   "cell_id": "ARCH.V12CL896",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.243523,
+   "union_now": 0.299363,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.330986
+  },
+  {
+   "cell_id": "ARCH.V12CL896G01",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.196891,
+   "union_now": 0.242038,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.265734
+  },
+  {
+   "cell_id": "ARCH.V12CL896G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.46114,
+   "union_now": 0.452229,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.635714
+  },
+  {
+   "cell_id": "ARCH.V12CL896G10",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.243523,
+   "union_now": 0.299363,
+   "machine_was": "CAP_RIDE",
+   "machine_now": "CAP_RIDE",
+   "hand": "",
+   "response_union_coverage": 0.009897
+  },
+  {
+   "cell_id": "ARCH.V12CL896X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.093264,
+   "union_now": 0.11465,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.204545
+  },
+  {
+   "cell_id": "ARCH.V12CL896X09G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.093264,
+   "union_now": 0.11465,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.204545
+  },
+  {
+   "cell_id": "ARCH.V12CL896X09G10",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.093264,
+   "union_now": 0.11465,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.204545
+  },
+  {
+   "cell_id": "ARCH.V12CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.176166,
+   "union_now": 0.216561,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "CONTENT",
+   "response_union_coverage": 0.124088
+  },
+  {
+   "cell_id": "ARCH.V12CL896X13G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.979275,
+   "union_now": 0.974522,
+   "machine_was": "COPY_BACK",
+   "machine_now": "COPY_BACK",
+   "hand": "",
+   "response_union_coverage": 0.949749
+  },
+  {
+   "cell_id": "ARCH.V14CL896G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.46114,
+   "union_now": 0.452229,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.635714
+  },
+  {
+   "cell_id": "ARCH.V14CL896X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.051813,
+   "union_now": 0.063694,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.072464
+  },
+  {
+   "cell_id": "ARCH.V14CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.19171,
+   "union_now": 0.235669,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.351562
+  },
+  {
+   "cell_id": "ARCH.V16CL896G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.46114,
+   "union_now": 0.452229,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.635714
+  },
+  {
+   "cell_id": "ARCH.V19X13CL896",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.056995,
+   "union_now": 0.070064,
+   "machine_was": "CAP_RIDE",
+   "machine_now": "CAP_RIDE",
+   "hand": "",
+   "response_union_coverage": 0.009378
+  },
+  {
+   "cell_id": "ARCH.V3CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.948187,
+   "union_now": 0.968153,
+   "machine_was": "COPY_BACK",
+   "machine_now": "COPY_BACK",
+   "hand": "",
+   "response_union_coverage": 0.928934
+  },
+  {
+   "cell_id": "ARCH.V4CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.207254,
+   "union_now": 0.203822,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.144928
+  },
+  {
+   "cell_id": "ARCH.V5CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.160622,
+   "union_now": 0.197452,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.102649
+  },
+  {
+   "cell_id": "ARCH.V6CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.38342,
+   "union_now": 0.420382,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.148
+  },
+  {
+   "cell_id": "ARCH.V7CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.336788,
+   "union_now": 0.363057,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.281385
+  },
+  {
+   "cell_id": "ARCH.V7CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.61658,
+   "union_now": 0.528662,
+   "machine_was": "COPY_BACK",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.410345
+  },
+  {
+   "cell_id": "ARCH.V8CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.041451,
+   "union_now": 0.0,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.097561
+  },
+  {
+   "cell_id": "ARCH.V8CL896",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.264249,
+   "union_now": 0.324841,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.372263
+  },
+  {
+   "cell_id": "ARCH.V8CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.57513,
+   "union_now": 0.477707,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.121577
+  },
+  {
+   "cell_id": "ARCH.V95CL896X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.243523,
+   "union_now": 0.235669,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.494737
+  },
+  {
+   "cell_id": "ARCH.V9CL768",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.041451,
+   "union_now": 0.0,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.097561
+  },
+  {
+   "cell_id": "ARCH.V9CL896G03",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.481865,
+   "union_now": 0.477707,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.683824
+  },
+  {
+   "cell_id": "ARCH.V9CL896G10",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.481865,
+   "union_now": 0.477707,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "COPY_BACK",
+   "response_union_coverage": 0.683824
+  },
+  {
+   "cell_id": "ARCH.V9CL896X09",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.243523,
+   "union_now": 0.235669,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.494737
+  },
+  {
+   "cell_id": "ARCH.V9CL896X13",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.186528,
+   "union_now": 0.229299,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.176471
+  },
+  {
+   "cell_id": "ARCH.V9CL896X13G10",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.357513,
+   "union_now": 0.43949,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.269531
+  },
+  {
+   "cell_id": "ARCH.V9CL896X13G29",
+   "lane": "writing-concise-email",
+   "payload_chars_was": 193,
+   "payload_chars_now": 157,
+   "union_was": 0.57513,
+   "union_now": 0.477707,
+   "machine_was": "CONTENT",
+   "machine_now": "CONTENT",
+   "hand": "",
+   "response_union_coverage": 0.973684
+  }
+ ],
+ "void_changing_disagreements": {
+  "before": 8,
+  "after": 8
+ },
+ "total_disagreements": {
+  "before": 15,
+  "after": 15
+ },
+ "floors": {
+  "floor_under_copy_back_counts": {
+   "before": [
+    0.38599191519762294,
+    "ARCH.V3CL768"
+   ],
+   "after": [
+    0.38599191519762294,
+    "ARCH.V3CL768"
+   ]
+  },
+  "floor_under_copy_back_refused": {
+   "before": [
+    0.4116484013735471,
+    "ARCH.V10CL896X09"
+   ],
+   "after": [
+    0.4116484013735471,
+    "ARCH.V10CL896X09"
+   ]
+  },
+  "floor_under_copy_back_refused_machine_union_only": {
+   "before": [
+    0.4116484013735471,
+    "ARCH.V10CL896X09"
+   ],
+   "after": [
+    0.4116484013735471,
+    "ARCH.V10CL896X09"
+   ]
+  },
+  "floor_under_copy_back_refused_machine_legacy_only": {
+   "before": [
+    0.3951221469418962,
+    "ARCH.V5CL768"
+   ],
+   "after": [
+    0.3951221469418962,
+    "ARCH.V5CL768"
+   ]
+  }
+ },
+ "registered_predictions_graded": {
+  "P1_writing_concise_email_void_changing_stays_7": {
+   "registered": 7,
+   "measured": 7,
+   "verdict": "HIT"
+  },
+  "P2_total_void_changing_stays_8": {
+   "registered": 8,
+   "measured": 8,
+   "verdict": "HIT"
+  },
+  "P3_both_floors_unmoved": {
+   "registered": "A 0.3859919152x, B 0.4116484014x",
+   "measured": "A 0.3859919152x, B 0.4116484014x",
+   "verdict": "HIT"
+  },
+  "P4_response_side_column_over_threshold": {
+   "registered": "0.683824 and 0.635714",
+   "measured": [
+    0.683824,
+    0.635714
+   ],
+   "verdict": "HIT"
+  }
+ },
+ "reading": "THE ORDERED REPAIR WAS MADE, IT IS LIVE, AND IT DID NOT DO WHAT IT WAS ORDERED TO DO -- and this wave registered that before it ran.  The anchor RESOLVES on all 45 lanes that carry a response: every writing-concise-email payload slice moves from 193 characters to 157, so the entry is a live lookup and not a silent failure.  EXACTLY ONE machine classification moves in the whole 912-lane band and it is not one of the seven: ARCH.V7CL896X13's writing-concise-email lane goes COPY_BACK -> CONTENT at 0.616580 -> 0.528662.  That lane is sealed Observed miss, so it was never held, it could never be voided, and it moves NO column -- the child reads 0 on all four columns before and after; what changes is its published lane census, copy_back 4 -> 3 and content 5 -> 6.  Its response-side number is 0.410345, which agrees with the anchored call and not with the unanchored one, so the single move the anchor makes is a move toward the other measure rather than away from it.  ALL SEVEN OF THE ROWS THE ANCHOR WAS ORDERED TO CLOSE STAY OPEN.  Wave 44's mechanism -- 'the copied material is the ask and the ask is only about half of the prompt' -- is right about the arithmetic and wrong about the repair: no cut of this prompt turns half of it into 0.60 of itself.  The residual is a DENOMINATOR defect on PRODUCE lanes, and the response-side column measures it at 0.683824 and 0.635714 with no anchor at all.",
+ "the_one_classification_move_in_full": {
+  "cell_id": "ARCH.V7CL896X13",
+  "campaign_wave": 42,
+  "lane": "writing-concise-email",
+  "lane_ask": "PRODUCE",
+  "sealed_verdict": "Observed miss",
+  "payload_union_was": 0.61658,
+  "payload_union_now": 0.528662,
+  "machine_was": "COPY_BACK",
+  "machine_now": "CONTENT",
+  "response_union_coverage": 0.410345,
+  "held_under_copy_back_counts": false,
+  "held_under_copy_back_refused": false,
+  "columns_before": {
+   "A": 0,
+   "B": 0,
+   "B_machine_union": 0,
+   "B_machine_legacy": 0
+  },
+  "columns_after": {
+   "A": 0,
+   "B": 0,
+   "B_machine_union": 0,
+   "B_machine_legacy": 0
+  },
+  "lane_census_before": {
+   "copy_back": 4,
+   "cap_ride": 7,
+   "content": 5
+  },
+  "lane_census_after": {
+   "copy_back": 3,
+   "cap_ride": 7,
+   "content": 6
+  },
+  "why_it_cannot_move_a_floor": "only a HELD lane can be voided.  A sealed Observed miss is never re-read and this module never turns a miss into a hold, so the move is bookkeeping in the published lane census and nothing else."
+ }
+}
