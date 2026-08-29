@@ -40,9 +40,11 @@ whole band**, so the ruling costs no re-grading in either direction.
 | `ARCH.V10CL768X09` | 0.389393 | 89,441,024 | **0** | **0** | -- | -- | 40 |
 | `ARCH.V12CL896X09X13` | 0.390512 | 89,698,048 | **0** | **0** | -- | -- | 38 |
 | `ARCH.V6CL896X13` | 0.393388 | 90,358,528 | **0** | **0** | -- | -- | 42 |
+| **`ARCH.V5CL768`** | **0.395122** | **90,756,864** | **1** | **0** | summ | -- | **43** |
 | `ARCH.V7CL896X13` | 0.397953 | 91,407,104 | **0** | **0** | -- | -- | 42 |
 | `ARCH.V12CL768X09` | 0.398524 | 91,538,176 | **0** | **0** | -- | -- | 40 |
 | `ARCH.V6CL768` | 0.399687 | 91,805,440 | **1** | **0** | summ | -- | 42 |
+| **`ARCH.K7680CL896X13`** | **0.400236** | **91,931,392** | **0** | **0** | -- | -- | **43** |
 | `ARCH.V8CL896X13` | 0.402518 | 92,455,680 | **1** | **0** | summ | -- | 41 |
 | `ARCH.V7CL768` | 0.404252 | 92,854,016 | **1** | **0** | summ | -- | 41 |
 | `ARCH.V9CL896X09` | 0.407083 | 93,504,256 | **0** | **0** | -- | -- | 38 |
@@ -94,20 +96,35 @@ whole band**, so the ruling costs no re-grading in either direction.
 
 | reading | ratio | child | what holds |
 |---|---:|---|---|
-| **A — copy-back counts** | **0.3996872628** | `ARCH.V6CL768` | one lane: the source paragraph returned in full |
+| **A — copy-back counts** | **0.3951221469** | `ARCH.V5CL768` | one lane: the source paragraph returned in full |
 | **B — copy-back refused** | **0.4116484014** | `ARCH.V10CL896X09` | one lane: `uncertainty-insufficient-data`, which NAMES the four missing variables |
 
-**The gap is 0.0119611386 of stored ratio — 2,747,392 parameters — and the whole
-of it is one lane read two ways.** Nothing else in the fifty-two children differs
-between the columns.
+**WAVE 43 MOVED COLUMN A AND DID NOT MOVE COLUMN B.** `ARCH.V5CL768` at
+0.3951221469x holds one case, and its held lane is another verbatim copy of the
+payload, so column B voids it exactly as it voids the ten above it. **The gap is
+now 0.0165262545 of stored ratio — 3,795,968 parameters — and the whole of it is
+one lane read two ways.** Nothing else in the fifty-four children differs between
+the columns. Column B's rung has not moved since wave 38.
 
-**WHAT COLUMN B SAYS, STATED PLAINLY.** Under the clause as written **every held
-case between 0.3934x and 0.4094x is voided**: seventeen children, and each one
-holds on `summarization-priorities`, and every one of those lanes is the
-six-sentence source paragraph returned in full — read by hand, all **seventeen
-distinct responses** in the band, six of them with the instruction line still
-attached. Below 0.4116484014x the campaign has **no living child at all** on that
-reading, and the rung has not moved since wave 38.
+**WHAT COLUMN B SAYS, STATED PLAINLY, AND RE-COUNTED FROM THE WAVE-43 ARTIFACT.**
+Twenty-one children sit below 0.4116484014x. **Eleven of them hold at least one
+case under column A and column B voids every one**, all on
+`summarization-priorities`, across 0.3951221469x to 0.4088174946x:
+`V5CL768`, `V6CL768`, `V8CL896X13`, `V7CL768`, `V9CL896X13`, `RP9CL896X13`,
+`RR9CL896X13`, `RC9CL896X13`, `V9CL896X13G10`, `V9CL896X13G03`, `V8CL768`.
+Below 0.4116484014x the campaign has **no living child at all** on that reading.
+
+> **A COUNT THAT DOES NOT RECONCILE, FLAGGED RATHER THAN QUIETLY REPLACED.**
+> `NOTES-MX-AT` §10 and the paragraph this one replaces both said **seventeen**
+> children in this band go to zero. Wave 43's artifact measures **eleven** (ten
+> before this wave's own addition), and that agrees with the table immediately
+> above, which has never listed seventeen A≥1 rows in that band. The likeliest
+> reading is that wave 42's seventeen counted hand-read *responses* across its
+> whole band rather than *children* below the column-B floor. Both artifacts are
+> on disk — `wave42/deep-band-dual-assessment.json` and
+> `wave43/deep-band-dual-assessment.json` — and this table is generated from the
+> wave-43 one. A later wave that needs the number should take it from an
+> artifact and not from either prose.
 
 **WHAT COLUMN B DOES NOT VOID, AND WHY THE ASK TABLE IS THE LOAD-BEARING PART.**
 Wave 40 sealed a copied SUMMARISATION lane held and a copied RETRIEVAL lane a

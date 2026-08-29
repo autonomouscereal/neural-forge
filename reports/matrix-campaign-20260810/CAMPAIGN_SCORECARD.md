@@ -1,4 +1,74 @@
-# CAMPAIGN_SCORECARD — wave 42, under the canonical standard and the sealed one
+# CAMPAIGN_SCORECARD — wave 43, under the canonical standard and the sealed one
+
+> **WAVE 43 HEADER, PREPENDED.  EVERYTHING BELOW THE NEXT RULE IS THE WAVE-42
+> HEADER AND THEN THE WAVE-39 BODY, BOTH LEFT UNEDITED AS THE SNAPSHOTS THEY
+> ARE.**
+>
+> **Ledger 1046 rows**,
+> `264884995e0c2b8748fd5da66700e698c2e29cf5df305d8126469bb76db63d18`, 1042
+> resolving, 1042 verifying, **0 failing**, across **39 audited seal roots**, 0
+> undeclared.
+>
+> **THE SEALED 1/15 RUNG MOVES A FOURTH TIME.** `ARCH.V5CL768`, K=5,120 on wave
+> 40's retained `MX40-CL768`, **90,756,864 parameters, 0.3951221469x, 1/15** —
+> the deepest child this campaign has built that holds anything. It moved
+> 0.0045651159 from wave 42's `ARCH.V6CL768`, on the same two-axis CL768 body,
+> which is now **eight rungs flat** across 0.2693 of stored ratio and is the only
+> flat ladder left in the campaign.
+>
+> **THE BLOCK-13 CLIFF HALVES TO 512 ROWS.** `ARCH.K7680CL896X13` at
+> 0.4002356117x was registered at ONE on two accounts of three and **reads
+> ZERO**, so the cliff sits between K=8,192 and K=7,680. Its summarisation lane
+> is byte-identical to `ARCH.V7CL896X13`'s 512 rows below it. It was built with
+> the coverage guard **armed** — the vocabulary census reads post-closure
+> coverage of exactly 1.000000 at K=7,680 — and the guard did not fire.
+>
+> **THE FREQUENCY-BAND AXIS WAS OPENED AND RE-SEALED BY ONE CHILD.**
+> `ARCH.HD48`, head_dim 48 on the parent, **224,974,400 parameters,
+> 0.9794561427x, 1/15 against a registration of TWELVE** — the largest
+> registration miss in the campaign. The pre-registered energy attribution holds
+> and exonerates the solver: the band retains 0.864581 of the pooled score
+> energy against wave 15's HD16 at 0.237895, q/k rows and value channels are
+> verbatim, every solve sits at update_scale 0.05–0.75, and the two gain ridges
+> beat wave 15's scalar install on held rows at all six sites. Six sites at
+> out_proj held cos 0.94–0.98 compose to an end-to-end held relL2 of 0.6435, and
+> the exported child reproduces that to the last digit on reload.
+>
+> **XCHANGE IS CLOSED WITHOUT A BUILD**, by the authority its own pre-registered
+> gate granted it: `rho_2` above 0.50 at all eight conv sites (best 0.5326),
+> gate dispersion above 0.50 at all eight but one of sixteen numbers, and a
+> Stage-1 band mass of 0.2779 against a threshold of 0.90 — needing a score
+> range 63x the parent's measured maximum.
+>
+> **THE DEEP BAND'S TWO COLUMNS, refreshed over 54 children at or below 0.47x**
+> (`DEEP_RECORD` §0 and `wave43/deep-band-dual-assessment.json`):
+>
+> | reading | floor ratio | child |
+> |---|---:|---|
+> | **A — copy-back counts** (wave 40's practice, the sealed column) | **0.3951221469** | `ARCH.V5CL768` |
+> | **B — copy-back refused** (the canonical clause as written) | **0.4116484014** | `ARCH.V10CL896X09` |
+>
+> **Wave 43 moved column A and did not move column B.** Twenty-one children sit
+> below the column-B floor; **eleven hold under A and B voids every one**, all on
+> `summarization-priorities`, across 0.3951x–0.4088x. The gap is 0.0165262545 of
+> stored ratio. **Nothing has been re-graded**; column A is the sealed verdict
+> and the module refuses to write its artifact if it disagrees with the ledger.
+> The count differs from wave 42's stated seventeen and `DEEP_RECORD` §0 flags
+> the discrepancy rather than replacing it silently.
+>
+> **The frozen review runner is now provably fixed across NINE dossiers spanning
+> waves 40 through 43** at one parent-lane digest. **The parent benchmark row
+> reproduces for the 30th time** to every reported digit, confirmed across 261
+> benchmark rows in `wave43/campaign-frontier-table.json`.
+>
+> **Waves 41, 42 and 43's rows are NOT in the tables below.** They are in
+> `ledger.jsonl`, in `NOTES-MX-AS`, `NOTES-MX-AT` and `NOTES-MX-AU`, and — for
+> the deep band — in `DEEP_RECORD` §0, which is regenerated rather than
+> transcribed.
+
+---
+
+## The wave-42 header, kept
 
 > **WAVE 42 HEADER, PREPENDED.  EVERYTHING BELOW THE RULE IS THE WAVE-39 BODY,
 > LEFT UNEDITED AS THE WAVE-39 SNAPSHOT IT IS.**

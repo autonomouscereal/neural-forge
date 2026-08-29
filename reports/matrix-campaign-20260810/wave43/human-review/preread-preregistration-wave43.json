@@ -1,0 +1,239 @@
+{
+ "schema": "neural-forge-matrix-wave43-preregistration-v1",
+ "wave": 43,
+ "branch": "codex/lrc-blank-compression",
+ "registered_against_slate": "docs/ROUND3_SLATE_2026-08-28.md (sha256 1b7562a96d30af919aed70316a340d03041ec3eee1d6241e820c5428271015aa, unchanged since the wave-41 cut) and docs/ATTENTION_SHORTCONV_TRANSLATION_DESIGN_2026-08-01.md (sha256 583b55fba7a66c40602bc17a5c72da7a7e1cdf67eeda36a696d0c3339ca23dff)",
+ "parent_parameters": 229693184,
+ "ledger_before_this_wave": {
+  "rows": 1040,
+  "sha256": "803439d1d300622dea437d64aaea07de88c16af04e3a808c5e6f2155ce5c58c4"
+ },
+ "reading_standard": "ADDENDUM 6, frozen 15 + parent lane, parent reference 5 Useful / 7 Partial / 3 miss = 12/15; the parent lane is re-read blind from this wave's FIRST dossier before any child lane is opened, SIXTEENTH consecutive calibration.  For every child under 0.60x the summarisation lane is read FIRST and written down before any other lane is opened.",
+ "what_this_wave_is": "THE SOLVER WAVE.  PLANE and XCHANGE were deferred by waves 41 and 42 for the same stated reason twice -- authoring time for a new solver, not a finding about either -- and NOTES-MX-AT section 11.7 said the choice was to budget a wave for the solvers or take them off the slate.  Both are authored.  The code was committed at 75323e57 BEFORE either census ran, and the deployment cut from that commit verified 7,597 files with zero discrepancies.",
+ "ordering_of_this_document": "TWO ITEMS IN THIS FILE ARE NOT REGISTERED BY THIS FILE AND SAY SO.  The XCHANGE go-gate thresholds are the GO_GATE table in commit 75323e57's mx43_xchange.py, with a stated reason per threshold, committed before the census existed; this document CITES that table and records its outcome, and the audit trail is 'git show 75323e57:reports/matrix-campaign-20260810/run/mx43/mx43_xchange.py'.  The plane-energy census GATES NOTHING and therefore needed no registration to run; what needs registering is the HD48 PREDICTION, and that is registered here, before ARCH.HD48 exists.  Everything else in this file is registered before its measurement.",
+ "plane_energy_census": {
+  "status": "RAN FIRST, PUBLISHES, GATES NOTHING",
+  "artifact": "wave43/prereads/plane-energy-census-wave43.json",
+  "measure": "mx15_build.py:431 plane_energy, unchanged",
+  "cross_wave_reproduction": {
+   "claim": "wave 15's ARCH.HD16 receipt read ABOUT 0.24 retained score energy.  HD16 is d=16, stride 1, slide 0 = planes 0..7.  This wave's independent run of the same function on the same evidence reads that band at 0.237895.",
+   "hd16_band_retained_this_wave": 0.23789486236547527,
+   "why_it_matters": "the census is only comparable to HD16's receipt if it is the same measure, and this is the check that it is"
+  },
+  "slate_predictions_the_census_settles": {
+   "slate_text": "HD16's receipt read ~0.24 retained score energy = 8/32 uniform -> predicts ~0.75 at d=48, ~0.50 at d=32",
+   "d48_m1_s0_predicted": 0.75,
+   "d48_m1_s0_measured": 0.8645811089262252,
+   "d32_m1_s0_predicted": 0.5,
+   "d32_m1_s0_measured": 0.3022304155210667,
+   "verdict": "BOTH SLATE FIGURES ARE WRONG AND IN OPPOSITE DIRECTIONS, because the uniform-energy assumption behind them is false.  Registering the census before the build is the reason this is a finding instead of a post-hoc excuse."
+  },
+  "the_energy_is_not_uniform": {
+   "top_four_planes": {
+    "p21": 0.31067449104812533,
+    "p0": 0.15603981246013487,
+    "p22": 0.124403855567617,
+    "p23": 0.055405707193450345
+   },
+   "top_four_total": 0.6465238662693276,
+   "weakest_plane": {
+    "p3": 0.003908271697014245
+   },
+   "dynamic_range": 79.49152851514073
+  },
+  "phase_excursion_across_one_sealed_sequence_radians": {
+   "p0": 263.0,
+   "p4": 46.768748484023675,
+   "p8": 8.316790246242837,
+   "p12": 1.478957685250618,
+   "p16": 0.263,
+   "p20": 0.04676874848402367,
+   "p21": 0.03037076619733275,
+   "p22": 0.01972221770544359,
+   "p23": 0.0128072459118622,
+   "p24": 0.008316790246242838,
+   "p28": 0.0014789576852506181,
+   "p31": 0.00040500067635364635
+  },
+  "registered_reading_of_that_table": "OVER THE 264-TOKEN SEALED SEQUENCE THE DOMINANT PLANES BARELY ROTATE.  Plane 21 carries 0.3107 of the score energy and traverses 0.0304 radians across a whole sequence; planes 24 and above traverse less than 0.01 radians and are position-independent for every purpose this evidence can see.  So the parent's attention on this evidence is dominated by a near-DC CONTENT term carried in low-frequency RoPE planes, and the genuinely positional planes (p <= 8, phase > 8 radians) carry 0.2469 of the energy -- which is EXACTLY the band wave 15's HD16 kept, and HD16 read 0/15.  This is registered as the mechanism attribution BEFORE the build, which is what the slate asked for.",
+  "band_slide_is_load_bearing_at_d32_and_not_at_d48": {
+   "d48_best": {
+    "slide": 0,
+    "retained": 0.8645811089262252
+   },
+   "d48_second_best": {
+    "slide": 8,
+    "retained": 0.7621051376345247
+   },
+   "d32_default_slide0": 0.3022304155210667,
+   "d32_best_slide16": 0.6977695844789332,
+   "ratio": 2.3087338290420867,
+   "registered_consequence": "at d=48 the default window already contains all four dominant planes and every slide is worse, so the NEW knob buys nothing at the rung this wave builds.  At d=32 the best expressible band retains 2.31x what the default band retains AT BYTE-IDENTICAL STORAGE, which is slate section 4 lever 3's first quantitative support and is registered here so that a later wave cannot claim it was obvious."
+  }
+ },
+ "cells": [
+  {
+   "cell_id": "ARCH.HD48",
+   "tag": "HD48",
+   "module": "mx43_plane.py --mode build --head-dim 48 --stride 1 --slide 0",
+   "source": "the PARENT, unfolded (a solo rung on the attention axis)",
+   "stored_parameters": 224974400,
+   "stored_ratio": 0.9794561427,
+   "registered_retained_plane_energy": 0.8645811089262252,
+   "rope_theta": 31622.776601683792,
+   "linear_factor": null,
+   "planes_kept": "0..23",
+   "planes_dropped": "24..31, total energy 0.135419, all of them near-DC over the evidence window (phase < 0.01 rad)",
+   "two_accounts_that_disagree": "THE BAND ACCOUNT predicts 12: 0.8646 of the score energy is retained, 3.6x HD16's 0.2379, all four dominant planes are inside the window, the eight dropped planes are position-independent over this evidence, q/k rows and v channels are VERBATIM, and the rung is 0.9795x -- the shallowest solo child in eleven waves.  THE HD16 ACCOUNT predicts <= 10: the only other child ever built on this axis read 0/15 at 0.9385x, which says the attention operator does not tolerate ANY band truncation, and 13.5 per cent of the score energy is still 13.5 per cent.",
+   "registered_sealed_count": 12,
+   "registered_on": "the band account.  It is the account with a measured mechanism behind it; the HD16 account has one data point and this census explains it.",
+   "registered_canonical_count_under_the_copy_back_clause": 12,
+   "secondary_registered_predictions": [
+    {
+     "quantity": "held_kept_plane_logit_share",
+     "prediction": ">= 0.80 at all six sites",
+     "why": "the census measures a SECOND-MOMENT PRODUCT proxy; the build measures the true share of the parent's full logit energy the band carries.  If the proxy does not transfer, every band claim in this campaign rests on the wrong instrument, and this is the first chance anyone has had to check it"
+    },
+    {
+     "quantity": "held_logit_relL2_solved vs held_logit_relL2_prior",
+     "prediction": "solved <= prior at all six sites",
+     "why": "the prior IS wave 15's install (sliced gain x mean RMS ratio x sqrt(d/64)).  A d-unknown ridge that does not beat a scalar on HELD rows is a ridge with no reason to exist, and this wave would say so rather than keep it"
+    },
+    {
+     "quantity": "update_scale",
+     "prediction": "<= 1.0 on all three solved objects at all six sites",
+     "why": "THE LAW is fail-closed; a refusal is a result and is reported as one"
+    }
+   ],
+   "kill_gate": "slate section 3.4, unchanged: >= 12/15 funds HD32 and the composed d=48 pass; < 10/15 re-seals the axis WITH the pre-registered energy attribution above; 10-11/15 -> build the composed d=48 directly and let it decide.",
+   "registered_deviation": "THE SLATE SAYS 'a plain normal-equation ridge in d unknowns per layer against cached pre-softmax logits', SINGULAR.  The logit is BILINEAR in the two gain vectors, so a single joint solve is not a plain normal equation.  This build runs ONE such ridge on the q side and then ONE on the k side with the other held fixed.  The stop is one pass per side and NOT an alternation loop.  Registered before the build.",
+   "registered_reading_of_the_slate": "the slate writes E_{D2}[|ctx_c|] and 'prior-anchored D2 ridge'.  D2 is read as the campaign's sealed 24-batch evidence stream, FIT rows, which is the only distribution any solve in this campaign has ever used.  Registered rather than assumed."
+  },
+  {
+   "cell_id": "ARCH.V5CL768",
+   "tag": "V5CL768",
+   "k": 5120,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave40/children/MX40-CL768 (RETAINED)",
+   "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave40/cells/ARCH.CL768/cell-receipt.json",
+   "stored_parameters": 90756864,
+   "stored_ratio": 0.3951221469,
+   "why_this_cell": "NOTES-MX-AT section 11.2: the only cheap cell in the estate that can move the sub-0.40x floor again.  One CPU pass.",
+   "the_corpus_gate_risk_is_RETIRED_BEFORE_THE_BUILD": {
+    "the_risk_as_stated": "the builder refuses below observed-vocabulary coverage (wave 25's gate, split in wave 32), and V5 sits near the census floor -- if it is refused, the refusal is the result and the vocab axis bottoms at V6",
+    "what_the_census_says": {
+     "mandatory_rows": 765,
+     "tokens_skipped_because_their_closure_did_not_fit": 0,
+     "post_closure_sealed_corpus_occurrence_coverage": 0.9853013667936366,
+     "post_closure_captured_batches_occurrence_coverage": 0.9982636148382005
+    },
+    "registered_consequence": "THE STRUCTURAL HALF OF THE GATE WILL NOT FIRE AND THE COVERAGE HALF WILL.  The mandatory set is 765 rows -- 509 added/special plus 256 ByteLevel plus closure -- so at K=5,120 there are about 4,355 discretionary rows and nothing is skipped for want of closure room.  THE STRUCTURAL FLOOR OF THIS VOCABULARY AXIS IS 765 ROWS, NOT FIVE THOUSAND, and that is registered here because the wave was warned about the wrong floor.  Coverage falls to 0.98530 post-closure, so BELOW_FLOOR=1 is passed and the guard it disarms is asserted present by cut_wave43.py --audit."
+   },
+   "two_accounts_that_disagree": "FLATNESS predicts 1: the CL768 ladder is flat at one over SEVEN rungs, from the body at 0.6645x down to V6CL768 at 0.3997x, and nothing on it has ever read anything but one.  THE CLIFF ACCOUNT predicts 0: the block-13 ladder was flat for seven rungs too and then ended between K=8,192 and K=7,168 at a SHALLOWER ratio than this cell, so the CL768 ladder has an end and it is close.",
+   "registered_sealed_count": 1,
+   "registered_on": "flatness, seven rungs of it, on this body",
+   "registered_lane": "the summarisation lane, which is the lane that has decided every count on this body",
+   "registered_canonical_count_under_the_copy_back_clause": 0,
+   "why_the_two_columns_differ": "every held lane in the deep band that wave 42 hand-read was a verbatim copy of the prompt payload, so column B voids it.  Registering 1 and 0 is registering BOTH columns, which is what the pending ruling requires."
+  },
+  {
+   "cell_id": "ARCH.K7680CL896X13",
+   "tag": "K7680CL896X13",
+   "k": 7680,
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13 (RETAINED)",
+   "source_cell_receipt": "/mnt/ai_data/neural-forge-matrix/wave35/cells/ARCH.CL896X13/cell-receipt.json",
+   "stored_parameters": 91931392,
+   "stored_ratio": 0.4002356117,
+   "naming": "the tag carries the LITERAL K because 7,680 is not a multiple of 1,024 and the V<n> convention would have to lie about it.  Every interior rung the BISECT class builds has the same problem and this is the convention that answers it.",
+   "why_this_cell": "NOTES-MX-AT section 11.1: it halves the 1,024-row bracket the block-13 cliff sits in, on a body whose upper endpoint is retained.  It lands ABOVE 0.40x, so a survival here does NOT move the sub-0.40 floor; its value is locating the cliff, and that value does not depend on which way it goes.",
+   "the_coverage_guard_is_ARMED_ON_THIS_RUNG": {
+    "post_closure_sealed_corpus_occurrence_coverage": 1.0,
+    "post_closure_sealed_corpus_distinct_coverage": 1.0,
+    "registered_consequence": "BELOW_FLOOR IS NOT PASSED ON THIS RUNG.  The census reads post-closure occurrence AND distinct coverage of exactly 1.000000 at K=7,680, so wave 25's coverage gate has nothing to fire on and disarming it would be disarming a guard that was not in the way.  The guard is EXERCISED here rather than released, and a refusal would mean the census and the builder disagree -- which would be reported as the finding it is."
+   },
+   "three_accounts": "SAME BODY, RUNG ABOVE predicts 1: ARCH.V8CL896X13 at K=8,192 reads 1/15.  SAME BODY, RUNG BELOW predicts 0: ARCH.V7CL896X13 at K=7,168 reads 0/15.  RATIO NEIGHBOURS predict 1: 0.4002x sits between ARCH.V6CL768 at 0.3997x (1/15) and ARCH.V8CL896X13 at 0.4025x (1/15), and both of them hold.",
+   "registered_sealed_count": 1,
+   "registered_on": "two accounts of three, and the one that dissents is a single rung",
+   "registered_canonical_count_under_the_copy_back_clause": 0,
+   "what_it_settles_either_way": "1/15 puts the block-13 cliff between K=7,680 and K=7,168 -- 512 rows.  0/15 puts it between K=8,192 and K=7,680 -- 512 rows.  THE BRACKET HALVES ON EITHER OUTCOME, which is why this cell is worth a review at a ratio that cannot move the floor."
+  }
+ ],
+ "xchange_go_gate": {
+  "status": "NOT REGISTERED BY THIS FILE.  Registered in code at commit 75323e57.",
+  "where_the_thresholds_live": "git show 75323e57:reports/matrix-campaign-20260810/run/mx43/mx43_xchange.py -- the GO_GATE table, one declared dict, each entry carrying its reason",
+  "thresholds_as_committed": {
+   "rho_2_max": 0.5,
+   "gate_dispersion_max": 0.5,
+   "stage1_band_mass_min": 0.9,
+   "reconstruction_rtol": 0.0001
+  },
+  "authority_as_committed": "this census MAY close the XCHANGE class, by its own pre-registration, and only in one direction: if EVERY surviving conv site fails the conjunction of G1, G2 and G3 then the class closes, because the three gates are preconditions for the substituted operator being in the class at all and no solve restores what is provably outside it.  A pass at ANY site funds ONE build at the cheapest passing site.  This census never grades a child and never moves a floor.",
+  "when_it_ran": "against the deployment cut from 75323e57, after the commit and before this document.  Nothing in GO_GATE was touched afterwards.",
+  "outcome": "CLASS CLOSED.  No surviving conv site passes the conjunction of G1, G2 and G3, so the substituted operator is not in the class at any site and no solve restores what is provably outside it.  XCHANGE closes by its own pre-registered gate.",
+  "per_site": {
+   "L00": {
+    "rho_2_fit": 0.5329171382606949,
+    "error_floor_relL2": 0.7300117384403452,
+    "gate_dispersion_B_median": 0.918536212044673,
+    "gate_dispersion_C_median": 0.9625986679342147
+   },
+   "L01": {
+    "rho_2_fit": 0.8155178849041087,
+    "error_floor_relL2": 0.9030602886319986,
+    "gate_dispersion_B_median": 0.8477642879903191,
+    "gate_dispersion_C_median": 0.8801424647057017
+   },
+   "L03": {
+    "rho_2_fit": 0.8118236137693376,
+    "error_floor_relL2": 0.9010125491741708,
+    "gate_dispersion_B_median": 0.7191999538002826,
+    "gate_dispersion_C_median": 0.7441975172897127
+   },
+   "L05": {
+    "rho_2_fit": 0.5510373755279482,
+    "error_floor_relL2": 0.7423189176681059,
+    "gate_dispersion_B_median": 0.5866737394924445,
+    "gate_dispersion_C_median": 0.5973511247976951
+   },
+   "L07": {
+    "rho_2_fit": 0.6643561237976504,
+    "error_floor_relL2": 0.8150804400779412,
+    "gate_dispersion_B_median": 0.6745790406923695,
+    "gate_dispersion_C_median": 0.6355106177157325
+   },
+   "L09": {
+    "rho_2_fit": 0.5326078671159741,
+    "error_floor_relL2": 0.729799881553823,
+    "gate_dispersion_B_median": 0.527546503189809,
+    "gate_dispersion_C_median": 0.5977997754195093
+   },
+   "L11": {
+    "rho_2_fit": 0.6971761217858402,
+    "error_floor_relL2": 0.8349707310953123,
+    "gate_dispersion_B_median": 0.573409505984812,
+    "gate_dispersion_C_median": 0.7279450914008353
+   },
+   "L13": {
+    "rho_2_fit": 0.6647231314628268,
+    "error_floor_relL2": 0.8153055448497986,
+    "gate_dispersion_B_median": 0.4993321383146758,
+    "gate_dispersion_C_median": 0.5661348102651389
+   }
+  },
+  "stage1": {
+   "gamma_cap_from_the_parent": 10.718704223632812,
+   "best_multiplane_worst_lag_band_mass": 0.2779360692780486,
+   "single_plane_worst_lag_band_mass": 0.001978330031286167
+  },
+  "registered_post_hoc_extension": "THE REGISTERED STAGE-1 PLANE SETS STOP AT EIGHT PLANES AND THAT IS A REAL LIMIT OF THE REGISTRATION.  A post-hoc robustness read is published beside the gate and LABELLED post-hoc: unit-amplitude phase-aligned sets at 2, 4, 8, 12, 16, 24 and 32 planes, and the design document's own construction (free amplitude AND free phase over all 32 planes, least squares against an impulse at the lag).  It publishes either way and it does not move the verdict, because G1 fails independently at all eight sites."
+ },
+ "dual_column_discipline": "PENDING CYRIL'S RULING, BOTH COLUMNS ARE PUBLISHED FOR EVERY CHILD.  Column A (copy-backs count) and column B (copy-backs refused) are registered above per cell.  Any held lane on either vocabulary child is run through the carried mx43_dualband.py before this wave writes a floor statement, so the wave publishes both floors and pre-empts neither.",
+ "benchmarks": "ADDENDUM 8 column, PARENT FIRST, then every non-looping child.  The parent row is the thirtieth consecutive reproduction check.",
+ "estate": {
+  "seal_roots_declared": 39,
+  "basis_schemas_accepted": 15,
+  "seal_calls_at_cut": 0,
+  "lines_below_the_calibration_sentinel_at_cut": 0,
+  "residue_the_general_pin_deleted": 78,
+  "residue_predicted_by_NOTES_MX_AT_11_4": 78
+ }
+}

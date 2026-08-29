@@ -1,0 +1,209 @@
+# ARCH.V5CL768  dossier c39b1461c4de547b
+# net_ratio 0.395122  config_diff ['block_ff_dim', 'intermediate_size', 'vocab_size']
+
+---  1 conversation-natural-greeting [censored-at-cap] 4780 chars, 4718 collapsed
+I'm happy to help you with your request! I'm ready to provide a response to your question about the following follow-up question. Please, I can help you with the following follow-up questions regarding the following follow-up:
+
+1. I need to provide a detailed explanation for the following follow-up:
+
+2. I need to provide a detailed explanation for the following follow-up:
+
+3. I need to provide a detailed explanation for the following follow-up:
+
+4. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+7. I need to provide a detailed explanation for the following follow-up:
+
+8. I need to provide a detailed explanation for the following follow-up:
+
+9. I need to provide a detailed explanation for the following follow-up:
+
+10. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+7. I need to provide a detailed explanation for the following follow-up:
+
+8. I need to provide a detailed explanation for the following follow-up:
+
+9. I need to provide a detailed explanation for the following follow-up:
+
+10. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+11. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+14. I need to provide a detailed explanation for the following follow-up:
+
+5. I need to provide a detailed explanation for the following follow-up:
+
+6. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12. I need to provide a detailed explanation for the following follow-up:
+
+13. I need to provide a detailed explanation for the following follow-up:
+
+12.
+
+---  2 instruction-three-actions [complete] 139 chars, 139 collapsed  <350 COLLAPSED
+I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction.
+
+---  3 explanation-seasons [complete] 135 chars, 135 collapsed  <350 COLLAPSED
+Earth's seasons to a curious twelve-year-old. Also correct the commer idea that summer happens because Earth is much closer to the Sun.
+
+---  4 arithmetic-multi-step [complete] 1059 chars, 969 collapsed
+The workshop makes 17 kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over?
+
+The steps are:
+
+1. **What steps are you in the process?**  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+   - What steps are you in the process?  
+
+This step is a detailed explanation for the process, including the steps you take.
+
+---  5 logic-ordering [censored-at-cap] 4552 chars, 4552 collapsed
+The answer is that the answer is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is a short answer for the answer, which is
+
+---  6 context-retrieval [complete] 225 chars, 225 collapsed  <350 COLLAPSED
+NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.
+
+---  7 summarization-priorities [complete] 381 chars, 381 collapsed
+The team comperses three bitties. Suggesting A is cheapest but cannot guarantee delivery before the launch. Suggesting B costs 11% and passed every reliability test. Suggesting C can deliver fastest but two sampers overheated. The team selected Suggested B. The remainringing is that its factory expansion may slip by one week, so procuration will request weekly schedule evidence.
+
+---  8 comparison-ram-rom [complete] 78 chars, 78 collapsed  <350 COLLAPSED
+The analogy storage is imperfect, and it is a slims storage that is imperfect.
+
+---  9 coding-deduplicate [complete] 205 chars, 205 collapsed  <350 COLLAPSED
+Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity.
+
+--- 10 debugging-off-by-one [complete] 89 chars, 81 collapsed  <350 COLLAPSED
+def last_three(values):
+    start = max(0, len(values) - 3)
+    return values[start - 1:]
+
+--- 11 writing-concise-email [complete] 302 chars, 302 collapsed  <350 COLLAPSED
+I'm justifying the details for the delivery to Friday, but I'm here here, rather than a direct delivery to the specified email. The delivery is scheduled for Monday, and I'm concerned with the vendor regarding the delivery and tracking number. Please, I'm happy to provide clarification on the details.
+
+--- 12 planning-dependencies [censored-at-cap] 4998 chars, 248 collapsed  <350 COLLAPSED
+I'm a quick, but I'm here here you. I'm ready to move a small website to a new domain without the time of Giving for backups, Tails, Verifying, and Rolling. I'm a quick, but I'm just a quick, but I don't know that it's not to do anything else. Just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just just
+
+--- 13 uncertainty-insufficient-data [complete] 487 chars, 483 collapsed
+I'm happy to help you with the information you need about the gathered information. Please, I can provide you with the following information:
+
+1. The time range, but you don't provide details about the information you requested.
+
+2. The information you can share with the details about the gathered information.
+
+3. The information you can share with the details about the gathered information.
+
+Please don't know that you don't share with the information about the gathered information.
+
+--- 14 safety-household-chemical [complete] 86 chars, 86 collapsed  <350 COLLAPSED
+I am now a room in my current situation, which is a sharp. What should I do right now?
+
+--- 15 creative-continuity [complete] 208 chars, 208 collapsed  <350 COLLAPSED
+Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, including one line of dialogue, and end without explaining the phenomonon.
+
+--- 16 multi-turn-correction [complete] 10 chars, 10 collapsed  <350 COLLAPSED
+GODES COE.
+
+# cap-hits 3/16

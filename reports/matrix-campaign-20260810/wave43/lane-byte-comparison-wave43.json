@@ -1,0 +1,367 @@
+{
+ "schema": "neural-forge-matrix-wave43-lane-byte-comparison-v1",
+ "sources": {
+  "ARCH.HD48": "/mnt/ai_data/neural-forge-matrix/wave43/cells/ARCH.HD48/frozen-review-dossier.json",
+  "ARCH.V5CL768": "/mnt/ai_data/neural-forge-matrix/wave43/cells/ARCH.V5CL768/frozen-review-dossier.json",
+  "ARCH.K7680CL896X13": "/mnt/ai_data/neural-forge-matrix/wave43/cells/ARCH.K7680CL896X13/frozen-review-dossier.json",
+  "ARCH.V6CL768": "/mnt/ai_data/neural-forge-matrix/wave42/human-review/dossier-V6CL768.json",
+  "ARCH.V7CL896X13": "/mnt/ai_data/neural-forge-matrix/wave42/human-review/dossier-V7CL896X13.json",
+  "ARCH.V6CL896X13": "/mnt/ai_data/neural-forge-matrix/wave42/human-review/dossier-V6CL896X13.json",
+  "ARCH.V7CL768": "/mnt/ai_data/neural-forge-matrix/wave41/human-review/dossier-V7CL768.json",
+  "ARCH.V8CL896X13": "/mnt/ai_data/neural-forge-matrix/wave41/human-review/dossier-V8CL896X13.json",
+  "ARCH.V9CL896X13": "/mnt/ai_data/neural-forge-matrix/wave40/human-review/dossier-V9CL896X13.json"
+ },
+ "dossier_sha256": {
+  "ARCH.HD48": "38c567509bdfe65f",
+  "ARCH.V5CL768": "c39b1461c4de547b",
+  "ARCH.K7680CL896X13": "d0e9eeb99d53972b",
+  "ARCH.V6CL768": "b2eb1dec6b68edda",
+  "ARCH.V7CL896X13": "fa157ae346c17d89",
+  "ARCH.V6CL896X13": "98b945ff3c10b2ab",
+  "ARCH.V7CL768": "29736abd434c09d1",
+  "ARCH.V8CL896X13": "c73ba87a91f70fb5",
+  "ARCH.V9CL896X13": "e29106d7da7db85e"
+ },
+ "protocol": {
+  "ARCH.HD48": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V5CL768": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.K7680CL896X13": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V6CL768": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V7CL896X13": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V6CL896X13": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V7CL768": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V8CL896X13": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  },
+  "ARCH.V9CL896X13": {
+   "protocol": "e5e377688597",
+   "prompt_pack": "0ee6bf14cef5"
+  }
+ },
+ "parent_lanes_identical_everywhere": true,
+ "pairs": [
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V5CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.K7680CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V6CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V7CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V6CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V7CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V8CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.HD48",
+   "b": "ARCH.V9CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.K7680CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.V6CL768",
+   "shared": 6,
+   "lanes": [
+    "context-retrieval",
+    "conversation-natural-greeting",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "instruction-three-actions"
+   ]
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.V7CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.V6CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.V7CL768",
+   "shared": 6,
+   "lanes": [
+    "coding-deduplicate",
+    "context-retrieval",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "instruction-three-actions"
+   ]
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.V8CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V5CL768",
+   "b": "ARCH.V9CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.K7680CL896X13",
+   "b": "ARCH.V6CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.K7680CL896X13",
+   "b": "ARCH.V7CL896X13",
+   "shared": 7,
+   "lanes": [
+    "context-retrieval",
+    "explanation-seasons",
+    "instruction-three-actions",
+    "planning-dependencies",
+    "safety-household-chemical",
+    "summarization-priorities",
+    "uncertainty-insufficient-data"
+   ]
+  },
+  {
+   "a": "ARCH.K7680CL896X13",
+   "b": "ARCH.V6CL896X13",
+   "shared": 5,
+   "lanes": [
+    "context-retrieval",
+    "instruction-three-actions",
+    "safety-household-chemical",
+    "uncertainty-insufficient-data",
+    "writing-concise-email"
+   ]
+  },
+  {
+   "a": "ARCH.K7680CL896X13",
+   "b": "ARCH.V7CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.K7680CL896X13",
+   "b": "ARCH.V8CL896X13",
+   "shared": 8,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "instruction-three-actions",
+    "logic-ordering",
+    "multi-turn-correction",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.K7680CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "shared": 5,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "creative-continuity",
+    "multi-turn-correction",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V7CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V6CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V7CL768",
+   "shared": 10,
+   "lanes": [
+    "comparison-ram-rom",
+    "context-retrieval",
+    "creative-continuity",
+    "debugging-off-by-one",
+    "explanation-seasons",
+    "instruction-three-actions",
+    "logic-ordering",
+    "multi-turn-correction",
+    "safety-household-chemical",
+    "uncertainty-insufficient-data"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V8CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL768",
+   "b": "ARCH.V9CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V6CL896X13",
+   "shared": 8,
+   "lanes": [
+    "comparison-ram-rom",
+    "context-retrieval",
+    "conversation-natural-greeting",
+    "instruction-three-actions",
+    "logic-ordering",
+    "multi-turn-correction",
+    "safety-household-chemical",
+    "uncertainty-insufficient-data"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V7CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V8CL896X13",
+   "shared": 2,
+   "lanes": [
+    "instruction-three-actions",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "shared": 1,
+   "lanes": [
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V7CL768",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V8CL896X13",
+   "shared": 2,
+   "lanes": [
+    "instruction-three-actions",
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V6CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "shared": 1,
+   "lanes": [
+    "safety-household-chemical"
+   ]
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V8CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V7CL768",
+   "b": "ARCH.V9CL896X13",
+   "shared": 0,
+   "lanes": []
+  },
+  {
+   "a": "ARCH.V8CL896X13",
+   "b": "ARCH.V9CL896X13",
+   "shared": 7,
+   "lanes": [
+    "arithmetic-multi-step",
+    "coding-deduplicate",
+    "creative-continuity",
+    "multi-turn-correction",
+    "planning-dependencies",
+    "safety-household-chemical",
+    "summarization-priorities"
+   ]
+  }
+ ],
+ "held_lane_digests": {
+  "ARCH.HD48/conversation-natural-greeting": "80c1b8d576223bc26a9b07753573c03d4c8bc6cca23f137fb20b7f8a2777f304",
+  "ARCH.V5CL768/summarization-priorities": "f0f9cef07b1aa99436af5d60f3575712bbe87d3be5a89a1df616cd2379c67897"
+ }
+}
