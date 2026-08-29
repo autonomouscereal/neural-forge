@@ -138,10 +138,19 @@ Five lines carry it, all pinned at one:
   half of the census gate, the half with no flag, because a kept token that
   cannot be produced from the restricted merge list is a broken tokenizer and
   never a coverage choice.
-* `if lost and not args.below_floor:` — the **coverage** half. Both of wave 39's
-  children are built below the census floor deliberately, which means this wave
-  passes the flag that turns this refusal off. **A wave that passes a flag must
-  assert the guard the flag disarms**, or it cannot tell disarming from absence.
+* `if lost and not args.below_floor:` — the **coverage** half, and the guard
+  that decides whether this wave needs `--below-floor` at all.
+
+  **The first version of this README said both of wave 39's children are built
+  below the census floor deliberately and that the wave therefore passes that
+  flag. That was wrong and it was checked rather than shipped.** Wave 38 built
+  K = 14,336, 10,240 and 9,216 on the sibling body and every one of them logged
+  *sealed-corpus coverage: donor-mapped 1.000000 (0 lost), canonical 1.000000
+  (0 lost)* — the refusal never fired and the flag was never passed. Wave 39
+  passes it on neither child. The line is pinned anyway, because a wave that
+  does not need a guard is exactly the wave that will not notice the guard is
+  gone: if it were missing, a rung that DID lose coverage would build silently
+  and the receipt's `below_census_floor` field would say nothing.
 * `"the child tokenizer is not lossless on text; the byte alphabet or "` — the
   refusal behind `decode(child_encode(t)) == t`. This parent has
   `byte_fallback: false` and `unk_token: null`, so the 256 byte-alphabet rows

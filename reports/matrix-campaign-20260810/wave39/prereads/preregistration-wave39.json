@@ -1,0 +1,87 @@
+{
+ "schema": "neural-forge-matrix-wave39-preregistration-v1",
+ "written_before": "any wave-39 build, any wave-39 decode, any wave-39 seal",
+ "repo_head_at_registration": "c5d39eba",
+ "wave": 39,
+ "the_one_open_question": {
+  "statement": "NOTES-MX-AP section 2.3: the X09-over-X13 advantage rests on ONE K value. ARCH.V12CL896X09 reads 2 and ARCH.V12CL896X13 reads 1 at K=12,288, at an identical 96,649,984 parameters, on bodies that share ZERO of sixteen lanes. Wave 38 built no X13 rung and did not claim it could settle this.",
+  "what_settles_it": "two vocabulary folds on wave 35's RETAINED MX35-CL896X13, at the two K values where the X09 ladder is already measured and alive: 14,336 (X09 reads 2) and 10,240 (X09 reads 1). K=9,216 is NOT built this wave, and that is stated in the deviations below.",
+  "three_outcomes_declared_in_advance": [
+   "X09 strictly above X13 at BOTH new K values (V14CL896X13 <= 1 and V10CL896X13 = 0) -- the block-choice advantage is a LAW of the block and not of the rung.",
+   "X09 above X13 at 14,336 and TIED at 10,240 (V14CL896X13 = 1, V10CL896X13 = 1) -- the advantage is real at the shallow end and CLOSES at the floor, because there is only one case left to hold.",
+   "X13 matching X09 at 14,336 (V14CL896X13 = 2) -- the wave-37 observation was K-specific and the 12,288 gap was an accident of one rung."
+  ]
+ },
+ "children": [
+  {
+   "cell_id": "ARCH.V14CL896X13",
+   "tag": "V14CL896X13",
+   "build": "mx39_vocab.py --mode build --k 14336 --source MX35-CL896X13",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+   "source_provenance": "wave 35's RETAINED block-13 body, ARCH.CL896X13, --ff 896 --excise 13, 151,175,936 parameters, 0.6581646584689252x, sealed 1/15 and canonical 1/15 at wave 35. The axes are carried out of its own build receipt by mx39_vocab.py rather than re-described by a driver.",
+   "cost": "one CPU pass, no capture, no forward call, no GPU for the build",
+   "predicted_parameter_count": 98747136,
+   "predicted_stored_parameter_ratio": 0.4299088648620936,
+   "parameter_count_is_a_falsifiable_criterion": "ARCH.CL896X09 and ARCH.CL896X13 agree at 151,175,936 to the byte because blocks 9 and 13 are both conv. The same K on the same-sized body must therefore land on ARCH.V14CL896X09's count EXACTLY. A different number is a defect in the gather, not a result.",
+   "predicted_review_useful_or_partial": 1,
+   "prediction_reasoning": "FLATNESS. The X13 ladder has two measured points and both read 1: the body ARCH.CL896X13 (wave 35) and its K=12,288 fold ARCH.V12CL896X13 (wave 35). K=14,336 is one rung SHALLOWER than the measured 1, and DEEP_RECORD 8.5's law says the vocabulary fold does not change a body's count across K on four of five bodies. Predicting 2 would require the X13 body to gain a case at 14,336 that it did not gain at 12,288, which is an inversion in the direction no ladder on this body supports. NOTE THE COMPETING ACCOUNT AND WHAT IT PREDICTS: if block choice is irrelevant and the count is a function of the RUNG, this reads 2, because ARCH.V14CL896X09 reads 2 at this K. The two accounts disagree here by exactly one case, which is why this cell is worth a pass.",
+   "what_a_miss_means": "a read of 2 falsifies the block-choice advantage at this rung and makes wave 37's 12,288 observation K-specific. A read of 0 would put an X13 death at 14,336, four rungs shallower than the X09 death at 9,216, and would break DEEP_RECORD 8.4's finding that blocks 9 and 13 cost the same."
+  },
+  {
+   "cell_id": "ARCH.V10CL896X13",
+   "tag": "V10CL896X13",
+   "build": "mx39_vocab.py --mode build --k 10240 --source MX35-CL896X13",
+   "source": "/mnt/ai_data/neural-forge-matrix/wave35/children/MX35-CL896X13",
+   "source_provenance": "the same retained wave-35 body.",
+   "cost": "one CPU pass",
+   "predicted_parameter_count": 94552832,
+   "predicted_stored_parameter_ratio": 0.4116484013735471,
+   "parameter_count_is_a_falsifiable_criterion": "must equal ARCH.V10CL896X09's count to the byte, for the same reason.",
+   "predicted_review_useful_or_partial": 1,
+   "prediction_reasoning": "TWO LAWS AGREE ON ONE. (a) DEEP_RECORD 8.4: blocks 9 and 13 have the same parameter count and the same behavioural cost on five of six bodies. The X09 vocabulary DEATH is at K=9,216, so an X13 death should also sit at about 9,216 and K=10,240 is one rung ABOVE it. (b) DEEP_RECORD 8.5 flatness: the X13 ladder reads 1 at both points measured so far. Both give 1. THE COMPETING ACCOUNT: if the decay wave 38 measured on X09 is a property of K on this parent rather than of block 9, then X13 loses its case here exactly as X09 lost one, and this reads 0. NOTE WHICH LANE IS AT RISK AND WHY IT IS NOT THE SAME MECHANISM: X09 lost CONTEXT-RETRIEVAL first at this rung, and the X13 family does not hold context-retrieval at any rung. ARCH.CL896X13's one lane is summarization-priorities and ARCH.V12CL896X13's one lane is writing-concise-email, held on the ASK. So X09's 10,240 loss cannot transfer by the same lane, and a loss here would have to be a different mechanism, which is worth recording either way.",
+   "what_a_miss_means": "a read of 0 makes X09 strictly better than X13 at every K where both were built, which promotes the block-choice advantage from one data point to a law and makes the campaign's THIRD vocabulary death. A read of 2 would be the first case a fold has ever ADDED on this body and would make the X13 ladder behave like the X09 one."
+  }
+ ],
+ "wave_level_predictions": [
+  {
+   "claim": "NEITHER child moves a sealed frontier rung.",
+   "reasoning": "the sealed 1/15 rung is ARCH.V10CL896X09 at 0.4116484014x and the sealed 2/15 rung is ARCH.V10CL896X09G10 at the same ratio. ARCH.V10CL896X13 is predicted at 1 at EXACTLY that ratio, which ties rather than beats; ARCH.V14CL896X13 is 0.018 of stored ratio shallower. A tie does not move a rung, and this wave will not report one as if it did."
+  },
+  {
+   "claim": "the canonical lens moves nothing on either child.",
+   "reasoning": "DEEP_RECORD 8.8, written at wave 38: below roughly 0.43x the canonical column stops being an independent reading. Both children are below 0.43x. Wave 38 read zero of six above their seals. This wave budgets zero."
+  },
+  {
+   "claim": "both parameter counts land EXACTLY on their X09 twins' counts.",
+   "reasoning": "the strongest falsifiable criterion in the wave and the cheapest to check: 98,747,136 and 94,552,832, to the byte."
+  },
+  {
+   "claim": "the sealed-corpus coverage reads 1.000000 with ZERO occurrences lost on both, and --below-floor is passed on NEITHER.",
+   "reasoning": "wave 38's build logs for K=14,336, 10,240 and 9,216 on the sibling body all read coverage 1.000000 (0 lost). If either of this wave's rungs reads otherwise, the census gate fires and the build stops, which is the answer either way."
+  }
+ ],
+ "stated_deviations": [
+  {
+   "deviation": "K=9,216 on ARCH.CL896X13 is NOT built.",
+   "why": "NOTES-MX-AP item 2 named three passes: V14CL896X13, V10CL896X13 and V9CL896X13. The first two answer the question as asked, because they sit at the two K values where the X09 ladder is measured AND ALIVE. V9CL896X13's X09 twin reads ZERO, and a comparison against a dead control measures nothing -- which is wave 38's own stated reason for substituting its G3 arm. If V10CL896X13 reads 0 this wave, K=9,216 is below a death that has already happened and is not worth a pass; if it reads 1, K=9,216 becomes the interesting cell and the next wave has an argued reason to spend it. That decision is recorded HERE, before either dossier exists."
+  },
+  {
+   "deviation": "no benchmark ladder beyond the two children and the parent row.",
+   "why": "standard invocation, parent FIRST, as every wave since 32. Three rows."
+  },
+  {
+   "deviation": "DEEP_RECORD 8.3's n stays at thirteen.",
+   "why": "no lambda ladder runs this wave. Wave 38 said a wave that wants to move n has to spend two solves; wave 39 spends none and says so rather than counting an arm."
+  }
+ ],
+ "gpu_state_at_registration": {
+  "rtx_3090_index_0_mib": 288,
+  "rtx_3090_index_4_mib": 279,
+  "quadro_rtx_8000_index_6_mib": 45212,
+  "note": "the Quadro's 45,212 MiB is a STANDING allocation across waves 37 and 38 that this campaign did not create and will not touch. Recorded at wave start so a later reader does not attribute it to the matrix campaign. The two 3090s carry an idle-holding H3 ComfyUI container at ~280 MiB each and are not restarted, for wave 34's stated reason. The four P40s read 5 MiB each and are never touched."
+ },
+ "ledger_at_registration": {
+  "rows": 988,
+  "sha256": "2beb2c7e966a8f7fe312b8a6d000b266a6bb3dec662cc1408d15da5a22139c7f"
+ }
+}

@@ -582,10 +582,14 @@ def audit() -> int:
          "because a kept token that cannot be produced from the restricted merge "
          "list is a broken tokenizer and never a coverage choice"),
         ("    if lost and not args.below_floor:\n", 1,
-         "the COVERAGE half.  BOTH of wave 39's children are built below the "
-         "census floor deliberately, so this wave passes the flag that disarms "
-         "this refusal -- and a wave that passes a flag must assert the guard "
-         "the flag disarms, or it cannot tell disarming from absence"),
+         "the COVERAGE half, and it is the guard that DECIDES whether this wave "
+         "needs the --below-floor flag at all.  Wave 38 built K=14,336, 10,240 "
+         "and 9,216 on the sibling body and every one read sealed-corpus "
+         "coverage 1.000000 with ZERO occurrences lost, so this refusal never "
+         "fired and the flag was never passed.  Wave 39 does not pass it either "
+         "and does not get to assume it would not have fired: if this refusal "
+         "were missing, a rung that DID lose coverage would build silently and "
+         "the receipt's below_census_floor field would say nothing"),
         ('            "the child tokenizer is not lossless on text; the byte alphabet or "\n', 1,
          "the refusal behind decode(child_encode(t)) == t.  This parent has "
          "byte_fallback false and unk_token null, so the 256 byte-alphabet rows "
