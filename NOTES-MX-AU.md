@@ -419,21 +419,26 @@ band and it holds nothing: at this rung the child cannot even copy.
 | `ec94b610` | run both censuses and pre-register |
 | `20cbdd3c` | append the sealer's second accept list and fix the plane receipt's contract |
 | `18ca9b50` | the three seals |
-| *(this)* | the measurement, the tables, retention and the docs |
+| `c6fb9b03` | the measurement, the tables and the dual-column doc refresh |
+| *(this)* | retention applied, and this file's own estate section closed |
 
 **Deployments**, each verified file-by-file against its commit's blob digests:
 
 | commit | files | mismatches | missing | undeclared | hardlinks |
 |---|---:|---:|---:|---:|---:|
-| `75323e57` | 7490 → **7597** | 0 | 0 | 0 | 0 |
+| `75323e57` | 7597 | 0 | 0 | 0 | 0 |
 | `ec94b610` | 7603 | 0 | 0 | 0 | 0 |
 | `20cbdd3c` | 7603 | 0 | 0 | 0 | 0 |
 | `18ca9b50` | 7603 | 0 | 0 | 0 | 0 |
+| `c6fb9b03` | 7654 | 0 | 0 | 0 | 0 |
 
-**Four deployments, and two of them were avoidable.** The wave needs at least
-two by construction — the censuses must run before the predictions they make
-possible can be registered — and `env.sh` says so. The third is the accept-list
-defect above.
+**Five deployments for five commits, which is the campaign's normal rate, and
+exactly ONE of them was avoidable.** Waves 40 through 42 each cut one deployment
+per commit. Wave 43 has one commit more than wave 42 for a structural reason
+(`env.sh` states it: the censuses must RUN before the predictions they make
+possible can be registered, so the code commit and the pre-registration commit
+cannot be the same commit) and one more for the accept-list defect in §1.1.
+`20cbdd3c` is the avoidable one.
 
 **Ledger.** Re-verified on the share before it was touched (1040 rows,
 `803439d1…`), backed up to
@@ -456,12 +461,18 @@ the pinned run.
 
 **Disk**: `/mnt/ai_data` 4.5T, 1.7T available. **The Codex lane was not touched.**
 
-**Retention**: `package.sh` ran BEFORE `--plan`, as the rule requires. KEEP =
-`MX43-V5CL768` (the frontier holder and the wave's only new deep-band held-lane
-witness, and the lane the machine and the hand disagree on) and `MX43-HD48` (the
-only living child on the frequency-band axis; not a one-CPU-pass rebuild). DROP
-= `MX43-K7680CL896X13`, rebuilt by one CPU pass off the retained
-`MX35-CL896X13`, **without** `BELOW_FLOOR`.
+**Retention**: `package.sh` ran BEFORE `--plan`, as the rule requires, and
+`--plan` was read before `--apply`. KEEP = `MX43-V5CL768` (the frontier holder
+and the wave's only new deep-band held-lane witness, and the lane the machine
+and the hand disagree on) and `MX43-HD48` (the only living child on the
+frequency-band axis; not a one-CPU-pass rebuild). DROP =
+`MX43-K7680CL896X13`, rebuilt by one CPU pass off the retained
+`MX35-CL896X13`, **without** `BELOW_FLOOR`. **Applied**: 636,675,736 bytes kept,
+184,360,369 deleted, manifest re-parsed OK.
+
+**Final state**: both 3090s back to their idle H3-container residents (288 and
+279 MiB) at 0% utilisation, no stray `mx43_*` process on the box, ledger 1046
+rows at `264884995e0c2b87…`, `/mnt/ai_data` 1.7T free.
 
 ---
 
