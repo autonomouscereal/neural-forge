@@ -1,0 +1,23 @@
+	Command being timed: "/home/cereal/model-surgery-lab/venv/bin/python /home/cereal/omni-campaign/composite/codex-sep04-safety/s0_import_27b.py --src /home/cereal/models/Qwen3.8-27B-Uncensored --out /home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04 --chimera-commit c5e6052 --profile chimera_omni_27b --allow-unverified-output-gate --ledger-band music_codes:65536 --dtype-out bf16"
+	User time (seconds): 1258.36
+	System time (seconds): 1070.46
+	Percent of CPU this job got: 115%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 33:37.74
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 174528852
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 203150
+	Minor (reclaiming a frame) page faults: 223831380
+	Voluntary context switches: 298072
+	Involuntary context switches: 33565
+	Swaps: 0
+	File system inputs: 55497320
+	File system outputs: 108201408
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

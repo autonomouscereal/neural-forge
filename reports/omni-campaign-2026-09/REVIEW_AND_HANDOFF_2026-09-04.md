@@ -81,7 +81,7 @@ that K3/media intelligence has transferred to a compressed composite child.
   Evidence residual estimates based on 65,536 positions require a 1.5x correction.
 - Current parent registry: `PARENT-Q38-27BU`, 27,781,427,952 header-derived
   parameters, directory SHA `8f6735a4510e65f014f0dea8efdbaa3e5a05407c370c976de2d148266d60667a`.
-  September 4 non-deep verification: one checkpoint/record/ledger row matched.
+  September 4 deep verification: one checkpoint/record/ledger row matched.
 - Server at review: no composite process, GPUs idle, 232 GiB RAM available,
   185 GB free on root (90% used), Lexar mounted at `/mnt/lexar` with about 708 GB
   free. The September 3 Lexar/K3 staging instruction supersedes treating repeated
@@ -129,7 +129,7 @@ real 0.8B assets absent locally. Symlink tests ran and passed. Full server valid
 **26 passed in 197.37 seconds**, including those real-asset cases. Combined with QF,
 all 45 server tests pass. The subsequent parent deep-hash check continued beyond
 the SSH command's 300-second wrapper limit; its original process was inspected,
-not duplicated. Real-run results will be appended below as they land. No model cleanup was
+not duplicated. Real-run results are recorded below. No model cleanup was
 executed during this review; root disk pressure remains a planning constraint.
 
 ### S2P memory prerequisite completed
@@ -158,17 +158,60 @@ The existing parent passed deep verification: one checkpoint, one record and one
 ledger row matched, `deep=yes`. At 20:03:50Z the guarded CPU import was started
 against that parent, with the music_codes:65536 band, bf16 output, and no overwrite.
 Output: `/home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04`.
-Launcher PID 346331; Python worker PID 346333. Expected count 27,699,193,344 is an
-assertion to check against written headers, not a result yet. Import receipt and
-`/usr/bin/time -v` evidence remain required before this probe is called built.
+Launcher PID 346331; Python worker PID 346333. At 20:29:49Z the importer wrote its
+receipt: 27,699,193,344 header-derived parameters, 1,011 tensors and 14 bf16 shards.
+Peak RSS reported inside the importer is 178,717,544,448 bytes (166.44 GiB).
+State SHA: `3fc569a683111ef447ef287af241ae42311a2ac5fa38522659c9b0fae734509e`.
+Receipt SHA: `79c6b7f1eae3db24be7c5edd50533f4cdf48169ec18805d69e9b2d988c73d9ec`.
+
+The first independent verification attempt stopped at its successful-process-exit
+guard: the receipt was already written, but Python was still in disk sleep during
+teardown. Only stdin/stdout/stderr remained open; model memory had been released.
+That refusal was not counted as a pass. The process was left intact and exited
+with status **0**. `/usr/bin/time -v` measured **33m37.74s**, versus 1,556.61 seconds
+through receipt generation (642.45s import, 526.8s writing). The delay is included
+in the elapsed process time; no duplicate import was launched.
+
+Independent serialization verification then **passed** in 443.74 seconds with
+4,329,029,632-byte peak RSS (4.03 GiB). It reproduced the pre-write full-state SHA,
+checked all 14 shard file hashes and 1,011 individual tensor hashes, reconciled
+the exact 27,699,193,344 header elements, required BF16 throughout, and checked
+actual zero bytes in both untied ledger-band tables. It also checked unique
+header keys, contiguous offsets, exact payload lengths and index/name agreement.
+The selected server runtime was confirmed to have `sys.flags.optimize == 0` and
+`PYTHONOPTIMIZE` unset; assertion gates were not intentionally disabled.
+
+Only five compact evidence/source files are retained locally under
+`composite/receipts/sep04/` (not the model weights):
+
+- `import_receipt.json` and its SHA-256 sidecar.
+- `s0_serialization_verification.json`, SHA
+  `7b6356e1c786bffb8437a7476d4bce6a82b9819d2d87dbd571e5b9c08c7b5796`.
+- `s0_import.time.log`, SHA
+  `b0c0692bc954caa98a885357855e6959eee5fb91d7d20da83e6b80729660668d`.
+- `verify_s0_serialization.py`, independently reviewed implementation, SHA
+  `1f912500cffe6705fb58e341a93fb6b559d5db15bd9c00f21ac81d5ff53ea347`.
+  Run with ordinary Python, never `-O`/`-OO`; it refuses to replace its result.
+
+**Built and serialization-verified is not behavior-verified.** No new whole-model
+forward, bf16 parity, split execution, compression, long-context or media-transfer
+claim is made. This unregistered import probe is not OMNI1, and its zero music rows
+do not demonstrate music capability.
+
+Retention: preserve this one new probe, existing parents, the completed K3 Lexar
+copy, code and the needed compact receipts. No existing model/result files were
+removed. Root has about 129 GB free after writing S0. A broader cleanup still needs
+a path-specific keep/delete manifest; the old runbook deletion commands are not
+an approved current cleanup plan.
 
 ## Exact remaining construction work
 
-- S0: create the bf1627B Chimera import with the declared music band; independently
-  verify serialization and bf16/split execution. This remains PROBE.S0, not a fold.
+- S0: use the built, serialization-verified bf16 27B import with its declared music
+  band; complete bf16/split execution and streamed parity before sealing PROBE.S0.
+  Do not rerun the import. It is not a fold or the all-source child.
 - S2P: implement the missing full-K3 dual-stream pass. Fit on folded-prefix inputs
   against teacher targets, keep both residual pairs, bind snapshots to input IDs,
-  test uninterrupted/resumed equivalence, and chunk AttnRes. Then measure real L01
+  test uninterrupted/resumed equivalence, and use the tested chunked AttnRes. Then measure real L01
   at the current corpus size before launching all 92 MoE layers.
 - Complete streamed27B exactness and the family-neutral readable review runner.
 - Fold the Qwen trunk, complete K3 charts/union, fold and install actual media

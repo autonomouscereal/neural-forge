@@ -1,5 +1,18 @@
 # COMPOSITE STEP 1 RUN BOOK — the all-source fold into ONE dense Chimera Omni child
 
+> **September 4 continuation:** Read [REVIEW_AND_HANDOFF_2026-09-04.md](REVIEW_AND_HANDOFF_2026-09-04.md)
+> before scheduling or running commands below. Its measured state supersedes the
+> historical C02/C03 import claims, corpus sizing and RAM estimates here. S0 is
+> built and serialization-verified at `composite/s0/q38-27bu-chimera-bf16-sep04`;
+> inspect its receipt and the handoff status instead of launching a duplicate
+> import. bf16 forward/split parity is still pending. The
+> 27B whole-reference peak was 230.76 GiB, not 203 GiB. Corpus v2 has 98,304
+> evidence positions, not 65,536. K3 has a completed size-checked Lexar copy;
+> authoritative digest verification remains required before use. Do not execute
+> historical staged-copy deletion commands without a current keep/delete plan.
+> The all-source OMNI1 child remains unbuilt; imports and component tests are not
+> evidence that this final child exists or retains its source capabilities.
+
 Status: plan of record for step 1 (2026-09-03). Synthesis of the TRUNK-FIRST design plus both judges' grafts, with every refutation C01–C08 applied as fact changes (not softenings). Every number is tagged to a lane fact / receipt, marked `[assumed]` (arithmetic only, unmeasured) or `[proposed]` (a threshold Cyril has not yet ratified). Machine-readable stage list: `COMPOSITE_STEP1_STAGES.json` (derived from section 1).
 
 Standing rules that bind this document: only measured intelligence gates anything; >= 4x per folded component, gated per component from safetensors headers (never from a whole-directory delta); quantization forbidden inside folds; storage counted in PARAMETERS; dense->MoE is cheating; every fold class closes only by a BUILT child; artifact-tolerant grading; "memory" = the PostgreSQL agent-memory backend; never "can't" — run the experiment; delete bad checkpoints, package partially-capable ones for Cyril.

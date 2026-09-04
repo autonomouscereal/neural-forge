@@ -8,7 +8,10 @@
     "resources": "CPU import-only ~152 GiB host peak [assumed, measured by this run] + 54 GB disk, ~4 h, shares the 226 GiB box ONLY with S6H (194 GiB); the whole-model reference column (203 GiB) runs alone. Split verify GPU6+GPU4, host <70 GB, ~1 h before S6H",
     "hours": 5,
     "gate": "BUILT: show/verify clean; index.json header count 27,028,104,704 + 671,088,640 = 27,699,193,344 [assumed]; state_sha256 (PROBE.S0 and the S3 re-import key on s0_import_27b.py's own state_sha256, never on the R-Q 0.8B receipt's 5d81a211); receipt checkpoint.directory_shard_files_match_index == true; share_rate MB/s; peak_rss_bytes recorded. MEASURED: split-verify argmax over >=200 positions + max-abs logit diff vs the streamed HF bf16 teacher (0.8B floors: cpu/fp32 210/210 @ 3.19e-05 exactness; cuda/bf16 209/210 @ 0.5 tolerance); [proposed] argmax >= 99% reported not gated until the receipt JSON lands. S2 re-priced as 1.42 TiB / measured MB/s.",
-    "status": "todo"
+    "status": "partial",
+    "status_as_of": "2026-09-04",
+    "status_note": "Parent deep verification passed. Guarded import BUILT and independently serialization-VERIFIED at composite/s0/q38-27bu-chimera-bf16-sep04: 27,699,193,344 parameters, 1,011 BF16 tensors, 14 shards, state SHA 3fc569a683111ef447ef287af241ae42311a2ac5fa38522659c9b0fae734509e. Process exited 0 after 33m37.74s; import peak 166.44 GiB. bf16 forward/split parity and streamed exactness remain pending. This is an import probe, not a fold or an all-source child. Historical command/output paths and resource estimates above are not a fresh launch instruction; read REVIEW_AND_HANDOFF_2026-09-04.md.",
+    "current_outputs": ["composite/s0/q38-27bu-chimera-bf16-sep04/", "composite/receipts/sep04/import_receipt.json", "composite/receipts/sep04/s0_serialization_verification.json", "composite/receipts/sep04/s0_import.time.log"]
   },
   {
     "id": "S1",
@@ -19,7 +22,9 @@
     "resources": "CPU, <8 GB RAM, ~0.5 GiB share reads, 1-2 h",
     "hours": 2,
     "gate": "BUILT: four files + verify receipt 12/12 PASS, contamination screen 0 hits, review rows excluded from fit. MEASURED: boundary_map aligned-position fraction (ceiling on S4 paired rows).",
-    "status": "todo"
+    "status": "partial",
+    "status_as_of": "2026-09-04",
+    "status_note": "Paired text corpus v2 is built: 98,304 evidence positions, 18 fit/6 held rows, 69,743 K3 fit tokens, 23,186 held tokens and 22,769 held aligned boundary pairs. Separate review files have 45,056 positions and zero fit masks. Media stimuli remain pending; see REVIEW_AND_HANDOFF_2026-09-04.md."
   },
   {
     "id": "S2P",
@@ -30,7 +35,9 @@
     "resources": "coding 8-12 h (overlaps the S0 import); measurement GPU6 + host 60-75 GB (~70 GiB), after the S0 import releases RAM and before S6H, ~2 h, no share reads",
     "hours": 12,
     "gate": "BUILT: tools + tests; L01 receipt. MEASURED: real peak_rss_bytes and wall at 17,408 / T=65,536 replace S2's RAM and per-layer compute lines; if compute > the 11-min clean read, S2 is compute-bound and re-priced as 92 x measured. Synthetic 3-layer fixture: rung=full width => folded == teacher.",
-    "status": "todo"
+    "status": "partial",
+    "status_as_of": "2026-09-04",
+    "status_note": "S0/QF safety guards and inference/no_grad token-chunked AttnRes prerequisite are implemented; 108 focused server tests pass across these three areas. This is not the full dual-stream harness. k3_dense_pass.py, streamed27B exactness, readable review runner and real L01 measurement remain pending. Measure at the actual 98,304 evidence positions, not the historical 65,536 above. Preserve the completed size-checked Lexar K3 copy and verify authoritative digests before use."
   },
   {
     "id": "S6H",
