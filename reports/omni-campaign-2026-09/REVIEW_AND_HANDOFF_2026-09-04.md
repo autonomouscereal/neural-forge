@@ -125,9 +125,42 @@ it is not reported as passing locally. Server test deployment is isolated under
 tool files were not overwritten.
 
 S0 local validation: **24 passed, 2 skipped in 157.93 seconds**; the skips require
-real 0.8B assets absent locally. Symlink tests ran and passed. Full server validation
-and real-run results will be appended below as they land. No model cleanup was
+real 0.8B assets absent locally. Symlink tests ran and passed. Full server validation:
+**26 passed in 197.37 seconds**, including those real-asset cases. Combined with QF,
+all 45 server tests pass. The subsequent parent deep-hash check continued beyond
+the SSH command's 300-second wrapper limit; its original process was inspected,
+not duplicated. Real-run results will be appended below as they land. No model cleanup was
 executed during this review; root disk pressure remains a planning constraint.
+
+### S2P memory prerequisite completed
+
+`k3_common.apply_attn_res` now slices tokens before concatenating snapshots or
+upcasting. The existing five-positional API defaults to 1,024-token chunks;
+`token_chunk_size=None` retains the original expression. Invalid sizes and
+mismatched token/hidden dimensions are refused. Empty input, zero snapshots,
+noncontiguous inputs and dtype promotion are preserved.
+
+The independent pre-change expression matches bit-for-bit in the fp32/bf16 CPU
+fixtures: **63 tests passed locally**, and **63 passed on the server in 7.42 s**.
+The allocation-bound test observes token chunks 1,024 / 1,024 / 3 before cat/upcast.
+At T=98,304, nine snapshot/prefix entries and H=7,168, one fp32 stack is 23.625 GiB
+unchunked versus 252 MiB per default chunk (shape arithmetic, not a measured RSS
+claim). The bound applies to inference/no_grad; autograd can retain intermediates.
+GPU numerical behavior and total real-layer memory are not yet measured.
+
+This makes **108 focused server tests passing** across QF, S0 and this prerequisite.
+It does not complete the K3 dual-stream harness. Deployment is isolated under
+`composite/codex-sep04-safety/k3-memory`; the original server K3 lane is unchanged.
+
+### Real S0 continuation
+
+The existing parent passed deep verification: one checkpoint, one record and one
+ledger row matched, `deep=yes`. At 20:03:50Z the guarded CPU import was started
+against that parent, with the music_codes:65536 band, bf16 output, and no overwrite.
+Output: `/home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04`.
+Launcher PID 346331; Python worker PID 346333. Expected count 27,699,193,344 is an
+assertion to check against written headers, not a result yet. Import receipt and
+`/usr/bin/time -v` evidence remain required before this probe is called built.
 
 ## Exact remaining construction work
 

@@ -341,6 +341,8 @@ def apply_attn_res(
     proj_weight: torch.Tensor,
     norm_weight: torch.Tensor,
     eps: float,
+    *,
+    token_chunk_size: int | None = 1024,
 ) -> torch.Tensor:
     """`_apply_attn_res`: a softmax read over the block snapshots + the prefix.
 
@@ -348,7 +350,50 @@ def apply_attn_res(
     block_residual  [tokens, blocks, hidden]
     proj_weight     [1, hidden]        (self_attention_res_proj / mlp_res_proj)
     norm_weight     [hidden]           (the matching res_norm)
+
+    Slice the token axis BEFORE concatenating snapshots or upcasting to fp32.
+    During inference/no_grad, only the [tokens, hidden] output is allocated at
+    full length; autograd may retain per-chunk intermediates. None keeps
+    the original unchunked expression for comparison; five positional callers
+    receive the bounded path without changing their call sites.
     """
+    if token_chunk_size is not None and (
+        isinstance(token_chunk_size, bool)
+        or not isinstance(token_chunk_size, int)
+        or token_chunk_size <= 0
+    ):
+        raise ValueError("token_chunk_size must be a positive integer or None")
+    if (
+        prefix_sum.ndim != 2
+        or block_residual.ndim != 3
+        or block_residual.shape[0] != prefix_sum.shape[0]
+        or block_residual.shape[2] != prefix_sum.shape[1]
+    ):
+        raise ValueError("AttnRes inputs must be [tokens, hidden] and [tokens, blocks, hidden] with matching dimensions")
+    tokens = prefix_sum.shape[0]
+    if token_chunk_size is None or tokens <= token_chunk_size:
+        return _apply_attn_res_chunk(prefix_sum, block_residual, proj_weight, norm_weight, eps)
+
+    result = prefix_sum.new_empty(
+        prefix_sum.shape, dtype=torch.promote_types(prefix_sum.dtype, block_residual.dtype)
+    )
+    for start in range(0, tokens, token_chunk_size):
+        stop = min(start + token_chunk_size, tokens)
+        result[start:stop] = _apply_attn_res_chunk(
+            prefix_sum[start:stop], block_residual[start:stop], proj_weight, norm_weight, eps
+        )
+    return result
+
+
+def _apply_attn_res_chunk(
+    prefix_sum: torch.Tensor,
+    block_residual: torch.Tensor,
+    proj_weight: torch.Tensor,
+    norm_weight: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    """The original numerical kernel, called only on a bounded token slice."""
+
     v = torch.cat((block_residual, prefix_sum.unsqueeze(1)), dim=1)
     v_float = v.float()
     variance = v_float.pow(2).mean(-1, keepdim=True)
