@@ -23,7 +23,8 @@ naming every identical / differing tensor against that checkpoint.
 
 Refusals (exit code 3): `--chimera-commit` does not match the tree the code
 runs from (`git rev-parse HEAD` when the tree has a `.git`, otherwise the
-`COMMIT` file written next to a git-archive extraction), the tree's
+`COMMIT` file written next to a git-archive extraction), dirty executable checkout
+files, overlapping input/output paths (including symlink aliases), the tree's
 `chimera_omni` is not the one that was imported, `--out` already holds
 safetensors (anywhere under it) without `--overwrite`, a non-positive
 `--shard-bytes`, `--dtype-out fp16` without `--allow-fp16-narrowing`, a band
@@ -38,7 +39,9 @@ can never be sealed by `oc_seal`.
 `model.safetensors.index.json`, `config.json`, `import_receipt.json(.sha256)`
 and `REFUSED.json` at the top of `--out` before writing (recorded in the
 receipt as `checkpoint.overwrite_removed`); it never touches a subdirectory
-and never deletes anything else.
+and never deletes anything else. Source/config/range checks finish before this
+replacement starts. The receipt hashes the running tool and every Python source
+file in the bound Chimera package; archive COMMIT values remain declarations.
 
 Profile: `--profile auto` (default) selects `chimera_omni_27b_profile` when the
 source config carries the verified Qwen3.8-27B geometry and
@@ -74,7 +77,7 @@ from pathlib import Path
 from typing import Any
 
 TOOL_NAME = "s0_import_27b"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 RECEIPT_SCHEMA = "chimera_omni.import.qwen35.v1"
 DEFAULT_CHIMERA_SRC = "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052"
 COMMIT_FILENAME = "COMMIT"
@@ -162,6 +165,45 @@ def commits_match(declared: str, actual: str) -> bool:
     return left.startswith(right) or right.startswith(left)
 
 
+def executable_source_manifest(tree: str | Path) -> dict[str, Any]:
+    """Hash the Python package that runs, and reject dirty executable checkout files.
+
+    An archive's COMMIT file is a declaration, not a verification of its bytes.
+    Its per-file hashes therefore travel with the receipt too.
+    """
+
+    root = Path(tree).resolve()
+    package = root / "src" / "chimera_omni"
+    if (root / ".git").exists():
+        changed: set[str] = set()
+        for arguments in (
+            ["diff", "--name-only", "-z", "HEAD", "--", "src/chimera_omni"],
+            ["ls-files", "--others", "--exclude-standard", "-z", "--", "src/chimera_omni"],
+        ):
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(root), *arguments], check=True, capture_output=True, text=True
+                )
+            except (OSError, subprocess.CalledProcessError) as error:
+                raise Refusal(f"cannot verify executable checkout files at {root}: {error}") from error
+            changed.update(name for name in result.stdout.split("\0") if name.endswith(".py"))
+        if changed:
+            raise Refusal(f"dirty executable source at {root}: {', '.join(sorted(changed))}")
+    files = {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in sorted(package.rglob("*.py")) if path.is_file()
+    }
+    if not files:
+        raise Refusal(f"{package} has no executable Python source")
+    return {
+        "scope": "src/chimera_omni/**/*.py",
+        "files": files,
+        "sha256": hashlib.sha256(canonical_json(files).encode("utf-8")).hexdigest(),
+        "checkout_executable_files_clean": True if (root / ".git").exists() else None,
+        "commit_binding": "clean checkout" if (root / ".git").exists() else "archive COMMIT declaration; actual bytes hashed",
+    }
+
+
 def bind_chimera_tree(tree: str | Path, declared_commit: str) -> dict[str, Any]:
     """Put `<tree>/src` first on sys.path, import chimera_omni from it, check the commit."""
 
@@ -175,6 +217,7 @@ def bind_chimera_tree(tree: str | Path, declared_commit: str) -> dict[str, Any]:
             f"--chimera-commit {declared_commit!r} does not name the tree the code runs from: "
             f"{root} is at {actual} ({how})"
         )
+    source_manifest = executable_source_manifest(root)
     sys.path.insert(0, str(src))
     import chimera_omni  # noqa: WPS433 (deliberately late: the path was just bound)
 
@@ -184,7 +227,10 @@ def bind_chimera_tree(tree: str | Path, declared_commit: str) -> dict[str, Any]:
             f"chimera_omni was imported from {loaded}, not from the bound tree {src}; "
             "clear PYTHONPATH / installed copies before running"
         )
-    return {"tree": str(root), "src": str(src), "commit": actual, "commit_source": how}
+    return {
+        "tree": str(root), "src": str(src), "commit": actual, "commit_source": how,
+        "executable_source": source_manifest,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -268,7 +314,15 @@ def index_shard_files(index: dict[str, Any]) -> list[str]:
     return sorted(set(str(name) for name in index["weight_map"].values()))
 
 
-def prepare_out_dir(out: Path, *, overwrite: bool) -> list[str]:
+def refuse_path_overlap(out: Path, source: Path, label: str) -> None:
+    """Resolve directory aliases before protecting either direction of ancestry."""
+
+    destination, protected = out.resolve(), source.resolve()
+    if destination.is_relative_to(protected) or protected.is_relative_to(destination):
+        raise Refusal(f"--out {destination} overlaps {label} {protected}; use disjoint directories")
+
+
+def prepare_out_dir(out: Path, *, overwrite: bool, apply: bool = True) -> list[str]:
     """Refuse an occupied `--out`, or (with `--overwrite`) clear the previous layout.
 
     Returns the relative names of the files removed. Only the tool's own
@@ -278,6 +332,8 @@ def prepare_out_dir(out: Path, *, overwrite: bool) -> list[str]:
 
     if not out.exists():
         return []
+    if not out.is_dir():
+        raise Refusal(f"--out {out} is not a directory")
     present = directory_shard_files(out)
     nested = [name for name in present if "/" in name]
     if nested:
@@ -296,20 +352,33 @@ def prepare_out_dir(out: Path, *, overwrite: bool) -> list[str]:
             out / RECEIPT_FILENAME,
             out / (RECEIPT_FILENAME + ".sha256"),
         ]
-        for path in candidates:
-            if path.is_file():
-                path.unlink()
-                removed.append(path.name)
-        leftover = directory_shard_files(out)
+        # Validate the complete old layout before unlinking even one file.
+        # A Hugging Face checkpoint elsewhere is also a source, never an S0 output.
+        config_path = out / CONFIG_FILENAME
+        if config_path.is_file():
+            try:
+                previous = json.loads(config_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                raise Refusal(f"cannot identify the existing output config at {out}: {error}") from error
+            if not isinstance(previous, dict) or previous.get("schema") != "chimera_omni.checkpoint.v1":
+                raise Refusal(f"--overwrite refuses a non-Chimera checkpoint at {out}")
+        candidate_names = {path.name for path in candidates}
+        leftover = [name for name in present if name not in candidate_names]
         if leftover:
             raise Refusal(
-                f"{out} still holds safetensors after --overwrite cleared the tool's own layout: "
+                f"{out} holds safetensors outside the tool's overwrite layout: "
                 f"{', '.join(leftover[:5])}; not the tool's files, move them out first"
             )
+        for path in candidates:
+            if path.is_file():
+                if apply:
+                    path.unlink()
+                removed.append(path.name)
     marker = out / REFUSED_FILENAME
     if marker.is_file():
         # The tool's own marker from an earlier refused run; a fresh run replaces it.
-        marker.unlink()
+        if apply:
+            marker.unlink()
         removed.append(marker.name)
     return removed
 
@@ -556,6 +625,7 @@ def lane_comparison(
 
 def run_import(args: argparse.Namespace) -> dict[str, Any]:
     started_wall = time.time()
+    tool_sha256 = file_sha256(Path(__file__))
     tree = bind_chimera_tree(args.chimera_src, args.chimera_commit)
     log(f"chimera tree {tree['tree']} @ {tree['commit']} ({tree['commit_source']})")
 
@@ -576,6 +646,9 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
 
     src = Path(args.src).resolve()
     out = Path(args.out).resolve()
+    refuse_path_overlap(out, src, "--src")
+    refuse_path_overlap(out, Path(tree["src"]) / "chimera_omni", "executable source")
+    refuse_path_overlap(out, Path(__file__), "import tool")
     if not (src / "config.json").is_file():
         raise Refusal(f"{src} has no config.json")
 
@@ -591,9 +664,18 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
     compare_to = Path(args.compare_to).resolve() if args.compare_to else None
     if compare_to is not None and not (compare_to / INDEX_FILENAME).is_file():
         raise Refusal(f"--compare-to {compare_to} has no {INDEX_FILENAME}")
-    removed = prepare_out_dir(out, overwrite=bool(args.overwrite))
-    if removed:
-        log(f"--overwrite removed {len(removed)} file(s) from {out}: {', '.join(removed[:6])}{', ...' if len(removed) > 6 else ''}")
+    if compare_to is not None:
+        refuse_path_overlap(out, compare_to, "--compare-to")
+    receipt_path = Path(args.receipt).resolve() if args.receipt else out / RECEIPT_FILENAME
+    refuse_path_overlap(receipt_path, src, "--src")
+    refuse_path_overlap(receipt_path, Path(tree["src"]) / "chimera_omni", "executable source")
+    refuse_path_overlap(receipt_path, Path(__file__), "import tool")
+    if compare_to is not None:
+        refuse_path_overlap(receipt_path, compare_to, "--compare-to")
+    if receipt_path.parent == out and (
+        receipt_path.name in {CONFIG_FILENAME, INDEX_FILENAME} or receipt_path.suffix == ".safetensors"
+    ):
+        raise Refusal("--receipt must not replace a checkpoint config, index or shard")
 
     extra_bands = tuple(args.ledger_band or ())
     default_names = {name for name, _ in DEFAULT_FIXED_BANDS}
@@ -622,6 +704,8 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
     default_rows = sum(width for _, width in DEFAULT_FIXED_BANDS)
     extra_rows = sum(width for _, width in extra_bands)
     tables = 1 if cfg.tie_word_embeddings else 2
+    # Read-only preflight. Existing outputs survive all config, load and range refusals.
+    prepare_out_dir(out, overwrite=bool(args.overwrite), apply=False)
 
     # The RNG state is the whole story of the 16 interface tensors; pin it.
     torch.manual_seed(int(args.seed))
@@ -665,8 +749,15 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
 
     log("hashing the state")
     digest = state_sha256(model)
+    if executable_source_manifest(tree["tree"]) != tree["executable_source"]:
+        raise Refusal("executable source changed during import; the previous output is untouched")
+    if file_sha256(Path(__file__)) != tool_sha256:
+        raise Refusal("import tool changed during import; the previous output is untouched")
 
     # ---- the write; a refusal past this point unlinks the products ---------
+    removed = prepare_out_dir(out, overwrite=bool(args.overwrite))
+    if removed:
+        log(f"--overwrite removed {len(removed)} file(s) from {out}: {', '.join(removed[:6])}{', ...' if len(removed) > 6 else ''}")
     log(f"writing {out}")
     started = time.time()
     index: dict[str, Any] | None = None
@@ -713,7 +804,7 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
     receipt.update(
         {
             "schema": RECEIPT_SCHEMA,
-            "tool": {"name": TOOL_NAME, "version": TOOL_VERSION, "argv": list(args.argv)},
+            "tool": {"name": TOOL_NAME, "version": TOOL_VERSION, "argv": list(args.argv), "sha256": tool_sha256},
             "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "chimera": tree,
             "chimera_commit": tree["commit"],
@@ -780,7 +871,6 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
             "peak_rss_source": "resource.getrusage(RUSAGE_SELF).ru_maxrss * 1024",
         }
     )
-    receipt_path = Path(args.receipt) if args.receipt else out / RECEIPT_FILENAME
     receipt_sha = write_receipt(receipt_path, receipt)
     summary = {
         "out": str(out),

@@ -410,6 +410,9 @@ def test_src_dir_reads_a_staged_copy(tiny, both_children, work: Path):
         "--out", str(out), "--streamed", "--no-parity",
     ]))
     assert built["preconditions"]["engine"]["weights_read_from"] == str(staged)
+    identity = built["preconditions"]["source_identity"]
+    assert identity["mode"] == "byte-identical-staged-checkpoint"
+    assert identity["weights"] == qs.checkpoint_weight_manifest(tiny["parent"])
     assert built["export"]["child_tensors_sha256"] == both_children["resident"]["export"]["child_tensors_sha256"]
     # A staged copy with a different config is refused before anything streams.
     bad = work / "parent-staged-bad"
@@ -421,3 +424,83 @@ def test_src_dir_reads_a_staged_copy(tiny, both_children, work: Path):
     (bad / "config.json").write_text(json.dumps(body), encoding="utf-8")
     with pytest.raises(SystemExit, match="different config"):
         qs.StreamedHarness(tiny["parent"], "cpu", torch.float32, tiny["manifest"], read_dir=bad)
+
+
+def test_src_dir_rejects_same_config_different_weights_before_engine(tiny, tmp_path, monkeypatch):
+    staged = tmp_path / "substituted"
+    shutil.copytree(tiny["parent"], staged)
+    from safetensors.torch import load_file, save_file
+
+    weights = load_file(str(staged / "model.safetensors"))
+    name = sorted(weights)[0]
+    weights[name] = weights[name].clone()
+    weights[name].view(-1)[0] += 1
+    save_file(weights, str(staged / "model.safetensors"))
+    monkeypatch.setattr(qs, "StreamedTrunk", lambda *_a, **_k: pytest.fail("constructed unverified engine"))
+    with pytest.raises(SystemExit, match="different checkpoint weights/index"):
+        qs.StreamedHarness(tiny["parent"], "cpu", torch.float32, tiny["manifest"], read_dir=staged)
+
+
+def test_source_recheck_rejects_both_copies_changed_together(tiny, tmp_path):
+    parent, staged = tmp_path / "parent", tmp_path / "staged"
+    shutil.copytree(tiny["parent"], parent)
+    shutil.copytree(parent, staged)
+    identity = qs.bind_checkpoint_source(parent, staged)
+    for directory in (parent, staged):
+        with (directory / "model.safetensors").open("ab") as handle:
+            handle.write(b"changed")
+    with pytest.raises(SystemExit, match="changed after the initial provenance check"):
+        qs.recheck_checkpoint_source(identity)
+
+
+def test_weight_manifest_covers_index_and_all_shards(tmp_path):
+    index = tmp_path / "model.safetensors.index.json"
+    index.write_text(json.dumps({"weight_map": {"x": "a.safetensors", "y": "b.safetensors"}}))
+    (tmp_path / "a.safetensors").write_bytes(b"a")
+    (tmp_path / "b.safetensors").write_bytes(b"b")
+    first = qs.checkpoint_weight_manifest(tmp_path)
+    assert set(first["files"]) == {index.name, "a.safetensors", "b.safetensors"}
+    (tmp_path / "b.safetensors").write_bytes(b"c")
+    assert qs.checkpoint_weight_manifest(tmp_path)["sha256"] != first["sha256"]
+    (tmp_path / "b.safetensors").unlink()
+    with pytest.raises(SystemExit, match="missing or escaping"):
+        qs.checkpoint_weight_manifest(tmp_path)
+
+
+def test_weight_manifest_rejects_unbound_single_file_beside_index(tmp_path):
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"x": "a.safetensors"}})
+    )
+    (tmp_path / "a.safetensors").write_bytes(b"indexed weights")
+    (tmp_path / "model.safetensors").write_bytes(b"different HF-preferred weights")
+    with pytest.raises(SystemExit, match="ambiguous single-file and indexed"):
+        qs.checkpoint_weight_manifest(tmp_path)
+
+
+def test_weight_manifest_accepts_index_explicitly_naming_the_single_file(tmp_path):
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"x": "model.safetensors"}})
+    )
+    (tmp_path / "model.safetensors").write_bytes(b"same engine source")
+    manifest = qs.checkpoint_weight_manifest(tmp_path)
+    assert set(manifest["files"]) == {"model.safetensors", "model.safetensors.index.json"}
+
+
+def test_weight_manifest_rejects_symlink_escape(tmp_path):
+    root = tmp_path / "checkpoint"
+    root.mkdir()
+    outside = tmp_path / "outside.safetensors"
+    outside.write_bytes(b"outside weights")
+    try:
+        (root / "model.safetensors").symlink_to(outside)
+    except OSError:
+        pytest.skip("host does not permit creating symlinks")
+    with pytest.raises(SystemExit, match="missing or escaping"):
+        qs.checkpoint_weight_manifest(root)
+
+
+@pytest.mark.parametrize("name", ["../escaped.safetensors", "/escaped.safetensors", "..\\escaped.safetensors"])
+def test_weight_manifest_rejects_index_path_escape(tmp_path, name):
+    (tmp_path / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"x": name}}))
+    with pytest.raises(SystemExit, match="unsafe checkpoint file path"):
+        qs.checkpoint_weight_manifest(tmp_path)

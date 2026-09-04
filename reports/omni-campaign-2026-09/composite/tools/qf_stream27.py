@@ -66,6 +66,7 @@ from __future__ import annotations
 import argparse
 import copy
 import gc
+import hashlib
 import json
 import os
 import sys
@@ -120,6 +121,86 @@ def log(message: str) -> None:
 
 
 # ----------------------------------------------------------------- readers
+def checkpoint_weight_manifest(directory: str | Path) -> dict[str, Any]:
+    """Hash the exact index and weight files the streamed reader will consume.
+
+    A staging directory is a byte copy, not merely a compatible architecture.
+    Hash in bounded chunks; never load a 27B checkpoint to check its identity.
+    """
+    root = Path(directory).resolve(strict=True)
+    index = root / "model.safetensors.index.json"
+    if index.is_file():
+        body = json.loads(index.read_text(encoding="utf-8"))
+        weight_map = body.get("weight_map")
+        if not isinstance(weight_map, dict) or not weight_map:
+            raise SystemExit(f"{root}: missing or empty checkpoint weight_map")
+        shards = list(weight_map.values())
+        if any(not isinstance(name, str) or not name for name in shards):
+            raise SystemExit(f"{root}: invalid checkpoint shard name")
+        # HF from_pretrained prefers a single file; our streamed reader prefers
+        # the index. Refuse layouts that would give the two engines different
+        # source weights despite an identical indexed-shard manifest.
+        if (root / "model.safetensors").exists() and set(shards) != {"model.safetensors"}:
+            raise SystemExit(f"{root}: ambiguous single-file and indexed checkpoint layout")
+        names = sorted(set(shards)) + [index.name]
+    else:
+        names = ["model.safetensors"]
+    files: dict[str, Any] = {}
+    for name in sorted(names):
+        relative = Path(name)
+        if relative.anchor or ".." in relative.parts or "\\" in name:
+            raise SystemExit(f"{root}: unsafe checkpoint file path {name!r}")
+        path = root / relative
+        if not path.is_file() or not path.resolve().is_relative_to(root):
+            raise SystemExit(f"{root}: missing or escaping checkpoint file {name!r}")
+        before = path.stat()
+        digest = hashlib.sha256()
+        length = 0
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+                digest.update(chunk)
+                length += len(chunk)
+        after = path.stat()
+        stamp = lambda stat: (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        if stamp(before) != stamp(after) or length != before.st_size:
+            raise SystemExit(f"{root}: checkpoint file changed while hashing {name!r}")
+        files[name] = {"bytes": length, "sha256": digest.hexdigest()}
+    return {"files": files, "sha256": qf_arch.canonical_sha256(files)}
+
+
+def bind_checkpoint_source(model_dir: str | Path, read_dir: str | Path) -> dict[str, Any]:
+    """Refuse substituted staged weights BEFORE model construction or capture."""
+    parent = Path(model_dir).resolve(strict=True)
+    source = Path(read_dir).resolve(strict=True)
+    declared = qf_arch.load_config(parent).to_dict()
+    staged = qf_arch.load_config(source).to_dict()
+    for body in (declared, staged):
+        body.pop("_name_or_path", None)
+        for sub in body.values():
+            if isinstance(sub, dict):
+                sub.pop("_name_or_path", None)
+    if declared != staged:
+        raise SystemExit(f"--src-dir {source} carries a different config.json than --parent {parent}")
+    parent_manifest = checkpoint_weight_manifest(parent)
+    source_manifest = parent_manifest if source == parent else checkpoint_weight_manifest(source)
+    if parent_manifest != source_manifest:
+        raise SystemExit(f"--src-dir {source} carries different checkpoint weights/index than --parent {parent}")
+    return {
+        "schema": "qf.checkpoint-source-identity.v1",
+        "parent_dir": str(parent), "read_dir": str(source),
+        "mode": "same-resolved-path" if source == parent else "byte-identical-staged-checkpoint",
+        "config_sha256": qf_arch.canonical_sha256(declared),
+        "weights": parent_manifest,
+    }
+
+
+def recheck_checkpoint_source(identity: dict[str, Any]) -> None:
+    """Do not assemble or seal a child after its source changed during capture."""
+    current = bind_checkpoint_source(identity["parent_dir"], identity["read_dir"])
+    if current != identity:
+        raise SystemExit("checkpoint source changed after the initial provenance check")
+
+
 class SingleOrShardedReader(tps_probe.ShardReader):
     """``tps_probe.ShardReader`` that also accepts an un-sharded checkpoint.
 
@@ -722,17 +803,7 @@ class StreamedHarness:
         *, read_dir: str | Path | None = None,
     ) -> None:
         read_dir = Path(read_dir or model_dir)
-        if read_dir != Path(model_dir):
-            declared = qf_arch.load_config(model_dir).to_dict()
-            staged = qf_arch.load_config(read_dir).to_dict()
-            for body in (declared, staged):
-                # The only path-dependent field a loaded config carries.
-                body.pop("_name_or_path", None)
-                for sub in body.values():
-                    if isinstance(sub, dict):
-                        sub.pop("_name_or_path", None)
-            if declared != staged:
-                raise SystemExit(f"--src-dir {read_dir} carries a different config.json than --parent {model_dir}")
+        self.source_identity = bind_checkpoint_source(model_dir, read_dir)
         self.engine = StreamedTrunk(read_dir, device, dtype)
         self.model_dir = read_dir
         self.parent_dir = Path(model_dir)
@@ -1311,6 +1382,7 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
         "parity": None,
         "causal_masks": None,
         "evidence_tokenizer": evidence_tokenizer,
+        "source_identity": harness.source_identity,
         "engine": {
             "streamed": True,
             "solve_form": args.solve_form,
@@ -1364,12 +1436,14 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
         torch.cuda.empty_cache()
 
     log("assembling the child on the CPU from the parent + the folded sites")
+    recheck_checkpoint_source(receipts["source_identity"])
     model, parent_counts, child_counts = assemble_child(read_dir, folded, keep, dtype)
     log(f"child parameters {child_counts['live']:,} (closed form agrees; parent live {parent_counts['live']:,})")
     export = qf_export.export_child(model, args.out, parent_dir=args.parent, sidecars=True)
     child_config = copy.deepcopy(model.config)
     del model
     gc.collect()
+    recheck_checkpoint_source(receipts["source_identity"])
 
     mtp = {"mtp": "not present in the parent index"}
     if args.drop_mtp:

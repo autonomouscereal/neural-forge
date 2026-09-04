@@ -253,7 +253,12 @@ def test_synthetic_untied_band_grows_headers_by_65536_x_hidden_x_2_and_rows_are_
     assert manifest["config"]["vocab_size"] == VOCAB + 4096 + MUSIC_BAND
     assert manifest["chimera_commit"] == tree_commit
     # receipt carries what the row asks for
-    assert isinstance(receipt["peak_rss_bytes"], int) and receipt["peak_rss_bytes"] > 0
+    if tool.peak_rss_bytes() is None:
+        assert receipt["peak_rss_bytes"] is None
+    else:
+        assert isinstance(receipt["peak_rss_bytes"], int) and receipt["peak_rss_bytes"] > 0
+    assert receipt["tool"]["sha256"] == tool.file_sha256(TOOL)
+    assert receipt["chimera"]["executable_source"] == tool.executable_source_manifest(CHIMERA_SRC)
     assert {item["name"] for item in receipt["skipped"]["mtp"]} == {"mtp.fc.weight"}
     assert {item["name"] for item in receipt["skipped"]["media"]} == {"model.visual.patch_embed.proj.weight"}
     assert all("sha256" in item for item in receipt["skipped"]["mtp"] + receipt["skipped"]["media"])
@@ -545,13 +550,140 @@ def test_fp16_needs_the_narrowing_waiver_and_the_receipt_records_the_range(tmp_p
     assert receipt_of(plain)["narrowing"] is None and set(checkpoint_dtypes(plain)) == {"BF16"}
 
 
-def test_spec_commit_is_the_tree_commit_c5e6052_not_5a87018(tree_commit):
-    """Minor (spec): STAGES.json/run book now name c5e6052; 5a87018 is refused against this tree
-    even though src/chimera_omni is byte-identical at 5a87018, c5e6052 and 5b35906."""
+def test_commit_binding_uses_the_actual_tree_even_when_package_bytes_are_identical(tree_commit):
+    """A runner may use a newer checkout; its own commit must be named accurately."""
 
+    assert tool.commits_match(tree_commit[:7], tree_commit)
     assert tool.commits_match("c5e6052", tree_commit) == tree_commit.startswith("c5e6052")
-    assert tree_commit.startswith("c5e6052"), tree_commit
-    assert not tool.commits_match("5a87018", tree_commit)
+    assert not tool.commits_match("5a87018", "c5e6052")
+
+
+def _file_bytes(root: Path) -> dict[str, bytes]:
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+
+@pytest.mark.parametrize("relation", ["same", "output_below_source", "source_below_output"])
+def test_source_output_overlap_preserves_every_existing_file(tmp_path, tree_commit, relation):
+    parent = tmp_path / "parent"
+    src = parent / "nested" if relation == "source_below_output" else parent
+    _write_synthetic_qwen(src)
+    # Use the sharded filename that the old --overwrite loop would delete.
+    (src / "model.safetensors").rename(src / ONE_SHARD)
+    out = src / "child" if relation == "output_below_source" else parent
+    before = _file_bytes(parent)
+    proc = run_tool([
+        "--src", str(src), "--out", str(out), "--overwrite", "--chimera-commit", tree_commit,
+    ], expect=3)
+    assert "overlaps --src" in proc.stderr
+    assert _file_bytes(parent) == before
+
+
+def test_symlinked_output_alias_cannot_overwrite_source(tmp_path, tree_commit):
+    src = _write_synthetic_qwen(tmp_path / "parent")
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(src, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("directory symlinks are unavailable for this host/account")
+    before = _file_bytes(src)
+    proc = run_tool([
+        "--src", str(src), "--out", str(alias), "--overwrite", "--chimera-commit", tree_commit,
+    ], expect=3)
+    assert "overlaps --src" in proc.stderr and _file_bytes(src) == before
+
+
+@pytest.mark.parametrize("invalid", [
+    ["--ledger-band", "control:10"],
+    ["--ledger-band", "music_codes:10", "--ledger-band", "music_codes:10"],
+    [],  # declared swish with no waiver: the profile itself refuses
+])
+def test_invalid_profile_or_band_preserves_previous_output(tmp_path, tree_commit, invalid):
+    src = _write_synthetic_qwen(tmp_path / "parent", output_gate_type="swish" if not invalid else None)
+    out = tmp_path / "old-output"
+    out.mkdir()
+    (out / "config.json").write_text('{"schema":"chimera_omni.checkpoint.v1"}', encoding="utf-8")
+    (out / ONE_SHARD).write_bytes(b"previous checkpoint must survive")
+    before = _file_bytes(out)
+    run_tool([
+        "--src", str(src), "--out", str(out), "--overwrite", "--chimera-commit", tree_commit, *invalid,
+    ], expect=3)
+    assert _file_bytes(out) == before
+
+
+def test_unrelated_hf_checkpoint_is_not_an_overwrite_target(tmp_path):
+    other_parent = tmp_path / "another-parent"
+    other_parent.mkdir()
+    (other_parent / "config.json").write_text('{"model_type":"qwen3_5"}', encoding="utf-8")
+    (other_parent / ONE_SHARD).write_bytes(b"registered parent")
+    before = _file_bytes(other_parent)
+    with pytest.raises(tool.Refusal, match="non-Chimera checkpoint"):
+        tool.prepare_out_dir(other_parent, overwrite=True)
+    assert _file_bytes(other_parent) == before
+
+
+def test_unknown_top_level_shard_refuses_before_clearing_known_products(tmp_path):
+    out = tmp_path / "output"
+    out.mkdir()
+    (out / ONE_SHARD).write_bytes(b"previous known shard")
+    (out / "unrelated.safetensors").write_bytes(b"unrelated data")
+    before = _file_bytes(out)
+    with pytest.raises(tool.Refusal, match="not the tool's files"):
+        tool.prepare_out_dir(out, overwrite=True)
+    assert _file_bytes(out) == before
+
+
+def test_custom_receipt_cannot_replace_source_or_output_config(tmp_path, tree_commit):
+    src = _write_synthetic_qwen(tmp_path / "parent")
+    out = tmp_path / "unwritten-output"
+    before = _file_bytes(src)
+    for receipt in (src / "config.json", out / "config.json"):
+        proc = run_tool([
+            "--src", str(src), "--out", str(out), "--receipt", str(receipt),
+            "--chimera-commit", tree_commit,
+        ], expect=3)
+        assert "REFUSED" in proc.stderr and not out.exists()
+        assert _file_bytes(src) == before
+
+
+def test_archive_source_manifest_tracks_actual_bytes_not_the_commit_label(tmp_path):
+    package = tmp_path / "src" / "chimera_omni"
+    package.mkdir(parents=True)
+    module = package / "__init__.py"
+    module.write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "COMMIT").write_text("c5e6052\n", encoding="utf-8")
+    before = tool.executable_source_manifest(tmp_path)
+    assert before["files"] == {"src/chimera_omni/__init__.py": tool.file_sha256(module)}
+    assert before["checkout_executable_files_clean"] is None
+    module.write_text("VALUE = 2\n", encoding="utf-8")
+    after = tool.executable_source_manifest(tmp_path)
+    assert before["sha256"] != after["sha256"]
+    assert tool.resolve_tree_commit(tmp_path)[0] == "c5e6052"
+
+
+def test_dirty_executable_checkout_is_refused_but_document_edits_are_allowed(tmp_path):
+    package = tmp_path / "src" / "chimera_omni"
+    package.mkdir(parents=True)
+    module = package / "__init__.py"
+    module.write_text("VALUE = 1\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text("Original\n", encoding="utf-8")
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True)
+
+    git("init")
+    git("add", ".")
+    git("-c", "user.name=S0 test", "-c", "user.email=s0@example.invalid", "commit", "-m", "fixture")
+    before = tool.executable_source_manifest(tmp_path)
+    assert before["checkout_executable_files_clean"] is True
+    readme.write_text("User documentation edit\n", encoding="utf-8")
+    assert tool.executable_source_manifest(tmp_path) == before
+    module.write_text("VALUE = 2\n", encoding="utf-8")
+    with pytest.raises(tool.Refusal, match="dirty executable source"):
+        tool.executable_source_manifest(tmp_path)
+    git("add", "src/chimera_omni/__init__.py")
+    with pytest.raises(tool.Refusal, match="dirty executable source"):
+        tool.executable_source_manifest(tmp_path)
 
 
 # --------------------------------------------------------------------------
