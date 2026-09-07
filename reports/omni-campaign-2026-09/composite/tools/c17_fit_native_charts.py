@@ -162,11 +162,37 @@ def scores(pairs, mask, weight, chunk):
             "r2": 1.0 - error / max(variance, 1e-30), "rows": count, "width": width}
 
 
+def design_regime(pairs, vectors, mask, *, shared_host_design):
+    """Row-identity rank bound, not a measured rank or independence claim.
+
+    C_out repeats exactly the same host design for each K3 target layer. Those
+    observations affect the objective, but cannot add independent design rows.
+    C_in can have different source-layer designs at each original host pair;
+    their identities still provide only an upper bound on numerical rank.
+    """
+    if shared_host_design:
+        require(all(x is pairs[0][0] for x, _ in pairs), "shared host design must reuse the same captured tensor")
+    original_rows = int(torch.unique(vectors["host_flat_position"][mask]).numel())
+    observations = int(mask.sum()) * len(pairs)
+    design_rows = original_rows * (1 if shared_host_design else len(pairs))
+    width = pairs[0][0].shape[1]
+    return {"original_host_pair_rows": original_rows, "pooled_observations": observations,
+        "source_layers": len(pairs), "design_width": width,
+        "design_row_identity_scope": "shared_host_pair" if shared_host_design else "source_layer_and_host_pair",
+        "design_row_identity_upper_bound": design_rows, "rank_upper_bound": min(design_rows, width),
+        "underdetermined_by_row_count": design_rows < width,
+        "underdetermined": True if design_rows < width else None,
+        "numerical_rank": None, "rank_measured": False, "full_column_rank_verified": False,
+        "interpretation": "row identities only; enough rows do not establish full column rank"}
+
+
 @torch.no_grad()
-def fit_direction(pairs, vectors, *, seed=0, chunk=512):
+def fit_direction(pairs, vectors, *, seed=0, chunk=512, shared_host_design=False):
     fit = vectors["held"] == 0
     held = ~fit
     inner_fit, inner_check = split_fit_groups(vectors, seed)
+    refit_regime = design_regime(pairs, vectors, fit, shared_host_design=shared_host_design)
+    inner_regime = design_regime(pairs, vectors, inner_fit, shared_host_design=shared_host_design)
     a, b = gram(pairs, inner_fit, chunk)
     trail = []
     best = None
@@ -192,7 +218,8 @@ def fit_direction(pairs, vectors, *, seed=0, chunk=512):
         "inner_check_groups": torch.unique(vectors["evidence_row_index"][inner_check]).tolist(),
         "fit_rows": int(fit.sum()) * len(pairs), "held_rows": int(held.sum()) * len(pairs),
         "design_width": pairs[0][0].shape[1],
-        "underdetermined": int(fit.sum()) * len(pairs) < pairs[0][0].shape[1],
+        "underdetermined": refit_regime["underdetermined"],
+        "refit_regime": refit_regime, "inner_fit_regime": inner_regime,
         "fp64_fit": scores(pairs, fit, weight, chunk), "fp64_held": scores(pairs, held, weight, chunk),
         "stored_f32_fit": scores(pairs, fit, stored, chunk), "stored_f32_held": scores(pairs, held, stored, chunk),
         "zero_held": scores(pairs, held, zero, chunk), "regularization_escalated": False,
@@ -282,7 +309,8 @@ def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Pa
         pins.file(path.resolve(), host.digest(path))
     pins.stable()
     print(f"[c17-native-fit] host L{layer:02d} / K3 {layers}: original paired groups verified; fitting two constrained maps", flush=True)
-    c_out, out_notes = fit_direction([(hp["ffn_input"], x["ffn_input"]) for x in ks], vectors, seed=seed, chunk=chunk)
+    c_out, out_notes = fit_direction([(hp["ffn_input"], x["ffn_input"]) for x in ks], vectors,
+                                     seed=seed, chunk=chunk, shared_host_design=True)
     c_in, in_notes = fit_direction([(x["ffn_output"], hp["ffn_output"]) for x in ks], vectors, seed=seed, chunk=chunk)
     pins.stable()
     out.mkdir(parents=True, exist_ok=False)

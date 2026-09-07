@@ -78,6 +78,16 @@ back to an identity/prior. Stored F32 coefficients are measured separately from
 the FP64 solution, with fit/held relL2, mean/p05 cosine, R² and held zero baseline.
 These are diagnostics, **not invented intelligence thresholds**.
 
+Both `refit_regime` and `inner_fit_regime` distinguish unique original host-pair
+row identities from pooled observations. For `C_out`, repeating the same host
+design against multiple K3 layers increases observation count, not the design
+row bound. For `C_in`, source-layer/host-pair identities may add design rows, but
+are still only a rank upper bound. Numerical rank is not measured. The legacy
+`underdetermined` diagnostic is `true` when the row bound proves a shortage and
+`null` otherwise; enough row identities never establish full column rank.
+Neither these counts nor their interpretation changes fitting, lambda selection,
+stored coefficients, scores, or candidate-only acceptance restrictions.
+
 `max_working_bytes` bounds a conservative numerical-workspace estimate; it excludes
 OS pages backing the mapped capture files and is not an RSS or memory reservation.
 Budget those captured rows separately. All source files are full-hashed with stat
