@@ -1,0 +1,28 @@
+# Docker Official Python 3.12 slim-bookworm, linux/amd64 manifest resolved
+# read-only on the AI server on 2026-09-07. Build, inspect, and launch by the
+# resulting immutable image ID; do not mutate the existing host virtualenv.
+FROM docker.io/library/python@sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef
+
+# Match the accepted host runtime's PyTorch/CUDA and array/serialization versions.
+# torch's wheel supplies its CUDA user-space dependencies; the allocator exposes
+# the host NVIDIA driver and exactly the leased GPU. No CUDA toolkit is required
+# for the pure-torch KDA path. This is not an FLA/mixer-diagnostic runtime.
+RUN python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 \
+        torch==2.11.0+cu128 \
+    && python -m pip install --no-cache-dir \
+        numpy==2.4.4 safetensors==0.8.0 psutil==7.2.2 pytest==9.1.1 \
+    && python -m pip check
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache
+
+# AI-server campaign directories are owned by cereal (uid/gid 1000).
+# Source/model inputs are supplied as read-only mounts, outputs as one new mount.
+USER 1000:1000
+WORKDIR /tmp
+ENTRYPOINT []
+CMD ["python", "--version"]

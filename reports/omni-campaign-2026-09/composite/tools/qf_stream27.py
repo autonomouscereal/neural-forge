@@ -68,6 +68,7 @@ import copy
 import gc
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -107,6 +108,7 @@ EXTRA_FLAGS = {
     "--streamed": ("streamed", False),
     "--resident-check": ("resident_check", False),
     "--allow-share-read": ("allow_share_read", False),
+    "--full-sequence-preflight": ("full_sequence_preflight", False),
 }
 #: Valued flags this entry adds (``--flag VALUE``), likewise stripped.
 EXTRA_VALUED = {
@@ -1160,6 +1162,53 @@ def mlp_axis_streamed(
 
 # --------------------------------------------------------------- parity
 @torch.no_grad()
+def full_sequence_preflight(harness: StreamedHarness) -> dict[str, Any]:
+    """Exercise one complete evidence row before expensive Gram/parity allocation.
+
+    This is a finite-output and measured-memory check, NOT behavioural acceptance
+    or a parent comparison. It keeps the exact corpus, kernels and layer weights.
+    The last-token head avoids materialising a sequence-by-vocabulary tensor.
+    """
+    import psutil
+
+    if harness.residual.boundary != 0 or harness.engine.layers.folded:
+        raise SystemExit("full-sequence preflight requires the pristine engine")
+    batch_index, ids = harness.batches[0]
+    cuda = str(harness.device).startswith("cuda")
+    before_rss = psutil.Process().memory_info().rss
+    started = time.time()
+    if cuda:
+        torch.cuda.synchronize(harness.device)
+        torch.cuda.reset_peak_memory_stats(harness.device)
+    hidden = harness.engine.final_hidden(ids)
+    expected_shape = (*ids.shape, int(harness.engine.text_config.hidden_size))
+    if tuple(hidden.shape) != expected_shape or not bool(torch.isfinite(hidden).all()):
+        raise SystemExit("full-sequence preflight produced invalid final hidden states")
+    last_logits = harness.engine.head(hidden[:, -1:])
+    expected_logits = (ids.shape[0], 1, int(harness.engine.text_config.vocab_size))
+    if tuple(last_logits.shape) != expected_logits or not bool(torch.isfinite(last_logits).all()):
+        raise SystemExit("full-sequence preflight produced invalid last-token logits")
+    if cuda:
+        torch.cuda.synchronize(harness.device)
+    report = {
+        "schema": "qf.full-sequence-preflight.v1", "batch_index": int(batch_index),
+        "input_shape": list(ids.shape), "final_hidden_shape": list(hidden.shape),
+        "input_ids_sha256": hashlib.sha256(ids.detach().cpu().contiguous().numpy().tobytes()).hexdigest(),
+        "layers": harness.engine.count, "finite_hidden_and_last_logits": True,
+        "last_token_argmax": last_logits.argmax(-1).cpu().tolist(),
+        "seconds": round(time.time() - started, 3),
+        "host_rss_before_bytes": before_rss,
+        "host_rss_after_bytes": psutil.Process().memory_info().rss,
+        "host_available_after_bytes": psutil.virtual_memory().available,
+        "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(harness.device) if cuda else None,
+        "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(harness.device) if cuda else None,
+        "scope": "one complete corpus row; no fold quality, parity, or all-modality acceptance claim",
+    }
+    del hidden, last_logits
+    return report
+
+
+@torch.no_grad()
 def streamed_parity(harness: StreamedHarness, sites: tuple[int, ...] = (0, 1, 2), *, resident_check: bool = False) -> dict[str, Any]:
     """:func:`qf_harness.harness_parity` for the streamed engine.
 
@@ -1356,6 +1405,63 @@ def read_dir_of(args: argparse.Namespace) -> str:
     return args.src_dir or args.parent
 
 
+def mtp_inventory(directory: str | Path) -> list[dict[str, Any]]:
+    """Count indexed MTP tensors from headers, without loading their weights."""
+    root = Path(directory).resolve(strict=True)
+    reader = SingleOrShardedReader(root, device="cpu")
+    rows = []
+    for name in sorted(reader.weight_map):
+        if not name.startswith(qf_arch.carried_prefixes()):
+            continue
+        shard = reader.weight_map[name]
+        relative = Path(shard)
+        if relative.anchor or ".." in relative.parts or "\\" in shard:
+            raise SystemExit(f"unsafe MTP shard path {shard!r}")
+        if not (root / relative).resolve(strict=True).is_relative_to(root):
+            raise SystemExit(f"escaping MTP shard path {shard!r}")
+        shape = list(reader._handle(shard).get_slice(name).get_shape())
+        rows.append({"name": name, "shape": shape, "parameters": math.prod(shape)})
+    return rows
+
+
+def drop_exported_mtp(parent_dir: str | Path, child_dir: str | Path) -> dict[str, Any]:
+    """Make the canonical text config agree with absent MTP weights.
+
+    MTP was never loaded by the stock HF model. Its exact omitted parameter
+    count is reported separately, never credited to the C2 fold ratio.
+    """
+    path = Path(child_dir) / "config.json"
+    body = json.loads(path.read_text(encoding="utf-8"))
+    if body.get("model_type") == "qwen3_5":
+        text = body.get("text_config")
+        if not isinstance(text, dict):
+            raise SystemExit("VL child has no canonical text_config for MTP metadata")
+        field = "text_config.mtp_num_hidden_layers"
+    else:
+        text = body
+        field = "mtp_num_hidden_layers"
+    dropped = mtp_inventory(parent_dir)
+    if mtp_inventory(child_dir):
+        raise SystemExit("cannot declare MTP dropped: exported child still contains MTP tensors")
+    previous = text.get("mtp_num_hidden_layers")
+    text["mtp_num_hidden_layers"] = 0
+    # Keep an existing legacy alias consistent, but do not add one to VL configs.
+    if text is not body and "mtp_num_hidden_layers" in body:
+        body["mtp_num_hidden_layers"] = 0
+    path.write_text(json.dumps(body, indent=2), encoding="utf-8")
+    return {
+        "mtp": "dropped" if dropped else "not present in the parent checkpoint",
+        "config_field": field,
+        "previous_config_value": previous,
+        "exported_config_value": 0,
+        "dropped_tensors": dropped,
+        "dropped_parameters": sum(row["parameters"] for row in dropped),
+        "count_method": "indexed safetensors header shapes; no tensor materialization",
+        "credited_to_fold_ratio": False,
+        "note": "MTP is absent from the child; omitted MTP parameters are outside the stock-model C2 ratio",
+    }
+
+
 def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
     started = time.time()
     refuse_unsupported(args)
@@ -1380,6 +1486,7 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
 
     receipts: dict[str, Any] = {
         "parity": None,
+        "full_sequence_preflight": None,
         "causal_masks": None,
         "evidence_tokenizer": evidence_tokenizer,
         "source_identity": harness.source_identity,
@@ -1398,6 +1505,9 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
         f"vs parent {str(evidence_tokenizer['parent_tokenizer_sha256'])[:16]}: "
         f"{'match' if evidence_tokenizer['matches'] else 'MISMATCH (allowed)'}"
     )
+    if args.full_sequence_preflight:
+        receipts["full_sequence_preflight"] = full_sequence_preflight(harness)
+        log("full-sequence preflight: " + json.dumps(receipts["full_sequence_preflight"], sort_keys=True))
     if not args.no_parity:
         receipts["parity"] = streamed_parity(harness, resident_check=args.resident_check)
         log(
@@ -1447,11 +1557,7 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
 
     mtp = {"mtp": "not present in the parent index"}
     if args.drop_mtp:
-        mtp = {"mtp": "dropped", "note": "mtp_num_hidden_layers set to 0 in the child config"}
-        config_path = out / "config.json"
-        body = json.loads(config_path.read_text(encoding="utf-8"))
-        body["mtp_num_hidden_layers"] = 0
-        config_path.write_text(json.dumps(body, indent=2), encoding="utf-8")
+        mtp = drop_exported_mtp(read_dir, out)
 
     verify, reloaded = qf_export.verify_child(args.out, device="cpu", dtype=torch.float32)
     log(
