@@ -900,6 +900,27 @@ class Pair:
         return Pair(self.prefix.clone(), self.blocks.clone())
 
 
+def teacher_temporary_lifetime(prefix: torch.Tensor, persisted_prefix: torch.Tensor,
+                               taps: dict[str, Any]) -> dict[str, Any]:
+    """Drop the unused teacher latent tap; caller must also delete its prefix alias.
+
+    Fit consumes the FOLDED latent and the teacher y_lat/router, never this tap.
+    Report logical reference sizes, not an unmeasured allocator-memory saving.
+    A same-device residual Pair may still own the prefix storage legitimately.
+    """
+    latent = taps.pop("latent_in", None)
+    released = {name: {"logical_bytes": value.numel() * value.element_size(),
+                       "device": str(value.device), "dtype": str(value.dtype)}
+                for name, value in (("teacher_prefix_local_alias", prefix), ("unused_teacher_latent_in", latent))
+                if value is not None}
+    return {"released_references": released,
+            "prefix_storage_retained_by_residual_pair":
+                prefix.device == persisted_prefix.device and
+                prefix.untyped_storage().data_ptr() == persisted_prefix.untyped_storage().data_ptr(),
+            "cuda_allocator_bytes_freed": None,
+            "note": "reference logical sizes only; CPU copies preserve dtype/values; no allocator measurement"}
+
+
 def attention_half(runner: StreamedLayer, pair: Pair, corpus: Corpus, device: torch.device, *,
                    row_chunk: int, token_chunk: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """`_forward_attn_residual` up to the FFN input.  Returns (carried, ffn_in, blocks_after).
@@ -2157,7 +2178,10 @@ class DualStreamRun(StreamRun):
             entry["router"] = {"experts": int(counts.numel()), "experts_touched": int(t_taps["experts_touched"]),
                                "max_tokens_on_one_expert": int(counts.max()) if counts.numel() else 0}
         new_teacher = Pair(t_prefix_new.to(self.resid_device), t_blocks_after)
-        del t_ffn_in
+        entry["teacher_temporary_lifetime"] = teacher_temporary_lifetime(t_prefix_new, new_teacher.prefix, t_taps)
+        # The synchronous residual-device copy above owns the teacher output now.
+        # Keeping this local GPU alias through folded MLA needlessly retains N*H.
+        del t_prefix_new, t_ffn_in
 
         # ---- folded ----------------------------------------------------------
         fold_start = time.time()
