@@ -31,7 +31,7 @@ def dump(path, body):
 def bundle(tmp_path):
     torch.manual_seed(92)
     block, width, inner, head = 0, 8, 32, 2
-    frozen = {k: (torch.randn(shape) * .15).to(torch.float8_e4m3fn)
+    frozen = {k: (torch.randn(shape, dtype=torch.float32) * .15).to(torch.float8_e4m3fn)
               for k, shape in tool.frozen_shapes(block, width, inner, head).items()}
     frozen_record = tool.write_tensors(tmp_path / "frozen.safetensors", frozen)
     records, entries = [], []
@@ -41,20 +41,20 @@ def bundle(tmp_path):
         image = hash_text("fixture image " + str(index))
         prompt = hash_text("fixture prompt " + str(index))
         name = "fixture" + str(index)
-        state = {"source_ids": torch.zeros(1, total, 3),
-                 "rotation_generated": torch.eye(2).reshape(1, 1, 1, 1, 2, 2).repeat(1, 1, total, head // 2, 1, 1),
+        state = {"source_ids": torch.zeros(1, total, 3, dtype=torch.float32),
+                 "rotation_generated": torch.eye(2, dtype=torch.float32).reshape(1, 1, 1, 1, 2, 2).repeat(1, 1, total, head // 2, 1, 1),
                  "temb": torch.zeros(1, width, dtype=torch.bfloat16),
                  "text_attention_mask": torch.zeros(1, count_txt, dtype=torch.bfloat16),
                  "prediction": torch.zeros(1, 16, 1, 8, 12, dtype=torch.bfloat16),
                  "model_input": torch.zeros(1, 16, 1, 8, 12, dtype=torch.bfloat16),
-                 "sigma": torch.tensor([.3 + index * .5]),
+                 "sigma": torch.tensor([.3 + index * .5], dtype=torch.float32),
                  "image_patch_indices": torch.zeros(count_img, 3, dtype=torch.int64),
                  "joint_row_kind": torch.tensor([0] * count_txt + [1] * count_img, dtype=torch.int8),
                  "context_token_ids": torch.arange(count_txt)[None],
                  "context_valid": torch.tensor([[True] * 10 + [False] * 2])}
         state["rotation_used"] = state["rotation_generated"].bfloat16()
         for stream, count in (("img", count_img), ("txt", count_txt)):
-            x = torch.randn(1, count, width).bfloat16()
+            x = torch.randn(1, count, width, dtype=torch.float32).bfloat16()
             _, y = tool.mlp_forward(x, tool.mlp_weights(frozen, block, stream, "cpu"))
             state[stream + "_mlp_in"], state[stream + "_mlp_out"] = x, y
             for suffix in ("_in", "_out", "_attn_out"):
@@ -79,6 +79,22 @@ def bundle(tmp_path):
     policy_path = tmp_path / "fixture_policy.json"
     dump(policy_path, policy)
     return receipt_path, receipt, policy_path, policy
+
+
+def test_fixture_float_identities_do_not_depend_on_global_default_dtype(tmp_path):
+    previous = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(torch.float64)
+        path, receipt, *_ = bundle(tmp_path)
+        data = tool.load_captures([path], fixture=True)
+        assert len(data["forwards"]) == 2
+        for record in receipt["captures"]:
+            state = tool.load_file(str(tmp_path / record["file"]))
+            for name in ("sigma", "source_ids", "rotation_generated"):
+                assert state[name].dtype == torch.float32
+            assert float(state["sigma"][0]) == record["sigma"]
+    finally:
+        torch.set_default_dtype(previous)
 
 
 def test_fixture_conversion_folds_both_biased_mlps_and_preserves_every_other_source_byte(tmp_path):
