@@ -89,7 +89,7 @@ def test_candidate_fits_actual_input_and_write_directions(inputs):
     maps = record["arms"]["ridge"]["native_boundary_provenance"]["maps"]
     assert maps["C_in"]["domain"][0]["boundary"] == "ffn_output"
     assert maps["C_out"]["domain"][0]["boundary"] == "ffn_input"
-    with pytest.raises(SystemExit, match="native boundary provenance|legacy charts"):
+    with pytest.raises(SystemExit, match="native chart boundary provenance|legacy charts"):
         tool.installer.load_chart(str(out), 0, 6, 4, False)
 
 
@@ -208,3 +208,44 @@ def test_one_original_fit_group_is_not_enough(inputs):
     vectors["evidence_row_index"][vectors["held"] == 0] = 0
     with pytest.raises(tool.Refusal, match="two ORIGINAL fit"):
         tool.fit_direction([data[:2]], vectors)
+
+
+@pytest.mark.parametrize("fault", [None, "prefix", "missing_layer", "not_exact"])
+def test_selected_window_layer_has_accepted_prefix_evidence(inputs, fault):
+    root, plan, *_ = inputs
+    plan = copy.deepcopy(plan)
+    item = plan["k3_captures"][0]
+    accepted = json.loads(Path(item["accepted_receipt"]["path"]).read_text())
+    accepted["layers"]["1"]["prefix_out_sha256"] = {"folded": "8" * 64}
+    item["accepted_receipt"] = write_json(Path(item["accepted_receipt"]["path"]), accepted)
+    captured = json.loads(Path(item["capture"]["path"]).read_text())
+    captured["accepted_receipt"] = item["accepted_receipt"]
+    captured["final_window_verification"] = {"all_folded_prefixes_exact": fault != "not_exact",
+                                            "layers": [] if fault == "missing_layer" else [1]}
+    captured["layers"][0]["accepted_folded_prefix_exact"] = True
+    captured["layers"][0]["folded_prefix_sha256"] = ("0" if fault == "prefix" else "8") * 64
+    item["capture"] = write_json(Path(item["capture"]["path"]), captured)
+    if fault is None:
+        record, _ = invoke(inputs, plan)
+        assert record["production_install_eligible"] is False
+    else:
+        with pytest.raises(tool.Refusal, match="window-prefix"):
+            invoke(inputs, plan)
+
+
+def test_no_output_acceptance_when_source_changes_during_fit(inputs, monkeypatch):
+    root, _, *_ = inputs
+    original = tool.fit_direction
+    changed = False
+    def mutate(*args, **kwargs):
+        nonlocal changed
+        result = original(*args, **kwargs)
+        if not changed:
+            path = root / "candidate-plan.json"
+            path.write_text(path.read_text() + " ", encoding="utf-8")
+            changed = True
+        return result
+    monkeypatch.setattr(tool, "fit_direction", mutate)
+    with pytest.raises(tool.Refusal, match="changed during"):
+        invoke(inputs)
+    assert not (root / "candidate" / "L00" / "candidate_layer.json").exists()
