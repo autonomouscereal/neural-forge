@@ -4,7 +4,13 @@
 # tag the verified local ID below as this content-named base and recheck it.
 # Required base ID: sha256:5070872ac7aef716eadc60ec92b0f944521c7899d90c6899a7b1ed1e883942e1
 FROM local/qimg-base:5070872ac7aef716
-ENV USER=codex-operator LOGNAME=codex-operator HOME=/tmp PYTHONDONTWRITEBYTECODE=1 TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
+ENV USER=codex-operator LOGNAME=codex-operator HOME=/tmp PYTHONDONTWRITEBYTECODE=1 TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 CUDA_VISIBLE_DEVICES=0 NVIDIA_VISIBLE_DEVICES=none USER_PASSWORD=""
+# Generic allocator supplies the exact physical NVIDIA UUID. This image exposes
+# only its first mounted device to Torch and never inherits ai-dock credentials,
+# Compose service identity, or a service health probe.
+LABEL com.docker.compose.config-hash="" com.docker.compose.container-number="" com.docker.compose.depends_on="" com.docker.compose.image="" com.docker.compose.oneoff="" com.docker.compose.project="" com.docker.compose.project.config_files="" com.docker.compose.project.working_dir="" com.docker.compose.replace="" com.docker.compose.service="" com.docker.compose.version=""
+RUN /opt/environments/python/comfyui/bin/python -m pip install --no-cache-dir pytest==8.4.2
+HEALTHCHECK NONE
 WORKDIR /tmp
 ENTRYPOINT []
 CMD ["/opt/environments/python/comfyui/bin/python"]
