@@ -296,6 +296,8 @@ class Observe:
             yield record
 
     def __enter__(self):
+        self.had_attention_override = "attention" in vars(self.runner)
+        self.attention_override = vars(self.runner).get("attention")
         self.original_attention = self.runner.attention
         self.original_res = native.apply_attn_res
         self.original_write = native.moe_write
@@ -328,7 +330,12 @@ class Observe:
         return self
 
     def __exit__(self, *_args):
-        self.runner.attention = self.original_attention
+        # A class-bound method stored on its own instance creates a self-cycle
+        # and can retain a whole GPU layer until cyclic garbage collection.
+        if self.had_attention_override:
+            self.runner.attention = self.attention_override
+        else:
+            del self.runner.attention
         native.apply_attn_res = self.original_res
         native.moe_write = self.original_write
 

@@ -416,3 +416,39 @@ def test_all_window_bodies_verified_before_any_replay(accepted, monkeypatch):
     monkeypatch.setattr(tool, "replay", forbidden)
     with pytest.raises(tool.Refusal, match="body differs"):
         invoke(accepted, plan, suffix="body-preflight-bad")
+
+
+def test_observer_restores_descriptor_without_retaining_runner_cycle():
+    import gc
+    import weakref
+
+    class Runner:
+        def attention(self, x, state=None):
+            return x, state
+
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        runner = Runner()
+        ref = weakref.ref(runner)
+        observer = tool.Observe(runner, type("Corpus", (), {"tokens": 0})(), torch.empty(0, dtype=torch.int64))
+        with observer:
+            assert "attention" in vars(runner)
+        assert "attention" not in vars(runner)
+        del observer, runner
+        assert ref() is None
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
+def test_observer_preserves_original_instance_attention_override():
+    class Runner:
+        pass
+
+    runner = Runner()
+    original = lambda x, state=None: (x, state)
+    runner.attention = original
+    with tool.Observe(runner, type("Corpus", (), {"tokens": 0})(), torch.empty(0, dtype=torch.int64)):
+        assert runner.attention is not original
+    assert runner.attention is original
