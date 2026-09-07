@@ -86,6 +86,8 @@ def test_candidate_fits_actual_input_and_write_directions(inputs):
     assert not (out / "L00" / "layer.json").exists()
     assert record["fixture"] and record["production_install_eligible"] is False
     assert record["acceptance"]["exact_installed_computation_gate"] == "not_run"
+    assert record["arms"]["ridge"]["C_out"]["refit_regime"]["design_row_identity_scope"] == "shared_host_pair"
+    assert record["arms"]["ridge"]["C_in"]["refit_regime"]["design_row_identity_scope"] == "source_layer_and_host_pair"
     maps = record["arms"]["ridge"]["native_boundary_provenance"]["maps"]
     assert maps["C_in"]["domain"][0]["boundary"] == "ffn_output"
     assert maps["C_out"]["domain"][0]["boundary"] == "ffn_input"
@@ -133,6 +135,74 @@ def test_pool_reuses_same_group_split_without_held_leakage(inputs):
     torch.testing.assert_close(pooled, single, rtol=1e-5, atol=1e-6)
     assert notes["fit_rows"] == 2 * one["fit_rows"]
     assert notes["inner_fit_groups"] == one["inner_fit_groups"]
+
+
+def test_pooled_host_observations_do_not_inflate_design_row_rank_bound(inputs):
+    _, _, vectors, data, _ = inputs
+    generator = torch.Generator().manual_seed(29)
+    x = torch.randn(16, 14, generator=generator)
+    y = data[1]
+    pairs = [(x, y), (x, y)]
+    actual, notes = tool.fit_direction(pairs, vectors, seed=7, chunk=3, shared_host_design=True)
+    # 12 original fit host rows are repeated twice: 24 observations cannot
+    # establish 14 independent columns. Eight rows remain in inner fit.
+    assert notes["fit_rows"] == 24 and notes["design_width"] == 14
+    for name, rows in (("refit_regime", 12), ("inner_fit_regime", 8)):
+        regime = notes[name]
+        assert regime["original_host_pair_rows"] == rows
+        assert regime["pooled_observations"] == rows * 2
+        assert regime["design_row_identity_upper_bound"] == regime["rank_upper_bound"] == rows
+        assert regime["underdetermined"] is True
+        assert regime["underdetermined_by_row_count"] is True
+        assert regime["numerical_rank"] is None and regime["rank_measured"] is False
+    assert notes["underdetermined"] is True
+    # Changing the diagnostic interpretation never changes the solve or scores.
+    reference, other = tool.fit_direction(pairs, vectors, seed=7, chunk=3)
+    assert torch.equal(actual, reference)
+    for key in ("lambda_ladder", "ridge_rel_selected", "ridge_lambda", "fp64_fit", "fp64_held",
+                "stored_f32_fit", "stored_f32_held", "zero_held"):
+        assert notes[key] == other[key]
+
+
+def test_inner_fit_regime_keeps_its_own_row_shortage(inputs):
+    _, _, vectors, data, _ = inputs
+    x = torch.randn(16, 10, generator=torch.Generator().manual_seed(37))
+    y = data[1]
+    _, notes = tool.fit_direction([(x, y), (x, y)], vectors, seed=7, chunk=3, shared_host_design=True)
+    assert notes["refit_regime"]["original_host_pair_rows"] == 12
+    assert notes["refit_regime"]["underdetermined"] is None
+    assert notes["inner_fit_regime"]["original_host_pair_rows"] == 8
+    assert notes["inner_fit_regime"]["pooled_observations"] == 16
+    assert notes["inner_fit_regime"]["rank_upper_bound"] == 8
+    assert notes["inner_fit_regime"]["underdetermined"] is True
+
+
+def test_enough_row_identities_do_not_claim_full_rank(inputs):
+    _, _, vectors, data, _ = inputs
+    # All design rows are equal: plenty of identities, actual rank only one.
+    x, y = torch.ones_like(data[0]), data[1]
+    _, notes = tool.fit_direction([(x, y), (x, y)], vectors, seed=7, chunk=3, shared_host_design=True)
+    assert int(torch.linalg.matrix_rank(x.double())) == 1
+    assert notes["underdetermined"] is None
+    for name in ("refit_regime", "inner_fit_regime"):
+        regime = notes[name]
+        assert regime["underdetermined_by_row_count"] is False
+        assert regime["underdetermined"] is None
+        assert regime["full_column_rank_verified"] is False
+        assert regime["rank_measured"] is False and regime["numerical_rank"] is None
+
+
+def test_source_layer_design_rows_remain_only_an_upper_bound(inputs):
+    _, _, vectors, data, _ = inputs
+    x, y = data[2:]
+    mask = vectors["held"] == 0
+    regime = tool.design_regime([(x, y), (x.clone(), y)], vectors, mask, shared_host_design=False)
+    assert regime["original_host_pair_rows"] == 12
+    assert regime["pooled_observations"] == regime["design_row_identity_upper_bound"] == 24
+    assert regime["design_row_identity_scope"] == "source_layer_and_host_pair"
+    assert regime["underdetermined"] is None and regime["full_column_rank_verified"] is False
+    with pytest.raises(tool.Refusal, match="same captured tensor"):
+        tool.design_regime([(x, y), (x.clone(), y)], vectors, mask, shared_host_design=True)
 
 
 @pytest.mark.parametrize("fault", ["held_order", "position", "missing_write", "teacher_stream", "source_gate",
