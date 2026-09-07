@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import struct
 import sys
@@ -572,18 +573,67 @@ class K3Index:
 # --------------------------------------------------------------------------
 # scoring (mirrors mx45_build.write_scores)
 # --------------------------------------------------------------------------
-def write_scores(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
-    pred = pred.to(torch.float32)
-    target = target.to(torch.float32)
-    diff = pred - target
-    cos = torch.nn.functional.cosine_similarity(pred, target, dim=-1).flatten()
-    # torch.quantile refuses a q tensor on a different device than its input
-    quantile = torch.tensor(0.05, dtype=cos.dtype, device=cos.device)
-    return {
-        "relL2": float(diff.norm() / max(float(target.norm()), 1e-30)),
-        "cos": float(cos.mean()),
-        "cos_p05": float(torch.quantile(cos, quantile)),
-    }
+WRITE_SCORE_CHUNK_ROWS = 1024
+
+
+class WriteScoreAccumulator:
+    """All-row write metrics with bounded device scratch, not sampled scores.
+
+    Predictions, targets and cosine arithmetic remain FP32. Frobenius squared
+    norms are reduced in FP64 and summed across chunks, avoiding an enormous
+    full-matrix subtraction/normalization. Only one FP32 cosine scalar per row
+    is retained on the CPU: p05 is still the exact full-population torch.quantile
+    (linear interpolation), never a quantile of per-chunk quantiles. Changing
+    reduction order can change the last FP32 ulps; gate thresholds are unchanged.
+    """
+
+    def __init__(self, chunk_rows: int = WRITE_SCORE_CHUNK_ROWS) -> None:
+        if type(chunk_rows) is not int or chunk_rows < 1:
+            raise ValueError("score chunk_rows must be a positive integer")
+        self.chunk_rows = chunk_rows
+        self.diff_sq: list[float] = []
+        self.target_sq: list[float] = []
+        self.cosines: list[torch.Tensor] = []
+        self.rows = 0
+
+    @torch.no_grad()
+    def update(self, pred: torch.Tensor, target: torch.Tensor) -> None:
+        if pred.shape != target.shape or pred.ndim < 1 or pred.shape[-1] < 1:
+            raise ValueError("write scores require equal shapes and a nonempty feature axis")
+        if pred.device != target.device:
+            raise ValueError("write scores require predictions and targets on the same device")
+        if pred.ndim == 1:
+            pred, target = pred.unsqueeze(0), target.unsqueeze(0)
+        if pred.ndim > 2:
+            # Do not flatten a noncontiguous population into a full-size copy.
+            for index in range(pred.shape[0]):
+                self.update(pred[index], target[index])
+            return
+        for start in range(0, pred.shape[0], self.chunk_rows):
+            p = pred[start:start + self.chunk_rows].float()
+            t = target[start:start + self.chunk_rows].float()
+            self.diff_sq.append(float(torch.linalg.vector_norm(p - t, dtype=torch.float64)) ** 2)
+            self.target_sq.append(float(torch.linalg.vector_norm(t, dtype=torch.float64)) ** 2)
+            cos = torch.nn.functional.cosine_similarity(p, t, dim=-1)
+            self.cosines.append(cos.to(device="cpu"))
+            self.rows += int(cos.numel())
+
+    def result(self) -> dict[str, float]:
+        if not self.rows:
+            raise ValueError("write scores require at least one row")
+        cos = torch.cat(self.cosines)
+        return {
+            "relL2": math.sqrt(math.fsum(self.diff_sq)) / max(math.sqrt(math.fsum(self.target_sq)), 1e-30),
+            "cos": float(cos.mean()),
+            "cos_p05": float(torch.quantile(cos, torch.tensor(0.05, dtype=cos.dtype))),
+        }
+
+
+def write_scores(pred: torch.Tensor, target: torch.Tensor, *,
+                 chunk_rows: int = WRITE_SCORE_CHUNK_ROWS) -> dict[str, float]:
+    scores = WriteScoreAccumulator(chunk_rows)
+    scores.update(pred, target)
+    return scores.result()
 
 
 def canonical_device(device: torch.device | str | int) -> torch.device:
