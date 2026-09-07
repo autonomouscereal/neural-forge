@@ -21,7 +21,9 @@ with the SAME lane functions ``k3_dense_pass`` v1.1.1 used:
 2. the fit at K = 17,408 (stage-1 coreset exactly as the run selected it) solved
    with a ZERO prior over the whole lambda ladder -- the unconstrained ridge --
    and every solution scored on the HELD rows against every target form above,
-   including the prefix the next layer will actually consume.  The law's own
+   with separate FP32-fit and runtime-dtype map scores.  Both reconstruct the
+   downstream writes in the parent dtype; only the runtime-dtype map also casts
+   W2' as the installed dense path does.  The law's own
    prior-anchored ladder is solved from the same Cholesky factors, so the run's
    ``free 81.642`` is reproduced and the nine update_scale values the refusal
    never wrote are recorded.  The prior itself (m_c * W2) is scored too.
@@ -77,7 +79,7 @@ from k3_common import (  # noqa: E402
 from k3_layer import StreamedLayer  # noqa: E402
 
 TOOL_NAME = "k3_veto_diag_h2"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 RECEIPT_NAME = "k3_veto_diag_h2_receipt.json"
 ALPHAS = (0.01, 0.1, 0.5, 2.0, 10.0, 81.642)
 
@@ -115,18 +117,23 @@ class HeldTargets:
         self.shared = shared[held_dev]
         self.y_lat = y_lat[held_dev]
         self.routed_write = routed_write[held_dev]
-        self.moe_out = (self.routed_write.float() + self.shared.float())
-        self.prefix_out = (self.carried.float() + self.moe_out)
+        # Match moe_write -> ffn_half: both additions round in the parent dtype.
+        # Promoting either sum to fp32 measures a different downstream prefix.
+        self.moe_out = self.routed_write + self.shared
+        self.prefix_out = self.carried + self.moe_out
 
     def child_write(self, pred_y: torch.Tensor) -> dict[str, torch.Tensor]:
         """From a child's y_lat prediction (fp32) to routed_write / moe_out / prefix_out on the held rows.
 
         pred_y is cast to the parent dtype before the norm, as ``moe_write`` does with the
         teacher's fp32 accumulator."""
-        y = pred_y.to(self.up_w.dtype)
-        rw = F.linear(rms_norm(y, self.norm_w, self.eps), self.up_w).float()
-        moe = rw + self.shared.float()
-        return {"routed_write": rw, "moe_out": moe, "prefix_out": self.carried.float() + moe}
+        rw = torch.empty(pred_y.shape[0], self.up_w.shape[0], dtype=self.up_w.dtype, device=pred_y.device)
+        for start in range(0, pred_y.shape[0], self.chunk):
+            stop = min(start + self.chunk, pred_y.shape[0])
+            y = pred_y[start:stop].to(self.up_w.dtype)
+            rw[start:stop] = F.linear(rms_norm(y, self.norm_w, self.eps), self.up_w)
+        moe = rw + self.shared
+        return {"routed_write": rw, "moe_out": moe, "prefix_out": self.carried + moe}
 
     def score_child(self, pred_y: torch.Tensor) -> dict[str, Any]:
         got = self.child_write(pred_y)
@@ -136,15 +143,35 @@ class HeldTargets:
                 "prefix_out_heldout": compare(got["prefix_out"], self.prefix_out)}
 
 
-def predict_y(bank: c14.ExpertBank, fold: c14.CoresetFold, w2p: torch.Tensor, rows: torch.Tensor) -> torch.Tensor:
+def predict_y(bank: c14.ExpertBank, fold: c14.CoresetFold, w2p: torch.Tensor, rows: torch.Tensor,
+              runtime_dtype: bool = False, token_chunk: int | None = None) -> torch.Tensor:
+    """FP32 fit prediction, or the installed map's activation-dtype W2' projection."""
     preds = []
-    w = w2p.to(fold.device, torch.float32)
-    for start in range(0, rows.numel(), fold.chunk):
-        piece = rows[start:start + fold.chunk]
-        psi = bank.psi(fold.latent[piece], fold.beta, fold.linear_beta).float()
-        preds.append(F.linear(psi, w))
+    w = w2p.to(fold.device)
+    chunk = token_chunk if runtime_dtype and token_chunk is not None else fold.chunk
+    for start in range(0, rows.numel(), chunk):
+        piece = rows[start:start + chunk]
+        psi = bank.psi(fold.latent[piece], fold.beta, fold.linear_beta)
+        if runtime_dtype:
+            preds.append(F.linear(psi, w.to(psi.dtype)).float())
+        else:
+            preds.append(F.linear(psi.float(), w.float()))
         del psi
     return torch.cat(preds)
+
+
+def score_maps(bank, fold, w2p: torch.Tensor, rows: torch.Tensor, targets: HeldTargets) -> dict[str, Any]:
+    """Keep fit diagnostics separate from runtime-cast map scores, without two live predictions."""
+    out = {}
+    for key, runtime in (("heldout", False), ("heldout_runtime_dtype", True)):
+        pred = predict_y(bank, fold, w2p, rows, runtime_dtype=runtime, token_chunk=targets.chunk)
+        out[key] = {**targets.score_child(pred),
+                    "prediction_mode": "runtime_dtype_map" if runtime else "fp32_fit_map",
+                    "map_dtype": str(fold.latent.dtype if runtime else torch.float32).replace("torch.", ""),
+                    "projection_chunk": targets.chunk if runtime else fold.chunk,
+                    "write_dtype": str(targets.up_w.dtype).replace("torch.", "")}
+        del pred
+    return out
 
 
 def moe_write_split(weights, x: torch.Tensor, y_lat: torch.Tensor, cfg: dict, chunk: int
@@ -221,7 +248,7 @@ def run(args) -> dict[str, Any]:
     token_chunk = int(args.token_chunk)
 
     receipt: dict[str, Any] = {
-        "schema": "omni-campaign.k3_veto_diag_h2.v1",
+        "schema": "omni-campaign.k3_veto_diag_h2.v2",
         "tool": TOOL_NAME, "tool_version": TOOL_VERSION, "tool_sha256": sha256_file(os.path.abspath(__file__)),
         "dense_pass_tool_sha256": sha256_file(kdp.__file__), "dense_pass_tool_version": kdp.TOOL_VERSION,
         "lane_dir": kdp.LANE_DIR, "lane_sha256": kdp.lane_file_digests(),
@@ -238,6 +265,15 @@ def run(args) -> dict[str, Any]:
                      "rounding, so the L00 sha check may read False on another card without meaning anything "
                      "for the measurements",
         "python": sys.version.split()[0],
+        "scoring_contract": {
+            "heldout": "FP32 fit map: activation features and W2' projected in fp32; not installed-map parity",
+            "heldout_runtime_dtype": "W2' cast to the activation dtype before projection with token_chunk, "
+                                     "as dense_y_lat does",
+            "downstream": "both maps cast y_lat before routed norm/up-projection, then add routed + shared "
+                          "and carried + moe_out in the parent dtype, in ffn_half order; only metrics use fp32",
+            "historical_caveat": "H2 v0.1.0 reconstructed held-row MoE/prefix sums in fp32; its downstream "
+                                 "numbers are not runtime-dtype receipts and are not rewritten by this tool",
+        },
         "layers": {},
     }
     held = corpus.held
@@ -331,9 +367,10 @@ def run(args) -> dict[str, Any]:
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
             if split_name == "fit":
                 continue  # the relations are a held-row measurement; five fit-row temporaries do not fit a 24 GB card
-            rw, sh, mo, ca, po = (routed_write[rows].float(), shared[rows].float(), moe_out[rows].float(),
-                                  carried[rows].float(), prefix_out[rows].float())
-            zero_rw = routed_write_of(weights, torch.zeros_like(y_lat[rows]), cfg, token_chunk, ffn_in.dtype).float()
+            rw, sh, mo, ca, po = (routed_write[rows], shared[rows], moe_out[rows],
+                                  carried[rows], prefix_out[rows])
+            zero_rw = routed_write_of(weights, torch.zeros_like(y_lat[rows]), cfg, token_chunk, ffn_in.dtype)
+            zero_moe = zero_rw + sh
             relations[split_name] = {
                 "routed_write_vs_moe_out": compare(rw, mo),
                 "shared_vs_moe_out": compare(sh, mo),
@@ -344,11 +381,11 @@ def run(args) -> dict[str, Any]:
                     "what": "a child that writes y_lat = 0 (the relL2 = 1.0 baseline of the fit target): "
                             "what the next layer would see",
                     "routed_write": compare(zero_rw, rw),
-                    "moe_out": compare(zero_rw + sh, mo),
-                    "prefix_out": compare(ca + zero_rw + sh, po),
+                    "moe_out": compare(zero_moe, mo),
+                    "prefix_out": compare(ca + zero_moe, po),
                 },
             }
-            del rw, sh, mo, ca, po, zero_rw
+            del rw, sh, mo, ca, po, zero_rw, zero_moe
         # scale invariance of the downstream norm: the target's GLOBAL scale is not consumed
         inv = {}
         base = routed_write[held_dev].float()
@@ -459,9 +496,9 @@ def run(args) -> dict[str, Any]:
         "mean_router_weight_when_routed": float((fold.expert_mass()[experts].cpu() / counts.clamp(min=1)).mean()),
     }
     with torch.no_grad():
-        pred_prior = predict_y(bank, fold, prior_f, held_dev)
-        fit_entry["prior_scored"] = targets.score_child(pred_prior)
-        del pred_prior
+        prior_scores = score_maps(bank, fold, prior_f, held_dev, targets)
+        fit_entry["prior_scored"] = prior_scores["heldout"]
+        fit_entry["prior_scored_runtime_dtype"] = prior_scores["heldout_runtime_dtype"]
     log(f"prior: mass mean {fit_entry['prior']['prior_mass_mean']:.4e}, ||prior|| {prior_norm:.4f}, "
         f"||W2 bank|| {w2_bank_norm:.4f}; prior held relL2 {fit_entry['prior_scored']['y_lat_heldout']['relL2']:.4f}")
     write_receipt(receipt_path, {**receipt, "fit": fit_entry})
@@ -520,12 +557,8 @@ def run(args) -> dict[str, Any]:
         row_law["solution_frobenius"] = float(w_law.norm())
         row_law["distance_to_zero_prior_solution_rel"] = float((w_law - w_zero).norm() / max(float(w_zero.norm()), 1e-30))
         with torch.no_grad():
-            pz = predict_y(bank, fold, w_zero.float(), held_dev)
-            row_zero["heldout"] = targets.score_child(pz)
-            del pz
-            pl = predict_y(bank, fold, w_law.float(), held_dev)
-            row_law["heldout"] = targets.score_child(pl)
-            del pl
+            row_zero.update(score_maps(bank, fold, w_zero.float(), held_dev, targets))
+            row_law.update(score_maps(bank, fold, w_law.float(), held_dev, targets))
         log(f"  full rel={rel:g}: ZERO prior held y_lat relL2 {row_zero['heldout']['y_lat_heldout']['relL2']:.4f} "
             f"cos {row_zero['heldout']['y_lat_heldout']['cos']:.4f} routed_write relL2 "
             f"{row_zero['heldout']['routed_write_heldout']['relL2']:.4f} prefix_out relL2 "
@@ -553,11 +586,15 @@ def run(args) -> dict[str, Any]:
     }
     zero_best_check = min(ladder_zero, key=lambda r: r["check_sse"])
     fit_entry["zero_prior_summary"] = {
+        "selection_metric": "diagnostic FP32-fit-map held y_lat relL2 (not a runtime acceptance decision)",
         "best_heldout_lambda_relative": best["lambda_relative"],
         "best_heldout": best["heldout"],
+        "best_heldout_runtime_dtype": best["heldout_runtime_dtype"],
         "check_split_would_pick_lambda_relative": zero_best_check["lambda_relative"],
         "check_split_pick_heldout": zero_best_check["heldout"],
+        "check_split_pick_heldout_runtime_dtype": zero_best_check["heldout_runtime_dtype"],
         "unconstrained_rel1e-6_heldout": ladder_zero[0]["heldout"],
+        "unconstrained_rel1e-6_heldout_runtime_dtype": ladder_zero[0]["heldout_runtime_dtype"],
         "unconstrained_norm_over_prior": ladder_zero[0]["norm_over_prior"],
         "unconstrained_norm_over_bank_w2": ladder_zero[0]["norm_over_bank_w2"],
     }
@@ -580,6 +617,7 @@ def run(args) -> dict[str, Any]:
     # -- the numbers that decide H2, stated next to each other ---------------------------------
     h = relations["held"]
     u = ladder_zero[0]["heldout"]
+    u_runtime = ladder_zero[0]["heldout_runtime_dtype"]
     receipt["h2_summary"] = {
         "target_used_by_the_run": "y_lat (PRE-norm fp32 routed accumulator); reproduced here with the same functions",
         "y_lat_rms_held": scales["held"]["y_lat"]["rms"],
@@ -595,14 +633,20 @@ def run(args) -> dict[str, Any]:
         "zero_child_routed_write_relL2_held": h["zero_y_lat_child"]["routed_write"]["relL2"],
         "prior_child_y_lat_relL2_held": fit_entry["prior_scored"]["y_lat_heldout"]["relL2"],
         "prior_child_prefix_out_relL2_held": fit_entry["prior_scored"]["prefix_out_heldout"]["relL2"],
+        "prior_child_prefix_out_relL2_held_runtime_dtype": fit_entry["prior_scored_runtime_dtype"]["prefix_out_heldout"]["relL2"],
         "unconstrained_child_y_lat_relL2_held": u["y_lat_heldout"]["relL2"],
         "unconstrained_child_y_lat_cos_held": u["y_lat_heldout"]["cos"],
         "unconstrained_child_routed_write_relL2_held": u["routed_write_heldout"]["relL2"],
         "unconstrained_child_moe_out_relL2_held": u["moe_out_heldout"]["relL2"],
         "unconstrained_child_prefix_out_relL2_held": u["prefix_out_heldout"]["relL2"],
+        "unconstrained_child_y_lat_relL2_held_runtime_dtype": u_runtime["y_lat_heldout"]["relL2"],
+        "unconstrained_child_routed_write_relL2_held_runtime_dtype": u_runtime["routed_write_heldout"]["relL2"],
+        "unconstrained_child_moe_out_relL2_held_runtime_dtype": u_runtime["moe_out_heldout"]["relL2"],
+        "unconstrained_child_prefix_out_relL2_held_runtime_dtype": u_runtime["prefix_out_heldout"]["relL2"],
         "best_zero_prior_lambda_relative": best["lambda_relative"],
         "best_zero_prior_y_lat_relL2_held": best["heldout"]["y_lat_heldout"]["relL2"],
         "best_zero_prior_prefix_out_relL2_held": best["heldout"]["prefix_out_heldout"]["relL2"],
+        "best_zero_prior_prefix_out_relL2_held_runtime_dtype": best["heldout_runtime_dtype"]["prefix_out_heldout"]["relL2"],
         "law_free_update_scale": free_scale,
         "law_would_refuse": not admitted,
     }
