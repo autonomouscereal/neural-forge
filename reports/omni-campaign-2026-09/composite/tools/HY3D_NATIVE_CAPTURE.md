@@ -27,6 +27,22 @@ The object manifest has schema `neural-forge.hy3d-capture-objects.v1` and an
   the same split, including different views/sigmas. Both splits are required.
 - `seed`: integer 0..4294967295; `sigma`: explicit normalized flow time 0..1.
 
+The producer also computes `geometry_identity` from the hash-bound PLY/STL
+bytes, using the genuine Trimesh parser with `process=False`. The exact parsed
+float64 triangle-set hash ignores metadata, vertex/face order, winding,
+duplicate/unused vertices, repeated faces and negative zero. Equal geometry
+must remain in one split even when file hashes differ. The computed identity
+is sealed in each sample/DiT receipt. An optional declared identity must match
+the complete computed object; a declaration can never override the guard.
+Mesh/image digests are checked again before sampling after model initialization.
+
+This is **not** a near-duplicate or original-object classifier: transformed,
+rounded, remeshed, or otherwise edited versions still require curator-provided
+original-object grouping in preparation. No coordinate normalization/rounding
+or mesh edits are made by this guard. It refuses more than 1,000,000 faces or
+3,000,000 vertices instead of silently reducing them. The native sampler still
+consumes the unchanged original input file.
+
 Example argv **inside an already allocated container** (paths must be actual
 mounted inputs, not invented placeholders passed to the allocator):
 
@@ -46,10 +62,47 @@ is no resume: preserve incomplete output and use a fresh sibling directory.
 Runtime dependencies: the actual native source's PyTorch, safetensors, PyYAML,
 NumPy, Pillow, einops, scipy/scikit-image, trimesh, torch-cluster, diffusers,
 transformers, torchvision, OpenCV and OmegaConf. `torch-cluster` must match the
-runtime PyTorch/CUDA ABI; no fallback FPS is provided. No package installation,
-image build, or dependency compatibility check has been performed by this
-source-only change. No network model download or pickle checkpoint loading is
-used. Full parent weights are read for strict component loading, not hashed.
+runtime PyTorch/CUDA ABI; no fallback FPS is provided. CPU-only inspection of
+the existing reviewed image confirmed that `torch_cluster` is absent. No
+package installation or image build has been performed by this source change.
+No network model download or pickle checkpoint loading is used. Selected
+component weights are read for strict loading, not full-parent hashing.
+
+### Isolated FPS runtime extension (recipe, not a deployed runtime)
+
+`Dockerfile.hy3d-capture` extends the reviewed local image
+`sha256:735020f27cb59da7ca4ea62284154ad97fcbc1a765fa8ffc6c0abd9a2d283c0a`.
+Before a separately authorized build, verify that exact image ID, tag it
+`local/hy3d-base:735020f27cb59da7`, and verify the tag resolves to that same ID.
+Use this tools directory as build context and `--pull=false`; do not substitute
+another base or a registry pull. The recipe itself cannot establish the local
+tag's image identity, so the builder must retain that check in its build receipt.
+
+The only installed distribution is the CPython3.10/Linux x86_64 wheel
+`torch_cluster-1.6.3+pt26cu124`, compatible by tag with Torch2.6/cu124.
+`requirements-hy3d-fps.txt` pins the official URL and observed SHA-256; pip uses
+`--require-hashes --no-deps --no-index`, without upgrades or fallback compilation.
+The wheel was fetched into local process memory on 2026-09-07, not installed:
+3,397,729 bytes, SHA-256
+`707bc36cccd885cb18155f3e1718866c4f4e6df4160a00ee17b9457a41bf530b`.
+Official index: <https://data.pyg.org/whl/torch-2.6.0%2Bcu124.html>.
+
+The build must pass `hy3d_fps_self_test.py`: genuine two-batch CPU FPS through
+the exact native six-argument API and compiled operator, with exact expected
+indices, no CUDA initialization, and explicit unproven VAE/child status.
+This script has not passed until a separately authorized build actually runs
+it. xformers is not repaired/replaced; the source VAE uses native Torch SDPA.
+A later allocated GPU FPS/ShapeVAE canary remains required. The recipe allocates
+no GPU, loads no parent model, and does not install a companion model/decoder.
+
+The producer, contract and runtime-recipe suites passed **88 tests** in 7.27s
+using genuine Trimesh PLY/STL parsing in the existing `735020` image on
+2026-09-07. Input meshes and model classes were explicitly synthetic fixtures;
+this is parser/guard/receipt coverage, not source-VAE or modality proof.
+The CPU-only disposable test container used runc, no network/GPU, a read-only
+root filesystem and tmpfs; no image/package changes were made. Exact streamed
+test archive SHA-256:
+`bf2e4ef0e14fa59a6ebb867a6545d46a473fa3b7cc91f938115aa376ce9f6d38`.
 
 ## What is actually captured
 

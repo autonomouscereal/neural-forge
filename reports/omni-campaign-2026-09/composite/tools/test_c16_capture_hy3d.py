@@ -2,11 +2,13 @@
 import hashlib
 from contextlib import contextmanager
 import json
+import struct
 from pathlib import Path
 import sys
 from types import SimpleNamespace
 
 import pytest
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -272,11 +274,29 @@ def test_strict_loader_refusals(tmp_path, bad):
         capture.strict_component(nn.Linear(2, 3), parent, "vae.", "cpu")
 
 
+def write_test_mesh(path, vertices, faces, comment="SYNTHETIC fixture"):
+    """Tiny real-format fixtures, never parent/child modality evidence."""
+    if path.suffix == ".ply":
+        header = (f"ply\nformat ascii 1.0\ncomment {comment}\nelement vertex {len(vertices)}\n"
+                  "property double x\nproperty double y\nproperty double z\n"
+                  f"element face {len(faces)}\nproperty list uchar int vertex_indices\nend_header\n")
+        rows = [" ".join(map(str, row)) for row in vertices]
+        rows += ["3 " + " ".join(map(str, row)) for row in faces]
+        path.write_text(header + "\n".join(rows) + "\n", encoding="ascii")
+    else:
+        data = comment.encode("ascii")[:80].ljust(80, b" ") + struct.pack("<I", len(faces))
+        for face in faces:
+            xyz = np.asarray(vertices)[face].reshape(-1).tolist()
+            data += struct.pack("<12fH", 0, 0, 0, *xyz, 0)
+        path.write_bytes(data)
+
+
 def object_manifest(tmp_path):
+    pytest.importorskip("trimesh", reason="genuine parser fixture needs native runtime dependency")
     rows = []
     for i, split in enumerate(("fit", "held")):
         mesh, image = tmp_path / f"object-{i}.ply", tmp_path / f"image-{i}.png"
-        mesh.write_bytes(f"SYNTHETIC MESH ID {i}".encode())
+        write_test_mesh(mesh, [[0, 0, 0], [i + 1, 0, 0], [0, 1, 0]], [[0, 1, 2]])
         image.write_bytes(f"SYNTHETIC IMAGE ID {i}".encode())
         rows.append({"object_file": mesh.name, "object_sha256": hashlib.sha256(mesh.read_bytes()).hexdigest(),
                      "conditioning_file": image.name, "conditioning_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
@@ -308,6 +328,94 @@ def test_grouped_object_inputs(tmp_path, bad):
     else:
         result = capture.read_objects(path)
         assert len(result) == 2 and Path(result[0]["object_file"]).is_absolute()
+        assert result[0]["geometry_identity"]["schema"] == capture.GEOMETRY_SCHEMA
+
+
+def test_canonical_geometry_ignores_serialization_and_index_order_without_mutation():
+    vertices = np.array([[0., 0, 0], [2, 0, 0], [0, 1, 0], [0, 0, 3]])
+    faces = np.array([[0, 1, 2], [0, 2, 3]])
+    original = vertices.copy()
+    expected = capture.canonical_geometry(vertices, faces)
+    permutation = np.array([3, 1, 0, 2])
+    changed = vertices[permutation].copy()
+    changed[changed == 0] = -0.0
+    remapped = np.argsort(permutation)[faces][::-1, ::-1]
+    # Duplicated vertex, unused vertex, duplicate/reversed face all describe
+    # the same triangle set even though the serialized artifact differs.
+    changed = np.concatenate([changed, changed[2:3], [[99, 99, 99]]])
+    remapped[remapped == 2] = 4
+    remapped = np.concatenate([remapped, remapped[:1, ::-1]])
+    assert capture.canonical_geometry(changed, remapped) == expected
+    assert np.array_equal(vertices, original)
+    altered = vertices.copy()
+    altered[1, 0] = np.nextafter(2., 3.)
+    assert capture.canonical_geometry(altered, faces) != expected  # no tolerance/rounding
+    assert capture.canonical_geometry(vertices, [[0, 1, 3], [0, 2, 3]]) != expected
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "empty", "nontriangle", "negative", "outside", "float_indices", "bound"])
+def test_canonical_geometry_refusals(monkeypatch, bad):
+    vertices = np.array([[0., 0, 0], [1, 0, 0], [0, 1, 0]])
+    faces = np.array([[0, 1, 2]])
+    if bad in ("nan", "inf"):
+        vertices[0, 0] = float(bad)
+    elif bad == "empty":
+        faces = np.empty((0, 3), dtype=int)
+    elif bad == "nontriangle":
+        faces = np.array([[0, 1]])
+    elif bad == "negative":
+        faces[0, 0] = -1
+    elif bad == "outside":
+        faces[0, 0] = 3
+    elif bad == "float_indices":
+        faces = faces.astype(float)
+    else:
+        monkeypatch.setattr(capture, "MAX_GEOMETRY_FACES", 0)
+    with pytest.raises(ValueError):
+        capture.canonical_geometry(vertices, faces)
+
+
+@pytest.mark.parametrize("extension", [".ply", ".stl"])
+def test_genuine_parser_rejects_duplicate_geometry_across_splits(tmp_path, extension):
+    body = object_manifest(tmp_path)
+    rows = body["objects"]
+    duplicate = tmp_path / ("different-name" + extension)
+    write_test_mesh(duplicate, [[0, 1, 0], [0, 0, 0], [1, 0, 0]], [[2, 1, 0]], "changed metadata")
+    rows[1].update(object_file=duplicate.name, object_sha256=capture.digest_file(duplicate))
+    assert rows[0]["object_sha256"] != rows[1]["object_sha256"]
+    path = tmp_path / "objects.json"
+    path.write_text(json.dumps(body))
+    with pytest.raises(ValueError, match="identical geometry leaked"):
+        capture.read_objects(path)
+    # The same geometry may appear in several views/timesteps in ONE split.
+    rows[1]["split"] = "fit"
+    distinct = tmp_path / "distinct.ply"
+    write_test_mesh(distinct, [[0, 0, 0], [3, 0, 0], [0, 1, 0]], [[0, 1, 2]])
+    rows.append({**rows[0], "object_file": distinct.name, "object_sha256": capture.digest_file(distinct), "split": "held"})
+    path.write_text(json.dumps(body))
+    result = capture.read_objects(path)
+    assert result[0]["geometry_identity"] == result[1]["geometry_identity"]
+    assert result[0]["geometry_identity"] != result[2]["geometry_identity"]
+
+
+def test_declared_geometry_cannot_override_computed_identity(tmp_path):
+    body = object_manifest(tmp_path)
+    body["objects"][0]["geometry_identity"] = {"sha256": "0" * 64}
+    path = tmp_path / "objects.json"
+    path.write_text(json.dumps(body))
+    with pytest.raises(ValueError, match="declared geometry identity mismatch"):
+        capture.read_objects(path)
+
+
+def test_geometry_parser_is_bound_to_actual_bytes(tmp_path):
+    body = object_manifest(tmp_path)
+    row = body["objects"][0]
+    mesh = tmp_path / row["object_file"]
+    with pytest.raises(ValueError, match="geometry input digest mismatch"):
+        capture.geometry_identity(mesh, "0" * 64)
+    mesh.write_text("not a PLY file")
+    with pytest.raises(ValueError, match="geometry input digest mismatch"):
+        capture.geometry_identity(mesh, row["object_sha256"])
 
 
 def test_sealed_artifacts_refuse_overwrite_and_nonfinite(tmp_path):
@@ -334,7 +442,7 @@ def test_native_namespace_refuses_source_changes_without_importing(tmp_path):
     assert not any(n.startswith("_nf_hy3d_capture_native") for n in sys.modules)
 
 
-@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.parametrize("fail", [False, True, "replace_input"])
 def test_synthetic_cli_posterior_path_and_partial_preservation(tmp_path, tiny_dims, monkeypatch, fail):
     # Entire native dependency boundary is explicitly synthetic in this unit test.
     # The CLI itself has no injection/fixture switch.
@@ -352,7 +460,7 @@ def test_synthetic_cli_posterior_path_and_partial_preservation(tmp_path, tiny_di
 
     def load_surface(path):
         loaded.append(path)
-        if fail and len(loaded) == 2:
+        if fail is True and len(loaded) == 2:
             raise RuntimeError("intentional second object failure")
         return surface.clone()
 
@@ -364,12 +472,23 @@ def test_synthetic_cli_posterior_path_and_partial_preservation(tmp_path, tiny_di
                "extra_source_sha256": {}}
 
     monkeypatch.setattr(capture, "native_modules", modules)
-    monkeypatch.setattr(capture, "strict_component", lambda module, *args: module)
+    def strict_component(module, *args):
+        if fail == "replace_input":
+            (tmp_path / "object-0.ply").write_text("replaced during model initialization")
+        return module
+
+    monkeypatch.setattr(capture, "strict_component", strict_component)
     monkeypatch.setattr(capture, "inspect_source", lambda *args: {"source_identity": {"synthetic": True}})
     monkeypatch.setattr(capture, "verify_native_dependencies", lambda *args: None)
     output = tmp_path / "out"
     argv = ["--source-root", str(tmp_path), "--parent-checkpoint", str(parent), "--objects", str(manifest),
             "--output", str(output), "--device", "cpu", "--query-chunk", "1"]
+    if fail == "replace_input":
+        with pytest.raises(ValueError, match="capture input digest changed"):
+            capture.main(argv)
+        assert loaded == []
+        assert not (output / "capture-run.json").exists()
+        return
     if fail:
         with pytest.raises(RuntimeError, match="second object"):
             capture.main(argv)
@@ -385,5 +504,6 @@ def test_synthetic_cli_posterior_path_and_partial_preservation(tmp_path, tiny_di
         assert report["field_kind"] == "native_binary_field_logits_not_metric_sdf"
         for receipt in report["samples"]:
             assert capture.digest_file(output / receipt["file"]) == receipt["file_sha256"]
+            assert receipt["geometry_identity"]["schema"] == capture.GEOMETRY_SCHEMA
     with pytest.raises(ValueError, match="fresh output"):
         capture.main(argv)
