@@ -1,0 +1,63 @@
+{
+  "schema": "neural_forge.qimg_parent_image_plan.v1",
+  "scope": "Second preregistered calibration experiment: four batches totaling 24 new fit and 8 fresh held images, four sigmas each. Old first-experiment data is development-only and excluded. No seed search, quality selection or edits. Teacher-generated calibration, not child output.",
+  "sampling": {
+    "width": 512,
+    "height": 512,
+    "steps": 20,
+    "cfg": 4,
+    "sampler": "euler",
+    "scheduler": "normal",
+    "denoise": 1
+  },
+  "entries": [
+    {
+      "id": "b4_fit_paper_collage",
+      "split": "fit",
+      "seed": 20260907324,
+      "prompt": "A handcrafted paper-collage illustration of an imaginary hillside town with simple stacked cream houses, red roofs and dark green trees. Layered cut-paper edges cast delicate shadows, and a winding blue river crosses the foreground beneath a small arched bridge. The composition uses a restrained palette and broad balanced shapes without realistic photographic textures. Each building has a coherent simple silhouette and the scene leaves open sky above. Warm cheerful mood, visible paper grain, no people, logos, writing, gradients or excessive tiny decorative details."
+    },
+    {
+      "id": "b4_fit_charcoal_drawing",
+      "split": "fit",
+      "seed": 20260907325,
+      "prompt": "A careful charcoal drawing of a wicker basket containing three pears on a folded linen cloth. The composition is viewed from slightly above, with the complete basket visible and a quiet empty background. Expressive but controlled charcoal strokes describe the woven material, rounded fruit and soft fabric folds. One directional light source creates convincing form shadows and a grounded contact shadow beneath the arrangement. Monochrome black and gray on textured off-white paper, no color wash, printed words, signature or photographic rendering."
+    },
+    {
+      "id": "b4_fit_technical_poster",
+      "split": "fit",
+      "seed": 20260907326,
+      "prompt": "A clear educational-style flat illustration showing the visible parts of an ordinary desk lamp. The lamp has a round base, two connected articulated arms, a small hinge at each joint and a cone-shaped shade pointing downward. It stands alone on a pale cream background with three thin navy arrows pointing to the base, hinge and shade, but no written labels. Consistent geometric linework, a restrained yellow and navy palette, physically coherent connections and generous empty space, no decorative border, photographic texture or extra objects."
+    },
+    {
+      "id": "b4_fit_pastry_macro",
+      "split": "fit",
+      "seed": 20260907327,
+      "prompt": "A close-up food photograph of three small golden croissants on a white ceramic plate beside a folded blue linen napkin. The flaky curved pastries have distinct crisp layers and a few natural crumbs on the plate. Soft window light from the left highlights the warm baked surface without oily glare, while a neutral wooden table fades gently out of focus behind. Realistic scale, appetizing but unretouched texture and an uncluttered arrangement, no hands, cups, fruit, packaging, advertising labels or visible writing."
+    },
+    {
+      "id": "b4_fit_fabric_macro",
+      "split": "fit",
+      "seed": 20260907328,
+      "prompt": "A detailed macro photograph of loosely folded indigo linen fabric resting on a pale stone surface. The weave, tiny irregular fibers and soft creases are visible, with shallow depth of field fading naturally toward the upper edge. Gentle side lighting produces subtle highlights and dark folds while preserving the material's matte quality. The image is a simple study of textile texture rather than a recognizable garment or scene. Restrained color, realistic scale and exposure, no printed pattern, labels, buttons, logos, people or artificial sparkle."
+    },
+    {
+      "id": "b4_fit_typography_card",
+      "split": "fit",
+      "seed": 20260907329,
+      "prompt": "A clean printed invitation-card design on warm ivory paper. Large dark green uppercase letters at the top read exactly GARDEN WALK, and smaller centered letters below read exactly SUNDAY. A simple line illustration of three leafy stems fills the lower half, framed by a thin rectangular border with generous margins. Use tidy consistent spacing, flat ink and subtle paper texture rather than glossy digital effects. The entire card is visible from directly above on a plain neutral background, no other words, logos, envelopes or hands."
+    },
+    {
+      "id": "b4_held_botanical_plate",
+      "split": "holdout",
+      "seed": 20260907330,
+      "prompt": "A delicate colored-pencil botanical illustration of a single orange nasturtium flower with two round green leaves and one curved stem. The whole plant cutting is shown clearly against blank cream paper, with fine pencil strokes describing veins, petals and subtle natural color changes. A faint soft shadow suggests the page surface without creating a photographic scene. Balanced vertical composition, plausible connected plant anatomy, restrained detail, no pot, insects, handwritten notes, printed labels, signature, decorative border or additional flowers."
+    },
+    {
+      "id": "b4_held_clay_scene",
+      "split": "holdout",
+      "seed": 20260907331,
+      "prompt": "A small stop-motion-style clay illustration of a blue rowboat resting beside a simple wooden dock on calm turquoise water. One red life ring lies inside the empty boat, and two pale green hills rise in the background beneath a soft cream sky. Visible handmade clay texture and slightly imperfect edges give the scene a physical crafted appearance. Gentle studio lighting, coherent small-scale geometry and a balanced open composition, no people, sails, text, logos, dramatic waves or photographic materials."
+    }
+  ]
+}

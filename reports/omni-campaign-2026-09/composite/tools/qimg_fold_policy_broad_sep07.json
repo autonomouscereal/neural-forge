@@ -1,0 +1,11 @@
+{
+  "schema": "neural_forge.qimg_fold_policy.v1",
+  "policy_id": "sep07-broad-fresh-holdout-dual-stream-fourfold",
+  "description": "Second preregistered experiment, before new calibration generation or candidate scoring. Four fixed batches supply 24 new fit and 8 fresh held images; old experiment receipts are development-only and excluded. Same engineering gates as first experiment, not native-block/visual/child acceptance. Both keeps are now 3071, the bias-inclusive fourfold maximum, with actual valid-text FIT row floor 6142 still enforced. Fit/generalization limitations of the first 3071/512 candidate motivate broader data and less aggressive text compression, not relaxed thresholds. Four declared sigmas 0.15,0.35,0.65,0.9 per image. No heldout-informed ridge, selection, refit or automatic retry. Parameter and memory bounds are unchanged.",
+  "preregistered_before_scoring": true,
+  "gate_scope": "pooled_and_each_heldout_forward",
+  "streams": {
+    "img": {"keep": 3071, "max_source_replay_rel_l2": 0.005, "max_heldout_rel_l2": 0.30, "min_heldout_cos": 0.95},
+    "txt": {"keep": 3071, "max_source_replay_rel_l2": 0.005, "max_heldout_rel_l2": 0.30, "min_heldout_cos": 0.95}
+  }
+}

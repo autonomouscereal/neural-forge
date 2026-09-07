@@ -1,0 +1,22 @@
+{
+  "schema": "neural_forge.qimg_encoding_plan.v1",
+  "sigmas": [0.3, 0.8],
+  "entries": [{
+    "id": "keyboard_canary",
+    "split": "fit",
+    "seed": 20260907,
+    "prompt": "A compact product photo of a matte black synth keyboard on a clean studio desk, realistic lighting",
+    "image": {
+      "path": "/inputs/codex_qwen_t2i_00003_.png",
+      "sha256": "764d3758b45dba162decab2ce5ec3847622450728c1499c0dcd57f1e8cb8a83f"
+    },
+    "image_provenance": {
+      "kind": "existing_teacher_generated_calibration_image",
+      "description": "Existing May 2026 Comfy Qwen-Image six-step 512x512 smoke output; exact embedded positive prompt retained. Visually inspected Sep 7: black keyboard on white desk. This is a teacher-encoding/capture canary only, not an independent photograph, held-out quality benchmark, production anchor or folded-child result.",
+      "original_path": "/home/cereal/comfyui/output/codex_qwen_t2i_00003_.png",
+      "original_seed": 20260517,
+      "original_steps": 6,
+      "original_cfg": 4.0
+    }
+  }]
+}
