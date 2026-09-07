@@ -1,0 +1,17 @@
+# Recipe only: no build/deployment has been performed by this source change.
+# Build context is this tools directory. Before building, the operator must
+# verify and tag exactly this LOCAL base image (no pull / mutable-tag substitute):
+# sha256:735020f27cb59da7ca4ea62284154ad97fcbc1a765fa8ffc6c0abd9a2d283c0a
+# BuildKit interprets a bare image ID as a registry name, hence the checked tag.
+FROM local/hy3d-base:735020f27cb59da7
+USER root
+ENV PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NVIDIA_VISIBLE_DEVICES=none CUDA_VISIBLE_DEVICES=0 USER_PASSWORD="" USE_SAGEATTN=0
+COPY requirements-hy3d-fps.txt hy3d_fps_self_test.py /opt/hy3d-fps/
+# Direct official wheel only, verified hash, no resolver upgrades or source build.
+# The inherited Torch, xformers and native SDPA paths are deliberately untouched.
+RUN /opt/environments/python/comfyui/bin/python -m pip install --disable-pip-version-check --no-cache-dir --no-index --no-deps --require-hashes -r /opt/hy3d-fps/requirements-hy3d-fps.txt
+RUN CUDA_VISIBLE_DEVICES=-1 /opt/environments/python/comfyui/bin/python /opt/hy3d-fps/hy3d_fps_self_test.py
+HEALTHCHECK NONE
+WORKDIR /tmp
+ENTRYPOINT []
+CMD ["/opt/environments/python/comfyui/bin/python"]

@@ -1,0 +1,50 @@
+{
+  "schema": "neural-forge.hy3d-parent-calibration-images.v1",
+  "qimg_receipt_file": "/qimg-batch1/parent_images_receipt.json",
+  "qimg_receipt_sha256": "cca3c756469e3ad8fb10407992d3188cee9ed259a5929c5349a20ce89d69c09a",
+  "generation": {
+    "steps": 20,
+    "guidance_scale": 5.0,
+    "bounds": 1.01,
+    "octree_resolution": 128,
+    "query_chunk": 1024,
+    "capture_sigma": 0.5,
+    "volume_decoder": "VanillaVolumeDecoder",
+    "surface_extractor": "MCSurfaceExtractor",
+    "mc_level": 0.0,
+    "latent_scaling": "none_installed_Hy3D21VAEDecode",
+    "seed_device": "cpu",
+    "postprocess": "none",
+    "dtype": "float16"
+  },
+  "images": [
+    {
+      "id": "b1_fit_toy_robot",
+      "conditioning_file": "/qimg-batch1/b1_fit_toy_robot.png",
+      "conditioning_sha256": "ba2fc7c12315da429967cb9bcc62c7870925672a95bb1f9d7def66caace94160",
+      "split": "fit",
+      "seed": 2026090780
+    },
+    {
+      "id": "b1_fit_ceramic_bird",
+      "conditioning_file": "/qimg-batch1/b1_fit_ceramic_bird.png",
+      "conditioning_sha256": "3b785e4131459d98cd37755130269c3dc2a8d0796a7cb39d694b73ad923442b6",
+      "split": "fit",
+      "seed": 2026090781
+    },
+    {
+      "id": "b1_held_glass_pitcher",
+      "conditioning_file": "/qimg-batch1/b1_held_glass_pitcher.png",
+      "conditioning_sha256": "e2a93fb4723fefdc9903e7c41cefe09af426b1d9b3a08041b769714df33d7bde",
+      "split": "held",
+      "seed": 2026090782
+    },
+    {
+      "id": "b1_held_stone_turtle",
+      "conditioning_file": "/qimg-batch1/b1_held_stone_turtle.png",
+      "conditioning_sha256": "3d3b3a47030bafb6d22a6c51b21e056d62ad37cb4cbd58cba3977ae8d0fef4e5",
+      "split": "held",
+      "seed": 2026090783
+    }
+  ]
+}

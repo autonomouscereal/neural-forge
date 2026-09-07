@@ -1,0 +1,63 @@
+{
+  "schema": "neural_forge.qimg_parent_image_plan.v1",
+  "scope": "Second preregistered calibration experiment: four batches totaling 24 new fit and 8 fresh held images, four sigmas each. Old first-experiment data is development-only and excluded. No seed search, quality selection or edits. Teacher-generated calibration, not child output.",
+  "sampling": {
+    "width": 512,
+    "height": 512,
+    "steps": 20,
+    "cfg": 4,
+    "sampler": "euler",
+    "scheduler": "normal",
+    "denoise": 1
+  },
+  "entries": [
+    {
+      "id": "b2_fit_workshop",
+      "split": "fit",
+      "seed": 20260907308,
+      "prompt": "A wide interior photograph of a quiet furniture workshop with exposed wooden beams and a large central workbench. A neatly arranged hand plane, two clamps and a short board rest on the bench. Shelves along the back wall hold a few unpainted wooden boxes, while soft afternoon light enters through a high window on the left. The floor has scattered fine sawdust but remains navigable. Believable perspective, warm natural wood grain and controlled highlights, no workers, readable brand names, dramatic sparks or excessive clutter."
+    },
+    {
+      "id": "b2_fit_greenhouse",
+      "split": "fit",
+      "seed": 20260907309,
+      "prompt": "An architectural photograph looking down the central aisle of a modest glass greenhouse. Terracotta pots of leafy herbs sit on wooden benches on both sides, with a watering hose neatly coiled near the entrance. A metal-framed transparent roof admits soft cloudy daylight, and a slightly open door reveals a simple garden outside. The moist brick floor reflects only a little light. Consistent perspective, realistic leaf structure, glass reflections and useful empty walking space, no people, labels, fantasy plants or saturated neon colors."
+    },
+    {
+      "id": "b2_fit_train_hall",
+      "split": "fit",
+      "seed": 20260907310,
+      "prompt": "A spacious photographic view inside an imaginary small railway waiting hall with a high cream ceiling, green painted columns and two rows of wooden benches. Tall windows on the right cast broad bands of morning light across a clean tiled floor. A simple round wall clock and a closed doorway provide a sense of scale. The room is calm and empty, with believable straight architectural lines and worn material texture. No trains inside the room, advertisements, readable destination boards, crowds or dramatic smoke."
+    },
+    {
+      "id": "b2_fit_cafe",
+      "split": "fit",
+      "seed": 20260907311,
+      "prompt": "A realistic interior photograph of a compact neighborhood cafe before opening time. Three small round tables and several dark wooden chairs stand near a large front window. Behind a modest counter are a silver espresso machine, stacked white cups and a single glass cake cover. Warm pendant lights balance the cool morning daylight without overexposure. The pale tiled floor and cream walls have subtle everyday wear. Clear perspective and grounded furniture, no staff or customers, no brand names, menus, neon writing or floating tableware."
+    },
+    {
+      "id": "b2_fit_bedroom",
+      "split": "fit",
+      "seed": 20260907312,
+      "prompt": "An interior photograph of a simple attic bedroom beneath a sloped white ceiling. A low wooden bed with a neatly folded rust-colored blanket sits against the back wall, with one small bedside table and a ceramic lamp. A round woven rug lies on the light wood floor, and a narrow roof window admits soft daylight. The bedding has realistic folds and the room remains modest and uncluttered. Consistent scale and perspective, quiet natural materials, no people, mirrors with figures, writing or excessive decorative objects."
+    },
+    {
+      "id": "b2_fit_staircase",
+      "split": "fit",
+      "seed": 20260907313,
+      "prompt": "An architectural photograph of a curved indoor staircase made from pale limestone, with a continuous dark bronze handrail. The view looks upward from the bottom three steps toward an open landing lit by a tall arched window. Soft natural light reveals fine stone texture and gentle shadows beneath the rail. The staircase and supporting walls connect plausibly without impossible geometry, and the frame includes sufficient surrounding space to understand the layout. Minimal warm-toned interior, no people, signage, plants or unrelated furniture."
+    },
+    {
+      "id": "b2_held_aquarium_room",
+      "split": "holdout",
+      "seed": 20260907314,
+      "prompt": "A documentary-style interior photograph of a quiet public aquarium gallery with one broad illuminated tank built into a dark wall. A few small silver fish swim above rocks and aquatic plants behind clear glass, while two simple wooden benches face the display. The surrounding floor is matte gray and the ceiling lights are subdued, with realistic glass reflections rather than glowing haze. The room is empty and architecturally coherent. Natural fish anatomy and water color, no visitors, large text panels, logos or fantasy creatures."
+    },
+    {
+      "id": "b2_held_rooftop_garden",
+      "split": "holdout",
+      "seed": 20260907315,
+      "prompt": "A realistic architectural photograph of a small rooftop garden bordered by low concrete walls. Raised wooden beds contain herbs and modest flowering plants, and a narrow gravel path leads to a plain metal chair beneath a light fabric shade. Distant low buildings are softly visible under a bright overcast sky. Wind gently bends a few leaves without motion blur. Believable urban scale, natural weathering and grounded objects, balanced composition, no people, rooftop swimming pool, spectacular skyline, brand markings or written signs."
+    }
+  ]
+}

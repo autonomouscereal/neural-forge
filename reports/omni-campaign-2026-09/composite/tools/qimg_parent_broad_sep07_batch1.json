@@ -1,0 +1,63 @@
+{
+  "schema": "neural_forge.qimg_parent_image_plan.v1",
+  "scope": "Second preregistered calibration experiment: four batches totaling 24 new fit and 8 fresh held images, four sigmas each. Old first-experiment data is development-only and excluded. No seed search, quality selection or edits. Teacher-generated calibration, not child output.",
+  "sampling": {
+    "width": 512,
+    "height": 512,
+    "steps": 20,
+    "cfg": 4,
+    "sampler": "euler",
+    "scheduler": "normal",
+    "denoise": 1
+  },
+  "entries": [
+    {
+      "id": "b1_fit_copper_kettle",
+      "split": "fit",
+      "seed": 20260907300,
+      "prompt": "A studio photograph of one polished copper camping kettle with a dark wooden handle arcing above the lid and a narrow spout pointing right. The kettle stands alone on a matte pale stone plinth against a seamless cool gray background. Three-quarter eye-level view shows its complete silhouette, believable seams, small rivets and softly brushed metal. Broad diffused light from the left creates restrained reflections and one grounded shadow. Balanced composition, natural proportions, no writing, logos, hands or additional objects."
+    },
+    {
+      "id": "b1_fit_travel_bag",
+      "split": "fit",
+      "seed": 20260907301,
+      "prompt": "A realistic product photograph of one ochre canvas travel bag with two short leather handles and a closed brass zipper. The entire rectangular bag is visible from a slightly elevated three-quarter angle on a pale wooden bench. Carefully stitched seams, woven fabric and gently worn leather have convincing physical texture. Soft daylight enters from the upper right, leaving a clear contact shadow and an uncluttered cream background. The bag is neither transparent nor cut open. No people, brand markings, labels or floating parts."
+    },
+    {
+      "id": "b1_fit_toy_robot",
+      "split": "fit",
+      "seed": 20260907302,
+      "prompt": "A high-quality studio photograph of a small painted tin toy robot standing upright on two broad rectangular feet. It has a silver cylindrical head, two round dark eyes, a square blue torso and simple red articulated arms hanging at its sides. Its full body is visible in a slightly turned pose against a plain light gray backdrop. The metal has subtle scratches and realistic highlights without heavy rust. Softbox lighting, believable joints and balanced proportions, no extra limbs, no text and no recognizable franchise."
+    },
+    {
+      "id": "b1_fit_violin",
+      "split": "fit",
+      "seed": 20260907303,
+      "prompt": "A carefully lit photograph of a single wooden violin resting upright against a neutral padded support, viewed at a gentle three-quarter angle. Its amber varnish, curved waist, bridge, four strings, dark fingerboard and curled scroll are visibly distinct. The entire instrument fits inside the frame above a dark walnut tabletop. Soft warm side light brings out fine wood grain and controlled reflections, with a deep charcoal background. Realistic construction and scale, no bow crossing the instrument, no person, no music sheet and no lettering."
+    },
+    {
+      "id": "b1_fit_bicycle",
+      "split": "fit",
+      "seed": 20260907304,
+      "prompt": "An outdoor product photograph of a simple forest-green city bicycle standing beside a plain pale brick wall. The whole bicycle is shown from the left side, with two equal wheels, a brown saddle, black tires, curved handlebars and a small rear luggage rack. A narrow paved strip and a few fallen leaves ground the scene. Overcast daylight produces soft shadows and realistic paint, rubber and metal textures. Clear readable frame geometry, correct connected pedals and chain, no rider, no brand names or painted signs."
+    },
+    {
+      "id": "b1_fit_ceramic_bird",
+      "split": "fit",
+      "seed": 20260907305,
+      "prompt": "A museum-style photograph of one handmade white ceramic bird sculpture with a rounded body, a short beak and a smoothly raised tail. It rests securely on two simple integrated feet on a pale oak shelf. Three-quarter view reveals the entire object and a softly speckled matte glaze with minor handmade irregularities. A warm gray plaster wall fills the uncluttered background. Gentle directional window light casts one short shadow beneath the sculpture. Restrained composition, plausible solid construction, no second bird, flowers, text or decorative labels."
+    },
+    {
+      "id": "b1_held_glass_pitcher",
+      "split": "holdout",
+      "seed": 20260907306,
+      "prompt": "A studio still-life photograph of a tall transparent pale amber glass pitcher standing alone on a dark blue cloth-covered table. The pitcher has a wide circular base, a narrow neck, a clear curved handle and a small pouring lip. A small amount of water rests at the bottom, with physically plausible refraction and controlled soft reflections. Side light from a large window outlines the complete silhouette against a muted gray background. Careful material detail, stable contact shadow, no hands, logos, fruit or additional vessels."
+    },
+    {
+      "id": "b1_held_stone_turtle",
+      "split": "holdout",
+      "seed": 20260907307,
+      "prompt": "A realistic photograph of a small carved basalt turtle sculpture displayed on a low sandstone pedestal. The complete animal is visible from above and to the front, including a domed segmented shell, four broad short feet, a small head and a tapered tail. Fine tool marks and subtle variations in dark stone texture are visible without excessive gloss. Diffuse gallery lighting creates gentle shadows and a neutral warm background. The sculpture is a single solid object with believable proportions, no lettering, people or additional artifacts."
+    }
+  ]
+}

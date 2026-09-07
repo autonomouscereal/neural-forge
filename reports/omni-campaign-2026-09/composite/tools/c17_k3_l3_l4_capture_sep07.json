@@ -1,0 +1,41 @@
+{
+  "schema": "neural-forge.c17-k3-capture-plan.v1",
+  "fixture": false,
+  "layers": [3, 4],
+  "accepted_receipt": {"path": "/sealed/k3_dense_pass_receipt.json", "sha256": "c54e2fd0ade6fb8bbc9a111cb76fc5469abc1c197001b137e70f1c1156e976ff"},
+  "model_metadata_directory": "/parent-metadata",
+  "input_ids": {"path": "/inputs/corpus/k3_input_ids.safetensors", "sha256": "bb3b16573665d049fdc6f1368182fbffb2aabee2b83eff771b9f35c5c839ed38"},
+  "review_input_ids": [
+    {"path": "/inputs/corpus/k3_review_input_ids.safetensors", "sha256": "4b34c87d5d6a3aa9dceede2b21df991202614c5490ef9b6c8d75ac2a84ee8732"},
+    {"path": "/inputs/corpus/k3_review_native_input_ids.safetensors", "sha256": "5c53c84f9587b6a356209849fb578ed7c339a644c6f510460daf82e0ac3e1de7"}
+  ],
+  "evidence": {"path": "/inputs/s1/omni-evidence-27b-v1.json", "sha256": "a0a7f0da58e1d1b2ea19bc30e5187139c3618cff678ddabf44c27791b36dd124"},
+  "boundary_map": {"path": "/inputs/s1/boundary_map.json", "sha256": "090e47a2e3153d3d91f7d747847d7a9c8d36b7c9de99daaa6a11d452d78d9c68"},
+  "bodies": {
+    "3": {"path": "/accepted/body/L03/body.safetensors", "sha256": "5af5903c2b2fefa148c61893c956b5d667f3969e231071b6e118a4924119d5b2"},
+    "4": {"path": "/accepted/body/L04/body.safetensors", "sha256": "b5d5a1f3f35e3a16601a29a68963eff35433d3ac15e5562a4960784657aa5216"}
+  },
+  "accepted_layers": {
+    "1": {
+      "ffn": {"path": "/accepted/fold/dense/L01/ffn.safetensors", "sha256": "c33bcf90a207c5b923c1d94db554112dd3f2cce12bd02efd65852ad1cdf3cd55"},
+      "done": {"path": "/accepted/fold/dense/L01/done.json", "sha256": "ac6273515f5f1cca048bc0a702ad1c037595dfe5517e74a942dc50bb8f0de9d5"}
+    },
+    "2": {
+      "ffn": {"path": "/accepted/fold/dense/L02/ffn.safetensors", "sha256": "f2c63e8a9887cc2a49550c05a145c1667acd344ba78692440a49da7757845d07"},
+      "done": {"path": "/accepted/fold/dense/L02/done.json", "sha256": "ac621c883278b98d66b975fb5db2b49365aca2c4a56bd03493fac8a535388875"}
+    },
+    "3": {
+      "ffn": {"path": "/accepted/fold/dense/L03/ffn.safetensors", "sha256": "a56c49359553f089c035c2641229462a42f561762103cb91aed967419d5581bc"},
+      "done": {"path": "/accepted/fold/dense/L03/done.json", "sha256": "4d5db47c36a5a6983a762e4332fcb14871ae80d3eec43dd8bae5ed71895dd791"}
+    },
+    "4": {
+      "ffn": {"path": "/accepted/fold/dense/L04/ffn.safetensors", "sha256": "b73a3c5e05797759df2c9a6d9df10df5bdfa181e59022ed4b9d602ebb93c63ca"},
+      "done": {"path": "/accepted/fold/dense/L04/done.json", "sha256": "86c981b12c7bd2f746fcb103d9be7b6aa9cf13f636cabd7bdd123a62aaf247ec"}
+    }
+  },
+  "snapshot_manifest": {"path": "/sealed/snapshots_manifest.json", "sha256": "fdc849b628c980245dc0b05bc26b98f32b92ae187379281d0cbb93c9fc3dcb2d"},
+  "start_folded": {"path": "/accepted/fold/snapshots/before_L03_folded.safetensors", "manifest_key": "/run-output/fold/snapshots/before_L03_folded.safetensors"},
+  "end_teacher": {"path": "/accepted/fold/snapshots/before_L05.safetensors", "manifest_key": "/run-output/fold/snapshots/before_L05.safetensors"},
+  "end_folded": {"path": "/accepted/fold/snapshots/before_L05_folded.safetensors", "manifest_key": "/run-output/fold/snapshots/before_L05_folded.safetensors"},
+  "max_capture_bytes": 68719476736
+}

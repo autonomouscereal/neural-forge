@@ -98,6 +98,37 @@ def resident_site_gram(parent: Path, manifest, site: int):
 
 
 # --------------------------------------------------------------------- tests
+def test_full_sequence_preflight_preserves_pristine_trunk_and_parity(tiny):
+    harness = qs.StreamedHarness(tiny["parent"], "cpu", torch.float32, tiny["manifest"])
+    ids = harness.batches[0][1]
+    before = harness.engine.final_hidden(ids).clone()
+    report = qs.full_sequence_preflight(harness)
+    assert report["finite_hidden_and_last_logits"] is True
+    assert report["input_shape"] == list(ids.shape)
+    assert report["final_hidden_shape"] == list(before.shape)
+    assert report["cuda_peak_allocated_bytes"] is None
+    assert report["host_rss_after_bytes"] > 0
+    assert len(report["input_ids_sha256"]) == 64
+    assert harness.residual.boundary == 0 and not harness.engine.layers.folded
+    assert torch.equal(before, harness.engine.final_hidden(ids))
+    assert qs.streamed_parity(harness)["deterministic"] is True
+    harness.tap.remove()
+
+
+def test_full_sequence_preflight_refuses_nonfinite_and_folded_state(tiny, monkeypatch):
+    harness = qs.StreamedHarness(tiny["parent"], "cpu", torch.float32, tiny["manifest"])
+    harness.residual.boundary = 1
+    with pytest.raises(SystemExit, match="pristine"):
+        qs.full_sequence_preflight(harness)
+    harness.residual.boundary = 0
+    ids = harness.batches[0][1]
+    monkeypatch.setattr(harness.engine, "final_hidden", lambda _: torch.full(
+        (*ids.shape, harness.engine.text_config.hidden_size), float("nan")))
+    with pytest.raises(SystemExit, match="invalid final hidden"):
+        qs.full_sequence_preflight(harness)
+    harness.tap.remove()
+
+
 def test_check_split_matches_fit_check_rows(tiny):
     """The per-batch check flag is the row mask ``qf_corpus.fit_check_rows`` builds."""
 
