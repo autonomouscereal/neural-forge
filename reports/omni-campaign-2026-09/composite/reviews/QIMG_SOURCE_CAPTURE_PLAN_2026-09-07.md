@@ -3,6 +3,11 @@
 Read-only inventory on 2026-09-07. This is not a folded container, capture receipt,
 installed child, media result, or permission to use a companion decoder.
 
+Implementation follow-up: `composite/tools/c16_qimg_capture.py` now provides the
+actual source-hooked adapter; `QIMG_CAPTURE_INPUT_CONTRACT.md` defines its inputs,
+outputs and refusals. This supersedes the earlier "script missing" status below,
+but no real inputs/capture or folded runtime have been produced yet.
+
 ## What actually exists
 
 - Parent: `/home/cereal/comfyui/models/diffusion_models/qwen_image_fp8_e4m3fn.safetensors`.

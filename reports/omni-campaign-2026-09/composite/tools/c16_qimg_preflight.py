@@ -17,7 +17,8 @@ import struct
 
 
 SOURCE_CODE_SHA256 = "14c805af8da13d31094c2c704e413cc282ef43f4afe17f77de9070bdca301f28"
-DTYPE_BYTES = {"F8_E4M3": 1, "F8_E5M2": 1, "BF16": 2, "F16": 2, "F32": 4, "F64": 8}
+DTYPE_BYTES = {"F8_E4M3": 1, "F8_E5M2": 1, "BF16": 2, "F16": 2, "F32": 4, "F64": 8,
+               "BOOL": 1, "I8": 1, "U8": 1, "I16": 2, "U16": 2, "I32": 4, "U32": 4, "I64": 8, "U64": 8}
 MAX_HEADER_BYTES = 64 << 20
 
 
