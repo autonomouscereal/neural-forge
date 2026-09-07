@@ -618,7 +618,14 @@ def make_streamed_chimera_blocks() -> Any:
                     #: global default-dtype switch a raised exception could leak.
                     with torch.device(device):
                         block = ChimeraBlock(cfg, i)
-                    self.block_buffers[key] = block.to(device=device, dtype=dtype).eval()
+                    # Nonpersistent RoPE frequencies are absent from checkpoint state.
+                    # Preserve the original FP32 values before .to() rounds buffers;
+                    # widening a BF16/FP16 table afterward cannot recover them.
+                    rope_inv_freq = getattr(block.mixer, "inv_freq", None)
+                    block = block.to(device=device, dtype=dtype).eval()
+                    if rope_inv_freq is not None:
+                        block.mixer.inv_freq = rope_inv_freq.to(device=device, dtype=torch.float32)
+                    self.block_buffers[key] = block
             self.current_index: int | None = None
             self.layer_loads = 0
             self.layer_load_seconds = 0.0

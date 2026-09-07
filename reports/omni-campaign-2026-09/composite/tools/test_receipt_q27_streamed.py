@@ -102,6 +102,102 @@ def tree() -> dict:
     return tool.bind_chimera_tree(CHIMERA_SRC)
 
 
+def rotary_test_config(*, kind="gated_gqa", rope_dim=16):
+    from chimera_omni.config import ChimeraConfig
+
+    return ChimeraConfig(
+        vocab_size=64, hidden_size=32, intermediate_size=48, num_layers=2,
+        num_heads=2, num_kv_heads=1, max_sequence_length=262144,
+        block_pattern=(kind,), residual_mode="none", attention_head_dim=16,
+        gqa_rope_dim=rope_dim, gqa_rope_theta=1.0e7,
+    )
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_streamed_rope_preserves_original_fp32_frequencies(tree, tmp_path, dtype):
+    """Casting back after rounding is insufficient, especially at long positions."""
+    from chimera_omni.modeling.layers import ChimeraBlock
+
+    cfg = rotary_test_config()
+    reference = ChimeraBlock(cfg, 0).mixer
+    index = {"weight_map": {f"blocks.{i}.stub": "unused" for i in range(cfg.num_layers)}}
+    blocks = tool.make_streamed_chimera_blocks()(
+        cfg, tmp_path, index, "cpu", dtype, verify=False, layers_reported=0,
+    )
+    try:
+        mixer = blocks.block_buffers[blocks.buffer_key[0]].mixer
+        assert mixer.q_proj.weight.dtype == dtype
+        assert mixer.inv_freq.dtype == torch.float32
+        assert torch.equal(mixer.inv_freq, reference.inv_freq)
+        assert "mixer.inv_freq" not in blocks.block_buffers[blocks.buffer_key[0]].state_dict()
+        positions = torch.tensor([[0, 17, 65536, 262143]])
+        x = torch.linspace(-1, 1, 2 * 4 * 16).reshape(1, 2, 4, 16).to(dtype)
+        assert torch.equal(mixer.apply_rope(x, positions), reference.apply_rope(x, positions))
+    finally:
+        blocks.remove()
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_streamed_rope_survives_materialisation_and_buffer_reuse(tree, tmp_path, monkeypatch, dtype):
+    from types import SimpleNamespace
+
+    from chimera_omni.importing import safetensors_io
+    from chimera_omni.modeling.layers import ChimeraBlock
+
+    cfg = rotary_test_config()
+    expected = ChimeraBlock(cfg, 0).mixer.inv_freq.clone()
+    states = [ChimeraBlock(cfg, i).state_dict() for i in range(cfg.num_layers)]
+    index = {"weight_map": {f"blocks.{i}.{name}": "fixture" for i, state in enumerate(states) for name in state}}
+
+    def read_fixture(_root, names, *, verify):
+        assert verify
+        views = {}
+        for name in names:
+            _, layer, local = name.split(".", 2)
+            tensor = states[int(layer)][local]
+            views[name] = SimpleNamespace(
+                buffer=bytes(tensor.numel() * tensor.element_size()),
+                torch=lambda *, device, dtype, source=tensor: source.to(device=device, dtype=dtype),
+            )
+        return views
+
+    monkeypatch.setattr(safetensors_io, "read_safetensors", read_fixture)
+    blocks = tool.make_streamed_chimera_blocks()(
+        cfg, tmp_path, index, "cpu", dtype, verify=True, layers_reported=0,
+    )
+    try:
+        assert len(blocks.block_buffers) == 1
+        identity = None
+        for i in (0, 1, 0):
+            block = blocks[i]
+            if identity is None:
+                identity = block
+            assert block is identity
+            assert block.mixer.inv_freq.dtype == torch.float32
+            assert torch.equal(block.mixer.inv_freq, expected)
+            assert torch.equal(block.mixer.q_proj.weight, states[i]["mixer.q_proj.weight"].to(dtype))
+        assert blocks.layer_loads == 3
+    finally:
+        blocks.remove()
+
+
+@pytest.mark.parametrize("kind", ["gated_gqa", "kda"])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_streamed_rope_absent_is_supported(tree, tmp_path, kind, dtype):
+    cfg = rotary_test_config(kind=kind, rope_dim=0)
+    index = {"weight_map": {f"blocks.{i}.stub": "unused" for i in range(cfg.num_layers)}}
+    blocks = tool.make_streamed_chimera_blocks()(
+        cfg, tmp_path, index, "cpu", dtype, verify=False, layers_reported=0,
+    )
+    try:
+        assert len(blocks.block_buffers) == 1
+        block = blocks.block_buffers[blocks.buffer_key[0]]
+        assert getattr(block.mixer, "inv_freq", None) is None
+        assert next(block.parameters()).dtype == dtype
+    finally:
+        blocks.remove()
+
+
 @pytest.fixture(scope="session")
 def rq(tree):
     return tool.load_rq_script(tree["tree"])
