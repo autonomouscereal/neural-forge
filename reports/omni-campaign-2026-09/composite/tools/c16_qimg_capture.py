@@ -192,8 +192,14 @@ class QimgBlockTap:
         if not isinstance(value, torch.Tensor):
             raise ValueError(f"source hook did not receive a tensor: {name}")
         value = value.detach().clone().to("cpu").contiguous()
-        if value.is_floating_point() and not bool(torch.isfinite(value).all()):
-            raise ValueError(f"non-finite source capture: {name}")
+        if value.is_floating_point():
+            if name == "text_attention_mask":
+                # Native Qwen accepts an additive mask unchanged. Negative
+                # infinity is a valid blocked key, not a failed activation.
+                if bool((torch.isnan(value) | (value > 0)).any()):
+                    raise ValueError("invalid additive source text attention mask")
+            elif not bool(torch.isfinite(value).all()):
+                raise ValueError(f"non-finite source capture: {name}")
         self.records[name] = value
 
     def __enter__(self):

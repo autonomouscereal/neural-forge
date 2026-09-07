@@ -169,6 +169,33 @@ def test_pre_hook_preserves_entry_values_before_inplace_source_write():
     assert_no_hooks(model)
 
 
+def test_native_additive_padding_mask_is_preserved_without_replacing_forward():
+    model, x, sigma, context, _ = forward_fixture()
+    mask = torch.tensor([[0.0, -0.5, -float("inf")]])
+    with torch.no_grad():
+        expected = model(x, sigma, context, attention_mask=mask)
+    records, _ = tool.capture_forward(model, 0, x, sigma, context, mask, fixture=True)
+    assert torch.equal(records["text_attention_mask"], mask)
+    assert torch.equal(records["prediction"], expected)
+    assert_no_hooks(model)
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), 0.5])
+def test_additive_masks_refuse_nan_positive_infinity_and_positive_bias(invalid):
+    model, x, sigma, context, _ = forward_fixture()
+    with pytest.raises(ValueError, match="invalid additive"):
+        tool.capture_forward(model, 0, x, sigma, context,
+                             torch.tensor([[0.0, 0.0, invalid]]), fixture=True)
+    assert_no_hooks(model)
+
+
+def test_mask_exception_does_not_permit_nonfinite_activations():
+    model, *_ = forward_fixture()
+    tap = tool.QimgBlockTap(model, 0, fixture=True)
+    with pytest.raises(ValueError, match="non-finite source capture"):
+        tap.put("img_mlp_out", torch.tensor([-float("inf")]))
+
+
 def test_production_tap_refuses_fixture_class():
     model, x, sigma, context, mask = forward_fixture()
     with pytest.raises(ValueError, match="actual Qwen-Image"):
