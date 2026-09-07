@@ -38,7 +38,11 @@ def prepared(tmp_path):
     data = tool.fold.load_captures([path], fixture=True)
     native = SyntheticJointBlock(data["frozen"], data)
     for record in receipt["captures"]:
-        state = tool.fold.load_file(str(tmp_path / record["file"]))
+        # Linux safetensors tensors can borrow their file's mmap. Saving borrowed
+        # tensors back to that same path can truncate/zero the backing storage.
+        # This fixture deliberately rewrites files; production always writes new
+        # paths. Own every tensor before the fixture's same-path rewrite.
+        state = {k: v.clone() for k, v in tool.fold.load_file(str(tmp_path / record["file"])).items()}
         ni, nt = record["image_tokens"], record["text_tokens"]
         row, col = torch.meshgrid(torch.arange(4), torch.arange(6), indexing="ij")
         grid = torch.stack((torch.zeros(ni, dtype=torch.int64), row.flatten(), col.flatten()), 1)
@@ -57,6 +61,38 @@ def prepared(tmp_path):
     folded_path = tmp_path / "fold/fold_receipt.json"
     candidate, _ = tool.load_candidate(folded_path, tool.fold.file_sha(folded_path), data)
     return path, folded_path, data, candidate
+
+
+def test_prepared_owns_loaded_tensors_before_rewrite_and_preserves_exact_sigma(tmp_path, monkeypatch):
+    original_load, original_write = tool.fold.load_file, tool.fold.write_tensors
+    loaded = {}
+    rewrites = []
+    def tracked_load(path, *args, **kwargs):
+        state = original_load(path, *args, **kwargs)
+        loaded[str(Path(path))] = state
+        return state
+    def checked_write(path, state):
+        if path.exists() and str(path) in loaded:
+            borrowed = loaded[str(path)]
+            for name, value in state.items():
+                if name in borrowed:
+                    assert value.untyped_storage().data_ptr() != borrowed[name].untyped_storage().data_ptr(), name
+            before = {k: tool.fold.tensor_sha(v) for k, v in state.items()}
+            result = original_write(path, state)
+            assert before == {k: tool.fold.tensor_sha(v) for k, v in state.items()}
+            saved = original_load(str(path))
+            assert before == {k: tool.fold.tensor_sha(v) for k, v in saved.items()}
+            rewrites.append(path.name)
+            return result
+        return original_write(path, state)
+    monkeypatch.setattr(tool.fold, "load_file", tracked_load)
+    monkeypatch.setattr(tool.fold, "write_tensors", checked_write)
+    path, _, _, _ = prepared(tmp_path)
+    assert rewrites == ["fixture0.safetensors", "fixture1.safetensors"]
+    for record in json.loads(path.read_text())["captures"]:
+        saved = original_load(str(tmp_path / record["file"]))
+        assert saved["sigma"].dtype == torch.float32
+        assert float(saved["sigma"][0]) == record["sigma"]
 
 
 def test_complete_joint_replay_reports_both_streams_without_acceptance(tmp_path):
@@ -158,11 +194,13 @@ def test_candidate_source_identity_and_mixed_storage_fail_closed(tmp_path, mutat
     receipt = json.loads(path.read_text())
     if mutation in ("frozen", "dtype"):
         state, target = tool.fold.verified_tensors(path.parent, receipt["output"], 1 << 28)
+        state = {k: v.clone() for k, v in state.items()}
         name = "time_text_embed.timestep_embedder.linear_1.weight" if mutation == "frozen" else "transformer_blocks.0.img_mlp.net.2.weight"
         state[name] = state[name].float() + 1 if mutation == "frozen" else state[name].to(torch.float8_e4m3fn)
         receipt["output"] = tool.fold.write_tensors(target, state)
     elif mutation == "selection":
         state, target = tool.fold.verified_tensors(path.parent, receipt["selection"], 1 << 20)
+        state = {k: v.clone() for k, v in state.items()}
         state["img.selected_channels"][1] = state["img.selected_channels"][0]
         receipt["selection"] = tool.fold.write_tensors(target, state)
     elif mutation == "capture_identity": receipt["capture_receipts"][0]["sha256"] = "0" * 64
@@ -210,7 +248,7 @@ def test_optional_actual_native_tiny_block_preserves_mixed_dtype_and_joint_conte
     ids = torch.arange(6).float()[None, :, None].expand(1, 6, 3)
     record = {"text_mask_present": True}
     capture = {"img_in": torch.randn(1, 4, 8).bfloat16(), "txt_in": torch.randn(1, 2, 8).bfloat16(),
-        "temb": torch.randn(1, 8).bfloat16(), "source_ids": ids, "sigma": torch.tensor([.3]),
+        "temb": torch.randn(1, 8).bfloat16(), "source_ids": ids, "sigma": torch.tensor([.3], dtype=torch.float32),
         "rotation_used": native.embed(ids).bfloat16(), "text_attention_mask": torch.tensor([[0., -float('inf')]]).bfloat16()}
     before = {k: v.clone() for k, v in capture.items()}
     output = native.forward(capture, record)
