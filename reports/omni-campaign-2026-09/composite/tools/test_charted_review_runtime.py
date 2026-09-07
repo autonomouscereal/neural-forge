@@ -73,6 +73,27 @@ def media(h3=False):
     }
 
 
+def h3_media(sequence=4):
+    m = media(True)
+    base = 0.3
+    m["noise_levels"] = torch.tensor([[12 * base / (1 + 11 * base), 3 * base / (1 + 2 * base)]])
+    m["target_kind"] = "x0"
+    m["update_mask"] = torch.ones(1, 2, dtype=torch.bool)
+    m["charted_source_positions"] = {"h3": torch.arange(sequence * 3).reshape(1, sequence, 3).double()}
+    return m
+
+
+def whole_model_prefill(model, ids, m):
+    return model(
+        ids, native_media_features=m["features"], native_media_type_ids=m["type_ids"],
+        native_media_positions=m["positions"], native_media_indices=m["indices"],
+        native_media_valid_mask=m["valid_mask"], native_media_noise_levels=m.get("noise_levels"),
+        native_media_target_kind=m.get("target_kind", "reconstruction"),
+        native_media_update_mask=m.get("update_mask"), native_media_bidirectional_refinement=False,
+        charted_source_positions=m.get("charted_source_positions"),
+    )
+
+
 @pytest.mark.parametrize("h3", [False, True])
 def test_charted_media_prefill_matches_whole_model_and_reaches_block(h3):
     model, cfg = make_model(h3)
@@ -144,3 +165,75 @@ def test_streamed_charted_lane_remains_explicitly_unsupported(tmp_path):
     write_safetensors(model.state_dict(), root, config=cfg.to_manifest(), ledger=cfg.ledger().to_manifest(), chimera_commit="fixture")
     with pytest.raises(review.Refusal, match="streamed proxy"):
         review.StreamedChimera(root, device="cpu", dtype=torch.float32, ledger_band_logit_mask=False)
+
+
+@pytest.mark.parametrize("h3", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_padded_media_slots_match_native_validity_and_never_become_text(h3, dtype):
+    model, cfg = make_model(h3)
+    model.to(dtype=dtype)
+    split = decoder(model, cfg)
+    m = h3_media() if h3 else media()
+    m["valid_mask"][0, 1] = False
+    m["type_ids"][0, 1] = 0
+    if h3:
+        m["update_mask"][0, 1] = False
+        m["noise_levels"][0, 1] = 0
+    ids = torch.tensor([[264, 265, 8, 12]])
+    with torch.no_grad():
+        expected = whole_model_prefill(model, ids, m)
+        actual = split.forward(ids, media=m)
+        torch.testing.assert_close(actual["logits"], expected["logits"], atol=0, rtol=0)
+        assert torch.count_nonzero(actual["hidden"][:, 1]) == 0
+        changed = ids.clone()
+        changed[0, 1] = 14
+        # A padded media slot is invalid regardless of its input token embedding.
+        another = split.forward(changed, media=m)
+        assert torch.equal(actual["logits"], another["logits"])
+
+
+def test_non_h3_media_prefill_incremental_decode_still_matches_full_prefix():
+    model, cfg = make_model(False)
+    split = decoder(model, cfg)
+    ids, token, m = torch.tensor([[264, 265, 8, 12]]), torch.tensor([[13]]), media()
+    with torch.no_grad():
+        first = split.forward(ids, media=m)
+        assert not isinstance(first["cache"], review.UncacheableMediaPrefill)
+        actual = split.forward(token, first["cache"])
+        expected = whole_model_prefill(model, torch.cat((ids, token), dim=1), m)
+    assert torch.equal(actual["logits"][:, -1], expected["logits"][:, -1])
+
+
+def test_h3_prefill_returns_tensor_free_sentinel_and_refuses_cached_continuation(monkeypatch):
+    model, cfg = make_model(True)
+    split = decoder(model, cfg)
+    m, ids = h3_media(), torch.tensor([[264, 265, 8, 12]])
+    def no_retained_cache(*args):
+        pytest.fail("H3 prefill must not retain a reusable KV/history container")
+    monkeypatch.setattr(split, "_cache_class", no_retained_cache)
+    with torch.no_grad():
+        actual = split.forward(ids, media=m)
+        expected = whole_model_prefill(model, ids, m)
+    assert torch.equal(actual["logits"], expected["logits"])
+    marker = actual["cache"]
+    assert isinstance(marker, review.UncacheableMediaPrefill)
+    assert not hasattr(marker, "__dict__") and not hasattr(marker, "block_caches")
+    with pytest.raises(review.Refusal, match="full-context native forward"):
+        split.forward(torch.tensor([[13]]), marker)
+    # Fresh full-context evaluation remains faithful; no H3 context is frozen.
+    extended = torch.cat((ids, torch.tensor([[13]])), dim=1)
+    m["charted_source_positions"] = {"h3": torch.arange(15).reshape(1, 5, 3).double()}
+    with torch.no_grad():
+        rerun = split.forward(extended, media=m)
+        reference = whole_model_prefill(model, extended, m)
+    assert torch.equal(rerun["logits"], reference["logits"])
+
+
+def test_h3_model_without_routed_media_does_not_forbid_text_cache():
+    model, cfg = make_model(True)
+    split = decoder(model, cfg)
+    # Image rows are not H3's AV rows and therefore do not activate joint H3 attention.
+    with torch.no_grad():
+        first = split.forward(torch.tensor([[264, 265, 8, 12]]), media=media(False))
+        assert not isinstance(first["cache"], review.UncacheableMediaPrefill)
+        split.forward(torch.tensor([[13]]), first["cache"])

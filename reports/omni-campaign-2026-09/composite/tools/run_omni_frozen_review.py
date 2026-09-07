@@ -429,7 +429,7 @@ def load_chimera_split(
         "load_dtype": str(dtype),
         "rope_inv_freq_dtype": "torch.float32",
         "fp32_source_coefficients": sorted(fp32_names),
-        "charted_runtime": "text identity and explicit native-media prefill; continuous sampling is separate",
+        "charted_runtime": "text identity and explicit native-media prefill; H3 requires fresh full-context forwards, never cached continuation; continuous sampling is separate",
     }
     return model, cfg, receipt
 
@@ -437,6 +437,16 @@ def load_chimera_split(
 # --------------------------------------------------------------------------
 # The split decoder: the reference cached path, one `.to(device)` per boundary.
 # --------------------------------------------------------------------------
+
+
+class UncacheableMediaPrefill:
+    """Opaque, tensor-free marker: H3 joint text/AV context cannot be frozen.
+
+    Appending text changes the media write upstream of later trunk blocks, so
+    their prefill KV/history is not a valid cache for the enlarged context.
+    """
+
+    __slots__ = ()
 
 
 class SplitDecoder:
@@ -463,7 +473,8 @@ class SplitDecoder:
         self._cache_class = ChimeraCausalCache
 
     def _trunk(self, x: Any, valid: Any, cache: Any, *, row_types: Any = None,
-               noise_levels: Any = None, source_positions: Any = None) -> tuple[Any, Any]:
+               noise_levels: Any = None, source_positions: Any = None,
+               cacheable: bool = True) -> tuple[Any, Any]:
         torch = self.torch
         model = self.model
         blocks = model.blocks
@@ -490,25 +501,35 @@ class SplitDecoder:
                 if types is not None:
                     x = x + block.charted_output(x, types, levels, v, positions)
                 x = torch.where(v.unsqueeze(-1), x, torch.zeros_like(x))
-                next_caches.append(MixerHistory(inputs=x[:, :0], valid_mask=v[:, :0]))
+                if cacheable:
+                    next_caches.append(MixerHistory(inputs=x[:, :0], valid_mask=v[:, :0]))
                 continue
             attention, next_cache = block.attention_output_with_cache(x, block_cache, v)
             x = x + attention
             x = x + block.feed_forward_output(x, v)
             x = torch.where(v.unsqueeze(-1), x, torch.zeros_like(x))
-            next_caches.append(next_cache)
-        return x, self._cache_class(tuple(next_caches))
+            if cacheable:
+                next_caches.append(next_cache)
+            else:
+                del next_cache
+        return x, self._cache_class(tuple(next_caches)) if cacheable else UncacheableMediaPrefill()
 
     def forward(self, input_ids: Any, cache: Any = None, *, media: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Logits for `input_ids` given `cache`; returns the next cache too."""
+        """Logits plus cache, or a tensor-free non-cacheable H3 prefill marker."""
 
         torch = self.torch
         model = self.model
+        if isinstance(cache, UncacheableMediaPrefill):
+            raise Refusal(
+                "H3 media is initial prefill only: joint text/AV attention requires a full-context "
+                "native forward after text changes; cached H3 media decode is not implemented"
+            )
         ids = input_ids.to(self.head_device)
         valid = model._token_validity(ids, None)
         model._validate_token_ids(ids)
         x = model.embed(ids)
         row_types = noise_levels = source_positions = None
+        h3_media_active = False
         if media is not None:
             if cache is not None:
                 raise Refusal("native media is supported only in the initial prefill, not an existing causal cache")
@@ -530,17 +551,25 @@ class SplitDecoder:
                 media["valid_mask"].to(self.head_device),
                 None if raw_noise is None else raw_noise.to(self.head_device),
             )
+            media_slots, valid_media, _ = model._native_refinement_layout(
+                ids, _count, media["indices"], media["valid_mask"], media["type_ids"],
+                requested=False,
+            )
+            if media_slots is not None:
+                valid = valid & ~(media_slots & ~valid_media)
             row_types, noise_levels = model._charted_layout(
                 ids, _count, media["indices"], media["type_ids"], media["valid_mask"], raw_noise
             )
             source_positions = media.get("charted_source_positions")
-            if row_types is not None and raw_noise is None and any(
-                spec.modulation == "h3_curve6" and any(bool(row_types.eq(t).any()) for t in spec.type_ids)
+            h3_media_active = row_types is not None and any(
+                spec.modulation == "h3_curve6" and any(bool((row_types.eq(t) & valid).any()) for t in spec.type_ids)
                 for spec in self.cfg.charted_blocks
-            ):
+            )
+            if h3_media_active and raw_noise is None:
                 raise Refusal("H3 media prefill requires explicit actual per-type sigma values")
         x, next_cache = self._trunk(x, valid, cache, row_types=row_types,
-                                  noise_levels=noise_levels, source_positions=source_positions)
+                                  noise_levels=noise_levels, source_positions=source_positions,
+                                  cacheable=not h3_media_active)
         if str(x.device) != self.head_device:
             x = x.to(self.head_device)
         v = valid.to(self.head_device)
