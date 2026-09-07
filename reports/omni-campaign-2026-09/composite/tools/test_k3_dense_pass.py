@@ -1041,7 +1041,11 @@ def test_resume_refits_downstream_after_same_rung_upstream_replacement(
     upstream = run_pass(argv(layers="0-1", k_pool_factor=2))
     new_l1 = upstream["layers"]["1"]["ffn"]["sha256"]
     assert old_l1 != new_l1, "the fixture must really replace the upstream fold"
-    resumed = run_pass(argv(layers="2-2", resume=True))
+    # Continue under the numerical context that produced the replacement prefix.
+    # Switching back to pool=1 now deliberately refuses the pool=2 snapshot.
+    with pytest.raises(SystemExit, match="source/runtime/corpus context"):
+        run_pass(argv(layers="2-2", resume=True))
+    resumed = run_pass(argv(layers="2-2", resume=True, k_pool_factor=2))
     new_held = load_file(str(out / "resid" / "L02" / "held_rows.safetensors"))
     assert torch.equal(old_held["teacher_moe_x"], new_held["teacher_moe_x"])
     assert not torch.equal(old_held["folded_moe_x"], new_held["folded_moe_x"])
@@ -1052,7 +1056,7 @@ def test_resume_refits_downstream_after_same_rung_upstream_replacement(
     assert marker["prefix_lineage"] == layer["prefix_lineage"] == layer["fold"]["prefix_lineage"]
     assert marker["prefix_lineage"]["upstream_ffn_sha256"] == {"1": new_l1}
     # Refitting changed ancestry, not the ordinary unchanged-prefix resume behavior.
-    again = run_pass(argv(layers="2-2", resume=True))
+    again = run_pass(argv(layers="2-2", resume=True, k_pool_factor=2))
     assert again["layers"]["2"]["fit_skipped"] is not None
     assert again["final_prefix_sha256"] == resumed["final_prefix_sha256"]
 

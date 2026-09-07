@@ -125,6 +125,9 @@ Deviations from the run-book row, on purpose and recorded in the receipt:
   prefix; missing (legacy) lineage forces a refit. Snapshots and carried
   receipts validate the whole chain. Gate-mode resume also refuses to carry
   a record-only refusal or an unverifiable acceptance verdict.
+* v1.2.2 -- reuse also requires the same source metadata, numerical runtime,
+  implementation hashes and complete corpus masks/lengths. An accepted FP32
+  diagnostic is not a BF16 acceptance receipt. Legacy context is never inferred.
 
 Usage (server, lab venv; the real pass runs DETACHED and is polled):
 
@@ -152,7 +155,7 @@ import torch
 import torch.nn.functional as F
 
 TOOL_NAME = "k3_dense_pass"
-TOOL_VERSION = "1.2.1"
+TOOL_VERSION = "1.2.2"
 SHARE_ROOT = "/mnt/ai_data"
 DEFAULT_SRC_DIR = "/mnt/lexar/models/moonshotai/Kimi-K3"
 DEFAULT_OUT = "/mnt/lexar/omni-campaign/k3"
@@ -177,6 +180,7 @@ FOLD_METRIC_KEYS = ("fold", "pivot_seconds", "fit_timings", "veto_binding", "upd
                     "fit_relL2_heldout", "routed_write_relL2_heldout", "width_installed",
                     "law_verdict", "acceptance")
 PREFIX_LINEAGE_VERSION = "k3_dense_pass.prefix_lineage.v1"
+RESUME_CONTEXT_VERSION = "k3_dense_pass.resume_context.v1"
 # ---- the measured acceptance rule (v1.2.0) --------------------------------------------
 # Named, versioned constants.  Changing one is a tool-version change and the receipt names the
 # calibration it came from; nothing here is tuned against the held rows of a running pass.
@@ -463,6 +467,9 @@ class Segment:
             self.held_mask = torch.zeros_like(self.held_mask)
         self.input_ids_sha256 = sha256_bytes(self.ids.contiguous().numpy().tobytes())
         self.fit_mask_sha256 = sha256_bytes(self.fit_mask.contiguous().numpy().tobytes())
+        self.held_mask_sha256 = sha256_tensor(self.held_mask)
+        self.real_lengths_sha256 = sha256_tensor(self.real_lengths)
+        self.split_sha256 = sha256_tensor(self.split) if self.split is not None else None
 
     def record(self) -> dict[str, Any]:
         return {
@@ -470,6 +477,8 @@ class Segment:
             "tokens": self.rows * self.T, "real_tokens": int(self.real_mask.sum()),
             "fit_tokens": int(self.fit_mask.sum()), "held_tokens": int(self.held_mask.sum()),
             "input_ids_sha256": self.input_ids_sha256, "fit_mask_sha256": self.fit_mask_sha256,
+            "held_mask_sha256": self.held_mask_sha256,
+            "real_lengths_sha256": self.real_lengths_sha256, "split_sha256": self.split_sha256,
             "file_sha256": sha256_file(self.path),
             "metadata": {k: (v if len(v) < 200 else v[:200] + "...") for k, v in self.metadata.items()},
         }
@@ -495,7 +504,9 @@ class Corpus:
         # the provenance stamp every snapshot carries and every resume checks
         self.sha256 = sha256_text(canonical_json(
             [{"file": s.name, "role": s.role, "input_ids_sha256": s.input_ids_sha256,
-              "fit_mask_sha256": s.fit_mask_sha256} for s in self.segments]))
+              "shape": [s.rows, s.T], "fit_mask_sha256": s.fit_mask_sha256,
+              "held_mask_sha256": s.held_mask_sha256, "real_lengths_sha256": s.real_lengths_sha256,
+              "split_sha256": s.split_sha256} for s in self.segments]))
 
     def record(self) -> dict[str, Any]:
         return {"corpus_sha256": self.sha256, "tokens": self.tokens,
@@ -1479,9 +1490,44 @@ class DualStreamRun(StreamRun):
             "snapshots": {"every": int(args.snapshot_every), "keep": int(args.snapshot_keep), "written": []},
             "layers": {},
         }
+        self.resume_context = self._resume_context()
+        self.receipt["resume_context"] = self.resume_context
         self._carry_forward_previous_receipt()
 
     # -- identity ------------------------------------------------------------
+    def _resume_context(self) -> dict[str, Any]:
+        """Bind cached acceptance to what produced it, without rehashing the 1.56 TB parent.
+
+        Source file size/mtime is an inexpensive change detector, not proof of
+        unchanged shard bytes. Full shard identity remains the separate digest gate.
+        Operational flags (staging, retention, layer window, acceptance mode) do
+        not change this key; numerical/scoring inputs deliberately do.
+        """
+        model = self.receipt["model"]
+        source_files = {}
+        for name in sorted(set(self.index.weight_map.values())):
+            stat = os.stat(os.path.join(self.args.src_dir, name))
+            source_files[name] = {"bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+        numerical_args = ("compute_dtype", "kda_backend", "k_pool_factor", "row_chunk", "token_chunk",
+                          "chunk", "holdout_blocks", "divergence_rows", "review_topk")
+        return {
+            "version": RESUME_CONTEXT_VERSION,
+            "model": {"source_directory": os.path.normcase(os.path.realpath(self.args.src_dir)),
+                      "config_sha256": model["config_sha256"], "index_sha256": model["index_sha256"],
+                      "source_file_metadata": source_files},
+            "source_identity_scope": "config/index hashes and shard size/mtime change detection; "
+                                     "not a full shard digest verification",
+            "corpus": self.corpus.sha256,
+            "runtime": {**{key: getattr(self.args, key) for key in numerical_args},
+                        "device": str(self.device), "experts_device": str(self.experts_device),
+                        "resid_device": str(self.resid_device), "devices": self.receipt["devices"],
+                        "float32_matmul_precision": torch.get_float32_matmul_precision(),
+                        "num_threads": torch.get_num_threads()},
+            "software": {"tool_sha256": self.receipt["tool_sha256"],
+                         "lane_sha256": self.receipt["lane_sha256"], "torch": str(torch.__version__),
+                         "cuda": torch.version.cuda},
+        }
+
     def _model_identity(self) -> dict[str, Any]:
         src = os.path.abspath(self.args.src_dir)
         index_path = os.path.join(src, "model.safetensors.index.json")
@@ -1528,6 +1574,11 @@ class DualStreamRun(StreamRun):
                     prior = json.load(handle)
             except (OSError, ValueError) as exc:
                 self.receipt["resumed_from_receipt"] = {"path": path, "error": repr(exc)[:200]}
+                continue
+            if not isinstance(prior, dict) or prior.get("resume_context") != self.resume_context:
+                self.receipt["resumed_from_receipt"] = {
+                    "path": path, "carried": False,
+                    "reason": "source/runtime/corpus resume context differs or is missing; replay/refit required"}
                 continue
             if prior.get("corpus", {}).get("corpus_sha256") != self.corpus.sha256:
                 self.receipt["resumed_from_receipt"] = {
@@ -1620,6 +1671,7 @@ class DualStreamRun(StreamRun):
         installed ffn.safetensors -- what a resume must find unchanged on disk."""
         stamp = {"input_ids_sha256": self.corpus.sha256, "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
                  "run_id": self.run_id, "rung": str(int(self.args.rung)),
+                 "resume_context": canonical_json(self.resume_context),
                  "prefix_lineage_version": PREFIX_LINEAGE_VERSION,
                  "installed_ffn_sha256": self.installed_stamp(),
                  "installed_layers": str(len(self.installed))}
@@ -1656,6 +1708,8 @@ class DualStreamRun(StreamRun):
             if not os.path.exists(path):
                 return False, f"{path} is missing", {}
             stamp = read_metadata(path)
+            if stamp.get("resume_context") != canonical_json(self.resume_context):
+                return False, f"snapshot {path} carries a different or missing source/runtime/corpus context", stamp
             if stamp.get("input_ids_sha256") != self.corpus.sha256:
                 return False, (f"snapshot {path} was written for input_ids {stamp.get('input_ids_sha256')!r}, "
                                f"this run streams {self.corpus.sha256!r}"), stamp
@@ -1778,6 +1832,8 @@ class DualStreamRun(StreamRun):
             return None
         if not isinstance(marker, dict):
             return None
+        if marker.get("resume_context") != self.resume_context:
+            return None
         artefact = marker.get("artefact")
         if (marker.get("corpus_sha256") != self.corpus.sha256 or not isinstance(artefact, str)
                 or not artefact or not os.path.exists(artefact)):
@@ -1805,6 +1861,7 @@ class DualStreamRun(StreamRun):
                   "corpus_sha256": self.corpus.sha256, "rung": int(self.args.rung) if extra.get("moe") else None,
                   "tool": TOOL_NAME, "tool_version": TOOL_VERSION, "run_id": self.run_id,
                   "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **extra}
+        marker["resume_context"] = self.resume_context
         if extra.get("moe"):
             marker["prefix_lineage"] = self.prefix_lineage(layer_idx)
         return write_receipt(self.done_marker_path(layer_idx), marker)
