@@ -1,0 +1,19 @@
+# Build only after checking this local tag resolves to the exact verified image:
+# sha256:d4ef16f161e51df2bd51df62c1aaa4ea7d9fc65fefcbaef8382027a527ec3ba6
+# A Docker image ID is not a registry manifest digest: do not invent an @ digest.
+# Build context is this tools directory; no model, corpus or source is copied.
+FROM local/omni-k3-fold:sep07-e2e615be
+
+LABEL org.opencontainers.image.description="Offline streamed Qwen C2 S3 fold runtime; no training or optional fused kernels" \
+      ai.neural-forge.k3-base-image-id="sha256:d4ef16f161e51df2bd51df62c1aaa4ea7d9fc65fefcbaef8382027a527ec3ba6"
+
+USER root
+COPY requirements-s3-fold.txt /tmp/requirements-s3-fold.txt
+RUN python -m pip install --no-cache-dir --no-deps -r /tmp/requirements-s3-fold.txt \
+    && python -m pip check \
+    && python -c "import torch, numpy, safetensors, transformers; from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration, Qwen3_5ForCausalLM, Qwen3_5DecoderLayer; assert torch.__version__ == '2.11.0+cu128'; assert numpy.__version__ == '2.4.4'; assert safetensors.__version__ == '0.8.0'; assert transformers.__version__ == '5.12.1'"
+
+USER 1000:1000
+WORKDIR /tmp
+ENTRYPOINT []
+CMD ["python", "--version"]
