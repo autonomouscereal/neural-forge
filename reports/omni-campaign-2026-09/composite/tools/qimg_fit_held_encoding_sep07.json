@@ -1,0 +1,148 @@
+{
+  "schema": "neural_forge.qimg_encoding_plan.v1",
+  "scope": "Actual native parent-generated images; fixed six-fit/two-holdout groups. Calibration noise grid only, not sampler states or child proof.",
+  "sigmas": [
+    0.15,
+    0.35,
+    0.65,
+    0.9
+  ],
+  "entries": [
+    {
+      "id": "fit_product",
+      "split": "fit",
+      "seed": 20260908100,
+      "prompt": "A carefully composed studio product photograph of a cobalt blue ceramic teapot beside one small white porcelain cup on a pale oak table. The teapot has a curved handle on the right and a short spout pointing left. Soft window light enters from the upper left, producing a gentle grounded shadow beneath both objects. Fine glaze texture and realistic wood grain are visible. A plain warm gray background remains uncluttered. Eye-level three-quarter view, moderate depth of field, no writing, no logos, no people.",
+      "image": {
+        "path": "/parent-images/fit_product.png",
+        "sha256": "2865eb751e7be00249375e2c3bf9f47ac2c147325b182670af6ecfcdcff631a4"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907100,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "fit_portrait",
+      "split": "fit",
+      "seed": 20260908101,
+      "prompt": "A natural photographic portrait of an imaginary older woman with short silver hair, round brown glasses and a dark green knitted cardigan. She is seated beside a window in a quiet library, looking toward the camera with a relaxed closed-mouth smile. Warm bookshelves are softly out of focus behind her. Both shoulders and her hands resting together on the table are visible. The daylight is soft and believable, with detailed skin texture and knitted fabric rather than airbrushing. Balanced centered composition, no text, no recognizable public figure.",
+      "image": {
+        "path": "/parent-images/fit_portrait.png",
+        "sha256": "825fb70893b9c1c123797b1c1db9a7ed5e10d37ad30c788afa44be21a3272a21"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907101,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "fit_landscape",
+      "split": "fit",
+      "seed": 20260908102,
+      "prompt": "A wide photographic landscape of a small alpine lake beneath a rugged mountain ridge at early morning. In the foreground, rounded gray stones are visible through clear shallow water. A narrow wooden footbridge crosses a stream on the right. Dark evergreen trees frame the left edge, while light mist floats just above the distant water. Soft orange sunlight touches the mountain peaks and reflects in the still lake. Natural colors, realistic scale, crisp environmental detail, an open sky with a few thin clouds, no buildings, no people, no writing.",
+      "image": {
+        "path": "/parent-images/fit_landscape.png",
+        "sha256": "7861e1d30573674cf14fe3388ff3490c045c50a5820a9f8dced1c01672ee178f"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907102,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "fit_interior",
+      "split": "fit",
+      "seed": 20260908103,
+      "prompt": "An architectural photograph of a modest sunlit reading room with white plaster walls and a terracotta tile floor. One mustard yellow armchair sits to the left of a low circular walnut table. On the table are a closed dark blue book and a clear glass of water. A tall leafy plant stands near the window on the right. Morning sunlight makes diagonal patches on the floor without overexposure. The furniture is realistically proportioned and grounded, with believable perspective and material textures. Quiet lived-in atmosphere, no people, no labels.",
+      "image": {
+        "path": "/parent-images/fit_interior.png",
+        "sha256": "d85d2383d7b117e6186b8aeabba78abbee162ba1cbd545b131f9880cc8431206"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907103,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "fit_animal",
+      "split": "fit",
+      "seed": 20260908104,
+      "prompt": "A detailed wildlife photograph of one red fox standing on a moss-covered fallen log in a leafy woodland. Its body is seen from the side while its head turns toward the camera, ears upright and mouth closed. The fox has rich orange fur, dark lower legs and a bushy tail with a white tip. Small ferns and brown leaves surround the log. Diffuse overcast light reveals natural fur texture, with a softly blurred green forest background. Anatomically plausible legs and paws, calm alert posture, no extra animals, no writing.",
+      "image": {
+        "path": "/parent-images/fit_animal.png",
+        "sha256": "96e32b38334f6c84e45e8ec00d8a95d9251576dda08b3f58129e6f726390502b"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907104,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "fit_graphic",
+      "split": "fit",
+      "seed": 20260908105,
+      "prompt": "A clean flat illustrated travel poster for an imaginary coastal town. A white lighthouse with a red roof stands on the left, a small blue sailboat sits on the water to the right, and a yellow sun is high in a pale cream sky. Three broad turquoise waves cross the lower half. At the top, large neatly spaced dark navy letters read exactly HARBOR DAY. The composition uses simple geometric shapes, consistent outlines and a restrained palette of cream, navy, turquoise, red and yellow. No additional words, no photographic textures.",
+      "image": {
+        "path": "/parent-images/fit_graphic.png",
+        "sha256": "052eeb67422f2e7b29d8f308d652d05eb496b5bd42b6c2a7e305809ecba6ed16"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907105,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "held_mechanical",
+      "split": "holdout",
+      "seed": 20260908106,
+      "prompt": "A realistic tabletop photograph of a small brass mechanical clock with an exposed circular gear assembly, standing upright on a dark slate surface. A plain white clock face shows black numerals and two slender dark hands. To the right lies one precision screwdriver with a red handle, fully separated from the clock. A folded light gray cloth rests behind the objects. Side lighting creates controlled reflections on the brushed metal and clear contact shadows. The arrangement feels like a tidy repair bench, with believable construction and scale, no brand names, no people.",
+      "image": {
+        "path": "/parent-images/held_mechanical.png",
+        "sha256": "756cae56b9b8894e0c35b46048483a341a51609ca521a04be310b2df54abdac4"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907106,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    },
+    {
+      "id": "held_watercolor",
+      "split": "holdout",
+      "seed": 20260908107,
+      "prompt": "A delicate watercolor painting of a small stone cottage beside a garden path after light rain. Purple lavender and white daisies border the path in the foreground. The cottage has a warm red wooden door, two small square windows and a weathered slate roof. A pale blue watering can sits near the doorway. Soft washes of green suggest distant trees under a cloudy sky. Visible watercolor paper texture, gentle pigment blooms and restrained pencil details create an authentic hand-painted appearance. Cozy peaceful composition, no people, no signs or lettering.",
+      "image": {
+        "path": "/parent-images/held_watercolor.png",
+        "sha256": "bfe070a467cf878e03d88a04f4599b2b18d49beb0cee80e42c108cea49b05131"
+      },
+      "image_provenance": {
+        "kind": "native_parent_generated",
+        "description": "native Qwen-Image parent generated; no selection; no edits; not a photograph",
+        "parent_plan_sha256": "43ad56286b5069ea3ff38d400e98b1caed9410cdbd67e3f9d4d114d9e6c07801",
+        "parent_seed": 20260907107,
+        "recipe": "Qwen-Image FP8 BF16 native Euler20 normal CFG4, 512x512; 2026-09-07; no quality selection"
+      }
+    }
+  ]
+}
