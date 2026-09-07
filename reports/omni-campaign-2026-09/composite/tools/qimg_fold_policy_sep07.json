@@ -1,0 +1,21 @@
+{
+  "schema": "neural_forge.qimg_fold_policy.v1",
+  "policy_id": "sep07-first-authentic-dual-stream-fold",
+  "description": "Preregistered 2026-09-07 before any authentic candidate solve or held-out candidate score. Engineering candidate gate only, not native block, visual quality, installed child, or all-modality acceptance. Source replay relL2 ceiling 0.005 permits bounded BF16 replay rounding; candidate relative error <=0.30 and mean row cosine >=0.95 must pass pooled and every held-out forward separately in both streams. Keeps were selected before scores: bias-inclusive fourfold maximum 3071 image, bounded 512 text. Preserve failure diagnostics; never relax these gates or silently retry with heldout-informed choices.",
+  "preregistered_before_scoring": true,
+  "gate_scope": "pooled_and_each_heldout_forward",
+  "streams": {
+    "img": {
+      "keep": 3071,
+      "max_source_replay_rel_l2": 0.005,
+      "max_heldout_rel_l2": 0.30,
+      "min_heldout_cos": 0.95
+    },
+    "txt": {
+      "keep": 512,
+      "max_source_replay_rel_l2": 0.005,
+      "max_heldout_rel_l2": 0.30,
+      "min_heldout_cos": 0.95
+    }
+  }
+}
