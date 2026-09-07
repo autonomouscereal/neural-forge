@@ -1,0 +1,63 @@
+{
+  "schema": "neural_forge.qimg_parent_image_plan.v1",
+  "scope": "Second preregistered calibration experiment: four batches totaling 24 new fit and 8 fresh held images, four sigmas each. Old first-experiment data is development-only and excluded. No seed search, quality selection or edits. Teacher-generated calibration, not child output.",
+  "sampling": {
+    "width": 512,
+    "height": 512,
+    "steps": 20,
+    "cfg": 4,
+    "sampler": "euler",
+    "scheduler": "normal",
+    "denoise": 1
+  },
+  "entries": [
+    {
+      "id": "b3_fit_cyclist_portrait",
+      "split": "fit",
+      "seed": 20260907316,
+      "prompt": "A candid photographic portrait of an imaginary adult cyclist resting beside a rural path. The person wears a matte blue helmet, a plain gray jacket and practical gloves, and stands with both hands lightly resting on a bicycle handlebar. Their relaxed face, upper body and connected arms are clearly visible, with natural skin texture and believable fabric folds. Soft green fields blur into the background under cloudy daylight. Calm ordinary moment, anatomically coherent pose, no recognizable celebrity, racing logo, dramatic injury or text."
+    },
+    {
+      "id": "b3_fit_potter",
+      "split": "fit",
+      "seed": 20260907317,
+      "prompt": "A documentary photograph of an imaginary middle-aged potter seated at a pottery wheel in a modest studio. Both hands gently shape one damp clay bowl centered on the wheel, with plausible fingers and a focused natural expression. The potter wears a plain dark apron over a cream shirt. Shelves of unfinished vessels are softly visible behind, illuminated by a large side window. Realistic clay texture, subtle splashes and grounded tools, no exaggerated action, extra hands, brand names, readable labels or staged theatrical lighting."
+    },
+    {
+      "id": "b3_fit_heron",
+      "split": "fit",
+      "seed": 20260907318,
+      "prompt": "A detailed wildlife photograph of one gray heron standing in shallow water near a reed bed. Its long legs, folded wings, extended neck and pointed beak are all visible in a natural side view. Small ripples spread around the legs, while pale morning mist softens distant trees. Soft light reveals layered feathers and a faint reflection without turning the water into a mirror. Realistic proportions and calm alert behavior, natural subdued colors, no additional birds, artificial ornaments, dramatic splashes or writing."
+    },
+    {
+      "id": "b3_fit_market_street",
+      "split": "fit",
+      "seed": 20260907319,
+      "prompt": "A street photograph of a quiet open-air produce market in an imaginary small town just after sunrise. Wooden stalls display modest baskets of green vegetables, red tomatoes and yellow squash along a paved lane. Two distant adults browse naturally without dominating the frame. Simple fabric awnings cast soft shadows, and ordinary plaster buildings form the background. Believable perspective, everyday material textures and gentle daylight, no famous location, crowded festival, identifiable real person, political signs, brand logos or oversized readable lettering."
+    },
+    {
+      "id": "b3_fit_desert_landscape",
+      "split": "fit",
+      "seed": 20260907320,
+      "prompt": "A wide landscape photograph of a dry desert basin with layered reddish sandstone formations and sparse sagebrush. A winding pale dirt trail begins in the foreground and disappears between low rock ridges. Early evening light creates long soft-edged shadows and reveals fine sand and stone texture. The sky is mostly clear with a few faint high clouds, and the scene has a realistic sense of distance and scale. Natural restrained colors, no vehicles, buildings, people, giant moon, fantasy structures or lettering."
+    },
+    {
+      "id": "b3_fit_underwater_fish",
+      "split": "fit",
+      "seed": 20260907321,
+      "prompt": "An underwater nature photograph of a small school of yellow-and-silver reef fish swimming above rounded coral heads in clear shallow water. Sunlight from the surface forms faint moving patterns on the sandy seabed. The fish vary naturally in orientation without overlapping into fused shapes, with believable fins, eyes and scales. Blue-green water fades softly into the distance, and the composition remains open rather than crowded. Realistic marine colors and anatomy, no diver, shipwreck, giant predator, plastic waste, logos or text."
+    },
+    {
+      "id": "b3_held_snowy_village",
+      "split": "holdout",
+      "seed": 20260907322,
+      "prompt": "A realistic winter photograph of a narrow lane through an imaginary mountain village after fresh snowfall. Low timber houses with steep roofs line the lane, and one small red sled rests beside a fence. Warm light glows gently from a few windows as late afternoon blue shadows cross the snow. Footprints follow the path without revealing any person. Believable scale, wooden construction and soft snow texture, calm composition, no famous landmark, holiday lettering, oversized decorations, blizzard effects or fantasy architecture."
+    },
+    {
+      "id": "b3_held_cooking_portrait",
+      "split": "holdout",
+      "seed": 20260907323,
+      "prompt": "A natural documentary portrait of an imaginary adult cook standing in a small bright kitchen while slicing a cucumber on a wooden board. Both hands, the kitchen knife and the board are clearly connected in a plausible careful pose. The cook wears a plain green apron and looks down with a relaxed focused expression. A bowl and folded towel sit nearby, with simple cabinets softly visible behind. Soft daylight, realistic food and fabric textures, no recognizable person, extra limbs, readable packaging or restaurant branding."
+    }
+  ]
+}
