@@ -1,5 +1,6 @@
 """Small native split-runtime tests; no tokenizer or real media claims."""
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -237,3 +238,100 @@ def test_h3_model_without_routed_media_does_not_forbid_text_cache():
         first = split.forward(torch.tensor([[264, 265, 8, 12]]), media=media(False))
         assert not isinstance(first["cache"], review.UncacheableMediaPrefill)
         split.forward(torch.tensor([[13]]), first["cache"])
+
+
+def written_fixture(tmp_path, h3=False, *, bad_fp32_island=False):
+    model, cfg = make_model(h3)
+    model.bfloat16()
+    state = model.state_dict()
+    if bad_fp32_island:
+        name = "blocks.1.charted." + H3_FP32_PARAMETERS[0]
+        state[name] = state[name].bfloat16()
+    root = tmp_path / "checkpoint"
+    write_safetensors(state, root, config=cfg.to_manifest(), ledger=cfg.ledger().to_manifest(), chimera_commit="fixture")
+    path = root / "model.safetensors.index.json"
+    return cfg, root, path, json.loads(path.read_text())
+
+
+@pytest.mark.parametrize("mode", ["missing", "partial", "extra", "malformed", "nonstring"])
+def test_requested_verification_refuses_incomplete_or_invalid_hashes_before_loading(tmp_path, monkeypatch, mode):
+    cfg, root, path, index = written_fixture(tmp_path)
+    hashes = index["metadata"]["tensor_sha256"]
+    name = next(iter(hashes))
+    if mode == "missing":
+        del index["metadata"]["tensor_sha256"]
+    elif mode == "partial":
+        del hashes[name]
+    elif mode == "extra":
+        hashes["unindexed.tensor"] = "a" * 64
+    elif mode == "malformed":
+        hashes[name] = "z" * 64
+    else:
+        hashes[name] = 42
+    path.write_text(json.dumps(index))
+    import chimera_omni.modeling
+    def refuse_allocation(*args, **kwargs):
+        pytest.fail("incomplete verification metadata reached model construction")
+    monkeypatch.setattr(chimera_omni.modeling, "ChimeraOmniModel", refuse_allocation)
+    with pytest.raises(review.Refusal, match="tensor_sha256|SHA256"):
+        review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=True)
+
+
+def test_full_hash_coverage_is_verified_and_counted_including_h3_source_islands(tmp_path):
+    cfg, root, _, index = written_fixture(tmp_path, h3=True)
+    _, _, receipt = review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=True)
+    count = len(index["weight_map"])
+    assert receipt["tensor_sha256_verified"] is True
+    assert receipt["tensor_sha256_verified_count"] == receipt["tensor_sha256_total_stored"] == count
+    assert len(receipt["fp32_source_coefficients"]) == len(H3_FP32_PARAMETERS)
+
+
+def test_wrong_hash_with_full_coverage_refuses(tmp_path):
+    cfg, root, path, index = written_fixture(tmp_path)
+    hashes = index["metadata"]["tensor_sha256"]
+    hashes[next(iter(hashes))] = "0" * 64
+    path.write_text(json.dumps(index))
+    with pytest.raises(review.Refusal, match="does not match the sha256"):
+        review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=True)
+
+
+def test_opt_out_never_claims_verification_when_metadata_is_absent(tmp_path):
+    cfg, root, path, index = written_fixture(tmp_path)
+    del index["metadata"]["tensor_sha256"]
+    path.write_text(json.dumps(index))
+    _, _, receipt = review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=False)
+    assert receipt["tensor_sha256_verified"] is False
+    assert receipt["tensor_sha256_verified_count"] == 0
+    assert receipt["tensor_sha256_total_stored"] == len(index["weight_map"])
+
+
+def test_h3_source_coefficients_refuse_bf16_storage_even_with_valid_hashes(tmp_path):
+    cfg, root, _, _ = written_fixture(tmp_path, h3=True, bad_fp32_island=True)
+    with pytest.raises(review.Refusal, match="must be stored in FP32"):
+        review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=True)
+
+
+def test_tied_alias_cannot_overwrite_a_verified_stored_tensor(tmp_path):
+    cfg, root, path, index = written_fixture(tmp_path)
+    name = next(iter(index["weight_map"]))
+    index["metadata"]["tied_weights"][name] = name
+    path.write_text(json.dumps(index))
+    with pytest.raises(review.Refusal, match="without overwriting stored bytes"):
+        review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=True)
+
+
+@pytest.mark.parametrize("mode", ["unindexed_stored_tensor", "missing_indexed_tensor"])
+def test_declared_hash_coverage_must_also_match_actual_stored_tensors(tmp_path, mode):
+    cfg, root, path, index = written_fixture(tmp_path)
+    name = next(iter(index["weight_map"]))
+    if mode == "unindexed_stored_tensor":
+        del index["weight_map"][name]
+        del index["metadata"]["tensor_sha256"][name]
+        message = "absent from its declared indexed shard"
+    else:
+        index["weight_map"]["ghost.weight"] = index["weight_map"][name]
+        index["metadata"]["tensor_sha256"]["ghost.weight"] = "0" * 64
+        message = "indexed tensors were not verified"
+    path.write_text(json.dumps(index))
+    with pytest.raises(review.Refusal, match=message):
+        review.load_chimera_split(root, placement=review.placement_for(cfg, [3], ["cpu"]), dtype=torch.bfloat16, verify_tensors=True)
