@@ -37,6 +37,7 @@ SOURCE_FILES = {
     "comfy/ldm/flux/layers.py": "35f2dfbadb8b59de79c306f365f26c2baa0a7d54836414737cd781fc24e6a2bc",
     "comfy/ldm/lightricks/model.py": "c9ae1a8505aa0eabefdffe409083141e5e8461dd9d55f452c13f0f7b0c6466d8",
     "comfy/model_sampling.py": "8559ac2f700b788babf30cc16f410c93890e1f71485ac8f6a299ea36e2cb8717",
+    "comfy/model_management.py": "b7741d049c2c749c316e5769ef520846bc7dd444e67de08403a4ee13a9c034c2",
 }
 PARENT_HEADER_SHA256 = "bd90f4d6af8d235cb3b46ccf5f426abb351995e28e852b04fc678a541d87158e"
 INPUT_KEYS = {"model_inputs", "sigma", "context", "context_mask", "context_token_ids"}
@@ -90,7 +91,8 @@ def load_inputs(manifest_path: Path, *, max_tokens=2048, max_forwards=32):
     # hashing multi-GB parent/VAE/text-encoder tensor bodies.
     upstream_path = verified_file(root, body["encoding_receipt"], max_bytes=1 << 20)
     upstream = json.loads(upstream_path.read_text(encoding="utf-8"))
-    if upstream.get("kind") != body["kind"] or upstream.get("latent_space") != body["latent_space"]:
+    if (upstream.get("status") != "complete" or upstream.get("kind") != body["kind"]
+            or upstream.get("latent_space") != body["latent_space"]):
         raise ValueError("upstream receipt has an incompatible encoding contract")
     sources = {}
     for role in ("vae", "text_encoder"):
@@ -352,7 +354,11 @@ def load_parent(weights, comfy_root, device):
         raise ValueError(f"Comfy selected {actual_device}, not requested {device}")
     patcher = comfy.sd.load_diffusion_model(str(weights), model_options={"dtype": torch.float8_e4m3fn,
                                           "fp8_optimizations": False}, disable_dynamic=True)
-    management.load_models_gpu([patcher], memory_required=float(patcher.model_size()), force_full_load=True)
+    # memory_required is EXTRA inference scratch, not the weight size. Comfy
+    # already budgets model_memory_required * 1.1 separately. Keep its normal
+    # inference reserve and verify residency below, without double-counting the
+    # 20 GB parent in the requested free-memory target.
+    management.load_models_gpu([patcher], force_full_load=True)
     model = patcher.model
     dit = model.diffusion_model.eval()
     off_device = [name for name, p in dit.named_parameters() if p.device != actual_device]
@@ -367,6 +373,7 @@ def load_parent(weights, comfy_root, device):
     return patcher, dit, compute_dtype, {"device": str(actual_device), "torch": torch.__version__,
         "weight_dtype_requested": "torch.float8_e4m3fn", "fp8_optimizations": False,
         "dynamic_patcher": False, "full_residency_verified": True,
+        "loader_memory_policy": "Comfy default inference reserve; model bytes counted by Comfy once",
         "float32_matmul_precision": torch.get_float32_matmul_precision(),
         "cuda_matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
         "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
