@@ -97,7 +97,157 @@ def write_model(model: ChimeraOmniModel, cfg: ChimeraConfig, directory: Path) ->
 
 @pytest.fixture(scope="module")
 def work(tmp_path_factory) -> Path:
-    return tmp_path_factory.mktemp("c10")
+    root = tmp_path_factory.mktemp("c10")
+    (root / c10.FIXTURE_MARKER).write_text(json.dumps({"schema": "neural-forge.c10-synthetic-fixture.v1"}))
+    return root
+
+
+def load_fixture_chart(charts, *args, **kwargs):
+    root = next(p for p in Path(charts).resolve().parents if (p / c10.FIXTURE_MARKER).is_file())
+    return c10.load_chart(charts, *args, fixture_root=str(root), **kwargs)
+
+
+def test_legacy_charts_refused_in_production(k3):
+    with pytest.raises(SystemExit, match="missing explicit non-fixture native boundary provenance"):
+        c10.load_chart(str(k3["charts"]), 0, K3_HIDDEN, HIDDEN, False)
+    with pytest.raises(SystemExit, match="identity charts have no native boundary"):
+        c10.load_chart(None, 0, HIDDEN, HIDDEN, True)
+
+
+@pytest.mark.parametrize("extra", [["--identity-charts"], ["--extra-blocks", "no-proof=missing@0"],
+                                  ["--extra-charts", "no-proof=missing"]])
+def test_production_unproven_routes_refuse_before_output(trunks, k3, work, extra):
+    out = work / ("must_not_exist_" + extra[0].removeprefix("--"))
+    args = ["--trunk", str(trunks["trunk"]), "--parent-trunk", str(trunks["parent"]),
+            "--k3-dense", str(k3["dir"]), "--evidence", str(trunks["evidence"]), "--out", str(out)]
+    with pytest.raises(SystemExit, match="production route refused"):
+        c10.main(args + extra)
+    assert not out.exists()
+
+
+def test_synthetic_checkpoint_requires_fixture_path_even_without_legacy_charts(trunks, k3, work):
+    out = work / "synthetic_cannot_enter_production"
+    args = ["--trunk", str(trunks["trunk"]), "--parent-trunk", str(trunks["parent"]),
+            "--k3-dense", str(k3["dir"]), "--evidence", str(trunks["evidence"]), "--out", str(out)]
+    with pytest.raises(SystemExit, match="synthetic checkpoint source cannot enter production"):
+        c10.main(args)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("key", ["prenorm", "post_attention", None])
+def test_prenorm_and_missing_boundary_refuse_even_fixture(work, key):
+    charts = work / f"wrong_boundary_{key}"
+    write_c17_chart(charts / "L00", 0, torch.zeros(K3_HIDDEN, HIDDEN), torch.zeros(HIDDEN),
+                    torch.zeros(HIDDEN, K3_HIDDEN), torch.zeros(K3_HIDDEN), rows_key=key)
+    with pytest.raises(SystemExit, match="post-norm2 FFN input"):
+        c10.load_chart(str(charts), 0, K3_HIDDEN, HIDDEN, False, fixture_root=str(work))
+
+
+@pytest.mark.parametrize("override", [{"device": "cuda:0"}, {"hidden": 5120}, {"source_hidden": 7168}, {"layers": 64}])
+def test_fixture_route_cannot_admit_production_geometry(work, override):
+    args = {"hidden": HIDDEN, "source_hidden": K3_HIDDEN, "layers": 4, "device": "cpu", **override}
+    with pytest.raises(SystemExit, match="CPU-only tiny geometry"):
+        c10.fixture_root_checked(str(work), [work / "foo"], **args)
+
+
+def test_fixture_route_cannot_escape_root(work):
+    with pytest.raises(SystemExit, match="beneath its explicit fixture root"):
+        c10.fixture_root_checked(str(work), [work.parent / "outside"], hidden=32, source_hidden=40)
+
+
+def native_contract_fixture(root):
+    """Invented tiny contract bytes to test the validator, NOT real-model evidence."""
+    endpoints = {}
+    for family, width, layer in (("host", HIDDEN, 0), ("k3", K3_HIDDEN, 1)):
+        directory = root / family
+        directory.mkdir(parents=True)
+        schema = f"neural-forge.c17-{'host' if family == 'host' else 'k3'}-boundaries.v1"
+        path = directory / "rows.safetensors"
+        tensors = {"ffn_input": torch.ones(2, width), "ffn_output": 2 * torch.ones(2, width),
+                   "evidence_row_index": torch.tensor([0, 1]), "host_position": torch.tensor([0, 0]),
+                   "k3_position": torch.tensor([1, 1]), "held": torch.tensor([0, 1])}
+        save_file(tensors, str(path), metadata={"schema": schema, "layer": str(layer)})
+        receipt = {"schema": schema, "fixture": False, "stream": "folded", "accepted_prefix_replay_exact": True,
+                   "gradients_or_training": False, "consumed_tensor_hashes_verified": True,
+                   "code_sha256": {"invented-native-contract-fixture": "a" * 64}, "index_sha256": "b" * 64,
+                   "evidence_sha256": "c" * 64, "installed_ffn_sha256": {"1": "d" * 64},
+                   "layers": [{"layer": layer, "path": path.name, "rows": 2, "sha256": c10.sha256_file(str(path)),
+                               "boundaries": {key: {"shape": [2, width]} for key in ("ffn_input", "ffn_output")}}]}
+        rp = directory / "capture_receipt.json"
+        rp.write_text(json.dumps(receipt))
+        for key in ("ffn_input", "ffn_output"):
+            endpoints[family, key] = {"family": family, "boundary": key, "layer": layer,
+                                     "capture_receipt": {"path": str(rp), "sha256": c10.sha256_file(str(rp))}}
+    p = {"schema": c10.NATIVE_CHART_SCHEMA, "fixture": False, "maps": {
+        "C_out": {"domain": endpoints["host", "ffn_input"], "codomain": endpoints["k3", "ffn_input"]},
+        "C_in": {"domain": endpoints["k3", "ffn_output"], "codomain": endpoints["host", "ffn_output"]}}}
+    return {"arms": {"ridge": {"native_boundary_provenance": p}}}
+
+
+def test_native_map_contract_checks_both_observed_input_and_write_spaces(tmp_path):
+    doc = native_contract_fixture(tmp_path)
+    report = c10.native_chart_boundaries(doc, str(tmp_path / "layer.json"), 0, "ridge",
+                                        trunk_hidden=HIDDEN, k3_hidden=K3_HIDDEN)
+    assert report["fixture"] is False
+    assert report["maps"]["C_out"][0]["domain"]["boundary"] == "ffn_input"
+    assert report["maps"]["C_in"][0]["domain"]["boundary"] == "ffn_output"
+    assert report["source_layers"] == [1]
+    assert report["installed_ffn_sha256"] == {"1": "d" * 64}
+
+
+@pytest.mark.parametrize("fault", ["missing", "fixture", "prenorm", "input_as_write", "bad_receipt_sha",
+                                  "wrong_host_layer", "write_key_missing", "changed_payload", "mismatched_pairs",
+                                  "no_replay", "missing_ffn_identity", "other_evidence", "other_host", "bad_pooled"])
+def test_native_chart_contract_refuses_unsupported_or_unbound_endpoints(tmp_path, fault):
+    doc = native_contract_fixture(tmp_path)
+    p = doc["arms"]["ridge"]["native_boundary_provenance"]
+    if fault == "missing":
+        del doc["arms"]["ridge"]["native_boundary_provenance"]
+    elif fault == "fixture":
+        p["fixture"] = True
+    elif fault == "prenorm":
+        p["maps"]["C_out"]["domain"]["boundary"] = "post_attention"
+    elif fault == "input_as_write":
+        p["maps"]["C_in"]["domain"]["boundary"] = "ffn_input"
+    elif fault == "bad_receipt_sha":
+        p["maps"]["C_in"]["domain"]["capture_receipt"]["sha256"] = "0" * 64
+    elif fault == "wrong_host_layer":
+        p["maps"]["C_in"]["codomain"]["layer"] = 2
+    elif fault == "bad_pooled":
+        p["maps"]["C_out"]["domain"] = []
+    else:
+        family = "host" if fault == "other_host" else "k3"
+        rp = tmp_path / family / "capture_receipt.json"
+        receipt = json.loads(rp.read_text())
+        if fault in ("write_key_missing", "changed_payload", "mismatched_pairs"):
+            fp = rp.parent / "rows.safetensors"
+            payload = load_file(str(fp))
+            if fault == "write_key_missing":
+                del payload["ffn_output"]
+            elif fault == "mismatched_pairs":
+                payload["host_position"][1] = 3
+            else:
+                payload["ffn_output"][0, 0] = 17
+            save_file(payload, str(fp), metadata={"schema": receipt["schema"], "layer": "1"})
+            if fault != "changed_payload":
+                receipt["layers"][0]["sha256"] = c10.sha256_file(str(fp))
+        elif fault == "no_replay":
+            receipt["accepted_prefix_replay_exact"] = False
+        elif fault == "missing_ffn_identity":
+            receipt["installed_ffn_sha256"] = {}
+        elif fault == "other_evidence":
+            receipt["evidence_sha256"] = "e" * 64
+        elif fault == "other_host":
+            # Two independently hashed host receipts disagree on checkpoint.
+            receipt["index_sha256"] = "f" * 64
+            rp = rp.parent / "changed.json"
+        rp.write_text(json.dumps(receipt))
+        for mapping in p["maps"].values():
+            for endpoint in mapping.values():
+                if endpoint["family"] == family and (fault != "other_host" or endpoint["boundary"] == "ffn_output"):
+                    endpoint["capture_receipt"] = {"path": str(rp), "sha256": c10.sha256_file(str(rp))}
+    with pytest.raises(SystemExit):
+        c10.native_chart_boundaries(doc, str(tmp_path / "layer.json"), 0, "ridge", trunk_hidden=HIDDEN, k3_hidden=K3_HIDDEN)
 
 
 @pytest.fixture(scope="module")
@@ -231,7 +381,7 @@ def run(trunks: dict, k3_dir: Path, charts: Path, out: Path, k3_channels: int, e
     argv = ["--trunk", str(trunks["trunk"]), "--parent-trunk", str(trunks["parent"]), "--k3-dense", str(k3_dir),
             "--charts", str(charts), "--evidence", str(trunks["evidence"]), "--k3-channels", str(k3_channels),
             "--device", "cpu", "--group-size", "2", "--chunk", "64", "--gram-block", "16", "--out", str(out),
-            "--overwrite", "--k3-config-from-flags"] + (extra or [])
+            "--overwrite", "--k3-config-from-flags", "--synthetic-fixture-root", str(trunks["trunk"].parent)] + (extra or [])
     code = c10.main(argv)
     assert code == expect, (code, expect)
     if expect != 0:
@@ -328,7 +478,7 @@ def test_situ_to_silu_scalar_reproduces_situ_within_recorded_relL2(installed: di
     assert not (installed["out"] / "captures").exists()
     captures = load_file(str(captures_dir / f"L{k:02d}.safetensors"))
     x_fit = captures["x_fit"]
-    chart = c10.load_chart(str(k3["charts"]), k, K3_HIDDEN, HIDDEN, False)
+    chart = load_fixture_chart(str(k3["charts"]), k, K3_HIDDEN, HIDDEN, False)
     cfg = c10.K3Config()
     recorded = {row["source"]: row for row in layer_record["situ_to_silu"]}
     assert recorded, "no SiTU sources on this layer"
@@ -382,7 +532,7 @@ def test_form_e_lift_equals_form_m_lift_on_random_inputs(k3: dict) -> None:
     torch.manual_seed(3)
     cfg = c10.K3Config()
     layer = c10.load_k3_layer(str(k3["dir"]), 2, cfg)
-    chart = c10.load_chart(str(k3["charts"]), 1, K3_HIDDEN, HIDDEN, False)
+    chart = load_fixture_chart(str(k3["charts"]), 1, K3_HIDDEN, HIDDEN, False)
     form_m = c10.form_m_from_form_e(layer)
     gate_e, up_e = c10.lift_routed_form_e(layer, chart.trunk_to_k3)
     gate_m, up_m = c10.lift_routed_form_m(form_m, chart.trunk_to_k3)
@@ -475,6 +625,7 @@ def test_child_loads_and_runs_at_the_uniform_width(installed: dict, trunks: dict
 def test_charts_dir_in_c17_layout_installs_and_records_the_arm(installed: dict, k3: dict, work: Path,
                                                                trunks: dict) -> None:
     receipt = installed["receipt"]
+    assert receipt["synthetic_fixture"] is True
     charts = k3["charts"]
     assert receipt["charts"]["arm"] == "ridge"
     for k in range(LAYERS):
@@ -488,7 +639,7 @@ def test_charts_dir_in_c17_layout_installs_and_records_the_arm(installed: dict, 
         assert layer_rec["sha256"] == rec["sha256"] and layer_rec["arm"] == "ridge"
     # the arm names the FILE c17 wrote; an arm that was not fitted is a named refusal
     with pytest.raises(SystemExit) as missing:
-        c10.load_chart(str(charts), 0, K3_HIDDEN, HIDDEN, False, arm="procrustes")
+        load_fixture_chart(str(charts), 0, K3_HIDDEN, HIDDEN, False, arm="procrustes")
     assert "procrustes.safetensors" in str(missing.value) and "c17 writes" in str(missing.value)
     # a control arm installs too (svd_chart.safetensors, C_out = C_in^T)
     control = work / "charts_svd"
@@ -508,13 +659,13 @@ def test_charts_dir_in_c17_layout_installs_and_records_the_arm(installed: dict, 
     doc["arms"]["ridge"]["convention"] = "y_hat = C_in @ x_k3"
     (bad / "L00" / "layer.json").write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(SystemExit) as conv:
-        c10.load_chart(str(bad), 0, K3_HIDDEN, HIDDEN, False)
+        load_fixture_chart(str(bad), 0, K3_HIDDEN, HIDDEN, False)
     assert "convention" in str(conv.value)
     doc["arms"]["ridge"]["convention"] = c10.C17_CONVENTION
     doc["files"]["ridge"]["file_sha256"] = "0" * 64
     (bad / "L00" / "layer.json").write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(SystemExit) as sha:
-        c10.load_chart(str(bad), 0, K3_HIDDEN, HIDDEN, False)
+        load_fixture_chart(str(bad), 0, K3_HIDDEN, HIDDEN, False)
     assert "sha256" in str(sha.value)
 
 
@@ -578,7 +729,7 @@ def test_chart_direction_and_biases_follow_c17_convention(k3: dict, work: Path, 
     assert not torch.allclose(c_out, c_in.T, atol=1e-3)                    # independent, non-orthonormal
     charts = work / "charts_fitted"
     write_c17_chart(charts / "L00", 0, c_in, c_in_bias, c_out, c_out_bias)
-    chart = c10.load_chart(str(charts), 0, K3_HIDDEN, HIDDEN, False)
+    chart = load_fixture_chart(str(charts), 0, K3_HIDDEN, HIDDEN, False)
     assert torch.allclose(chart.trunk_to_k3, c_out.T) and torch.allclose(chart.k3_to_trunk, c_in.T)
     assert torch.allclose(chart.bias_to_k3, c_out_bias) and torch.allclose(chart.bias_to_trunk, c_in_bias)
     assert torch.allclose(chart.to_k3(x), x @ c_out + c_out_bias, atol=1e-5)
@@ -699,7 +850,7 @@ def test_stop_and_resume_reproduce_the_single_pass_child(installed: dict, trunks
     argv = ["--trunk", str(trunks["trunk"]), "--parent-trunk", str(trunks["parent"]), "--k3-dense", str(k3["dir"]),
             "--charts", str(k3["charts"]), "--evidence", str(trunks["evidence"]), "--k3-channels", "10",
             "--device", "cpu", "--group-size", "2", "--chunk", "64", "--gram-block", "16", "--out", str(out),
-            "--k3-config-from-flags"]
+            "--k3-config-from-flags", "--synthetic-fixture-root", str(work)]
     with pytest.raises(SystemExit) as stale:
         c10.main(argv)
     assert "partial run" in str(stale.value)
@@ -776,7 +927,8 @@ def test_k3_tensors_move_to_device_once_per_install(trunks: dict, k3: dict, work
 def test_k3_config_is_required_and_recorded(trunks: dict, k3: dict, work: Path) -> None:
     base = ["--trunk", str(trunks["trunk"]), "--parent-trunk", str(trunks["parent"]), "--k3-dense", str(k3["dir"]),
             "--charts", str(k3["charts"]), "--evidence", str(trunks["evidence"]), "--k3-channels", "6",
-            "--device", "cpu", "--group-size", "2", "--chunk", "64", "--gram-block", "16", "--overwrite"]
+            "--device", "cpu", "--group-size", "2", "--chunk", "64", "--gram-block", "16", "--overwrite",
+            "--synthetic-fixture-root", str(work)]
     with pytest.raises(SystemExit) as required:
         c10.main(base + ["--out", str(work / "child_nocfg")])
     assert "--k3-config" in str(required.value)
@@ -797,7 +949,8 @@ def test_overwrite_refuses_foreign_dirs_and_input_overlap(trunks: dict, k3: dict
     def argv(out: Path, extra: list[str] | None = None) -> list[str]:
         return ["--trunk", str(trunks["trunk"]), "--parent-trunk", str(trunks["parent"]), "--k3-dense", str(k3["dir"]),
                 "--charts", str(k3["charts"]), "--evidence", str(trunks["evidence"]), "--k3-channels", "6",
-                "--device", "cpu", "--out", str(out), "--overwrite", "--k3-config-from-flags"] + (extra or [])
+                "--device", "cpu", "--out", str(out), "--overwrite", "--k3-config-from-flags",
+                "--synthetic-fixture-root", str(work)] + (extra or [])
 
     # (a) --out overlapping the charts dir, the evidence file's dir, or the receipt path is refused, nothing removed
     before = sorted(p.name for p in k3["charts"].rglob("*"))
