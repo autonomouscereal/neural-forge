@@ -45,9 +45,10 @@ def build_plan(args: argparse.Namespace) -> dict:
         raise ValueError("--image must be the inspected immutable local image ID")
     paths = {name: Path(getattr(args, name)).resolve()
              for name in ("nf", "chimera", "parent", "corpus", "digest", "layer0", "output")}
+    input_dirs = [paths[name] for name in ("nf", "chimera", "parent", "corpus")]
+    input_dirs += [paths[name].parent for name in ("digest", "layer0")]
     output = paths["output"]
-    if any(output == p or output.is_relative_to(p) or p.is_relative_to(output)
-           for name, p in paths.items() if name != "output"):
+    if any(output == p or output.is_relative_to(p) or p.is_relative_to(output) for p in input_dirs):
         raise ValueError("output must not overlap a source/input mount")
     legacy = Path("/mnt/lexar/omni-campaign/k3").resolve()
     if output == legacy or output.is_relative_to(legacy) or legacy.is_relative_to(output):
@@ -72,22 +73,28 @@ def build_plan(args: argparse.Namespace) -> dict:
     if not digest.get("complete") or not digest.get("all_verified") or len(digest["files"]) != 98:
         raise ValueError("digest receipt is not the complete 98-file verification")
     for row in digest["files"]:
-        shard = paths["parent"] / row["file"]
+        name = row["file"]
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or name in (".", ".."):
+            raise ValueError("digest file names must be plain basenames without traversal")
+        shard = paths["parent"] / name
+        if shard.resolve().parent != paths["parent"]:
+            raise ValueError("digest file must stay directly under the read-only parent root")
         if shard.stat().st_size != row["local_size"]:
             raise ValueError(f"source size changed since the digest receipt: {shard}")
     mounts = [{"source": str(paths[name]), "target": target, "read_only": True}
               for name, target in (("nf", "/code/neural-forge"), ("chimera", "/code/chimera"),
-                                   ("parent", "/parent"), ("corpus", "/inputs/corpus"),
-                                   ("digest", "/inputs/digest.json"), ("layer0", "/inputs/layer0.json"))]
-    mounts.append({"source": str(output), "target": "/run/k3", "read_only": False})
+                                   ("parent", "/parent"), ("corpus", "/inputs/corpus"))]
+    for name, target in (("digest", "/inputs/digest-receipts"), ("layer0", "/inputs/import-receipts")):
+        mounts.append({"source": str(paths[name].parent), "target": target, "read_only": True})
+    mounts.append({"source": str(output), "target": "/run-output", "read_only": False})
     command = ["env", f"OMP_NUM_THREADS={args.threads}", f"MKL_NUM_THREADS={args.threads}",
                f"OPENBLAS_NUM_THREADS={args.threads}", "python", "/code/neural-forge/" + TOOL,
                "--src-dir", "/parent", "--input-ids", "/inputs/corpus/k3_input_ids.safetensors",
                "--review-input-ids", "/inputs/corpus/k3_review_input_ids.safetensors",
                "--review-input-ids", "/inputs/corpus/k3_review_native_input_ids.safetensors",
-               "--out", "/run/k3/fold", "--receipt-dir", "/run/k3/receipts", "--body-dir", "/run/k3/body",
-               "--chimera-src", "/code/chimera/src", "--digest-receipt", "/inputs/digest.json",
-               "--layer0-import-receipt", "/inputs/layer0.json", "--no-share-read",
+               "--out", "/run-output/fold", "--receipt-dir", "/run-output/receipts", "--body-dir", "/run-output/body",
+               "--chimera-src", "/code/chimera/src", "--digest-receipt", "/inputs/digest-receipts/" + paths["digest"].name,
+               "--layer0-import-receipt", "/inputs/import-receipts/" + paths["layer0"].name, "--no-share-read",
                "--device", "cuda:0", "--experts-device", args.experts_device, "--resid-device", "cpu",
                "--compute-dtype", "auto", "--kda-backend", "torch", "--layers", args.layers,
                "--rung", "17408", "--k-pool-factor", "1", "--row-chunk", "1",
