@@ -327,6 +327,40 @@ def tensor_device(name: str, placement: dict[str, Any]) -> str:
     return str(placement["block_device"][index])
 
 
+def required_tensor_hashes(root: Path, index: dict[str, Any]) -> tuple[dict[str, Path], dict[str, str]]:
+    """Fail closed before loading when requested verification has incomplete evidence.
+
+    The index contains stored tensors only. Tied aliases are reconstructed from
+    their verified owners and must not masquerade as independently hashed bytes.
+    """
+    mapping = index.get("weight_map") if isinstance(index, dict) else None
+    metadata = index.get("metadata") if isinstance(index, dict) else None
+    hashes = metadata.get("tensor_sha256") if isinstance(metadata, dict) else None
+    if not isinstance(mapping, dict) or not mapping or not isinstance(hashes, dict):
+        raise Refusal("tensor verification requires an indexed checkpoint and complete tensor_sha256 metadata")
+    if any(not isinstance(name, str) or not name for name in mapping):
+        raise Refusal("tensor verification index contains an invalid tensor name")
+    if set(hashes) != set(mapping):
+        missing, extra = sorted(set(mapping) - set(hashes)), sorted(set(hashes) - set(mapping))
+        raise Refusal(f"tensor_sha256 coverage must exactly match indexed tensors; missing={missing[:5]}, extra={extra[:5]}")
+    for name, digest in hashes.items():
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdefABCDEF" for c in digest):
+            raise Refusal(f"tensor {name!r} has an invalid SHA256 string")
+    root = root.resolve(strict=True)
+    files = {}
+    for name, filename in mapping.items():
+        if not isinstance(filename, str) or not filename:
+            raise Refusal(f"tensor {name!r} has an invalid indexed shard path")
+        relative = Path(filename)
+        if relative.anchor or ".." in relative.parts or "\\" in filename:
+            raise Refusal(f"tensor {name!r} has an unsafe indexed shard path")
+        path = root / relative
+        if not path.is_file() or not path.resolve().is_relative_to(root):
+            raise Refusal(f"tensor {name!r} has a missing or escaping indexed shard")
+        files[name] = path.resolve()
+    return files, {name: digest.lower() for name, digest in hashes.items()}
+
+
 def load_chimera_split(
     root: Path,
     *,
@@ -363,8 +397,8 @@ def load_chimera_split(
             "pre-norm residual trunk only; block_attnres is not placed across devices here"
         )
     index = read_index(root) or {}
+    indexed_files, expected_sha = required_tensor_hashes(root, index) if verify_tensors else ({}, {})
     tied: dict[str, str] = dict(index.get("metadata", {}).get("tied_weights", {}))
-    expected_sha: dict[str, str] = dict(index.get("metadata", {}).get("tensor_sha256", {}))
 
     with torch.device("meta"):
         model = ChimeraOmniModel(cfg)
@@ -373,13 +407,22 @@ def load_chimera_split(
     param_names = {key for key, _ in model.named_parameters()}
     state: dict[str, Any] = {}
     read_bytes = 0
+    stored_names: set[str] = set()
+    verified_names: set[str] = set()
     for shard in shard_paths(root):
         views = read_safetensors_file(shard)
         for name, view in views.items():
             if name not in target:
                 raise Refusal(f"checkpoint tensor {name!r} has no place in this model")
-            if verify_tensors and name in expected_sha and view.sha256() != expected_sha[name]:
-                raise Refusal(f"tensor {name!r} does not match the sha256 recorded in the index")
+            if verify_tensors:
+                if name in stored_names:
+                    raise Refusal(f"duplicate stored tensor {name!r} cannot be independently verified")
+                if name not in indexed_files or indexed_files[name] != shard.resolve():
+                    raise Refusal(f"stored tensor {name!r} is absent from its declared indexed shard")
+                if view.sha256() != expected_sha[name]:
+                    raise Refusal(f"tensor {name!r} does not match the sha256 recorded in the index")
+                verified_names.add(name)
+            stored_names.add(name)
             reference = target[name]
             device = tensor_device(name, placement)
             if name in fp32_names and view.dtype != "F32":
@@ -391,9 +434,15 @@ def load_chimera_split(
             read_bytes += len(view.buffer)
             state[name] = torch.nn.Parameter(tensor, requires_grad=False) if name in param_names else tensor
         del views
+    if verify_tensors and verified_names != set(indexed_files):
+        raise Refusal(f"indexed tensors were not verified: {sorted(set(indexed_files) - verified_names)[:5]}")
     for alias, owner in tied.items():
+        if verify_tensors and (alias in indexed_files or owner not in indexed_files):
+            raise Refusal(f"tied alias {alias!r} must name a verified stored owner without overwriting stored bytes")
         if owner not in state:
             raise Refusal(f"tied tensor {alias!r} points at missing tensor {owner!r}")
+        if alias in fp32_names and state[owner].dtype != torch.float32:
+            raise Refusal(f"H3 tied source coefficient {alias!r} must remain FP32")
         state[alias] = state[owner]
     missing = sorted(set(target) - set(state))
     if missing:
@@ -425,7 +474,10 @@ def load_chimera_split(
         "tied_weights": dict(sorted(tied.items())),
         "total_size": index.get("metadata", {}).get("total_size"),
         "bytes_read": read_bytes,
-        "tensor_sha256_verified": bool(verify_tensors),
+        "tensor_sha256_verified": bool(verify_tensors) and verified_names == stored_names,
+        "tensor_sha256_verified_count": len(verified_names),
+        "tensor_sha256_total_stored": len(stored_names),
+        "tensor_sha256_scope": "all indexed stored tensors; tied aliases share verified owners" if verify_tensors else "not requested",
         "load_dtype": str(dtype),
         "rope_inv_freq_dtype": "torch.float32",
         "fp32_source_coefficients": sorted(fp32_names),
