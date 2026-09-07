@@ -1757,12 +1757,14 @@ class DualStreamRun(StreamRun):
         return record
 
     def snapshot_provenance(self, layer_idx: int) -> tuple[bool, str, dict[str, Any]]:
-        """(usable, reason, stamp) for the dual snapshot before ``layer_idx``.
+        """(eligible, reason, stamp) for the dual snapshot before ``layer_idx``.
 
         Usable means: both files exist, stamped with this corpus, and every fold the
         stamp says is installed has a done marker that validates (corpus, rung,
         artefact sha on disk) with the SAME sha the snapshot was written under.
-        A snapshot carrying folds is refused at another rung.
+        A snapshot carrying folds is refused at another rung. Candidate discovery
+        checks recorded payload identity, not GiB payload bodies; load_dual_snapshot
+        must verify BOTH actual file digests before deserializing either stream.
         """
         stamps = {}
         for stream in ("teacher", "folded"):
@@ -1807,6 +1809,23 @@ class DualStreamRun(StreamRun):
                 return False, (f"snapshot before layer {layer_idx} was written with L{fold_layer:02d}/ffn "
                                f"sha {sha[:12]}..., but no done marker validates that file now"), stamp
             validated_prefix[fold_layer] = sha
+        files = self.snapshot_manifest.get("files", {}) if isinstance(self.snapshot_manifest, dict) else {}
+        for stream in ("teacher", "folded"):
+            path = self.snapshot_path(layer_idx, stream)
+            record = files.get(path) if isinstance(files, dict) else None
+            if not isinstance(record, dict):
+                return False, f"snapshot {path} has no recorded payload digest in the snapshot manifest", stamp
+            digest = record.get("sha256")
+            if (not isinstance(digest, str) or len(digest) != 64
+                    or any(c not in "0123456789abcdef" for c in digest)):
+                return False, f"snapshot {path} has a malformed recorded payload digest", stamp
+            saved = stamps[stream]
+            if (record.get("layer") != layer_idx or record.get("stream") != stream
+                    or record.get("corpus_sha256") != self.corpus.sha256
+                    or str(record.get("rung")) != saved.get("rung")
+                    or record.get("run_id") != saved.get("run_id")
+                    or canonical_json(record.get("installed")) != saved.get("installed_ffn_sha256")):
+                return False, f"snapshot {path} manifest entry disagrees with the snapshot provenance", stamp
         return True, "ok", {**stamp, "installed": installed}
 
     def _prune_snapshots(self, keep: int) -> None:
@@ -1837,18 +1856,43 @@ class DualStreamRun(StreamRun):
         usable, reason, stamp = self.snapshot_provenance(layer_idx)
         if not usable:
             raise SystemExit(f"refusing to resume from the dual snapshot before layer {layer_idx}: {reason}")
+        def file_stamp(path):
+            info = os.stat(path)
+            return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+        verified = {}
+        for stream in ("teacher", "folded"):
+            path = self.snapshot_path(layer_idx, stream)
+            before = file_stamp(path)
+            actual = sha256_file(path)
+            expected = self.snapshot_manifest["files"][path]["sha256"]
+            if before != file_stamp(path):
+                raise SystemExit(f"snapshot {path} changed while hashing; refusing to resume")
+            if actual != expected:
+                raise SystemExit(f"snapshot {path} payload SHA256 differs from its recorded manifest digest; "
+                                 "refusing to resume")
+            verified[stream] = {"sha256": actual, "stamp": before}
         pairs = {}
         record: dict[str, Any] = {"layer": layer_idx, "files": {},
                                   "installed_layers": sorted(stamp["installed"]), "rung": stamp.get("rung")}
         for stream in ("teacher", "folded"):
             path = self.snapshot_path(layer_idx, stream)
+            if file_stamp(path) != verified[stream]["stamp"]:
+                raise SystemExit(f"snapshot {path} changed after digest verification; refusing to resume")
             got = load_file(path)
+            if file_stamp(path) != verified[stream]["stamp"]:
+                raise SystemExit(f"snapshot {path} changed during tensor loading; refusing to resume")
             prefix = got["prefix_sum"].to(self.resid_device)
             blocks = got["block_residual"].to(self.resid_device)
             if self.compute_dtype is not None:
                 prefix, blocks = prefix.to(self.compute_dtype), blocks.to(self.compute_dtype)
             pairs[stream] = Pair(prefix, blocks)
-            record["files"][stream] = {"path": path, "sha256": sha256_file(path), "stamp": read_metadata(path)}
+            record["files"][stream] = {"path": path, "sha256": verified[stream]["sha256"],
+                                      "manifest_sha256_matched": True, "stamp": read_metadata(path)}
+        for stream in ("teacher", "folded"):
+            path = self.snapshot_path(layer_idx, stream)
+            if file_stamp(path) != verified[stream]["stamp"]:
+                raise SystemExit(f"snapshot {path} changed while materializing the dual pair; refusing to resume")
         self.installed = dict(stamp["installed"])
         return pairs["teacher"], pairs["folded"], record
 
