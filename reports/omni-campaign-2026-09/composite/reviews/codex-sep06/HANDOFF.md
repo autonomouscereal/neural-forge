@@ -42,3 +42,5 @@ Suggested acceptance gate: stamp the upstream installed-fold lineage when fittin
 Original streamed files were saved before edits in commit `85a0881e35147720991ab7920598762e1c69f3e8`, on `codex/sep06-streamed-rope`. A separate index preserves the user's active HEAD and staged work. Use the final focused correction commit/diff, not a wholesale merge of the snapshot branch (its ancestry contains the earlier campaign safety snapshot).
 
 Retain these three compact review files plus the source/tests in Git. Only this run's enumerated `pytest-before`, `pytest-after`, `pytest-suite` fixture directories and temporary `safety.index` are cleanup candidates; no existing model, campaign result, cache, or server path is included.
+
+The environment blocked the scoped cleanup command before execution. Those temporary paths remain (19 test-fixture files totaling 21,090,367 bytes, plus the alternate Git index); no deletion occurred. Do not report them as removed. Correction/evidence commit: `37b59942de190dae97253fd11758ebedf2957db9`.
