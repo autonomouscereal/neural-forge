@@ -1,6 +1,9 @@
 # Frozen teacher code/libraries only: disable ai-dock's service-init entrypoint.
 # This image is run exclusively through the tracked standalone GPU allocator.
-FROM sha256:5070872ac7aef716eadc60ec92b0f944521c7899d90c6899a7b1ed1e883942e1
+# BuildKit treats a bare image ID as a registry name. The launcher must first
+# tag the verified local ID below as this content-named base and recheck it.
+# Required base ID: sha256:5070872ac7aef716eadc60ec92b0f944521c7899d90c6899a7b1ed1e883942e1
+FROM local/qimg-base:5070872ac7aef716
 ENV USER=codex-operator LOGNAME=codex-operator HOME=/tmp PYTHONDONTWRITEBYTECODE=1 TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
 WORKDIR /tmp
 ENTRYPOINT []
