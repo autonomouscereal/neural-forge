@@ -1,6 +1,7 @@
 # Accepted K3 native folded-boundary capture
 
-`c17_capture_k3.py` observes **one already accepted MoE layer** per invocation.
+`c17_capture_k3.py` observes **one already accepted MoE layer or a bounded
+contiguous accepted window (at most 12 layers)** per invocation.
 It never fits, trains, calls parent experts, rebuilds the upstream prefix, or
 changes the accepted run's resume context. It uses the receipt-pinned native
 `attention_half` and `ffn_half`, preserving full sequence lengths, zero-based
@@ -13,10 +14,14 @@ The CPU implementation tests are synthetic mechanics, not model intelligence.
    snapshot manifest, selected body, all ancestor/current FFNs and done markers.
    Preserve immutable selected snapshots **before another window can prune them**.
    Read-only mounts are required; this tool does not copy, freeze or delete inputs.
-2. Choose a layer whose *starting folded* and *ending teacher + folded* snapshots
+2. Choose a layer/window whose *starting folded* and *ending teacher + folded* snapshots
    still exist in the frozen manifest. L2 needs `before_L02_folded` and both
    `before_L03` streams. L3 needs `before_L03_folded` and both `before_L04` streams.
    Do not assume either pair survived the keep-two policy. Missing inputs refuse.
+   Actual September 7 L3–L4 completion retained `before_L03` and `before_L05`
+   only: `snapshot_every=12` plus window-end writes never created `before_L04`.
+   Use the accepted **L3–L4 window**; do not manufacture an intermediate snapshot
+   or rerun the parent experts to obtain one.
 3. Use the accepted GPU class, image/software, CUDA device enumeration, dtype,
    thread count, backend flags and chunk sizes. The accepted runtime/context is
    compared exactly, not migrated. The allocator environment is operational;
@@ -33,7 +38,7 @@ The CPU implementation tests are synthetic mechanics, not model intelligence.
    ```text
    python /code/composite/tools/c17_capture_k3.py \
      --capture-plan /inputs/c17-k3-plan.json --plan-sha256 <independently-pinned-full-SHA> \
-     --out /run-output/c17-k3-L03
+     --out /run-output/c17-k3-L03-L04
    ```
 
    Use a fresh output path. There is no resume/overwrite flag. A failure may leave
@@ -43,7 +48,7 @@ The CPU implementation tests are synthetic mechanics, not model intelligence.
 ## Explicit plan (all file paths absolute)
 
 Every ordinary file reference is `{"path":"/mounted/file","sha256":"<64 lower hex>"}`.
-The plan itself must be independently SHA-pinned by the command. Example shape:
+The plan itself must be independently SHA-pinned by the command. Single-layer example shape:
 
 ```json
 {
@@ -73,25 +78,40 @@ The plan itself must be independently SHA-pinned by the command. Example shape:
 }
 ```
 
+For the actual L3–L4 canary, replace `layer`/`body` with `layers: [3, 4]` and
+`bodies: {"3": <L03 body reference>, "4": <L04 body reference>}`. Add L4's
+accepted FFN/done reference to `accepted_layers`. Keep the `before_L03_folded`
+start and use `before_L05` teacher/folded as the two ending references. Every
+selected body is verified before the first replay. The snapshot manifest needs
+only these existing endpoints; intermediate snapshot entries are not required.
+
 Do not copy placeholder hashes/paths. Review files must be the **complete original
 ordered list**, with original basenames (part of the native corpus hash), including
 any K3-native review file. The S1 boundary map must bind the exact evidence-ID file.
 Original fit/held positions alone are captured; review/padding still participate in
 full native replay and prefix hashes. The budget above is an illustrative 64 GiB
 output ceiling, not a measured resource requirement or allocation recommendation.
-The tool computes a conservative F32 output projection and refuses an insufficient
+The tool computes a conservative F32 output projection **summed over all selected
+layers** and refuses an insufficient
 ceiling; it never silently reduces the pair set. Paired tensors remain on CPU;
 plan host RAM for that projected capture plus original/residual snapshots and native
 working state. No giant teacher-prefix GPU alias or parent expert weights are loaded.
 
 ## Evidence and next step
 
-The final `capture_receipt.json` requires exact folded prefix **and block-stack**
+The final `capture_receipt.json` requires each layer's folded prefix to equal its
+accepted layer receipt, plus exact final-window folded prefix **and block-stack**
 FP32-byte hashes against the accepted ending snapshot. Starting and ending snapshot
 files are full-hashed against the frozen manifest with stat stability, source and
 complete FFN-lineage checks. Ending teacher snapshot prefix must match the accepted
-teacher prefix, explicitly `teacher_reference_verified=true` and
-`teacher_forward_replayed=false`. This is not a teacher-forward rerun.
+teacher prefix, explicitly `teacher_reference_verified=true`,
+`teacher_reference_scope=final_window_boundary_only`, `teacher_reference_layer`
+equal to the last layer, and `teacher_forward_replayed=false`. Intermediate
+teacher references are **not verified or claimed**. This is not a teacher-forward
+rerun. Each layer's rows are written and its GPU weights released before the
+next layer loads; the final receipt is emitted only after the entire window
+verifies. A failure can leave explicitly unaccepted partial row files, never a
+successful final receipt; preserve those files and use another fresh output.
 
 `Lxx/k3_boundaries.safetensors` contains nine actual boundaries and ordered I64
 evidence/host/K3 position/group vectors. In particular, `ffn_input` is the actual
