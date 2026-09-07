@@ -298,3 +298,121 @@ def test_existing_output_is_never_overwritten(accepted):
     with pytest.raises(tool.Refusal, match="fresh"):
         tool.run(Path(pin["path"]), pin["sha256"], out, synthetic_fixture_root=root)
     assert note.read_text() == "user data"
+
+
+def window_plan(accepted, name):
+    root, original, _ = accepted
+    plan = copy.deepcopy(original)
+    plan.pop("layer")
+    plan.pop("body")
+    plan["layers"] = [1, 2]
+    plan["bodies"] = {str(layer): ref(root / "body" / f"L{layer:02d}" / "body.safetensors") for layer in (1, 2)}
+    manifest = json.loads(Path(plan["snapshot_manifest"]["path"]).read_text())
+    # Mimic real snapshot_every=12 + window ends: no intermediate L2 entry.
+    manifest["files"] = {key: value for key, value in manifest["files"].items() if value["layer"] in (1, 3)}
+    plan["snapshot_manifest"] = write_json(root / f"{name}-manifest.json", manifest)
+    start = next(k for k, value in manifest["files"].items() if value["layer"] == 1 and value["stream"] == "folded")
+    plan["start_folded"] = {"path": start, "manifest_key": start}
+    return plan
+
+
+def test_contiguous_window_needs_no_intermediate_snapshot_or_teacher(accepted, monkeypatch):
+    root, _, receipt = accepted
+    plan = window_plan(accepted, "window")
+    # This unverified intermediate teacher value is deliberately never claimed.
+    receipt = copy.deepcopy(receipt)
+    receipt["layers"]["1"]["prefix_out_sha256"]["teacher"] = "0" * 64
+    plan["accepted_receipt"] = write_json(root / "window-accepted.json", receipt)
+    original_file = tool.Pins.file
+    def no_intermediate(self, path, expected):
+        assert "before_L02" not in str(path), "no intermediate snapshot may be consumed"
+        return original_file(self, path, expected)
+    monkeypatch.setattr(tool.Pins, "file", no_intermediate)
+    def no_experts(*args, **kwargs):
+        pytest.fail("a window cannot rerun parent experts")
+    monkeypatch.setattr(tool.native, "routed_y_lat", no_experts)
+    result, out = invoke(accepted, plan, suffix="window-capture")
+    assert [x["layer"] for x in result["layers"]] == [1, 2]
+    assert [x["kind"] for x in result["layers"]] == ["kda", "mla"]
+    assert [x["teacher_reference_verified"] for x in result["layers"]] == [False, True]
+    assert result["teacher_reference_scope"] == "final_window_boundary_only"
+    assert result["teacher_reference_layer"] == 2
+    assert result["intermediate_teacher_reference_verified"] is False
+    assert result["final_window_verification"]["layers"] == [1, 2]
+    assert result["final_window_verification"]["all_folded_prefixes_exact"]
+    assert result["final_window_verification"]["snapshots_created"] is False
+    for entry in result["layers"]:
+        assert entry["folded_prefix_sha256"] == receipt["layers"][str(entry["layer"])]["prefix_out_sha256"]["folded"]
+        payload = load_file(str(out / entry["path"]))
+        assert set(tool.BOUNDARIES) <= set(payload)
+        assert payload["ffn_input"].shape == (8, 64)
+    assert set(result["loading"]) == {"1", "2"}
+
+
+def test_window_checks_each_intermediate_folded_prefix(accepted):
+    root, _, receipt = accepted
+    plan = window_plan(accepted, "intermediate")
+    receipt = copy.deepcopy(receipt)
+    receipt["layers"]["1"]["prefix_out_sha256"]["folded"] = "0" * 64
+    plan["accepted_receipt"] = write_json(root / "intermediate-accepted.json", receipt)
+    with pytest.raises(tool.Refusal, match="L01: accepted folded prefix"):
+        invoke(accepted, plan, suffix="intermediate-bad")
+    assert not (root / "intermediate-bad").exists()
+
+
+def test_failed_final_window_keeps_partial_rows_without_acceptance(accepted, monkeypatch):
+    root, _, _ = accepted
+    plan = window_plan(accepted, "final-window")
+    original = tool.replay
+    def wrong_final(runner, *args, **kwargs):
+        pair, payload = original(runner, *args, **kwargs)
+        if runner.w.layer_idx == 2:
+            pair.blocks.flatten()[0] += 1
+        return pair, payload
+    monkeypatch.setattr(tool, "replay", wrong_final)
+    with pytest.raises(tool.Refusal, match="BlockAttnRes replay is NOT exact"):
+        invoke(accepted, plan, suffix="window-final-bad")
+    partial = root / "window-final-bad" / "L01" / "k3_boundaries.safetensors"
+    assert partial.is_file()
+    with tool.safe_open(str(partial), framework="pt") as sf:
+        assert "requires final capture_receipt.json" in sf.metadata()["acceptance"]
+    assert not (root / "window-final-bad" / "capture_receipt.json").exists()
+
+
+@pytest.mark.parametrize("fault", ["both", "gap", "duplicate", "reverse", "bool", "zero", "too_many", "missing_body", "extra_body", "singular_body"])
+def test_window_selection_is_explicit_and_bounded(accepted, fault):
+    _, plan, _ = accepted
+    index = tool.native.K3Index(plan["model_metadata_directory"])
+    candidate = {"layers": [1, 2], "bodies": {"1": {}, "2": {}}}
+    if fault == "both":
+        candidate["layer"] = 2
+    elif fault == "gap":
+        candidate["layers"] = [1, 3]
+    elif fault == "duplicate":
+        candidate["layers"] = [1, 1]
+    elif fault == "reverse":
+        candidate["layers"] = [2, 1]
+    elif fault == "bool":
+        candidate["layers"] = [True, 2]
+    elif fault == "zero":
+        candidate["layers"] = [0, 1]
+    elif fault == "too_many":
+        candidate["layers"] = list(range(1, tool.MAX_WINDOW_LAYERS + 2))
+    elif fault == "missing_body":
+        candidate["bodies"].pop("2")
+    elif fault == "extra_body":
+        candidate["bodies"]["3"] = {}
+    elif fault == "singular_body":
+        candidate["body"] = {}
+    with pytest.raises(tool.Refusal):
+        tool.capture_window(candidate, index)
+
+
+def test_all_window_bodies_verified_before_any_replay(accepted, monkeypatch):
+    plan = window_plan(accepted, "body-preflight")
+    plan["bodies"]["2"]["sha256"] = "0" * 64
+    def forbidden(*args, **kwargs):
+        pytest.fail("must not replay first layer with later body unverified")
+    monkeypatch.setattr(tool, "replay", forbidden)
+    with pytest.raises(tool.Refusal, match="body differs"):
+        invoke(accepted, plan, suffix="body-preflight-bad")
