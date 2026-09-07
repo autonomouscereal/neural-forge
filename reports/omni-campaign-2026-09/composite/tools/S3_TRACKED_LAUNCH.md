@@ -29,6 +29,12 @@ The S3 parser has **no `--threads` option**; the environment configures Torch.
 The runtime preflight refuses a different Torch thread count. Twenty-two threads
 permit K3's other 22-thread CPU work; they are not a CPU affinity reservation.
 
+Mounted containers run as operator UID/GID, which has no passwd entry in the
+minimal image. Set `USER=codex-operator`, `LOGNAME=codex-operator`, `HOME=/tmp`,
+and `TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor` from startup. A real non-root
+import check exposed `getpwuid(): uid not found: 1000`; a later duplicate
+Torch cache-registration error was its secondary symptom, not a model failure.
+
 ## Inputs and mounts
 
 Use only the controller's structured **directory** mounts. Source trees must
@@ -78,13 +84,16 @@ python /code/neural-forge/reports/omni-campaign-2026-09/composite/tools/qf_strea
   --out /run-output/S3-C2K4352-sep07 \
   --tag S3-C2K4352-sep07 --parent-code Q38-27BU \
   --device cuda:0 --dtype bfloat16 \
-  --mlp-keep 4352 --mlp-group 3 --solve-form gram --drop-mtp \
+  --mlp-keep 4352 --mlp-group 3 --solve-form gram --drop-mtp --full-sequence-preflight \
   --notes 'Fresh tracked S3 fold; 22 CPU threads; GPU4 mapped to cuda:0; no training; frozen review remains separate.'
 ```
 
 Use GPU4's RTX3090 through the allocator, not a host CUDA ordinal in the
 container. Do not add `--resident-check`: the BF16 parent exceeds 24 GiB.
-Leave ordinary streamed parity enabled. It checks determinism, hook placement,
+The full-sequence preflight runs one actual evidence row through all layers
+and the last-token head before allocating the parity Grams. It records finite
+outputs and observed CUDA allocated/reserved peaks; it is not quality acceptance
+or a host parity-peak guarantee. Leave ordinary streamed parity enabled. It checks determinism, hook placement,
 and full-trunk tap parity, not behavioural acceptance or a rerun review baseline.
 
 ## Resource assessment and acceptance limits
@@ -110,6 +119,9 @@ tracked GPU before committing to a long run, and retain peak-memory evidence.
 Reserve **128 GiB host RAM** for S3 admission and keep K3's separate headroom.
 Major CPU components: group-of-3 FP64 MLP weights 5.98 GiB, inner/check Grams+
 RHS 17.53 GiB, BF16 XY stash 5.63 GiB, residual 0.94 GiB, final folded cache 7.97 GiB.
+Independent review estimates roughly **100.30 GiB nominal anonymous tensor
+high-water** in parity, before allocator/MKL workspace and mapped pages.
+The 128 GiB admission check is not a cgroup reservation or a measured peak.
 Parity temporarily retains two group captures and compares against a row-form
 design, so `--solve-form gram` does not eliminate its transient row allocation.
 Export assembles the full BF16 parent (~50.96 GiB) on CPU, then releases it

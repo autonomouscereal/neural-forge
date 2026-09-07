@@ -108,6 +108,7 @@ EXTRA_FLAGS = {
     "--streamed": ("streamed", False),
     "--resident-check": ("resident_check", False),
     "--allow-share-read": ("allow_share_read", False),
+    "--full-sequence-preflight": ("full_sequence_preflight", False),
 }
 #: Valued flags this entry adds (``--flag VALUE``), likewise stripped.
 EXTRA_VALUED = {
@@ -1161,6 +1162,53 @@ def mlp_axis_streamed(
 
 # --------------------------------------------------------------- parity
 @torch.no_grad()
+def full_sequence_preflight(harness: StreamedHarness) -> dict[str, Any]:
+    """Exercise one complete evidence row before expensive Gram/parity allocation.
+
+    This is a finite-output and measured-memory check, NOT behavioural acceptance
+    or a parent comparison. It keeps the exact corpus, kernels and layer weights.
+    The last-token head avoids materialising a sequence-by-vocabulary tensor.
+    """
+    import psutil
+
+    if harness.residual.boundary != 0 or harness.engine.layers.folded:
+        raise SystemExit("full-sequence preflight requires the pristine engine")
+    batch_index, ids = harness.batches[0]
+    cuda = str(harness.device).startswith("cuda")
+    before_rss = psutil.Process().memory_info().rss
+    started = time.time()
+    if cuda:
+        torch.cuda.synchronize(harness.device)
+        torch.cuda.reset_peak_memory_stats(harness.device)
+    hidden = harness.engine.final_hidden(ids)
+    expected_shape = (*ids.shape, int(harness.engine.text_config.hidden_size))
+    if tuple(hidden.shape) != expected_shape or not bool(torch.isfinite(hidden).all()):
+        raise SystemExit("full-sequence preflight produced invalid final hidden states")
+    last_logits = harness.engine.head(hidden[:, -1:])
+    expected_logits = (ids.shape[0], 1, int(harness.engine.text_config.vocab_size))
+    if tuple(last_logits.shape) != expected_logits or not bool(torch.isfinite(last_logits).all()):
+        raise SystemExit("full-sequence preflight produced invalid last-token logits")
+    if cuda:
+        torch.cuda.synchronize(harness.device)
+    report = {
+        "schema": "qf.full-sequence-preflight.v1", "batch_index": int(batch_index),
+        "input_shape": list(ids.shape), "final_hidden_shape": list(hidden.shape),
+        "input_ids_sha256": hashlib.sha256(ids.detach().cpu().contiguous().numpy().tobytes()).hexdigest(),
+        "layers": harness.engine.count, "finite_hidden_and_last_logits": True,
+        "last_token_argmax": last_logits.argmax(-1).cpu().tolist(),
+        "seconds": round(time.time() - started, 3),
+        "host_rss_before_bytes": before_rss,
+        "host_rss_after_bytes": psutil.Process().memory_info().rss,
+        "host_available_after_bytes": psutil.virtual_memory().available,
+        "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(harness.device) if cuda else None,
+        "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(harness.device) if cuda else None,
+        "scope": "one complete corpus row; no fold quality, parity, or all-modality acceptance claim",
+    }
+    del hidden, last_logits
+    return report
+
+
+@torch.no_grad()
 def streamed_parity(harness: StreamedHarness, sites: tuple[int, ...] = (0, 1, 2), *, resident_check: bool = False) -> dict[str, Any]:
     """:func:`qf_harness.harness_parity` for the streamed engine.
 
@@ -1438,6 +1486,7 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
 
     receipts: dict[str, Any] = {
         "parity": None,
+        "full_sequence_preflight": None,
         "causal_masks": None,
         "evidence_tokenizer": evidence_tokenizer,
         "source_identity": harness.source_identity,
@@ -1456,6 +1505,9 @@ def build_streamed(args: argparse.Namespace) -> dict[str, Any]:
         f"vs parent {str(evidence_tokenizer['parent_tokenizer_sha256'])[:16]}: "
         f"{'match' if evidence_tokenizer['matches'] else 'MISMATCH (allowed)'}"
     )
+    if args.full_sequence_preflight:
+        receipts["full_sequence_preflight"] = full_sequence_preflight(harness)
+        log("full-sequence preflight: " + json.dumps(receipts["full_sequence_preflight"], sort_keys=True))
     if not args.no_parity:
         receipts["parity"] = streamed_parity(harness, resident_check=args.resident_check)
         log(
