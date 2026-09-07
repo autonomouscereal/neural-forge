@@ -130,9 +130,12 @@ Deviations from the run-book row, on purpose and recorded in the receipt:
   unavailable/nonpositive reading is a named refusal, recorded as null in
   ``resources.host_peak_rss``. This is an observability requirement, not a new
   numeric budget or a changed fitting/acceptance policy.
-* v1.2.3 -- reuse also requires the same source metadata, numerical runtime,
-  implementation hashes and complete corpus masks/lengths. An accepted FP32
-  diagnostic is not a BF16 acceptance receipt. Legacy context is never inferred.
+  * v1.2.3 -- reuse also requires the same source metadata, numerical runtime,
+    implementation hashes and complete corpus masks/lengths. An accepted FP32
+    diagnostic is not a BF16 acceptance receipt. Legacy context is never inferred.
+  * v1.2.4 -- all fold scoring streams the existing token chunks through latent
+    and routed-write metrics. Every row contributes; exact full cosine quantiles
+    are retained on CPU and norm sums use FP64. Thresholds and gates are unchanged.
 
 Usage (server, lab venv; the real pass runs DETACHED and is polled):
 
@@ -162,7 +165,7 @@ import torch
 import torch.nn.functional as F
 
 TOOL_NAME = "k3_dense_pass"
-TOOL_VERSION = "1.2.3"
+TOOL_VERSION = "1.2.4"
 SHARE_ROOT = "/mnt/ai_data"
 DEFAULT_SRC_DIR = "/mnt/lexar/models/moonshotai/Kimi-K3"
 DEFAULT_OUT = "/mnt/lexar/omni-campaign/k3"
@@ -276,6 +279,7 @@ from k3_common import (  # noqa: E402
     situ,
     write_receipt,
     write_scores,
+    WriteScoreAccumulator,
 )
 from k3_layer import LayerWeights, StreamedLayer, dense_mlp_forward, dequant_expert, route  # noqa: E402
 from k3_review_stream import kl_top_agreement  # noqa: E402
@@ -1379,9 +1383,8 @@ class DualCoresetFold(c14.CoresetFold):
         return w2p, bank, ladder
 
     # -- scoring: the lane's held-out score plus the baselines the gates need ----------
-    def _predict(self, bank, w2p: torch.Tensor, rows: torch.Tensor,
-                 runtime_dtype: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-        preds, targets = [], []
+    def _prediction_chunks(self, bank, w2p: torch.Tensor, rows: torch.Tensor,
+                           runtime_dtype: bool = False):
         for start in range(0, rows.numel(), self.chunk):
             piece = rows[start:start + self.chunk]
             psi = bank.psi(self.latent[piece], self.beta, self.linear_beta)
@@ -1390,26 +1393,27 @@ class DualCoresetFold(c14.CoresetFold):
                 pred = F.linear(psi, w2p.to(psi.device, psi.dtype)).float()
             else:
                 pred = F.linear(psi.float(), w2p.to(psi.device).float())
-            preds.append(pred)
-            targets.append(self.y_lat[piece])
             del psi
-        return torch.cat(preds), torch.cat(targets)
+            yield pred, self.y_lat[piece]
+            del pred
 
-    def _write_scores(self, pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
+    def _routed_write(self, latent: torch.Tensor) -> torch.Tensor:
         eps = float(self.cfg["rms_norm_eps"])
         body = self.w.body
         norm_w = body["block_sparse_moe.routed_expert_norm.weight"]
         up_w = body["block_sparse_moe.routed_expert_up_proj.weight"]
         dtype = up_w.dtype
-        pred_write = F.linear(rms_norm(pred.to(dtype), norm_w, eps), up_w)
-        target_write = F.linear(rms_norm(target.to(dtype), norm_w, eps), up_w)
-        return write_scores(pred_write.float(), target_write.float())
+        return F.linear(rms_norm(latent.to(dtype), norm_w, eps), up_w)
 
+    @torch.no_grad()
     def _score_map(self, bank, w2p: torch.Tensor, rows: torch.Tensor, runtime_dtype: bool = False) -> dict[str, Any]:
-        pred, target = self._predict(bank, w2p, rows, runtime_dtype=runtime_dtype)
-        out = {"y_lat": write_scores(pred, target), "routed_write": self._write_scores(pred, target)}
-        del pred, target
-        return out
+        latent_scores = WriteScoreAccumulator(self.chunk)
+        write_scores_acc = WriteScoreAccumulator(self.chunk)
+        for pred, target in self._prediction_chunks(bank, w2p, rows, runtime_dtype=runtime_dtype):
+            latent_scores.update(pred, target)
+            write_scores_acc.update(self._routed_write(pred), self._routed_write(target))
+            del pred, target
+        return {"y_lat": latent_scores.result(), "routed_write": write_scores_acc.result()}
 
     def _score_extras(self, bank, w2p: torch.Tensor) -> dict[str, Any]:
         held = torch.nonzero(self.held).flatten().to(self.device)
@@ -1431,13 +1435,20 @@ class DualCoresetFold(c14.CoresetFold):
                                   "what": "the parent's W2 column x the channel's mean router mass (c14's ridge prior)"}
         out["baselines"] = baselines
         out["rows"] = {"held": int(held.numel()), "fit": int(fit.numel())}
+        out["scoring"] = {"version": "k3.chunked-write-scores.v1", "chunk_rows": self.chunk,
+                          "rows_sampled": False, "norm_reduction": "FP64 squared norms over FP32 values",
+                          "cosine": "FP32 per row; every scalar retained on CPU for full mean and exact linear p05"}
         out["what"] = ("y_lat_heldout / routed_write_heldout: the lane's score (fp32 W2'); *_runtime_dtype: W2' "
                        "cast as the dense path casts it; y_lat_fit: the installed map on the fit rows (G2); "
                        "baselines: the zero map and the prior map on the same held rows (G1)")
         return out
 
     def score(self, bank, w2p: torch.Tensor):
-        scores = self._timed("score_seconds", super().score, bank, w2p)
+        # The inherited held path also concatenates the entire population. Use
+        # the same streamed map for held, fit, runtime-dtype and baseline scores.
+        held = torch.nonzero(self.held).flatten().to(self.device)
+        scored = self._timed("score_seconds", self._score_map, bank, w2p, held)
+        scores = {"y_lat_heldout": scored["y_lat"], "routed_write_heldout": scored["routed_write"]}
         scores.update(self._timed("score_extras_seconds", self._score_extras, bank, w2p))
         return scores
 
