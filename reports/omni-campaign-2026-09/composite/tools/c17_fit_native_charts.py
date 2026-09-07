@@ -182,7 +182,7 @@ def fit_direction(pairs, vectors, *, seed=0, chunk=512):
     weight, lam = solve(a, b, best[1])
     del a, b
     # Installed C10 chart loader consumes F32. Measure those exact stored coefficients too.
-    stored = weight.float()
+    stored = weight.float().contiguous()
     require(bool(torch.isfinite(stored).all()), "F32 chart narrowing overflow")
     zero = torch.zeros_like(weight)
     notes = {"constraint": "through-origin; no learned affine offset", "fit_bias": False,
@@ -244,6 +244,15 @@ def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Pa
                 k3.acceptance(accepted.get("layers", {}).get(str(source_layer), {}).get("acceptance", {})) and
                 accepted["layers"][str(source_layer)]["ffn"]["sha256"] == kc["installed_ffn_sha256"][str(source_layer)],
                 "K3 accepted source gate/FFN identity mismatch")
+        window = kc.get("final_window_verification")
+        if window is not None:
+            captured_layer = next(x for x in kc["layers"] if x["layer"] == source_layer)
+            require(window.get("all_folded_prefixes_exact") is True and source_layer in window.get("layers", []) and
+                    captured_layer.get("accepted_folded_prefix_exact") is True and
+                    captured_layer.get("folded_prefix_sha256") == accepted["layers"][str(source_layer)]["prefix_out_sha256"]["folded"],
+                    "selected K3 layer lacks exact accepted window-prefix evidence")
+        elif not fixture:
+            require(len(kc.get("layers", [])) == 1, "multi-layer capture is missing final window verification")
         contexts.append(kc["accepted_resume_context"])
         ks.append(kp)
         source_records.append({"layer": source_layer, "capture": item["capture"], "accepted_receipt": item["accepted_receipt"],
