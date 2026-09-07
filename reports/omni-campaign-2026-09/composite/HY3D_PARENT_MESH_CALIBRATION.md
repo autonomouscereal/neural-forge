@@ -85,6 +85,15 @@ prefix keys/shapes as stored F16 and run frozen, without gradients.
    triangle coordinates are compared to the reparsed output's exact geometry
    identity. No simplification, repair, remeshing, rescale or texture sidecar.
 
+The MC rescale expression has an F64 intermediate, but the pinned original
+`SurfaceExtractor.__call__` explicitly applies `vertices.astype(np.float32)`
+before returning `Latent2MeshOutput`. The generator requires that final native
+F32 dtype. PLY's F32 coordinates therefore preserve the *returned source mesh*
+exactly; no additional rounding is introduced. Export refuses non-F32-
+representable inputs before writing anything. Tests include non-dyadic bounds
+whose intermediate coordinates are not exactly representable in F32, verify the
+original source cast, and compare the reparsed PLY's exact triangle identity.
+
 Captured source evidence per image includes processed image/mask, complete CFG
 context, each step's full latent input/output, both raw DiT predictions, actual
 time token/model time/scheduler time, actual combined CFG prediction, sigma pair,

@@ -283,6 +283,10 @@ def extract_native(vae, latent, settings):
                 (1,) + (settings["octree_resolution"] + 1,) * 3, "complete native dense field grid required")
         mesh = meshes[0]
         vertices = np.asarray(mesh.mesh_v)
+        # Native SurfaceExtractor.__call__ explicitly casts its rescaled F64
+        # intermediate to F32 before returning Latent2MeshOutput. Preserve that
+        # final source boundary; never introduce an additional rounding here.
+        require(vertices.dtype == np.float32, "native final mesh dtype changed; re-audit required")
         faces = np.asarray(mesh.mesh_f)[:, ::-1].copy()  # actual installed node winding
         identity = canonical_geometry(vertices, faces)
         return vertices, faces, grid, {"geometry_identity": identity, "query_calls": len(query_calls),
@@ -294,8 +298,12 @@ def extract_native(vae, latent, settings):
 
 
 def write_mesh(path, vertices, faces, expected_identity):
+    import numpy as np
     import trimesh
     require(not path.exists(), "refusing to replace native mesh")
+    vertices = np.asarray(vertices)
+    require(np.array_equal(vertices, vertices.astype(np.float32).astype(vertices.dtype)),
+            "PLY F32 storage would round native geometry; refusing lossy serialization")
     # Serialization only: no Trimesh's default process/repair/merge, decimation,
     # normals replacement, rescaling, extra model or external texture references.
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)

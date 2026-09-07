@@ -190,6 +190,17 @@ def test_actual_ply_roundtrip_preserves_fixture_geometry(tmp_path):
         mod.write_mesh(tmp_path / "fixture.ply", vertices, faces, identity)
 
 
+def test_non_f32_representable_geometry_refused_before_output(tmp_path):
+    pytest.importorskip("trimesh")
+    import numpy as np
+    vertices = np.array([[0., 0, 0], [np.nextafter(1., 2.), 0, 0], [0, 1., 0]], dtype=np.float64)
+    faces = np.array([[0, 1, 2]], dtype=np.int64)
+    target = tmp_path / "would-round.ply"
+    with pytest.raises(ValueError, match="refusing lossy"):
+        mod.write_mesh(target, vertices, faces, mod.canonical_geometry(vertices, faces))
+    assert not target.exists()
+
+
 def native_decode_fixture(native):
     class Geometry(torch.nn.Module):
         label_type = "binary"
@@ -236,6 +247,13 @@ def test_native_scheduler_and_mc_without_comfy_import(tmp_path, monkeypatch):
         assert field["field_logits"].shape == (1, 9, 9, 9)
         assert extraction["query_count"] == 729 and extraction["query_calls"] == 6
         assert not vae.geo_decoder._forward_hooks
+        # Non-dyadic spatial bounds expose the native F64 intermediate. The
+        # original source itself then casts to F32 in SurfaceExtractor.__call__.
+        extractor = native["vae"].MCSurfaceExtractor()
+        intermediate, _ = extractor.run(field["field_logits"][0], mc_level=0., bounds=1.01, octree_resolution=8)
+        assert intermediate.dtype == np.float64 and vertices.dtype == np.float32
+        assert np.any(intermediate != intermediate.astype(np.float32).astype(np.float64))
+        assert np.array_equal(vertices, intermediate.astype(np.float32))
         mod.write_mesh(tmp_path / "synthetic-native-field.ply", vertices, faces, extraction["geometry_identity"])
 
 
