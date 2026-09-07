@@ -12,6 +12,7 @@ import hashlib
 import importlib
 import importlib.machinery
 import importlib.metadata
+import io
 import json
 import math
 import os
@@ -42,6 +43,53 @@ EXTRA_SHA = {
 }
 PRODUCER = {"native_forward": True, "strict_weights": True, "eval": True,
             "modified_attention": False}
+GEOMETRY_SCHEMA = "neural-forge.exact-triangle-geometry.v1"
+MAX_GEOMETRY_FACES = 1_000_000
+
+
+def canonical_geometry(vertices, faces):
+    """Exact triangle-set identity, not a semantic/near-duplicate classifier.
+
+    Ignore container metadata, vertex/face order, winding, unused/duplicated
+    vertices and repeated triangles. No rounding, centering, rotation, scale
+    normalization, retriangulation or source-mesh mutation is performed.
+    """
+    import numpy as np
+    vertices, faces = np.asarray(vertices), np.asarray(faces)
+    require(vertices.ndim == 2 and vertices.shape[1] == 3 and 0 < len(vertices) <= 3 * MAX_GEOMETRY_FACES,
+            "bounded XYZ vertex array required")
+    require(vertices.dtype.kind in "fiu" and bool(np.isfinite(vertices).all()), "finite real geometry required")
+    require(faces.ndim == 2 and faces.shape[1] == 3 and 0 < len(faces) <= MAX_GEOMETRY_FACES,
+            "bounded nonempty triangle array required")
+    require(faces.dtype.kind in "iu" and bool((faces >= 0).all()) and bool((faces < len(vertices)).all()),
+            "valid integer triangle indices required")
+    points = np.array(vertices[faces.reshape(-1)], dtype="<f8", copy=True)
+    require(bool(np.isfinite(points).all()), "geometry cannot be represented as finite float64")
+    points[points == 0] = 0.0  # canonicalize IEEE negative zero, without rounding
+    points, inverse = np.unique(points, axis=0, return_inverse=True)
+    triangles = np.unique(np.sort(inverse.reshape(-1, 3), axis=1), axis=0)
+    digest = hashlib.sha256((GEOMETRY_SCHEMA + "\n").encode("ascii"))
+    digest.update(np.asarray([len(points), len(triangles)], dtype="<u8").tobytes())
+    digest.update(np.asarray(points, dtype="<f8").tobytes())
+    digest.update(np.asarray(triangles, dtype="<u8").tobytes())
+    return {"schema": GEOMETRY_SCHEMA, "sha256": digest.hexdigest(),
+            "vertices": len(points), "triangles": len(triangles)}
+
+
+def geometry_identity(path, expected_sha256):
+    """Parse the exact hash-bound single-file input; never follow mesh sidecars."""
+    import trimesh
+    path = Path(path)
+    require(path.suffix.lower() in (".ply", ".stl"), "single-file PLY/STL mesh required")
+    before = stamp(path)
+    require(before[2] <= 256 << 20, "geometry input too large")
+    with path.open("rb") as handle:
+        data = handle.read((256 << 20) + 1)
+    require(len(data) <= 256 << 20 and before == stamp(path), "geometry input changed during read")
+    require(hashlib.sha256(data).hexdigest() == expected_sha256, "geometry input digest mismatch")
+    mesh = trimesh.load_mesh(io.BytesIO(data), file_type=path.suffix[1:].lower(), process=False)
+    require(isinstance(mesh, trimesh.Trimesh), "single triangle mesh required")
+    return canonical_geometry(mesh.vertices, mesh.faces)
 
 
 def digest_file(path, max_bytes=None):
@@ -325,7 +373,7 @@ def read_objects(path):
     require(isinstance(body, dict) and body.get("schema") == "neural-forge.hy3d-capture-objects.v1", "wrong objects manifest")
     rows = body.get("objects")
     require(isinstance(rows, list) and 2 <= len(rows) <= 8, "bounded capture needs 2..8 fit/held entries")
-    splits, result = {}, []
+    splits, geometry_splits, result = {}, {}, []
     for row in rows:
         require(isinstance(row, dict) and row.get("split") in ("fit", "held"), "invalid object split")
         require(type(row.get("seed")) is int and 0 <= row["seed"] < 2**32, "explicit uint32 seed required")
@@ -339,6 +387,12 @@ def read_objects(path):
             item[key] = str(file)
         require(Path(item["object_file"]).suffix.lower() in (".ply", ".stl"), "single-file PLY/STL mesh required")
         require(splits.setdefault(row["object_sha256"], row["split"]) == row["split"], "object leaked across fit/held")
+        geometry = geometry_identity(item["object_file"], item["object_sha256"])
+        require("geometry_identity" not in row or row["geometry_identity"] == geometry,
+                "declared geometry identity mismatch")
+        require(geometry_splits.setdefault(geometry["sha256"], row["split"]) == row["split"],
+                "identical geometry leaked across fit/held")
+        item["geometry_identity"] = geometry
         result.append(item)
     require(set(splits.values()) == {"fit", "held"}, "fit and held objects required")
     return result
@@ -381,9 +435,13 @@ def main(argv=None):
         receipts, captures, samples = [], [], []
         for index, row in enumerate(rows):
             mesh_stamp, image_stamp = stamp(Path(row["object_file"])), stamp(Path(row["conditioning_file"]))
+            # Bind the actual later sampler inputs to the already checked split
+            # inventory even if a file was replaced during model initialization.
+            for key, digest_key in (("object_file", "object_sha256"), ("conditioning_file", "conditioning_sha256")):
+                require(digest_file(row[key], 256 << 20) == row[digest_key], "capture input digest changed")
             surface = loader(row["object_file"]).to(device=args.device, dtype=torch.float16)
             payload, posterior = capture_posterior(vae, surface, row["seed"], args.query_chunk)
-            sample = {key: row[key] for key in ("object_sha256", "conditioning_sha256", "seed", "split")}
+            sample = {key: row[key] for key in ("object_sha256", "conditioning_sha256", "seed", "split", "geometry_identity")}
             samples.append(sample)
             if model is not None:
                 with Image.open(row["conditioning_file"]) as image:
