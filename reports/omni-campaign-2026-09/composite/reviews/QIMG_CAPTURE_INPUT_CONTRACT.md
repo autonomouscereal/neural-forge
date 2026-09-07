@@ -2,7 +2,8 @@
 
 Implemented by `composite/tools/c16_qimg_capture.py`. This captures the existing
 parent, not a substitute implementation. No capture has been launched by the
-implementation/tests. Real input preparation, allocation and review remain pending.
+implementation/tests. The preparation adapter now exists; actual teacher
+execution, capture and review remain separate evidence gates.
 
 ## Input bundle
 
@@ -53,6 +54,7 @@ image/text again. A sigma grid must not be fabricated from unrelated observation
 
 ```json
 {
+  "status": "complete",
   "kind": "real_image_vae_qwen25_context",
   "latent_space": "wan21_model_input",
   "vae": {"path": "<actual VAE weights>", "header_sha256": "<actual raw header SHA256>"},
@@ -81,6 +83,38 @@ entry; an initial parity-only capture may lack holdout but is not fold evidence.
 
 ## Production entry point
 
+### Frozen input preparation
+
+`tools/c16_qimg_prepare_inputs.py` accepts a hashed-image plan with schema
+`neural_forge.qimg_encoding_plan.v1`, an explicit `sigmas` list in `(0,1)`, and
+`entries` containing `id`, `split`, `seed`, `prompt`, hashed `image`, and
+`image_provenance` (`kind` and `description`). Existing teacher-generated images
+must be labeled as such; image-pixel input is not automatically a photograph or
+quality benchmark. The plan is capped at 32 forwards. Each image must already
+be 16-aligned and no larger than 512x512; no implicit resize or crop is performed.
+EXIF orientation and white alpha compositing are recorded with the decoded-pixel
+digest. `--validate-plan-only` decodes/checks these identities without Comfy or GPU.
+
+The production run takes `--plan`, `--vae`, `--text-encoder`, `--comfy-root`,
+`--device cuda:0` and a new `--out`. It hashes eight reviewed r5 code files,
+uses the actual Qwen-Image text teacher and Wan21 VAE, and records source header
+identities. It does not authenticate all teacher payload bytes. The exact native
+system/user-template crop must match returned context rows. FP16 context, if
+returned, is stored losslessly as FP32. VAE complete key/shape coverage is checked;
+the native encoder returns posterior mu, not a random posterior sample.
+
+Actual VAE latents are normalized once with `Wan21.process_in`. A seeded CPU
+Gaussian draw is shared across each image's declared calibration sigmas, using
+the native `CONST.noise_scaling` formula. These are deliberately chosen noise
+fractions, **not observed sampler states**, and no second timestep shift is
+applied. No gradient, optimizer, distillation or fine-tuning is involved. The
+resulting tensors, origin/recipe/token alignment and hashes are written to the
+upstream receipt; only a complete run emits `capture_inputs.json`. All partial
+outputs remain preserved on error. The end-to-end fixture suite checks compatibility
+with the downstream identity validator, not source-model fidelity.
+
+### Source block capture
+
 First, on the intended mounted paths, validate the identities and sizes without
 loading Comfy, allocating a GPU or writing output:
 
@@ -97,11 +131,15 @@ must use the project's tracked runtime allocation and mount the exact reviewed
 source and inputs. `--device cpu` exists but does **not** make the full 20B parent
 a small CPU test; unit tests use explicitly labeled tiny fixtures instead.
 
-The parent header must match the audited FP8 file. The five reviewed source files
+The parent header must match the audited FP8 file. The six reviewed source files
 are hashed and matched before import. The loader uses the actual Comfy diffusion
 loader with FP8 storage, manual-cast inference, FP8 optimizations disabled,
 no dynamic patcher, no custom operations and full residency. Selected block/time
-runtime tensors must byte-match their original stored FP8 tensors. The exact
+runtime tensors must byte-match their original stored FP8 tensors.
+Comfy loader uses its default inference reserve: parent bytes are already counted
+by its model-memory accounting, not repeated as extra inference scratch. The
+reviewed model-management source is pinned with the numerical source files.
+The exact
 compute dtype, storage dtype counts, TF32 settings, visible-device environment,
 source code identities and Python/Torch versions are recorded. Full parent-file
 SHA256 is deliberately not recomputed or claimed.

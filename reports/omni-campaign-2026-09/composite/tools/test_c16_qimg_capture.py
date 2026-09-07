@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import types
 
 import pytest
 import torch
@@ -15,6 +16,38 @@ from safetensors.torch import save_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import c16_qimg_capture as tool
+
+
+def test_loader_does_not_request_model_bytes_as_extra_inference_scratch(monkeypatch, tmp_path):
+    """Exercise the production loader call, without importing Comfy or a parent."""
+    calls = []
+    dit = nn.Linear(2, 2, dtype=torch.bfloat16)
+    model = types.SimpleNamespace(diffusion_model=dit,
+        model_config=types.SimpleNamespace(manual_cast_dtype=torch.bfloat16))
+    patcher = types.SimpleNamespace(model=model)
+    package = types.ModuleType("comfy")
+    package.__path__ = []
+    options = types.ModuleType("comfy.options")
+    cli = types.ModuleType("comfy.cli_args")
+    cli.args = types.SimpleNamespace(cpu=False)
+    management = types.ModuleType("comfy.model_management")
+    management.in_training = False
+    management.get_torch_device = lambda: torch.device("cpu")
+    management.load_models_gpu = lambda models, **kwargs: calls.append((models, kwargs))
+    sd = types.ModuleType("comfy.sd")
+    sd.load_diffusion_model = lambda path, **kwargs: patcher
+    for module in (package, options, cli, management, sd):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+    package.options, package.sd, package.model_management = options, sd, management
+    old_path = sys.path[:]
+    try:
+        got, loaded, dtype, receipt = tool.load_parent(tmp_path / "fixture.safetensors", tmp_path, "cpu")
+    finally:
+        sys.path[:] = old_path
+    assert got is patcher and loaded is dit and dtype == torch.bfloat16
+    assert calls == [([patcher], {"force_full_load": True})]
+    assert receipt["full_residency_verified"] is True
+    assert not dit.training
 
 
 class FixturePositions(nn.Module):
@@ -207,7 +240,7 @@ def input_bundle(tmp_path):
              "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
              "image": {"path": image.name, "sha256": tool.file_sha(image)},
              "tensors": {"path": tensor_path.name, "sha256": tool.file_sha(tensor_path)}}
-    upstream = {"kind": "real_image_vae_qwen25_context", "latent_space": "wan21_model_input",
+    upstream = {"status": "complete", "kind": "real_image_vae_qwen25_context", "latent_space": "wan21_model_input",
                 "vae": {"path": source.name, "header_sha256": identity["header_sha256"]},
                 "text_encoder": {"path": source.name, "header_sha256": identity["header_sha256"]},
                 "entries": {entry["id"]: {"image_sha256": entry["image"]["sha256"],
