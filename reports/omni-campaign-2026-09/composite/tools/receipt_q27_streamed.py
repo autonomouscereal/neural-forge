@@ -194,20 +194,60 @@ def canonical_json(document: Any) -> str:
 
 
 def write_receipt(path: Path, document: dict[str, Any]) -> str:
-    text = canonical_json(document)
+    payload = canonical_json(document).encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    Path(str(path) + ".sha256").write_text(f"{digest}  {path.name}\n", encoding="utf-8")
+    # Hash exactly the bytes written, without platform text-mode translation.
+    path.write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    Path(str(path) + ".sha256").write_bytes(f"{digest}  {path.name}\n".encode("utf-8"))
     return digest
+
+
+def _windows_peak_rss_bytes() -> int | None:
+    """Native process-lifetime peak working set, in bytes (not commit size)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessMemoryCounters(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.GetProcessMemoryInfo.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(ProcessMemoryCounters), wintypes.DWORD,
+    ]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+    counters = ProcessMemoryCounters()
+    counters.cb = ctypes.sizeof(counters)
+    if not psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+        return None
+    return int(counters.PeakWorkingSetSize) or None
+
+
+def peak_rss_source() -> str:
+    if sys.platform == "win32":
+        return "GetProcessMemoryInfo(GetCurrentProcess()).PeakWorkingSetSize (bytes)"
+    scale = "bytes" if sys.platform == "darwin" else "KiB * 1024"
+    return f"resource.getrusage(RUSAGE_SELF).ru_maxrss ({scale})"
 
 
 def peak_rss_bytes() -> int | None:
     try:
+        if sys.platform == "win32":
+            return _windows_peak_rss_bytes()
         import resource
-    except ImportError:  # pragma: no cover - Windows has no resource module
+        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        return value * (1 if sys.platform == "darwin" else 1024) if value > 0 else None
+    except (ImportError, AttributeError, OSError):
         return None
-    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
 
 
 def gib(num_bytes: float | None) -> float | None:
@@ -967,13 +1007,16 @@ def check_budgets(
 ) -> dict[str, Any]:
     """The two run-book assertions, as facts; `passed` decides the exit code."""
 
-    host_peak = max(int(peak_rss_bytes_value or 0), int(sampled_rss_bytes or 0))
+    host_values = [int(value) for value in (peak_rss_bytes_value, sampled_rss_bytes)
+                   if value is not None and int(value) > 0]
+    host_peak = max(host_values) if host_values else None
     host = {
         "limit_gib": round(float(max_host_rss_gib), 4),
         "peak_rss_gib": gib(host_peak),
         "peak_rss_bytes": host_peak,
-        "source": "max(resource.getrusage ru_maxrss, sampled VmRSS)",
-        "passed": host_peak <= float(max_host_rss_gib) * GIB,
+        "source": f"max({peak_rss_source()}, sampled VmRSS)",
+        "measurement_available": host_peak is not None,
+        "passed": host_peak is not None and host_peak <= float(max_host_rss_gib) * GIB,
     }
     gpu = {
         "limit_gib": round(float(max_gpu_reserved_gib), 4),
@@ -1175,7 +1218,7 @@ def run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     column["resources"] = {
         "peak_rss_bytes": rss,
         "peak_rss_gib": gib(rss),
-        "peak_rss_source": "resource.getrusage(RUSAGE_SELF).ru_maxrss * 1024",
+        "peak_rss_source": peak_rss_source(),
         "sampled": sampled,
         "torch_peak_allocated_gib": gib(allocated) if cuda else None,
         "torch_peak_reserved_gib": gib(reserved) if cuda else None,

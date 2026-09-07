@@ -359,6 +359,97 @@ def test_check_budgets_names_each_limit_and_decides_passed():
 
 
 # ------------------------------------------------------ tiny: mechanics (CPU)
+def test_receipt_hash_matches_bytes_even_with_text_newline_translation(tmp_path, monkeypatch):
+    """Exercise Windows text-mode behavior on every test host."""
+    original_write_text = Path.write_text
+
+    def translated_write(path, data, *args, **kwargs):
+        kwargs["newline"] = ""
+        return original_write_text(path, data.replace("\n", "\r\n"), *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", translated_write)
+    document = {"label": "naïve λ", "nested": {"value": 1}}
+    out = tmp_path / "receipt.json"
+    digest = tool.write_receipt(out, document)
+    assert out.read_bytes() == tool.canonical_json(document).encode("utf-8")
+    assert digest == hashlib.sha256(out.read_bytes()).hexdigest()
+    assert sidecar_matches(out)
+
+
+@pytest.mark.parametrize("peak,sampled", [(None, None), (None, 0), (0, 0), (-1, 0)])
+def test_host_budget_without_a_measurement_fails_closed(peak, sampled):
+    result = tool.check_budgets(
+        peak_rss_bytes_value=peak, sampled_rss_bytes=sampled, reserved_bytes=None,
+        max_host_rss_gib=12, max_gpu_reserved_gib=3, cuda=False,
+    )
+    assert result["passed"] is False
+    assert result["host_rss"]["passed"] is False
+    assert result["host_rss"]["peak_rss_bytes"] is None
+    assert result["host_rss"]["measurement_available"] is False
+
+
+@pytest.mark.parametrize("peak,sampled", [(None, 1024), (1024, None), (2048, 1024)])
+def test_host_budget_accepts_available_measurements(peak, sampled):
+    result = tool.check_budgets(
+        peak_rss_bytes_value=peak, sampled_rss_bytes=sampled, reserved_bytes=None,
+        max_host_rss_gib=12, max_gpu_reserved_gib=3, cuda=False,
+    )
+    assert result["passed"] is True
+    assert result["host_rss"]["peak_rss_bytes"] == max(peak or 0, sampled or 0)
+    assert result["host_rss"]["measurement_available"] is True
+
+
+def test_platform_peak_rss_is_a_real_positive_measurement():
+    if sys.platform not in {"win32", "linux", "darwin"}:
+        pytest.skip("platform has no native peak RSS contract")
+    assert tool.peak_rss_bytes() > 0
+
+
+@pytest.mark.parametrize("platform,expected", [("linux", 1234 * 1024), ("darwin", 1234)])
+def test_platform_peak_rss_normalises_unix_units(monkeypatch, platform, expected):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(tool, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setitem(sys.modules, "resource", SimpleNamespace(
+        RUSAGE_SELF=0, getrusage=lambda _who: SimpleNamespace(ru_maxrss=1234),
+    ))
+    assert tool.peak_rss_bytes() == expected
+
+
+@pytest.mark.parametrize("api_ok,peak,expected", [(True, 5 * (1 << 30), 5 * (1 << 30)),
+                                                 (False, 1234, None), (True, 0, None)])
+def test_platform_peak_rss_windows_uses_size_t_peak_or_unknown(monkeypatch, api_ok, peak, expected):
+    import ctypes
+    from types import SimpleNamespace
+
+    if ctypes.sizeof(ctypes.c_size_t) < 8:
+        pytest.skip("model inference requires a 64-bit address space")
+
+    def memory_info(_handle, pointer, _size):
+        pointer._obj.PeakWorkingSetSize = peak
+        pointer._obj.WorkingSetSize = 11
+        pointer._obj.PeakPagefileUsage = 22
+        return int(api_ok)
+
+    kernel = SimpleNamespace(GetCurrentProcess=lambda: -1)
+    psapi = SimpleNamespace(GetProcessMemoryInfo=memory_info)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **_kw: kernel if name == "kernel32" else psapi, raising=False)
+    monkeypatch.setattr(tool, "sys", SimpleNamespace(platform="win32"))
+    assert tool.peak_rss_bytes() == expected
+
+
+def test_platform_peak_rss_windows_dll_failure_is_unknown(monkeypatch):
+    import ctypes
+    from types import SimpleNamespace
+
+    def unavailable(*_args, **_kwargs):
+        raise OSError("native memory counter unavailable")
+
+    monkeypatch.setattr(ctypes, "WinDLL", unavailable, raising=False)
+    monkeypatch.setattr(tool, "sys", SimpleNamespace(platform="win32"))
+    assert tool.peak_rss_bytes() is None
+
+
 def test_tiny_streamed_engines_are_bit_identical_to_the_resident_models(tiny, rq, tps, cpu_reference):
     """Streaming changes no arithmetic: logits AND first-four hiddens are equal bit for bit."""
 
