@@ -30,6 +30,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -77,6 +78,9 @@ COMMON = [
     "--chimera-src", str(CHIMERA_SRC),
     "--mediafold-root", str(MEDIAFOLD_ROOT),
     "--ledger-root", str(LEDGER_ROOT),
+    # Tiny synthetic fixtures do not require the real campaign's 60 GiB reserve.
+    # Production default stays 60; the dedicated disk-guard test overrides this.
+    "--min-free-gib", "0",
 ]
 
 
@@ -356,7 +360,12 @@ def test_the_manifest_names_every_source_and_a_reachable_register_line(full_inse
     assert "--parent-parameter-count" not in command and "--allow-asserted" not in command
     assert "--accounting-slack" not in command
     assert f"--recipe {out / 'composite_manifest.json'} --recipe-command " in command
-    assert "--recipe-command 'c16_install_media.py " in command and f"--child {root / 'child'}" in command
+    # Parse the nested POSIX command quoting: Windows paths contain backslashes
+    # and may contain spaces, so the recipe cannot be checked as a raw substring.
+    recipe = shlex.split(command.partition("--recipe-command ")[2])[0]
+    recipe_args = shlex.split(recipe)
+    assert recipe_args[0] == "c16_install_media.py"
+    assert recipe_args[recipe_args.index("--child") + 1] == str(root / "child")
     assert command.endswith("--confirm")
     assert register["reachable"] is True
     assert register["accounting_slack_required"] == 0

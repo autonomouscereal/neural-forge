@@ -26,6 +26,12 @@ plus `composite_manifest.json`:
     ACE, `time_embed_r`) and refuses the block unless it reproduces the reference within
     `--time-reference-rel-tol` (1e-5). This is the gate that catches a dropped timestep
     path -- the ACE block with `time_embed` alone ran at ~10 % of the parent's modulation.
+    H3 `h3_curve6` instead carries captured `[n,3,6,width]` modulation in video/text/audio
+    order and `[n,curve_dim]` curve references. Both are checked at relL2 <= 1e-5.
+    Its saved curve, projection and RoPE coefficients stay byte-exact F32 even inside
+    a BF16 child. Counted shared coefficients, source tensor digests and explicit
+    `h3_thw_v1` text/AV position requirements are checked and carried into the manifest;
+    the installer does not claim the caller's coordinate mapping has been verified.
     `--arm blend` is a DIAGNOSTIC push, not a registrable fold: each block's SwiGLU rows
     are pushed through the charts into the paired trunk FFN (`ffn.up` / `ffn.down`, plain
     SiLU-GLU only; a `situ` trunk is refused). Its child is `3 x keep x hidden` per block,
@@ -80,7 +86,8 @@ blocks; an output that would leave the filesystem under `--min-free-gib`.
 Formats: `composite/COMPOSITE_S6_INPUT_FORMATS.md`; fixtures: `c16_media_fixtures.py`.
 Standing rules: dense only; no quantization (the charted state is written in the
 child's storage dtype, bf16 narrowing measured and recorded, `--charted-dtype fp32`
-keeps it wide); storage counted in parameters from headers; every claim in the manifest
+keeps it wide; H3 time/RoPE coefficients ALWAYS stay F32 and mixed storage is explicit);
+storage counted in parameters from headers; every claim in the manifest
 names the bytes it was read from.
 """
 
@@ -90,8 +97,8 @@ import argparse
 import dataclasses
 import hashlib
 import json
+import math
 import os
-import resource
 import shlex
 import shutil
 import sys
@@ -100,7 +107,7 @@ from pathlib import Path
 from typing import Any
 
 TOOL_NAME = "c16_install_media"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 MANIFEST_SCHEMA = "chimera_omni.composite_manifest.v1"
 MANIFEST_FILENAME = "composite_manifest.json"
 REFUSED_FILENAME = "REFUSED.json"
@@ -118,6 +125,11 @@ DEFAULT_MIN_FREE_GIB = 60.0
 DEFAULT_TIME_REFERENCE_REL_TOL = 1.0e-5
 EXIT_REFUSED = 3
 CHART_KEYS = ("chart_in.weight", "chart_in.bias", "chart_out.weight")
+H3_SHARED_COEFFICIENTS = {"h3_time.curve_table": "adaln_t_table", "attn.rope_inv_freq": "rope.inv_freq"}
+H3_FP32_TENSORS = frozenset((*H3_SHARED_COEFFICIENTS, "h3_time.proj.weight", "h3_time.proj.bias"))
+H3_MODALITY_ORDER = ["video", "text", "audio"]
+H3_SOURCE_POSITIONS = "explicit h3_thw_v1 coordinates for text and AV rows"
+H3_COORDINATE_INFERENCE = "forbidden: native thwr_v1 values are not H3 source coordinates"
 STREAM_CHUNK = 1 << 24
 
 
@@ -219,6 +231,36 @@ def _torch():
     import torch
 
     return torch
+
+
+def peak_rss_bytes() -> int | None:
+    """Actual process-lifetime peak resident memory; unknown is never a fake zero."""
+    if sys.platform != "win32":
+        import resource
+
+        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        return value * (1 if sys.platform == "darwin" else 1024)
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessMemoryCounters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessMemoryCounters), wintypes.DWORD]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+    counters = ProcessMemoryCounters()
+    counters.cb = ctypes.sizeof(counters)
+    if not psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+        return None
+    return int(counters.PeakWorkingSetSize) or None
 
 
 # --------------------------------------------------------------------------
@@ -610,6 +652,63 @@ def check_bands(entries: list[dict[str, Any]], *, allow_overlap: bool) -> dict[s
 # --------------------------------------------------------------------------
 
 
+def validate_h3_contract(body: dict[str, Any], spec: Any, views: dict[str, Any], directory: Path) -> dict[str, Any]:
+    """Validate the converter's counted H3 coefficients and explicit runtime contract.
+
+    This verifies the installed bytes against carried source tensor digests; it
+    does not pretend to reopen the full parent checkpoint or prove media quality.
+    """
+    metadata = spec.metadata
+    requirements = body.get("runtime_requirements", {})
+    if (not isinstance(metadata, dict) or metadata.get("source_position_schema") != "h3_thw_v1"
+            or not isinstance(requirements, dict) or requirements.get("source_positions") != H3_SOURCE_POSITIONS
+            or requirements.get("coordinate_inference") != H3_COORDINATE_INFERENCE):
+        raise Refusal(f"{directory}: H3 requires explicit h3_thw_v1 source positions for text and AV; coordinate inference is forbidden")
+    reference = body.get("time_reference", {})
+    if not isinstance(reference, dict) or reference.get("modality_order") != H3_MODALITY_ORDER:
+        raise Refusal(f"{directory}: H3 time reference must declare modality order video/text/audio")
+    for name in H3_FP32_TENSORS:
+        if views[name].dtype != "F32":
+            raise Refusal(f"{directory}: H3 source time/RoPE coefficient {name} must be stored F32, not {views[name].dtype}")
+    provenance = body.get("provenance", {})
+    if not isinstance(provenance, dict):
+        raise Refusal(f"{directory}: H3 source coefficient provenance must be an object")
+    globals_sha = provenance.get("source_globals_tensor_sha256")
+    if not isinstance(globals_sha, dict) or set(globals_sha) != set(H3_SHARED_COEFFICIENTS.values()):
+        raise Refusal(f"{directory}: H3 requires source tensor digests for the retained curve and RoPE coefficients")
+    coefficient_counts = {}
+    for target, source in H3_SHARED_COEFFICIENTS.items():
+        if view_hash(views[target]) != globals_sha[source]:
+            raise Refusal(f"{directory}: retained H3 coefficient {target} differs from its source tensor digest")
+        coefficient_counts[target] = elements(views[target].shape)
+    shared = sum(coefficient_counts.values())
+    total = sum(elements(view.shape) for view in views.values())
+    accounting = body.get("accounting", {})
+    if not isinstance(accounting, dict):
+        raise Refusal(f"{directory}: H3 accounting must declare block and retained coefficient counts")
+    expected = {"retained_shared_coefficients": shared, "child_block_parameters": total - shared,
+                "child_mlp_parameters": spec.mlp_parameter_count()}
+    for name, count in expected.items():
+        if type(accounting.get(name)) is not int or accounting[name] != count:
+            raise Refusal(f"{directory}: H3 accounting.{name} must equal its header-derived count {count}")
+    for name in ("parent_mlp_parameters", "parent_block_parameters"):
+        if type(accounting.get(name)) is not int or accounting[name] <= 0:
+            raise Refusal(f"{directory}: H3 accounting.{name} must be a positive integer")
+    if (accounting["parent_mlp_parameters"] < 4 * expected["child_mlp_parameters"]
+            or accounting["parent_block_parameters"] != total - shared - expected["child_mlp_parameters"] + accounting["parent_mlp_parameters"]):
+        raise Refusal(f"{directory}: H3 parent/child block counts or 4x MLP component counts are inconsistent")
+    return {"coefficient_header_parameters": coefficient_counts, "retained_shared_coefficients": shared,
+            "block_with_retained_coefficients_parameters": total, "source_coefficient_tensor_sha256_verified": True,
+            "preserved_f32_tensors": sorted(H3_FP32_TENSORS),
+            "source_position_schema": "h3_thw_v1", "source_positions_required": True,
+            "position_mapping_verified": False, "note": "caller must supply and verify actual text/AV source coordinates; no media capability proof"}
+
+
+def require_complete_hashes(views: dict[str, Any], declared: Any, *, where: str) -> None:
+    if not isinstance(declared, dict) or set(declared) != set(views):
+        raise Refusal(f"{where}: H3 requires complete declared tensor_sha256 evidence for every tensor")
+
+
 def load_container(directory: Path, cfg: Any) -> dict[str, Any]:
     from chimera_omni.charted import ChartedBlockSpec
 
@@ -642,6 +741,9 @@ def load_container(directory: Path, cfg: Any) -> dict[str, Any]:
         raise Refusal(f"{directory}: tensor_sha256 must map file names to per-tensor digests")
 
     views = read_single(tensors_path)
+    is_h3 = spec.modulation == "h3_curve6"
+    if is_h3:
+        require_complete_hashes(views, declared.get("charted_block.safetensors"), where=str(tensors_path))
     sha_checks = {"charted_block.safetensors": verify_declared_sha256(views, declared.get("charted_block.safetensors"), where=f"{directory}/charted_block.safetensors")}
     if set(views) != set(block_expected):
         raise Refusal(
@@ -653,10 +755,15 @@ def load_container(directory: Path, cfg: Any) -> dict[str, Any]:
         if tuple(view.shape) != tuple(block_expected[name]):
             raise Refusal(f"{directory}: {name} has shape {tuple(view.shape)}, spec says {block_expected[name]}")
         tensors[name] = view.torch(dtype=_torch().float32)
+        if is_h3 and not bool(_torch().isfinite(tensors[name]).all()):
+            raise Refusal(f"{directory}: non-finite H3 source tensor {name}")
+    h3_contract = validate_h3_contract(body, spec, views, directory) if is_h3 else None
     charts: dict[str, Any] | None = None
     dropped_chart_keys: list[str] = []
     if charts_path.is_file():
         chart_views = read_single(charts_path)
+        if is_h3:
+            require_complete_hashes(chart_views, declared.get("charts.safetensors"), where=str(charts_path))
         sha_checks["charts.safetensors"] = verify_declared_sha256(chart_views, declared.get("charts.safetensors"), where=f"{directory}/charts.safetensors")
         charts = {}
         for name in chart_expected:
@@ -667,24 +774,32 @@ def load_container(directory: Path, cfg: Any) -> dict[str, Any]:
                     f"{directory}: {name} has shape {tuple(chart_views[name].shape)}, spec says {chart_expected[name]}"
                 )
             charts[name] = chart_views[name].torch(dtype=_torch().float32)
+            if is_h3 and not bool(_torch().isfinite(charts[name]).all()):
+                raise Refusal(f"{directory}: non-finite H3 chart tensor {name}")
         dropped_chart_keys = sorted(set(chart_views) - set(chart_expected))
     time_reference: dict[str, Any] | None = None
-    if spec.modulation == "adaln6":
+    if spec.modulation in ("adaln6", "h3_curve6"):
         if not reference_path.is_file():
             raise Refusal(
-                f"{directory}: an adaLN container must ship {TIME_REFERENCE_FILENAME} (the captured modulation, "
-                "sigma -> [6, width]); the installer refuses a time path it cannot check against the capture"
+                f"{directory}: a {spec.modulation} container must ship {TIME_REFERENCE_FILENAME}; "
+                "the installer refuses a time path it cannot check against the capture"
             )
         reference_views = read_single(reference_path)
+        if is_h3:
+            require_complete_hashes(reference_views, declared.get(TIME_REFERENCE_FILENAME), where=str(reference_path))
         sha_checks[TIME_REFERENCE_FILENAME] = verify_declared_sha256(reference_views, declared.get(TIME_REFERENCE_FILENAME), where=f"{directory}/{TIME_REFERENCE_FILENAME}")
         for key in ("sigma", "modulation"):
             if key not in reference_views:
                 raise Refusal(f"{reference_path} lacks {key}")
-        sigma = reference_views["sigma"].torch(dtype=_torch().float32).reshape(-1)
+        sigma = reference_views["sigma"].torch(dtype=_torch().float32)
+        if is_h3 and (sigma.ndim != 1 or not bool(_torch().isfinite(sigma).all()) or bool(((sigma < 0) | (sigma > 1)).any())):
+            raise Refusal(f"{reference_path}: H3 sigma must be a finite [n] vector in [0, 1]")
+        sigma = sigma.reshape(-1)
         modulation = reference_views["modulation"].torch(dtype=_torch().float32)
-        if sigma.numel() == 0 or tuple(modulation.shape) != (int(sigma.numel()), 6, int(spec.width)):
+        expected_shape = (int(sigma.numel()), *((3,) if is_h3 else ()), 6, int(spec.width))
+        if sigma.numel() == 0 or tuple(modulation.shape) != expected_shape:
             raise Refusal(
-                f"{reference_path}: modulation must be [{int(sigma.numel())}, 6, {spec.width}], got {tuple(modulation.shape)}"
+                f"{reference_path}: modulation must be {expected_shape}, got {tuple(modulation.shape)}"
             )
         time_reference = {
             "file": str(reference_path),
@@ -693,6 +808,10 @@ def load_container(directory: Path, cfg: Any) -> dict[str, Any]:
             "modulation": modulation,
             "declared": body.get("time_reference", {}),
         }
+        if is_h3:
+            if "curve" not in reference_views or tuple(reference_views["curve"].shape) != (len(sigma), spec.h3_curve_dim):
+                raise Refusal(f"{reference_path}: H3 curve reference must be [n, {spec.h3_curve_dim}]")
+            time_reference["curve"] = reference_views["curve"].torch(dtype=_torch().float32)
     elif reference_path.is_file():
         raise Refusal(f"{directory}: {TIME_REFERENCE_FILENAME} present on a block without adaLN modulation")
     accounting = dict(body.get("accounting", {}))
@@ -714,6 +833,9 @@ def load_container(directory: Path, cfg: Any) -> dict[str, Any]:
         "time_reference": time_reference,
         "tensor_sha256_check": sha_checks,
         "accounting": accounting,
+        "h3_source_contract": h3_contract,
+        "runtime_requirements": body.get("runtime_requirements", {}),
+        "capture_deviations": body.get("capture_deviations", []),
         "provenance": body.get("provenance", {}),
         "holdout": body.get("holdout", {}),
         "insert_after": None if insert_after is None else int(insert_after),
@@ -742,19 +864,24 @@ def verify_time_reference(container: dict[str, Any], hidden: int, *, rel_tol: fl
     reference = container.get("time_reference")
     if reference is None:
         return None
+    is_h3 = container["spec"].modulation == "h3_curve6"
+    if not math.isfinite(rel_tol) or rel_tol <= 0 or (is_h3 and rel_tol > DEFAULT_TIME_REFERENCE_REL_TOL):
+        raise Refusal("time reference tolerance must be finite and positive; H3 evidence cannot be loosened beyond 1e-5")
     torch = _torch()
     block = build_source_block(container["spec"], hidden, container["tensors"], container["charts"])
     with torch.no_grad():
         got = block.time_path(reference["sigma"]).to(torch.float32)
     expected = reference["modulation"]
+    if got.shape != expected.shape:
+        raise Refusal(f"{container['name']}: rebuilt time path shape differs from the captured modulation")
     if not bool(torch.isfinite(expected).all()) or not bool(torch.isfinite(got).all()):
         raise Refusal(f"{container['name']}: non-finite values in the time reference or the time path")
-    norm = float(expected.norm())
+    norm = float(expected.double().norm())
     if norm == 0.0:
         raise Refusal(f"{container['name']}: the captured modulation is all zero; a reference must carry the parent's temb")
     diff = (got - expected).abs()
-    rel = float((got - expected).norm() / norm)
-    chunk_norms = [float(v) for v in expected.norm(dim=(0, 2))]
+    rel = float((got.double() - expected.double()).norm() / norm)
+    chunk_norms = expected.double().norm(dim=(0, 3) if is_h3 else (0, 2)).tolist()
     report = {
         "file": reference["file"],
         "sha256": reference["sha256"],
@@ -763,12 +890,25 @@ def verify_time_reference(container: dict[str, Any], hidden: int, *, rel_tol: fl
         "max_abs": float(diff.max()),
         "reference_norm": norm,
         "reference_chunk_norms": chunk_norms,
+        "reference_shape": list(expected.shape),
         "tolerance_rel_l2": float(rel_tol),
         "time_embed_r": bool(container["spec"].time_embed_r),
         "declared": reference.get("declared"),
         "verified": rel <= float(rel_tol),
     }
-    if rel > float(rel_tol):
+    if is_h3:
+        with torch.no_grad():
+            curve = block.h3_time.curve(reference["sigma"])
+        expected_curve = reference["curve"]
+        if (curve.shape != expected_curve.shape or not bool(torch.isfinite(curve).all())
+                or not bool(torch.isfinite(expected_curve).all()) or float(expected_curve.double().norm()) == 0):
+            raise Refusal(f"{container['name']}: invalid or empty H3 captured curve evidence")
+        curve_rel = float((curve.double() - expected_curve.double()).norm() / expected_curve.double().norm())
+        report.update(modality_order=H3_MODALITY_ORDER.copy(), curve_rel_l2=curve_rel,
+                      curve_max_abs=float((curve - expected_curve).abs().max()))
+        if not math.isfinite(curve_rel) or curve_rel > rel_tol:
+            raise Refusal(f"{container['name']}: H3 curve does not reproduce captured reference (rel_l2 {curve_rel:.3e})")
+    if not math.isfinite(rel) or rel > float(rel_tol):
         raise Refusal(
             f"{container['name']}: the spec's time path does not reproduce the captured modulation "
             f"(rel_l2 {rel:.3e} > {rel_tol:.1e}, max_abs {float(diff.max()):.3e}); the block would run in a "
@@ -1189,9 +1329,11 @@ class Installer:
                     raise Refusal(f"{container['name']}: tensor set {sorted(tensors)} != spec set {sorted(expected)}")
                 block_params = 0
                 for key, tensor in tensors.items():
-                    stats = self.cast_stats(key, tensor)
+                    preserve_h3_f32 = spec.modulation == "h3_curve6" and key in H3_FP32_TENSORS
+                    stats = ({"dtype": "F32", "max_abs_narrowing": 0.0, "reason": "source H3 time/RoPE coefficients retained exactly"}
+                             if preserve_h3_f32 else self.cast_stats(key, tensor))
                     narrowing[key] = stats
-                    charted_state[prefix + key] = tensor if self.args.charted_dtype == "fp32" else tensor.to(self.storage_dtype)
+                    charted_state[prefix + key] = tensor if preserve_h3_f32 or self.args.charted_dtype == "fp32" else tensor.to(self.storage_dtype)
                     block_params += int(tensor.numel())
                 added += block_params
                 mlp_prefix = prefix + "mlp."
@@ -1220,6 +1362,9 @@ class Installer:
                         "provenance": container["provenance"],
                         "holdout": container["holdout"],
                         "accounting": container["accounting"],
+                        "h3_source_contract": container.get("h3_source_contract"),
+                        "runtime_requirements": container.get("runtime_requirements", {}),
+                        "capture_deviations": container.get("capture_deviations", []),
                     }
                 )
                 log(f"charted {container['name']} ({spec.source}) -> blocks.{position} after trunk layer {old}; {block_params:,} params")
@@ -1269,6 +1414,8 @@ class Installer:
         added = 0
         for container in containers:
             spec = container["spec"]
+            if spec.modulation == "h3_curve6":
+                raise Refusal(f"{container['name']}: H3 curve modulation, joint context and source RoPE cannot be represented by the blend arm; use insert")
             if spec.mlp_kind != "swiglu":
                 raise Refusal(f"{container['name']}: the blend arm folds SwiGLU rows only; {spec.mlp_kind!r} cannot enter a silu-glu FFN")
             layer = int(container["insert_after"])
@@ -1514,7 +1661,11 @@ class Installer:
                 "equality_asserted": True,
                 "quantization": "none",
                 "storage_dtype": self.storage_dtype_name,
-                "charted_dtype": "F32" if self.args.charted_dtype == "fp32" else self.storage_dtype_name,
+                "charted_dtype": ("F32" if self.args.charted_dtype == "fp32" else
+                                  "mixed" if self.storage_dtype_name != "F32" and any(c.get("h3_source_contract") for c in self.record.get("blocks", {}).get("placements", []))
+                                  else self.storage_dtype_name),
+                "charted_dtype_policy": {"default": "F32" if self.args.charted_dtype == "fp32" else self.storage_dtype_name,
+                                         "h3_preserved_f32_tensors": sorted(H3_FP32_TENSORS)},
             },
             "sources": self.sources(components),
             "components": components,
@@ -1524,7 +1675,8 @@ class Installer:
             "narrowing": self.record.get("narrowing"),
             "disk": self.record.get("disk"),
             "register": register,
-            "runtime": {"peak_rss_bytes": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024, "python": sys.version.split()[0]},
+            "runtime": {"peak_rss_bytes": peak_rss_bytes(), "python": sys.version.split()[0],
+                        "peak_rss_source": "GetProcessMemoryInfo.PeakWorkingSetSize" if sys.platform == "win32" else "resource.ru_maxrss"},
         }
         digest = write_json_with_sidecar(self.out / MANIFEST_FILENAME, manifest)
         self.manifest_sha256 = digest
@@ -1566,6 +1718,9 @@ class Installer:
                         "parent_params": whole_parent,
                         "child_params": whole_child,
                         "ratio": (whole_child / whole_parent) if whole_parent and whole_child is not None else None,
+                        "retained_shared_coefficients": placement.get("accounting", {}).get("retained_shared_coefficients", 0),
+                        "child_with_retained_coefficients_params": (whole_child + placement.get("accounting", {}).get("retained_shared_coefficients", 0)) if whole_child is not None else None,
+                        "installed_with_charts_parameters": placement["parameters"],
                     },
                     "note": (
                         "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block "
