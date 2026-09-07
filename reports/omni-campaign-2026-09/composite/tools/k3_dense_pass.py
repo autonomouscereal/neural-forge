@@ -125,6 +125,11 @@ Deviations from the run-book row, on purpose and recorded in the receipt:
   prefix; missing (legacy) lineage forces a refit. Snapshots and carried
   receipts validate the whole chain. Gate-mode resume also refuses to carry
   a record-only refusal or an unverifiable acceptance verdict.
+* v1.2.2 -- native path containment and exact-byte receipts work on Windows.
+  Process-lifetime peak RSS is measured using the platform counter; an
+  unavailable/nonpositive reading is a named refusal, recorded as null in
+  ``resources.host_peak_rss``. This is an observability requirement, not a new
+  numeric budget or a changed fitting/acceptance policy.
 
 Usage (server, lab venv; the real pass runs DETACHED and is polled):
 
@@ -152,7 +157,7 @@ import torch
 import torch.nn.functional as F
 
 TOOL_NAME = "k3_dense_pass"
-TOOL_VERSION = "1.2.1"
+TOOL_VERSION = "1.2.2"
 SHARE_ROOT = "/mnt/ai_data"
 DEFAULT_SRC_DIR = "/mnt/lexar/models/moonshotai/Kimi-K3"
 DEFAULT_OUT = "/mnt/lexar/omni-campaign/k3"
@@ -251,6 +256,7 @@ from k3_common import (  # noqa: E402
     device_inventory,
     log,
     peak_rss_bytes,
+    peak_rss_source,
     read_header,
     read_metadata,
     read_tensors,
@@ -282,9 +288,14 @@ def lane_file_digests() -> dict[str, str]:
 def under_share(path: str | None, share_root: str = SHARE_ROOT) -> bool:
     if not path:
         return False
-    resolved = os.path.realpath(path)
-    root = os.path.realpath(share_root)
-    return resolved == root or resolved.startswith(root.rstrip("/") + "/")
+    # A trailing separator also makes a bare Windows UNC share an absolute root
+    # to commonpath (\\\\server\\share and \\\\server\\share\\ parse differently).
+    resolved = os.path.normcase(os.path.realpath(path)).rstrip(os.path.sep) + os.path.sep
+    root = os.path.normcase(os.path.realpath(share_root)).rstrip(os.path.sep) + os.path.sep
+    try:
+        return os.path.commonpath([resolved, root]).rstrip(os.path.sep) + os.path.sep == root
+    except ValueError:  # distinct Windows drives or incompatible path roots
+        return False
 
 
 def canonical_json(payload: Any) -> str:
@@ -1853,8 +1864,28 @@ class DualStreamRun(StreamRun):
         return F.linear(hidden, head["lm_head"]).float().view(n_rows, seq, -1)
 
     # -- the pass -------------------------------------------------------------
+    def require_peak_rss(self, where: str, layer_idx: int | None = None) -> int:
+        """Require an actual process-lifetime peak measurement; never report unknown as zero."""
+        peak = peak_rss_bytes()
+        available = peak is not None and peak > 0
+        record = {"required": True, "measurement_available": available,
+                  "peak_rss_bytes": int(peak) if available else None,
+                  "source": peak_rss_source(), "where": where,
+                  "scope": "whole-process lifetime peak, not an isolated per-layer peak"}
+        self.receipt.setdefault("resources", {})["host_peak_rss"] = record
+        if not available:
+            message = f"process peak RSS measurement unavailable ({where}); refusing unmeasured completion"
+            detail = {"gate": "host_peak_rss_measurement", "host_peak_rss": record}
+            self.receipt["peak_rss_bytes"] = None
+            self.receipt["refusal"] = {"layer": layer_idx, "message": message,
+                                       "at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **detail}
+            write_receipt(os.path.join(self.receipt_dir, PARTIAL_RECEIPT_NAME), self.receipt)
+            raise Refusal(message, detail)
+        return int(peak)
+
     def run(self) -> dict[str, Any]:
         args = self.args
+        self.require_peak_rss("before_pass")
         layers = parse_layers(args.layers, self.index.num_layers)
         if layers != list(range(layers[0], layers[-1] + 1)):
             raise SystemExit(f"--layers must be one contiguous range for a streamed pass, got {args.layers}")
@@ -1931,7 +1962,7 @@ class DualStreamRun(StreamRun):
             entry["staged_release"] = self.stager.release(plan_shards[layer_idx], still_needed)
             self.receipt["layers"][str(layer_idx)] = entry
             self.receipt["staging"] = self.stager.record()
-            self.receipt["peak_rss_bytes_so_far"] = peak_rss_bytes()
+            self.receipt["peak_rss_bytes_so_far"] = self.require_peak_rss("after_layer", layer_idx)
             write_receipt(partial_path, self.receipt)
             log(f"L{layer_idx:02d} done in {entry['layer_seconds']}s: read {entry['read']['gigabytes']} GB at "
                 f"{entry['read']['MB_per_s']} MB/s; folded-vs-teacher prefix relL2 (held) "
@@ -1970,7 +2001,7 @@ class DualStreamRun(StreamRun):
         self.receipt["layers_folded"] = sorted(int(k) for k, v in self.receipt["layers"].items() if v.get("moe"))
         self.receipt["installed_ffn_sha256"] = {str(k): v for k, v in sorted(self.installed.items())}
         self.receipt["total_seconds"] = round(time.time() - wall_start, 1)
-        self.receipt["peak_rss_bytes"] = peak_rss_bytes()
+        self.receipt["peak_rss_bytes"] = self.require_peak_rss("completion")
         self.receipt["staging"] = self.stager.record()
         self.stager.close()
         self.receipt["determinism_sha256"] = self.determinism_sha256()
@@ -2128,7 +2159,7 @@ class DualStreamRun(StreamRun):
         entry["prefix_out_sha256"] = {"teacher": sha256_tensor(new_teacher.prefix),
                                       "folded": sha256_tensor(new_folded.prefix)}
         entry["block_residual_blocks"] = int(new_teacher.blocks.shape[1])
-        entry["peak_rss_bytes"] = peak_rss_bytes()
+        entry["peak_rss_bytes"] = self.require_peak_rss("layer_record", layer_idx)
         entry["layer_seconds"] = round(time.time() - layer_start, 1)
         entry["_teacher"] = new_teacher
         entry["_folded"] = new_folded

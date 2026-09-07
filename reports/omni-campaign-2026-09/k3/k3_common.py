@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import struct
+import sys
 import tempfile
 import time
 from typing import Any, Callable, Iterable
@@ -138,14 +139,13 @@ def sha256_tensor(tensor: torch.Tensor) -> str:
 def write_receipt(path: str, payload: dict[str, Any]) -> str:
     """Canonical-JSON receipt, atomically written; returns its own sha256."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    body = json.dumps(payload, indent=1, sort_keys=True, default=str)
-    handle = tempfile.NamedTemporaryFile(
-        "w", delete=False, dir=os.path.dirname(os.path.abspath(path)), encoding="utf-8"
-    )
-    handle.write(body)
-    handle.close()
+    body = json.dumps(payload, indent=1, sort_keys=True, default=str).encode("utf-8")
+    # Binary writes keep the digest identical to the committed bytes on Windows too.
+    with tempfile.NamedTemporaryFile("wb", delete=False,
+                                      dir=os.path.dirname(os.path.abspath(path))) as handle:
+        handle.write(body)
     os.replace(handle.name, path)
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+    return hashlib.sha256(body).hexdigest()
 
 
 # --------------------------------------------------------------------------
@@ -287,25 +287,72 @@ def blocks_before(layer_idx: int, block_size: int) -> int:
     return -(-int(layer_idx) // int(block_size))
 
 
+def _windows_peak_rss_bytes() -> int | None:
+    """Native process-lifetime peak working set, in bytes (not commit size)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessMemoryCounters(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.GetProcessMemoryInfo.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(ProcessMemoryCounters), wintypes.DWORD,
+    ]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+    counters = ProcessMemoryCounters()
+    counters.cb = ctypes.sizeof(counters)
+    if not psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+        return None
+    return int(counters.PeakWorkingSetSize) or None
+
+
+def peak_rss_source() -> str:
+    if sys.platform == "win32":
+        return "GetProcessMemoryInfo(GetCurrentProcess()).PeakWorkingSetSize (bytes)"
+    if sys.platform == "linux":
+        return "/proc/self/status VmHWM; fallback resource.ru_maxrss (KiB * 1024)"
+    scale = "bytes" if sys.platform == "darwin" else "KiB * 1024"
+    return f"resource.getrusage(RUSAGE_SELF).ru_maxrss ({scale})"
+
+
 def peak_rss_bytes() -> int | None:
-    """High-water-mark resident set size of THIS process, or None off Linux.
+    """High-water-mark resident set size of THIS process; unknown is None, never zero.
 
     Used to turn "the Gram arithmetic says N GB" into a measurement.  `VmHWM`
-    is read first because it is exact and in kB; `ru_maxrss` is the portable
-    fallback (kB on Linux, bytes on macOS -- we only claim the Linux reading).
+    remains Linux's first source. Windows uses native PeakWorkingSetSize;
+    `ru_maxrss` is the Unix fallback (KiB on Linux, bytes on macOS).
     """
+    if sys.platform == "win32":
+        try:
+            return _windows_peak_rss_bytes()
+        except (ImportError, AttributeError, OSError):
+            return None
     try:
-        with open("/proc/self/status", "r", encoding="utf-8") as handle:
-            for line in handle:
-                if line.startswith("VmHWM:"):
-                    return int(line.split()[1]) * 1024
-    except OSError:
+        if sys.platform == "linux":
+            with open("/proc/self/status", "r", encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith("VmHWM:"):
+                        value = int(line.split()[1])
+                        if value > 0:
+                            return value * 1024
+    except (OSError, ValueError, IndexError):
         pass
     try:
         import resource
 
-        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
-    except Exception:
+        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        return value * (1 if sys.platform == "darwin" else 1024) if value > 0 else None
+    except (ImportError, AttributeError, OSError, TypeError, ValueError):
         return None
 
 

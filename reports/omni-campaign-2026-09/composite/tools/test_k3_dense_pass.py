@@ -1288,3 +1288,71 @@ def test_same_prefix_segmented_and_resumed_content_stays_identical(
         assert candidate["determinism_sha256"] == direct["determinism_sha256"]
         assert candidate["final_prefix_sha256"] == direct["final_prefix_sha256"]
         assert candidate["end_of_stack"]["held"] == direct["end_of_stack"]["held"]
+
+
+@pytest.mark.parametrize("path,root,expected", [
+    (r"C:\share\models\K3", r"C:\share", True),
+    (r"c:\SHARE\models", r"C:\share", True),
+    (r"C:\share-other\model", r"C:\share", False),
+    (r"D:\share\model", r"C:\share", False),
+    (r"C:\share\models\..", r"C:\share", True),
+    (r"\\server\models\K3", r"\\server\models", True),
+])
+def test_share_containment_uses_native_windows_path_rules(monkeypatch, path, root, expected):
+    import ntpath
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(kdp, "os", SimpleNamespace(path=ntpath))
+    assert kdp.under_share(path, root) is expected
+
+
+@pytest.mark.parametrize("path,root,expected", [
+    ("/mnt/ai_data/models/K3", "/mnt/ai_data", True),
+    ("/mnt/ai_data-other/model", "/mnt/ai_data", False),
+    ("/mnt/AI_DATA/model", "/mnt/ai_data", False),
+    ("/mnt/ai_data/models/..", "/mnt/ai_data", True),
+    ("/mnt/ai_data", "/", True),
+])
+def test_share_containment_preserves_posix_path_rules(monkeypatch, path, root, expected):
+    import posixpath
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(kdp, "os", SimpleNamespace(path=posixpath))
+    assert kdp.under_share(path, root) is expected
+
+
+@pytest.mark.parametrize("value", [None, 0, -1])
+def test_unknown_peak_rss_refuses_with_null_measurement_receipt(
+        tmp_path: Path, fixture: dict, corpus_files: dict, monkeypatch, value):
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    monkeypatch.setattr(kdp, "peak_rss_bytes", lambda: value)
+    with pytest.raises(kdp.Refusal, match="RSS measurement unavailable"):
+        kdp.main(base_argv(fixture["dir"], corpus_files, out, receipts, layers="0-1"))
+    partial = json.loads((receipts / kdp.PARTIAL_RECEIPT_NAME).read_text(encoding="utf-8"))
+    memory = partial["resources"]["host_peak_rss"]
+    assert memory["measurement_available"] is False
+    assert memory["peak_rss_bytes"] is None
+    assert partial["refusal"]["gate"] == "host_peak_rss_measurement"
+    assert partial["layers"] == {}, "unknown memory must refuse before a model forward"
+    assert not (out / "dense" / "L00" / "mlp.safetensors").exists()
+
+
+@pytest.mark.parametrize("fail_at,where", [(2, "layer_record"), (3, "after_layer"), (6, "completion")])
+def test_lost_rss_measurement_cannot_produce_a_completed_receipt(
+        tmp_path: Path, fixture: dict, corpus_files: dict, monkeypatch, fail_at, where):
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    calls = 0
+
+    def measurement():
+        nonlocal calls
+        calls += 1
+        return None if calls == fail_at else 1024
+
+    monkeypatch.setattr(kdp, "peak_rss_bytes", measurement)
+    with pytest.raises(kdp.Refusal, match="RSS measurement unavailable"):
+        kdp.main(base_argv(fixture["dir"], corpus_files, out, receipts, layers="0-1"))
+    partial = json.loads((receipts / kdp.PARTIAL_RECEIPT_NAME).read_text(encoding="utf-8"))
+    memory = partial["resources"]["host_peak_rss"]
+    assert memory["where"] == where and memory["measurement_available"] is False
+    assert memory["peak_rss_bytes"] is None and partial["peak_rss_bytes"] is None
+    assert not (receipts / kdp.RECEIPT_NAME).exists()
