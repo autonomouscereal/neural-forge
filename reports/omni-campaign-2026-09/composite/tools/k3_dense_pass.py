@@ -148,6 +148,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
+import math
 import json
 import os
 import sys
@@ -186,6 +188,9 @@ FOLD_METRIC_KEYS = ("fold", "pivot_seconds", "fit_timings", "veto_binding", "upd
                     "law_verdict", "acceptance")
 PREFIX_LINEAGE_VERSION = "k3_dense_pass.prefix_lineage.v1"
 RESUME_CONTEXT_VERSION = "k3_dense_pass.resume_context.v1"
+KL_ROUNDOFF_POLICY = {"version": "fp32_kl_roundoff.v1",
+                      "negative_absolute_tolerance": 8 * torch.finfo(torch.float32).eps,
+                      "action": "preserve raw score; normalize negative FP32 roundoff to zero"}
 # ---- the measured acceptance rule (v1.2.0) --------------------------------------------
 # Named, versioned constants.  Changing one is a tool-version change and the receipt names the
 # calibration it came from; nothing here is tuned against the held rows of a running pass.
@@ -1521,6 +1526,20 @@ class DualStreamRun(StreamRun):
             source_files[name] = {"bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns}
         numerical_args = ("compute_dtype", "kda_backend", "k_pool_factor", "row_chunk", "token_chunk",
                           "chunk", "holdout_blocks", "divergence_rows", "review_topk")
+        packages = {}
+        for name in ("flash-linear-attention", "triton"):
+            try:
+                packages[name] = importlib.metadata.version(name)
+            except importlib.metadata.PackageNotFoundError:
+                packages[name] = None
+        matmul = torch.backends.cuda.matmul
+        backend_flags = {key: getattr(matmul, key, None) for key in (
+            "allow_tf32", "allow_fp16_reduced_precision_reduction", "allow_bf16_reduced_precision_reduction")}
+        for name in ("flash_sdp_enabled", "math_sdp_enabled", "mem_efficient_sdp_enabled", "cudnn_sdp_enabled"):
+            getter = getattr(torch.backends.cuda, name, None)
+            backend_flags[name] = getter() if getter is not None else None
+        backend_flags.update({"cudnn_" + name: getattr(torch.backends.cudnn, name, None)
+                              for name in ("enabled", "benchmark", "deterministic", "allow_tf32")})
         return {
             "version": RESUME_CONTEXT_VERSION,
             "model": {"source_directory": os.path.normcase(os.path.realpath(self.args.src_dir)),
@@ -1533,10 +1552,10 @@ class DualStreamRun(StreamRun):
                         "device": str(self.device), "experts_device": str(self.experts_device),
                         "resid_device": str(self.resid_device), "devices": self.receipt["devices"],
                         "float32_matmul_precision": torch.get_float32_matmul_precision(),
-                        "num_threads": torch.get_num_threads()},
+                        "num_threads": torch.get_num_threads(), "backend_flags": backend_flags},
             "software": {"tool_sha256": self.receipt["tool_sha256"],
                          "lane_sha256": self.receipt["lane_sha256"], "torch": str(torch.__version__),
-                         "cuda": torch.version.cuda},
+                         "cuda": torch.version.cuda, "packages": packages},
         }
 
     def _model_identity(self) -> dict[str, Any]:
@@ -1597,9 +1616,9 @@ class DualStreamRun(StreamRun):
                     "reason": "the previous receipt was written for a different corpus"}
                 continue
             prior_rung = prior.get("arguments", {}).get("rung")
-            if prior_rung is not None and int(prior_rung) != int(self.args.rung):
+            if not isinstance(prior_rung, int) or isinstance(prior_rung, bool) or prior_rung != int(self.args.rung):
                 self.receipt["resumed_from_receipt"] = {
-                    "path": path, "carried": False, "previous_rung": int(prior_rung), "rung": int(self.args.rung),
+                    "path": path, "carried": False, "previous_rung": prior_rung, "rung": int(self.args.rung),
                     "reason": "the previous receipt was written at another rung; its layers are not carried"}
                 continue
             carried, dropped = {}, {}
@@ -1745,9 +1764,10 @@ class DualStreamRun(StreamRun):
             return False, f"snapshot before layer {layer_idx} does not carry the complete prior MoE prefix", stamp
         if stamps["teacher"].get("installed_ffn_sha256") != installed_raw:
             return False, "teacher and folded snapshots disagree on the installed folds", stamp
-        if installed and stamp.get("rung") is not None and int(stamp["rung"]) != int(self.args.rung):
+        if installed and any(item.get("rung") != str(int(self.args.rung)) for item in stamps.values()):
             return False, (f"snapshot before layer {layer_idx} carries {len(installed)} folds fitted at rung "
-                           f"{stamp['rung']}, this run is --rung {self.args.rung}"), stamp
+                           f"{stamp.get('rung')!r} (teacher {stamps['teacher'].get('rung')!r}), "
+                           f"this run is --rung {self.args.rung}"), stamp
         validated_prefix = {}
         for fold_layer, sha in sorted(installed.items()):
             marker = self.read_done_marker(fold_layer, installed=validated_prefix)
@@ -1849,8 +1869,10 @@ class DualStreamRun(StreamRun):
         if (marker.get("corpus_sha256") != self.corpus.sha256 or not isinstance(artefact, str)
                 or not artefact or not os.path.exists(artefact)):
             return None
-        if marker.get("rung") is not None and int(marker["rung"]) != int(self.args.rung):
-            return None
+        if self.index.is_moe_layer(layer_idx):
+            rung = marker.get("rung")
+            if not isinstance(rung, int) or isinstance(rung, bool) or rung != int(self.args.rung):
+                return None
         if sha256_file(artefact) != marker.get("artefact_sha256"):
             raise SystemExit(f"done marker {path} names {artefact} with sha {marker.get('artefact_sha256')}, "
                              "but the file on disk hashes differently; refusing to trust it")
@@ -2326,12 +2348,15 @@ class DualStreamRun(StreamRun):
         """G4: end-of-stack held top-1 / KL per fitted layer vs the first measured window's calibration.
 
         The first window with an end_of_stack number writes ``acceptance_calibration.json``
-        beside the receipts (corpus sha + rung stamped); later windows at the same corpus and
-        rung gate against it.  The constants may not be raised silently: they live in
+        beside the receipts (context, rung and installed prefix stamped); later windows in
+        that same context may extend the unchanged calibrated prefix. The constants may not
+        be raised silently: they live in
         ``ACCEPTANCE_CONSTANTS`` and every receipt names them.
         """
         held = eos.get("held") or {}
-        folded = sorted(int(k) for k, v in self.receipt["layers"].items() if v.get("moe"))
+        # Snapshots can carry a validated prefix even when its earlier receipt is
+        # absent. The installed state, not receipt coverage, defines the child.
+        folded = sorted(self.installed)
         n_fitted = max(len(folded), 1)
         kl = held.get("kl_parent_child_mean")
         top1 = held.get("top1_agreement")
@@ -2340,24 +2365,70 @@ class DualStreamRun(StreamRun):
         record: dict[str, Any] = {
             "version": ACCEPTANCE_VERSION, "gate": "G4_window_intelligence", "layers_folded": folded,
             "held_kl_parent_child_mean": kl, "held_top1_agreement": top1,
-            "kl_per_fitted_layer": (float(kl) / n_fitted) if kl is not None else None,
+            "raw_held_kl_parent_child_mean": kl, "kl_roundoff_policy": dict(KL_ROUNDOFF_POLICY),
+            "receipt_layers_missing": [k for k in folded if str(k) not in self.receipt["layers"]],
+            "kl_per_fitted_layer": None,
             "constants": {"G4_window_kl_per_layer_budget_x": budget, "G4_window_top1_floor_x": floor},
             "mode": str(self.args.acceptance), "enforced": bool(self.args.acceptance == "gate"),
+            "gates": {},
         }
-        if kl is None or top1 is None:
-            record.update({"verdict": "not_evaluated", "note": "end_of_stack carries no held numbers"})
+        def unavailable(note: str) -> dict[str, Any]:
+            record.update({"verdict": "refused" if record["enforced"] else "not_evaluated", "note": note})
+            if record["enforced"]:
+                record["message"] = "window refused by G4: " + note
             return record
+
+        def valid_score(value: Any, *, probability: bool = False) -> bool:
+            return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value) and value >= 0 and (not probability or value <= 1))
+
+        if (isinstance(kl, (int, float)) and not isinstance(kl, bool) and math.isfinite(kl)
+                and -KL_ROUNDOFF_POLICY["negative_absolute_tolerance"] <= kl < 0):
+            kl = 0.0
+            record["held_kl_parent_child_mean"] = kl
+            record["kl_roundoff_normalized"] = True
+        if not valid_score(kl) or not valid_score(top1, probability=True):
+            return unavailable("end_of_stack carries unavailable or invalid held numbers")
+        if not folded:
+            return unavailable("no installed folded layers to calibrate or evaluate")
+        record["kl_per_fitted_layer"] = float(kl) / n_fitted
         path = os.path.join(self.receipt_dir, ACCEPTANCE_CALIBRATION_NAME)
         if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as handle:
-                calibration = json.load(handle)
-            if (calibration.get("corpus_sha256") != self.corpus.sha256
-                    or int(calibration.get("rung", -1)) != int(self.args.rung)):
-                record.update({"verdict": "not_evaluated", "calibration_path": path,
-                               "note": "a calibration exists for another corpus / rung; not gated, not overwritten"})
-                return record
+            record["calibration_path"] = path
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    calibration = json.load(handle)
+            except (OSError, ValueError):
+                return unavailable("incompatible unreadable calibration; not overwritten")
+            if not isinstance(calibration, dict):
+                return unavailable("incompatible non-object calibration; not overwritten")
+            baseline = calibration.get("installed_ffn_sha256")
+            baseline_layers = calibration.get("layers_folded")
+            current_installed = {str(k): v for k, v in sorted(self.installed.items())}
+            if (calibration.get("version") != ACCEPTANCE_VERSION
+                    or calibration.get("constants") != ACCEPTANCE_CONSTANTS
+                    or calibration.get("kl_roundoff_policy") != KL_ROUNDOFF_POLICY
+                    or calibration.get("resume_context") != self.resume_context
+                    or calibration.get("corpus_sha256") != self.corpus.sha256
+                    or not isinstance(calibration.get("rung"), int) or isinstance(calibration["rung"], bool)
+                    or calibration["rung"] != int(self.args.rung)
+                    or not isinstance(baseline, dict) or not baseline
+                    or not isinstance(baseline_layers, list)
+                    or any(not isinstance(k, int) or isinstance(k, bool) or k < 0 for k in baseline_layers)
+                    or len(set(baseline_layers)) != len(baseline_layers)
+                    or set(baseline_layers) != self.prior_moe_layers(max(baseline_layers, default=-1) + 1)
+                    or set(baseline) != {str(k) for k in baseline_layers}
+                    or any(not isinstance(v, str) or len(v) != 64
+                           or any(c not in "0123456789abcdef" for c in v) for v in baseline.values())
+                    or any(current_installed.get(k) != v for k, v in baseline.items())
+                    or not valid_score(calibration.get("kl_per_fitted_layer"))
+                    or not valid_score(calibration.get("held_top1_agreement"), probability=True)):
+                return unavailable("incompatible calibration context, version, constants, prefix or metrics; "
+                                   "not gated against stale numbers and not overwritten")
             thr_kl = budget * float(calibration["kl_per_fitted_layer"])
             thr_top1 = floor * float(calibration["held_top1_agreement"])
+            if not math.isfinite(thr_kl) or not math.isfinite(thr_top1):
+                return unavailable("incompatible calibration produces non-finite thresholds; not overwritten")
             gates = {
                 "kl_per_fitted_layer": {"value": record["kl_per_fitted_layer"], "threshold": thr_kl,
                                         "pass": bool(record["kl_per_fitted_layer"] <= thr_kl)},
@@ -2374,6 +2445,10 @@ class DualStreamRun(StreamRun):
             return record
         calibration = {
             "version": ACCEPTANCE_VERSION, "corpus_sha256": self.corpus.sha256, "rung": int(self.args.rung),
+            "constants": dict(ACCEPTANCE_CONSTANTS), "resume_context": self.resume_context,
+            "kl_roundoff_policy": dict(KL_ROUNDOFF_POLICY),
+            "raw_held_kl_parent_child_mean": record["raw_held_kl_parent_child_mean"],
+            "installed_ffn_sha256": {str(k): self.installed[k] for k in folded},
             "layers_folded": folded, "kl_per_fitted_layer": record["kl_per_fitted_layer"],
             "held_kl_parent_child_mean": float(kl), "held_top1_agreement": float(top1),
             "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tool_version": TOOL_VERSION,
