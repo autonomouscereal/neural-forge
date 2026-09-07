@@ -1,0 +1,14 @@
+{
+  "schema": "neural-forge.hy3d-dense-fold-policy.v1",
+  "policy_id": "sep07-hy3d-block0-two-fit-two-held-fourfold",
+  "preregistered_before_scoring": true,
+  "description": "Frozen before real HY3D captures exist or are scored. One attempt; no held-informed selection, ridge, retries or gate adjustment. Engineering component checks only, not mesh quality or installed-child proof. Numeric bounds reuse the prior QIMG engineering policy; HY3D baseline replay is strictly bit-exact.",
+  "block_index": 0,
+  "keep": 2047,
+  "fit_objects": 2,
+  "held_objects": 2,
+  "gate_scope": "pooled_and_each_held_object_full_context",
+  "baseline": "all_native_boundaries_bit_exact",
+  "mlp_output": {"max_relative_l2": 0.30, "min_mean_cosine": 0.95},
+  "block_output": {"max_relative_l2": 0.30, "min_mean_cosine": 0.95}
+}
