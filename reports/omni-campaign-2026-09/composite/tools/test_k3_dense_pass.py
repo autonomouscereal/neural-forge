@@ -1027,3 +1027,264 @@ def test_the_sparse_toy_is_a_no_signal_fold_and_the_rule_says_so(work: Path, fix
     assert recorded["arguments"]["acceptance"] == "record"
     marker = json.load(open(os.path.join(os.path.dirname(entry["ffn"]["path"]), "done.json")))
     assert marker["fold_metrics"]["acceptance"]["enforced"] is False
+
+
+def test_resume_refits_downstream_after_same_rung_upstream_replacement(
+        tmp_path: Path, fixture: dict, corpus_files: dict):
+    """A fresh before-L2 snapshot does not make the old L2 fit match its new input."""
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    argv = lambda **kw: base_argv(fixture["dir"], corpus_files, out, receipts, **kw)
+    original = run_pass(argv())
+    old_l1 = original["layers"]["1"]["ffn"]["sha256"]
+    old_l2 = original["layers"]["2"]["ffn"]["sha256"]
+    old_held = load_file(str(out / "resid" / "L02" / "held_rows.safetensors"))
+    upstream = run_pass(argv(layers="0-1", k_pool_factor=2))
+    new_l1 = upstream["layers"]["1"]["ffn"]["sha256"]
+    assert old_l1 != new_l1, "the fixture must really replace the upstream fold"
+    resumed = run_pass(argv(layers="2-2", resume=True))
+    new_held = load_file(str(out / "resid" / "L02" / "held_rows.safetensors"))
+    assert torch.equal(old_held["teacher_moe_x"], new_held["teacher_moe_x"])
+    assert not torch.equal(old_held["folded_moe_x"], new_held["folded_moe_x"])
+    layer = resumed["layers"]["2"]
+    assert layer["fit_skipped"] is None, "a different prefix requires a new downstream fit"
+    assert layer["ffn"]["sha256"] != old_l2
+    marker = json.loads((out / "dense" / "L02" / "done.json").read_text(encoding="utf-8"))
+    assert marker["prefix_lineage"] == layer["prefix_lineage"] == layer["fold"]["prefix_lineage"]
+    assert marker["prefix_lineage"]["upstream_ffn_sha256"] == {"1": new_l1}
+    # Refitting changed ancestry, not the ordinary unchanged-prefix resume behavior.
+    again = run_pass(argv(layers="2-2", resume=True))
+    assert again["layers"]["2"]["fit_skipped"] is not None
+    assert again["final_prefix_sha256"] == resumed["final_prefix_sha256"]
+
+
+def test_resume_gate_does_not_reuse_refused_record_only_marker(
+        tmp_path: Path, fixture: dict, corpus_files: dict):
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    argv = lambda **kw: base_argv(fixture["dir"], corpus_files, out, receipts, layers="0-1", **kw)
+    first = run_pass(argv())
+    assert first["layers"]["1"]["acceptance"]["verdict"] == "refused"
+    with pytest.raises(kdp.Refusal, match="G1"):
+        kdp.main(argv(resume=True, acceptance="gate"))
+
+
+@pytest.fixture
+def lineage_markers(tmp_path: Path, fixture: dict, corpus_files: dict):
+    """Small on-disk marker chain; no model forward or fitting is needed for provenance tests."""
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    argv = base_argv(fixture["dir"], corpus_files, out, receipts)
+    run = make_run(argv)
+    entries = {}
+    for layer in (1, 2):
+        path = Path(run.layer_dir(layer)) / "ffn.safetensors"
+        path.parent.mkdir(parents=True)
+        save_file({"w": torch.tensor([float(layer)])}, str(path))
+        digest = kdp.sha256_file(str(path))
+        lineage = run.prefix_lineage(layer)
+        run.write_done_marker(layer, str(path), digest, {
+            "moe": True, "fold_metrics": {"acceptance": {
+                "version": kdp.ACCEPTANCE_VERSION, "constants": dict(kdp.ACCEPTANCE_CONSTANTS),
+                "mode": "record", "enforced": False, "verdict": "accepted"}}})
+        entries[str(layer)] = {"moe": True, "ffn": {"sha256": digest}, "prefix_lineage": lineage}
+        run.installed[layer] = digest
+    return run, argv, entries
+
+
+@pytest.mark.parametrize("corruption", ["missing", "version", "omitted", "self", "future", "malformed"])
+def test_done_marker_requires_complete_explicit_prefix_lineage(lineage_markers, corruption):
+    run, _, _ = lineage_markers
+    path = Path(run.done_marker_path(2))
+    marker = json.loads(path.read_text(encoding="utf-8"))
+    if corruption == "missing":
+        marker.pop("prefix_lineage")
+    elif corruption == "version":
+        marker["prefix_lineage"]["version"] = "old"
+    elif corruption == "omitted":
+        marker["prefix_lineage"]["upstream_ffn_sha256"] = {}
+    elif corruption == "malformed":
+        marker["prefix_lineage"] = []
+    else:
+        marker["prefix_lineage"]["upstream_ffn_sha256"]["2" if corruption == "self" else "3"] = "f" * 64
+    kdp.write_receipt(str(path), marker)
+    assert run.read_done_marker(1) is not None
+    assert run.read_done_marker(2) is None
+
+
+def test_legacy_first_moe_marker_invalidates_descendants_and_snapshot(lineage_markers):
+    run, _, _ = lineage_markers
+    pair = kdp.Pair(torch.zeros(2, 64), torch.zeros(2, 0, 64))
+    run.save_dual_snapshot(3, pair, pair.clone())
+    assert run.snapshot_provenance(3)[0]
+    first = Path(run.done_marker_path(1))
+    marker = json.loads(first.read_text(encoding="utf-8"))
+    assert marker["prefix_lineage"]["upstream_ffn_sha256"] == {}
+    marker.pop("prefix_lineage")
+    kdp.write_receipt(str(first), marker)
+    assert run.read_done_marker(1) is None, "missing lineage is not an empty lineage"
+    assert run.read_done_marker(2) is None
+    assert not run.snapshot_provenance(3)[0]
+
+
+def test_resume_legacy_markers_refit_from_verified_dense_prefix(
+        tmp_path: Path, fixture: dict, corpus_files: dict):
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    argv = lambda **kw: base_argv(fixture["dir"], corpus_files, out, receipts, **kw)
+    original = run_pass(argv())
+    for layer in (1, 2):
+        path = out / "dense" / f"L{layer:02d}" / "done.json"
+        marker = json.loads(path.read_text(encoding="utf-8"))
+        marker.pop("prefix_lineage")
+        kdp.write_receipt(str(path), marker)
+    resumed = run_pass(argv(resume=True))
+    assert resumed["start"]["layer"] == 1
+    assert resumed["resumed_from_receipt"]["layers_dropped"].keys() == {"1", "2"}
+    for layer in ("1", "2"):
+        assert resumed["layers"][layer]["fit_skipped"] is None
+    assert resumed["final_prefix_sha256"] == original["final_prefix_sha256"]
+
+
+@pytest.mark.parametrize("installed_layers", [[], [1], [1, 2, 3]])
+def test_snapshot_rejects_omitted_and_future_installed_layers(lineage_markers, installed_layers):
+    run, _, _ = lineage_markers
+    pair = kdp.Pair(torch.zeros(2, 64), torch.zeros(2, 0, 64))
+    # These pairs exist, but their claimed fold ancestry is structurally impossible.
+    run.installed = {i: run.installed.get(i, "f" * 64) for i in installed_layers}
+    run.save_dual_snapshot(3, pair, pair.clone())
+    usable, reason, _ = run.snapshot_provenance(3)
+    assert not usable
+    assert "complete prior MoE prefix" in reason
+
+
+def test_snapshot_and_receipt_drop_downstream_with_replaced_valid_ancestor(lineage_markers):
+    run, argv, entries = lineage_markers
+    pair = kdp.Pair(torch.zeros(2, 64), torch.zeros(2, 0, 64))
+    path = Path(run.layer_dir(1)) / "ffn.safetensors"
+    save_file({"w": torch.tensor([9.0])}, str(path))
+    digest = kdp.sha256_file(str(path))
+    first_marker = json.loads(Path(run.done_marker_path(1)).read_text(encoding="utf-8"))
+    run.write_done_marker(1, str(path), digest, {"moe": True, "fold_metrics": first_marker["fold_metrics"]})
+    run.installed[1] = digest
+    # Even a fresh snapshot claiming the new ancestor cannot bless an old descendant.
+    run.save_dual_snapshot(3, pair, pair.clone())
+    assert run.read_done_marker(1) is not None
+    assert run.read_done_marker(2) is None
+    assert not run.snapshot_provenance(3)[0]
+    entries["1"]["ffn"]["sha256"] = digest
+    run.receipt["layers"] = entries
+    kdp.write_receipt(str(Path(run.receipt_dir) / kdp.PARTIAL_RECEIPT_NAME), run.receipt)
+    resumed = make_run(argv + ["--resume"])
+    assert resumed.receipt["resumed_from_receipt"]["layers_carried_forward"] == [1]
+    assert "2" in resumed.receipt["resumed_from_receipt"]["layers_dropped"]
+
+
+def test_receipt_rejects_stale_lineage_even_when_own_ffn_sha_matches(lineage_markers):
+    run, argv, entries = lineage_markers
+    entries["2"]["prefix_lineage"]["upstream_ffn_sha256"]["1"] = "f" * 64
+    run.receipt["layers"] = entries
+    kdp.write_receipt(str(Path(run.receipt_dir) / kdp.PARTIAL_RECEIPT_NAME), run.receipt)
+    resumed = make_run(argv + ["--resume"])
+    assert resumed.read_done_marker(2) is not None, "on-disk folds themselves remain valid"
+    assert resumed.receipt["resumed_from_receipt"]["layers_carried_forward"] == [1]
+    assert "2" in resumed.receipt["resumed_from_receipt"]["layers_dropped"]
+
+
+@pytest.mark.parametrize("acceptance", [None, [], "malformed", {"verdict": "accepted"},
+                                        "refused", "old_version", "old_constants"])
+def test_gate_mode_requires_verifiable_current_accepted_marker(lineage_markers, acceptance):
+    run, _, _ = lineage_markers
+    path = Path(run.done_marker_path(1))
+    marker = json.loads(path.read_text(encoding="utf-8"))
+    if acceptance == "refused":
+        marker["fold_metrics"]["acceptance"]["verdict"] = "refused"
+    elif acceptance == "old_version":
+        marker["fold_metrics"]["acceptance"]["version"] = "old"
+    elif acceptance == "old_constants":
+        marker["fold_metrics"]["acceptance"]["constants"]["G1_signal_margin"] = 1.0
+    else:
+        marker["fold_metrics"]["acceptance"] = acceptance
+    kdp.write_receipt(str(path), marker)
+    assert run.read_done_marker(1) is not None, "explicit record mode may retain its diagnostic fold"
+    run.args.acceptance = "gate"
+    assert run.read_done_marker(1) is None
+    assert run.read_done_marker(2) is None
+
+
+def test_accepted_record_mode_fold_can_resume_under_unchanged_gate(
+        tmp_path: Path, uniform_fixture: dict, corpus_files: dict):
+    out, receipts = tmp_path / "out", tmp_path / "receipts"
+    argv = lambda **kw: base_argv(uniform_fixture["dir"], corpus_files, out, receipts,
+                                  layers="0-1", rung=512, **kw)
+    first = run_pass(argv())
+    assert first["layers"]["1"]["acceptance"]["verdict"] == "accepted"
+    resumed = run_pass(argv(resume=True, acceptance="gate"))
+    assert resumed["layers"]["1"]["fit_skipped"] is not None
+    assert resumed["layers"]["1"]["acceptance"]["enforced_this_run"] is True
+    assert resumed["final_prefix_sha256"] == first["final_prefix_sha256"]
+
+
+def test_done_chain_hashes_each_artifact_once(lineage_markers, monkeypatch):
+    run, _, _ = lineage_markers
+    actual = kdp.sha256_file
+    calls = []
+
+    def observed(path):
+        calls.append(path)
+        return actual(path)
+
+    monkeypatch.setattr(kdp, "sha256_file", observed)
+    assert run.read_done_marker(2) is not None
+    assert calls == [str(Path(run.layer_dir(i)) / "ffn.safetensors") for i in (1, 2)]
+
+
+@pytest.mark.parametrize("raw", ["not json", "null", "[]", '{"01":"' + "f" * 64 + '"}',
+                                '{"x":"' + "f" * 64 + '"}', '{"1":9}', '{"1":"short"}'])
+def test_malformed_snapshot_lineage_falls_back_to_earlier_candidate(lineage_markers, raw):
+    run, _, _ = lineage_markers
+    pair = kdp.Pair(torch.zeros(2, 64), torch.zeros(2, 0, 64))
+    first_sha = run.installed[1]
+    run.installed = {}
+    run.save_dual_snapshot(1, pair, pair.clone())
+    run.installed = {1: first_sha}
+    run.save_dual_snapshot(2, pair, pair.clone())
+    for stream in ("teacher", "folded"):
+        path = run.snapshot_path(2, stream)
+        metadata = k3_common.read_metadata(path)
+        metadata["installed_ffn_sha256"] = raw
+        tensors = load_file(path)
+        save_file(tensors, path, metadata=metadata)
+    usable, reason, _ = run.snapshot_provenance(2)
+    assert not usable and "malformed installed-fold lineage" in reason
+    assert run.resume_point([1, 2]) == 1
+
+
+@pytest.mark.parametrize("marker", [None, [], "not a marker"])
+def test_non_object_done_marker_invalidates_chain(lineage_markers, marker):
+    run, _, _ = lineage_markers
+    kdp.write_receipt(run.done_marker_path(1), marker)
+    assert run.read_done_marker(1) is None
+    assert run.read_done_marker(2) is None
+
+
+def test_gate_mode_rejects_non_object_fold_metrics(lineage_markers):
+    run, _, _ = lineage_markers
+    path = Path(run.done_marker_path(1))
+    marker = json.loads(path.read_text(encoding="utf-8"))
+    marker["fold_metrics"] = ["invalid"]
+    kdp.write_receipt(str(path), marker)
+    run.args.acceptance = "gate"
+    assert run.read_done_marker(1) is None
+
+
+def test_same_prefix_segmented_and_resumed_content_stays_identical(
+        tmp_path: Path, fixture: dict, corpus_files: dict):
+    """Content-level t11c control independent of the existing Windows sidecar writer bug."""
+    direct = run_pass(base_argv(fixture["dir"], corpus_files, tmp_path / "direct", tmp_path / "direct-rc"))
+    out, receipts = tmp_path / "split", tmp_path / "split-rc"
+    argv = lambda **kw: base_argv(fixture["dir"], corpus_files, out, receipts, **kw)
+    run_pass(argv(layers="0-1"))
+    split = run_pass(argv(layers="2-2", resume=True))
+    resumed = run_pass(argv(resume=True))
+    assert resumed["layers"]["2"]["fit_skipped"] is not None
+    for candidate in (split, resumed):
+        assert candidate["determinism_sha256"] == direct["determinism_sha256"]
+        assert candidate["final_prefix_sha256"] == direct["final_prefix_sha256"]
+        assert candidate["end_of_stack"]["held"] == direct["end_of_stack"]["held"]

@@ -120,6 +120,11 @@ Deviations from the run-book row, on purpose and recorded in the receipt:
 * Snapshots are stamped with the rung, the tool version and the sha256 of
   every installed ``ffn.safetensors``; a snapshot whose folds no longer
   validate on disk, or that was fitted at another rung, is not a resume point.
+* v1.2.1 -- every MoE marker and its layer/rung receipt carry the complete
+  upstream fold lineage. Resume reuses a fit only on that same installed
+  prefix; missing (legacy) lineage forces a refit. Snapshots and carried
+  receipts validate the whole chain. Gate-mode resume also refuses to carry
+  a record-only refusal or an unverifiable acceptance verdict.
 
 Usage (server, lab venv; the real pass runs DETACHED and is polled):
 
@@ -147,7 +152,7 @@ import torch
 import torch.nn.functional as F
 
 TOOL_NAME = "k3_dense_pass"
-TOOL_VERSION = "1.2.0"
+TOOL_VERSION = "1.2.1"
 SHARE_ROOT = "/mnt/ai_data"
 DEFAULT_SRC_DIR = "/mnt/lexar/models/moonshotai/Kimi-K3"
 DEFAULT_OUT = "/mnt/lexar/omni-campaign/k3"
@@ -171,6 +176,7 @@ COPY_CHUNK = 64 << 20
 FOLD_METRIC_KEYS = ("fold", "pivot_seconds", "fit_timings", "veto_binding", "update_scale",
                     "fit_relL2_heldout", "routed_write_relL2_heldout", "width_installed",
                     "law_verdict", "acceptance")
+PREFIX_LINEAGE_VERSION = "k3_dense_pass.prefix_lineage.v1"
 # ---- the measured acceptance rule (v1.2.0) --------------------------------------------
 # Named, versioned constants.  Changing one is a tool-version change and the receipt names the
 # calibration it came from; nothing here is tuned against the held rows of a running pass.
@@ -1535,12 +1541,16 @@ class DualStreamRun(StreamRun):
                     "reason": "the previous receipt was written at another rung; its layers are not carried"}
                 continue
             carried, dropped = {}, {}
-            for key, entry in prior.get("layers", {}).items():
+            previous_layers = prior.get("layers", {})
+            valid_markers = self.valid_done_chain(max((int(k) for k in previous_layers), default=-1))
+            for key, entry in previous_layers.items():
                 if entry.get("moe"):
-                    marker = self.read_done_marker(int(key))
+                    marker = valid_markers.get(int(key))
                     ffn_sha = (entry.get("ffn") or {}).get("sha256")
-                    if marker is None or marker.get("artefact_sha256") != ffn_sha:
-                        dropped[key] = "no done marker validates this layer's ffn at this corpus/rung/sha"
+                    if (marker is None or marker.get("artefact_sha256") != ffn_sha
+                            or entry.get("prefix_lineage") != marker.get("prefix_lineage")):
+                        dropped[key] = ("no done marker validates this layer's ffn and receipt at this "
+                                        "corpus/rung/sha/prefix lineage/acceptance")
                         continue
                 carried[key] = entry
             self.receipt["layers"].update(carried)
@@ -1596,11 +1606,21 @@ class DualStreamRun(StreamRun):
         """Canonical JSON of {layer: ffn artefact sha256} for every fold the folded pair carries."""
         return canonical_json({str(k): v for k, v in sorted(self.installed.items())})
 
+    def prefix_lineage(self, layer_idx: int, installed: dict[int, str] | None = None) -> dict[str, Any]:
+        """The complete fold ancestry of this input, excluding the current layer."""
+        installed = self.installed if installed is None else installed
+        return {"version": PREFIX_LINEAGE_VERSION,
+                "upstream_ffn_sha256": {str(k): v for k, v in sorted(installed.items()) if k < layer_idx}}
+
+    def prior_moe_layers(self, layer_idx: int) -> set[int]:
+        return {i for i in range(layer_idx) if self.index.is_moe_layer(i)}
+
     def save_dual_snapshot(self, layer_idx: int, teacher: Pair, folded: Pair) -> dict[str, Any]:
         """Both pairs, stamped with the corpus, the rung, the tool version and the sha of every
         installed ffn.safetensors -- what a resume must find unchanged on disk."""
         stamp = {"input_ids_sha256": self.corpus.sha256, "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
                  "run_id": self.run_id, "rung": str(int(self.args.rung)),
+                 "prefix_lineage_version": PREFIX_LINEAGE_VERSION,
                  "installed_ffn_sha256": self.installed_stamp(),
                  "installed_layers": str(len(self.installed))}
         record = {"layer": layer_idx, "corpus_sha256": self.corpus.sha256, "rung": int(self.args.rung),
@@ -1639,22 +1659,37 @@ class DualStreamRun(StreamRun):
             if stamp.get("input_ids_sha256") != self.corpus.sha256:
                 return False, (f"snapshot {path} was written for input_ids {stamp.get('input_ids_sha256')!r}, "
                                f"this run streams {self.corpus.sha256!r}"), stamp
+            if stamp.get("prefix_lineage_version") != PREFIX_LINEAGE_VERSION:
+                return False, f"snapshot {path} carries no current prefix-lineage version (older tool)", stamp
             stamps[stream] = stamp
         stamp = stamps["folded"]
         installed_raw = stamp.get("installed_ffn_sha256")
         if installed_raw is None:
             return False, f"snapshot before layer {layer_idx} carries no installed-fold stamp (older tool)", stamp
-        installed = {int(k): v for k, v in json.loads(installed_raw).items()}
+        try:
+            raw = json.loads(installed_raw)
+            if not isinstance(raw, dict):
+                raise ValueError("installed folds must be an object")
+            installed = {int(k): v for k, v in raw.items()}
+            if any(str(int(k)) != k or not isinstance(v, str) or len(v) != 64
+                   or any(c not in "0123456789abcdef" for c in v) for k, v in raw.items()):
+                raise ValueError("installed folds must map canonical layer indices to SHA256 digests")
+        except (TypeError, ValueError):
+            return False, f"snapshot before layer {layer_idx} carries malformed installed-fold lineage", stamp
+        if set(installed) != self.prior_moe_layers(layer_idx):
+            return False, f"snapshot before layer {layer_idx} does not carry the complete prior MoE prefix", stamp
         if stamps["teacher"].get("installed_ffn_sha256") != installed_raw:
             return False, "teacher and folded snapshots disagree on the installed folds", stamp
         if installed and stamp.get("rung") is not None and int(stamp["rung"]) != int(self.args.rung):
             return False, (f"snapshot before layer {layer_idx} carries {len(installed)} folds fitted at rung "
                            f"{stamp['rung']}, this run is --rung {self.args.rung}"), stamp
-        for fold_layer, sha in installed.items():
-            marker = self.read_done_marker(fold_layer)
+        validated_prefix = {}
+        for fold_layer, sha in sorted(installed.items()):
+            marker = self.read_done_marker(fold_layer, installed=validated_prefix)
             if marker is None or marker.get("artefact_sha256") != sha:
                 return False, (f"snapshot before layer {layer_idx} was written with L{fold_layer:02d}/ffn "
                                f"sha {sha[:12]}..., but no done marker validates that file now"), stamp
+            validated_prefix[fold_layer] = sha
         return True, "ok", {**stamp, "installed": installed}
 
     def _prune_snapshots(self, keep: int) -> None:
@@ -1711,20 +1746,58 @@ class DualStreamRun(StreamRun):
     def done_marker_path(self, layer_idx: int) -> str:
         return os.path.join(self.layer_dir(layer_idx), "done.json")
 
-    def read_done_marker(self, layer_idx: int) -> dict[str, Any] | None:
+    def valid_done_chain(self, through_layer: int) -> dict[int, dict[str, Any]]:
+        """Validate in order, hashing each artifact once; a broken ancestor ends the chain."""
+        valid, installed = {}, {}
+        for layer in range(through_layer + 1):
+            if not self.index.is_moe_layer(layer):
+                continue
+            marker = self.read_done_marker(layer, installed=installed)
+            if marker is None:
+                break
+            valid[layer] = marker
+            installed[layer] = marker["artefact_sha256"]
+        return valid
+
+    def read_done_marker(self, layer_idx: int, *, installed: dict[int, str] | None = None) -> dict[str, Any] | None:
+        """A reusable marker must match the actual prefix and this run's gate eligibility.
+
+        Callers with an already-validated carried prefix pass it explicitly. Other
+        callers validate the on-disk chain once, rather than recursively rehashing it.
+        Legacy MoE markers without an explicit lineage are not reusable, even at L01.
+        """
+        if installed is None and self.index.is_moe_layer(layer_idx):
+            return self.valid_done_chain(layer_idx).get(layer_idx)
         path = self.done_marker_path(layer_idx)
         if not os.path.exists(path):
             return None
-        with open(path, "r", encoding="utf-8") as handle:
-            marker = json.load(handle)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                marker = json.load(handle)
+        except (OSError, ValueError):
+            return None
+        if not isinstance(marker, dict):
+            return None
         artefact = marker.get("artefact")
-        if marker.get("corpus_sha256") != self.corpus.sha256 or not artefact or not os.path.exists(artefact):
+        if (marker.get("corpus_sha256") != self.corpus.sha256 or not isinstance(artefact, str)
+                or not artefact or not os.path.exists(artefact)):
             return None
         if marker.get("rung") is not None and int(marker["rung"]) != int(self.args.rung):
             return None
         if sha256_file(artefact) != marker.get("artefact_sha256"):
             raise SystemExit(f"done marker {path} names {artefact} with sha {marker.get('artefact_sha256')}, "
                              "but the file on disk hashes differently; refusing to trust it")
+        if self.index.is_moe_layer(layer_idx):
+            if (set(installed) != self.prior_moe_layers(layer_idx)
+                    or marker.get("prefix_lineage") != self.prefix_lineage(layer_idx, installed)):
+                return None
+            if self.args.acceptance == "gate":
+                metrics = marker.get("fold_metrics")
+                acceptance = metrics.get("acceptance") if isinstance(metrics, dict) else None
+                if (not isinstance(acceptance, dict) or acceptance.get("version") != ACCEPTANCE_VERSION
+                        or acceptance.get("constants") != ACCEPTANCE_CONSTANTS
+                        or acceptance.get("verdict") != "accepted"):
+                    return None
         return marker
 
     def write_done_marker(self, layer_idx: int, artefact: str, digest: str, extra: dict[str, Any]) -> str:
@@ -1732,6 +1805,8 @@ class DualStreamRun(StreamRun):
                   "corpus_sha256": self.corpus.sha256, "rung": int(self.args.rung) if extra.get("moe") else None,
                   "tool": TOOL_NAME, "tool_version": TOOL_VERSION, "run_id": self.run_id,
                   "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **extra}
+        if extra.get("moe"):
+            marker["prefix_lineage"] = self.prefix_lineage(layer_idx)
         return write_receipt(self.done_marker_path(layer_idx), marker)
 
     # -- embedding -----------------------------------------------------------
@@ -1992,7 +2067,8 @@ class DualStreamRun(StreamRun):
             # section 3b: what reaches the fp64 Gram must be finite -- checked before the fold
             entry["finite_checks"].append(require_finite("folded latent_in (fit input)", f_latent, layer_idx))
             entry["finite_checks"].append(require_finite("teacher y_lat (fit target)", t_taps["y_lat"], layer_idx))
-            marker = self.read_done_marker(layer_idx) if args.resume else None
+            entry["prefix_lineage"] = self.prefix_lineage(layer_idx)
+            marker = self.read_done_marker(layer_idx, installed=self.installed) if args.resume else None
             if marker is not None:
                 dense = self.load_ffn(marker["artefact"])
                 prior_entry = self.receipt["layers"].get(str(layer_idx)) or {}
@@ -2088,7 +2164,7 @@ class DualStreamRun(StreamRun):
     def accept_layer(self, layer_idx: int, entry: dict[str, Any]) -> None:
         """G1-G3 on a fitted layer; writes the done marker on acceptance, removes this run's own
         ffn.safetensors and raises a named ``Refusal`` (numbers in the message and the receipt) otherwise.
-        A resumed layer keeps the verdict its done marker carries."""
+        A resumed layer keeps its eligible verdict; read_done_marker checks gate mode."""
         rung = int(self.args.rung)
         if entry.get("fit_skipped") is not None:
             if not isinstance(entry.get("acceptance"), dict):
@@ -2098,6 +2174,8 @@ class DualStreamRun(StreamRun):
             if not isinstance(entry.get("law_verdict"), dict):
                 entry["law_verdict"] = None
             entry["acceptance"]["zero_child_prefix_this_run"] = entry.get("zero_child_prefix", {}).get("held")
+            entry["acceptance"]["mode_this_run"] = str(self.args.acceptance)
+            entry["acceptance"]["enforced_this_run"] = bool(self.args.acceptance == "gate")
             return
         heldout = entry["fold"]["heldout"]
         acceptance = evaluate_acceptance(heldout, entry["stream_divergence"].get("held"),
@@ -2410,6 +2488,7 @@ class DualStreamRun(StreamRun):
         except torch.linalg.LinAlgError as exc:  # a Gram defect is named, never swallowed
             raise SystemExit(f"layer {layer_idx} K={rung}: the fp64 Gram refit failed in the factorisation "
                              f"({exc}); this is a Gram defect (section 3b), not a fit failure to paper over") from exc
+        rung_receipt["prefix_lineage"] = self.prefix_lineage(layer_idx)
         form_e_path = rung_receipt["form_E_path"]
         from safetensors.torch import load_file
 
