@@ -34,6 +34,25 @@ this file ever transposes one into the other.  The chart files are what c17 writ
 or ``procrustes.safetensors``, beside ``layer.json``; ``alignment.json`` in the same
 directory is c17's ``{schema, summary, table: [{trunk, k3_layers, ...}]}``.
 
+Native boundary gate (v1.2): production now REQUIRES each arm's
+``native_boundary_provenance`` (schema ``neural-forge.c17-native-chart-boundaries.v1``).
+Its ``maps.C_out`` binds host.ffn_input -> k3.ffn_input; ``maps.C_in`` binds
+k3.ffn_output -> host.ffn_output. Domain/codomain each carry family, boundary,
+layer and capture_receipt {path, sha256}; lists pair pooled source layers.
+Receipts and actual boundary tensors/positions/splits are checked by
+``native_chart_boundaries``. An input-space chart is not evidence for a
+write-space map. The old C17 fitter does NOT emit this contract: an authentic
+K3 capture + paired fitter are still needed; no existing charts are relabeled
+or refitted here. Geometry/algebra above is unchanged. This consistency check
+is not an independent proof that declared capture code is trustworthy or that
+the fitted maps transfer intelligence; actual source/held functional review remains mandatory.
+
+Legacy mechanics only: ``--synthetic-fixture-root`` must name a marked unit-test
+workspace with CPU-only hidden <=128, <=8-layer geometry and explicit unit-test
+checkpoint source markers. Its receipt is labeled ``synthetic_fixture: true``.
+Identity and extra-block chart routes have no production native-boundary contract
+and are refused. No large-model/GPU override exists for the fixture route.
+
 Biases.  The K3 REFERENCE (the targets) applies the input bias exactly.  A bias-free
 ``FeedForward`` row cannot carry the constant pre-activation shift ``w_c . b`` the
 input bias adds, so the lifted rows drop it and the receipt records the dropped
@@ -148,6 +167,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import time
@@ -159,7 +179,7 @@ import torch
 import torch.nn.functional as F
 
 TOOL_NAME = "c10_union_install"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 LOCAL_CHIMERA_SRC = "C:/Users/cereal/Documents/ai training/chimera-omni/src"
@@ -229,6 +249,8 @@ NONFINITE_CEILING = 0.02
 CHART_ARM_FILES = {"ridge": "ridge.safetensors", "svd": "svd_chart.safetensors", "procrustes": "procrustes.safetensors"}
 C17_CONVENTION = "y_hat = x_k3 @ C_in + C_in_bias; x_hat = y_trunk @ C_out + C_out_bias"
 C17_ALIGNMENT_SCHEMA = "chimera_omni.composite.c17_alignment.v1"
+NATIVE_CHART_SCHEMA = "neural-forge.c17-native-chart-boundaries.v1"
+FIXTURE_MARKER = "c10-synthetic-fixture.json"
 PARTIAL_SCHEMA = "neural-forge-c10-partial-v1"
 PARTIAL_INPUTS = "partial_inputs.json"
 OUT_MARKER = "c10_union_install.marker.json"
@@ -522,6 +544,7 @@ class Chart:
     bias_to_trunk: torch.Tensor
     layer_json_sha256: str | None = None
     fit_trunk_rows_key: str | None = None
+    native_boundary_provenance: dict[str, Any] | None = None
 
     @property
     def k3_hidden(self) -> int:
@@ -546,6 +569,7 @@ class Chart:
     def record(self) -> dict[str, Any]:
         return {"path": self.path, "sha256": self.sha256, "arm": self.arm, "layer_json_sha256": self.layer_json_sha256,
                 "fit_trunk_rows_key": self.fit_trunk_rows_key,
+                "native_boundary_provenance": self.native_boundary_provenance,
                 "trunk_to_k3_shape": list(self.trunk_to_k3.shape), "k3_to_trunk_shape": list(self.k3_to_trunk.shape),
                 "input_bias_norm": float(self.bias_to_k3.norm()), "output_bias_norm": float(self.bias_to_trunk.norm()),
                 "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)"}
@@ -573,16 +597,170 @@ def chart_from_c17_tensors(k: int, path: str, sha: str, arm: str, got: dict[str,
                  **extra)
 
 
+def fixture_root_checked(root: str | None, paths: list[str | Path], *, hidden: int, source_hidden: int,
+                         device: str = "cpu", layers: int = 1) -> str | None:
+    """Explicit tiny mechanics route; never available for campaign geometry/GPU."""
+    if root is None:
+        return None
+    base = Path(root).resolve(strict=True)
+    marker = base / FIXTURE_MARKER
+    if (device != "cpu" or max(hidden, source_hidden) > 128 or min(hidden, source_hidden) < 1
+            or not 0 < layers <= 8 or not marker.is_file()
+            or json.loads(marker.read_text()).get("schema") != "neural-forge.c10-synthetic-fixture.v1"):
+        raise SystemExit("synthetic fixture route requires marked CPU-only tiny geometry (hidden <=128, layers <=8)")
+    if any(not Path(p).resolve().is_relative_to(base) for p in paths if p is not None):
+        raise SystemExit("every synthetic fixture input/output must stay beneath its explicit fixture root")
+    return str(base)
+
+
+def native_chart_boundaries(doc: dict[str, Any], layer_json: str, k: int, arm: str, *,
+                            trunk_hidden: int, k3_hidden: int) -> dict[str, Any]:
+    """Verify observed map endpoints; this validates provenance, never fits maps.
+
+    Each map endpoint names a native capture receipt (path/sha256), a captured
+    layer and its tensor key. The receipt must list the SHA-sealed safetensors
+    file and its boundaries. Input and write maps use DIFFERENT observed keys.
+    Native K3 producer/paired fitter are still required to emit this contract.
+    """
+    from safetensors import safe_open
+    p = (doc.get("arms", {}).get(arm) or {}).get("native_boundary_provenance")
+    if not isinstance(p, dict) or p.get("schema") != NATIVE_CHART_SCHEMA or p.get("fixture") is not False:
+        raise SystemExit(f"{layer_json}: missing explicit non-fixture native boundary provenance; legacy charts cannot install")
+    maps = p.get("maps")
+    if not isinstance(maps, dict) or set(maps) != {"C_in", "C_out"}:
+        raise SystemExit("native boundary provenance must bind both applied maps")
+    expected = {"C_out": (("host", "ffn_input"), ("k3", "ffn_input")),
+                "C_in": (("k3", "ffn_output"), ("host", "ffn_output"))}
+    receipt_cache, file_cache = {}, {}
+    host_identities, evidence_identities, source_layers = set(), set(), set()
+    installed_ffns: dict[str, str] = {}
+    base = Path(layer_json).parent
+    def endpoint(e: Any, family: str, boundary: str) -> dict[str, Any]:
+        if not isinstance(e, dict) or e.get("family") != family or e.get("boundary") != boundary:
+            raise SystemExit(f"native map endpoint must be {family}.{boundary}; input charts cannot stand in for writes")
+        r = e.get("capture_receipt") or {}
+        raw_path, sha = r.get("path"), r.get("sha256")
+        if not isinstance(raw_path, str) or not raw_path or not re.fullmatch(r"[0-9a-f]{64}", str(sha)):
+            raise SystemExit("native endpoint requires capture receipt path and SHA256")
+        path = (base / raw_path).resolve(strict=True)
+        cache_key = (str(path), sha)
+        if cache_key not in receipt_cache:
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != sha:
+                raise SystemExit("native capture receipt SHA256 mismatch")
+            receipt_cache[cache_key] = json.loads(raw)
+        captured = receipt_cache[cache_key]
+        schema = "neural-forge.c17-host-boundaries.v1" if family == "host" else "neural-forge.c17-k3-boundaries.v1"
+        code_hashes = captured.get("code_sha256")
+        if (captured.get("schema") != schema or captured.get("fixture", False) is not False
+                or captured.get("gradients_or_training") is not False
+                or not isinstance(code_hashes, dict) or not code_hashes
+                or any(not re.fullmatch(r"[0-9a-f]{64}", str(s)) for s in code_hashes.values())):
+            raise SystemExit("endpoint must originate in an observed forward-only native capture, not a fixture")
+        if family == "k3" and captured.get("stream") != "folded":
+            raise SystemExit("K3 endpoints require the accepted folded stream, not teacher or synthetic rows")
+        if family == "k3" and captured.get("accepted_prefix_replay_exact") is not True:
+            raise SystemExit("K3 capture requires exact accepted-prefix replay evidence")
+        if family == "host":
+            if captured.get("consumed_tensor_hashes_verified") is not True:
+                raise SystemExit("host capture did not verify consumed tensor hashes")
+            host_identities.add(captured.get("index_sha256"))
+        evidence_identities.add(captured.get("evidence_sha256"))
+        layer = e.get("layer")
+        if type(layer) is not int or layer < 0 or (family == "host" and layer != k):
+            raise SystemExit("native endpoint layer mismatch")
+        if family == "k3":
+            source_layers.add(layer)
+            ffn_sha = (captured.get("installed_ffn_sha256") or {}).get(str(layer))
+            if not re.fullmatch(r"[0-9a-f]{64}", str(ffn_sha)) or installed_ffns.get(str(layer), ffn_sha) != ffn_sha:
+                raise SystemExit("K3 capture lacks consistent installed FFN identity")
+            installed_ffns[str(layer)] = ffn_sha
+        entries = [x for x in captured.get("layers", []) if x.get("layer") == layer]
+        if len(entries) != 1:
+            raise SystemExit("capture receipt does not bind the endpoint layer exactly once")
+        entry = entries[0]
+        if type(entry.get("rows")) is not int or entry["rows"] < 2:
+            raise SystemExit("native captured row count must be an explicit integer >=2")
+        row_path = (path.parent / entry["path"]).resolve(strict=True)
+        if not row_path.is_relative_to(path.parent):
+            raise SystemExit("native captured rows escape the capture directory")
+        row_sha = entry.get("sha256")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(row_sha)):
+            raise SystemExit("native captured row SHA256 missing")
+        if str(row_path) not in file_cache:
+            file_cache[str(row_path)] = sha256_file(str(row_path))
+        if file_cache[str(row_path)] != row_sha:
+            raise SystemExit("native captured row SHA256 mismatch")
+        width = trunk_hidden if family == "host" else k3_hidden
+        with safe_open(str(row_path), framework="pt", device="cpu") as handle:
+            metadata = handle.metadata() or {}
+            if metadata.get("schema") != schema or metadata.get("layer") != str(layer):
+                raise SystemExit("native captured row schema/layer mismatch")
+            if boundary not in handle.keys() or handle.get_slice(boundary).get_shape() != [entry.get("rows"), width]:
+                raise SystemExit("native endpoint must name actual captured boundary rows of the expected shape")
+            if handle.get_slice(boundary).get_dtype() not in ("F16", "BF16", "F32", "F64"):
+                raise SystemExit("native endpoint boundary tensors must be floating-point")
+            declared = entry.get("boundaries", {}).get(boundary) or {}
+            if declared.get("shape") != [entry.get("rows"), width]:
+                raise SystemExit("capture receipt does not declare the actual endpoint boundary")
+            identity_keys = ("evidence_row_index", "host_position", "k3_position", "held")
+            if not all(name in handle.keys() for name in identity_keys):
+                raise SystemExit("native endpoint lacks explicit paired positions and original split")
+            identity = {name: handle.get_tensor(name) for name in identity_keys}
+            if any(t.dtype != torch.int64 or tuple(t.shape) != (entry.get("rows"),) for t in identity.values()):
+                raise SystemExit("native endpoint positions/splits must be int64 vectors")
+            if set(identity["held"].tolist()) != {0, 1} or any((t < 0).any() for t in identity.values()):
+                raise SystemExit("native endpoints need original fit/held groups and nonnegative positions")
+        return {"family": family, "boundary": boundary, "layer": layer, "receipt_sha256": sha,
+                "rows_sha256": row_sha, "identity": identity}
+    observed = {}
+    for name, endpoints in expected.items():
+        map_doc = maps[name]
+        if not isinstance(map_doc, dict) or set(map_doc) != {"domain", "codomain"}:
+            raise SystemExit("each applied map must bind its exact native domain and codomain")
+        domains, codomains = map_doc["domain"], map_doc["codomain"]
+        domains = domains if isinstance(domains, list) else [domains]
+        codomains = codomains if isinstance(codomains, list) else [codomains]
+        if not domains or len(domains) != len(codomains):
+            raise SystemExit("pooled native map endpoints need one matched pair per source layer")
+        pairs = []
+        for domain, codomain in zip(domains, codomains):
+            left = endpoint(domain, *endpoints[0])
+            right = endpoint(codomain, *endpoints[1])
+            if any(not torch.equal(left["identity"][key], right["identity"][key]) for key in left["identity"]):
+                raise SystemExit("native chart endpoints do not carry identical paired positions/splits")
+            for entry in (left, right):
+                del entry["identity"]
+            pairs.append({"domain": left, "codomain": right})
+        observed[name] = pairs
+    inputs = [pair["codomain"]["layer"] for pair in observed["C_out"]]
+    outputs = [pair["domain"]["layer"] for pair in observed["C_in"]]
+    if inputs != outputs or len(inputs) != len(set(inputs)):
+        raise SystemExit("native input/write maps must cover identical source layers exactly once")
+    if (len(host_identities) != 1 or len(evidence_identities) != 1
+            or any(not re.fullmatch(r"[0-9a-f]{64}", str(x)) for x in host_identities | evidence_identities)):
+        raise SystemExit("native maps disagree on host checkpoint or evidence identity")
+    return {"schema": NATIVE_CHART_SCHEMA, "fixture": False, "maps": observed,
+            "host_index_sha256": next(iter(host_identities)), "evidence_sha256": next(iter(evidence_identities)),
+            "source_layers": sorted(source_layers), "installed_ffn_sha256": installed_ffns, "provenance_sha256": hashlib.sha256(
+                json.dumps(p, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
+
+
 def load_chart(charts_dir: str | None, k: int, k3_hidden: int, trunk_hidden: int, identity: bool,
-               arm: str = "ridge") -> Chart:
+               arm: str = "ridge", *, fixture_root: str | None = None) -> Chart:
+    fixture = fixture_root_checked(fixture_root, [charts_dir] if charts_dir else [],
+                                   hidden=trunk_hidden, source_hidden=k3_hidden, layers=k + 1)
     if charts_dir is None:
+        if fixture is None:
+            raise SystemExit("identity charts have no native boundary evidence; explicit tiny fixture path only")
         if not identity:
             raise SystemExit("--charts is required unless --identity-charts (K3 hidden == trunk hidden)")
         if k3_hidden != trunk_hidden:
             raise SystemExit(f"--identity-charts needs K3 hidden {k3_hidden} == trunk hidden {trunk_hidden}")
         eye = torch.eye(trunk_hidden, dtype=torch.float32)
         zero = torch.zeros(trunk_hidden)
-        return Chart(k, "identity", sha256_tensor(eye), "identity", eye.clone(), zero.clone(), eye.clone(), zero.clone())
+        return Chart(k, "identity", sha256_tensor(eye), "identity", eye.clone(), zero.clone(), eye.clone(), zero.clone(),
+                     native_boundary_provenance={"fixture": True, "fixture_root": fixture})
     from safetensors.torch import load_file
 
     if arm not in CHART_ARM_FILES:
@@ -598,22 +776,23 @@ def load_chart(charts_dir: str | None, k: int, k3_hidden: int, trunk_hidden: int
         extra["layer_json_sha256"] = sha256_file(layer_json)
         arm_doc = (doc.get("arms") or {}).get(arm) or {}
         convention = arm_doc.get("convention")
-        if convention is not None and convention != C17_CONVENTION:
+        if convention != C17_CONVENTION:
             raise SystemExit(f"{layer_json}: arm {arm!r} records convention {convention!r}; this tool implements "
                              f"{C17_CONVENTION!r}")
         recorded_sha = ((doc.get("files") or {}).get(arm) or {}).get("file_sha256")
         actual_sha = sha256_file(path)
-        if recorded_sha is not None and recorded_sha != actual_sha:
+        if recorded_sha != actual_sha:
             raise SystemExit(f"{path}: sha256 {actual_sha} != {recorded_sha} recorded in {layer_json}")
-        if doc.get("trunk_layer") is not None and int(doc["trunk_layer"]) != k:
+        if type(doc.get("trunk_layer")) is not int or doc["trunk_layer"] != k:
             raise SystemExit(f"{layer_json} is for trunk layer {doc['trunk_layer']}, not {k}")
         extra["fit_trunk_rows_key"] = (doc.get("trunk_taps") or {}).get("rows_key")
+        if extra["fit_trunk_rows_key"] not in ("normed", "ffn_input"):
+            raise SystemExit(f"{layer_json}: chart was not fitted on native post-norm2 FFN input; prenorm/missing is incompatible")
+        extra["native_boundary_provenance"] = ({"fixture": True, "fixture_root": fixture} if fixture else
+            native_chart_boundaries(doc, layer_json, k, arm, trunk_hidden=trunk_hidden, k3_hidden=k3_hidden))
     else:
-        actual_sha = sha256_file(path)
+        raise SystemExit(f"{layer_json}: required native chart boundary provenance is missing")
     chart = chart_from_c17_tensors(k, path, actual_sha, arm, load_file(path), k3_hidden, trunk_hidden, **extra)
-    if chart.fit_trunk_rows_key == "prenorm":
-        log(f"WARNING: chart L{k:02d} was fitted on trunk rows key 'prenorm' (the input of norm2); this tool applies "
-            "it to the FFN input (post norm2) -- recorded in the receipt as fit_trunk_rows_key")
     return chart
 
 
@@ -1718,6 +1897,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "(0 disables the refusal; the numbers are recorded either way)")
     ap.add_argument("--alignment", default=None, help="alignment.json override (c17 table or {trunk_to_k3: {k: [l, ...]}})")
     ap.add_argument("--identity-charts", action="store_true", help="tests only: identity charts when widths agree")
+    ap.add_argument("--synthetic-fixture-root", help="explicit marked CPU-only tiny unit-test workspace; never production")
     ap.add_argument("--evidence", required=True, help="the sealed omni-evidence manifest (qf_corpus schema)")
     ap.add_argument("--k3-channels", type=int, default=12288, help="K3 rows per layer; total width = trunk + this")
     ap.add_argument("--extra-blocks", action="append", default=[], help="name=path@trunk_layer (S7 blend arm)")
@@ -1821,7 +2001,6 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out).absolute()
     trunk_dir = Path(args.trunk).absolute()
     parent_dir = Path(args.parent_trunk).absolute()
-    guard_out(args, out)
     if args.k3_channels < 0:
         raise SystemExit("--k3-channels must be >= 0")
     if args.group_size < 1:
@@ -1843,6 +2022,16 @@ def main(argv: list[str] | None = None) -> int:
     width = q + args.k3_channels
     n_layers = int(trunk_cfg.num_layers)
     h = int(trunk_cfg.hidden_size)
+    fixture = fixture_root_checked(args.synthetic_fixture_root,
+        [args.trunk, args.parent_trunk, args.k3_dense, args.charts, args.evidence, args.out,
+         *[p for _, p in _extra_paths(args)]], hidden=h, source_hidden=h, device=str(device), layers=n_layers)
+    if fixture and any(d.get("source", {}).get("import_source") != "c10 unit test" for d in (trunk_doc, parent_doc)):
+        raise SystemExit("synthetic fixture route requires explicit unit-test parent/trunk source markers")
+    if not fixture and (args.identity_charts or args.extra_blocks or args.extra_charts):
+        raise SystemExit("identity/extra-block charts lack native read/write boundary evidence; production route refused")
+    if not fixture and any(any(tag in json.dumps(d.get("source", {})).lower()
+                               for tag in ("synthetic", "fixture", "unit test")) for d in (trunk_doc, parent_doc)):
+        raise SystemExit("synthetic checkpoint source cannot enter production; explicit tiny fixture root is required")
 
     parent_count, parent_count_record = resolve_parent_parameter_count(args)
     trunk_total, trunk_counts = header_total(trunk_dir)
@@ -1853,6 +2042,7 @@ def main(argv: list[str] | None = None) -> int:
         "schema": "neural-forge-c10-union-install-v1", "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
         "tool_sha256": sha256_file(os.path.abspath(__file__)), "argv": list(argv) if argv is not None else sys.argv[1:],
         "torch": torch.__version__, "device": str(device), "engine": args.engine,
+        "synthetic_fixture": bool(fixture), "fixture_root": fixture,
         "lanes": {"k3": K3_LANE_DIR, "qwen_fold": QF_LANE_DIR, "ledger": LEDGER_DIR, "chimera_src": CHIMERA_SRC},
         "trunk": {"path": str(trunk_dir), "files": trunk_digests, "header_parameters": trunk_total,
                   "intermediate_size": q, "num_layers": n_layers, "hidden_size": h,
@@ -1869,6 +2059,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # -- k3-channels 0: the trunk, byte for byte --------------------------------
     if args.k3_channels == 0:
+        guard_out(args, out)
         digests = verbatim_copy(trunk_dir, out)
         child_total, _ = header_total(out)
         refuse_size(child_total, parent_count, "after the verbatim copy", out)
@@ -1893,11 +2084,23 @@ def main(argv: list[str] | None = None) -> int:
     if len(k3_hidden) != 1:
         raise SystemExit(f"K3 layers disagree on hidden size: {sorted(k3_hidden)}")
     k3_hidden_size = k3_hidden.pop()
+    fixture_root_checked(fixture, [args.k3_dense], hidden=h, source_hidden=k3_hidden_size,
+                         device=str(device), layers=n_layers)
     alignment, alignment_record = load_alignment(args.charts, args.alignment, wanted, n_layers)
     charts: dict[int, Chart] = {}
     for k in range(n_layers):
         if alignment[k]:
-            charts[k] = load_chart(args.charts, k, k3_hidden_size, h, args.identity_charts, args.chart_arm)
+            charts[k] = load_chart(args.charts, k, k3_hidden_size, h, args.identity_charts, args.chart_arm,
+                                   fixture_root=fixture)
+            if not fixture:
+                provenance = charts[k].native_boundary_provenance
+                if (provenance["host_index_sha256"] != sha256_file(str(trunk_dir / INDEX_FILENAME))
+                        or provenance["evidence_sha256"] != sha256_file(args.evidence)
+                        or provenance["source_layers"] != sorted(alignment[k])):
+                    raise SystemExit("native chart boundaries do not match installed host/evidence/source alignment")
+                for l in alignment[k]:
+                    if provenance["installed_ffn_sha256"][str(l)] != sha256_file(k3_headers[l]["path"]):
+                        raise SystemExit("native chart source capture does not match installed K3 FFN")
     extra_charts = {}
     for spec in args.extra_charts:
         if "=" not in spec:
@@ -1932,6 +2135,7 @@ def main(argv: list[str] | None = None) -> int:
     })
 
     # -- the trunk engine ------------------------------------------------------------------
+    guard_out(args, out)
     load_dtype = getattr(torch, args.dtype) if args.dtype else None
     trunk_views = read_safetensors(trunk_dir, verify=True)
     engine = ENGINES[args.engine](trunk_dir, trunk_cfg, trunk_views, device, load_dtype, evidence)
@@ -1947,6 +2151,9 @@ def main(argv: list[str] | None = None) -> int:
         "evidence": {"file_sha256": evidence.sha256, "manifest_sha256": evidence.manifest_sha256},
         "k3_dense": os.path.abspath(args.k3_dense), "k3_layers": wanted, "k3_config": k3_cfg_record,
         "charts": {str(k): c.sha256 for k, c in charts.items()}, "chart_arm": args.chart_arm,
+        "chart_boundary_provenance": {str(k): c.native_boundary_provenance for k, c in charts.items()},
+        "chart_layer_json_sha256": {str(k): c.layer_json_sha256 for k, c in charts.items()},
+        "synthetic_fixture": bool(fixture),
         "alignment": alignment_record.get("trunk_to_k3"), "alignment_sha256": alignment_record.get("sha256"),
         "extra_blocks": extra_records, "k3_channels": int(args.k3_channels), "group_size": int(args.group_size),
         "engine": args.engine, "ffn_dtype": str(ffn_dtype).replace("torch.", ""),
