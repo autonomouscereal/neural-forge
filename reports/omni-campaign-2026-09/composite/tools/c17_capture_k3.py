@@ -1,4 +1,4 @@
-"""Capture one accepted folded K3 layer, without parent experts or fitting.
+"""Capture a bounded accepted folded K3 window, without parent experts or fitting.
 
 This is a new observation tool, NOT a resume-context migration. It imports the
 unchanged, receipt-pinned attention_half/ffn_half implementation. Full original
@@ -31,6 +31,7 @@ SHARED = tuple("block_sparse_moe." + name for name in (
     "shared_experts.gate_proj.weight", "shared_experts.up_proj.weight", "shared_experts.down_proj.weight"))
 BOUNDARIES = ("residual_in", "attention_read", "mixer_input", "mixer_output", "post_attention",
               "ffn_read", "ffn_input", "ffn_output", "residual_out")
+MAX_WINDOW_LAYERS = 12
 
 
 def require(condition: bool, reason: str) -> None:
@@ -356,6 +357,27 @@ def replay(runner: Any, dense: dict[str, torch.Tensor], pair: native.Pair, corpu
     return result, {**observer.rows, **vectors}
 
 
+def capture_window(plan: dict[str, Any], index: native.K3Index) -> tuple[list[int], dict[str, Any]]:
+    """Retain v1 single-layer plans; a window must name every body explicitly."""
+    require(("layer" in plan) != ("layers" in plan), "name exactly one of layer or layers")
+    if "layer" in plan:
+        require("body" in plan and "bodies" not in plan, "single layer requires one explicit body")
+        layers = [host.integer(plan["layer"], "layer", minimum=1)]
+        bodies = {str(layers[0]): plan["body"]}
+    else:
+        layers = plan["layers"]
+        require(isinstance(layers, list) and 1 <= len(layers) <= MAX_WINDOW_LAYERS,
+                f"explicit window needs 1..{MAX_WINDOW_LAYERS} contiguous layers")
+        layers = [host.integer(i, "layer", minimum=1) for i in layers]
+        require(layers == list(range(layers[0], layers[-1] + 1)), "capture window must be contiguous, ascending and unique")
+        bodies = plan.get("bodies")
+        require("body" not in plan and isinstance(bodies, dict) and set(bodies) == {str(i) for i in layers},
+                "window requires exactly one native body per selected layer")
+    require(all(i < index.num_layers and index.is_moe_layer(i) for i in layers),
+            "this canary captures accepted MoE layers only")
+    return layers, bodies
+
+
 def run(plan_path: Path, expected_plan_sha: str, out: Path, *, synthetic_fixture_root: Path | None = None) -> dict[str, Any]:
     pins = Pins()
     plan = pins.json({"path": str(plan_path), "sha256": expected_plan_sha})
@@ -387,10 +409,15 @@ def run(plan_path: Path, expected_plan_sha: str, out: Path, *, synthetic_fixture
         require(plan.get("fixture") is False and index.config_json.get("synthetic") is not True,
                 "synthetic inputs are not production evidence")
         require(runtime["device"].startswith("cuda:"), "production replay requires the accepted GPU runtime")
-    layer = host.integer(plan["layer"], "layer", minimum=1)
-    require(layer < index.num_layers and index.is_moe_layer(layer), "this canary captures one accepted MoE layer")
-    print(f"[c17-k3] L{layer:02d}: source/runtime verified; checking accepted FFN lineage", flush=True)
-    installed = accepted_chain(plan, receipt, index, pins, layer)
+    layers, bodies = capture_window(plan, index)
+    first, last = layers[0], layers[-1]
+    print(f"[c17-k3] L{first:02d}..L{last:02d}: source/runtime verified; checking accepted FFN lineage", flush=True)
+    installed = accepted_chain(plan, receipt, index, pins, last)
+    for layer in layers:
+        accepted_body = receipt["layers"][str(layer)]["body"]
+        require(accepted_body.get("byte_exact") is True and bodies[str(layer)]["sha256"] == accepted_body["sha256"],
+                f"L{layer:02d}: body differs from accepted verbatim source")
+        pins.ref(bodies[str(layer)])
     files = [pins.ref(plan["input_ids"])] + [pins.ref(ref) for ref in plan["review_input_ids"]]
     corpus = native.Corpus(str(files[0]), [str(p) for p in files[1:]])
     evidence, boundary = pins.json(plan["evidence"]), pins.json(plan["boundary_map"])
@@ -400,46 +427,76 @@ def run(plan_path: Path, expected_plan_sha: str, out: Path, *, synthetic_fixture
         require(corpus.tokens <= 4096 and all(p.is_relative_to(root) for p in [out.resolve(), metadata_dir.resolve(),
                 *[p for p in pins.records if p.suffix in (".json", ".safetensors")]]), "fixture inputs/output must stay inside tiny fixture root")
     max_bytes = host.integer(plan.get("max_capture_bytes"), "max_capture_bytes", minimum=1)
-    projected = len(vectors["held"]) * (len(BOUNDARIES) * index.hidden_size * 4 + len(vectors) * 8)
+    projected = len(layers) * len(vectors["held"]) * (len(BOUNDARIES) * index.hidden_size * 4 + len(vectors) * 8)
     require(projected <= max_bytes, "capture output budget exceeded; no implicit subsampling")
     print(f"[c17-k3] original corpus verified: {corpus.tokens} tokens; {len(vectors['held'])} paired rows; "
           f"capture upper bound {projected} bytes; hashing frozen snapshots", flush=True)
     manifest = pins.json(plan["snapshot_manifest"])
     snap_args = (manifest, pins, context, installed)
     end_args = (receipt["arguments"]["rung"], corpus.tokens, index.hidden_size, index.attn_res_block_size)
-    pair, start_record = snapshot(plan["start_folded"], *snap_args, layer, "folded", *end_args)
-    previous = receipt["layers"][str(layer - 1)]["prefix_out_sha256"]["folded"]
+    pair, start_record = snapshot(plan["start_folded"], *snap_args, first, "folded", *end_args)
+    previous = receipt["layers"][str(first - 1)]["prefix_out_sha256"]["folded"]
     require(start_record["prefix_sha256"] == previous, "starting folded prefix differs from accepted upstream receipt")
-    teacher, teacher_record = snapshot(plan["end_teacher"], *snap_args, layer + 1, "teacher", *end_args)
-    require(teacher_record["prefix_sha256"] == receipt["layers"][str(layer)]["prefix_out_sha256"]["teacher"],
+    teacher, teacher_record = snapshot(plan["end_teacher"], *snap_args, last + 1, "teacher", *end_args)
+    require(teacher_record["prefix_sha256"] == receipt["layers"][str(last)]["prefix_out_sha256"]["teacher"],
             "ending teacher reference differs from accepted receipt")
     del teacher
-    end, end_record = snapshot(plan["end_folded"], *snap_args, layer + 1, "folded", *end_args)
-    require(end_record["prefix_sha256"] == receipt["layers"][str(layer)]["prefix_out_sha256"]["folded"],
+    end, end_record = snapshot(plan["end_folded"], *snap_args, last + 1, "folded", *end_args)
+    require(end_record["prefix_sha256"] == receipt["layers"][str(last)]["prefix_out_sha256"]["folded"],
             "ending folded reference differs from accepted receipt")
     expected_dtype = end.prefix.dtype
     del end
-    runner, dense, loading = load_layer(plan, receipt, index, pins, layer, torch.device(runtime["device"]))
-    require(pair.prefix.dtype == expected_dtype == next(iter(runner.w.attn.values())).dtype,
-            "snapshot/native compute dtype mismatch")
     if fixture:
         require(all(p.is_relative_to(root) for p in pins.records if p.suffix in (".json", ".safetensors")),
                 "fixture snapshots/body must stay inside fixture root")
     pins.stable()
-    print(f"[c17-k3] snapshots and native body verified; replaying L{layer:02d} with no parent experts", flush=True)
-    result, payload = replay(runner, dense, pair, corpus, vectors, runtime)
-    require(tensor_sha(result.prefix) == end_record["prefix_sha256"] and
-            tensor_sha(result.blocks) == end_record["block_residual_sha256"], "accepted folded prefix/BlockAttnRes replay is NOT exact")
-    pins.stable()
-    print("[c17-k3] folded prefix and BlockAttnRes exactly match accepted reference; writing observed boundaries", flush=True)
-    out.mkdir(parents=True, exist_ok=False)
-    folder = out / f"L{layer:02d}"
-    folder.mkdir()
-    target = folder / "k3_boundaries.safetensors"
-    save_file({k: v.contiguous() for k, v in payload.items()}, str(target),
-              metadata={"schema": SCHEMA, "layer": str(layer), "stream": "folded", "fixture": str(fixture).lower()})
+    layer_records, loading = [], {}
+    for layer in layers:
+        runner, dense, load_record = load_layer({**plan, "body": bodies[str(layer)]}, receipt, index, pins,
+                                               layer, torch.device(runtime["device"]))
+        require(pair.prefix.dtype == expected_dtype == next(iter(runner.w.attn.values())).dtype,
+                "snapshot/native compute dtype mismatch")
+        pins.stable()
+        print(f"[c17-k3] replaying accepted L{layer:02d} with no parent experts", flush=True)
+        result, payload = replay(runner, dense, pair, corpus, vectors, runtime)
+        actual_prefix = tensor_sha(result.prefix)
+        require(actual_prefix == receipt["layers"][str(layer)]["prefix_out_sha256"]["folded"],
+                f"L{layer:02d}: accepted folded prefix replay is NOT exact")
+        actual_blocks = tensor_sha(result.blocks)
+        require(result.blocks.shape[1] == receipt["layers"][str(layer)]["block_residual_blocks"],
+                f"L{layer:02d}: accepted BlockAttnRes block count differs")
+        if layer == last:
+            require(actual_prefix == end_record["prefix_sha256"] and actual_blocks == end_record["block_residual_sha256"],
+                    "accepted folded prefix/BlockAttnRes replay is NOT exact")
+        pins.stable()
+        if layer == first:
+            out.mkdir(parents=True, exist_ok=False)
+        folder = out / f"L{layer:02d}"
+        folder.mkdir()
+        target = folder / "k3_boundaries.safetensors"
+        save_file({k: v.contiguous() for k, v in payload.items()}, str(target),
+                  metadata={"schema": SCHEMA, "layer": str(layer), "stream": "folded", "fixture": str(fixture).lower(),
+                            "acceptance": "requires final capture_receipt.json window verification"})
+        layer_records.append({"layer": layer, "kind": "kda" if runner.w.is_kda else "mla", "rows": len(vectors["held"]),
+            "path": str(target.relative_to(out)).replace("\\", "/"), "sha256": host.digest(target), "bytes": target.stat().st_size,
+            "folded_prefix_sha256": actual_prefix, "accepted_folded_prefix_exact": True,
+            "block_residual_sha256": actual_blocks, "block_residual_reference_verified": layer == last,
+            "teacher_reference_verified": layer == last, "teacher_forward_replayed": False,
+            "boundaries": {k: {"shape": list(payload[k].shape), "dtype": str(payload[k].dtype)} for k in BOUNDARIES}})
+        loading[str(layer)] = load_record
+        pair = result
+        # Release this layer's weights/observations before allocating the next.
+        del runner, dense, result, payload
+    print("[c17-k3] every folded prefix and final window BlockAttnRes match accepted references", flush=True)
     record = {"schema": SCHEMA, "fixture": fixture, "stream": "folded", "gradients_or_training": False,
         "accepted_prefix_replay_exact": True, "teacher_reference_verified": True, "teacher_forward_replayed": False,
+        "teacher_reference_scope": "final_window_boundary_only", "teacher_reference_layer": last,
+        "intermediate_teacher_reference_verified": False,
+        "final_window_verification": {"layers": layers, "all_folded_prefixes_exact": True,
+            "final_folded_prefix_sha256": end_record["prefix_sha256"],
+            "final_block_residual_sha256": end_record["block_residual_sha256"],
+            "final_teacher_prefix_sha256": teacher_record["prefix_sha256"],
+            "intermediate_snapshots_required": False, "snapshots_created": False},
         "folded_child_proven": False, "parent_experts_loaded": False, "new_fit": False,
         "installed_ffn_sha256": installed, "accepted_receipt": plan["accepted_receipt"],
         "accepted_resume_context": context, "capture_plan": {"path": str(plan_path), "sha256": expected_plan_sha},
@@ -457,9 +514,7 @@ def run(plan_path: Path, expected_plan_sha: str, out: Path, *, synthetic_fixture
             "ffn_input": "actual post_attention_layernorm output consumed by routed down projection and shared FFN",
             "ffn_output": "actual native moe_write (dense form-E + verbatim shared experts), before residual addition",
             "residual_in": "folded prefix_sum entering layer", "residual_out": "folded prefix_sum leaving layer"},
-        "layers": [{"layer": layer, "kind": "kda" if runner.w.is_kda else "mla", "rows": len(vectors["held"]),
-            "path": str(target.relative_to(out)).replace("\\", "/"), "sha256": host.digest(target), "bytes": target.stat().st_size,
-            "boundaries": {k: {"shape": list(payload[k].shape), "dtype": str(payload[k].dtype)} for k in BOUNDARIES}}],
+        "layers": layer_records,
         "input_stat_stable": True, "source_host_pairs_complete": False,
         "missing": ["join actual native host captures", "fit and independently validate boundary-domain charts", "all-source child capability demonstration"]}
     pins.stable()
