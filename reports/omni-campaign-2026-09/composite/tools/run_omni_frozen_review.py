@@ -107,7 +107,7 @@ DEFAULT_CHIMERA_SRC = "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052"
 DEFAULT_CALIBRATION_DIR = "/home/cereal/omni-campaign/calibration"
 
 TOOL_NAME = "run_omni_frozen_review"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 RUNTIME = "chimera-omni-native"
 KERNEL_REPORT_SCHEMA = "chimera-omni-kernel-path-v1"
 MODE_FREE_RUN = "free-run"
@@ -242,24 +242,36 @@ def block_index_of(name: str) -> int | None:
 
 
 def refuse_charted(cfg: Any) -> None:
-    """OMNI1 (S7/S8) carries `charted` blocks that exist only on branch claude/omni-composite.
+    """The streamed proxy still lacks charted media layouts; refuse that lane.
 
-    `SplitDecoder._trunk` mirrors main's cached trunk and calls no `charted_output`,
-    and the streamed engine runs `block(x, ...)` with no charted row layout, so a
-    checkpoint whose block_pattern names a charted block is refused BY NAME here until
-    S8 binds a git-archive of the branch and routes media rows through
-    `charted_output`.  (The default tree c5e6052 refuses the pattern earlier, in
-    `ChimeraConfig`; this guard is what a branch-tree run hits.)
+    SplitDecoder supports charted text identity and explicitly laid-out media
+    prefill. This guard is not used by split placement/loading.
     """
 
     kinds = [str(cfg.block_kind(i)) for i in range(int(cfg.num_layers))]
     charted = [i for i, kind in enumerate(kinds) if kind == CHARTED_KIND]
     if charted:
         raise Refusal(
-            f"block_pattern names {len(charted)} charted block(s) at {charted[:8]}: this runner's split "
-            "trunk and streamed engine do not call charted_output; S8 must bind a git-archive of "
-            "branch claude/omni-composite and route media rows through it before a charted checkpoint "
-            "is reviewed here"
+            f"block_pattern names {len(charted)} charted block(s) at {charted[:8]}: "
+            "the streamed proxy has no charted media layout; use the pinned split runtime"
+        )
+
+
+def fp32_source_names(cfg: Any) -> set[str]:
+    """Exact stored H3 coefficient islands, not every FP32 meta placeholder."""
+    specs = [spec for spec in getattr(cfg, "charted_blocks", ()) if spec.modulation == "h3_curve6"]
+    if not specs:
+        return set()
+    from chimera_omni.charted import H3_FP32_PARAMETERS
+    return {f"blocks.{spec.layer_index}.charted.{name}" for spec in specs for name in H3_FP32_PARAMETERS}
+
+
+def materialize_charted_buffers(block: Any, device: str) -> None:
+    """Restore the source-owned, non-persistent type IDs after meta loading."""
+    if getattr(block, "charted", None) is not None:
+        import torch
+        block.charted.routed_type_ids = torch.tensor(
+            sorted(block.charted.spec.type_ids), device=device, dtype=torch.long
         )
 
 
@@ -285,7 +297,6 @@ def rope_inv_freq(reference_gqa: Any, device: str) -> Any:
 def placement_for(cfg: Any, split: list[int] | None, devices: list[str]) -> dict[str, Any]:
     """Which device each block (and everything else) lives on."""
 
-    refuse_charted(cfg)
     num_layers = int(cfg.num_layers)
     if split is None:
         split = [num_layers]
@@ -358,6 +369,7 @@ def load_chimera_split(
     with torch.device("meta"):
         model = ChimeraOmniModel(cfg)
     target = model.state_dict()
+    fp32_names = fp32_source_names(cfg)
     param_names = {key for key, _ in model.named_parameters()}
     state: dict[str, Any] = {}
     read_bytes = 0
@@ -370,8 +382,11 @@ def load_chimera_split(
                 raise Refusal(f"tensor {name!r} does not match the sha256 recorded in the index")
             reference = target[name]
             device = tensor_device(name, placement)
+            if name in fp32_names and view.dtype != "F32":
+                raise Refusal(f"H3 source coefficient {name!r} must be stored in FP32, got {view.dtype}")
             tensor = view.torch(
-                device=device, dtype=dtype if reference.is_floating_point() else reference.dtype
+                device=device, dtype=(torch.float32 if name in fp32_names else
+                                      dtype if reference.is_floating_point() else reference.dtype)
             )
             read_bytes += len(view.buffer)
             state[name] = torch.nn.Parameter(tensor, requires_grad=False) if name in param_names else tensor
@@ -390,6 +405,7 @@ def load_chimera_split(
         isinstance(block.mixer, GatedGQAAttention) for block in model.blocks
     ) else None
     for block_index, block in enumerate(model.blocks):
+        materialize_charted_buffers(block, placement["block_device"][block_index])
         if isinstance(block.mixer, GatedGQAAttention) and block.mixer.inv_freq is not None:
             block.mixer.inv_freq = rope_inv_freq(reference_gqa, placement["block_device"][block_index])
     if cfg.tie_word_embeddings and model.lm_head.weight.data_ptr() != model.embed.weight.data_ptr():
@@ -412,6 +428,8 @@ def load_chimera_split(
         "tensor_sha256_verified": bool(verify_tensors),
         "load_dtype": str(dtype),
         "rope_inv_freq_dtype": "torch.float32",
+        "fp32_source_coefficients": sorted(fp32_names),
+        "charted_runtime": "text identity and explicit native-media prefill; continuous sampling is separate",
     }
     return model, cfg, receipt
 
@@ -444,7 +462,8 @@ class SplitDecoder:
 
         self._cache_class = ChimeraCausalCache
 
-    def _trunk(self, x: Any, valid: Any, cache: Any) -> tuple[Any, Any]:
+    def _trunk(self, x: Any, valid: Any, cache: Any, *, row_types: Any = None,
+               noise_levels: Any = None, source_positions: Any = None) -> tuple[Any, Any]:
         torch = self.torch
         model = self.model
         blocks = model.blocks
@@ -462,6 +481,17 @@ class SplitDecoder:
             v = valid.to(device=device, dtype=torch.bool)
             if index == 0:
                 x = torch.where(v.unsqueeze(-1), x, torch.zeros_like(x))
+            if getattr(block, "charted", None) is not None:
+                from chimera_omni.modeling.layers import MixerHistory
+                types = None if row_types is None else row_types.to(device)
+                levels = None if noise_levels is None else noise_levels.to(device)
+                positions = (None if source_positions is None else
+                             {name: value.to(device) for name, value in source_positions.items()})
+                if types is not None:
+                    x = x + block.charted_output(x, types, levels, v, positions)
+                x = torch.where(v.unsqueeze(-1), x, torch.zeros_like(x))
+                next_caches.append(MixerHistory(inputs=x[:, :0], valid_mask=v[:, :0]))
+                continue
             attention, next_cache = block.attention_output_with_cache(x, block_cache, v)
             x = x + attention
             x = x + block.feed_forward_output(x, v)
@@ -478,7 +508,19 @@ class SplitDecoder:
         valid = model._token_validity(ids, None)
         model._validate_token_ids(ids)
         x = model.embed(ids)
+        row_types = noise_levels = source_positions = None
         if media is not None:
+            if cache is not None:
+                raise Refusal("native media is supported only in the initial prefill, not an existing causal cache")
+            raw_noise = media.get("noise_levels")
+            if media.get("bidirectional_refinement", False):
+                raise Refusal("cached split prefill does not implement bidirectional trunk refinement")
+            model._validate_native_contract(
+                features=media["features"], type_ids=media["type_ids"], positions=media["positions"],
+                indices=media["indices"], valid_mask=media["valid_mask"],
+                update_mask=media.get("update_mask"), noise_levels=raw_noise,
+                targets=None, loss_mask=None, target_kind=media.get("target_kind", "reconstruction"),
+            )
             x, _count = model._add_native_media(
                 x,
                 media["features"].to(self.head_device),
@@ -486,9 +528,19 @@ class SplitDecoder:
                 media["positions"].to(self.head_device),
                 media["indices"].to(self.head_device),
                 media["valid_mask"].to(self.head_device),
-                None,
+                None if raw_noise is None else raw_noise.to(self.head_device),
             )
-        x, next_cache = self._trunk(x, valid, cache)
+            row_types, noise_levels = model._charted_layout(
+                ids, _count, media["indices"], media["type_ids"], media["valid_mask"], raw_noise
+            )
+            source_positions = media.get("charted_source_positions")
+            if row_types is not None and raw_noise is None and any(
+                spec.modulation == "h3_curve6" and any(bool(row_types.eq(t).any()) for t in spec.type_ids)
+                for spec in self.cfg.charted_blocks
+            ):
+                raise Refusal("H3 media prefill requires explicit actual per-type sigma values")
+        x, next_cache = self._trunk(x, valid, cache, row_types=row_types,
+                                  noise_levels=noise_levels, source_positions=source_positions)
         if str(x.device) != self.head_device:
             x = x.to(self.head_device)
         v = valid.to(self.head_device)

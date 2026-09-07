@@ -746,7 +746,7 @@ def test_gpu_occupancy_refusal_and_inventory():
         assert row["name"] and row["capability"].startswith("sm") and row["total_bytes"] > row["free_bytes"] >= 0
 
 
-def test_charted_block_kind_is_refused(tiny):
+def test_charted_split_placement_allowed_but_unimplemented_streamed_lane_refuses(tiny):
     class Charted:
         num_layers = 3
 
@@ -754,8 +754,9 @@ def test_charted_block_kind_is_refused(tiny):
         def block_kind(index: int) -> str:
             return ["kda", "charted", "gated_gqa"][index]
 
+    assert tool.placement_for(Charted(), [3], ["cpu"])["block_device"] == ["cpu"] * 3
     with pytest.raises(tool.Refusal, match="charted") as info:
-        tool.placement_for(Charted(), [3], ["cpu"])
-    assert "claude/omni-composite" in str(info.value) and "[1]" in str(info.value)
+        tool.refuse_charted(Charted())
+    assert "streamed proxy" in str(info.value) and "[1]" in str(info.value)
     cfg = load_chimera_checkpoint(tiny[0], device="cpu", dtype=torch.float32)[1]
     assert tool.refuse_charted(cfg) is None
