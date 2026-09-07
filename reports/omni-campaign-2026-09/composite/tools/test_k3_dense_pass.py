@@ -152,6 +152,14 @@ def base_argv(model_dir: str, corpus: dict, out: Path, receipts: Path, **extra) 
             # tests (streaming, resume, staging) therefore run with the verdict RECORDED, not enforced;
             # the gate tests pass acceptance="gate" explicitly (argparse keeps the last occurrence)
             "--acceptance", "record"]
+    selected_chimera = os.environ.get("CHIMERA_OMNI_SRC")
+    if selected_chimera:
+        # The combined suite selects one tree; do not import the production CLI's
+        # historical default before the receipt fixture binds that selected tree.
+        src = Path(selected_chimera)
+        if (src / "src" / "chimera_omni").is_dir():
+            src = src / "src"
+        argv += ["--chimera-src", str(src)]
     for key, value in extra.items():
         flag = "--" + key.replace("_", "-")
         if (key == "no_layer0_receipt" and value is False) or key == "layer0_import_receipt":
@@ -165,6 +173,37 @@ def base_argv(model_dir: str, corpus: dict, out: Path, receipts: Path, **extra) 
         elif value is not None:
             argv += [flag, str(value)]
     return argv
+
+
+@pytest.mark.parametrize("layout", ["root", "src"])
+def test_base_argv_uses_selected_chimera_source(tmp_path, monkeypatch, layout):
+    root = tmp_path / "selected-chimera"
+    src = root / "src"
+    (src / "chimera_omni").mkdir(parents=True)
+    selected = root if layout == "root" else src
+    monkeypatch.setenv("CHIMERA_OMNI_SRC", str(selected))
+    before_path = list(sys.path)
+    argv = base_argv("model", {"evidence": "ids", "review": "review"}, tmp_path, tmp_path)
+    args = kdp.build_parser().parse_args(argv)
+    assert Path(args.chimera_src) == src
+    assert sys.path == before_path, "fixture argument construction must not alter import state"
+
+
+def test_base_argv_explicit_chimera_source_overrides_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHIMERA_OMNI_SRC", str(tmp_path / "environment-source"))
+    explicit = tmp_path / "explicit-source"
+    argv = base_argv("model", {"evidence": "ids", "review": "review"}, tmp_path, tmp_path,
+                     chimera_src=explicit)
+    assert kdp.build_parser().parse_args(argv).chimera_src == str(explicit)
+
+
+def test_base_argv_keeps_cli_default_without_chimera_environment(tmp_path, monkeypatch):
+    monkeypatch.delenv("CHIMERA_OMNI_SRC", raising=False)
+    before_path = list(sys.path)
+    argv = base_argv("model", {"evidence": "ids", "review": "review"}, tmp_path, tmp_path)
+    assert "--chimera-src" not in argv
+    assert kdp.build_parser().parse_args(argv).chimera_src == kdp.DEFAULT_CHIMERA_SRC
+    assert sys.path == before_path
 
 
 def make_run(argv: list[str]) -> "kdp.DualStreamRun":
