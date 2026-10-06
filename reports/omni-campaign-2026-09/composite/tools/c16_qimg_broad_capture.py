@@ -113,7 +113,18 @@ def excluded_images(refs):
 
 
 def derive_plans(batches, exclusions):
-    """Read-only; every plan entry comes from a verified preregistered batch."""
+    """Legacy contract: only the four committed September 7 broad plans."""
+    return _derive_plans_against(batches, exclusions, None)
+
+
+def _derive_plans_against(batches, exclusions, canonical_plans):
+    """Shared native audits; fresh callers must separately prove plan authority.
+
+    This private helper grants no preregistration, launch or acceptance authority.
+    The legacy entry point still supplies only its committed September 7 plans.
+    """
+    if canonical_plans is not None and (not isinstance(canonical_plans, list) or len(canonical_plans) != 4):
+        raise ValueError("four independently verified canonical generation plans required")
     if not isinstance(batches, list) or len(batches) != 4:
         raise ValueError("exactly four complete broad batches required")
     old = excluded_images(exclusions)
@@ -128,8 +139,11 @@ def derive_plans(batches, exclusions):
         plan = json_pinned(gp["path"], gp["sha256"])
         # Compare semantic content with the committed preregistration, while the
         # explicit caller hash binds exact archived bytes (including LF/CRLF).
-        canonical_path = TOOLS / f"qimg_parent_broad_sep07_batch{number}.json"
-        canonical = parent.read_plan(canonical_path)
+        if canonical_plans is None:
+            canonical_path = TOOLS / f"qimg_parent_broad_sep07_batch{number}.json"
+            canonical = parent.read_plan(canonical_path)
+        else:
+            canonical = canonical_plans[number - 1]
         if plan != canonical or len(plan["entries"]) != 8 or Counter(e["split"] for e in plan["entries"]) != {"fit": 6, "holdout": 2}:
             raise ValueError("generation plan differs from the complete committed broad batch")
         body = json_pinned(rp["path"], rp["sha256"])
@@ -352,12 +366,26 @@ def require_rows(reports):
 
 
 def run(bundle_path, bundle_sha, out, weights, vae, text_encoder, comfy_root, threads):
+    """Legacy command and sealed September 7 bundle contract are unchanged."""
     out = Path(out)
     if out.exists() or out.is_symlink():
         raise ValueError("run output exists; no overwrite, retry or cleanup")
     if type(threads) is not int or not 1 <= threads <= 22:
         raise ValueError("explicit bounded CPU thread count 1..22 required")
     bundle, plans = validate_bundle(bundle_path, bundle_sha)
+    return _run_audited(bundle_path, bundle_sha, out, weights, vae, text_encoder,
+                        comfy_root, threads, bundle, plans,
+                        lambda: validate_bundle(bundle_path, bundle_sha))
+
+
+def _run_audited(bundle_path, bundle_sha, out, weights, vae, text_encoder,
+                 comfy_root, threads, bundle, plans, revalidate, before_dispatch=None):
+    """Shared native subprocess/audit pipeline; authorization belongs to caller."""
+    out = Path(out)
+    if out.exists() or out.is_symlink():
+        raise ValueError("run output exists; no overwrite, retry or cleanup")
+    if type(threads) is not int or not 1 <= threads <= 22:
+        raise ValueError("explicit bounded CPU thread count 1..22 required")
     for role, path in (("diffusion", weights), ("vae", vae), ("text_encoder", text_encoder)):
         if source_content(capture.read_header(Path(path))[1]) != source_content(bundle["source_identities"][role]):
             raise ValueError("runtime source header/size differs from actual generation receipt")
@@ -370,6 +398,8 @@ def run(bundle_path, bundle_sha, out, weights, vae, text_encoder, comfy_root, th
         # Every subprocess runs a committed existing tool; no shell or launcher.
         if tool_hashes() != bundle["tool_sha256"]:
             raise ValueError("production source changed after seal")
+        if before_dispatch is not None:
+            before_dispatch()
         commands.append(argv)
         subprocess.run(argv, check=True, env=env)
     try:
@@ -394,7 +424,7 @@ def run(bundle_path, bundle_sha, out, weights, vae, text_encoder, comfy_root, th
         forward_hashes = [digest for batch in captures for digest in batch["forward_file_sha256"]]
         if len(forward_hashes) != 128 or len(set(forward_hashes)) != 128:
             raise ValueError("captured forward bytes were duplicated across batches")
-        validate_bundle(bundle_path, bundle_sha)
+        revalidate()
         result = {"schema": RUN_SCHEMA, "status": "complete", "bundle": reference(bundle_path, bundle_sha),
                   "encodings": encodings, "captures": captures, "actual_row_counts": rows, "actual_forwards": 128,
                   "commands": commands, "torch_threads": threads,
