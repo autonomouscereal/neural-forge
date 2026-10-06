@@ -313,7 +313,10 @@ def test_verified_fixture_refold_persists_complete_or_refused_diagnostics_only(t
 def test_verified_sparse_fixture_numeric_pass_persists_nonaccepting_json_only(tmp_path):
     # All files here are new tiny synthetic fixtures, not historical captures.
     path, body, policy_path, p = strict_bundle(tmp_path)
-    frozen = original.load_file(str(path.parent / body["frozen_source"]["file"]))
+    # CPU safetensors can return file-backed tensors. Detach before this fixture-
+    # only same-path rewrite so truncating a file cannot clobber its mapped input.
+    frozen = {name: tensor.clone() for name, tensor in original.load_file(
+        str(path.parent / body["frozen_source"]["file"])).items()}
     for stream in runner.STREAMS:
         key = f"transformer_blocks.0.{stream}_mlp.net.2.weight"
         w = torch.zeros_like(frozen[key], dtype=torch.float32)
@@ -322,10 +325,15 @@ def test_verified_sparse_fixture_numeric_pass_persists_nonaccepting_json_only(tm
         p["streams"][stream]["keep"] = 2
     body["frozen_source"] = original.write_tensors(path.parent / body["frozen_source"]["file"], frozen)
     for record in body["captures"]:
-        state = original.load_file(str(path.parent / record["file"]))
+        state = {name: tensor.clone() for name, tensor in original.load_file(
+            str(path.parent / record["file"])).items()}
+        preserved = {name: original.tensor_sha(state[name]) for name in ("sigma", "img_mlp_in", "txt_mlp_in")}
         for stream in runner.STREAMS:
             _, state[stream + "_mlp_out"] = original.mlp_forward(state[stream + "_mlp_in"], original.mlp_weights(frozen, 0, stream, "cpu"))
         record.update(original.write_tensors(path.parent / record["file"], state))
+        reloaded = original.load_file(str(path.parent / record["file"]))
+        assert all(original.tensor_sha(reloaded[name]) == sha for name, sha in preserved.items())
+    assert len({record["file_sha256"] for record in body["captures"]}) == len(body["captures"])
     dump(path, body); dump(policy_path, p)
     source_hashes = {f: original.file_sha(f) for f in path.parent.iterdir() if f.is_file()}
     report = tmp_path / "research" / "passed_but_nonaccepting.json"

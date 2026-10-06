@@ -126,7 +126,7 @@ def _validate_policy(policy):
 
 
 @torch.no_grad()
-def _measure_loaded(data, policy, *, device="cpu"):
+def _fit_loaded_candidate(data, policy, *, device="cpu"):
     rows = row_preflight(data, policy)
     baseline, features = {}, {}
     # BOTH streams must replay before EITHER stream reaches pivoting/refitting.
@@ -146,7 +146,7 @@ def _measure_loaded(data, policy, *, device="cpu"):
         features[stream] = torch.cat(fit_hidden)
         del weights, fit_hidden
     candidate = dict(data["frozen"])
-    measured = {}
+    measured, selections = {}, {}
     for stream in STREAMS:
         entry = policy["streams"][stream]
         keep, width, inner = entry["keep"], data["width"], data["inner"]
@@ -214,6 +214,7 @@ def _measure_loaded(data, policy, *, device="cpu"):
             "stored_update_scale": stored_update, "fit_scores": fit_scores, "heldout_scores": held_scores,
             "per_forward": per_forward, "development_numeric_gates_passed": passed}
         measured[stream]["selected_channel_indices"] = selection.tolist()
+        selections[stream + ".selected_channels"] = selection
         measured[stream]["ephemeral_refit_sha256"] = {name: tensor_sha(candidate[prefix + name])
             for name in ("net.2.weight", "net.2.bias")}
         measured[stream]["ephemeral_verbatim_projection_sha256"] = {name: tensor_sha(candidate[prefix + name])
@@ -241,6 +242,14 @@ def _measure_loaded(data, policy, *, device="cpu"):
     if not result["development_numeric_gates_passed"]:
         result["status"] = "development_rejected_numerical_policy"
         raise DevelopmentRejected("development numerical gates failed; no acceptance or tensors written", result)
+    return candidate, selections, result
+
+
+@torch.no_grad()
+def _measure_loaded(data, policy, *, device="cpu"):
+    """Development wrapper discards ephemeral tensors; no writer or acceptance."""
+    candidate, selections, result = _fit_loaded_candidate(data, policy, device=device)
+    del candidate, selections
     return result
 
 
