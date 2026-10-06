@@ -159,11 +159,11 @@ def test_stored_update_veto_recomputes_f16_update(fixture, monkeypatch, kind):
 
 
 def test_all_law_rungs_vetoed_keeps_unchanged_prior_not_unbounded_solve(fixture, monkeypatch):
-    original = mod.linalg.prior_anchored
+    original = mod.linalg._prior_anchored_from_statistics
     def veto(*args, **kwargs):
         answer, notes = original(*args, **kwargs)
         return answer, {**notes, "update_scale": 2.0}
-    monkeypatch.setattr(mod.linalg, "prior_anchored", veto)
+    monkeypatch.setattr(mod.linalg, "_prior_anchored_from_statistics", veto)
     _, _, report = mod.fold_loaded(*fixture)
     assert report["solve"]["fell_back_to_prior"] and report["stored_update_scale"] == 0
 

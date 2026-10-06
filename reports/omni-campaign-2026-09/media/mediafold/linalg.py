@@ -302,6 +302,31 @@ def fit_ridge_lambda_ladder(
     return best
 
 
+def _prior_anchored_from_statistics(
+    gram: torch.Tensor,
+    cross: torch.Tensor,
+    anchor: torch.Tensor,
+    *,
+    ridge_rel: float,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """One unchanged ridge rung from fixed FP64 CPU sufficient statistics."""
+
+    ridge_lambda = float(ridge_rel) * float(torch.diagonal(gram).mean().item())
+    eye = torch.eye(gram.shape[0], dtype=gram.dtype)
+    shifted = gram + ridge_lambda * eye
+    anchored = cross + ridge_lambda * anchor.transpose(0, 1)
+    try:
+        factor = torch.linalg.cholesky(shifted)
+        solution = torch.cholesky_solve(anchored, factor)
+    except Exception:
+        solution = torch.linalg.lstsq(shifted, anchored).solution
+    weight = solution.transpose(0, 1).contiguous()
+    update_scale = float(
+        ((weight - anchor).norm() / anchor.norm().clamp_min(1.0e-30)).item()
+    )
+    return weight, {"ridge_lambda": ridge_lambda, "update_scale": update_scale}
+
+
 def prior_anchored(
     design: torch.Tensor,
     targets: torch.Tensor,
@@ -323,20 +348,7 @@ def prior_anchored(
         raise ValueError("prior shape does not match the design / target pair")
     gram = matrix.transpose(0, 1) @ matrix
     cross = matrix.transpose(0, 1) @ answer
-    ridge_lambda = float(ridge_rel) * float(torch.diagonal(gram).mean().item())
-    eye = torch.eye(gram.shape[0], dtype=gram.dtype)
-    shifted = gram + ridge_lambda * eye
-    anchored = cross + ridge_lambda * anchor.transpose(0, 1)
-    try:
-        factor = torch.linalg.cholesky(shifted)
-        solution = torch.cholesky_solve(anchored, factor)
-    except Exception:
-        solution = torch.linalg.lstsq(shifted, anchored).solution
-    weight = solution.transpose(0, 1).contiguous()
-    update_scale = float(
-        ((weight - anchor).norm() / anchor.norm().clamp_min(1.0e-30)).item()
-    )
-    return weight, {"ridge_lambda": ridge_lambda, "update_scale": update_scale}
+    return _prior_anchored_from_statistics(gram, cross, anchor, ridge_rel=ridge_rel)
 
 
 def law_abiding_solve(
@@ -350,16 +362,30 @@ def law_abiding_solve(
 
     Mirrors ``mx45_build.law_abiding_solve``: rungs whose solution moves further than
     the prior's own norm are vetoed, and among the survivors the best fit wins.
+    Fixed Gram/cross statistics are computed once; every rung retains its original
+    solve, score, ranking and veto arithmetic. An empty ladder still keeps prior.
     """
 
     best_weight: torch.Tensor | None = None
     best_notes: dict[str, Any] = {}
     best_error = float("inf")
     trail: list[dict[str, Any]] = []
+    statistics: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
     for rung in ladder:
-        weight, notes = prior_anchored(design, targets, prior, ridge_rel=float(rung))
-        prediction = design.detach().to(torch.float64).cpu() @ weight.transpose(0, 1)
-        scores = write_scores(prediction, targets.detach().to(torch.float64).cpu())
+        if statistics is None:
+            # Inputs and their products are identical for every lambda. Keep
+            # the original FP64 CPU BLAS shapes/order, once per ladder call.
+            matrix = design.detach().to(torch.float64).cpu()
+            answer = targets.detach().to(torch.float64).cpu()
+            anchor = prior.detach().to(torch.float64).cpu()
+            if anchor.shape[1] != matrix.shape[1] or anchor.shape[0] != answer.shape[1]:
+                raise ValueError("prior shape does not match the design / target pair")
+            gram = matrix.transpose(0, 1) @ matrix
+            cross = matrix.transpose(0, 1) @ answer
+            statistics = (gram, cross, anchor)
+        weight, notes = _prior_anchored_from_statistics(*statistics, ridge_rel=float(rung))
+        prediction = matrix @ weight.transpose(0, 1)
+        scores = write_scores(prediction, answer)
         vetoed = notes["update_scale"] > 1.0
         trail.append(
             {
