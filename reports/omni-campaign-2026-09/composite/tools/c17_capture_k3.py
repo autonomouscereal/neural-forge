@@ -22,6 +22,7 @@ from safetensors.torch import load_file, save_file
 
 import c17_capture_host as host
 import k3_dense_pass as native
+import c17_source_binding as source_binding
 
 SCHEMA = "neural-forge.c17-k3-boundaries.v1"
 PLAN_SCHEMA = "neural-forge.c17-k3-capture-plan.v1"
@@ -148,9 +149,11 @@ def check_corpus(corpus: native.Corpus, accepted: dict[str, Any], rows: list[dic
     return {key: torch.tensor(values, dtype=torch.int64) for key, values in vectors.items()}
 
 
-def acceptance(value: dict[str, Any]) -> bool:
-    return (value.get("version") == native.ACCEPTANCE_VERSION and
-            value.get("constants") == native.ACCEPTANCE_CONSTANTS and value.get("verdict") == "accepted")
+def acceptance(value: dict[str, Any], *, source_binding_policy: str | None = None,
+               layer: int | None = None, rung: int | None = None) -> bool:
+    return source_binding.k3_layer_source_admissible(value,
+            version=native.ACCEPTANCE_VERSION, constants=native.ACCEPTANCE_CONSTANTS,
+            source_binding_policy=source_binding_policy, layer=layer, rung=rung)
 
 
 def accepted_chain(plan: dict[str, Any], receipt: dict[str, Any], index: native.K3Index,
@@ -174,9 +177,16 @@ def accepted_chain(plan: dict[str, Any], receipt: dict[str, Any], index: native.
                 "done marker source/runtime/corpus mismatch")
         require(done.get("prefix_lineage") == expected_lineage and record.get("prefix_lineage") == expected_lineage,
                 "accepted FFN upstream lineage mismatch")
-        require(done.get("rung") == receipt["arguments"]["rung"] and
-                acceptance(done.get("fold_metrics", {}).get("acceptance", {})) and
-                acceptance(record.get("acceptance", {})), "not an accepted production fold")
+        policy, rung = plan.get("source_binding_policy"), receipt["arguments"]["rung"]
+        done_acceptance = done.get("fold_metrics", {}).get("acceptance", {})
+        record_acceptance = record.get("acceptance", {})
+        require(done.get("rung") == rung and
+                acceptance(done_acceptance, source_binding_policy=policy, layer=i, rung=rung) and
+                acceptance(record_acceptance, source_binding_policy=policy, layer=i, rung=rung),
+                "fold source is neither legacy accepted nor explicitly owner-recorded diagnostics")
+        if policy is not None:
+            require(source_binding.k3_acceptance_core_equal(done_acceptance, record_acceptance),
+                    "done marker and receipt acceptance cores differ")
         recorded_done_sha = record["ffn"].get("done_marker_sha256")
         if recorded_done_sha:
             require(recorded_done_sha == refs["done"]["sha256"], "done marker differs from accepted receipt")
@@ -388,13 +398,15 @@ def capture_window(plan: dict[str, Any], index: native.K3Index) -> tuple[list[in
 def run(plan_path: Path, expected_plan_sha: str, out: Path, *, synthetic_fixture_root: Path | None = None) -> dict[str, Any]:
     pins = Pins()
     plan = pins.json({"path": str(plan_path), "sha256": expected_plan_sha})
+    require(plan.get("source_binding_policy") in (None, source_binding.OWNER_DIAGNOSTIC_POLICY),
+            "unknown source binding policy")
     require(plan.get("schema") == PLAN_SCHEMA, "unsupported capture plan")
     require(not out.exists(), "output must be fresh; existing/partial captures are never overwritten")
     receipt = pins.json(plan["accepted_receipt"])
     context = receipt["resume_context"]
     require(context.get("version") == native.RESUME_CONTEXT_VERSION, "unsupported native resume identity")
     require(software_identity(pins) == context["software"], "accepted native source/software identity mismatch")
-    for module in (Path(__file__).resolve(), Path(host.__file__).resolve()):
+    for module in (Path(__file__).resolve(), Path(host.__file__).resolve(), Path(source_binding.__file__).resolve()):
         pins.file(module, host.digest(module))
     metadata_dir = Path(plan["model_metadata_directory"])
     pins.file(metadata_dir / "config.json", context["model"]["config_sha256"])
@@ -506,6 +518,7 @@ def run(plan_path: Path, expected_plan_sha: str, out: Path, *, synthetic_fixture
             "intermediate_snapshots_required": False, "snapshots_created": False},
         "folded_child_proven": False, "parent_experts_loaded": False, "new_fit": False,
         "installed_ffn_sha256": installed, "accepted_receipt": plan["accepted_receipt"],
+        "source_binding_policy": plan.get("source_binding_policy"),
         "accepted_resume_context": context, "capture_plan": {"path": str(plan_path), "sha256": expected_plan_sha},
         "source_identity_scope": "accepted config/index identity plus hash-verified verbatim body and folded FFNs; no full parent shard rehash",
         "code_sha256": {str(p): sha for p, (_stat, sha) in pins.records.items() if p.suffix == ".py"},

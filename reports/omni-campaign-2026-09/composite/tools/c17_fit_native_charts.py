@@ -22,6 +22,7 @@ import c10_union_install as installer
 import c17_capture_host as host
 import c17_capture_k3 as k3
 import c17_chart_fit as legacy
+import c17_source_binding as source_binding
 
 SCHEMA = "neural-forge.c17-native-chart-candidate.v1"
 PLAN_SCHEMA = "neural-forge.c17-native-chart-plan.v1"
@@ -42,7 +43,8 @@ def original_vectors(rows: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
 
 
 def read_capture(ref, family: str, layer: int, pins: k3.Pins, vectors: dict[str, torch.Tensor],
-                 evidence_sha: str, boundary_sha: str, fixture: bool) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
+                 evidence_sha: str, boundary_sha: str, fixture: bool,
+                 source_binding_policy: str | None = None) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
     rec = pins.json(ref)
     require(rec.get("schema") == (host.SCHEMA if family == "host" else k3.SCHEMA), "wrong native capture schema")
     require(rec.get("fixture", False) is fixture and rec.get("gradients_or_training") is False,
@@ -56,6 +58,9 @@ def read_capture(ref, family: str, layer: int, pins: k3.Pins, vectors: dict[str,
         require(rec.get("consumed_tensor_hashes_verified") is True and rec.get("checkpoint_stat_stable") is True,
                 "host capture tensor/source verification missing")
     else:
+        if source_binding_policy is not None:
+            require(rec.get("source_binding_policy") == source_binding_policy,
+                    "K3 capture policy differs from pinned chart plan")
         require(rec.get("stream") == "folded" and rec.get("accepted_prefix_replay_exact") is True and
                 rec.get("teacher_reference_verified") is True and rec.get("teacher_forward_replayed") is False and
                 rec.get("parent_experts_loaded") is False and rec.get("new_fit") is False and
@@ -234,6 +239,8 @@ def endpoint(ref, family, layer, boundary):
 def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Path | None = None):
     pins = k3.Pins()
     plan = pins.json({"path": str(plan_path), "sha256": plan_sha})
+    require(plan.get("source_binding_policy") in (None, source_binding.OWNER_DIAGNOSTIC_POLICY),
+            "unknown source binding policy")
     require(plan.get("schema") == PLAN_SCHEMA and not out.exists(), "plan schema invalid or output is not fresh")
     fixture = synthetic_fixture_root is not None
     require(plan.get("fixture") is fixture, "explicit fixture/production mode mismatch")
@@ -246,15 +253,21 @@ def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Pa
     hc, hp = read_capture(plan["host_capture"], "host", layer, pins, vectors,
             plan["evidence"]["sha256"], plan["boundary_map"]["sha256"], fixture)
     imported = pins.json(plan["host_import_receipt"])
-    require(imported.get("schema") == "chimera_omni.import.qwen35.v1" and
-            (hc.get("host_receipt") or {}).get("sha256") == plan["host_import_receipt"]["sha256"],
+    require((hc.get("host_receipt") or {}).get("sha256") == plan["host_import_receipt"]["sha256"],
             "host source gate must be the actual pinned native import, not a preflight")
-    checkpoint = imported.get("checkpoint", {})
+    policy = plan.get("source_binding_policy")
+    try:
+        host_binding = source_binding.host_checkpoint_binding(imported, source_binding_policy=policy,
+                           metadata_refs=plan.get("host_native_metadata"))
+    except ValueError as error:
+        raise Refusal(str(error)) from error
+    if host_binding["receipt_kind"] == source_binding.S3_BUNDLE_SCHEMA:
+        for ref in plan["host_native_metadata"].values():
+            pins.ref(ref)
+    checkpoint = host_binding["checkpoint"]
     for key in ("config_sha256", "index_sha256"):
         require(isinstance(hc.get(key), str) and bool(host.SHA.fullmatch(hc[key])) and checkpoint.get(key) == hc[key],
                 "host import/capture checkpoint identity mismatch")
-    require(imported.get("output_gate_waiver") is None and checkpoint.get("directory_shard_files_match_index") is True,
-            "host native import has an unverified output gate or unmatched shard set")
     ks, source_records = [], []
     provenance = {"schema": installer.NATIVE_CHART_SCHEMA, "fixture": fixture,
                   "maps": {"C_out": {"domain": [], "codomain": []}, "C_in": {"domain": [], "codomain": []}}}
@@ -263,12 +276,14 @@ def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Pa
     contexts = []
     for item, source_layer in zip(plan["k3_captures"], layers):
         kc, kp = read_capture(item["capture"], "k3", source_layer, pins, vectors,
-                plan["evidence"]["sha256"], plan["boundary_map"]["sha256"], fixture)
+                plan["evidence"]["sha256"], plan["boundary_map"]["sha256"], fixture,
+                source_binding_policy=policy)
         accepted = pins.json(item["accepted_receipt"])
         require(accepted.get("schema") == k3.native.RECEIPT_SCHEMA and
                 (kc.get("accepted_receipt") or {}).get("sha256") == item["accepted_receipt"]["sha256"] and
                 kc.get("accepted_resume_context") == accepted.get("resume_context") and
-                k3.acceptance(accepted.get("layers", {}).get(str(source_layer), {}).get("acceptance", {})) and
+                k3.acceptance(accepted.get("layers", {}).get(str(source_layer), {}).get("acceptance", {}),
+                              source_binding_policy=policy, layer=source_layer, rung=accepted["arguments"]["rung"]) and
                 accepted["layers"][str(source_layer)]["ffn"]["sha256"] == kc["installed_ffn_sha256"][str(source_layer)],
                 "K3 accepted source gate/FFN identity mismatch")
         window = kc.get("final_window_verification")
@@ -303,7 +318,7 @@ def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Pa
     overhead = 8 * (5 * max(h, p)**2 + 5 * h * p + chunk * (h + p) * 8)
     require(overhead <= host.integer(plan["max_working_bytes"], "max_working_bytes", minimum=1),
             "projected numerical workspace exceeds explicit budget (capture mappings excluded)")
-    code = [Path(__file__), Path(host.__file__), Path(k3.__file__), Path(installer.__file__),
+    code = [Path(__file__), Path(host.__file__), Path(k3.__file__), Path(installer.__file__), Path(source_binding.__file__),
             Path(legacy.__file__), Path(legacy.linalg.__file__)]
     for path in code:
         pins.file(path.resolve(), host.digest(path))
@@ -326,6 +341,7 @@ def run(plan_path: Path, plan_sha: str, out: Path, *, synthetic_fixture_root: Pa
         "status": "candidate_only", "production_install_eligible": False, "gradients_or_training": False,
         "host_index_sha256": hc["index_sha256"], "host_config_sha256": hc["config_sha256"],
         "host_import_receipt": plan["host_import_receipt"], "host_capture": plan["host_capture"], "k3_sources": source_records,
+        "source_binding_policy": policy, "host_checkpoint_binding": host_binding,
         "evidence_sha256": plan["evidence"]["sha256"], "boundary_sha256": plan["boundary_map"]["sha256"],
         "plan": {"path": str(plan_path), "sha256": plan_sha}, "arms": {"ridge": arm},
         "code_sha256": {str(path.resolve()): host.digest(path) for path in code},
