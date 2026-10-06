@@ -29,6 +29,8 @@ def dump(path, body):
 
 
 def bundle(tmp_path):
+    tmp_path = tmp_path / "source"
+    tmp_path.mkdir()
     torch.manual_seed(92)
     block, width, inner, head = 0, 8, 32, 2
     frozen = {k: (torch.randn(shape, dtype=torch.float32) * .15).to(torch.float8_e4m3fn)
@@ -89,7 +91,7 @@ def test_fixture_float_identities_do_not_depend_on_global_default_dtype(tmp_path
         data = tool.load_captures([path], fixture=True)
         assert len(data["forwards"]) == 2
         for record in receipt["captures"]:
-            state = tool.load_file(str(tmp_path / record["file"]))
+            state = tool.load_file(str(path.parent / record["file"]))
             for name in ("sigma", "source_ids", "rotation_generated"):
                 assert state[name].dtype == torch.float32
             assert float(state["sigma"][0]) == record["sigma"]
@@ -268,10 +270,10 @@ def test_existing_output_and_original_sources_are_preserved(tmp_path):
     out.mkdir()
     old = out / "old.txt"
     old.write_text("preserve")
-    source_sha = tool.file_sha(tmp_path / "frozen.safetensors")
+    source_sha = tool.file_sha(path.parent / "frozen.safetensors")
     with pytest.raises(ValueError, match="new directory"):
         tool.convert([path], policy_path, tool.file_sha(policy_path), out, fixture=True)
-    assert old.read_text() == "preserve" and tool.file_sha(tmp_path / "frozen.safetensors") == source_sha
+    assert old.read_text() == "preserve" and tool.file_sha(path.parent / "frozen.safetensors") == source_sha
 
 
 def test_output_failure_preserves_partial_artifacts_with_incomplete_receipt(tmp_path, monkeypatch):

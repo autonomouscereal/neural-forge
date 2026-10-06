@@ -42,7 +42,7 @@ def prepared(tmp_path):
         # tensors back to that same path can truncate/zero the backing storage.
         # This fixture deliberately rewrites files; production always writes new
         # paths. Own every tensor before the fixture's same-path rewrite.
-        state = {k: v.clone() for k, v in tool.fold.load_file(str(tmp_path / record["file"])).items()}
+        state = {k: v.clone() for k, v in tool.fold.load_file(str(path.parent / record["file"])).items()}
         ni, nt = record["image_tokens"], record["text_tokens"]
         row, col = torch.meshgrid(torch.arange(4), torch.arange(6), indexing="ij")
         grid = torch.stack((torch.zeros(ni, dtype=torch.int64), row.flatten(), col.flatten()), 1)
@@ -54,7 +54,7 @@ def prepared(tmp_path):
         record["text_mask_present"] = True
         actual = native.forward(state, record)
         state.update({k: actual[k] for k in tool.TAPS})
-        record.update(tool.fold.write_tensors(tmp_path / record["file"], state))
+        record.update(tool.fold.write_tensors(path.parent / record["file"], state))
     dump(path, receipt)
     tool.fold.convert([path], policy_path, tool.fold.file_sha(policy_path), tmp_path / "fold", fixture=True)
     data = tool.fold.load_captures([path], fixture=True)
@@ -90,7 +90,7 @@ def test_prepared_owns_loaded_tensors_before_rewrite_and_preserves_exact_sigma(t
     path, _, _, _ = prepared(tmp_path)
     assert rewrites == ["fixture0.safetensors", "fixture1.safetensors"]
     for record in json.loads(path.read_text())["captures"]:
-        saved = original_load(str(tmp_path / record["file"]))
+        saved = original_load(str(path.parent / record["file"]))
         assert saved["sigma"].dtype == torch.float32
         assert float(saved["sigma"][0]) == record["sigma"]
 

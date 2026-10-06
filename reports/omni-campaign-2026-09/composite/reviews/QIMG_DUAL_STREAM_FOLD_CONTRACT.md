@@ -133,11 +133,27 @@ FP8 would change the fitted result and is not supported. A native QIMG dual-stre
 runtime with these actual widths, full joint replay, paired host/source charts,
 and the eventual image interface is still required. Generic `adaln6` is not used.
 
-Numerical rejection prints diagnostics and writes no candidate. Existing outputs
-are never reused or overwritten. If a write/reread fails after a new output
-directory was created, available files remain and its receipt says
-`incomplete_output`; no cleanup is attempted. Outputs are reread and checked against
-all stored tensor hashes before a measured-candidate receipt is finalized.
+A numerical, source-replay or stored-update refusal writes an exclusive JSON
+receipt beside the requested output directory, then prints the same diagnostics
+and exits with code 2. For `--out /run-output/fold`, the default refusal file is
+`/run-output/fold.rejected.json`; `--rejection-receipt <new file>` can name another
+separate destination. The receipt preserves the original status and measured
+scores, caller policy/digest, capture/frozen-source identities and implementation
+digests, with `candidate_written: false`. It is flushed to disk before stdout is
+used, so lost container logs do not erase the refusal. No candidate directory is
+created. Other validation/runtime exceptions retain their existing behavior and
+are not classified as numerical refusals.
+
+Both destinations must be new and separate, outside capture and implementation
+source directories, and must not cover or replace input files. These checks run
+before large capture loading/fitting and again before writing. Existing files,
+directories and dangling symlinks are refused; no outputs are reused, overwritten
+or cleaned up. Success and `--validate-only` create no refusal file or its parents.
+If a write/reread fails after a new candidate directory was created, available
+files remain and its receipt says `incomplete_output`; no cleanup is attempted.
+Outputs are reread and checked against all stored tensor hashes before a
+measured-candidate receipt is finalized. This diagnostic correction changes no
+selection, refit, runtime arithmetic or preregistered numerical threshold.
 
 ## Validation scope
 
