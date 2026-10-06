@@ -70,6 +70,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -272,21 +273,139 @@ def resolve_loader_class(config: dict[str, Any], requested: str | None) -> Any:
     return loader
 
 
+PLACEMENT_STRATEGIES = ("auto", "balanced", "balanced_low_0", "sequential")
+
+
+def available_host_memory_bytes() -> int:
+    """Available physical RAM, without treating total RAM as available."""
+    if os.name == "nt":
+        import ctypes
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong)] + [
+                (name, ctypes.c_ulonglong) for name in (
+                    "total_physical", "available_physical", "total_pagefile",
+                    "available_pagefile", "total_virtual", "available_virtual", "extended")
+            ]
+        status = MemoryStatus()
+        status.length = ctypes.sizeof(status)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise CalibrationError("could not measure available host RAM")
+        return int(status.available_physical)
+    try:
+        return int(os.sysconf("SC_AVPHYS_PAGES")) * int(os.sysconf("SC_PAGE_SIZE"))
+    except (OSError, ValueError, AttributeError) as exc:
+        raise CalibrationError("could not measure available host RAM") from exc
+
+
+def make_load_plan(
+    device_map: str | None, max_memory: list[str] | None, *, device: str,
+    tiny_random: bool = False,
+) -> dict[str, Any] | None:
+    """Validate explicit budgets before tokenizer or checkpoint loading.
+
+    CUDA indices are relative to CUDA_VISIBLE_DEVICES. Every visible GPU needs
+    a limit, including 0MiB for a GPU which must not be used. CPU is mandatory;
+    cpu=0GiB prevents automatic spill. Limits reserve nothing and describe
+    weight placement, not the KV cache or activation footprint.
+    """
+    if device_map is None:
+        if max_memory is not None:
+            raise CalibrationError("--max-memory requires --device-map")
+        return None
+    if device_map not in PLACEMENT_STRATEGIES or not max_memory or tiny_random:
+        raise CalibrationError("explicit stock --device-map requires budgets and a real checkpoint")
+    limits: dict[int | str, int] = {}
+    for entry in max_memory:
+        match = re.fullmatch(r"(cpu|0|[1-9][0-9]*)=(0|[1-9][0-9]*)(MiB|GiB)", entry)
+        if match is None:
+            raise CalibrationError(f"invalid --max-memory {entry!r}; use DEVICE=integerMiB/GiB")
+        key: int | str = "cpu" if match[1] == "cpu" else int(match[1])
+        if key in limits:
+            raise CalibrationError(f"duplicate --max-memory device {key!r}")
+        limits[key] = int(match[2]) * (1 << (20 if match[3] == "MiB" else 30))
+    import torch
+    visible = set(range(torch.cuda.device_count()))
+    if set(limits) != visible | {"cpu"}:
+        raise CalibrationError("--max-memory must name cpu and every visible CUDA index exactly once")
+    target = "cpu" if device == "cpu" else (
+        int(device.split(":")[1]) if re.fullmatch(r"cuda:(0|[1-9][0-9]*)", device) else None
+    )
+    if target not in limits or limits[target] == 0:
+        raise CalibrationError("--device must name a device with a positive explicit memory limit")
+    available: dict[int | str, int] = {"cpu": available_host_memory_bytes()}
+    for index in sorted(visible):
+        if limits[index]:  # Do not initialize a context on excluded/busy GPUs.
+            available[index] = int(torch.cuda.mem_get_info(index)[0])
+    for key, measured in available.items():
+        if limits[key] > measured:
+            raise CalibrationError(f"--max-memory {key} budget {limits[key]} exceeds currently free {measured} bytes")
+    return {"device_map": device_map, "max_memory": limits}
+
+
+def mapped_placement_report(model: Any, limits: dict[int | str, int]) -> dict[str, Any]:
+    """Report actual stock placement; refuse disk or incomplete meta weights."""
+    def canonical(value: Any) -> str:
+        if isinstance(value, bool):
+            raise CalibrationError("boolean is not a device")
+        value = f"cuda:{value}" if isinstance(value, int) else str(value)
+        key: int | str = "cpu" if value == "cpu" else (
+            int(value.split(":")[1]) if re.fullmatch(r"cuda:(0|[1-9][0-9]*)", value) else "invalid"
+        )
+        if key not in limits or limits[key] <= 0:
+            raise CalibrationError(f"loaded placement {value!r} is outside positive explicit budgets")
+        return value
+    actual = getattr(model, "hf_device_map", None)
+    map_source = "hf_device_map"
+    if not isinstance(actual, dict) or not actual:
+        # Transformers 5.12.1 does not retain hf_device_map for a CPU-only
+        # from_pretrained result. Resident parameter devices are direct
+        # measurements; do not reconstruct an intended/inferred map instead.
+        actual = {name: parameter.device for name, parameter in model.named_parameters()} if hasattr(model, "named_parameters") else {}
+        map_source = "resident parameter devices"
+        if not actual:
+            raise CalibrationError("stock loader returned no measurable actual placement")
+    placement = {str(name): canonical(target) for name, target in actual.items()}
+    # Meta parameters in mixed CPU/GPU offload require a different execution
+    # surface. This option deliberately supports resident weights only.
+    dtypes: dict[str, int] = {}
+    for parameter in model.parameters():
+        canonical(parameter.device)
+        if parameter.is_floating_point():
+            name = str(parameter.dtype)
+            dtypes[name] = dtypes.get(name, 0) + int(parameter.numel())
+    embeddings = model.get_input_embeddings()
+    if embeddings is None or not hasattr(embeddings, "weight"):
+        raise CalibrationError("cannot discover the loaded input embedding device")
+    input_device = canonical(embeddings.weight.device)
+    return {"device_map": placement, "device_map_source": map_source, "input_device": input_device,
+            "floating_parameter_dtypes": dtypes}
+
+
 def load_model(
     model_dir: Path,
     *,
     dtype: Any,
     device: str,
     requested_class: str | None,
+    load_plan: dict[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     config = json.loads((Path(model_dir) / "config.json").read_text(encoding="utf-8"))
     loader = resolve_loader_class(config, requested_class)
     log(f"loading {model_dir} as {loader.__name__} in {dtype}")
     started = time.monotonic()
-    model = loader.from_pretrained(
-        str(model_dir), dtype=dtype, trust_remote_code=False
-    )
-    model = model.to(device).eval()
+    options = {"dtype": dtype, "trust_remote_code": False}
+    if load_plan is not None:
+        options.update(load_plan)
+    model = loader.from_pretrained(str(model_dir), **options)
+    placement = {}
+    if load_plan is None:
+        model = model.to(device)
+    else:
+        placement = mapped_placement_report(model, load_plan["max_memory"])
+        placement["device_map_strategy"] = load_plan["device_map"]
+        placement["max_memory_bytes"] = {str(k): v for k, v in load_plan["max_memory"].items()}
+        placement["requested_dtype"] = str(dtype)
+    model = model.eval()
     live = int(sum(p.numel() for p in model.parameters()))
     import transformers
 
@@ -302,6 +421,7 @@ def load_model(
         #: loaded module knows which of them is Triton and which is torch.
         "linear_attention_kernels": kernel_path_report(model),
         "load_wall_time_seconds": round(time.monotonic() - started, 3),
+        **placement,
     }
     if export["loaded_class"] != export["declared_class"]:
         raise CalibrationError(
@@ -467,6 +587,10 @@ def run(args: argparse.Namespace) -> int:
 
     torch.set_grad_enabled(False)
     started = time.monotonic()
+    load_plan = make_load_plan(
+        getattr(args, "device_map", None), getattr(args, "max_memory", None),
+        device=str(args.device), tiny_random=bool(args.tiny_random),
+    )
 
     architecture = compute_architecture(str(args.device))
     if args.require_compute_architecture and not architecture.startswith(
@@ -532,6 +656,7 @@ def run(args: argparse.Namespace) -> int:
             dtype=dtype,
             device=str(args.device),
             requested_class=args.loader_class,
+            load_plan=load_plan,
         )
         digest, files = directory_digest(model_dir)
         provenance = {
@@ -542,6 +667,18 @@ def run(args: argparse.Namespace) -> int:
         }
         log(f"directory digest {digest[:16]} over {len(files)} file(s)")
 
+    decode_device = str(export.get("input_device", args.device))
+    if load_plan is not None:
+        architectures = {target: compute_architecture(target)
+                         for target in sorted(set(export["device_map"].values()))}
+        export["device_compute_architectures"] = architectures
+        architecture = compute_architecture(decode_device)
+        if args.require_compute_architecture and any(
+            not value.startswith(str(args.require_compute_architecture))
+            for value in architectures.values()
+        ):
+            raise CalibrationError("actual mapped devices disagree with --require-compute-architecture")
+        log(f"mapped input embeddings -> {decode_device}; devices {architectures}")
     stops = set(extra_ids) | ({int(eos_id)} if eos_id is not None else set())
     #: Answer the thinking question ONCE, on a real case, before any decoding,
     #: so the dossier records what the template actually did rather than what
@@ -576,7 +713,7 @@ def run(args: argparse.Namespace) -> int:
             model,
             tokenizer,
             rows[0],
-            device=str(args.device),
+            device=decode_device,
             stop_ids=stops,
             thinking=str(args.thinking),
         )
@@ -603,7 +740,7 @@ def run(args: argparse.Namespace) -> int:
     probe_payload = json.loads(Path(args.probe_prompts).read_text(encoding="utf-8"))
     probe_digest = file_sha256(Path(args.probe_prompts))
     floor = emit_zero_floor(
-        model, tokenizer, probe_payload["prompts"], device=str(args.device)
+        model, tokenizer, probe_payload["prompts"], device=decode_device
     )
     log(
         f"emit-zero floor: passed={floor['passed']} "
@@ -616,7 +753,7 @@ def run(args: argparse.Namespace) -> int:
         tokenizer,
         rows,
         cap=int(args.maximum_new_tokens),
-        device=str(args.device),
+        device=decode_device,
         eos_id=eos_id,
         label=str(args.label),
         extra_eos_ids=extra_ids,
@@ -634,7 +771,7 @@ def run(args: argparse.Namespace) -> int:
             tokenizer,
             smoke_payload["prompts"],
             cap=int(args.smoke_maximum_new_tokens),
-            device=str(args.device),
+            device=decode_device,
             eos_id=eos_id,
             extra_eos_ids=extra_ids,
             thinking=str(args.thinking),
@@ -679,7 +816,7 @@ def run(args: argparse.Namespace) -> int:
             "maximum_new_tokens": int(args.maximum_new_tokens),
             "decoding": "greedy, argmax, no sampling",
             "decode_path": "manual argmax loop with use_cache",
-            "device": str(args.device),
+            "device": decode_device,
             "compute_architecture": architecture,
             "dtype": str(args.dtype),
             "eos_token_id": None if eos_id is None else int(eos_id),
@@ -768,6 +905,14 @@ def run(args: argparse.Namespace) -> int:
         "chat_template_thinking": thinking["requested"],
         "chat_template_thinking_took_effect": thinking["took_effect"],
     }
+    if load_plan is not None:
+        body["lane_digest_validity"]["mapped_placement"] = {
+            "device_map": export["device_map"],
+            "device_map_source": export["device_map_source"],
+            "input_device": decode_device,
+            "device_compute_architectures": export["device_compute_architectures"],
+            "floating_parameter_dtypes": export["floating_parameter_dtypes"],
+        }
     body["dossier_sha256"] = canonical_sha256(body)
     digest = write_canonical(Path(args.out), body)
     log(f"dossier {body['dossier_sha256'][:16]} -> {args.out}")
@@ -844,6 +989,10 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--skip-smoke", action="store_true")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--device-map", choices=PLACEMENT_STRATEGIES,
+                    help="optional direct stock-HF sharded placement; requires explicit --max-memory")
+    ap.add_argument("--max-memory", action="append",
+                    help="repeat DEVICE=integerMiB/GiB for cpu and each visible CUDA index; 0MiB excludes a device")
     ap.add_argument("--require-compute-architecture")
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--maximum-new-tokens", type=int, default=1024)
