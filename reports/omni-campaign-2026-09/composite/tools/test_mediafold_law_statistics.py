@@ -1,5 +1,6 @@
 """CPU parity with the pre-hoist ladder and direct matrix-operation counts."""
 from pathlib import Path
+import math
 import sys
 
 import pytest
@@ -42,11 +43,32 @@ def legacy_prior(design, targets, prior, ridge_rel=1e-6):
     return weight, {"ridge_lambda": ridge_lambda, "update_scale": update}
 
 
+def legacy_scores(prediction, target):
+    """Retained original scoring expressions, independent of the cached scorer."""
+    predicted = prediction.detach().to(torch.float64)
+    wanted = target.detach().to(torch.float64)
+    if predicted.shape != wanted.shape:
+        raise ValueError(f"score shape mismatch: {tuple(predicted.shape)} vs {tuple(wanted.shape)}")
+    residual = predicted - wanted
+    denominator = wanted.norm().clamp_min(1.0e-30)
+    rel_l2 = float((residual.norm() / denominator).item())
+    numerator = (predicted * wanted).sum(dim=-1)
+    scale = predicted.norm(dim=-1).clamp_min(1.0e-30) * wanted.norm(dim=-1).clamp_min(1.0e-30)
+    cosine = numerator / scale
+    order = torch.sort(cosine).values
+    index = max(0, min(order.numel() - 1, int(math.floor(0.05 * order.numel()))))
+    total_variance = (wanted - wanted.mean(dim=0, keepdim=True)).pow(2).sum()
+    r_squared = float((1.0 - residual.pow(2).sum() / total_variance.clamp_min(1.0e-30)).item())
+    return {"rel_l2": rel_l2, "cos": float(cosine.mean().item()),
+            "cos_p05": float(order[index].item()), "r2": r_squared,
+            "rows": int(wanted.shape[0]), "width": int(wanted.shape[1])}
+
+
 def legacy_law(design, targets, prior, ladder=LEGACY_LADDER):
     best_weight, best_notes, best_error, trail = None, {}, float("inf"), []
     for rung in ladder:
         weight, notes = legacy_prior(design, targets, prior, float(rung))
-        scores = tool.write_scores(design.detach().to(torch.float64).cpu() @ weight.T,
+        scores = legacy_scores(design.detach().to(torch.float64).cpu() @ weight.T,
                                    targets.detach().to(torch.float64).cpu())
         vetoed = notes["update_scale"] > 1.0
         trail.append({"ridge_rel": float(rung), "rel_l2": scores["rel_l2"],
