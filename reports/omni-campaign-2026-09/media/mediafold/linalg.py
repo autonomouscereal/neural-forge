@@ -29,6 +29,43 @@ IDENTITY_TOLERANCE = 5.0e-2
 # --------------------------------------------------------------------------------------
 
 
+def _score_target_statistics(
+    wanted: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Exact fixed-target reductions; retain only two scalars and row norms."""
+
+    denominator = wanted.norm().clamp_min(1.0e-30)
+    row_norm = wanted.norm(dim=-1).clamp_min(1.0e-30)
+    total_variance = (wanted - wanted.mean(dim=0, keepdim=True)).pow(2).sum()
+    return denominator, row_norm, total_variance
+
+
+def _write_scores_from_statistics(
+    predicted: torch.Tensor,
+    wanted: torch.Tensor,
+    statistics: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+) -> dict[str, float]:
+    """Original prediction-dependent scoring with normalized inputs and target stats."""
+
+    denominator, target_row_norm, total_variance = statistics
+    residual = predicted - wanted
+    rel_l2 = float((residual.norm() / denominator).item())
+    numerator = (predicted * wanted).sum(dim=-1)
+    scale = predicted.norm(dim=-1).clamp_min(1.0e-30) * target_row_norm
+    cosine = numerator / scale
+    order = torch.sort(cosine).values
+    index = max(0, min(order.numel() - 1, int(math.floor(0.05 * order.numel()))))
+    r_squared = float((1.0 - residual.pow(2).sum() / total_variance.clamp_min(1.0e-30)).item())
+    return {
+        "rel_l2": rel_l2,
+        "cos": float(cosine.mean().item()),
+        "cos_p05": float(order[index].item()),
+        "r2": r_squared,
+        "rows": int(wanted.shape[0]),
+        "width": int(wanted.shape[1]),
+    }
+
+
 def write_scores(prediction: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
     """relL2 / mean cosine / 5th-percentile cosine / R^2 over rows.
 
@@ -40,24 +77,7 @@ def write_scores(prediction: torch.Tensor, target: torch.Tensor) -> dict[str, fl
     wanted = target.detach().to(torch.float64)
     if predicted.shape != wanted.shape:
         raise ValueError(f"score shape mismatch: {tuple(predicted.shape)} vs {tuple(wanted.shape)}")
-    residual = predicted - wanted
-    denominator = wanted.norm().clamp_min(1.0e-30)
-    rel_l2 = float((residual.norm() / denominator).item())
-    numerator = (predicted * wanted).sum(dim=-1)
-    scale = predicted.norm(dim=-1).clamp_min(1.0e-30) * wanted.norm(dim=-1).clamp_min(1.0e-30)
-    cosine = numerator / scale
-    order = torch.sort(cosine).values
-    index = max(0, min(order.numel() - 1, int(math.floor(0.05 * order.numel()))))
-    total_variance = (wanted - wanted.mean(dim=0, keepdim=True)).pow(2).sum()
-    r_squared = float((1.0 - residual.pow(2).sum() / total_variance.clamp_min(1.0e-30)).item())
-    return {
-        "rel_l2": rel_l2,
-        "cos": float(cosine.mean().item()),
-        "cos_p05": float(order[index].item()),
-        "r2": r_squared,
-        "rows": int(wanted.shape[0]),
-        "width": int(wanted.shape[1]),
-    }
+    return _write_scores_from_statistics(predicted, wanted, _score_target_statistics(wanted))
 
 
 def psnr(prediction: torch.Tensor, target: torch.Tensor, *, data_range: float | None = None) -> float:
@@ -362,8 +382,9 @@ def law_abiding_solve(
 
     Mirrors ``mx45_build.law_abiding_solve``: rungs whose solution moves further than
     the prior's own norm are vetoed, and among the survivors the best fit wins.
-    Fixed Gram/cross statistics are computed once; every rung retains its original
-    solve, score, ranking and veto arithmetic. An empty ladder still keeps prior.
+    Fixed Gram/cross and target score statistics are computed once; every rung
+    retains its original solve, score, ranking and veto arithmetic. An empty
+    ladder still keeps prior.
     """
 
     best_weight: torch.Tensor | None = None
@@ -371,6 +392,7 @@ def law_abiding_solve(
     best_error = float("inf")
     trail: list[dict[str, Any]] = []
     statistics: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+    score_statistics: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
     for rung in ladder:
         if statistics is None:
             # Inputs and their products are identical for every lambda. Keep
@@ -383,9 +405,12 @@ def law_abiding_solve(
             gram = matrix.transpose(0, 1) @ matrix
             cross = matrix.transpose(0, 1) @ answer
             statistics = (gram, cross, anchor)
+            # Release full target-variance temporaries before prediction/residual
+            # allocation, then reuse the exact reductions for every lambda.
+            score_statistics = _score_target_statistics(answer)
         weight, notes = _prior_anchored_from_statistics(*statistics, ridge_rel=float(rung))
         prediction = matrix @ weight.transpose(0, 1)
-        scores = write_scores(prediction, answer)
+        scores = _write_scores_from_statistics(prediction, answer, score_statistics)
         vetoed = notes["update_scale"] > 1.0
         trail.append(
             {
