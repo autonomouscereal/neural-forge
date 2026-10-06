@@ -26,6 +26,7 @@ import c16_qimg_capture as single
 import c16_qimg_fold as original
 import c16_qimg_development_refold as development
 import c16_qimg_joint_replay as joint
+import c16_qimg_atomic_publication as publication
 
 SCHEMA = "neural_forge.qimg_folded_stack.v1"
 DEPTH = 60
@@ -442,11 +443,11 @@ def consolidate(out,index,blocks):
                 if not chunk:raise ValueError("truncated assembled state")
                 digest.update(chunk);remaining-=len(chunk)
             if digest.hexdigest()!=hashes[name]:raise ValueError("assembled physical tensor readback differs")
-    os.link(stage,out)
+    published=publication.publish_noreplace(stage,out)
     return {"file":out.name,"path":str(out.resolve()),"file_bytes":out.stat().st_size,"file_sha256":single.file_sha(out),
         "tensor_sha256":hashes,"shapes":shapes,"dtypes":dtypes,"tensor_sha256_schema":TENSOR_HASH_SCHEMA,
         "tensor_count":1933,"parameters":sum(math.prod(s) for s in shapes.values()),"storage_bytes":offset,
-        "shared_timestep_copies_in_component_files":60,"shared_timestep_instances_in_standalone_state":1,
+        "publication":published,"shared_timestep_copies_in_component_files":60,"shared_timestep_instances_in_standalone_state":1,
         "readback":"full streamed dtype/shape/raw tensor identity hashes verified before exclusive publication"}
 
 
@@ -469,11 +470,12 @@ def fold_stack(*,capture_manifest,capture_sha256,policy_path,policy_sha256,out,b
     policy_ref={"path":str(policy_path),"sha256":policy_sha256}
     implementation={**development.implementation_sha256(),Path(__file__).name:single.file_sha(Path(__file__)),
                     "c16_qimg_stack_capture.py":single.file_sha(Path(capture.__file__)),
-                    "c16_qimg_joint_replay.py":single.file_sha(Path(joint.__file__))}
+                    "c16_qimg_joint_replay.py":single.file_sha(Path(joint.__file__)),
+                    "c16_qimg_atomic_publication.py":single.file_sha(Path(publication.__file__))}
     protected=[*index.roots,policy_path.parent,Path(__file__).resolve().parent]
     if any(out.resolve()==p or out.resolve().is_relative_to(p)or p.is_relative_to(out.resolve())for p in protected):
         raise ValueError("fold output overlaps source/capture/policy/code roots")
-    base={"schema":SCHEMA,"fixture":_fixture,"status":"partial","stack_capture":{"path":str(index.path),"sha256":index.sha256},
+    base={"schema":SCHEMA,"publication_backend":publication.policy(),"fixture":_fixture,"status":"partial","stack_capture":{"path":str(index.path),"sha256":index.sha256},
         "parent_header_sha256":index.request["source"]["header_sha256"],"global_source":index.body["global_source"],
         "policy":policy_ref,"recipe_id":development.RECIPE_ID,"owner_policy":original.current_owner_policy(),
         "implementation_sha256":implementation,"accepted":False,"capability_accepted":False,
@@ -517,7 +519,8 @@ def fold_stack(*,capture_manifest,capture_sha256,policy_path,policy_sha256,out,b
         if original.load_policy(policy_path,policy_sha256)!=policy:raise ValueError("policy changed during fold")
         current_implementation={**development.implementation_sha256(),Path(__file__).name:single.file_sha(Path(__file__)),
                     "c16_qimg_stack_capture.py":single.file_sha(Path(capture.__file__)),
-                    "c16_qimg_joint_replay.py":single.file_sha(Path(joint.__file__))}
+                    "c16_qimg_joint_replay.py":single.file_sha(Path(joint.__file__)),
+                    "c16_qimg_atomic_publication.py":single.file_sha(Path(publication.__file__))}
         if current_implementation!=implementation:
             raise ValueError("fitter/helper source changed during fold")
         standalone=None

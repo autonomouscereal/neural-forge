@@ -24,6 +24,7 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file
 import c16_qimg_capture as single
+import c16_qimg_atomic_publication as publication
 
 SCHEMA = "neural_forge.qimg_stack_capture.v1"
 FORWARD_SCHEMA = "neural_forge.qimg_stack_source_forward.v1"
@@ -66,7 +67,7 @@ def _json_exclusive(path, body):
     stage = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".pending")
     with stage.open("xb") as handle:
         handle.write(raw); handle.flush(); os.fsync(handle.fileno())
-    os.link(stage, path)  # only complete canonical bytes; never overwrite
+    publication.publish_noreplace(stage, path)  # complete bytes; no overwrite
     return {"path": str(path.resolve()), "sha256": hashlib.sha256(raw).hexdigest()}
 
 
@@ -87,7 +88,8 @@ def _tensors_exclusive(path, tensors):
     stage = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".pending")
     record = single.write_tensors(stage, tensors)
     with stage.open("rb") as handle: os.fsync(handle.fileno())
-    os.link(stage, path)
+    published=publication.publish_noreplace(stage, path)
+    record["publication"]=published
     record.update(file=path.name, path=str(path.resolve()), file_bytes=path.stat().st_size)
     _verify_tensors(record, [path.parent.resolve()])
     return record
@@ -187,7 +189,7 @@ def capture_stack_forward(dit, blocks, x, sigma, context, mask, token_ids, valid
 
 def _implementation():
     return {Path(module.__file__).name: single.file_sha(Path(module.__file__)) for module in
-            (sys.modules[__name__], single, sys.modules["c16_qimg_preflight"])}
+            (sys.modules[__name__], single, sys.modules["c16_qimg_preflight"], publication)}
 
 
 def _stat(path):
@@ -353,7 +355,7 @@ def capture(*, weights, inputs, out, blocks, comfy_root, device="cuda:0", max_to
     free=shutil.disk_usage(probe).free
     if missing and free<estimate+(4<<30): raise ValueError("bounded capture estimate leaves less than4GiB; no cleanup")
     out.mkdir(parents=True,exist_ok=False)
-    body={"schema":SCHEMA,"fixture":False,"request":request,"request_sha256":_digest(request),"resume_from":resume,
+    body={"schema":SCHEMA,"publication_backend":publication.policy(),"fixture":False,"request":request,"request_sha256":_digest(request),"resume_from":resume,
           "status":"partial","runtime":None,"frozen_sources":{},"global_source":None,"capability_accepted":False,"functional_validation_complete":False,
           "folded":False,"installed":False,"numerical_target_policy":"diagnostic only; no fidelity target controls capture",
           "estimated_output_upper_bound_bytes":estimate,"free_bytes_before":free,"started_at_utc":_now(),
