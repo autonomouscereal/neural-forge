@@ -889,8 +889,8 @@ def test_receipt_scores_are_measured_on_the_shipped_dtype(installed: dict, trunk
     for k in range(LAYERS):
         rec = installed["receipt"]["layers"][k]
         assert rec["scores_dtype"] == "float32" and rec["cast"]["down_cast_relL2"] == 0.0
-        assert abs(recompute(installed["out"], installed["receipt"], k) - rec["heldout_relL2"]) < 1e-6
-    # bf16 model: the scored weights are the CAST weights, and the cast delta is recorded
+        assert abs(recompute(installed["out"], installed["receipt"], k) - rec["coefficient_cast_fp32_heldout_relL2"]) < 1e-6
+    # bf16 model: preserve the coefficient-cast FP32 diagnostic; the headline uses native arithmetic
     out = work / "child_bf16"
     receipt = run(trunks, k3["dir"], k3["charts"], out, 10, ["--dtype", "bfloat16", "--dump-captures"])
     child = read_safetensors(out, verify=True)
@@ -899,7 +899,9 @@ def test_receipt_scores_are_measured_on_the_shipped_dtype(installed: dict, trunk
         rec = receipt["layers"][k]
         assert rec["scores_dtype"] == "bfloat16" and rec["cast"]["ffn_dtype"] == "bfloat16"
         assert rec["cast"]["down_cast_relL2"] > 0 and rec["cast"]["up_cast_relL2"] > 0
-        assert abs(recompute(out, receipt, k) - rec["heldout_relL2"]) < 1e-6
+        assert abs(recompute(out, receipt, k) - rec["coefficient_cast_fp32_heldout_relL2"]) < 1e-6
+        assert rec["heldout_relL2"] == rec["scores"]["held"]["union"]["relL2"]
+        assert rec["runtime_arithmetic"]["prediction_dtype"] == "bfloat16"
         assert rec["update_scale"] != rec["update_scale_fp32_solution"]
         assert rec["update_scale_fp32_solution"] == rec["ridge"]["update_scale"]
         assert isinstance(rec["update_scale_cast_exceeds_law"], bool)

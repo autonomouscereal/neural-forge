@@ -104,10 +104,12 @@ LAW's free solve wanted more than the prior (``ridge.veto_binding``) OR when the
 K3 term carries no energy on the held rows (``k3_rows_function_absent``) -- rows in
 name only.  The receipt says which, out loud, and counts the layers.
 
-Every receipt number is measured on the weights that are SHIPPED: the solution is
-cast to the trunk's FFN dtype first, then scored (``heldout_relL2``, energy,
-``update_scale``); the fp32 ladder numbers stay under ``ridge`` and the cast delta
-is recorded.
+The headline ``scores`` / ``heldout_relL2`` execute the native fused FeedForward
+in the shipped FFN dtype on captured rows. The former widened-coefficient FP32
+measurements remain under ``coefficient_cast_fp32_scores``. Targets and K3-term
+energy remain their FP32 fitting diagnostics; ``update_scale`` measures the cast
+coefficients, and the fp32 ladder numbers remain under ``ridge``. This is FFN
+arithmetic evidence, not full-model behavior or cross-device parity.
 
 STREAMED CAPTURE (default ``--engine streamed``).  The residual stream lives on the
 host in the model dtype, one row per evidence token; block k is built on
@@ -183,7 +185,7 @@ import torch
 import torch.nn.functional as F
 
 TOOL_NAME = "c10_union_install"
-TOOL_VERSION = "1.2.0"
+TOOL_VERSION = "1.3.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 LOCAL_CHIMERA_SRC = "C:/Users/cereal/Documents/ai training/chimera-omni/src"
@@ -215,6 +217,7 @@ import oc_seal  # noqa: E402
 import qf_corpus  # noqa: E402
 import qf_solve  # noqa: E402
 from k3_common import (  # noqa: E402
+    WriteScoreAccumulator,
     canonical_device,
     peak_rss_bytes,
     rms_norm,
@@ -1483,6 +1486,34 @@ def _shift_relL2(shift: torch.Tensor, rows: torch.Tensor, xtx: torch.Tensor, n: 
     return num / math.sqrt(energy)
 
 
+def build_runtime_ffn(cfg: ChimeraConfig, up: torch.Tensor, down: torch.Tensor,
+                      device: torch.device) -> FeedForward:
+    """Native fused-up/activation/down operators on the exact shipped coefficients.
+
+    Meta construction avoids random initialization, duplicate host weights and
+    changes to fitting RNG. The input is cast only when executing the module.
+    """
+    if up.dtype != down.dtype or up.dtype not in (torch.float32, torch.bfloat16, torch.float16):
+        raise SystemExit("native runtime scoring requires matching FP32/BF16/FP16 FFN weights")
+    if (up.ndim != 2 or down.ndim != 2 or up.shape[0] % 2
+            or down.shape[1] != up.shape[0] // 2 or down.shape[0] != up.shape[1]):
+        raise SystemExit("native runtime scoring received incompatible FFN shapes")
+    with torch.device("meta"):
+        native = FeedForward(cfg, hidden_size=up.shape[1], intermediate_size=up.shape[0] // 2,
+                             output_size=down.shape[0])
+    native.up.weight = torch.nn.Parameter(up.to(device), requires_grad=False)
+    native.down.weight = torch.nn.Parameter(down.to(device), requires_grad=False)
+    return native.eval()
+
+
+@torch.no_grad()
+def runtime_ffn_prediction(native: FeedForward, rows: torch.Tensor) -> torch.Tensor:
+    prediction = native(rows.to(device=native.up.weight.device, dtype=native.up.weight.dtype))
+    if not bool(torch.isfinite(prediction).all()):
+        raise SystemExit("nonfinite native runtime FFN prediction; no runtime score can be issued")
+    return prediction
+
+
 def install_layer(k: int, x_fit: torch.Tensor, x_held: torch.Tensor, trunk_up: torch.Tensor, trunk_down: torch.Tensor,
                   trunk_cfg: ChimeraConfig, parent: ParentMlp, k3_layers: list[K3Layer], chart: Chart | None,
                   extras: list[Source], evidence: Evidence, k3_channels: int, device: torch.device,
@@ -1724,36 +1755,68 @@ def install_layer(k: int, x_fit: torch.Tensor, x_held: torch.Tensor, trunk_up: t
     record["cast"] = {"ffn_dtype": str(ffn_dtype).replace("torch.", ""),
                       "down_cast_relL2": relative_l2(down_c, down_child),
                       "up_cast_relL2": relative_l2(torch.cat([gate_c, up_c]), torch.cat([gate_child, up_child])),
-                      "rule": "scores and update_scale are measured on the weights cast to the FFN dtype (what is "
-                              "installed live and shipped); ridge.update_scale is the fp32 ladder number"}
+                      "rule": "weights are cast to the FFN dtype before scoring; scores use native FFN arithmetic, "
+                              "coefficient_cast_fp32_scores preserve the widened-coefficient diagnostic; "
+                              "update_scale is coefficient space and ridge.update_scale is the fp32 ladder number"}
     record["update_scale_cast_exceeds_law"] = bool(record["update_scale"] > 1.0)
 
-    # -- scores -------------------------------------------------------------------
+    # -- exact runtime arithmetic and the preserved coefficient-cast FP32 diagnostic --
+    # A BF16/F16 coefficient widened to FP32 is still a different computation:
+    # native FeedForward has one fused up projection and rounded activation/down
+    # operators in the FFN dtype. No solver, selection, target or veto changes here.
     scores: dict[str, Any] = {}
+    coefficient_scores: dict[str, Any] = {}
+    arithmetic_delta: dict[str, Any] = {}
     with torch.no_grad():
-        gk = gate_c.to(device)
-        uk = up_c.to(device)
+        native_union = build_runtime_ffn(trunk_cfg, up_ship, down_ship, device)
+        native_prior = build_runtime_ffn(trunk_cfg, native_union.up.weight,
+            torch.cat([prior, torch.zeros(h, pad)], dim=1).to(ffn_dtype), device)
+        native_trunk = build_runtime_ffn(trunk_cfg, torch.cat([gate_q, up_q]).to(ffn_dtype),
+                                        trunk_down.to(ffn_dtype), device)
+        gk, uk, dk = gate_c.to(device), up_c.to(device), down_c.to(device)
+        gq_d, uq_d, dq_d = gate_q.to(device), up_q.to(device), trunk_down.float().to(device)
+        pk = torch.cat([prior, torch.zeros(h, pad)], dim=1).to(device)
         for label, x_rows, y_rows in (("fit", x_fit, y_fit), ("held", x_held, y_held)):
             if not x_rows.shape[0]:
-                scores[label] = None
+                scores[label] = coefficient_scores[label] = arithmetic_delta[label] = None
                 continue
-            pred, no_repair, trunk_only = [], [], []
-            gq_d, uq_d, dq_d = gate_q.to(device), up_q.to(device), trunk_down.float().to(device)
-            dk = down_c.to(device)
-            pk = torch.cat([prior, torch.zeros(h, pad)], dim=1).to(device)
+            native_acc = {name: WriteScoreAccumulator() for name in ("union", "no_repair_prior", "trunk_only")}
+            coefficient_acc = {name: WriteScoreAccumulator() for name in native_acc}
+            delta_acc = WriteScoreAccumulator()
             for start in range(0, int(x_rows.shape[0]), chunk):
-                x = x_rows[start:start + chunk].to(device)
+                x = x_rows[start:start + chunk].to(device=device, dtype=torch.float32)
+                target = y_rows[start:start + chunk]
                 a = F.silu(x @ gk.T) * (x @ uk.T)
-                pred.append((a @ dk.T).cpu())
-                no_repair.append((a @ pk.T).cpu())
-                trunk_only.append(((F.silu(x @ gq_d.T) * (x @ uq_d.T)) @ dq_d.T).cpu())
-            pred_t, nr_t, tr_t = torch.cat(pred), torch.cat(no_repair), torch.cat(trunk_only)
-            scores[label] = {"union": write_scores(pred_t, y_rows), "no_repair_prior": write_scores(nr_t, y_rows),
-                             "trunk_only": write_scores(tr_t, y_rows), "rows": int(x_rows.shape[0])}
+                coefficient = {"union": (a @ dk.T).cpu(), "no_repair_prior": (a @ pk.T).cpu(),
+                    "trunk_only": ((F.silu(x @ gq_d.T) * (x @ uq_d.T)) @ dq_d.T).cpu()}
+                predictions = {"union": runtime_ffn_prediction(native_union, x).cpu(),
+                    "no_repair_prior": runtime_ffn_prediction(native_prior, x).cpu(),
+                    "trunk_only": runtime_ffn_prediction(native_trunk, x).cpu()}
+                for name in native_acc:
+                    native_acc[name].update(predictions[name], target)
+                    coefficient_acc[name].update(coefficient[name], target)
+                delta_acc.update(predictions["union"], coefficient["union"])
+            scores[label] = {name: acc.result() for name, acc in native_acc.items()}
+            coefficient_scores[label] = {name: acc.result() for name, acc in coefficient_acc.items()}
+            scores[label]["rows"] = coefficient_scores[label]["rows"] = int(x_rows.shape[0])
+            arithmetic_delta[label] = delta_acc.result()
+        del native_union, native_prior, native_trunk
     record["scores"] = scores
     record["scores_dtype"] = str(ffn_dtype).replace("torch.", "")
-    held_rel = scores["held"]["union"]["relL2"] if scores.get("held") else None
-    record["heldout_relL2"] = held_rel
+    record["heldout_relL2"] = scores["held"]["union"]["relL2"] if scores.get("held") else None
+    record["coefficient_cast_fp32_scores"] = coefficient_scores
+    record["coefficient_cast_fp32_scores_dtype"] = "float32"
+    record["coefficient_cast_fp32_heldout_relL2"] = (
+        coefficient_scores["held"]["union"]["relL2"] if coefficient_scores.get("held") else None)
+    record["runtime_arithmetic"] = {
+        "operator": "chimera_omni.modeling.layers.FeedForward.forward",
+        "source_sha256": sha256_file(FeedForward.forward.__code__.co_filename),
+        "grouping": "fused up Linear, chunk(2), native activation, down Linear",
+        "input_dtype": record["scores_dtype"], "weight_dtype": record["scores_dtype"],
+        "prediction_dtype": record["scores_dtype"], "device": str(device), "chunk_rows": chunk,
+        "target": "unchanged FP32 parent-plus-charted-K3 fit/held targets",
+        "coefficient_cast_fp32_difference": arithmetic_delta, "gpu_parity_verified": False,
+        "scope": "FFN arithmetic on captured input rows; no full-block or whole-child behavioral gate"}
 
     # -- the veto, out loud ---------------------------------------------------------
     absent = (held_energy is None and fit_energy < K3_ENERGY_FLOOR) or (
@@ -2171,6 +2234,8 @@ def main(argv: list[str] | None = None) -> int:
         "extra_blocks": extra_records, "k3_channels": int(args.k3_channels), "group_size": int(args.group_size),
         "engine": args.engine, "ffn_dtype": str(ffn_dtype).replace("torch.", ""),
         "chart_bias_ceiling": float(args.chart_bias_ceiling), "chunk": int(args.chunk), "gram_block": int(args.gram_block),
+        "runtime_ffn_source_sha256": sha256_file(FeedForward.forward.__code__.co_filename),
+        "runtime_torch_version": str(torch.__version__), "runtime_device": str(device),
         "tool_version": TOOL_VERSION,
     }
     partial = Partial(out)
