@@ -91,7 +91,7 @@ def test_candidate_fits_actual_input_and_write_directions(inputs):
     maps = record["arms"]["ridge"]["native_boundary_provenance"]["maps"]
     assert maps["C_in"]["domain"][0]["boundary"] == "ffn_output"
     assert maps["C_out"]["domain"][0]["boundary"] == "ffn_input"
-    with pytest.raises(SystemExit, match="native chart boundary provenance|legacy charts"):
+    with pytest.raises(SystemExit, match="production native chart admission is unavailable"):
         tool.installer.load_chart(str(out), 0, 6, 4, False)
 
 

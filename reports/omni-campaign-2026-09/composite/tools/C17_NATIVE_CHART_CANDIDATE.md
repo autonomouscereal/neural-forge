@@ -101,10 +101,16 @@ candidate includes C10's full `neural-forge.c17-native-chart-boundaries.v1`
 domain/codomain provenance, input hashes, group splits, numerical trail and
 explicit `production_install_eligible=false`.
 
-**No `layer.json` is emitted**, so current C10 production discovery refuses this
-candidate. Before any promotion, a reviewed acceptance policy and actual
-installed-computation evaluation must bind these exact map bytes, resulting
-post-S3 host identity, accepted K3 source weights and untouched held evidence.
+**No `layer.json` is emitted**. C10 also refuses every production-native chart
+before chart I/O: copying or renaming candidate metadata, removing restrictions,
+or asserting affirmative eligibility cannot promote it. The explicit marked,
+tiny CPU fixture route remains available only for mechanics tests.
+
+There is no current production admission route. Before implementing one, a
+reviewed acceptance policy and actual installed-computation evaluator must bind
+these exact map bytes, resulting post-S3 host identity, accepted K3 source
+weights and untouched held evidence. `native_chart_boundaries` remains a
+provenance-only validator available to this fitter, not an acceptance gate.
 Attention/residual transfer, every other source/modality, and a functioning dense
 all-source child's capability demonstration remain uncompleted gates.
 

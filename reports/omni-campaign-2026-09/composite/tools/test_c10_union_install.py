@@ -108,7 +108,7 @@ def load_fixture_chart(charts, *args, **kwargs):
 
 
 def test_legacy_charts_refused_in_production(k3):
-    with pytest.raises(SystemExit, match="missing explicit non-fixture native boundary provenance"):
+    with pytest.raises(SystemExit, match="production native chart admission is unavailable"):
         c10.load_chart(str(k3["charts"]), 0, K3_HIDDEN, HIDDEN, False)
     with pytest.raises(SystemExit, match="identity charts have no native boundary"):
         c10.load_chart(None, 0, HIDDEN, HIDDEN, True)

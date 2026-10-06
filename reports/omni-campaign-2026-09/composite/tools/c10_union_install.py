@@ -46,6 +46,10 @@ K3 capture + paired fitter are still needed; no existing charts are relabeled
 or refitted here. Geometry/algebra above is unchanged. This consistency check
 is not an independent proof that declared capture code is trustworthy or that
 the fitted maps transfer intelligence; actual source/held functional review remains mandatory.
+There is currently no production-native chart admission route: load_chart refuses
+before chart I/O until a reviewed exact-installed evaluator and acceptance policy
+exist. Renaming candidates or asserting affirmative metadata cannot promote them.
+native_chart_boundaries remains a provenance-only helper for candidate fitting.
 
 Legacy mechanics only: ``--synthetic-fixture-root`` must name a marked unit-test
 workspace with CPU-only hidden <=128, <=8-layer geometry and explicit unit-test
@@ -761,6 +765,15 @@ def load_chart(charts_dir: str | None, k: int, k3_hidden: int, trunk_hidden: int
         zero = torch.zeros(trunk_hidden)
         return Chart(k, "identity", sha256_tensor(eye), "identity", eye.clone(), zero.clone(), eye.clone(), zero.clone(),
                      native_boundary_provenance={"fixture": True, "fixture_root": fixture})
+    # Capture provenance and chart coefficients are candidate evidence only.
+    # No reviewed producer currently measures the exact installed computation
+    # against the post-S3 host, accepted source and untouched held evidence.
+    # A renamed candidate, affirmative metadata or a self-asserted receipt must
+    # therefore have no production allow path. Keep native_chart_boundaries
+    # available to the candidate fitter as a provenance-only validator.
+    if fixture is None:
+        raise SystemExit("production native chart admission is unavailable: a reviewed exact-installed "
+                         "evaluator and acceptance policy are required; candidate provenance is not acceptance")
     from safetensors.torch import load_file
 
     if arm not in CHART_ARM_FILES:
