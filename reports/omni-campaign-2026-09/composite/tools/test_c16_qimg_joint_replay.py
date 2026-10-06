@@ -111,7 +111,7 @@ def test_complete_joint_replay_reports_both_streams_without_acceptance(tmp_path)
     assert json.loads(out.read_text())["source_baseline_passed"] is True
 
 
-def test_baseline_failure_prevents_candidate_instantiation(tmp_path):
+def test_finite_baseline_difference_does_not_prevent_candidate_evaluation(tmp_path):
     _, _, data, candidate = prepared(tmp_path)
     calls = []
     class WrongSource(SyntheticJointBlock):
@@ -121,28 +121,29 @@ def test_baseline_failure_prevents_candidate_instantiation(tmp_path):
             return actual
     def factory(state, metadata):
         calls.append(state)
-        assert state is data["frozen"], "candidate constructed before all baseline forwards passed"
         return WrongSource(state, metadata)
-    with pytest.raises(tool.fold.FoldRejected) as caught:
-        tool.evaluate(data, candidate, factory, tool.capture_jobs(data)[0], 0)
-    assert len(calls) == 1
-    assert caught.value.receipt["folded_block_evaluated"] is False
+    result = tool.evaluate(data, candidate, factory, tool.capture_jobs(data)[0], 0)
+    assert calls == [data["frozen"], candidate]
+    assert result["source_baseline_passed"] is False
+    assert result["folded_block_evaluated"] is True
+    assert result["source_baseline_is_diagnostic"] is True
 
 
-def test_failed_baseline_writes_no_success_report_and_keeps_provenance(tmp_path):
+def test_finite_baseline_difference_writes_truthful_diagnostic_report(tmp_path):
     path, folded, _, _ = prepared(tmp_path)
     class WrongSource(SyntheticJointBlock):
         def forward(self, state, record):
             output = super().forward(state, record)
             output["img_out"] += 1
             return output
-    out = tmp_path / "not_created.json"
-    with pytest.raises(tool.fold.FoldRejected) as caught:
-        tool.replay([path], folded, tool.fold.file_sha(folded), tmp_path, "cpu", 0,
+    out = tmp_path / "diagnostics.json"
+    result = tool.replay([path], folded, tool.fold.file_sha(folded), tmp_path, "cpu", 0,
                     out, fixture=True, factory=WrongSource)
-    assert not out.exists()
-    assert caught.value.receipt["capture_receipts"][0]["sha256"] == tool.fold.file_sha(path)
-    assert caught.value.receipt["fold_receipt"]["sha256"] == tool.fold.file_sha(folded)
+    assert out.exists()
+    assert result["source_baseline_passed"] is False
+    assert result["capture_receipts"][0]["sha256"] == tool.fold.file_sha(path)
+    assert result["fold_receipt"]["sha256"] == tool.fold.file_sha(folded)
+    assert result["folded_block_evaluated"] is True
 
 
 @pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf")])
@@ -154,15 +155,16 @@ def test_invalid_baseline_tolerance_refuses_before_factory(value):
 
 
 @pytest.mark.parametrize("target", ["time_recomputed", "rotation_recomputed", "img_mlp_in", "txt_modulation"])
-def test_every_source_intermediate_is_gated_before_folded_replay(tmp_path, target):
+def test_each_finite_source_intermediate_difference_is_diagnostic(tmp_path, target):
     _, _, data, candidate = prepared(tmp_path)
     class WrongSource(SyntheticJointBlock):
         def forward(self, state, record):
             actual = super().forward(state, record)
             actual[target] = actual[target] + .25
             return actual
-    with pytest.raises(tool.fold.FoldRejected):
-        tool.evaluate(data, candidate, WrongSource, tool.capture_jobs(data)[0], 0)
+    result = tool.evaluate(data, candidate, WrongSource, tool.capture_jobs(data)[0], 0)
+    assert result["source_baseline_passed"] is False
+    assert result["folded_block_evaluated"] is True
 
 
 @pytest.mark.parametrize("field", ["source_ids", "image_patch_indices", "joint_row_kind", "rotation_used", "text_attention_mask"])

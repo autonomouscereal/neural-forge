@@ -3,7 +3,8 @@
 
 No full parent, sampler, training, token subsampling, generic adaln6 conversion,
 GPU allocator, or installer is involved. A caller supplies the baseline tolerance.
-The original block must replay before the folded block is evaluated at all.
+The original block is replayed first; finite baseline differences are diagnostic
+under the current owner policy, never a reason to skip the folded block.
 """
 from __future__ import annotations
 
@@ -37,9 +38,16 @@ def same_bytes(left, right):
 
 def load_candidate(path, expected_sha256, data):
     body = fold.json_file(path, expected_sha256=fold.digest(expected_sha256))
-    if (body.get("schema") != fold.FOLD_SCHEMA or body.get("status") != "measured_candidate"
-            or body.get("fixture") is not data["fixture"] or body.get("numerical_policy_passed") is not True):
-        raise ValueError("an exact pinned measured-candidate fold receipt is required")
+    legacy = body.get("schema") == fold.FOLD_SCHEMA
+    current = body.get("schema") == fold.OWNER_FOLD_SCHEMA
+    if (body.get("status") != "measured_candidate" or body.get("fixture") is not data["fixture"]
+            or not (legacy or current)
+            or (legacy and body.get("numerical_policy_passed") is not True)
+            or (current and (body.get("owner_policy") != fold.current_owner_policy()
+                or body.get("structural_artifact_valid") is not True
+                or body.get("accepted") is not False or body.get("capability_accepted") is not False
+                or not isinstance(body.get("numerical_policy_passed"), bool)))):
+        raise ValueError("an exact pinned structurally valid current artifact or historically passing legacy receipt is required")
     if body.get("block") != data["block"] or body.get("source_frozen_file_sha256") != data["frozen_file_sha256"]:
         raise ValueError("fold belongs to another source block/time")
     identities = sorted(item["sha256"] for item in data["capture_receipts"])
@@ -53,7 +61,8 @@ def load_candidate(path, expected_sha256, data):
     for stream in fold.STREAMS:
         prefix = f"transformer_blocks.{data['block']}.{stream}_mlp."
         keep = body["streams"][stream]["keep"]
-        if isinstance(keep, bool) or not isinstance(keep, int) or not 1 <= keep <= fold.maximum_fourfold_keep(data["width"], data["inner"]):
+        maximum = fold.maximum_fourfold_keep(data["width"], data["inner"]) if legacy else data["inner"]
+        if isinstance(keep, bool) or not isinstance(keep, int) or not 1 <= keep <= maximum:
             raise ValueError("invalid bias-inclusive folded width")
         index = selected[stream + ".selected_channels"]
         if (index.dtype != torch.int64 or index.shape != (keep,) or index.unique().numel() != keep
@@ -75,8 +84,14 @@ def load_candidate(path, expected_sha256, data):
         prior = torch.cat((data["frozen"][prefix + "net.2.weight"].bfloat16().double()[:, index],
                            data["frozen"][prefix + "net.2.bias"].bfloat16().double()[:, None]), dim=1)
         actual = torch.cat((candidate[prefix + "net.2.weight"].double(), candidate[prefix + "net.2.bias"].double()[:, None]), dim=1)
-        if float((actual - prior).norm() / prior.norm().clamp_min(1e-30)) > 1:
-            raise ValueError("stored candidate violates the existing update veto")
+        update = float((actual - prior).norm() / prior.norm().clamp_min(1e-30))
+        if legacy and (not math.isfinite(update) or update > 1):
+            raise ValueError("historical stored candidate violates its recorded update veto")
+        count = sum(candidate[prefix + suffix].numel() for suffix in
+                    ("net.0.proj.weight", "net.0.proj.bias", "net.2.weight", "net.2.bias"))
+        if current and (body["streams"][stream].get("child_parameters") != count
+                or body["streams"][stream].get("parent_parameters") != fold.biased_gelu_mlp_parameters(data["width"], data["inner"])):
+            raise ValueError("recorded parameter count differs from actual source or candidate")
     for key, value in data["frozen"].items():
         if key not in allowed and not same_bytes(candidate[key], value):
             raise ValueError("candidate changed a frozen attention/norm/modulation/time tensor")
@@ -261,10 +276,7 @@ def evaluate(data, candidate, factory, jobs, max_source_rel_l2):
             raise ValueError("native replay did not produce every complete source tap")
         metrics = {k: fold.score(actual[k], v) for k, v in wanted.items()}
         baseline.append({"file": record["file"], "file_sha256": record["file_sha256"], "split": record["split"], "scores": metrics})
-        if any(value["rel_l2"] > max_source_rel_l2 for value in metrics.values()):
-            raise fold.FoldRejected("native original-block baseline failed; no folded block evaluated",
-                {"schema": SCHEMA, "status": "rejected_source_replay", "baseline": baseline,
-                 "max_source_rel_l2": max_source_rel_l2, "folded_block_evaluated": False})
+        baseline[-1]["diagnostic_target_met"] = all(fold.finite_at_most(value["rel_l2"], max_source_rel_l2) for value in metrics.values())
     del native, actual, state
     native = factory(candidate, data)
     measured, pools = [], {s: {p: [[], []] for p in ("fit", "holdout")} for s in fold.STREAMS}
@@ -284,7 +296,10 @@ def evaluate(data, candidate, factory, jobs, max_source_rel_l2):
             "image_sha256": record["image_sha256"], "split": record["split"], "sigma": record["sigma"], "scores": metrics})
     pooled = {s: {p: fold.score(torch.cat(pair[0]), torch.cat(pair[1])) for p, pair in split.items()} for s, split in pools.items()}
     return {"schema": SCHEMA, "status": "measured_native_joint_block", "fixture": data["fixture"],
-        "max_source_rel_l2": max_source_rel_l2, "source_baseline_passed": True, "baseline": baseline,
+        "max_source_rel_l2": max_source_rel_l2,
+        "source_baseline_passed": all(row["diagnostic_target_met"] for row in baseline), "baseline": baseline,
+        "owner_policy": fold.current_owner_policy(), "source_baseline_is_diagnostic": True,
+        "folded_block_evaluated": True,
         "folded_per_forward": measured, "folded_pooled_valid_rows": pooled,
         "folded_numerical_acceptance": "not evaluated; no full-block acceptance criteria invented",
         "scope": "complete single source block on captured parent block inputs; not propagation through 60 folded blocks",

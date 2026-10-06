@@ -2,8 +2,8 @@
 """Measured dual-stream QIMG GELU channel folds; no installer or media proof.
 
 The frozen FP8 parent is explicitly cast to its captured BF16 inference dtype.
-Its MLP replay must pass a caller-pinned numerical policy before any channel is
-selected. Only image-disjoint FIT rows enter the existing prior-anchored solver;
+Finite source replay and fidelity targets are diagnostics under the explicit
+current owner policy; they never prevent selection or artifact publication. Only image-disjoint FIT rows enter the existing prior-anchored solver;
 actual captured MLP outputs, not a recreated parent's outputs, are its targets.
 """
 from __future__ import annotations
@@ -30,7 +30,94 @@ from mediafold.linalg import law_abiding_solve, pivoted_columns_gram, write_scor
 
 STREAMS = ("img", "txt")
 POLICY_SCHEMA = "neural_forge.qimg_fold_policy.v1"
+# Keep the historical quality-gated schema distinct; never relabel old receipts.
 FOLD_SCHEMA = "neural_forge.qimg_dual_stream_fold.v1"
+OWNER_FOLD_SCHEMA = "neural_forge.qimg_dual_stream_development_artifact.v2"
+OWNER_POLICY_ID = "chimera_omni.owner_finite_diagnostics_only.2026-10-06.v1"
+
+
+def current_owner_policy():
+    return {"policy_id": OWNER_POLICY_ID, "finite_numeric_targets": "diagnostic_only",
+            "artifact_authority": "structural validity only; unevaluated development artifact",
+            "capability_evaluation": "after fold and assembly; no capability success inferred",
+            "historical_policy": "caller-pinned reference values retained without rewriting past decisions",
+            "solver_constraint": "unchanged law_abiding_solve filters update_scale>1 rungs and may retain prior; not an artifact validity gate"}
+
+
+def current_artifact_fields():
+    return {"owner_policy": current_owner_policy(), "structural_artifact_valid": True,
+            "accepted": False, "acceptance_enabled": False, "capability_accepted": False,
+            "artifact_state": "unevaluated_development", "numerical_targets_are_diagnostics": True,
+            "diagnostic_target_scope": ["finite source replay reference", "pooled and each held-forward error/cosine references",
+                "stored BF16 update<=1 reference", "bias-inclusive fourfold reference", "2*keep FIT-row conditioning reference",
+                "historical selector full-rank selection without fallback", "derived diagnostic availability"]}
+
+
+class DiagnosticMetadataError(ValueError):
+    """Receipt metadata is not JSON data; no tensor sanitization is permitted."""
+
+
+def json_diagnostics(value):
+    """Represent undefined derived numbers as null with explicit field paths.
+
+    This never sanitizes tensors or coefficients. Those must pass their own
+    finite/shape checks before diagnostics are built.
+    """
+    unavailable = []
+    def visit(item, path):
+        if isinstance(item, float) and not math.isfinite(item):
+            unavailable.append({"field": path, "classification": "undefined_or_nonfinite_derived_metric", "value": str(item)})
+            return None
+        if isinstance(item, dict):
+            if not all(isinstance(k, str) for k in item): raise DiagnosticMetadataError("diagnostic keys must be strings")
+            return {k: visit(v, path + "." + k if path else k) for k, v in item.items()}
+        if isinstance(item, (tuple, list)): return [visit(v, f"{path}[{i}]") for i, v in enumerate(item)]
+        if item is None or isinstance(item, (str, bool, int, float)): return item
+        raise DiagnosticMetadataError("diagnostics must contain JSON metadata only, never tensors")
+    result = visit(value, "")
+    if unavailable:
+        if not isinstance(result, dict): raise ValueError("diagnostic root must be a metadata object")
+        result["undefined_diagnostics"] = unavailable
+    return result
+
+
+def finite_at_most(value, target):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value <= target
+
+
+def diagnostics_complete(value):
+    if isinstance(value, dict):
+        return not value.get("undefined_diagnostics") and all(diagnostics_complete(v) for v in value.values())
+    if isinstance(value, (list, tuple)): return all(diagnostics_complete(v) for v in value)
+    return not (isinstance(value, float) and not math.isfinite(value))
+
+
+def all_numeric_targets_met(result, stream_numeric_key):
+    """Descriptive aggregation only; no outcome of this function vetoes tensors."""
+    return (diagnostics_complete(result) and result["source_replay_diagnostic_passed"]
+            and all(values[stream_numeric_key] is True and values["stored_update_target_met"] is True
+                    and values["fourfold_target_met"] is True
+                    and values["selector_diagnostics"]["rank_shortfall_fallback_used"] is False
+                    and result["row_preflight"][stream]["fit_conditioning_target_met"] is True
+                    for stream, values in result["streams"].items()))
+
+
+def complete_source_selection(selection, keep, inner):
+    """Preserve successful Gram pivots; explicitly fill rank-shortfall in source order.
+
+    No channel synthesis, keep reduction, held-out input or numerical success claim.
+    """
+    if (selection.dtype != torch.int64 or selection.ndim != 1 or selection.numel() > keep
+            or selection.unique().numel() != selection.numel()
+            or bool((selection < 0).any()) or bool((selection >= inner).any())):
+        raise ValueError("invalid source-channel selector output")
+    count = selection.numel()
+    if count < keep:
+        used = set(selection.tolist())
+        fill = torch.tensor([i for i in range(inner) if i not in used][:keep-count], dtype=torch.int64)
+        selection = torch.cat((selection, fill))
+    return selection.sort().values, {"rank_shortfall_fallback_used": count < keep,
+        "pivot_channels": count, "fallback": "retain existing pivots then fill unchanged source channels in source order"}
 MIN_FIT_ROWS_PER_KEEP = 2
 MAX_ROWS_PER_STREAM = 131072
 CAPTURE_KEYS = {"source_ids", "rotation_generated", "rotation_used", "temb", "text_attention_mask",
@@ -244,12 +331,15 @@ def row_preflight(data, policy):
         keep = policy["streams"][stream]["keep"]
         rows = data["row_counts"][stream]
         maximum = maximum_fourfold_keep(data["width"], data["inner"])
-        if keep > maximum:
-            raise ValueError(f"{stream}: keep {keep} exceeds the bias-inclusive fourfold maximum {maximum}")
+        if isinstance(keep, bool) or not isinstance(keep, int) or not 1 <= keep <= data["inner"]:
+            raise ValueError(f"{stream}: keep must be within the source channel geometry")
         required = MIN_FIT_ROWS_PER_KEEP * keep
-        if rows["fit"] < required or rows["holdout"] < 1:
-            raise ValueError(f"{stream}: {rows['fit']} fit rows / {rows['holdout']} held rows; keep {keep} requires at least {required} fit rows and nonempty image-disjoint holdout")
+        if rows["fit"] < 1 or rows["holdout"] < 1:
+            raise ValueError(f"{stream}: nonempty genuine FIT and image-disjoint holdout rows required")
         report[stream] = {**rows, "keep": keep, "minimum_fit_rows": required,
+                          "fit_conditioning_target_met": rows["fit"] >= required,
+                          "fourfold_target_met": keep <= maximum,
+                          "targets_are_diagnostics": True,
                           "maximum_keep_by_count": maximum, "maximum_keep_by_available_fit_rows": rows["fit"] // 2}
     return report
 
@@ -272,15 +362,20 @@ def mlp_forward(x, weights):
 
 
 def score(actual, target):
+    if actual.shape != target.shape:
+        raise ValueError("evaluation tensor shape mismatch")
+    if not bool(torch.isfinite(actual).all()) or not bool(torch.isfinite(target).all()):
+        raise ValueError("non-finite actual or target evaluation tensor")
     result = write_scores(actual.detach().cpu().reshape(-1, actual.shape[-1]),
                           target.detach().cpu().reshape(-1, target.shape[-1]))
-    if not all(math.isfinite(value) for value in result.values()):
-        raise ValueError("non-finite numerical score")
-    return result
+    return json_diagnostics(result)
 
 
 def numerical_pass(scores, policy):
-    return scores["rel_l2"] <= policy["max_heldout_rel_l2"] and scores["cos"] >= policy["min_heldout_cos"]
+    cosine = scores["cos"]
+    return (finite_at_most(scores["rel_l2"], policy["max_heldout_rel_l2"])
+            and isinstance(cosine, (int, float)) and not isinstance(cosine, bool)
+            and math.isfinite(cosine) and cosine >= policy["min_heldout_cos"])
 
 
 @torch.no_grad()
@@ -296,9 +391,7 @@ def fold_loaded(data, policy, *, device="cpu"):
             hidden, predicted = mlp_forward(captured["x"], weights)
             scores = score(predicted, captured["y"])
             baseline[stream].append({"file": item["file"], "split": item["split"], "scores": scores})
-            if scores["rel_l2"] > policy["streams"][stream]["max_source_replay_rel_l2"]:
-                raise FoldRejected("source BF16/FP8 replay does not match captured MLP output; no fold attempted",
-                                   {"status": "rejected_source_replay", "source_replay": baseline, "fixture": data["fixture"]})
+            baseline[stream][-1]["diagnostic_target_met"] = finite_at_most(scores["rel_l2"], policy["streams"][stream]["max_source_replay_rel_l2"])
             if item["split"] == "fit":
                 fit_hidden.append(hidden.squeeze(0).cpu()[captured["valid"]])
         features[stream] = torch.cat(fit_hidden)
@@ -314,9 +407,7 @@ def fold_loaded(data, policy, *, device="cpu"):
             values = values.double()
             gram.add_(values.T @ values)
         selection = pivoted_columns_gram(gram, keep)
-        if selection.numel() != keep or selection.unique().numel() != keep:
-            raise ValueError(f"{stream}: selected Gram rank cannot support the requested keep")
-        selection = selection.sort().values
+        selection, selector_diagnostics = complete_source_selection(selection, keep, inner)
         del gram
         prefix = f"transformer_blocks.{data['block']}.{stream}_mlp."
         # Bias is a counted coefficient and has its own prior column. Neither
@@ -328,13 +419,13 @@ def fold_loaded(data, policy, *, device="cpu"):
         targets = torch.cat([item[stream]["y"].squeeze(0)[item[stream]["valid"]]
                              for item in data["forwards"] if item["split"] == "fit"]).double()
         fitted, solve = law_abiding_solve(design, targets, prior)
+        solve = json_diagnostics(solve)
         if not bool(torch.isfinite(fitted).all()):
             raise ValueError("non-finite closed-form solution")
         stored = fitted.to(torch.bfloat16)
         stored_update = float((stored.double() - prior).norm() / prior.norm().clamp_min(1e-30))
-        if not math.isfinite(stored_update) or stored_update > 1:
-            raise FoldRejected("stored BF16 refit violates the existing update_scale <= 1 veto",
-                               {"status": "rejected_stored_update", "stream": stream, "stored_update_scale": stored_update})
+        if not bool(torch.isfinite(stored).all()):
+            raise ValueError("closed-form coefficients overflowed BF16 storage")
         for name in ("net.0.proj.weight", "net.0.proj.bias"):
             original = data["frozen"][prefix + name]
             # CPU advanced indexing lacks FP8 support in some pinned runtimes;
@@ -360,15 +451,17 @@ def fold_loaded(data, policy, *, device="cpu"):
         parent_count = biased_gelu_mlp_parameters(width, inner)
         child_count = sum(candidate[prefix + name].numel() for name in
                           ("net.0.proj.weight", "net.0.proj.bias", "net.2.weight", "net.2.bias"))
-        if 4 * child_count > parent_count:
-            raise ValueError("stored component does not satisfy the bias-inclusive fourfold floor")
+        compression_target_met = 4 * child_count <= parent_count
         measured[stream] = {"keep": keep, "parent_parameters": parent_count, "child_parameters": child_count,
             "component_compression_x": parent_count / child_count, "solve": solve,
-            "stored_update_scale": stored_update, "fit_scores": fit_scores, "heldout_scores": held_scores,
+            "selector_diagnostics": selector_diagnostics, "fourfold_target_met": compression_target_met,
+            "stored_update_scale": stored_update, "stored_update_target_met": finite_at_most(stored_update, 1),
+            "fit_scores": fit_scores, "heldout_scores": held_scores,
             "per_forward": per_forward, "numerical_policy_passed": passed}
         selections[stream + ".selected_channels"] = selection
         del weights, pooled
-    result = {"schema": FOLD_SCHEMA, "status": "measured_candidate", "fixture": data["fixture"],
+    result = {"schema": OWNER_FOLD_SCHEMA, "status": "measured_candidate", "fixture": data["fixture"],
+        **current_artifact_fields(), "artifact_admitted": False, "serialization_validation": "not yet written",
         "block": data["block"], "source_replay": baseline, "streams": measured, "row_preflight": rows,
         "policy": policy, "image_splits": data["image_splits"], "capture_receipts": data["capture_receipts"],
         "source_frozen_file_sha256": data["frozen_file_sha256"],
@@ -387,10 +480,10 @@ def fold_loaded(data, policy, *, device="cpu"):
                                  "paired_host_source_charts": "not supplied or invented", "full_joint_block_replay": "not performed by this token-local MLP fold",
                                  "weight_storage": "preserved FP8 source plus BF16 refit; a loader that globally recasts this candidate to FP8 is not equivalent"},
         "capability_claim": "none: measured MLP candidate is not installed, behaviorally accepted, or a media/all-source child proof"}
-    if not result["numerical_policy_passed"]:
-        result["status"] = "rejected_numerical_policy"
-        raise FoldRejected("heldout numerical policy failed; no candidate written", result)
-    return candidate, selections, result
+    result["source_replay_diagnostic_passed"] = all(row["diagnostic_target_met"] for stream in baseline.values() for row in stream)
+    result["diagnostic_measurements_complete"] = diagnostics_complete(result)
+    result["all_numeric_diagnostic_targets_met"] = all_numeric_targets_met(result, "numerical_policy_passed")
+    return candidate, selections, json_diagnostics(result)
 
 
 def implementation_sha256():
@@ -457,11 +550,18 @@ def convert(receipts, policy_path, policy_sha256, out, *, device="cpu", validate
     try:
         result["output"] = write_tensors(out / "folded_source_block_and_time.safetensors", candidate)
         result["selection"] = write_tensors(out / "selection.safetensors", selection)
-        for key in ("output", "selection"):
+        for key, expected in (("output", candidate), ("selection", selection)):
             stored, _ = verified_tensors(out, result[key], 2 << 30)
+            if set(stored) != set(expected) or any(tensor_sha(stored[k]) != tensor_sha(v) for k, v in expected.items()):
+                raise ValueError("serialized candidate or selection changed on readback")
             del stored
+        result.update(candidate_written=True, selection_tensors_written=True,
+                      serialization_validation="complete: exact tensor identities/shapes/dtypes and byte readback",
+                      artifact_admitted=not fixture, structural_artifact_valid=True)
     except Exception as exc:
         result["status"] = "incomplete_output"
+        result["structural_artifact_valid"] = False
+        result["artifact_admitted"] = False
         result["error"] = {"type": type(exc).__name__, "message": str(exc)}
         raise
     finally:

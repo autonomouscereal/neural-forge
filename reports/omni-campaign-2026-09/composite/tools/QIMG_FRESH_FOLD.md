@@ -1,4 +1,12 @@
-# Fresh QIMG paired-MLP writer
+# Historical fresh QIMG paired-MLP writer notes
+
+The numerical acceptance rules below describe the implementation before the
+October 6 owner correction. They are historical reference, not the current
+workflow. Read [QIMG_OWNER_DIAGNOSTIC_POLICY.md](QIMG_OWNER_DIAGNOSTIC_POLICY.md)
+for the current diagnostic-only numerical policy, new receipt schema and
+structurally valid unevaluated artifact reader. Historical policy/receipt bytes
+remain unchanged; finite out-of-target artifacts now publish without quality or
+capability acceptance.
 
 `c16_qimg_fresh_fold.convert_fresh` is the separate capture-admitted writer.
 Its result can accept only a numerical paired token-local MLP component. Native

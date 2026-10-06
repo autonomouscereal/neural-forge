@@ -113,14 +113,13 @@ def test_all_source_forwards_of_both_streams_replay_before_selection(monkeypatch
     assert original.mlp_forward is runner._source_mlp_forward  # No production global patch occurred.
 
 
-def test_invalid_text_context_source_output_still_replays_before_fit(monkeypatch):
+def test_finite_invalid_text_row_replay_difference_is_diagnostic():
     data = tensor_data()
     data["forwards"][-1]["txt"]["y"][0, -1, 0] += 1
-    monkeypatch.setattr(runner, "select_fit_output_weighted_columns", lambda *a: pytest.fail("failed replay reached selection"))
-    with pytest.raises(runner.DevelopmentRejected) as exc:
-        runner.fold_loaded(data, policy())
-    assert exc.value.receipt["status"] == "development_rejected_source_replay"
-    assert_nonaccepting(exc.value.receipt)
+    result = runner.fold_loaded(data, policy())
+    assert result["source_replay_diagnostic_passed"] is False
+    assert result["source_replay"]["txt"][-1]["diagnostic_target_met"] is False
+    assert_nonaccepting(result)
 
 
 def test_fit_only_selection_and_actual_targets_plus_parent_bias(monkeypatch):
@@ -169,31 +168,37 @@ def test_changed_heldout_never_changes_selection_or_refit():
         assert first["streams"][stream]["ephemeral_refit_sha256"] == second["streams"][stream]["ephemeral_refit_sha256"]
 
 
-def test_stored_update_does_not_trust_solver_notes(monkeypatch):
+def test_stored_update_does_not_trust_solver_notes_and_is_diagnostic(monkeypatch):
     monkeypatch.setattr(runner, "law_abiding_solve", lambda design, target, prior: (prior * 3, {"update_scale": 0}))
-    with pytest.raises(runner.DevelopmentRejected) as exc:
-        runner.fold_loaded(tensor_data(), policy())
-    assert exc.value.receipt["status"] == "development_rejected_stored_update"
-    assert exc.value.receipt["stored_update_scale"] > 1
+    result = runner.fold_loaded(tensor_data(), policy())
+    assert all(v["stored_update_scale"] > 1 and v["stored_update_target_met"] is False for v in result["streams"].values())
+    assert_nonaccepting(result)
 
 
 @pytest.mark.parametrize("problem", ["fourfold", "fit_rows", "held_rows"])
-def test_original_row_and_fourfold_gates_precede_replay(monkeypatch, problem):
+def test_conditioning_and_fourfold_targets_are_diagnostic_except_empty_rows(monkeypatch, problem):
     data, p = tensor_data(), policy()
     if problem == "fourfold": p["streams"]["img"]["keep"] = 8
     elif problem == "fit_rows": data["row_counts"]["txt"]["fit"] = 1
     else: data["row_counts"]["img"]["holdout"] = 0
-    monkeypatch.setattr(runner, "mlp_forward", lambda *a: pytest.fail("invalid preflight reached replay"))
-    with pytest.raises(runner.DevelopmentRejected): runner.fold_loaded(data, p)
+    if problem == "held_rows":
+        monkeypatch.setattr(runner, "mlp_forward", lambda *a: pytest.fail("empty evidence reached replay"))
+        with pytest.raises(runner.DevelopmentRejected): runner.fold_loaded(data, p)
+    else:
+        result = runner.fold_loaded(data, p)
+        stream, field = ("img", "fourfold_target_met") if problem == "fourfold" else ("txt", "fit_conditioning_target_met")
+        assert result["row_preflight"][stream][field] is False
+        assert_nonaccepting(result)
 
 
 @pytest.mark.parametrize("stream", runner.STREAMS)
 @pytest.mark.parametrize("field,value", [("max_source_replay_rel_l2", .006), ("max_heldout_rel_l2", .31), ("min_heldout_cos", .94)])
-def test_api_cannot_weaken_frozen_gates(monkeypatch, stream, field, value):
+def test_current_api_preserves_finite_reference_values_without_enforcement(monkeypatch, stream, field, value):
     p = policy(); p["streams"][stream][field] = value
-    monkeypatch.setattr(runner, "mlp_forward", lambda *a: pytest.fail("weaker gate reached replay"))
-    with pytest.raises(runner.DevelopmentRejected, match="cannot weaken"):
-        runner.fold_loaded(tensor_data(), p)
+    result = runner.fold_loaded(tensor_data(), p)
+    assert result["policy"]["streams"][stream][field] == value
+    assert result["owner_policy"]["finite_numeric_targets"] == "diagnostic_only"
+    assert_nonaccepting(result)
 
 
 def test_original_tensors_policy_and_production_globals_unchanged():
@@ -240,18 +245,21 @@ def test_nonfinite_native_arithmetic_explicitly_refuses(stage, bad, monkeypatch)
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_nonfinite_score_cannot_pass_replay_comparison(bad, monkeypatch):
-    data = tensor_data()
+def test_undefined_derived_score_is_null_and_never_mislabeled_pass(bad, monkeypatch):
     monkeypatch.setattr(runner, "_source_score", lambda *a: {"rel_l2": bad, "cos": 1.0})
-    monkeypatch.setattr(runner, "select_fit_output_weighted_columns", lambda *a: pytest.fail("nonfinite score reached selection"))
-    with pytest.raises(runner.DevelopmentRejected) as exc: runner.fold_loaded(data, policy())
-    assert exc.value.receipt["status"] == "development_rejected_nonfinite_arithmetic"
-    json.dumps(exc.value.receipt, allow_nan=False)
+    result = runner.fold_loaded(tensor_data(), policy())
+    assert result["source_replay_diagnostic_passed"] is False
+    assert result["development_numeric_gates_passed"] is False
+    assert result["diagnostic_measurements_complete"] is False
+    assert result["source_replay"]["img"][0]["scores"]["rel_l2"] is None
+    assert result["source_replay"]["img"][0]["scores"]["undefined_diagnostics"]
+    json.dumps(result, allow_nan=False)
+    assert_nonaccepting(result)
 
 
 @pytest.mark.parametrize("scope,call_index", [("per_forward", 9), ("pooled", 11)])
 @pytest.mark.parametrize("field,value", [("rel_l2", .31), ("cos", .94)])
-def test_each_development_numeric_gate_is_enforced(scope, call_index, field, value, monkeypatch):
+def test_each_development_numeric_target_is_observed_without_refusal(scope, call_index, field, value, monkeypatch):
     source_score = runner._source_score
     calls = []
     def inject(*args):
@@ -259,10 +267,8 @@ def test_each_development_numeric_gate_is_enforced(scope, call_index, field, val
         if len(calls) == call_index: result[field] = value
         return result
     monkeypatch.setattr(runner, "_source_score", inject)
-    with pytest.raises(runner.DevelopmentRejected) as exc:
-        runner.fold_loaded(tensor_data(), policy())
-    result = exc.value.receipt
-    assert result["status"] == "development_rejected_numerical_policy"
+    result = runner.fold_loaded(tensor_data(), policy())
+    assert result["status"] == "development_complete"
     assert result["streams"]["img"]["development_numeric_gates_passed"] is False
     assert result["streams"]["txt"]["development_numeric_gates_passed"] is True
     if scope == "per_forward":
@@ -346,16 +352,16 @@ def test_verified_sparse_fixture_numeric_pass_persists_nonaccepting_json_only(tm
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_nonfinite_refusal_is_durable_finite_json(tmp_path, bad, monkeypatch):
+def test_undefined_derived_diagnostic_is_durably_recorded_as_null(tmp_path, bad, monkeypatch):
     path, _, policy_path, _ = strict_bundle(tmp_path)
     monkeypatch.setattr(runner, "_source_score", lambda *a: {"rel_l2": bad, "cos": 1.0})
-    report = tmp_path / "research" / "nonfinite.json"
-    with pytest.raises(runner.DevelopmentRejected) as exc:
-        runner.run_development([path], policy_path, original.file_sha(policy_path), report, development_only=True, fixture=True)
+    report = tmp_path / "research" / "undefined.json"
+    expected = runner.run_development([path], policy_path, original.file_sha(policy_path), report, development_only=True, fixture=True)
     result = json.loads(report.read_text(), parse_constant=lambda value: pytest.fail("non-finite JSON emitted"))
-    assert result == exc.value.receipt
-    assert result["status"] == "development_rejected_nonfinite_arithmetic"
-    assert result["nonfinite_arithmetic_refused"] is True
+    assert result == expected
+    assert result["status"] == "development_complete"
+    assert result["diagnostic_measurements_complete"] is False
+    assert result["development_numeric_gates_passed"] is False
     assert_nonaccepting(result)
 
 
@@ -374,20 +380,20 @@ def test_finite_fitted_overflow_on_bf16_storage_is_durable_refusal(tmp_path, mon
     assert_nonaccepting(result)
 
 
-def test_nonfinite_solver_notes_cannot_break_refusal_persistence(tmp_path, monkeypatch):
+def test_undefined_solver_notes_do_not_prevent_finite_artifact_measurement(tmp_path, monkeypatch):
     path, _, policy_path, _ = strict_bundle(tmp_path)
     monkeypatch.setattr(runner, "law_abiding_solve", lambda design, target, prior:
         (prior.clone(), {"update_scale": 0.0, "ladder": [{"rel_l2": float("nan")}]}))
-    report = tmp_path / "research" / "solver_nonfinite.json"
-    with pytest.raises(runner.DevelopmentRejected):
-        runner.run_development([path], policy_path, original.file_sha(policy_path), report, development_only=True, fixture=True)
+    report = tmp_path / "research" / "solver_undefined.json"
+    runner.run_development([path], policy_path, original.file_sha(policy_path), report, development_only=True, fixture=True)
     result = json.loads(report.read_text(), parse_constant=lambda value: pytest.fail("nonfinite JSON emitted"))
-    assert result["status"] == "development_rejected_nonfinite_arithmetic"
-    assert result["nonfinite_arithmetic_refused"] is True
+    assert result["status"] == "development_complete"
+    assert result["diagnostic_measurements_complete"] is False
+    assert result["streams"]["img"]["solve"]["ladder"][0]["rel_l2"] is None
     assert_nonaccepting(result)
 
 
-@pytest.mark.parametrize("failure", ["policy_hash", "capture_hash", "weaker_gate", "missing_development"])
+@pytest.mark.parametrize("failure", ["policy_hash", "capture_hash", "invalid_reference", "missing_development"])
 def test_durable_input_refusal(tmp_path, failure):
     path, body, policy_path, p = strict_bundle(tmp_path)
     sha = original.file_sha(policy_path)
@@ -395,8 +401,8 @@ def test_durable_input_refusal(tmp_path, failure):
     if failure == "policy_hash": sha = "0" * 64
     elif failure == "capture_hash":
         body["captures"][0]["file_sha256"] = "0" * 64; dump(path, body)
-    elif failure == "weaker_gate":
-        p["streams"]["txt"]["min_heldout_cos"] = .94; dump(policy_path, p); sha = original.file_sha(policy_path)
+    elif failure == "invalid_reference":
+        p["streams"]["txt"]["min_heldout_cos"] = 1.1; dump(policy_path, p); sha = original.file_sha(policy_path)
     else: explicit = False
     report = tmp_path / "research" / "refused.json"
     with pytest.raises(runner.DevelopmentRejected) as exc:

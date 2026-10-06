@@ -148,28 +148,31 @@ def test_actual_image_identity_not_sample_name_guards_group_split(tmp_path):
 
 
 @pytest.mark.parametrize("problem", ["quarter_bias", "text_rows", "no_held_rows"])
-def test_count_and_row_floors_precede_replay_and_solver(tmp_path, monkeypatch, problem):
+def test_count_and_row_floors_are_diagnostics_except_empty_evidence(tmp_path, monkeypatch, problem):
     path, _, _, policy = bundle(tmp_path)
     data = tool.load_captures([path], fixture=True)
-    if problem == "quarter_bias":
-        policy["streams"]["img"]["keep"] = data["inner"] // 4
-    elif problem == "text_rows":
-        policy["streams"]["txt"]["keep"] = 7
+    if problem == "quarter_bias": policy["streams"]["img"]["keep"] = data["inner"] // 4
+    elif problem == "text_rows": policy["streams"]["txt"]["keep"] = 7
+    else: data["row_counts"]["txt"]["holdout"] = 0
+    if problem == "no_held_rows":
+        monkeypatch.setattr(tool, "mlp_forward", lambda *a: pytest.fail("empty evidence reached replay"))
+        with pytest.raises(ValueError): tool.fold_loaded(data, policy)
     else:
-        data["row_counts"]["txt"]["holdout"] = 0
-    monkeypatch.setattr(tool, "mlp_forward", lambda *a: pytest.fail("invalid row/count preflight reached replay"))
-    with pytest.raises(ValueError):
-        tool.fold_loaded(data, policy)
+        _, _, result = tool.fold_loaded(data, policy)
+        assert result["structural_artifact_valid"] is True
+        stream, field = ("img", "fourfold_target_met") if problem == "quarter_bias" else ("txt", "fit_conditioning_target_met")
+        assert result["row_preflight"][stream][field] is False
 
 
-def test_source_replay_failure_cannot_be_hidden_as_fold_error(tmp_path, monkeypatch):
+def test_finite_source_replay_difference_is_recorded_and_does_not_skip_fold(tmp_path):
     path, _, _, policy = bundle(tmp_path)
     data = tool.load_captures([path], fixture=True)
     data["forwards"][1]["txt"]["y"] = data["forwards"][1]["txt"]["y"] + 1
-    monkeypatch.setattr(tool, "pivoted_columns_gram", lambda *a: pytest.fail("source baseline failure reached pivoting"))
-    with pytest.raises(tool.FoldRejected) as exc:
-        tool.fold_loaded(data, policy)
-    assert exc.value.receipt["status"] == "rejected_source_replay"
+    _, _, result = tool.fold_loaded(data, policy)
+    assert result["source_replay_diagnostic_passed"] is False
+    assert result["source_replay"]["txt"][-1]["diagnostic_target_met"] is False
+    assert result["structural_artifact_valid"] is True
+    assert result["accepted"] is result["capability_accepted"] is False
 
 
 def test_heldout_rows_never_influence_selection_or_refit(tmp_path):
@@ -203,28 +206,33 @@ def test_affine_solver_receives_actual_targets_and_parent_bias_prior(tmp_path, m
         assert torch.equal(bias, data["frozen"][f"transformer_blocks.0.{stream}_mlp.net.2.bias"].bfloat16().double())
 
 
-def test_stored_update_veto_does_not_trust_solver_notes(tmp_path, monkeypatch):
+def test_stored_update_is_measured_independently_and_not_vetoed(tmp_path, monkeypatch):
     path, _, _, policy = bundle(tmp_path)
     data = tool.load_captures([path], fixture=True)
     monkeypatch.setattr(tool, "law_abiding_solve", lambda design, target, prior: (prior * 3, {"update_scale": 0}))
-    with pytest.raises(tool.FoldRejected) as exc:
-        tool.fold_loaded(data, policy)
-    assert exc.value.receipt["status"] == "rejected_stored_update"
-    assert exc.value.receipt["stored_update_scale"] > 1
+    _, _, result = tool.fold_loaded(data, policy)
+    for values in result["streams"].values():
+        assert values["stored_update_scale"] > 1
+        assert values["stored_update_target_met"] is False
+        assert values["solve"]["update_scale"] == 0
+    assert result["structural_artifact_valid"] is True
 
 
-def test_preregistered_numeric_rejection_writes_no_candidate(tmp_path):
+def test_finite_out_of_target_artifact_is_written_under_new_owner_schema(tmp_path):
     path, _, policy_path, policy = bundle(tmp_path)
     policy["streams"]["img"]["max_heldout_rel_l2"] = 0
     dump(policy_path, policy)
-    out = tmp_path / "rejected"
-    with pytest.raises(tool.FoldRejected) as exc:
-        tool.convert([path], policy_path, tool.file_sha(policy_path), out, fixture=True)
-    assert exc.value.receipt["status"] == "rejected_numerical_policy"
-    assert exc.value.receipt["policy_sha256"] == tool.file_sha(policy_path)
-    assert exc.value.receipt["capture_receipts"][0]["sha256"] == tool.file_sha(path)
-    assert exc.value.receipt["candidate_written"] is False
-    assert not out.exists()
+    out = tmp_path / "development"
+    result = tool.convert([path], policy_path, tool.file_sha(policy_path), out, fixture=True)
+    assert result["schema"] == tool.OWNER_FOLD_SCHEMA
+    assert result["schema"] != tool.FOLD_SCHEMA
+    assert result["numerical_policy_passed"] is False
+    assert result["policy_sha256"] == tool.file_sha(policy_path)
+    assert result["capture_receipts"][0]["sha256"] == tool.file_sha(path)
+    assert result["candidate_written"] is True
+    assert result["accepted"] is result["capability_accepted"] is False
+    assert result["structural_artifact_valid"] is True
+    assert not out.with_name(out.name + ".rejected.json").exists()
 
 
 def test_validate_only_checks_rows_and_identities_without_replay_fit_or_output(tmp_path, monkeypatch):

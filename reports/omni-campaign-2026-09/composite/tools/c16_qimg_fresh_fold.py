@@ -21,8 +21,8 @@ import c16_qimg_fresh_preregistration as gate
 import c16_qimg_joint_replay as joint
 
 TOOLS = Path(__file__).resolve().parent
-SCOPE = "numerically accepted fresh paired token-local MLP candidate only"
-SERIALIZATION_COMPLETE = "complete: shapes/dtypes/byte identity/verbatim/frozen/update/count/held gates"
+SCOPE = "structurally valid unevaluated fresh paired token-local MLP development artifact only"
+SERIALIZATION_COMPLETE = "complete: shapes/dtypes/byte identity/verbatim/frozen/finite/count; numeric targets diagnostic only"
 
 
 def _no_larger_claims():
@@ -89,17 +89,17 @@ def _rescore_persisted(data, candidate, policy, *, device):
         streams[stream] = {"fit_scores": fit, "heldout_scores": held, "per_forward": per_forward,
                            "numerical_policy_passed": passed}
     development._require_finite_diagnostics(streams)
-    if not all(s["numerical_policy_passed"] for s in streams.values()):
-        raise original.FoldRejected("persisted BF16 held-out gates failed; no accepted receipt", {"streams": streams})
+    # Finite out-of-target scores are retained in the receipt, never rejected.
     return streams
 
 
 def _component_receipt(data, policy, measured, *, accepted=False):
     result = dict(measured)
-    result.update(schema=original.FOLD_SCHEMA, status="measured_candidate", fixture=data["fixture"],
-                  recipe_id=development.RECIPE_ID, numerical_policy_passed=True,
-                  acceptance_enabled=False, accepted=accepted,
-                  acceptance_scope=SCOPE if accepted else "provisional or synthetic numerical paired-MLP artifact; not accepted",
+    result.update(schema=original.OWNER_FOLD_SCHEMA, status="measured_candidate", fixture=data["fixture"],
+                  recipe_id=development.RECIPE_ID,
+                  numerical_policy_passed=measured["development_numeric_gates_passed"],
+                  acceptance_enabled=False, accepted=False, artifact_admitted=False,
+                  acceptance_scope="provisional or synthetic unevaluated paired-MLP artifact; not admitted",
                   candidate_written=True, selection_tensors_written=True, policy=policy,
                   **_no_larger_claims())
     # Keep original joint.load_candidate schema compatibility without presenting
@@ -144,12 +144,12 @@ def _persist_checked(data, policy, out, rejection, *, device, revalidate, proven
             count = sum(loaded[prefix + suffix].numel() for suffix in
                         ("net.0.proj.weight", "net.0.proj.bias", "net.2.weight", "net.2.bias"))
             parent_count = original.biased_gelu_mlp_parameters(data["width"], data["inner"])
-            if 4 * count > parent_count: raise ValueError("persisted bias-inclusive fourfold floor failed")
+            result["streams"][stream]["fourfold_target_met"] = 4 * count <= parent_count
             prior = torch.cat((data["frozen"][prefix + "net.2.weight"].bfloat16().double()[:, index],
                                data["frozen"][prefix + "net.2.bias"].bfloat16().double()[:, None]), dim=1)
             stored = torch.cat((loaded[prefix + "net.2.weight"].double(), loaded[prefix + "net.2.bias"].double()[:, None]), dim=1)
             update = float((stored-prior).norm() / prior.norm().clamp_min(1e-30))
-            if not math.isfinite(update) or update > 1: raise ValueError("persisted BF16 update veto failed")
+            result["streams"][stream]["stored_update_target_met"] = original.finite_at_most(update, 1)
             if count != result["streams"][stream]["child_parameters"]: raise ValueError("persisted parameter count changed")
             result["streams"][stream]["stored_update_scale"] = update
         persisted = _rescore_persisted(data, loaded, policy, device=device)
@@ -162,13 +162,18 @@ def _persist_checked(data, policy, out, rejection, *, device, revalidate, proven
                 not joint.same_bytes(final_selection[k], v) for k, v in loaded_selection.items()):
             raise ValueError("persisted tensors changed before final receipt")
         if real_admission and data["fixture"]: raise ValueError("synthetic fixture cannot receive production acceptance")
-        result.update(accepted=bool(real_admission and not data["fixture"]),
-                      acceptance_enabled=bool(real_admission and not data["fixture"]),
+        result.update(accepted=False, acceptance_enabled=False,
+                      artifact_admitted=bool(real_admission and not data["fixture"]), structural_artifact_valid=True,
                       serialization_validation=SERIALIZATION_COMPLETE,
-                      persisted_numeric_gates_passed=True, persisted_tensors_rescored_without_refit=True,
+                      numerical_policy_passed=all(s["numerical_policy_passed"] for s in persisted.values()),
+                      persisted_numeric_gates_passed=all(s["numerical_policy_passed"] for s in persisted.values()),
+                      persisted_tensors_rescored_without_refit=True,
                       fit_or_selector_retry=False, finalized_at_utc=datetime.now(timezone.utc).isoformat())
-        result["acceptance_scope"] = SCOPE if result["accepted"] else "synthetic numerical paired-MLP artifact only; not accepted"
+        result["acceptance_scope"] = SCOPE if result["artifact_admitted"] else "synthetic unevaluated paired-MLP artifact only; not admitted"
+        result["diagnostic_measurements_complete"] = original.diagnostics_complete(result)
+        result["all_numeric_diagnostic_targets_met"] = original.all_numeric_targets_met(result, "numerical_policy_passed")
         result["publication_protocol"] = "only canonical fold_receipt.json is an atomic exclusive publication marker; pending/provisional files grant no acceptance"
+        result = original.json_diagnostics(result)
         # Flush both actual artifact bodies before publishing any acceptance.
         for record in (result["output"], result["selection"]):
             with original.artifact(out, record["file"]).open("rb") as handle: os.fsync(handle.fileno())
@@ -176,7 +181,8 @@ def _persist_checked(data, policy, out, rejection, *, device, revalidate, proven
         return result
     except Exception as exc:
         # Never publish an accepted receipt for a failed reload/recheck/score.
-        receipt = {"schema": original.FOLD_SCHEMA, "status": "rejected_fresh_fold_or_serialization",
+        receipt = {"schema": original.OWNER_FOLD_SCHEMA, "status": "rejected_fresh_fold_or_serialization",
+                   "owner_policy": original.current_owner_policy(), "structural_artifact_valid": False, "artifact_admitted": False,
                    "fixture": bool(data["fixture"]), "accepted": False, "acceptance_enabled": False,
                    "candidate_written": (out / "folded_source_block_and_time.safetensors").is_file(),
                    "selection_tensors_written": (out / "selection.safetensors").is_file(),
@@ -203,6 +209,8 @@ def _code_and_policy(ctx, kwargs, policy_path, policy_sha):
     policy = original.load_policy(Path(policy_path), policy_sha)
     development._validate_policy(policy)
     gate.meta.require(gate.meta.same(policy["streams"], ctx["recipe"]["streams"]), "policy differs from frozen selector recipe gates")
+    gate.meta.require(ctx["recipe"].get("rules", {}).get("selector_recipe_id") == development.RECIPE_ID,
+                      "current owner selector recipe requires an explicit versioned fresh contract; historical v1 is not silently reinterpreted")
     return policy
 
 
@@ -255,18 +263,20 @@ def _published_header(receipt_path, receipt_sha):
             or path.absolute() != path.resolve()):
         raise ValueError("canonical regular non-symlink fold_receipt.json required")
     receipt = gate.meta.strict_json(path, receipt_sha)
-    required_true = ("accepted", "acceptance_enabled", "numerical_policy_passed",
-                     "persisted_numeric_gates_passed", "persisted_tensors_rescored_without_refit",
+    required_true = ("artifact_admitted", "structural_artifact_valid", "persisted_tensors_rescored_without_refit",
                      "candidate_written", "selection_tensors_written")
-    required_false = ("fixture", "fit_or_selector_retry", "native_block_accepted", "media_installed",
+    required_false = ("accepted", "acceptance_enabled", "fixture", "fit_or_selector_retry", "native_block_accepted", "media_installed",
                       "child_accepted", "capability_accepted", "full_joint_block_replay_performed")
-    if (receipt.get("schema") != original.FOLD_SCHEMA or receipt.get("status") != "measured_candidate"
+    if (receipt.get("schema") != original.OWNER_FOLD_SCHEMA or receipt.get("status") != "measured_candidate"
+            or receipt.get("owner_policy") != original.current_owner_policy()
+            or not isinstance(receipt.get("numerical_policy_passed"), bool)
+            or not isinstance(receipt.get("persisted_numeric_gates_passed"), bool)
             or receipt.get("recipe_id") != development.RECIPE_ID
             or receipt.get("acceptance_scope") != SCOPE
             or receipt.get("serialization_validation") != SERIALIZATION_COMPLETE
             or any(receipt.get(key) is not True for key in required_true)
             or any(receipt.get(key) is not False for key in required_false)):
-        raise ValueError("canonical receipt does not grant the narrow persisted nonfixture component acceptance")
+        raise ValueError("canonical receipt does not grant structural nonfixture component admission")
     development._require_finite_diagnostics(receipt)
     return path, receipt
 
@@ -274,7 +284,10 @@ def _published_header(receipt_path, receipt_sha):
 @torch.no_grad()
 def load_accepted_component(*, receipt_path, receipt_sha, run_receipt_path, run_receipt_sha,
                             policy_path, policy_sha, device="cpu", **kwargs):
-    """Read only canonical accepted paired MLPs, re-admitting real capture inputs.
+    """Read canonical structurally admitted unevaluated MLPs, re-admitting inputs.
+
+    Historical function name retained for callers; this API grants no numerical,
+    behavioral or model capability acceptance under the current owner policy.
 
     This is the acceptance consumer. The original joint.load_candidate remains
     a structural loader and grants no publication/component acceptance itself.
@@ -318,6 +331,10 @@ def load_accepted_component(*, receipt_path, receipt_sha, run_receipt_path, run_
     return candidate, {"receipt": {"path": str(path.resolve()), "sha256": receipt_sha},
                        "acceptance_scope": SCOPE, "structural_identity": identity,
                        "persisted_scores_revalidated": persisted, **_no_larger_claims()}
+
+
+# Explicit current-policy name. The historical name above is a compatibility alias.
+load_development_component = load_accepted_component
 
 
 def _convert_fixture_for_tests(data, policy, out, *, device="cpu", revalidate=lambda: None):

@@ -71,21 +71,21 @@ def test_kernel_is_one_fit_no_rescore_refit_and_development_unchanged(tmp_path, 
     no_tensors(report)
 
 
-def test_both_stream_source_replay_before_any_selection(tmp_path, monkeypatch):
+def test_finite_source_replay_mismatch_is_persisted_without_refusal(tmp_path):
     data = tensor_data(); data["forwards"][-1]["txt"]["y"][0, -1, 0] += 10
-    monkeypatch.setattr(development, "select_fit_output_weighted_columns", lambda *args: pytest.fail("source refusal reached selection"))
-    with pytest.raises(original.FoldRejected): writer._convert_fixture_for_tests(data, policy(), tmp_path / "candidate")
-    assert_no_acceptance(tmp_path / "candidate")
+    result = writer._convert_fixture_for_tests(data, policy(), tmp_path / "candidate")
+    assert result["source_replay_diagnostic_passed"] is False
+    assert result["accepted"] is result["artifact_admitted"] is False
+    assert result["candidate_written"] is result["structural_artifact_valid"] is True
 
 
 @pytest.mark.parametrize("bad_call,metric,value", [(3, "rel_l2", .31), (5, "rel_l2", .31),
                                                  (3, "cos", .94), (5, "cos", .94)])
-def test_pooled_and_each_heldout_gates_survive_reload(tmp_path, monkeypatch, bad_call, metric, value):
+def test_pooled_and_each_heldout_targets_remain_diagnostic_after_reload(tmp_path, monkeypatch, bad_call, metric, value):
     score = development.score
     candidate_scores = []
     def poison(actual, target):
         values = score(actual, target); candidate_scores.append(1)
-        # Only the separately invoked persisted-scoring phase is poisoned.
         if len(candidate_scores) == bad_call: values[metric] = value
         return values
     rescore = writer._rescore_persisted
@@ -94,8 +94,12 @@ def test_pooled_and_each_heldout_gates_survive_reload(tmp_path, monkeypatch, bad
             patcher.setattr(development, "score", poison)
             return rescore(*args, **kwargs)
     monkeypatch.setattr(writer, "_rescore_persisted", altered)
-    with pytest.raises(original.FoldRejected): writer._convert_fixture_for_tests(tensor_data(), policy(), tmp_path / "candidate")
-    assert_no_acceptance(tmp_path / "candidate")
+    result = writer._convert_fixture_for_tests(tensor_data(), policy(), tmp_path / "candidate")
+    assert result["persisted_numeric_gates_passed"] is result["numerical_policy_passed"] is False
+    assert result["structural_artifact_valid"] is result["candidate_written"] is True
+    assert result["accepted"] is result["capability_accepted"] is False
+    writer.joint.load_candidate(tmp_path / "candidate/fold_receipt.json",
+        original.file_sha(tmp_path / "candidate/fold_receipt.json"), tensor_data())
 
 
 def test_corrupted_written_tensor_refuses_final_marker(tmp_path, monkeypatch):
@@ -155,13 +159,18 @@ def test_refit_finite_but_bf16_overflow_refused(tmp_path, monkeypatch):
     assert_no_acceptance(tmp_path / "candidate")
 
 
-def test_stored_update_veto_refused(tmp_path, monkeypatch):
+def test_stored_finite_update_above_one_is_written_and_loaded(tmp_path, monkeypatch):
     solve = development.law_abiding_solve
     def changed(*args):
         fitted, receipt = solve(*args); return args[2] * 3, receipt
     monkeypatch.setattr(development, "law_abiding_solve", changed)
-    with pytest.raises(original.FoldRejected): writer._convert_fixture_for_tests(tensor_data(), policy(), tmp_path / "candidate")
-    assert_no_acceptance(tmp_path / "candidate")
+    data = tensor_data()
+    result = writer._convert_fixture_for_tests(data, policy(), tmp_path / "candidate")
+    assert all(s["stored_update_scale"] > 1 and s["stored_update_target_met"] is False for s in result["streams"].values())
+    assert result["all_numeric_diagnostic_targets_met"] is False
+    assert result["structural_artifact_valid"] is True
+    writer.joint.load_candidate(tmp_path / "candidate/fold_receipt.json",
+        original.file_sha(tmp_path / "candidate/fold_receipt.json"), data)
 
 
 def test_source_revalidation_failure_before_publication(tmp_path):
@@ -267,15 +276,15 @@ def test_consumer_rejects_symlink_marker_before_metadata(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("key,value", [("fixture", True), ("child_accepted", True), ("native_block_accepted", True),
-                                      ("fit_or_selector_retry", True), ("persisted_numeric_gates_passed", False),
+                                      ("fit_or_selector_retry", True), ("structural_artifact_valid", False),
                                       ("acceptance_scope", "installed child")])
-def test_consumer_rejects_malformed_acceptance_header(tmp_path, key, value):
-    # Header-only invalid fixture: no tensors, capture, authority or acceptance.
-    body = {"schema": original.FOLD_SCHEMA, "status": "measured_candidate", "recipe_id": development.RECIPE_ID, "acceptance_scope": writer.SCOPE,
+def test_consumer_rejects_malformed_structural_admission_header(tmp_path, key, value):
+    body = {"schema": original.OWNER_FOLD_SCHEMA, "status": "measured_candidate", "recipe_id": development.RECIPE_ID,
+            "owner_policy": original.current_owner_policy(), "acceptance_scope": writer.SCOPE,
             "serialization_validation": writer.SERIALIZATION_COMPLETE,
-            **{k: True for k in ("accepted", "acceptance_enabled", "numerical_policy_passed", "persisted_numeric_gates_passed",
+            **{k: True for k in ("artifact_admitted", "structural_artifact_valid", "numerical_policy_passed", "persisted_numeric_gates_passed",
                                 "persisted_tensors_rescored_without_refit", "candidate_written", "selection_tensors_written")},
-            **{k: False for k in ("fixture", "fit_or_selector_retry", "native_block_accepted", "media_installed",
+            **{k: False for k in ("accepted", "acceptance_enabled", "fixture", "fit_or_selector_retry", "native_block_accepted", "media_installed",
                                  "child_accepted", "capability_accepted", "full_joint_block_replay_performed")}}
     body[key] = value
     path = tmp_path / "fold_receipt.json"; path.write_text(json.dumps(body))

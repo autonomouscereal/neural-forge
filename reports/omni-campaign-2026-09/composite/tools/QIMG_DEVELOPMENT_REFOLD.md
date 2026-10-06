@@ -1,4 +1,10 @@
-# Nonaccepting QIMG development refold runner
+# Historical nonaccepting QIMG development refold runner notes
+
+The numerical veto descriptions below are historical reference from before the
+October 6 owner correction, not current rules. Read
+[QIMG_OWNER_DIAGNOSTIC_POLICY.md](QIMG_OWNER_DIAGNOSTIC_POLICY.md) for current
+diagnostic-only targets, explicit rank fallback and unchanged shared solver
+constraints. This development API remains JSON-only and nonaccepting.
 
 `c16_qimg_development_refold.py` is a separate experimental tool. It does not
 change or patch the production `c16_qimg_fold.py`, policies, selector primitive
