@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sys
@@ -392,9 +393,38 @@ def fold_loaded(data, policy, *, device="cpu"):
     return candidate, selections, result
 
 
-def convert(receipts, policy_path, policy_sha256, out, *, device="cpu", validate_only=False, fixture=False):
+def implementation_sha256():
+    return {"c16_qimg_fold.py": file_sha(Path(__file__)),
+            "c16_qimg_capture.py": file_sha(TOOLS / "c16_qimg_capture.py"),
+            "mediafold/linalg.py": file_sha(TOOLS.parents[1] / "media/mediafold/linalg.py")}
+
+
+def destinations_preflight(receipts, policy_path, out, rejection_receipt):
+    """Refuse aliases/overwrites before reading large captures or fitting."""
     if out.exists() or out.is_symlink():
         raise ValueError("output must be a new directory; no overwrite/cleanup")
+    rejection_receipt = rejection_receipt if rejection_receipt is not None else out.with_name(out.name + ".rejected.json")
+    if rejection_receipt.exists() or rejection_receipt.is_symlink():
+        raise ValueError("rejection receipt must be a new file; no overwrite/cleanup")
+    output, rejection = out.resolve(), rejection_receipt.resolve()
+    def overlaps(left, right):
+        return left == right or left in right.parents or right in left.parents
+    if overlaps(output, rejection):
+        raise ValueError("rejection receipt must be separate from the candidate output directory")
+    # Frozen source and forward tensors must be contained in receipt directories.
+    # Do not create a report or any of its parents inside those source directories.
+    source_directories = [*(path.parent.resolve() for path in receipts), TOOLS.resolve(),
+                          (TOOLS.parents[1] / "media").resolve()]
+    input_files = [*(path.resolve() for path in receipts), policy_path.resolve()]
+    if any(overlaps(destination, source) for destination in (output, rejection)
+           for source in source_directories + input_files):
+        raise ValueError("output/rejection receipt overlaps an input or source directory")
+    return rejection
+
+
+def convert(receipts, policy_path, policy_sha256, out, *, device="cpu", validate_only=False, fixture=False,
+            rejection_receipt=None):
+    rejection_receipt = destinations_preflight(receipts, policy_path, out, rejection_receipt)
     policy = load_policy(policy_path, policy_sha256)
     data = load_captures(receipts, fixture=fixture)
     preflight = row_preflight(data, policy)
@@ -406,18 +436,24 @@ def convert(receipts, policy_path, policy_sha256, out, *, device="cpu", validate
     except FoldRejected as exc:
         exc.receipt.update({"schema": FOLD_SCHEMA, "fixture": fixture, "policy": policy,
             "policy_sha256": policy_sha256, "capture_receipts": data["capture_receipts"],
-            "source_frozen_file_sha256": data["frozen_file_sha256"], "candidate_written": False})
+            "source_frozen_file_sha256": data["frozen_file_sha256"], "candidate_written": False,
+            "rejection_reason": str(exc), "rejection_receipt": str(rejection_receipt),
+            "implementation_sha256": implementation_sha256()})
+        # Persistence precedes stdout, so detached/lost logs cannot erase the
+        # measured refusal. Serialize before creating parents; never overwrite.
+        payload = json.dumps(exc.receipt, sort_keys=True, indent=2, allow_nan=False) + "\n"
+        destinations_preflight(receipts, policy_path, out, rejection_receipt)
+        rejection_receipt.parent.mkdir(parents=True, exist_ok=True)
+        with rejection_receipt.open("x", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
         raise
-    # Existing source files never become output destinations, even by alias.
-    input_paths = [*receipts, policy_path, *(Path(item["file"]) for item in data["forwards"])]
-    if any(out.resolve() == p.resolve() or out.resolve() in p.resolve().parents for p in input_paths):
-        raise ValueError("output overlaps an input")
+    destinations_preflight(receipts, policy_path, out, rejection_receipt)
     out.mkdir(parents=True, exist_ok=False)
     result["policy_sha256"] = policy_sha256
     result["policy_preregistration_scope"] = "caller-pinned bytes; chronological preregistration is an external review obligation"
-    result["implementation_sha256"] = {"c16_qimg_fold.py": file_sha(Path(__file__)),
-        "c16_qimg_capture.py": file_sha(TOOLS / "c16_qimg_capture.py"),
-        "mediafold/linalg.py": file_sha(TOOLS.parents[1] / "media/mediafold/linalg.py")}
+    result["implementation_sha256"] = implementation_sha256()
     try:
         result["output"] = write_tensors(out / "folded_source_block_and_time.safetensors", candidate)
         result["selection"] = write_tensors(out / "selection.safetensors", selection)
@@ -439,12 +475,15 @@ def main():
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--policy-sha256", required=True, help="externally preregistered policy digest")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--rejection-receipt", type=Path,
+                        help="exclusive refusal JSON, default sibling <out>.rejected.json; never a candidate")
     parser.add_argument("--device", choices=("cpu", "cuda:0"), default="cpu")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
     try:
         result = convert(args.captures, args.policy, args.policy_sha256, args.out,
-                         device=args.device, validate_only=args.validate_only)
+                         device=args.device, validate_only=args.validate_only,
+                         rejection_receipt=args.rejection_receipt)
     except FoldRejected as exc:
         print(json.dumps(exc.receipt, sort_keys=True, indent=2, allow_nan=False))
         raise SystemExit(2) from exc
