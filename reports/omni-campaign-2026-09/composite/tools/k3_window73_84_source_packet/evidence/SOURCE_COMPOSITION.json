@@ -1,0 +1,69 @@
+{
+  "actual_prior_closed_context_cap_admission": null,
+  "before93_created": false,
+  "current_expected_prior_native_source_sha256": "078187a4cfa2f5f7810f0c0a8fa85f7fcc8304085684d45dfda5b895854881d0",
+  "deployable": false,
+  "final_proposal_version": 3,
+  "new_layers": [
+    73,
+    84
+  ],
+  "old_prefix_end": 72,
+  "parent_catalog_origins": [
+    "legacy_closed36",
+    "closed37_48",
+    "closed49_60"
+  ],
+  "previous_unselected_draft_preserved": true,
+  "prior_proposal_root": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3",
+  "runtime_model_provider_allocator_actions": false,
+  "schema": "neural_forge.k3_73_84_source_only_integration_composition.v1",
+  "source_guard_correction": "Authenticated prior catalog permits every earlier origin; appended rows only newest closed origin.",
+  "source_only": true,
+  "source_origin_count": 4,
+  "source_pins": {
+    "collect_actual73_84_multi_origin.py": {
+      "bytes": 27372,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\collect_actual73_84_multi_origin.py",
+      "sha256": "3c6057a187c49007e2f3c12abfe6411a03bd536067418b3722b86654e77ff48b"
+    },
+    "continuation_worker73_84_template_v1.py": {
+      "bytes": 44293,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\continuation_worker73_84_template_v1.py",
+      "sha256": "7daf9999e01b5df2bb9b382773f28a3dc847928b9f57f289a94d597f04bf57f9"
+    },
+    "k3_dense_pass.py": {
+      "bytes": 190685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_dense_pass.py",
+      "sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56"
+    },
+    "k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "native_nas_io_qualification73_84_template_v1.py": {
+      "bytes": 5148,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\native_nas_io_qualification73_84_template_v1.py",
+      "sha256": "1edb4b8701003d1b0c9c9b83a1b371d17bb8d471565693fb7c6f7ee37e3d55f1"
+    },
+    "ro_resume_paths.py": {
+      "bytes": 26436,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_paths.py",
+      "sha256": "146665bbce576e52462d73384d96fafd7ec07a07a2f7a9f95bd52c9655f84ada"
+    },
+    "ro_resume_runtime.py": {
+      "bytes": 30768,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_runtime.py",
+      "sha256": "288bf5f3cde564b70932097d28a049fc1c4be500b83d7a43e33cb1273fa5e260"
+    },
+    "verify_later_window.py": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\verify_later_window.py",
+      "sha256": "51a178d37c142f646aacd6c726cfd2c8868d2ea19a2b632d578fd1a504257901"
+    }
+  },
+  "terminal92_truthful_metadata_only_manifest": false,
+  "writer_extent_bytes": 180943168512,
+  "writer_extent_sha256": "f183d67fc519f4896415b5084c1be069a5574bfbb1cc534b7b4969ebed9577fa"
+}

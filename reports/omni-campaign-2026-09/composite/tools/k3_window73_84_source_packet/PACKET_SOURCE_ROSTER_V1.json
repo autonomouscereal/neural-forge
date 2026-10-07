@@ -1,0 +1,84 @@
+{
+  "actual_binding": null,
+  "deployable": false,
+  "members": {
+    ".gitattributes": {
+      "bytes": 8,
+      "sha256": "705fd4d6451a31d36b3df7de96f83f30ac976c9b4a6d1e51671d8e2f33e2d0da"
+    },
+    "CALLER_CONTROL_INTEGRATION_REQUIREMENTS_V1.json": {
+      "bytes": 8146,
+      "sha256": "99d167ea5ebf8cffe8a63875721d6a0e89db36146a49559398c45cbf9e40c5ab"
+    },
+    "README.md": {
+      "bytes": 543,
+      "sha256": "b18c6847321604dd19717de60a0f82d287a2f865fc66cf360cc98d0d2e55f452"
+    },
+    "check_committed_later_source_packet_v1.py": {
+      "bytes": 3087,
+      "sha256": "157e50a035e38e41010ff1c6cc069270aa9759fdec303382a8d39f3e31060857"
+    },
+    "collect_actual73_84_multi_origin.py": {
+      "bytes": 27372,
+      "sha256": "3c6057a187c49007e2f3c12abfe6411a03bd536067418b3722b86654e77ff48b"
+    },
+    "continuation_worker73_84_template_v1.py": {
+      "bytes": 44293,
+      "sha256": "7daf9999e01b5df2bb9b382773f28a3dc847928b9f57f289a94d597f04bf57f9"
+    },
+    "evidence/ACTUAL_HEADER_WRITE_AND_ARRAY_COMPONENTS_V1.json": {
+      "bytes": 118576,
+      "sha256": "f183d67fc519f4896415b5084c1be069a5574bfbb1cc534b7b4969ebed9577fa"
+    },
+    "evidence/COMBINED_INTEGRATION_HANDOFF_V2.json": {
+      "bytes": 16551,
+      "sha256": "1934b24580cf9158aa38226eb1d8e555d973d94374b2a03aa9f1951c551e9498"
+    },
+    "evidence/LATER73_92_INDEPENDENT_SOURCE_REVIEW_V1.json": {
+      "bytes": 21249,
+      "sha256": "bda35800f6463d30f8b91ab790f88a1874e335cacec49f4914bf47287fb442b9"
+    },
+    "evidence/REFERENCE61_BINDING_AND_CALLER_SOURCE_CONTRACT_V4.json": {
+      "bytes": 13228,
+      "sha256": "607570dd3baacaeeebb3b506ceb7914ba606864f89f45ce0f827a9a79a2bf953"
+    },
+    "evidence/SOURCE_CHECKS.json": {
+      "bytes": 4726,
+      "sha256": "6eb61fda432d19e547fae0bcd632fb2e205446988b6b01c5604a6536a9ae7a7f"
+    },
+    "evidence/SOURCE_COMPOSITION.json": {
+      "bytes": 4365,
+      "sha256": "190dfd8f9834617268c0bdc1a845e7900401dde598bf1e3733a5d38f80603d79"
+    },
+    "k3_dense_pass.py": {
+      "bytes": 190685,
+      "sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56"
+    },
+    "k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "native_nas_io_qualification73_84_template_v1.py": {
+      "bytes": 5148,
+      "sha256": "1edb4b8701003d1b0c9c9b83a1b371d17bb8d471565693fb7c6f7ee37e3d55f1"
+    },
+    "ro_resume_paths.py": {
+      "bytes": 26436,
+      "sha256": "146665bbce576e52462d73384d96fafd7ec07a07a2f7a9f95bd52c9655f84ada"
+    },
+    "ro_resume_runtime.py": {
+      "bytes": 30768,
+      "sha256": "288bf5f3cde564b70932097d28a049fc1c4be500b83d7a43e33cb1273fa5e260"
+    },
+    "verify_later_window.py": {
+      "bytes": 42002,
+      "sha256": "51a178d37c142f646aacd6c726cfd2c8868d2ea19a2b632d578fd1a504257901"
+    }
+  },
+  "schema": "neural_forge.k3_later_reviewed_source_component_packet_roster.v1",
+  "source_only": true,
+  "window": [
+    73,
+    84
+  ]
+}

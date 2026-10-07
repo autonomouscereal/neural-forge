@@ -1,0 +1,146 @@
+{
+  "RO_origin_count": 4,
+  "actual_UUID": null,
+  "actual_admission": null,
+  "actual_allocation": null,
+  "actual_caps": null,
+  "actual_filesystem": null,
+  "actual_prior_closed_prefix": 72,
+  "actual_prior_closure": null,
+  "actual_source_freeze": null,
+  "basis61_contract": {
+    "bytes": 13228,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\BINDING_AND_CALLER_SOURCE_CONTRACT_V4.json",
+    "sha256": "607570dd3baacaeeebb3b506ceb7914ba606864f89f45ce0f827a9a79a2bf953"
+  },
+  "before93_created": false,
+  "body_prefix_copy_move_delete_bytes": 0,
+  "can_arm": false,
+  "canonical_destinations": {
+    "ancestry": [
+      "production_code/reports/omni-campaign-2026-09/composite/tools/k3_recovery_ancestry.py",
+      "production_control/k3_recovery_ancestry.py"
+    ],
+    "collector": "observer_source/collect_actual73_84_multi_origin.py",
+    "driver": "production_control/continuation_worker.py",
+    "native": "production_code/reports/omni-campaign-2026-09/composite/tools/k3_dense_pass.py",
+    "qualifier": "production_control/native_nas_io_qualification.py",
+    "resolver": [
+      "production_code/reports/omni-campaign-2026-09/composite/tools/ro_resume_paths.py",
+      "production_control/ro_resume_paths.py"
+    ],
+    "runtime": [
+      "production_code/reports/omni-campaign-2026-09/composite/tools/ro_resume_runtime.py",
+      "production_control/ro_resume_runtime.py"
+    ],
+    "verifier": "production_control/verify_later_window.py"
+  },
+  "cap_binding": "actual preceding final measured whole-controller peak plus header-derived residual delta and saver/head/observer buffers;104GiB61 proposal is not a universal later RSS cap proof",
+  "capability_accepted": false,
+  "deployable": false,
+  "exact_sorted_mount_count": 12,
+  "facts_host_binding": "bind exact new output selected filesystem and all four/five RO roots; genuine new UUID/identity/config/source roster+mount count; never reuse or mutate61/current49 rows",
+  "finite_new_write_leaves": 82,
+  "future_all93_admission_claimed": false,
+  "initial_native_boundary": "before_L73",
+  "missing_source_derivatives": [
+    "phase-specific actual prior raw metadata binder",
+    "phase-specific readonly facts source",
+    "phase-specific existing host caller source",
+    "phase-specific full capacity preflight source"
+  ],
+  "namespace_PID": "derive actual positive Popen fitter PID from genuine previous execution plus exact argv/events; no hostPID or historical PID substitution",
+  "new_window": [
+    73,
+    84
+  ],
+  "normal_caller_ABI": {
+    "capacity_requests": "/run-control-output/capacity_requests",
+    "capacity_responses": "/run-control-output/capacity_responses",
+    "config_schema": "neural_forge.k3_capacity_host_loop_config.v1",
+    "decision_schema": "neural_forge.k3_owned_launch_capacity.v2",
+    "driver_request_schema": "neural_forge.k3_driver_capacity_request.v1",
+    "driver_response_schema": "neural_forge.k3_driver_capacity_response.v1",
+    "preflight_request_schema": "neural_forge.k3_owned_capacity_preflight_request.v2"
+  },
+  "output_filesystem_options": [
+    "NAS",
+    "Lexar"
+  ],
+  "preflight_binding": "replace preceding K3 own write promise with this phase writer exactly once; join current RAM/residuals/CPU/other approved peer/backup/common/headroom commitments and actual filesystem capacity",
+  "qualification_included_once_bytes": 536870912,
+  "required_complete_prior_provenance": [
+    "source_closure",
+    "source_binding",
+    "identity",
+    "catalog",
+    "observation",
+    "driver_config",
+    "source_freeze",
+    "allocation",
+    "recovery_plan",
+    "every earlier sealed native context and source/catalog lineage"
+  ],
+  "required_latest_prior_raw_roles": [
+    "closed72_continuity",
+    "terminal_receipt",
+    "full_ffn_validation",
+    "snapshot_manifest",
+    "fitter_execution",
+    "controller_terminal_result",
+    "resources_jsonl",
+    "controller_events_jsonl",
+    "binding_receipt"
+  ],
+  "reviewed_eight_source_roster": {
+    "collect_actual73_84_multi_origin.py": {
+      "bytes": 27372,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\collect_actual73_84_multi_origin.py",
+      "sha256": "3c6057a187c49007e2f3c12abfe6411a03bd536067418b3722b86654e77ff48b"
+    },
+    "continuation_worker73_84_template_v1.py": {
+      "bytes": 44293,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\continuation_worker73_84_template_v1.py",
+      "sha256": "7daf9999e01b5df2bb9b382773f28a3dc847928b9f57f289a94d597f04bf57f9"
+    },
+    "k3_dense_pass.py": {
+      "bytes": 190685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_dense_pass.py",
+      "sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56"
+    },
+    "k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "native_nas_io_qualification73_84_template_v1.py": {
+      "bytes": 5148,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\native_nas_io_qualification73_84_template_v1.py",
+      "sha256": "1edb4b8701003d1b0c9c9b83a1b371d17bb8d471565693fb7c6f7ee37e3d55f1"
+    },
+    "ro_resume_paths.py": {
+      "bytes": 26436,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_paths.py",
+      "sha256": "146665bbce576e52462d73384d96fafd7ec07a07a2f7a9f95bd52c9655f84ada"
+    },
+    "ro_resume_runtime.py": {
+      "bytes": 30768,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_runtime.py",
+      "sha256": "288bf5f3cde564b70932097d28a049fc1c4be500b83d7a43e33cb1273fa5e260"
+    },
+    "verify_later_window.py": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\verify_later_window.py",
+      "sha256": "51a178d37c142f646aacd6c726cfd2c8868d2ea19a2b632d578fd1a504257901"
+    }
+  },
+  "schema": "neural_forge.k3_actual73_84_minimal_caller_control_integration_requirements.v1",
+  "serial_closure": "one exact emitted-path/hash FFN full scanner, body/global/endpoint and native forward/source-context validation; saved markers alone never promote prefix",
+  "source_freeze": "promote/test whole chosen caller/binder/eight-source closure and immutable full member hashes before normal runtime admission; atomic SHA sidecar before JSON/readiness publication",
+  "source_only": true,
+  "split_output_supported": false,
+  "terminal_manifest_publication_proof_required": false,
+  "training_eligible": false,
+  "whole_phase_writer_once_bytes": 180943168512,
+  "whole_prior_terminal_boundary": "bounded_window_complete; exact prior full-prefix and single matching completion event; partial/native EXIT0 alone insufficient"
+}
