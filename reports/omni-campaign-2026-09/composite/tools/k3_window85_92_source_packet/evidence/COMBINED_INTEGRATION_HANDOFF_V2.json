@@ -1,0 +1,241 @@
+{
+  "accepted_source_only_parent61_handoff": {
+    "bytes": 7393,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\INTEGRATION_HANDOFF_V1.json",
+    "sha256": "2242c3ec3d518e64133eaa97b4c43b3a5d281fda0821b7dfd79d5a097646a9f1"
+  },
+  "actual72_context_closure_admission": null,
+  "actual84_context_closure_admission": null,
+  "all99_qualified_mathematical_ASTs_preserved": true,
+  "ancestry_IO_optimization_adopted": false,
+  "at_utc": "2026-10-07T21:57:38.194926+00:00",
+  "capability_accepted": false,
+  "deployable": false,
+  "final_export_inventory_actual_closed92_request": null,
+  "final_export_inventory_contract": {
+    "bytes": 1036,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\final_export_inventory_source_v1\\SOURCE_CONTRACT_V1.json",
+    "sha256": "a09bc9e08c2f1f7a2c7254974fcf84314260a1e15eae93c38aa4f5c9e3650cb0"
+  },
+  "final_export_inventory_source": {
+    "bytes": 18360,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\final_export_inventory_source_v1\\build_final_export_inventory.py",
+    "sha256": "dc957e33824efecb87d24519c7d1e12d7c717d64649ff399ba53b4bea8946ab9"
+  },
+  "final_export_inventory_source_checks": {
+    "bytes": 2022,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\final_export_inventory_source_v1\\SOURCE_CHECKS_V1.json",
+    "sha256": "895b159979d6f06d3667bae3fdffa80d7b6655741a236778692920e5faa05fbd"
+  },
+  "final_handoff_version": 2,
+  "final_inventory_reader_functions_AST_byte_exact_to_updated_verifier": true,
+  "final_inventory_scope": "serial full current SHA, bounded safe_open finite/load, per-artifact accounting; no copying or model publication",
+  "future_split_output_requires_separate_review": true,
+  "homogeneous_new_output_device_seams": [
+    "ROResumePaths._check_descendant",
+    "collector output root/dev and relative mapping",
+    "driver OUT disk accounting",
+    "verifier ancestry output-relative paths"
+  ],
+  "independent_review_required": true,
+  "independent_terminal_publication_join_review_pending": true,
+  "no_reclaim_credit": true,
+  "numerical_targets_are_nonveto_diagnostics": true,
+  "original_L00_body_globals_prefix_source_contexts_and_ancestry_preserved": true,
+  "output_storage_selection": "fresh own disjoint output under existing NAS or Lexar only after exact phase admission; no input clone, historical relocation or split-output implementation",
+  "phase_proposals": [
+    {
+      "RO_origin_count": 4,
+      "actual_allocation": null,
+      "actual_caps": null,
+      "actual_current_peer_commitments": null,
+      "actual_header_writer_proof": {
+        "bytes": 118576,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\remaining_parent_header_accounting_v1\\ACTUAL_HEADER_73_84_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+        "sha256": "f183d67fc519f4896415b5084c1be069a5574bfbb1cc534b7b4969ebed9577fa"
+      },
+      "actual_namespace_UUID": null,
+      "actual_output_filesystem": null,
+      "actual_prior_closure": null,
+      "actual_prior_native_context": null,
+      "actual_runtime_admission": null,
+      "actual_source_catalog": null,
+      "actual_source_observation": null,
+      "before93_created": null,
+      "deployable": false,
+      "finite_exclusive_new_write_paths": 82,
+      "full_current_writer_extent_bytes": 180943168512,
+      "initial_dual_read_boundary": "before_L73",
+      "new_window": [
+        73,
+        84
+      ],
+      "next_dual_endpoint_payload_bytes": 36993761280,
+      "normal_caller_binder_source_integration_independent_review_required": true,
+      "old_prefix_tensor_copy_bytes": 0,
+      "required_actual_closed_prefix": 72,
+      "separately_retained_verifier_endpoint_copy_bytes": 36993761280,
+      "source_checks": {
+        "bytes": 4726,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\SOURCE_CHECKS_V1.json",
+        "sha256": "6eb61fda432d19e547fae0bcd632fb2e205446988b6b01c5604a6536a9ae7a7f"
+      },
+      "source_composition": {
+        "bytes": 4365,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\SOURCE_COMPOSITION_V3.json",
+        "sha256": "190dfd8f9834617268c0bdc1a845e7900401dde598bf1e3733a5d38f80603d79"
+      },
+      "source_pins": {
+        "collect_actual73_84_multi_origin.py": {
+          "bytes": 27372,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\collect_actual73_84_multi_origin.py",
+          "sha256": "3c6057a187c49007e2f3c12abfe6411a03bd536067418b3722b86654e77ff48b"
+        },
+        "continuation_worker73_84_template_v1.py": {
+          "bytes": 44293,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\continuation_worker73_84_template_v1.py",
+          "sha256": "7daf9999e01b5df2bb9b382773f28a3dc847928b9f57f289a94d597f04bf57f9"
+        },
+        "k3_dense_pass.py": {
+          "bytes": 190685,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_dense_pass.py",
+          "sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56"
+        },
+        "k3_recovery_ancestry.py": {
+          "bytes": 17493,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_recovery_ancestry.py",
+          "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+        },
+        "native_nas_io_qualification73_84_template_v1.py": {
+          "bytes": 5148,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\native_nas_io_qualification73_84_template_v1.py",
+          "sha256": "1edb4b8701003d1b0c9c9b83a1b371d17bb8d471565693fb7c6f7ee37e3d55f1"
+        },
+        "ro_resume_paths.py": {
+          "bytes": 26436,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_paths.py",
+          "sha256": "146665bbce576e52462d73384d96fafd7ec07a07a2f7a9f95bd52c9655f84ada"
+        },
+        "ro_resume_runtime.py": {
+          "bytes": 30768,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_runtime.py",
+          "sha256": "288bf5f3cde564b70932097d28a049fc1c4be500b83d7a43e33cb1273fa5e260"
+        },
+        "verify_later_window.py": {
+          "bytes": 42002,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\verify_later_window.py",
+          "sha256": "51a178d37c142f646aacd6c726cfd2c8868d2ea19a2b632d578fd1a504257901"
+        }
+      }
+    },
+    {
+      "RO_origin_count": 5,
+      "actual_allocation": null,
+      "actual_caps": null,
+      "actual_current_peer_commitments": null,
+      "actual_header_writer_proof": {
+        "bytes": 84948,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\remaining_parent_header_accounting_v1\\ACTUAL_HEADER_85_92_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+        "sha256": "a5511acd289ed6c2c080762a26dbf11ba84fb9e02b47c7211a1a7c11176c7eb8"
+      },
+      "actual_namespace_UUID": null,
+      "actual_output_filesystem": null,
+      "actual_prior_closure": null,
+      "actual_prior_native_context": null,
+      "actual_runtime_admission": null,
+      "actual_source_catalog": null,
+      "actual_source_observation": null,
+      "before93_created": false,
+      "deployable": false,
+      "finite_exclusive_new_write_paths": 59,
+      "full_current_writer_extent_bytes": 40692831840,
+      "initial_dual_read_boundary": "before_L85",
+      "new_window": [
+        85,
+        92
+      ],
+      "next_dual_endpoint_payload_bytes": 0,
+      "normal_caller_binder_source_integration_independent_review_required": true,
+      "old_prefix_tensor_copy_bytes": 0,
+      "prior_source_checks": {
+        "bytes": 4726,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\SOURCE_CHECKS_V1.json",
+        "sha256": "c2bc65c68abcb96d52ce5b8f5ac5df3c8606216b40c66520d3744dbc7f3305c6"
+      },
+      "required_actual_closed_prefix": 84,
+      "separately_retained_verifier_endpoint_copy_bytes": 0,
+      "source_checks": {
+        "bytes": 4906,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\SOURCE_CHECKS_V4.json",
+        "sha256": "26eaaf4a936f3829b3957ae4d9613c176320bfbb43be919778c3b99f9d3a131a"
+      },
+      "source_composition": {
+        "bytes": 4969,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\SOURCE_COMPOSITION_V4.json",
+        "sha256": "6d46ec91fef0215906a80d814fe8043c8d1728b81ad462331a6e564ab277f722"
+      },
+      "source_pins": {
+        "collect_actual85_92_multi_origin.py": {
+          "bytes": 28901,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\collect_actual85_92_multi_origin.py",
+          "sha256": "5d5b3853ed7a7538371881484d09f98280bdf6059ce17d8f80cf1cfe6b780660"
+        },
+        "continuation_worker85_92_template_v1.py": {
+          "bytes": 44624,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\continuation_worker85_92_template_v1.py",
+          "sha256": "4e17e5e87688096c747f83ab7d68f1ed4c5e521d36bff750780bcfa6e5e43509"
+        },
+        "k3_dense_pass.py": {
+          "bytes": 192629,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_dense_pass.py",
+          "sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b"
+        },
+        "k3_recovery_ancestry.py": {
+          "bytes": 17493,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_recovery_ancestry.py",
+          "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+        },
+        "native_nas_io_qualification85_92_template_v1.py": {
+          "bytes": 5223,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\native_nas_io_qualification85_92_template_v1.py",
+          "sha256": "29ceb3fa3cdaa4dcc006be478ab9f410b704703a0a973db1d2122cf12195f9a1"
+        },
+        "ro_resume_paths.py": {
+          "bytes": 27385,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_paths.py",
+          "sha256": "6c626aef115e17274c119ec8357d77380bf3d22df07ecda5f123988f3b74e6e8"
+        },
+        "ro_resume_runtime.py": {
+          "bytes": 38322,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_runtime.py",
+          "sha256": "22cdf12a5de1f6a6755b59085f15c0da508cb5cb34e3dba022dd085aa2b6f9f8"
+        },
+        "verify_later_window.py": {
+          "bytes": 44685,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\verify_later_window.py",
+          "sha256": "a717f7b437807c38c086aad67dbc72c4733e8fb823f1e66c7c47e5515e60be87"
+        }
+      },
+      "terminal_publication_join": "exact actual native publication source/published paths+SHA, authenticated closed84 prior fullSHA, preserved canonical semantics/current consumer context/no producer rewrite/no new payload/no before93; proof retained in closed92"
+    }
+  ],
+  "previous_handoff": {
+    "bytes": 14926,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\INTEGRATION_HANDOFF_V1.json",
+    "sha256": "a15a4be0568263ab69a14e59b0f83b7eea2a3da27d32e6e60696e63ae3da90b4"
+  },
+  "required_functional_boundaries": "actual terminal preceding window, one full finite/load/scanner + native forward/source/prefix closure, exact full SHA and current lineage, new exclusive outputs, normal new owned admission/runtime",
+  "required_old_roles": "complete immutable parent catalog plus appended latest closed window roles; original logical /run-output strings retained, verified physical RO root per artifact",
+  "resource_accounting": "phase writer bound already includes qualification/temp/header/JSON/overhead; retain measured input/residual RAM and latest approved peer/backup/common commitments once; header CPU components are not RSS/cap proof",
+  "runtime_Relay_allocator_provider_model_actions": false,
+  "schema": "neural_forge.k3_remaining73_92_combined_source_only_handoff.v1",
+  "selected49_or_61_sources_changed": false,
+  "source_attempts_and_unselected_drafts_preserved": true,
+  "source_only": true,
+  "terminal85_candidate_root": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b",
+  "terminal85_final_proposal_version": 4,
+  "terminal85_native_bytes_match_reviewed_655e10cb": true,
+  "terminal92_semantics": "authenticated prior manifest metadata published truthfully; producer entries unchanged; no before93/new dual payload; native two saved teacher-forced head diagnostics required",
+  "terminal_publication_verifier_gap_resolved_source_only": true,
+  "training_eligible": false
+}

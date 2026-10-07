@@ -1,0 +1,96 @@
+{
+  "actual_prior_closure_created": false,
+  "at_utc": "2026-10-07T21:39:05.646143+00:00",
+  "checks": [
+    {
+      "name": "eight exact current source pins and compilation",
+      "passed": true
+    },
+    {
+      "name": "all99 qualified mathematical ASTs unchanged",
+      "passed": true
+    },
+    {
+      "name": "actual native resume method requires exact window and dual before-first",
+      "passed": true
+    },
+    {
+      "name": "old role ownership, no future aliases and complete authenticated parent origins",
+      "passed": true
+    },
+    {
+      "name": "finite exclusive new output roster includes genuine terminal review/calibration and no before93",
+      "passed": true
+    },
+    {
+      "name": "latest sealed native metadata and duplicate alias rejection",
+      "passed": true
+    },
+    {
+      "name": "latest full-prefix/scanner/endpoint validator rejects wrong ancestor and nonfinite proof",
+      "passed": true
+    },
+    {
+      "name": "full SHA/stat/symlink/exclusive guards and exact original ancestry unchanged",
+      "passed": true
+    },
+    {
+      "name": "actual whole writer extent and late-bound caps; terminal matches reviewed native bytes",
+      "passed": true
+    }
+  ],
+  "deployable": false,
+  "failure_count": 0,
+  "pass_count": 9,
+  "phase": [
+    85,
+    92
+  ],
+  "qualified_math_ASTs_unchanged": 99,
+  "runtime_or_tensor_payload_actions": false,
+  "schema": "neural_forge.k3_later_source_only_guard_checks.v1",
+  "source_only": true,
+  "source_pins": {
+    "collect_actual85_92_multi_origin.py": {
+      "bytes": 28901,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\collect_actual85_92_multi_origin.py",
+      "sha256": "af7954807134d3d4ba86517db49e1054ee9781a99c8e581c9bccbd9599850294"
+    },
+    "continuation_worker85_92_template_v1.py": {
+      "bytes": 44624,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\continuation_worker85_92_template_v1.py",
+      "sha256": "4e17e5e87688096c747f83ab7d68f1ed4c5e521d36bff750780bcfa6e5e43509"
+    },
+    "k3_dense_pass.py": {
+      "bytes": 192629,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\k3_dense_pass.py",
+      "sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b"
+    },
+    "k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "native_nas_io_qualification85_92_template_v1.py": {
+      "bytes": 5223,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\native_nas_io_qualification85_92_template_v1.py",
+      "sha256": "29ceb3fa3cdaa4dcc006be478ab9f410b704703a0a973db1d2122cf12195f9a1"
+    },
+    "ro_resume_paths.py": {
+      "bytes": 27385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\ro_resume_paths.py",
+      "sha256": "6c626aef115e17274c119ec8357d77380bf3d22df07ecda5f123988f3b74e6e8"
+    },
+    "ro_resume_runtime.py": {
+      "bytes": 38322,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\ro_resume_runtime.py",
+      "sha256": "22cdf12a5de1f6a6755b59085f15c0da508cb5cb34e3dba022dd085aa2b6f9f8"
+    },
+    "verify_later_window.py": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\verify_later_window.py",
+      "sha256": "2b1375c9d1417866ffe5eb32fb52f0fc36b6593ed584d8788f6c742f2ac819d8"
+    }
+  },
+  "synthetic_metadata_only": true
+}
