@@ -1,0 +1,152 @@
+{
+  "ROOT_serial_future_once": {
+    "CPU_threads": 4,
+    "RAM_bytes": 17179869184,
+    "ROOT_write_bytes": 9663676416,
+    "active_actor_adopted": false
+  },
+  "actual_A": null,
+  "actual_FS": null,
+  "actual_UUID": null,
+  "actual_admission": null,
+  "actual_cap": null,
+  "actual_native_PIDs": null,
+  "actual_prior_closure": null,
+  "before93_created": false,
+  "can_arm": false,
+  "capability_accepted": false,
+  "collector_producer_aliases": [
+    "_61.py",
+    "_73.py"
+  ],
+  "deployable": false,
+  "metadata_before_A": 73,
+  "metadata_with_A": 74,
+  "mount_count": 13,
+  "new_old_input_copy_bytes": 0,
+  "schema": "neural_forge.k3_later_whole_control_packet_contract.v1",
+  "script_count": 5,
+  "selected_members": {
+    "ACTUAL85_INPUTS_UNRESOLVED_V2.json": {
+      "bytes": 792,
+      "sha256": "6c8ed7cec6cf13c764da01e4e611c581569c7aab2b972d61cb80beaa5ed8d054"
+    },
+    "ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_PUBLIC_PROOF_V1.json": {
+      "bytes": 53603,
+      "sha256": "99a1dec0fddc46a6478cf8bb289856dfe1804838a973b35f1bc3545e4b474201"
+    },
+    "SELECTED_PHASE_SOURCE_PINS_V9.json": {
+      "bytes": 4071,
+      "sha256": "a42e223e375cac605f582a9af40a6dd8837001ecf291f1576becdee9c3d01fac"
+    },
+    "bind_actual85_92_runtime_v9.py": {
+      "bytes": 54972,
+      "sha256": "0b00f66e7e66cf0546e14e76843172ca8721398fbb6b3ac60eac6ea1ce9903de"
+    },
+    "controls/normal_caller_ready85_remote.py": {
+      "bytes": 1650,
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+    },
+    "controls/normal_cap_arm_bound_remote.py": {
+      "bytes": 5223,
+      "sha256": "17d0a9a85d1fbacc82974e7e6f35d31ca28ffab8da13681b10a8baca30c2ad8a"
+    },
+    "controls/normal_freeze85_remote.py": {
+      "bytes": 3249,
+      "sha256": "e1558f8098d6013d0d707d609d65708b8aee6893cc8c8c50fe957174a34e0ee8"
+    },
+    "controls/normal_precheck13_remote.py": {
+      "bytes": 1385,
+      "sha256": "b4541cb88e1ff12558ab800798fd05a1a402fbfc04e4a017bc218a223b2a606f"
+    },
+    "controls/normal_stage_assets85_remote.py": {
+      "bytes": 1833,
+      "sha256": "fd74118dd70bd0b536b1188f84865b194006f28930ddbad77dcdf5f40453f815"
+    },
+    "controls/stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "sha256": "5443a420b9a7485ed2d6811138ded31c58a1aee77059751972eb994273389834"
+    },
+    "launch/LAUNCH_HELPER_SOURCE_PINS_V9.json": {
+      "bytes": 647,
+      "sha256": "67ed79500a65d96a39c81a954c8ba5c4697058dce816bcc248979a766a980567"
+    },
+    "launch/create_next85_roots_ROOT_serial_v9_remote.py": {
+      "bytes": 3214,
+      "sha256": "9ebf89ae41cba570d54fb05521a918d4c2aa2b866a6910cc2e5b5c0f0b3c8b1e"
+    },
+    "launch/execute_metadata_collector85_ROOT_serial_v9_remote.py": {
+      "bytes": 1520,
+      "sha256": "150b932a43b0183d879810019e56eaa7281ab016f4de2a0e196d318772d031b0"
+    },
+    "launch/execute_prospective85_ROOT_serial_v9_remote.py": {
+      "bytes": 3916,
+      "sha256": "5134d9af074901b52f7eb24e33374bc0d73a625ea5d52b6237ed9894c8710ee6"
+    },
+    "launch/launch_actual85_92_v9.py": {
+      "bytes": 26033,
+      "sha256": "0548c76c41f185c17c9b2affb1c4e453cda835bc680fda26d94a8b8e579a5963"
+    },
+    "launch/read_fresh_prospective85_ROOT_serial_v9_remote.py": {
+      "bytes": 7773,
+      "sha256": "584c65977c9e5569f1d53ba43a1101f99436f42b985831406db81378f53794e7"
+    },
+    "templates/collect_actual85_92_multi_origin.py": {
+      "bytes": 28901,
+      "sha256": "5d5b3853ed7a7538371881484d09f98280bdf6059ce17d8f80cf1cfe6b780660"
+    },
+    "templates/continuation_worker85_92_template_v1.py": {
+      "bytes": 44624,
+      "sha256": "4e17e5e87688096c747f83ab7d68f1ed4c5e521d36bff750780bcfa6e5e43509"
+    },
+    "templates/k3_capacity_host_loop85_92_template_v1.py": {
+      "bytes": 17967,
+      "sha256": "fc3ef46f960632109e3ea91cc2ebbaee2465ac3b10fcc7c8c5929ea3f89b4a8b"
+    },
+    "templates/k3_dense_pass.py": {
+      "bytes": 192629,
+      "sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b"
+    },
+    "templates/k3_owned_capacity_preflight85_92_ROOT_serial_v9.py": {
+      "bytes": 124801,
+      "sha256": "6cfac2f548fca339c26cf0a91c0fee52f4f74ece1f640d9304609764da7bd640"
+    },
+    "templates/k3_owned_readonly_facts85_92_template_v1.py": {
+      "bytes": 11936,
+      "sha256": "854eab9d510a88e4fb3a293ba7185f1dcdb0a562f0368875b11323edf8b05ec4"
+    },
+    "templates/k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "templates/native_nas_io_qualification85_92_template_v1.py": {
+      "bytes": 5223,
+      "sha256": "29ceb3fa3cdaa4dcc006be478ab9f410b704703a0a973db1d2122cf12195f9a1"
+    },
+    "templates/ro_resume_paths.py": {
+      "bytes": 27385,
+      "sha256": "6c626aef115e17274c119ec8357d77380bf3d22df07ecda5f123988f3b74e6e8"
+    },
+    "templates/ro_resume_runtime.py": {
+      "bytes": 38322,
+      "sha256": "22cdf12a5de1f6a6755b59085f15c0da508cb5cb34e3dba022dd085aa2b6f9f8"
+    },
+    "templates/verify_later_window.py": {
+      "bytes": 44685,
+      "sha256": "a717f7b437807c38c086aad67dbc72c4733e8fb823f1e66c7c47e5515e60be87"
+    },
+    "validate_actual84_source_metadata_v2.py": {
+      "bytes": 13361,
+      "sha256": "b21137e2aa06ae017da7881225ec1f09d2bbf47c6dd841748449e7442cd2122e"
+    }
+  },
+  "source_only": true,
+  "source_provenance": "whole source-only normal control proposal from final61 and authentic ROOTserial successor; actual predecessor whole execution/provenance remains mandatory",
+  "training_eligible": false,
+  "whole_independent_review_sha256": "cd4754a5f02e9354c76ea0fb171bb26c4de875ca7bf82a1a07a84633e7e05fe6",
+  "whole_writer_once": 40692831840,
+  "window": [
+    85,
+    92
+  ]
+}
