@@ -1,0 +1,33 @@
+{
+  "actual_catalog_or_observation_created": false,
+  "actual_collector_executed": false,
+  "checks": [
+    {
+      "name": "exact source fullSHA/bytes and compile",
+      "passed": true
+    },
+    {
+      "name": "authentic legacy127 row raw pin,124 recorded plus3 relative normalization and exact resolver old-role acceptance",
+      "passed": true
+    },
+    {
+      "name": "exact82 disjoint new write roles all accepted by selected resolver, no before49 write",
+      "passed": true
+    }
+  ],
+  "collector": {
+    "bytes": 22852,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual49_60_binding_proposal_v1\\collect_actual49_60_multi_origin.py",
+    "sha256": "ebcf86a3557033d8d0eb874417349b009357e4c63ef7f220fd90bf0d1d04dc46"
+  },
+  "contract": {
+    "bytes": 7892,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual49_60_binding_proposal_v1\\MULTI_ORIGIN_METADATA_COLLECTOR_CONTRACT_V1.json",
+    "sha256": "70ebc7ddc7982dd5bcd9b6024b80354cc315a96b1d1be3b1f8c054ef61b99e56"
+  },
+  "model_payload_bytes_read_or_hashed": 0,
+  "no_fake48_fixture": true,
+  "remote_or_runtime_actions": false,
+  "schema": "neural_forge.k3_actual49_60_multi_origin_collector_bounded_source_checks.v1",
+  "source_only": true
+}
