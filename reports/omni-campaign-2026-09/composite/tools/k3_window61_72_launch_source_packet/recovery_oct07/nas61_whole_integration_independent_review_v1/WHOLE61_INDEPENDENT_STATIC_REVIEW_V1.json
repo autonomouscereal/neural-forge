@@ -1,0 +1,362 @@
+{
+  "actual60_closed_or61_launched_claimed": false,
+  "all92_admitted": false,
+  "at": "2026-10-07T23:04:44.811124+00:00",
+  "audit_source_sha256": "0eec6e3fea8c950ffc12febc9f1a9b5d702fd004df68d8c8ac836660306ecf5c",
+  "candidate_main_import_remote_DB_Relay_allocator_provider_model_tensor_actions": false,
+  "capability_accepted": false,
+  "checks": [
+    "regular local file: NORMAL_CONTROL_COMPOSITION_V3.json",
+    "composition claims source only",
+    "regular local file: bind_actual61_runtime_v3.py",
+    "full source SHA: bind_actual61_runtime_v3.py",
+    "full source extent: bind_actual61_runtime_v3.py",
+    "regular local file: launch_actual61_72_v3.py",
+    "full source SHA: launch_actual61_72_v3.py",
+    "full source extent: launch_actual61_72_v3.py",
+    "regular local file: extract_actual60_raw9_v2.py",
+    "full source SHA: extract_actual60_raw9_v2.py",
+    "full source extent: extract_actual60_raw9_v2.py",
+    "compile only, not executed: bind_actual61_runtime_v3.py",
+    "compile only, not executed: launch_actual61_72_v3.py",
+    "compile only, not executed: extract_actual60_raw9_v2.py",
+    "eleven mounts, conditional104GiB cap and whole166556705792 writer",
+    "six selected controls and four helpers",
+    "regular local file: normal_caller_ready61_remote.py",
+    "full source SHA: normal_caller_ready61_remote.py",
+    "full source extent: normal_caller_ready61_remote.py",
+    "compile only, not executed: normal_caller_ready61_remote.py",
+    "regular local file: normal_cap_arm104_remote.py",
+    "full source SHA: normal_cap_arm104_remote.py",
+    "full source extent: normal_cap_arm104_remote.py",
+    "compile only, not executed: normal_cap_arm104_remote.py",
+    "regular local file: normal_freeze61_remote.py",
+    "full source SHA: normal_freeze61_remote.py",
+    "full source extent: normal_freeze61_remote.py",
+    "compile only, not executed: normal_freeze61_remote.py",
+    "regular local file: normal_precheck11_remote.py",
+    "full source SHA: normal_precheck11_remote.py",
+    "full source extent: normal_precheck11_remote.py",
+    "compile only, not executed: normal_precheck11_remote.py",
+    "regular local file: normal_stage_assets61_remote.py",
+    "full source SHA: normal_stage_assets61_remote.py",
+    "full source extent: normal_stage_assets61_remote.py",
+    "compile only, not executed: normal_stage_assets61_remote.py",
+    "regular local file: stage_owned_bound_source_remote.py",
+    "full source SHA: stage_owned_bound_source_remote.py",
+    "full source extent: stage_owned_bound_source_remote.py",
+    "compile only, not executed: stage_owned_bound_source_remote.py",
+    "regular local file: create_next61_roots_remote.py",
+    "full source SHA: create_next61_roots_remote.py",
+    "full source extent: create_next61_roots_remote.py",
+    "compile only, not executed: create_next61_roots_remote.py",
+    "regular local file: execute_metadata_collector61_remote.py",
+    "full source SHA: execute_metadata_collector61_remote.py",
+    "full source extent: execute_metadata_collector61_remote.py",
+    "compile only, not executed: execute_metadata_collector61_remote.py",
+    "regular local file: execute_prospective61_remote.py",
+    "full source SHA: execute_prospective61_remote.py",
+    "full source extent: execute_prospective61_remote.py",
+    "compile only, not executed: execute_prospective61_remote.py",
+    "regular local file: read_fresh_prospective61_remote.py",
+    "full source SHA: read_fresh_prospective61_remote.py",
+    "full source extent: read_fresh_prospective61_remote.py",
+    "compile only, not executed: read_fresh_prospective61_remote.py",
+    "regular local file: SELECTED61_PACKET_SOURCE_PINS_V1.json",
+    "full source SHA: SELECTED61_PACKET_SOURCE_PINS_V1.json",
+    "eleven normally promoted selected source modules",
+    "regular local file: k3_recovery_ancestry.py",
+    "full source SHA: k3_recovery_ancestry.py",
+    "full source extent: k3_recovery_ancestry.py",
+    "compile only, not executed: ancestry",
+    "regular local file: collect_actual61_72_multi_origin.py",
+    "full source SHA: collect_actual61_72_multi_origin.py",
+    "full source extent: collect_actual61_72_multi_origin.py",
+    "compile only, not executed: collector",
+    "regular local file: continuation_worker61_72_template_v1.py",
+    "full source SHA: continuation_worker61_72_template_v1.py",
+    "full source extent: continuation_worker61_72_template_v1.py",
+    "compile only, not executed: driver",
+    "regular local file: k3_owned_readonly_facts61_72_template_v2.py",
+    "full source SHA: k3_owned_readonly_facts61_72_template_v2.py",
+    "full source extent: k3_owned_readonly_facts61_72_template_v2.py",
+    "compile only, not executed: facts",
+    "regular local file: k3_capacity_host_loop61_72_template_v2.py",
+    "full source SHA: k3_capacity_host_loop61_72_template_v2.py",
+    "full source extent: k3_capacity_host_loop61_72_template_v2.py",
+    "compile only, not executed: host",
+    "regular local file: k3_dense_pass.py",
+    "full source SHA: k3_dense_pass.py",
+    "full source extent: k3_dense_pass.py",
+    "compile only, not executed: native",
+    "regular local file: k3_owned_capacity_preflight61_72_template_v3.py",
+    "full source SHA: k3_owned_capacity_preflight61_72_template_v3.py",
+    "full source extent: k3_owned_capacity_preflight61_72_template_v3.py",
+    "compile only, not executed: preflight",
+    "regular local file: native_nas_io_qualification61_72_template_v1.py",
+    "full source SHA: native_nas_io_qualification61_72_template_v1.py",
+    "full source extent: native_nas_io_qualification61_72_template_v1.py",
+    "compile only, not executed: qualification",
+    "regular local file: ro_resume_paths.py",
+    "full source SHA: ro_resume_paths.py",
+    "full source extent: ro_resume_paths.py",
+    "compile only, not executed: resolver",
+    "regular local file: ro_resume_runtime.py",
+    "full source SHA: ro_resume_runtime.py",
+    "full source extent: ro_resume_runtime.py",
+    "compile only, not executed: runtime",
+    "regular local file: verify_later_window.py",
+    "full source SHA: verify_later_window.py",
+    "full source extent: verify_later_window.py",
+    "compile only, not executed: verifier",
+    "regular local file: SOURCE_ONLY_PROPOSAL_VALIDATION_V2.json",
+    "full source SHA: SOURCE_ONLY_PROPOSAL_VALIDATION_V2.json",
+    "authentic99 names exclude IO-only resume_point",
+    "regular local file: k3_dense_pass_9086.py",
+    "full source SHA: k3_dense_pass_9086.py",
+    "all99 qualified mathematical/native functions equal authenticated9086",
+    "actual61-72/before61 resume method present",
+    "regular local file: launch_actual49_60_transport_v4.py",
+    "full source SHA: launch_actual49_60_transport_v4.py",
+    "strict UUID/datetime ledger normalizer AST unchanged",
+    "wire-only transport AST unchanged except diagnostic compile label",
+    "regular local file: bind_actual61_runtime_v2.py",
+    "full source SHA: bind_actual61_runtime_v2.py",
+    "full source extent: bind_actual61_runtime_v2.py",
+    "V3 correction is confined to plans_bind diagnostic destination labels",
+    "regular local file: launch_actual61_72_v2.py",
+    "full source SHA: launch_actual61_72_v2.py",
+    "full source extent: launch_actual61_72_v2.py",
+    "wrapper V3 operation function ASTs unchanged from V2",
+    "regular local file: ACTUAL61_INPUTS_UNRESOLVED_V1.json",
+    "full source SHA: ACTUAL61_INPUTS_UNRESOLVED_V1.json",
+    "all future actual60/raw9/prior49 references remain explicit nulls",
+    "regular local file: LOCAL_SOURCE_INTEGRATION61_FOCUSED_CHECKS_V3.json",
+    "full source SHA: LOCAL_SOURCE_INTEGRATION61_FOCUSED_CHECKS_V3.json",
+    "full source extent: LOCAL_SOURCE_INTEGRATION61_FOCUSED_CHECKS_V3.json",
+    "existing meaningful unresolved-input refusal preserved; not rerun",
+    "regular local file: ACTUAL_HEADER_61_72_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+    "full source SHA: ACTUAL_HEADER_61_72_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+    "authenticated complete writer source extent joins selected Driver",
+    "regular local file: NORMAL61_LAUNCH_BINDING_CONTRACT_V3.json",
+    "full source SHA: NORMAL61_LAUNCH_BINDING_CONTRACT_V3.json",
+    "full source extent: NORMAL61_LAUNCH_BINDING_CONTRACT_V3.json",
+    "regular local file: LAUNCH61_SOURCE_ROSTER_V3.json",
+    "full source SHA: LAUNCH61_SOURCE_ROSTER_V3.json",
+    "full source extent: LAUNCH61_SOURCE_ROSTER_V3.json",
+    "final contract retains actual-boundary and fresh-current-peer limitations"
+  ],
+  "compiled_candidate_modules": 24,
+  "concrete_issue_corrected": {
+    "initial_issue": "Runtime plan labeled NAS qualification and NAS serial model writer for Lexar selection.",
+    "resolution": "Additive binderV3 limits plans_bind delta to conditional NAS labels and explicit selected-output labels; all previous source bytes retained."
+  },
+  "conditional_remaining_actual_inputs": [
+    "Genuine actual49-60 EXIT0, serial full finite/load/ancestry closure and complete raw terminal60 proof.",
+    "Actual fresh same-context binding, new unique UUID and selected existing output filesystem.",
+    "Fresh source-backed current approved peer scope and resource/filesystem admission at actual60; dated current-peer proof is not fresh admission.",
+    "Actual three-origin current catalog/observation, supported own new allocation, exact caps/mounts, immutable whole execution freeze, runtime observation and per-launch capacity decision."
+  ],
+  "current_source_functional_blocker_found": null,
+  "deployable_or_admitted_now": false,
+  "fixture_or_model_tests_rerun": false,
+  "local_review_output_only": true,
+  "manual_complete_flow_review": [
+    "Actual60 raw receipt/scanner/manifest and whole terminal status/events must join authentic prior49 catalog/config/recovery plan/allocation and full raw execution freeze code/control pins.",
+    "Native namespace PID is derived from actual fitter execution and running/terminal events, with no203 assumption. Extractor requires genuine same-native-context connect after Docker FinishedAt.",
+    "Actual final60 cgroup peak plus8220835840 array-growth diagnostic must fit conditional104GiB proposal; this is not universal wholeRSS proof.",
+    "Source binder preserves63 historical metadata roles and adds closed60/writer/completed49 roles:66 metadata plus5 scripts before allocation; current actual allocation produces67 metadata roles and4 caller scripts.",
+    "Three RO origins preserve original producer contexts and current fullhash/stat consumption guards; distinct aliases/hostroots/inodes allow shared NAS device only with disjoint paths. Current source pins replace all native/RO/runtime imports and observer literals.",
+    "Only fresh output/code/control/meta roots and eleven sorted mounts are created. No old tensor-tree clone, source overwrite or ancestry context rewrite is adopted.",
+    "Whole source archive/member verification precedes owned extraction. Supported allocator prerequisites refuse terminal foreign rows rather than reconcile them. Installed mutation lock caps/attests only new own container, preserving held original provider fingerprint.",
+    "Whole source/config freeze and actual source-pinned host caller readiness precede barrier. Packed SSH transport and strict PG ledger normalization preserve proven49 APIs. Driver obtains fresh whole peer/resource admission after actual native runtime observation.",
+    "Legal61-72 native resume/before61, record-mode policy and snapshot_keep0 remain. Actual scanner full finite/load proof and serial native ancestry verifier must finish before bounded_window_complete/prefix72 publication.",
+    "166556705792 writer is charged once to selected filesystem; qualification512MiB is embedded once. NAS writer/qualification labels are0 for Lexar, separate selected-output labels remain truthful. Inherited common padding is conservative history, not separate new jobs."
+  ],
+  "preserved_initial_audit_failure": "audit_local_source.py refused its own overly literal resume check; actual method correctly calls dual_snapshot_available(61). The failed audit source remains unchanged; V2 uses the real AST call shape. No production defect or runtime action resulted.",
+  "result": "PASS_SOURCE_ONLY_CONDITIONAL",
+  "schema": "neural_forge.k3_61_72_whole_integration_independent_static_review.v1",
+  "source_pins": {
+    "nas49_60_proposal\\SOURCE_ONLY_PROPOSAL_VALIDATION_V2.json": {
+      "bytes": 8981,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\SOURCE_ONLY_PROPOSAL_VALIDATION_V2.json",
+      "sha256": "786c2dec8c385fd1d3eeed6a0b9b0d405ccc8c58fdc93f45e01ed9368541d57c"
+    },
+    "nas61_launch_integration_v1\\ACTUAL61_INPUTS_UNRESOLVED_V1.json": {
+      "bytes": 1716,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\ACTUAL61_INPUTS_UNRESOLVED_V1.json",
+      "sha256": "4a2416f30abc11c1804120c13dbc293983f1dd84452f3948dd3b8dbb7c91b4bf"
+    },
+    "nas61_launch_integration_v1\\LAUNCH61_SOURCE_ROSTER_V3.json": {
+      "bytes": 6026,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\LAUNCH61_SOURCE_ROSTER_V3.json",
+      "sha256": "fef90b1debc1b29f217cbed5c6d8822512462e2b1fd3113b03d57edc06a1d1dc"
+    },
+    "nas61_launch_integration_v1\\LOCAL_SOURCE_INTEGRATION61_FOCUSED_CHECKS_V3.json": {
+      "bytes": 3437,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\LOCAL_SOURCE_INTEGRATION61_FOCUSED_CHECKS_V3.json",
+      "sha256": "6cbfd95dbee8e11598c800f1f03c1c0892abc17a7f461fd120060ef14a7f9f03"
+    },
+    "nas61_launch_integration_v1\\NORMAL61_LAUNCH_BINDING_CONTRACT_V3.json": {
+      "bytes": 11416,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\NORMAL61_LAUNCH_BINDING_CONTRACT_V3.json",
+      "sha256": "ddffb7c1f223ba73e9e13a92081c5c017990dd5df659c40cfa489743a73f13b1"
+    },
+    "nas61_launch_integration_v1\\NORMAL_CONTROL_COMPOSITION_V3.json": {
+      "bytes": 3994,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\NORMAL_CONTROL_COMPOSITION_V3.json",
+      "sha256": "d1af3a3bdb31c3c28c240d2dc7d5c9fe1ccec45a692a591e510c2f5539422aa0"
+    },
+    "nas61_launch_integration_v1\\SELECTED61_PACKET_SOURCE_PINS_V1.json": {
+      "bytes": 3804,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\SELECTED61_PACKET_SOURCE_PINS_V1.json",
+      "sha256": "8de56667a46076344393d49358c6bbd83246f9f3934acc6aead63ccddda6870f"
+    },
+    "nas61_launch_integration_v1\\bind_actual61_runtime_v2.py": {
+      "bytes": 53036,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\bind_actual61_runtime_v2.py",
+      "sha256": "f40344e0c54d6ccf7c1f043c06d7904e4204369aa7dd78034aea38ccd28d25ad"
+    },
+    "nas61_launch_integration_v1\\bind_actual61_runtime_v3.py": {
+      "bytes": 53248,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\bind_actual61_runtime_v3.py",
+      "sha256": "d04600b44bb2f075eb61e0dcf4ab95b5f76c763d6c3996f2b95fa10af96af32b"
+    },
+    "nas61_launch_integration_v1\\controls\\normal_caller_ready61_remote.py": {
+      "bytes": 1650,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_caller_ready61_remote.py",
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+    },
+    "nas61_launch_integration_v1\\controls\\normal_cap_arm104_remote.py": {
+      "bytes": 4956,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_cap_arm104_remote.py",
+      "sha256": "0505e1fcfcba2b233dfd35c44b5b16363d2adc947774df470c884264b6670689"
+    },
+    "nas61_launch_integration_v1\\controls\\normal_freeze61_remote.py": {
+      "bytes": 3249,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_freeze61_remote.py",
+      "sha256": "90ee51f12cc187aaccf55f495ffc4e9078fc9301915efe7b9827ac8965129a98"
+    },
+    "nas61_launch_integration_v1\\controls\\normal_precheck11_remote.py": {
+      "bytes": 1385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_precheck11_remote.py",
+      "sha256": "d2c261cdf5d2799d85d25e4512144c45808090ca631b63ae5e4b2d9c38bf315d"
+    },
+    "nas61_launch_integration_v1\\controls\\normal_stage_assets61_remote.py": {
+      "bytes": 1833,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_stage_assets61_remote.py",
+      "sha256": "dc261438fce87bbc05d4242123dd90c2ec8c63ab297649c0cc4461866379d8b9"
+    },
+    "nas61_launch_integration_v1\\controls\\stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\stage_owned_bound_source_remote.py",
+      "sha256": "a272f068a41494b332212619c59e1d74bff9822f26c11eac92ff1639eb08c421"
+    },
+    "nas61_launch_integration_v1\\extract_actual60_raw9_v2.py": {
+      "bytes": 10734,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\extract_actual60_raw9_v2.py",
+      "sha256": "14a0b8363c77681972103d51ab978621954ddb22e87510408443f58d316bc028"
+    },
+    "nas61_launch_integration_v1\\launch\\create_next61_roots_remote.py": {
+      "bytes": 2845,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\launch\\create_next61_roots_remote.py",
+      "sha256": "59189c94c606f075dd6e2efcbe105608fc8ab9ecbe699b8cd4dd48cce5110008"
+    },
+    "nas61_launch_integration_v1\\launch\\execute_metadata_collector61_remote.py": {
+      "bytes": 1520,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\launch\\execute_metadata_collector61_remote.py",
+      "sha256": "6a7aaaf2c616a9f5269e8ca61956c3e181050912de62b0368222c5d943db465b"
+    },
+    "nas61_launch_integration_v1\\launch\\execute_prospective61_remote.py": {
+      "bytes": 3917,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\launch\\execute_prospective61_remote.py",
+      "sha256": "404d4dc0f659965b06bd2c07b5433b9ceab3d7a2762b8deaa8b062872eafc862"
+    },
+    "nas61_launch_integration_v1\\launch\\launch_actual61_72_v2.py": {
+      "bytes": 25857,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\launch\\launch_actual61_72_v2.py",
+      "sha256": "aaa304610cf28fb7036abb2f3c5ad53676cd64ac5fae56955053300bf11b2e32"
+    },
+    "nas61_launch_integration_v1\\launch\\launch_actual61_72_v3.py": {
+      "bytes": 25857,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\launch\\launch_actual61_72_v3.py",
+      "sha256": "00b0d8b6c93c70c835c66cd773b9ba64eb9b314875207d5f8ef766c30435a6c8"
+    },
+    "nas61_launch_integration_v1\\launch\\read_fresh_prospective61_remote.py": {
+      "bytes": 7272,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\launch\\read_fresh_prospective61_remote.py",
+      "sha256": "3e3a633ac1e24933bbae8f05a40eca07dd63b7bc0643b58319759110ec7df1ef"
+    },
+    "nas61_launch_integration_v1\\packet_source\\collect_actual61_72_multi_origin.py": {
+      "bytes": 25401,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\collect_actual61_72_multi_origin.py",
+      "sha256": "671f4b2828c893d506ca79e4b89da43f5a1040eeb4a9ac9013258aa96f57b971"
+    },
+    "nas61_launch_integration_v1\\packet_source\\continuation_worker61_72_template_v1.py": {
+      "bytes": 44015,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\continuation_worker61_72_template_v1.py",
+      "sha256": "f6a0949dc02bebe3806fb87ff7323d2df6a1ebcbb28cd205f4d6a4938e133cfb"
+    },
+    "nas61_launch_integration_v1\\packet_source\\evidence\\k3_dense_pass_9086.py": {
+      "bytes": 187275,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\evidence\\k3_dense_pass_9086.py",
+      "sha256": "9086d7c0a5ec2bc7cfd1b823aecdc12e2973b3c81b064776ad3670df9d6b7b69"
+    },
+    "nas61_launch_integration_v1\\packet_source\\k3_capacity_host_loop61_72_template_v2.py": {
+      "bytes": 18043,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_capacity_host_loop61_72_template_v2.py",
+      "sha256": "7612a588de135aba8cd3b44227c9fd15d30685fa2dc92af44abe2ab11034ed2e"
+    },
+    "nas61_launch_integration_v1\\packet_source\\k3_dense_pass.py": {
+      "bytes": 190685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_dense_pass.py",
+      "sha256": "078187a4cfa2f5f7810f0c0a8fa85f7fcc8304085684d45dfda5b895854881d0"
+    },
+    "nas61_launch_integration_v1\\packet_source\\k3_owned_capacity_preflight61_72_template_v3.py": {
+      "bytes": 115167,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_owned_capacity_preflight61_72_template_v3.py",
+      "sha256": "6c6f1ff7a249e76b040074437005cc344dcd2ce802c1f34f9c661f596d409a55"
+    },
+    "nas61_launch_integration_v1\\packet_source\\k3_owned_readonly_facts61_72_template_v2.py": {
+      "bytes": 12012,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_owned_readonly_facts61_72_template_v2.py",
+      "sha256": "6d490a40ca4026edbee4da8ce3e19f6734d7f1717f615fb0432071bd6b6e32f8"
+    },
+    "nas61_launch_integration_v1\\packet_source\\k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "nas61_launch_integration_v1\\packet_source\\native_nas_io_qualification61_72_template_v1.py": {
+      "bytes": 5073,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\native_nas_io_qualification61_72_template_v1.py",
+      "sha256": "e59b071db359c5dd0015a18a52dd7872325ed0e4df98592d8cf964a34e074056"
+    },
+    "nas61_launch_integration_v1\\packet_source\\ro_resume_paths.py": {
+      "bytes": 25760,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\ro_resume_paths.py",
+      "sha256": "219fd84678e3cf4c17401fc367c4f803e4046432a34241cff0cdc3a859e880c4"
+    },
+    "nas61_launch_integration_v1\\packet_source\\ro_resume_runtime.py": {
+      "bytes": 23255,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\ro_resume_runtime.py",
+      "sha256": "1bd169f1c215337475fc250e2e1ae6c19a37f35bc761e0fc48566d85acf614c7"
+    },
+    "nas61_launch_integration_v1\\packet_source\\verify_later_window.py": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\verify_later_window.py",
+      "sha256": "4bfc5ff16560b83b3a338baba19cb16efe9db7d9fa66d28a49373fcabd63fc56"
+    },
+    "recovery_resource_review\\actual49_60_binding_proposal_v1\\local_launch49_60_v1\\launch_actual49_60_transport_v4.py": {
+      "bytes": 24658,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual49_60_binding_proposal_v1\\local_launch49_60_v1\\launch_actual49_60_transport_v4.py",
+      "sha256": "f1b34b09a1eed028a6cd3440fffb7e96f54aed14c84faa6607002606b2156378"
+    },
+    "remaining_parent_header_accounting_v1\\ACTUAL_HEADER_61_72_WRITE_AND_ARRAY_COMPONENTS_V1.json": {
+      "bytes": 117834,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\remaining_parent_header_accounting_v1\\ACTUAL_HEADER_61_72_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+      "sha256": "d85a82c01d844daf2b89ab2b4071f5d6b4f7b616ae581e65ade55767d96ad78e"
+    }
+  },
+  "training_eligible": false
+}

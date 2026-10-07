@@ -1,0 +1,89 @@
+{
+  "inputs": {
+    "binding_receipt": {
+      "path": null,
+      "sha256": null
+    },
+    "closed60_continuity": {
+      "path": null,
+      "sha256": null
+    },
+    "controller_events_jsonl": {
+      "path": null,
+      "sha256": null
+    },
+    "controller_terminal_result": {
+      "path": null,
+      "sha256": null
+    },
+    "fitter_execution": {
+      "path": null,
+      "sha256": null
+    },
+    "full_ffn_validation": {
+      "path": null,
+      "sha256": null
+    },
+    "resources_jsonl": {
+      "path": null,
+      "sha256": null
+    },
+    "snapshot_manifest": {
+      "path": null,
+      "sha256": null
+    },
+    "terminal_receipt": {
+      "path": null,
+      "sha256": null
+    }
+  },
+  "new_output_filesystem": null,
+  "operating_cap_proposal": {
+    "CPU_threads": 22,
+    "memory_bytes": 111669149696,
+    "swap_bytes": 0
+  },
+  "previous49": {
+    "inputs": {
+      "allocation": {
+        "path": null,
+        "sha256": null
+      },
+      "catalog": {
+        "path": null,
+        "sha256": null
+      },
+      "driver_config": {
+        "path": null,
+        "sha256": null
+      },
+      "identity": {
+        "path": null,
+        "sha256": null
+      },
+      "observation": {
+        "path": null,
+        "sha256": null
+      },
+      "recovery_plan": {
+        "path": null,
+        "sha256": null
+      },
+      "source_binding": {
+        "path": null,
+        "sha256": null
+      },
+      "source_closure": {
+        "path": null,
+        "sha256": null
+      },
+      "source_freeze": {
+        "path": null,
+        "sha256": null
+      }
+    },
+    "source_bundle": null
+  },
+  "run_uuid": null,
+  "schema": "neural_forge.k3_actual61_72_local_source_binding_inputs.v1"
+}
