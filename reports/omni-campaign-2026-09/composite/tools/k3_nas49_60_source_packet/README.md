@@ -30,3 +30,17 @@ and runs the six existing path checks plus the three authorized actual-method
 resume checks. It imports no native/Torch module and reads no model payload.
 Promotion is source validation only; runtime adoption and resource admission
 require authentic future boundary evidence and are separate operations.
+
+Current-peer source-only revision V5 retains those ten canonical modules and
+all original99 qualified fitting functions. Only the preflight current-peer
+join changes: complete authentic public QIMG barrier/source/full-normal-row
+proof supports the exact later48GiB8CPU capped holder or a bounded original
+uncapped waiting singleton; fullfuture50GiB8CPU remains once. ROOT1075
+completion/release discharges only that exact phase. The one new proof role
+is current_peer_holder_source; all other ROOT and foreign futures remain.
+The portable check retains the original nine cases and repeats only the
+three existing actual-peer metadata cases. No physical matcher/admission
+is claimed by those checks. Old preflight89 and portableV3 are preserved
+under current_peer_evidence, while metadata_observer is separate source-only
+helper/evidence outside the ten canonical production/template modules.
+Actual48/current binding/96GiB operating cap/fresh admission remain unresolved.

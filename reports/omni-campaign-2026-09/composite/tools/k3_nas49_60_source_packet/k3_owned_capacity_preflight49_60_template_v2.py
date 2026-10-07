@@ -823,6 +823,169 @@ def speech_scope(sources, request, proofs, p):
     return scope
 
 
+CURRENT_PEER_SOURCE_SHA = '1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9'
+
+def current_peer_public_source(sources, request):
+    require(request['sources']['current_peer_holder_source']['sha256'] == CURRENT_PEER_SOURCE_SHA,
+            'exact complete current peer public source packet required')
+    packet = sources['current_peer_holder_source']
+    require(packet['schema'] == 'neural_forge.k3_next49_current_QIMG_native_and_ROOT1075_source.v1',
+            'exact current peer source schema required')
+    def unique(items):
+        value = {}
+        for key, item in items:
+            require(key not in value, 'duplicate public peer JSON key')
+            value[key] = item
+        return value
+    docs = {}
+    for role, row in packet['members'].items():
+        raw = row['raw_utf8'].encode()
+        require(len(raw) == row['bytes'] and hashlib.sha256(raw).hexdigest() == row['sha256'],
+                'complete authenticated public peer member differs: '+role)
+        if row['format'] == 'json':
+            docs[role] = json.loads(raw, object_pairs_hook=unique,
+                parse_constant=lambda value: require(False, 'nonfinite peer metadata'))
+    barrier = docs['qimg_barrier']; allocation = docs['qimg_allocation']
+    inspect = docs['qimg_created_inspect']
+    require(isinstance(inspect, list) and len(inspect) == 1, 'exact one created QIMG object required')
+    inspect = inspect[0]; recipe = barrier['recipe']
+    require(barrier['schema'] == 'chimera.qimg_first32.actual_native_normal_barrier.v1'
+            and barrier['normal_allocation']['sha256'] == packet['members']['qimg_allocation']['sha256']
+            and barrier['created_inspect']['sha256'] == packet['members']['qimg_created_inspect']['sha256']
+            and barrier['full_normal_ledger']['sha256'] == packet['members']['qimg_full_normal_ledger']['sha256']
+            and barrier['heavy_model_or_fold_started'] is False and barrier['plan'] is None
+            and recipe['initial_uncapped_barrier_only'] is True and recipe['heavy_child_started'] is False
+            and recipe['admission'] is False, 'authentic initial QIMG waiting barrier source required')
+    require(recipe['schema'] == 'chimera.qimg_first32.own_GPU_phase_recipe.v5'
+            and recipe['native'] == '01a111e4-2e50-7eb0-916a-74e1058b3a9c'
+            and recipe['run_uuid'] == 'a4ab5f77-1743-4d3a-b4d4-41ada7102de7'
+            and recipe['job_uuid'] == 'f33f18c8-fca9-4d5f-b53f-ad7c58bb7a76'
+            and recipe['phase'] == 'native' and recipe['owner'] == QIMG_OWNER
+            and recipe['worker_sha256'] == packet['members']['qimg_worker']['sha256']
+                == '7fd1ef0eb619a433f3115880bfc623b0171e198baf2207d044242790e7190e0d'
+            and recipe['worker_name'] == 'phase_worker_v5.py'
+            and recipe['memory_cap_bytes'] == 48*GIB and recipe['cpu_threads'] == 8,
+            'only exact source-backed current QIMG native job48GiB8CPU required')
+    require(allocation['allocation_id'] == 'f8a611e8-6c1b-4ff2-8a4a-5149bf9bb077'
+            and allocation['container_id'] == inspect['Id']
+                == '7fb0e676b730d2dded9294d5318a18ba347e67c7d096a759a65dbc5946fd610f'
+            and allocation['owner'] == recipe['owner'] and allocation['name'] == recipe['name']
+            and allocation['state'] == 'running' and allocation['server'] == 'ai'
+            and allocation['gpu_index'] == 0 and allocation['gpu_uuid'] == recipe['gpu_uuid']
+            and allocation['details']['image'] == inspect['Image'] == recipe['image']
+            and allocation['details']['mounts'] == recipe['mounts'], 'exact original normal QIMG row/object/source join required')
+    ledger = docs['qimg_full_normal_ledger']
+    require(ledger['read_only'] is True and ledger['resource_actions'] == 0
+            and ledger['normal_reconcile_or_release_called'] is False
+            and len([row for row in ledger['allocations']
+                if row['allocation_id'] == allocation['allocation_id']]) == 1
+            and all(allocation[key] == row[key] for row in ledger['allocations']
+                if row['allocation_id'] == allocation['allocation_id'] for key in row)
+            and all(set(row) == {'allocation_id','group_id','owner','name','gpu_uuid','gpu_index',
+                'state','container_id','created_at','updated_at','server','kind','details'}
+                for row in ledger['allocations'] if row['allocation_id'] == allocation['allocation_id']),
+            'complete raw normal ledger allocation required')
+    require(inspect['State']['Running'] is True and inspect['State']['Pid'] > 0
+            and inspect['HostConfig']['Memory'] == inspect['HostConfig']['MemorySwap']
+                == inspect['HostConfig']['NanoCpus'] == 0, 'original uncapped barrier provenance must remain truthful')
+    result = docs['root1075_result']; terminal = docs['root1075_terminal']
+    for role, pin in result['raw_pins'].items():
+        require(packet['members']['root1075_'+role]['sha256'] == pin['sha256']
+                and packet['members']['root1075_'+role]['bytes'] == pin['bytes'],
+                'all original ROOT1075 fullraw metadata/source pins required')
+    require(result['raw_pins']['terminal']['sha256'] == packet['members']['root1075_terminal']['sha256']
+            and result['run_uuid'] == '27588780-c763-4489-89cf-1f296ae1cc89'
+            and result['CPU_job_uuid'] == '34d7e1ee-19f1-43f3-831f-3dcef237e2c1'
+            and result['binding']['harness_id'] == ROOT_OWNER.removeprefix('codex-native-')
+            and result['container_id'] == 'f03d8f57e45920a9beda53d504faabfcf3bd8d8942ab60b5b8775611fa93ef35',
+            'exact separate actual ROOT1075 phase required')
+    require(result['caps'] == {'RAM_bytes': 12884901888, 'CPU': 4, 'swap_bytes': 0,
+                'GPU': 0, 'new_ROOT_disk_bytes': 2147483648}, 'exact completed ROOT1075 original scope required')
+    require(terminal['state'] == 'completed_control_call' and terminal['result']['remote_exit_code'] == 0,
+            'authentic natural ROOT1075 terminal control required')
+    tr = terminal['result']['result']; state = tr['actual']['State']
+    require(tr['run_uuid'] == result['run_uuid'] and tr['actual']['container_id'] == result['container_id']
+            and state['Status'] == 'exited' and state['Running'] is False and state['Pid'] == 0
+            and state['ExitCode'] == 0 and state['OOMKilled'] is False
+            and state['FinishedAt'] == result['actual_EXIT_utc']
+            and tr['normal_CPU_release'] == result['normal_own_release']
+            and tr['normal_CPU_release']['terminal_resources_returned_by_kernel'] is True
+            and tr['normal_CPU_release']['GPU_ledger_allocation_created'] is False
+            and tr['physical_container_retained'] is True and tr['global_reconcile_called'] is False,
+            'exact ROOT1075 successful noGPU kernel release/physical preservation required')
+    require(result['only_completed_own_fixed1075_phase_future_RAM_CPU_GPU_write_promises_zero'] is True
+            and result['retained_disk_still_charged'] is True
+            and result['foreign_future_promises_not_discharged'] is True
+            and result['retained_server_output_bytes'] == 581078809,
+            'only completed1075 future zero; occupied disk and all other promises retained')
+    request['ROOT1075_exact_completed_phase_future_once'] = {
+        'RAM_bytes': 0, 'CPU_threads': 0, 'new_ROOT_write_bytes': 0,
+        'retained_output_bytes': 581078809, 'all_ROOT_futures_discharged': False,
+        'run_uuid': result['run_uuid'], 'container_id': result['container_id']}
+    return {'recipe': recipe, 'allocation': allocation, 'inspect': inspect,
+            'ROOT1075_terminal_container_id': result['container_id']}
+
+def current_qimg_native_holder(facts, request):
+    proof = request['current_peer_public_source']; allocation = proof['allocation']
+    recipe = proof['recipe']; old = proof['inspect']
+    own_rows = [row for row in facts['containers'] if row['identity_labels'].get('ai.local.owner') == QIMG_OWNER]
+    require(len(own_rows) <= 1 and all(row['id'] == allocation['container_id'] for row in own_rows),
+            'unknown QIMG successor refuses current exact source scope')
+    require(not any(row['id'] == proof['ROOT1075_terminal_container_id'] for row in facts['containers']),
+            'completed1075 holder must remain absent from current complete frame')
+    if not own_rows:
+        request['QIMG_native_waiting_barrier_observed'] = False
+        return None, False
+    row = own_rows[0]; limits = row['resource_limits']; fp = row['known_cpu_peer_fingerprints']
+    digest = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True,
+        separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    require(row['name'] == old['Name'] and row['image_id'] == old['Image']
+            and row['pid'] == old['State']['Pid'] and row['started_at'] == old['State']['StartedAt']
+            and row['identity_labels'].get('ai.local.allocation') == allocation['allocation_id']
+            and row['identity_labels'].get('ai.local.gpu-uuid') == allocation['gpu_uuid']
+            and fp['Config_sha256'] == digest(old['Config'])
+            and fp['Path_Args_sha256'] == digest({'Path': old['Path'], 'Args': old['Args']})
+            and fp['Mounts_canonical_full_records_sha256'] == digest(sorted(old['Mounts'],
+                key=lambda item: json.dumps(item, sort_keys=True, separators=(',', ':'), allow_nan=False))),
+            'exact current QIMG birth/config/argv/image/mounts/normal allocation required')
+    worker = Path(recipe['control_root'])/recipe['worker_name']
+    require(worker.is_file() and not worker.is_symlink() and worker.stat().st_size <= 65536
+            and hashlib.sha256(worker.read_bytes()).hexdigest() == recipe['worker_sha256'],
+            'actual mounted current QIMG worker full source differs')
+    groups = [group for group in facts['cgroups'] if group['cgroup_path'] == row['cgroup_path']]
+    require(len(groups) == 1, 'complete current QIMG cgroup required')
+    group = groups[0]; host = dict(old['HostConfig']); host['OomKillDisable'] = False
+    capped = limits['Memory'] == limits['MemorySwap'] == 48*GIB and limits['NanoCpus'] == 8_000_000_000
+    if capped:
+        host.update(Memory=48*GIB, MemorySwap=48*GIB, NanoCpus=8_000_000_000)
+        require(fp['normalized_HostConfig_sha256'] == digest(host)
+                and group['memory.max'] == str(48*GIB)
+                and group['memory.swap.max'] == group['memory.swap.current'] == '0'
+                and group['cpu.max'].split() == ['800000', '100000'],
+                'genuine actual current QIMG48GiB8CPU/noSwap cap required')
+        request['QIMG_native_waiting_barrier_observed'] = False
+        return row, True
+    require(limits['Memory'] == limits['MemorySwap'] == limits['NanoCpus'] == 0
+            and fp['normalized_HostConfig_sha256'] == digest(host),
+            'uncapped current QIMG may only be the original exact waiting barrier')
+    require(group['memory.max'] == 'max' and group['cpu.max'].split()[0] == 'max'
+            and group['memory.swap.current'] == '0',
+            'original uncapped waiting kernel state must remain exact and nonswapping')
+    start = Path(recipe['control_root'])/'phase.start.json'
+    require(not start.exists() and not start.is_symlink(),
+            'heavy/current QIMG without actual48GiB cap refuses')
+    members = [item for item in facts['processes'] if item['cgroup_path'] == row['cgroup_path']]
+    require(len(members) == 1 and members[0]['pid'] == row['pid'] and members[0]['threads'] == 1
+            and members[0]['RSS_bytes'] <= 256 << 20 and int(group['memory.current']) <= 256 << 20,
+            'bounded exact stdlib waiting barrier singleton required')
+    ready, _ = read(Path(recipe['output_root'])/'native_worker_ready.json', limit=4096)
+    require(ready['state'] == 'awaiting own actual admission' and ready['phase'] == 'native',
+            'actual source worker still waiting for its own admission required')
+    request['QIMG_native_waiting_barrier_observed'] = True
+    # Actual MemAvailable already charges this small physical waiter. Reserve
+    # the complete future50GiB/eightCPU; claim no enforced48/current model work.
+    return row, False
+
 def classify(facts,policy,proposal,adoption,proofs,p,service,request):
     active,outside,_=p.membership(facts)
     by_id={row['id']:row for row in facts['containers']};processes={row['pid']:row for row in facts['processes']}
@@ -840,28 +1003,26 @@ def classify(facts,policy,proposal,adoption,proofs,p,service,request):
             and row['image_id']==known['image_id'],'ordinary physical service identity drift requires reclassification')
         rows.append(dict({k:row[k] for k in ('id','pid','cgroup_path')},classification='established_service',accounting_id=FAMILY))
     require(OLD_K3_ID not in by_id,'failed historical K3 must not be a live recovery peer')
-    qimg=by_id.get(QIMG_ID);qimg_active=qimg is not None
-    require(not qimg_active,'completed normal-released QIMG fold holder must remain inactive')
+    require(QIMG_ID not in by_id,'completed normal-released historical QIMG fold must remain absent')
+    terminal=request['loaded_sources']['QIMG_current_terminal']
+    require(request['sources']['QIMG_current_terminal']['sha256']=='2322ca8d350fedf7e9c38e019f4e22ec27a44738ad8ed9a8d5c5458578333c72'
+        and terminal['schema']=='chimera.qimg_first32.actual_recovery_fold_watch_status.v1'
+        and terminal['owner']==QIMG_OWNER and terminal['allocation_id']==QIMG_ALLOCATION
+        and terminal['container_id']==QIMG_ID and terminal['resource_actions']==0,
+        'exact public current QIMG terminal metadata required')
+    observation=terminal['latest_observation'];state=observation['physical_model_state']
+    require(observation['terminal_observed'] is True and observation['allocation_id']==QIMG_ALLOCATION
+        and observation['container_id']==QIMG_ID and state['Running'] is False and state['Pid']==0
+        and state['Status']=='exited' and state['FinishedAt']=='2026-10-07T06:19:32.974942749Z'
+        and QIMG_ID not in by_id,
+        'current QIMG terminal holder absence requires fresh complete no-successor frame')
     current_jobs=[]
-    if qimg_active:
-        require(qimg['identity_labels'].get('ai.local.owner')==QIMG_OWNER
-            and qimg['identity_labels'].get('ai.local.allocation')==QIMG_ALLOCATION,
-            'exact active current QIMG holder required; source roster changed')
-        rows.append(dict({k:qimg[k] for k in ('id','pid','cgroup_path')},classification='enforced_foreign_job',accounting_id='QIMG_current_48GiB_8CPU'))
-        current_jobs.append(('QIMG_current_48GiB_8CPU',qimg,48*GIB,8))
-    else:
-        terminal=request['loaded_sources']['QIMG_current_terminal']
-        require(request['sources']['QIMG_current_terminal']['sha256']=='2322ca8d350fedf7e9c38e019f4e22ec27a44738ad8ed9a8d5c5458578333c72'
-            and terminal['schema']=='chimera.qimg_first32.actual_recovery_fold_watch_status.v1'
-            and terminal['owner']==QIMG_OWNER and terminal['allocation_id']==QIMG_ALLOCATION
-            and terminal['container_id']==QIMG_ID and terminal['resource_actions']==0,
-            'exact public current QIMG terminal metadata required')
-        observation=terminal['latest_observation'];state=observation['physical_model_state']
-        require(observation['terminal_observed'] is True and observation['allocation_id']==QIMG_ALLOCATION
-            and observation['container_id']==QIMG_ID and state['Running'] is False and state['Pid']==0
-            and state['Status']=='exited' and state['FinishedAt']=='2026-10-07T06:19:32.974942749Z'
-            and not any(r['identity_labels'].get('ai.local.owner')==QIMG_OWNER for r in facts['containers']),
-            'current QIMG terminal holder absence requires fresh complete no-successor frame')
+    qimg,qimg_active=current_qimg_native_holder(facts,request)
+    if qimg is not None:
+        rows.append(dict({k:qimg[k] for k in ('id','pid','cgroup_path')},
+            classification='enforced_foreign_job' if qimg_active else 'source_bound_waiting_barrier',
+            accounting_id='QIMG_current_48GiB_8CPU' if qimg_active else 'QIMG_initial_barrier_future50GiB_8CPU'))
+    if qimg_active:current_jobs.append(('QIMG_current_48GiB_8CPU',qimg,48*GIB,8))
     request['QIMG_current_holder_active']=qimg_active
     qvl_active=False
     if 'QVL_current_allocation' in request['loaded_sources']:
@@ -1074,6 +1235,7 @@ def run():
     service=code(control/request['service_source_name'],SERVICE_SHA,'k3_frozen_service_observer')
     speech=speech_scope(sources,request,proofs,p)
     selected=current_NAS_scope(sources,request)
+    request['current_peer_public_source']=current_peer_public_source(sources,request)
     collector=control/request['facts_source_name']
     require(collector.is_file() and not collector.is_symlink() and collector.resolve()==collector
         and hashlib.sha256(collector.read_bytes()).hexdigest()==FACTS_SHA,'exact selected own facts collector required')
@@ -1168,6 +1330,10 @@ def run():
         'ordinary_once':{'RAM_bytes':32*GIB,'cpu_threads':48},'qualification_residual':{'RAM_bytes':qualification_ram,'cpu_threads':qualification_cpu},
         'QIMG_future_successor_delta_RAM_bytes':qscope['conservative_unresolved_extra_bytes'],'QIMG_current_plus_successor_CPU_once':8,
         'QIMG_current_holder_active':request['QIMG_current_holder_active'],
+        'QIMG_native_waiting_barrier_observed':request['QIMG_native_waiting_barrier_observed'],
+        'QIMG_uncapped_barrier_claimed_actual48GiB_cap':False,
+        'ROOT1075_exact_completed_phase_future_once':request['ROOT1075_exact_completed_phase_future_once'],
+        'other_ROOT_pending_12GiB4CPU2GiB_preserved_until_source_join':True,
         'QIMG_pending_scope_once':{'RAM_bytes':qimg_pending_ram,'cpu_threads':qimg_pending_cpu,
             'full_source_future_scope_discharged':False,'normal_release_claimed':True,'closed_phase':'fold','CPU1933_and_native_acceptance_claimed':False},
         'speech_acquisition_completed_scope':{'assets':22,'bytes':8_607_865_275,'future_RAM_bytes':0,'future_CPU_threads':0,'remaining_writes_bytes':0,'retained_disk_credit_bytes':0},

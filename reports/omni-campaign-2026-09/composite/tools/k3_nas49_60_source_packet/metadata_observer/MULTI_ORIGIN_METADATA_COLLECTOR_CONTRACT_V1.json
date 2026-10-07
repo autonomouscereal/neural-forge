@@ -1,0 +1,102 @@
+{
+  "schema": "neural_forge.k3_actual49_60_multi_origin_metadata_collector_contract.v1",
+  "run_uuid": "03603908-570d-4c90-96cb-ee3a63a9a139",
+  "source_only": true,
+  "actual_collection_executed": false,
+  "actual_runtime_admission_claimed": false,
+  "collector": {
+    "name": "collect_actual49_60_multi_origin.py",
+    "sha256": "ebcf86a3557033d8d0eb874417349b009357e4c63ef7f220fd90bf0d1d04dc46",
+    "bytes": 22852,
+    "staging_path": "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/observer_source/collect_actual49_60_multi_origin.py"
+  },
+  "preserved_binder": {
+    "name": "bind_actual49_60.py",
+    "sha256": "0865a0e8810de72ac2599eaa5fc363ce20ed1e4493b3b61084242e226fd3c5d0",
+    "scope": "Historical immutable529 packet selection; current-peer source selection requires an additive reviewed binder and new tested-promoted immutable packet. This collector does not change that selection."
+  },
+  "staging_rule": "Stage the collector and exact legacy catalog outside production_code/production_control under the new runtime observer_source. Verify their full SHA and byte lengths before execution through the existing approved control lane. Do not add them silently to the preserved binder production_file_pins inventory.",
+  "required_existing_inputs": {
+    "identity": {
+      "path": "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/production_control/identity.json",
+      "sha256": null,
+      "role": "Actual binder output after authentic closed48 and normal current connect receipt, never the unresolved draft."
+    },
+    "legacy_catalog": {
+      "path": "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/observer_source/legacy_closed36_catalog.json",
+      "local_source": "nas37_48_resume_review/ro_prefix_catalog_v2.json",
+      "sha256": "7a6b254fd7822bb2b868be149f2246b892868a7b2bbb0daa5f37db5ae1fe5cd2",
+      "original_rows": 127,
+      "recorded_logical_path_rows": 124,
+      "relative_path_rows": 3,
+      "canonical_original_rows_sha256": "c5d06a6f17377abdb50e948a830861f0b1539f83f4ca404c64d4a1166f3c7eb8"
+    },
+    "mounts": {
+      "path": "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/observer_source/mounts.json",
+      "sha256": null,
+      "role": "Byte-identical bound source-bundle mounts.json whose SHA is recorded by source_binding.mounts_sha256; ten sorted disjoint target rows."
+    },
+    "actual_closed48": {
+      "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/ancestry/window-37-48-764524b1-96a9-4636-be74-942f9c54754c/window_continuity.json",
+      "sha256": null,
+      "role": "Must equal bound identity.closed48_continuity_sha256 and join the full sealed terminal receipt, scanner, manifest, body/held rows and both before49 endpoint readbacks. Layer markers or partial receipts cannot substitute."
+    }
+  },
+  "foreground_argv": [
+    "/usr/bin/python3", "-B",
+    "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/observer_source/collect_actual49_60_multi_origin.py",
+    "--identity", "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/production_control/identity.json",
+    "--identity-sha256", null,
+    "--parent-catalog", "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/observer_source/legacy_closed36_catalog.json",
+    "--mounts", "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/observer_source/mounts.json",
+    "--mounts-sha256", null,
+    "--output-directory", "/home/cereal/omni-campaign/runtime/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/production_control"
+  ],
+  "source_origins": {
+    "legacy_closed36": {
+      "host_path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318",
+      "alias": "/resume-prefix",
+      "read_only": true,
+      "row_rule": "Exactly the unchanged original127 rows, adding only source_origin."
+    },
+    "closed37_48": {
+      "host_path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model",
+      "alias": "/resume-window37-48",
+      "read_only": true,
+      "row_rule": "48 exact FFN/done/body/held rows for37..48, two before49 snapshots, every sealed retained_ancestry member, sealed ffn_request and actual window_continuity."
+    }
+  },
+  "new_output": {
+    "host_path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model",
+    "alias": "/run-output",
+    "read_only": false,
+    "fresh_namespace_required": true,
+    "same_NAS_device_allowed": "Only exact disjoint source/output roots with different device/inode directory identities and explicit RO/RW planned mappings; actual allocation and mounted-cap evidence remain separate."
+  },
+  "exclusive_outputs": {
+    "ro_multi_origin_catalog.json": "chimera.k3_RO_multi_origin_prefix_fresh_NAS_output_source_route_review.v1",
+    "ro_multi_origin_observation.json": "chimera.k3_RO_multi_origin_prefix_separate_output_observation.v1",
+    "ro_multi_origin_collection_receipt.json": "neural_forge.k3_actual49_60_multi_origin_metadata_collection.v1"
+  },
+  "output_publication": "All three files use XB, fsync and byte readback in new production_control only. No existing file is replaced. A partial failed collection is preserved and must not be overwritten or represented as successful.",
+  "consumer_join": "Root retains the actual command/stdout/exit receipt and fullhashes all three generated outputs. Feed exact catalog/observation raw path+SHA into the existing plans input schema. Retain the collection receipt in the whole source-freeze evidence; it is provenance and is not a Driver request or resource admission.",
+  "finite_write_paths": 82,
+  "new_snapshot_roles": ["before_L60", "before_L61"],
+  "before49_payload_copy_or_write": false,
+  "hash_ownership": {
+    "collector_tensor_payload_bytes_read_or_hashed": 0,
+    "collector_tensor_payload_bytes_copied": 0,
+    "collector_metadata": "Wholehash every .json/.sha256 catalog row and selected source code; expected payload hashes come from authenticated full sealed native/scanner/catalog metadata. Fresh six-field file stats are persisted for every row and do not prove payload bytes.",
+    "selected_resolver": "be4 read_path297..314 hashes a consumed old file once per resolver instance, checks the expected fullSHA, then rechecks all six stat fields on every use. No cross-process single-pass cache is selected.",
+    "known_separate_readers": [
+      "Driver c088 admit439..452 consumes full48 FFN/body and12 held files through its own resolver.",
+      "Native5e has another resolver; old FFN done-marker1981..1983 uses its already-verified expected SHA rather than an extra direct hash.",
+      "Native5e load_dual_snapshot1918/1925 calls sha256_file on each endpoint after snapshot_path has already resolver-hashed it: this existing endpoint duplicate is not optimized by this proposal.",
+      "Verifier03d owns a separate resolver and its existing current readback obligations."
+    ],
+    "cross_reader_hash_optimization_adopted": false,
+    "old_finite_library_proof_reuse": "Only the already-reviewed runtime metadata join; no new finite/library load bypass or historical ctime cutoff is introduced."
+  },
+  "unresolved_actuals": ["final authentic closed48 seal", "final48 cgroup peak and resource proof", "normal current binding receipt", "actual bound identity SHA", "bound mounts SHA", "fresh current-peer source closure", "new raw allocation and physical mounted/cap evidence", "fresh whole resource admission"],
+  "runtime_or_foreign_actions": false
+}

@@ -1,0 +1,53 @@
+{
+  "Lexar_native_pending24GiB_and_ROOT2GiB_once_unchanged": true,
+  "QIMG_current_capped_holder_requires_actual48GiB8CPU_noSwap": true,
+  "QIMG_original_created_caps": {
+    "Memory": 0,
+    "MemorySwap": 0,
+    "NanoCpus": 0
+  },
+  "QIMG_uncapped_waiting_barrier_keeps_full_future50GiB8CPU": true,
+  "ROOT1075_only_exact_completed_phase_future_zero": true,
+  "base_preflight_sha256": "89ba302e7969680c9b51f394726b51eff99959b2c669398ad831630aaf838177",
+  "changed_existing_functions": [
+    "classify",
+    "run"
+  ],
+  "full_actual_closed48_binding_and_new_whole_closure_required": true,
+  "helper_sha256": "abc5873832e398a583913a4b87d32b15ed18a8433e4e944db035fccea6cc8443",
+  "model_payload_reads": 0,
+  "new_functions": [
+    "current_peer_public_source",
+    "current_qimg_native_holder"
+  ],
+  "other_ROOT_pending_12GiB4CPU2GiB_retained": true,
+  "outputs": {
+    "facts_unchanged": {
+      "bytes": 11667,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\current_peer_admission_v1\\corrected_v3\\k3_owned_readonly_facts49_60_template_v2.py",
+      "sha256": "38e27e17c59bc1a6c5b1ed9dd55e3e7923330961534af54bed6ce739df01a0dd"
+    },
+    "host_unchanged": {
+      "bytes": 17687,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\current_peer_admission_v1\\corrected_v3\\k3_capacity_host_loop49_60_template_v2.py",
+      "sha256": "089c84de8866d297038733c43ddf180192d339e9b6c73fad9df974a3a0101ada"
+    },
+    "preflight": {
+      "bytes": 113469,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\current_peer_admission_v1\\corrected_v3\\k3_owned_capacity_preflight49_60_current_peer_v3.py",
+      "sha256": "c3c6359b79342824af5b77d5073e4dabde720501de8648de587defbecb2f102e"
+    },
+    "proof": {
+      "bytes": 1797866,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\current_peer_admission_v1\\corrected_v3\\CURRENT_QIMG_NATIVE_AND_ROOT1075_PUBLIC_PROOF_V3.json",
+      "sha256": "1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9"
+    }
+  },
+  "proof_members": 19,
+  "raw_public_member_bytes": 1651875,
+  "runtime_host_model_or_foreign_actions": false,
+  "schema": "neural_forge.k3_next49_current_peer_source_composition.v3",
+  "selected_for_runtime": false,
+  "source_module_current_peer_role": "current_peer_holder_source",
+  "source_only": true
+}

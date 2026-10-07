@@ -1,0 +1,41 @@
+{
+  "author_checks_sha256": "8f5442ac5a98edc43021dce6f507f3b44e5826d4ea8d48ea2d59d6f1394f3042",
+  "before49_new_write_paths": 0,
+  "collector": {
+    "bytes": 22852,
+    "path": "owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual49_60_binding_proposal_v1\\collect_actual49_60_multi_origin.py",
+    "sha256": "ebcf86a3557033d8d0eb874417349b009357e4c63ef7f220fd90bf0d1d04dc46"
+  },
+  "concrete_schema_path_blockers_found": [],
+  "contract": {
+    "bytes": 7892,
+    "sha256": "70ebc7ddc7982dd5bcd9b6024b80354cc315a96b1d1be3b1f8c054ef61b99e56"
+  },
+  "logical_rows": {
+    "recorded": 124,
+    "relative_only": 3,
+    "unique": 127
+  },
+  "new_write_paths": 82,
+  "new_writes_accept_selected_role_predicates": true,
+  "original127_row_hash_unchanged": true,
+  "reviewed_source_seams": [
+    "Deepcopy unchanged original127 rows and add only source_origin=legacy_closed36; old receipt/manifest semantic paths are not rewritten",
+    "Latest37_48 sealed receipt/partial/SHA/manifest resolve through NativeResumeReads.sealed_metadata independently of original logical metadata",
+    "New37_48 FFN/done/body/held and before49 payload hashes are authenticated expected hashes from full pinned continuity/terminal/scanner/manifest; collector reads only stats",
+    "Fresh current metadata JSON/sidecar hashes and source code hashes are separately declared; source_files.source_sha256 is not falsely a fresh payload hash",
+    "Actual Linux no-symlink six-field file/root identities, complete disjoint same-NAS source/newoutput directories, exact10 planned mounts checked; actual normalmount/cgroup evidence remains separate",
+    "Pure actual48 validator authentic720 context joined to closed36, exact37_48 processed/finite-library scanner/both49 endpoints/installed full48; absent48 SHA refuses",
+    "All writes exclusively newproduction_control metadata XB/fsync/readback; old source and newNAS model payload paths never opened for write/copy/hash"
+  ],
+  "schema": "neural_forge.k3_actual49_60_collector_independent_static_review.v1",
+  "scope": {
+    "actual_closed48_used": false,
+    "actual_collector_executed": false,
+    "runtime_model_or_foreign_actions": false,
+    "tensor_payload_bytes_read_hashed_copied": 0
+  },
+  "selected_resolver_sha256": "be4f3aede6f94d242cad9c4037656c3de3eff8f2268f5f2b17d23cf69025a804",
+  "selected_runtime_sha256": "4e58891969a6e83b6cf2247b8837edeb53d7a37d03de2aba07a4a14e7b150e6b",
+  "verdict": "PASS_STATIC_SOURCE_ONLY"
+}

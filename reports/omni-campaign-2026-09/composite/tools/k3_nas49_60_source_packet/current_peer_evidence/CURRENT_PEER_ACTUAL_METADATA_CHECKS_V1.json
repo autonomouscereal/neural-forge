@@ -1,0 +1,38 @@
+{
+  "actual_current_QIMG_cap_claimed": false,
+  "checks": [
+    {
+      "case": "authentic19_fullraw_source_terminal_release_join",
+      "pass": true
+    },
+    {
+      "case": "changed_actual_worker_bytes_refuse",
+      "pass": true,
+      "reason": "complete authenticated public peer member differs: qimg_worker"
+    },
+    {
+      "case": "wrong_whole_public_proof_pin_refuses",
+      "pass": true,
+      "reason": "exact complete current peer public source packet required"
+    }
+  ],
+  "compile_pass": true,
+  "fresh_host_frame_checked": false,
+  "new_whole_source_closure_binding_and_fresh_current_admission_required": true,
+  "preflight_sha256": "c3c6359b79342824af5b77d5073e4dabde720501de8648de587defbecb2f102e",
+  "preserved_draft_failures": [
+    {
+      "failure": "ready path used control; worker actually writes native-results",
+      "revision": "V1"
+    },
+    {
+      "failure": "raw ledger13 columns differ from enriched allocation gpu_name/model_id/port",
+      "revision": "V2"
+    }
+  ],
+  "proof_members": 19,
+  "proof_sha256": "1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9",
+  "remote_model_resource_foreign_actions": false,
+  "schema": "neural_forge.k3_next49_current_peer_actual_metadata_checks.v1",
+  "source_only": true
+}

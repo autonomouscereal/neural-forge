@@ -2,6 +2,7 @@
 
 Candidate-root holds the seven core and three capacity template basenames. Evidence-root
 is the original recovery root, or a mirror with unique original proof basenames.
+V4 keeps the ten-module closure and adopts only the reviewed current-peer preflight.
 V3 compiles the complete ten-module source-only candidate closure.
 V2 added the exact native resume I/O correction and unbound DriverV4.
 The original six test functions and data construction are kept unchanged; only
@@ -282,27 +283,89 @@ def check(candidate_root, evidence_root):
             "whole current source closure and exact independent source-only review required")
     expected = {
         "facts": ("k3_owned_readonly_facts49_60_template_v2.py", "38e27e17c59bc1a6c5b1ed9dd55e3e7923330961534af54bed6ce739df01a0dd", 11667),
-        "preflight": ("k3_owned_capacity_preflight49_60_template_v2.py", "89ba302e7969680c9b51f394726b51eff99959b2c669398ad831630aaf838177", 100924),
+        "preflight": ("k3_owned_capacity_preflight49_60_template_v2.py", "c3c6359b79342824af5b77d5073e4dabde720501de8648de587defbecb2f102e", 113469),
         "host_caller": ("k3_capacity_host_loop49_60_template_v2.py", "089c84de8866d297038733c43ddf180192d339e9b6c73fad9df974a3a0101ada", 17687),
     }
     capacity_sources = {}
     for role, (name, digest, extent) in expected.items():
         selected = closure["new_source_templates"][role]
-        require((selected["name"], selected["sha256"], selected["bytes"]) == (name, digest, extent),
-                "capacity source template differs from exact selected closure")
+        historical_expected = (name, "89ba302e7969680c9b51f394726b51eff99959b2c669398ad831630aaf838177", 100924) if role == "preflight" else (name, digest, extent)
+        require((selected["name"], selected["sha256"], selected["bytes"]) == historical_expected,
+                "capacity source template differs from preserved exact parent closure")
         path = candidate_root / name
         source = pinned(path, digest, extent)
         compile(source, str(path), "exec")
         capacity_sources[role] = {"path": str(path), "sha256": digest, "bytes": extent}
     result = check_core(candidate_root, evidence_root)
-    result["schema"] = "neural_forge.k3_NAS49_60_portable_source_packet_check.v3"
+    peer_relative = "nas49_60_proposal/current_peer_admission_v1/corrected_v3/"
+    _, peer = json_pin(evidence_root, (peer_relative+"CURRENT_PEER_SOURCE_COMPOSITION_V3.json",
+        "83a92e035459fe4a9be76f9238faa86c890c2518a2f7d35c34ec8150ac133cd2"))
+    require(peer["schema"] == "neural_forge.k3_next49_current_peer_source_composition.v3"
+            and peer["source_only"] is True and peer["selected_for_runtime"] is False
+            and peer["source_module_current_peer_role"] == "current_peer_holder_source"
+            and peer["outputs"]["preflight"]["sha256"] == capacity_sources["preflight"]["sha256"]
+            and peer["outputs"]["preflight"]["bytes"] == capacity_sources["preflight"]["bytes"],
+            "exact isolated current-peer source composition required")
+    proof_raw = pinned(evidence_path(evidence_root, peer_relative+"CURRENT_QIMG_NATIVE_AND_ROOT1075_PUBLIC_PROOF_V3.json"),
+        "1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9", 1797866)
+    current_raw = pinned(candidate_root/expected["preflight"][0], expected["preflight"][1], expected["preflight"][2])
+    prior_raw = pinned(candidate_root/"current_peer_evidence/k3_owned_capacity_preflight49_60_prior89.py",
+        "89ba302e7969680c9b51f394726b51eff99959b2c669398ad831630aaf838177", 100924)
+    prior_functions, new_functions = functions(prior_raw), functions(current_raw)
+    require(set(prior_functions) <= set(new_functions)
+            and [name for name in prior_functions if prior_functions[name] != new_functions[name]] == ["classify", "run"]
+            and set(new_functions)-set(prior_functions) == {"current_peer_public_source", "current_qimg_native_holder"},
+            "only exact current-peer source/classification seam may change")
+    result["current_peer_actual_metadata_three_checks"] = run_current_peer_three(current_raw, proof_raw)
+    result["current_peer_source_composition"] = (peer_relative+"CURRENT_PEER_SOURCE_COMPOSITION_V3.json",
+        "83a92e035459fe4a9be76f9238faa86c890c2518a2f7d35c34ec8150ac133cd2")
+    result["current_peer_metadata_role"] = {"role": "current_peer_holder_source",
+        "name": "CURRENT_QIMG_NATIVE_AND_ROOT1075_PUBLIC_PROOF_V3.json",
+        "sha256": "1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9", "bytes": 1797866}
+    result["schema"] = "neural_forge.k3_NAS49_60_portable_source_packet_check.v4"
     result["capacity_candidate_sources_actual_pins"] = capacity_sources
     result["whole_selected_source_closure"] = closure_pin
     result["whole_selected_independent_source_review"] = independent_pin
     result["candidate_production_template_module_count"] = 10
     result["existing_test_cases_unchanged_total"] = 9
+    result["current_peer_existing_actual_metadata_cases"] = 3
+    result["total_source_checks"] = 12
     return result
 
+
+
+
+def run_current_peer_three(source, proof_raw):
+    """The existing three authentic-metadata cases; no physical holder fixture."""
+    import copy
+    packet = json.loads(proof_raw)
+    node = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef)
+                and n.name == "current_peer_public_source")
+    def strict(ok, message):
+        if ok is not True: raise RuntimeError(message)
+    env = {"require": strict, "json": json, "hashlib": hashlib, "GIB": 1 << 30,
+           "CURRENT_PEER_SOURCE_SHA": "1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9",
+           "QIMG_OWNER": "codex-native-01a111e4-2e50-7eb0-916a-74e1058b3a9c",
+           "ROOT_OWNER": "codex-native-01a10f94-259b-7623-9679-ce4e68f82b8c"}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), "<selected authentic metadata join>", "exec"), env)
+    def request(): return {"sources": {"current_peer_holder_source": {"sha256": env["CURRENT_PEER_SOURCE_SHA"]}}}
+    req = request(); joined = env["current_peer_public_source"]({"current_peer_holder_source": packet}, req)
+    require(len(packet["members"]) == 19
+            and joined["allocation"]["container_id"] == "7fb0e676b730d2dded9294d5318a18ba347e67c7d096a759a65dbc5946fd610f"
+            and joined["inspect"]["HostConfig"]["Memory"] == joined["inspect"]["HostConfig"]["NanoCpus"] == 0
+            and req["ROOT1075_exact_completed_phase_future_once"]["all_ROOT_futures_discharged"] is False,
+            "authentic19 raw source/release join and honest original uncapped barrier required")
+    checks = [{"case": "authentic19_fullraw_source_terminal_release_join", "pass": True}]
+    bad = copy.deepcopy(packet); bad["members"]["qimg_worker"]["raw_utf8"] += " "
+    try: env["current_peer_public_source"]({"current_peer_holder_source": bad}, request())
+    except RuntimeError as exc: checks.append({"case": "changed_actual_worker_bytes_refuse", "pass": True, "reason": str(exc)})
+    else: raise ValueError("changed actual worker bytes accepted")
+    bad = request(); bad["sources"]["current_peer_holder_source"]["sha256"] = "0" * 64
+    try: env["current_peer_public_source"]({"current_peer_holder_source": packet}, bad)
+    except RuntimeError as exc: checks.append({"case": "wrong_whole_public_proof_pin_refuses", "pass": True, "reason": str(exc)})
+    else: raise ValueError("wrong public proof pin accepted")
+    return {"successful": True, "tests_run": 3, "checks": checks,
+            "actual_current_QIMG_cap_claimed": False, "fresh_physical_predicate_executed": False}
 
 
 def main():
