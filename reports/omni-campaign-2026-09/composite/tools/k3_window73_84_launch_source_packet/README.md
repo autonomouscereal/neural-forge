@@ -1,0 +1,1 @@
+K373–84 reviewed source-only full control proposal. Actual closed72, owner binding, cap, filesystem, UUID/A/runtime/current peer state and admission remain unresolved. No launcher or model was executed. Read WHOLE_CONTROL_CONTRACT_V1.json.
