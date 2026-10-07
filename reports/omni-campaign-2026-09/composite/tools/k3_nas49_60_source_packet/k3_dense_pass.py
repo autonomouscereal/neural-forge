@@ -1927,9 +1927,9 @@ class DualStreamRun(StreamRun):
         return pairs["teacher"], pairs["folded"], record
 
     def resume_point(self, layers: list[int]) -> int | None:
-        if layers != list(range(37, 49)) or not self.dual_snapshot_available(37):
-            raise SystemExit("only authentic closed36 before37 may initialize new37-48 window")
-        return 37
+        if layers != list(range(49, 61)) or not self.dual_snapshot_available(49):
+            raise SystemExit("only authentic closed48 before49 may initialize new49-60 window")
+        return 49
 
     # -- done markers -------------------------------------------------------
     def layer_dir(self, layer_idx: int) -> str:
