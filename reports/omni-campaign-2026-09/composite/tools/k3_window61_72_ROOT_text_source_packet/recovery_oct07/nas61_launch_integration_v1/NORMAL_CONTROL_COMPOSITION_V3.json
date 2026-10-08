@@ -1,0 +1,105 @@
+{
+  "NAS_qualification_bytes_are_zero_for_Lexar_output": true,
+  "actual60_or_runtime_or_resource_actions": false,
+  "binder": {
+    "bytes": 53248,
+    "name": "bind_actual61_runtime_v3.py",
+    "sha256": "d04600b44bb2f075eb61e0dcf4ab95b5f76c763d6c3996f2b95fa10af96af32b"
+  },
+  "controls": {
+    "normal_caller_ready61_remote.py": {
+      "bytes": 1650,
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3",
+      "source_parent": {
+        "name": "normal_caller_ready49_remote.py",
+        "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+      }
+    },
+    "normal_cap_arm104_remote.py": {
+      "bytes": 4956,
+      "sha256": "0505e1fcfcba2b233dfd35c44b5b16363d2adc947774df470c884264b6670689",
+      "source_parent": {
+        "name": "normal_cap_arm96_remote.py",
+        "sha256": "2fdfd99eaf10ba3667f8e24b6cbc1a17489ec1f5f401c6a603e067cedfe11b45"
+      }
+    },
+    "normal_freeze61_remote.py": {
+      "bytes": 3249,
+      "sha256": "90ee51f12cc187aaccf55f495ffc4e9078fc9301915efe7b9827ac8965129a98",
+      "source_parent": {
+        "name": "normal_freeze49_remote.py",
+        "sha256": "df96e9d67f9ad162540f1dc26bdcf9ece1d0b177fd942c752b1e928d1959203a"
+      }
+    },
+    "normal_precheck11_remote.py": {
+      "bytes": 1385,
+      "sha256": "d2c261cdf5d2799d85d25e4512144c45808090ca631b63ae5e4b2d9c38bf315d",
+      "source_parent": {
+        "name": "normal_precheck10_remote.py",
+        "sha256": "0189f3f6e46ae46b931c53e8fafd9aa97032bc0fdf896a3c42b478d5da1b7516"
+      }
+    },
+    "normal_stage_assets61_remote.py": {
+      "bytes": 1833,
+      "sha256": "dc261438fce87bbc05d4242123dd90c2ec8c63ab297649c0cc4461866379d8b9",
+      "source_parent": {
+        "name": "normal_stage_assets49_remote.py",
+        "sha256": "aac6bfa7e2bc13fdaf8e2b72160dae3ae60148a40d588db38759551b9b9c1700"
+      }
+    },
+    "stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "sha256": "a272f068a41494b332212619c59e1d74bff9822f26c11eac92ff1639eb08c421",
+      "source_parent": {
+        "name": "stage_owned_bound_source_remote.py",
+        "sha256": "90cc9528d6a74f5ae7bd6e29ef801512b7b065f28a57a544809c9502cbfa48fa"
+      }
+    }
+  },
+  "extractor": {
+    "bytes": 10734,
+    "name": "extract_actual60_raw9_v2.py",
+    "sha256": "14a0b8363c77681972103d51ab978621954ddb22e87510408443f58d316bc028"
+  },
+  "helpers": {
+    "create_next61_roots_remote.py": {
+      "bytes": 2845,
+      "sha256": "59189c94c606f075dd6e2efcbe105608fc8ab9ecbe699b8cd4dd48cce5110008"
+    },
+    "execute_metadata_collector61_remote.py": {
+      "bytes": 1520,
+      "sha256": "6a7aaaf2c616a9f5269e8ca61956c3e181050912de62b0368222c5d943db465b"
+    },
+    "execute_prospective61_remote.py": {
+      "bytes": 3917,
+      "sha256": "404d4dc0f659965b06bd2c07b5433b9ceab3d7a2762b8deaa8b062872eafc862"
+    },
+    "read_fresh_prospective61_remote.py": {
+      "bytes": 7272,
+      "sha256": "3e3a633ac1e24933bbae8f05a40eca07dd63b7bc0643b58319759110ec7df1ef"
+    }
+  },
+  "local_launch_output_root": "D:/codex-owned-source-receipts/k3-window61-72-source-only-9d98292e804f/launch_integration_v1",
+  "local_output_parent": "D:/codex-owned-source-receipts/k3-window61-72-source-only-9d98292e804f",
+  "local_source_materialization_performed": false,
+  "mount_count": 11,
+  "operating_cap_proposal_bytes": 111669149696,
+  "qualification_once_inside_selected_output_writer_bytes": 536870912,
+  "schema": "neural_forge.k3_61_72_normal_control_source_composition.v3",
+  "source_only": true,
+  "source_parent_packed_v4_sha256": "f1b34b09a1eed028a6cd3440fffb7e96f54aed14c84faa6607002606b2156378",
+  "unresolved_actual_inputs": [
+    "closed60_raw9",
+    "run_uuid",
+    "new_output_filesystem",
+    "allocation",
+    "namespace_pid",
+    "fresh_admission"
+  ],
+  "whole_writer_bytes_once": 166556705792,
+  "wrapper": {
+    "bytes": 25857,
+    "name": "launch_actual61_72_v3.py",
+    "sha256": "00b0d8b6c93c70c835c66cd773b9ba64eb9b314875207d5f8ef766c30435a6c8"
+  }
+}

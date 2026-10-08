@@ -1,0 +1,80 @@
+{
+  "actual60": null,
+  "actual_scope": {
+    "ACE_CPU_threads": 4,
+    "ACE_RAM_bytes": 17179869184,
+    "CPU_threads": 4,
+    "H3_audio_CPU_threads": 2,
+    "H3_audio_RAM_bytes": 6442450944,
+    "H3_text_CPU_threads": 4,
+    "H3_text_RAM_bytes": 8589934592,
+    "P40_budget_or_execution_adopted": false,
+    "RAM_bytes": 17179869184,
+    "ROOT_owner": "codex-native-01a10f94-259b-7623-9679-ce4e68f82b8c",
+    "active_actor_adopted": false,
+    "active_actor_requires_complete_fresh_source_proof": true,
+    "additive_H3_text_ROOT_write_bytes": 1073741824,
+    "full_ROOT_future_discharged": false,
+    "new_ROOT_write_bytes": 10737418240,
+    "same_owner_historical_ROOT12GiB4CPU2GiB_replaced_once": true,
+    "serial_execution": true,
+    "source_pin": {
+      "name": "ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_TEXT_PUBLIC_PROOF_V2.json",
+      "sha256": "3f12e995d8715d56700d1b32954876808f544ab5244917a033b147fb2e2152ab"
+    }
+  },
+  "binder": {
+    "bytes": 55325,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\bind_actual61_ROOT_text_v3.py",
+    "sha256": "7aad82d551c8624179a0e87bcb4692edf6c575b5133a1dc304e46e9f40a0a821"
+  },
+  "candidate_main_or_module_import_executed": false,
+  "cases": [
+    {
+      "case": "complete authentic eleven public raws and full prior ROOT1075-only terminal proof",
+      "pass": true
+    },
+    {
+      "case": "wrong full source packet SHA",
+      "pass": true,
+      "refusal": "exact whole public ROOT serial source packet required"
+    },
+    {
+      "case": "wrong adopted text cap",
+      "pass": true,
+      "refusal": "serial16/4 and pending ACE8/audio1/text1=10GiB; inclusive47 is not an additional promise",
+      "test_only_member_expectation_adjusted": true
+    },
+    {
+      "case": "wrong genuine text owner",
+      "pass": true,
+      "refusal": "genuine same-owner additive text source and complete prior serial history required",
+      "test_only_member_expectation_adjusted": true
+    }
+  ],
+  "existing_changed_ASTs": [
+    "current_ROOT_serial_scope",
+    "run"
+  ],
+  "new_source_normal_promoted_commit": null,
+  "other_function_ASTs_unchanged": true,
+  "proof": {
+    "bytes": 191797,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_TEXT_PUBLIC_PROOF_V2.json",
+    "sha256": "3f12e995d8715d56700d1b32954876808f544ab5244917a033b147fb2e2152ab"
+  },
+  "result": "PASS_SOURCE_ONLY",
+  "runtime_or_DB_Relay_or_resource_actions": false,
+  "schema": "neural_forge.k3_ROOT_text_actual_public_metadata_focused_checks.v3",
+  "semantic_perturbations_test_only_not_actual_claims": true,
+  "source": {
+    "bytes": 127341,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\k3_owned_capacity_preflight61_72_ROOT_text_v2.py",
+    "sha256": "f4726d11d3edaee3a48357100ff931d22c337889a19c23e274c282e2bc476faa"
+  },
+  "wrapper": {
+    "bytes": 25908,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\launch\\launch_actual61_ROOT_text_v3.py",
+    "sha256": "a47286614b3259f9f9d698b595ed1db86868addf6ccd00526cdc6871f4a0912f"
+  }
+}
