@@ -1,0 +1,185 @@
+{
+  "NAS_if_selected_whole_floor_once": 858583311360,
+  "P40_proposal_is_not_approved_future": true,
+  "ROOT_inclusive_47GiB_not_added_as_new_promise": true,
+  "actual60": null,
+  "actual_allocation": null,
+  "additive_current_text_delta": {
+    "CPU_delta_threads": 0,
+    "RAM_delta_bytes": 0,
+    "disk_delta_bytes": 1073741824,
+    "new_serial_write_bytes": 10737418240,
+    "old_serial_write_bytes": 9663676416,
+    "speech_ROOT20GiB_preserved": true
+  },
+  "binder": {
+    "bytes": 55325,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\bind_actual61_ROOT_text_v3.py",
+    "sha256": "7aad82d551c8624179a0e87bcb4692edf6c575b5133a1dc304e46e9f40a0a821"
+  },
+  "conservative_whole_ROOT_future_bytes_once": 52613349376,
+  "current_actor_missing_proof": "Fresh immutable normal request/admission/CREATE/START/Config/HostConfig/Mounts/PathArgs/source/cgroup/PIDbirth; prepared budgets do not classify an active holder.",
+  "fresh_capacity": null,
+  "global_ROOT_future_discharge": false,
+  "helper_manifest": {
+    "bytes": 587,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\launch\\LAUNCH_HELPER_SOURCE_PINS_V1.json",
+    "sha256": "e37314e3cb2844bd07dada39850e7d98b21b4fdbc2bb8b1512c3aac4192a2891"
+  },
+  "helpers": {
+    "create_next61_roots_remote.py": {
+      "bytes": 2845,
+      "sha256": "59189c94c606f075dd6e2efcbe105608fc8ab9ecbe699b8cd4dd48cce5110008"
+    },
+    "execute_metadata_collector61_remote.py": {
+      "bytes": 1520,
+      "sha256": "6a7aaaf2c616a9f5269e8ca61956c3e181050912de62b0368222c5d943db465b"
+    },
+    "execute_prospective61_remote.py": {
+      "bytes": 3917,
+      "sha256": "22b318848c2ba80e5145bb57fb4c6226b8de148b201edc8225d2eb21c31d92fc"
+    },
+    "read_fresh_prospective61_remote.py": {
+      "bytes": 7616,
+      "sha256": "a91ec85ce1f11dc60f90514eeeb8ad823072687bbb5f1a4c18bc94225029833f"
+    }
+  },
+  "inherited_guard_repairs": [
+    "source binder and wrapper share the exact new exclusive output root",
+    "fresh capacity readback expects genuine serial10GiB write promise"
+  ],
+  "launch_ready": false,
+  "local_exclusive_output_root": "D:/codex-owned-source-receipts/k3-window61-72-source-only-9d98292e804f/launch_integration_ROOT_text_v3",
+  "metadata_count_after_allocation": 68,
+  "metadata_count_before_allocation": 67,
+  "new_phase_current_actor_adoption": false,
+  "new_run_uuid": null,
+  "new_source_normal_promoted_commit": null,
+  "no_remote_DB_Relay_model_runtime_provider_allocator_actions": true,
+  "parent_normal_template_commit": "6700c7dee88003983f8ef107bd1a7806863653ee",
+  "parent_normal_template_packet_sha256": "d426b2fdfacf0969fa3f63fa669d35063be0812813ebfa26304d3387b4ba8cbe",
+  "parent_whole_route_contract": {
+    "bytes": 11416,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\NORMAL61_LAUNCH_BINDING_CONTRACT_V3.json",
+    "sha256": "ddffb7c1f223ba73e9e13a92081c5c017990dd5df659c40cfa489743a73f13b1"
+  },
+  "parent_whole_route_independent_review": {
+    "bytes": 27297,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_whole_integration_independent_review_v1\\WHOLE61_INDEPENDENT_STATIC_REVIEW_V1.json",
+    "sha256": "9969465863c77a68ff6240106fdfd147dcb284201e3bfc9b6c461712b8825148"
+  },
+  "preflight": {
+    "bytes": 127341,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\k3_owned_capacity_preflight61_72_ROOT_text_v2.py",
+    "sha256": "f4726d11d3edaee3a48357100ff931d22c337889a19c23e274c282e2bc476faa"
+  },
+  "preserved_contract_before_complete_helper_pin_reseal": {
+    "bytes": 9708,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\ROOT_TEXT_WHOLE_CALLER_SOURCE_CONTRACT_V3.json",
+    "sha256": "af6936b0d432dcf36fd8a0c7768908efdea1bb82eec2054c543660f01c5c41cc"
+  },
+  "preserved_initial_text_draft_contract": {
+    "bytes": 8980,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v2\\ROOT_TEXT_WHOLE_CALLER_SOURCE_CONTRACT_V2.json",
+    "sha256": "0a9742299f9bc7648a82f5359cc5a4a049f63507367707c81e12211784a04d73"
+  },
+  "prior_ROOT_serial_whole_independent_review": {
+    "bytes": 8841,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\current_ROOT_serial_peer_scope_independent_review_v1\\ROOT_SERIAL_WHOLE_CALLER_INDEPENDENT_STATIC_REVIEW_V1.json",
+    "sha256": "a8d0f09f1dc18f29d1eae8f20d3c02b1e9489c760b0fba92a399020e139884d6"
+  },
+  "prior_reviewed_whole_ROOT_serial_contract": {
+    "bytes": 7748,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\ROOT_SERIAL_WHOLE_CALLER_SOURCE_CONTRACT_V1.json",
+    "sha256": "56654acebed9643f3988f0f44b0742c35fa45547843abb708ab9a0d0b77a53a4"
+  },
+  "proof": {
+    "bytes": 191797,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_TEXT_PUBLIC_PROOF_V2.json",
+    "sha256": "3f12e995d8715d56700d1b32954876808f544ab5244917a033b147fb2e2152ab"
+  },
+  "schema": "neural_forge.k3_actual61_ROOT_serial_text_source_caller_proposal.v4",
+  "script_count": 5,
+  "selected_source_roster": {
+    "bytes": 3823,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\SELECTED61_ROOT_TEXT_SOURCE_PINS_V3.json",
+    "sha256": "54e7ad6d88365aacf2dcbb3511677671fa2fd247b273216b6ac201e2066cfcde"
+  },
+  "source_filename": "ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_TEXT_PUBLIC_PROOF_V2.json",
+  "source_inactive_future_replacement_once": {
+    "new_ROOT_CPU_threads": 4,
+    "new_ROOT_RAM_bytes": 17179869184,
+    "new_ROOT_write_bytes": 10737418240,
+    "old_ROOT_CPU_threads": 4,
+    "old_ROOT_RAM_bytes": 12884901888,
+    "old_ROOT_write_bytes": 2147483648
+  },
+  "source_only": true,
+  "source_role": "ROOT_current_serial_scope",
+  "unchanged_facts": {
+    "bytes": 12012,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_owned_readonly_facts61_72_template_v2.py",
+    "sha256": "6d490a40ca4026edbee4da8ce3e19f6734d7f1717f615fb0432071bd6b6e32f8"
+  },
+  "unchanged_host": {
+    "bytes": 18043,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_capacity_host_loop61_72_template_v2.py",
+    "sha256": "7612a588de135aba8cd3b44227c9fd15d30685fa2dc92af44abe2ab11034ed2e"
+  },
+  "unchanged_six_normal_controls": {
+    "normal_caller_ready61_remote.py": {
+      "bytes": 1650,
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3",
+      "source_parent": {
+        "name": "normal_caller_ready49_remote.py",
+        "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+      }
+    },
+    "normal_cap_arm104_remote.py": {
+      "bytes": 4956,
+      "sha256": "0505e1fcfcba2b233dfd35c44b5b16363d2adc947774df470c884264b6670689",
+      "source_parent": {
+        "name": "normal_cap_arm96_remote.py",
+        "sha256": "2fdfd99eaf10ba3667f8e24b6cbc1a17489ec1f5f401c6a603e067cedfe11b45"
+      }
+    },
+    "normal_freeze61_remote.py": {
+      "bytes": 3249,
+      "sha256": "90ee51f12cc187aaccf55f495ffc4e9078fc9301915efe7b9827ac8965129a98",
+      "source_parent": {
+        "name": "normal_freeze49_remote.py",
+        "sha256": "df96e9d67f9ad162540f1dc26bdcf9ece1d0b177fd942c752b1e928d1959203a"
+      }
+    },
+    "normal_precheck11_remote.py": {
+      "bytes": 1385,
+      "sha256": "d2c261cdf5d2799d85d25e4512144c45808090ca631b63ae5e4b2d9c38bf315d",
+      "source_parent": {
+        "name": "normal_precheck10_remote.py",
+        "sha256": "0189f3f6e46ae46b931c53e8fafd9aa97032bc0fdf896a3c42b478d5da1b7516"
+      }
+    },
+    "normal_stage_assets61_remote.py": {
+      "bytes": 1833,
+      "sha256": "dc261438fce87bbc05d4242123dd90c2ec8c63ab297649c0cc4461866379d8b9",
+      "source_parent": {
+        "name": "normal_stage_assets49_remote.py",
+        "sha256": "aac6bfa7e2bc13fdaf8e2b72160dae3ae60148a40d588db38759551b9b9c1700"
+      }
+    },
+    "stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "sha256": "a272f068a41494b332212619c59e1d74bff9822f26c11eac92ff1639eb08c421",
+      "source_parent": {
+        "name": "stage_owned_bound_source_remote.py",
+        "sha256": "90cc9528d6a74f5ae7bd6e29ef801512b7b065f28a57a544809c9502cbfa48fa"
+      }
+    }
+  },
+  "whole_writer_bytes_once": 166556705792,
+  "wrapper": {
+    "bytes": 25908,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\launch\\launch_actual61_ROOT_text_v3.py",
+    "sha256": "a47286614b3259f9f9d698b595ed1db86868addf6ccd00526cdc6871f4a0912f"
+  }
+}

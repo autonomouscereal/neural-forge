@@ -1,0 +1,52 @@
+{
+  "actual_closed92_request": null,
+  "actual_tensor_or_model_actions": false,
+  "at_utc": "2026-10-07T21:49:46.368823+00:00",
+  "capability_accepted": false,
+  "checks": [
+    {
+      "name": "exact generated source SHA and compilation",
+      "passed": true
+    },
+    {
+      "name": "all three full finite/library reader functions byte-exact to reviewed terminal verifier",
+      "passed": true
+    },
+    {
+      "name": "top-level imports are stdlib only; genuine safe_open stays lazy inside retained reader",
+      "passed": true
+    },
+    {
+      "name": "authentic terminal92/record-mode/full prefix and original source config joins explicit",
+      "passed": true
+    },
+    {
+      "name": "all five RO origins/full current SHA/189 artifacts/93 markers/exclusive metadata outside roots",
+      "passed": true
+    },
+    {
+      "name": "no invented actual terminal binding or model publication/capability acceptance",
+      "passed": true
+    },
+    {
+      "name": "no allocator/provider/SSH/Relay/process/database mutation imports or calls",
+      "passed": true
+    }
+  ],
+  "deployable": false,
+  "failure_count": 0,
+  "pass_count": 7,
+  "reader_origin": {
+    "bytes": 42002,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v3\\verify_later_window.py",
+    "sha256": "2b1375c9d1417866ffe5eb32fb52f0fc36b6593ed584d8788f6c742f2ac819d8"
+  },
+  "schema": "neural_forge.k3_final_export_inventory_source_checks.v1",
+  "source": {
+    "bytes": 18360,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\final_export_inventory_source_v1\\build_final_export_inventory.py",
+    "sha256": "dc957e33824efecb87d24519c7d1e12d7c717d64649ff399ba53b4bea8946ab9"
+  },
+  "source_only": true,
+  "training_eligible": false
+}

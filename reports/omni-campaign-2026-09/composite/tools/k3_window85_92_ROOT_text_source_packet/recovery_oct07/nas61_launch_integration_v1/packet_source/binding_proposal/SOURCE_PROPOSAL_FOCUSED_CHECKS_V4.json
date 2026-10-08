@@ -1,0 +1,48 @@
+{
+  "Lexar_writer_QIMG_and_head_if_selected": 209506378752,
+  "NAS_current_common_guard_if_Lexar_selected": 692026605568,
+  "NAS_current_common_guard_if_NAS_selected": 858583311360,
+  "PASS": true,
+  "actual60_fixture_created": false,
+  "actual60_or_cap_or_RSS_or_admission_claimed": false,
+  "all_three_unresolved_caller_modules_refuse_before_body": true,
+  "authentic_header_writer_bytes_once": 166556705792,
+  "binder_sha256": "f745dc57365bc4c4d4ebf37825ac4777944560d171ac38c6b8d47b9c9463dc10",
+  "existing_function_AST_changes": {
+    "facts": [],
+    "host": [
+      "main"
+    ],
+    "preflight": [
+      "host",
+      "current_NAS_scope",
+      "run"
+    ]
+  },
+  "full_source_pin_and_compile_count": 11,
+  "remote_or_payload_or_GPU_or_allocator_or_provider_or_live_source_actions": false,
+  "schema": "neural_forge.k3_61_72_source_proposal_focused_checks.v4",
+  "source_only": true,
+  "source_roster_literal_pin_join_passed": true,
+  "unresolved_actual_input_refusal": {
+    "argv": [
+      "C:\\Python314\\python.exe",
+      "-B",
+      "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py",
+      "--inputs",
+      "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\ACTUAL61_72_INPUTS_UNRESOLVED_V1.json",
+      "--inputs-sha256",
+      "4a2416f30abc11c1804120c13dbc293983f1dd84452f3948dd3b8dbb7c91b4bf",
+      "--output-directory",
+      "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\unresolved_refusal_probe_output"
+    ],
+    "exit_code": 1,
+    "no_output_directory_created": true,
+    "stderr": "Traceback (most recent call last):\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py\", line 324, in <module>\n    if __name__=='__main__':main()\n                            ~~~~^^\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py\", line 321, in main\n    args=parser.parse_args();bind(args)\n                             ~~~~^^^^^^\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py\", line 195, in bind\n    run=spec['run_uuid'];require(isinstance(run,str) and str(uuid.UUID(run))==run and run!=PREVIOUS_RUN,'new actual61 UUID remains unresolved')\n                         ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py\", line 35, in require\n    if ok is not True:raise ValueError(message)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^\nValueError: new actual61 UUID remains unresolved\n",
+    "stdout": ""
+  },
+  "writer_raw_pin": {
+    "bytes": 117834,
+    "sha256": "d85a82c01d844daf2b89ab2b4071f5d6b4f7b616ae581e65ade55767d96ad78e"
+  }
+}

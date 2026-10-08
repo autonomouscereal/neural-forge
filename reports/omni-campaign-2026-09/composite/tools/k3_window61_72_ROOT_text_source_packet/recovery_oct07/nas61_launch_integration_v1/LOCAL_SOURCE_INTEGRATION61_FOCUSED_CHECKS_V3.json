@@ -1,0 +1,61 @@
+{
+  "Lexar_own_QIMG_headroom_bytes": 209506378752,
+  "NAS_common_floor_bytes": 858583311360,
+  "actual60_or_runtime_or_allocation_claimed": false,
+  "complete_source_pins_and_helper_manifest": true,
+  "eleven_selected_templates_compiled": [
+    "ancestry",
+    "collector",
+    "driver",
+    "facts",
+    "host",
+    "native",
+    "preflight",
+    "qualification",
+    "resolver",
+    "runtime",
+    "verifier"
+  ],
+  "operating_cap_proposal_bytes": 111669149696,
+  "real_unresolved_manifest_refusal": {
+    "argv": [
+      "C:\\Python314\\python.exe",
+      "-B",
+      "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\bind_actual61_runtime_v3.py",
+      "sources",
+      "--inputs",
+      "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\ACTUAL61_INPUTS_UNRESOLVED_V1.json",
+      "--inputs-sha256",
+      "4a2416f30abc11c1804120c13dbc293983f1dd84452f3948dd3b8dbb7c91b4bf",
+      "--output-directory",
+      "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\unresolved_refusal_output_v3"
+    ],
+    "exit_code": 1,
+    "output_created": false,
+    "stderr": "Traceback (most recent call last):\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\bind_actual61_runtime_v3.py\", line 616, in <module>\n    if __name__=='__main__':main()\n                            ~~~~^^\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\bind_actual61_runtime_v3.py\", line 610, in main\n    RUN=spec['run_uuid'];require(isinstance(RUN,str) and str(uuid.UUID(RUN))==RUN and RUN!=PREVIOUS_RUN,'new actual61 UUID remains unresolved')\n                         ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\bind_actual61_runtime_v3.py\", line 56, in require\n    if ok is not True:raise ValueError(message)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^\nValueError: new actual61 UUID remains unresolved\n",
+    "stdout": ""
+  },
+  "result": "PASS_SOURCE_ONLY",
+  "schema": "neural_forge.k3_61_launch_source_integration_focused_checks.v1",
+  "six_controls_four_helpers_compiled": true,
+  "source_pins": {
+    "binder": {
+      "bytes": 53248,
+      "sha256": "d04600b44bb2f075eb61e0dcf4ab95b5f76c763d6c3996f2b95fa10af96af32b"
+    },
+    "composition": {
+      "bytes": 3994,
+      "sha256": "d1af3a3bdb31c3c28c240d2dc7d5c9fe1ccec45a692a591e510c2f5539422aa0"
+    },
+    "extractor": {
+      "bytes": 10734,
+      "sha256": "14a0b8363c77681972103d51ab978621954ddb22e87510408443f58d316bc028"
+    },
+    "wrapper": {
+      "bytes": 25857,
+      "sha256": "00b0d8b6c93c70c835c66cd773b9ba64eb9b314875207d5f8ef766c30435a6c8"
+    }
+  },
+  "strict_UUID_datetime_ledger_normalizer_AST_unchanged": true,
+  "writer_bytes_once": 166556705792
+}
