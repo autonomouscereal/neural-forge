@@ -1,0 +1,167 @@
+{
+  "actual_UUID_FS_cap_namespace_PID_events_allocation_A_admission": null,
+  "actual_closed72_84": null,
+  "at_utc": "2026-10-08T02:20:46.179246+00:00",
+  "can_arm": false,
+  "candidate_entrypoints_imports_or_fixtures": false,
+  "capability_accepted": false,
+  "composition": {
+    "bytes": 22712,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\LATER_QIMG_COMPUTE_CLOSED_SOURCE_COMPOSITION_V2.json",
+    "sha256": "260e62d48042368360cb2b143ffabbcf8ac93cef5a35fb36673983ccb1f4ec26"
+  },
+  "failed_partial_source_leaf_preserved": true,
+  "focused_check": {
+    "bytes": 1725,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\LATER_QIMG_COMPUTE_CLOSED_FOCUSED_CHECK_V2.json",
+    "sha256": "3f57c06cdad582c7778b71cd6e5290a728cda4dac7b2c4574732455da05cd44e"
+  },
+  "independent_later_review": {
+    "bytes": 45779,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\NEXT_QIMG_compute_closure_independent_review_v1\\NEXT73_85_QIMG_COMPUTE_CLOSED_WHOLE_CALLER_INDEPENDENT_REVIEW_V1.json",
+    "sha256": "4595730ed509300905cea2df882540c7db36515ecc3f8653f4e1e13a0ed42b1f"
+  },
+  "independent_shared61_review": {
+    "bytes": 50867,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\NEXT_QIMG_compute_closure_independent_review_v1\\NEXT61_QIMG_COMPUTE_CLOSED_WHOLE_CALLER_INDEPENDENT_REVIEW_V1.json",
+    "sha256": "54274e4fb41a9a6b80ecd17f55a68d1c8134850617953f2789bf4559bd7b948c"
+  },
+  "new_packets": null,
+  "new_source_promotion_commit": null,
+  "ordinary_failed_source_attempt": {
+    "bytes": 741,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\COMPOSITION_SOURCE_JOIN_FAILURE_V1.json",
+    "sha256": "8fdaf67d59239ca63459e1c73ecd450636240384131c10e3db8b0c3dee78ff22"
+  },
+  "original_workspace_and_D_component_packet_dependencies_retained": true,
+  "phases": [
+    {
+      "QIMG_native_compute_proof_roles": {
+        "QIMG_native_compute_closure": {
+          "bytes": 46772,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_COMPUTE_CLOSURE_PUBLIC_PROOF_V1.json",
+          "sha256": "0f287f18050665afd92ee5d35cbf5f3cee516efff185af2e9d643f0721d54b20"
+        },
+        "QIMG_native_terminal_raw_part_1": {
+          "bytes": 9338811,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_1_V1.json",
+          "sha256": "8e2ada9351e913b593c1b0d851e40725aabdbf11ce1e14b6e9cd3355eec68e28"
+        },
+        "QIMG_native_terminal_raw_part_2": {
+          "bytes": 9393937,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_2_V1.json",
+          "sha256": "db9fd521dc10e5524f7cd8260d9e079a65647b9cb64ad33426cb1def51fae4ad"
+        }
+      },
+      "binder": {
+        "bytes": 57230,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\bind_actual73_84_QIMG_compute_closed_v2.py",
+        "sha256": "9de9737dcc26c8766598ea922b7b16070db0d24a1b56c6041ea58d0135a236bd"
+      },
+      "helper_manifest": {
+        "bytes": 679,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\launch\\LAUNCH_QIMG_COMPUTE_CLOSED_HELPER_SOURCE_PINS_V1.json",
+        "sha256": "3bb2e03685e129ad0cc486c68d03189b00da22bbbd2a7780cb0d980ebd99b128"
+      },
+      "metadata_before_A": 73,
+      "metadata_with_A": 74,
+      "native_full_sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56",
+      "selected_source_roster": {
+        "bytes": 4067,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\SELECTED_PHASE_QIMG_COMPUTE_CLOSED_SOURCE_PINS_V1.json",
+        "sha256": "ff759776801d428282cb9aab966e75705d62a36a98fb6af83eba148ec8d02334"
+      },
+      "whole_writer_once": 180943168512,
+      "window": [
+        73,
+        84
+      ],
+      "wrapper": {
+        "bytes": 26118,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v2\\launch\\launch_actual73_84_QIMG_compute_closed_v2.py",
+        "sha256": "3180642e2cb7cd5acbc38664938388a2735e0c7baac51ce9463e8d86bf6a20f1"
+      }
+    },
+    {
+      "QIMG_native_compute_proof_roles": {
+        "QIMG_native_compute_closure": {
+          "bytes": 46772,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_COMPUTE_CLOSURE_PUBLIC_PROOF_V1.json",
+          "sha256": "0f287f18050665afd92ee5d35cbf5f3cee516efff185af2e9d643f0721d54b20"
+        },
+        "QIMG_native_terminal_raw_part_1": {
+          "bytes": 9338811,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_1_V1.json",
+          "sha256": "8e2ada9351e913b593c1b0d851e40725aabdbf11ce1e14b6e9cd3355eec68e28"
+        },
+        "QIMG_native_terminal_raw_part_2": {
+          "bytes": 9393937,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_2_V1.json",
+          "sha256": "db9fd521dc10e5524f7cd8260d9e079a65647b9cb64ad33426cb1def51fae4ad"
+        }
+      },
+      "binder": {
+        "bytes": 57568,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\bind_actual85_92_QIMG_compute_closed_v2.py",
+        "sha256": "545f41d4722fb29476a5490b30c30516422c15c7993a1e5aa105dbc91b42e8f4"
+      },
+      "helper_manifest": {
+        "bytes": 679,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\LAUNCH_QIMG_COMPUTE_CLOSED_HELPER_SOURCE_PINS_V1.json",
+        "sha256": "91b96a7d83a6958dfe03b2cb76c933892f226621dc2f6e54204e047d51b2f57d"
+      },
+      "metadata_before_A": 76,
+      "metadata_with_A": 77,
+      "native_full_sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b",
+      "selected_source_roster": {
+        "bytes": 4075,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\SELECTED_PHASE_QIMG_COMPUTE_CLOSED_SOURCE_PINS_V1.json",
+        "sha256": "eea62c3179201f17acb3c923a8208a156d6a8b8fddb1f3de1d786b2d063df2dc"
+      },
+      "whole_writer_once": 40692831840,
+      "window": [
+        85,
+        92
+      ],
+      "wrapper": {
+        "bytes": 26117,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\launch_actual85_92_QIMG_compute_closed_v2.py",
+        "sha256": "f50848599ddcbb71e331bb6c10393740485b22c89cf4e9e5f9e32888504734dc"
+      }
+    }
+  ],
+  "prior_normal_source_commit": "0bbe9d52bc6690d5b394fa5d4f006c69f2913abf",
+  "production_source_or_runtime_modified_by_failed_attempt": false,
+  "promotion_owner": "root recovery_resource_review native subagent; no competing Git action by this author",
+  "remote_Relay_runtime_provider_allocator_model_actions": false,
+  "result": "REVIEWED_SOURCE_ONLY_NEXT_CALLER_READY_FOR_AUTHORIZED_NORMAL_PROMOTION",
+  "schema": "neural_forge.k3_later_NEXT_QIMG_compute_closed_source_handoff.v1",
+  "source_change": {
+    "QIMG_ROOT_future_bytes_once": 2147483648,
+    "QIMG_pending_CPU_threads_once": 0,
+    "QIMG_pending_RAM_bytes_once": 0,
+    "QIMG_retained_Lexar_future_bytes_once": 25769803776,
+    "ROOT_text_serial_future_write_bytes_once": 10737418240,
+    "conservative_whole_ROOT_future_bytes_once": 52613349376,
+    "metadata_before_A": [
+      73,
+      76
+    ],
+    "metadata_with_A": [
+      74,
+      77
+    ],
+    "mount_counts": [
+      12,
+      13
+    ],
+    "recurring_PG_gate_or_new_manual_ACK_required": false,
+    "requires_authentic_public_terminal_compute_proof_and_fresh_no_successor_holder_frame": true,
+    "script_count": 5,
+    "ten_other_selected_source_roles_six_controls_math_provider_facts_host_and_disk_costs_unchanged": true,
+    "terminal92_manifest_native_publication_and_full_readback_joins_unchanged": true,
+    "three_new_proof_roles_inherited_once": true
+  },
+  "source_packet_execution_portability": false,
+  "training_eligible": false
+}

@@ -1,0 +1,143 @@
+{
+  "actual_source_hashes": [
+    {
+      "bytes": 55309,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\bind_actual61_ROOT_serial_v1.py",
+      "sha256": "b9d3cfc226d73147bdb7fab9bb2d1f013c6f8b6cd6e6d1b54173b60097826c6f"
+    },
+    {
+      "bytes": 25907,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\launch\\launch_actual61_ROOT_serial_v1.py",
+      "sha256": "a77bf4442ca29e977b4bac329c4b672013f745c90592387e9e71252a4ae96203"
+    },
+    {
+      "bytes": 124269,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\k3_owned_capacity_preflight61_72_ROOT_serial_v1.py",
+      "sha256": "0b402fa5b60ccc75a2e5df21daee49925b85b4ab83cffd9a4a38883203510e19"
+    },
+    {
+      "bytes": 53603,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_PUBLIC_PROOF_V1.json",
+      "sha256": "99a1dec0fddc46a6478cf8bb289856dfe1804838a973b35f1bc3545e4b474201"
+    },
+    {
+      "bytes": 3820,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\SELECTED61_ROOT_SERIAL_SOURCE_PINS_V1.json",
+      "sha256": "b7312e598c86e2100513aecccd2bc0221794fa791d864aef926ba376ef8f3428"
+    },
+    {
+      "bytes": 587,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\launch\\LAUNCH_HELPER_SOURCE_PINS_V1.json",
+      "sha256": "5e7961ca8708ca1f56b29bdab3b3cccd3cb87699374fdc337596392fc1f2434a"
+    },
+    {
+      "bytes": 12012,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_owned_readonly_facts61_72_template_v2.py",
+      "sha256": "6d490a40ca4026edbee4da8ce3e19f6734d7f1717f615fb0432071bd6b6e32f8"
+    },
+    {
+      "bytes": 18043,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_capacity_host_loop61_72_template_v2.py",
+      "sha256": "7612a588de135aba8cd3b44227c9fd15d30685fa2dc92af44abe2ab11034ed2e"
+    },
+    {
+      "bytes": 2845,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\launch\\create_next61_roots_remote.py",
+      "sha256": "59189c94c606f075dd6e2efcbe105608fc8ab9ecbe699b8cd4dd48cce5110008"
+    },
+    {
+      "bytes": 1520,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\launch\\execute_metadata_collector61_remote.py",
+      "sha256": "6a7aaaf2c616a9f5269e8ca61956c3e181050912de62b0368222c5d943db465b"
+    },
+    {
+      "bytes": 3917,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\launch\\execute_prospective61_remote.py",
+      "sha256": "22b318848c2ba80e5145bb57fb4c6226b8de148b201edc8225d2eb21c31d92fc"
+    },
+    {
+      "bytes": 7615,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\launch\\read_fresh_prospective61_remote.py",
+      "sha256": "f252d2b18c3a72e62b6c7aa2aaa566670557ece9f212431a592b86ce649987fc"
+    },
+    {
+      "bytes": 1650,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_caller_ready61_remote.py",
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+    },
+    {
+      "bytes": 4956,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_cap_arm104_remote.py",
+      "sha256": "0505e1fcfcba2b233dfd35c44b5b16363d2adc947774df470c884264b6670689"
+    },
+    {
+      "bytes": 3249,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_freeze61_remote.py",
+      "sha256": "90ee51f12cc187aaccf55f495ffc4e9078fc9301915efe7b9827ac8965129a98"
+    },
+    {
+      "bytes": 1385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_precheck11_remote.py",
+      "sha256": "d2c261cdf5d2799d85d25e4512144c45808090ca631b63ae5e4b2d9c38bf315d"
+    },
+    {
+      "bytes": 1833,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\normal_stage_assets61_remote.py",
+      "sha256": "dc261438fce87bbc05d4242123dd90c2ec8c63ab297649c0cc4461866379d8b9"
+    },
+    {
+      "bytes": 3217,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\controls\\stage_owned_bound_source_remote.py",
+      "sha256": "a272f068a41494b332212619c59e1d74bff9822f26c11eac92ff1639eb08c421"
+    }
+  ],
+  "at_utc": "2026-10-07T23:24:09.024621+00:00",
+  "binder_function_changes": [
+    "selected",
+    "bind",
+    "verify_bound_bundle",
+    "final_configs"
+  ],
+  "capability_accepted": false,
+  "eight_public_members_fullSHA_and_bytes_equal": true,
+  "limits": [
+    "No candidate module/function/main imported or executed; no fixture/test rerun.",
+    "No remote/DB/Relay/runtime/allocation/service action; actual60/UUID/FS/A/admission remain null.",
+    "Authentic late-source proof is dated public input; fresh real actor/source/resource facts remain required at actual phase.",
+    "Source proposal only: normal promotion of new preflight and complete successor recursive bindings remain pending."
+  ],
+  "manual_source_joins": [
+    "Public member proof hash/bytes/schema/binding/caps/noSTART and original ROOT1075-only terminal request join inspected.",
+    "One source role installed into scope.source_pins, closure and request; whole role counts and prospective readback guards agree.",
+    "Active actor still needs actual normal request/caps/birth/source and remains refused without proof; no blanket owner exemption.",
+    "Source numerical policy, locks, normal allocator, control freeze/cap/arm and production mathematical code unchanged."
+  ],
+  "one_new_pure_public_source_join": "current_ROOT_serial_scope",
+  "preflight_existing_changes": [
+    "run"
+  ],
+  "schema": "neural_forge.k3_ROOT_serial_whole_caller_independent_static_review.v1",
+  "semantics": {
+    "H3_audio_and_ACE_serial_not_summed_RAM": true,
+    "NAS_floor858583311360_unchanged": true,
+    "ROOT1075_only_phase_zero_preserved_not_all_ROOT_zero": true,
+    "ROOT_pending_write_bytes_once": 9663676416,
+    "ROOT_serial_CPU_threads_once": 4,
+    "ROOT_serial_RAM_bytes_once": 17179869184,
+    "classify_and_unknown_census_unchanged": true,
+    "facts_host_ten_parent_templates_six_normal_controls_unchanged": true,
+    "metadata_after_A": 68,
+    "metadata_before_A": 67,
+    "new_preflight_normal_promotion": null,
+    "new_role": "ROOT_current_serial_scope",
+    "old12GiB_4CPU_2GiB_future_replaced_once": true,
+    "parent_promotion_does_not_cover_new_bytes": true,
+    "prepared_actor_classification_added": false,
+    "scripts": 5,
+    "writer166556705792_once_unchanged": true
+  },
+  "source_only": true,
+  "training_accepted": false,
+  "verdict": "PASS_SOURCE_ONLY_CONDITIONAL",
+  "wrapper_operation_function_ASTs_unchanged": true
+}

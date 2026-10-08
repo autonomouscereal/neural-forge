@@ -1,0 +1,9 @@
+The additive NEXT-only 73–84 and 85–92 QIMG compute-closure callers passed independent source review. They preserve the ROOT-text source at `0bbe9d52bc6690d5b394fa5d4f006c69f2913abf` and every earlier source packet.
+
+The three authenticated public QIMG terminal proof roles are inherited once. The preflight can close the pending 50 GiB/8 CPU compute promise only with the exact terminal/native/normal-release proof and a fresh frame showing no successor holder. QIMG's 24 GiB Lexar and 2 GiB ROOT disk promises remain charged. ROOT's serial text allowance stays 10 GiB and the conservative whole ROOT future stays 49 GiB. Metadata counts are 73/76 before allocation, 74/77 after, with five scripts and 12/13 mounts.
+
+Current composition SHA256: `260e62d48042368360cb2b143ffabbcf8ac93cef5a35fb36673983ccb1f4ec26`. Later independent review: `4595730ed509300905cea2df882540c7db36515ecc3f8653f4e1e13a0ed42b1f`. Shared-61 review: `54274e4fb41a9a6b80ecd17f55a68d1c8134850617953f2789bf4559bd7b948c`.
+
+Native mathematics, ten other selected source modules, all six controls, provider handling and retained disk costs are unchanged. The 92-layer terminal manifest/publication/head/full-prefix joins remain intact. The first composer attempt stopped at a wrong serialization-line assumption; its partial source leaf and failure receipt are retained. V2 inserts the guards before the actual extras serialization and passed review. No production action occurred.
+
+The source owner handles combined normal promotion. These are source-only packets with exact original workspace and component-packet dependencies, rather than portable launch materializations. New source commit/packet pins and actual closed 72/84, UUID, filesystem/cap, namespace PID/events, allocation/A and admission remain unresolved in this handoff. No candidate import, fixture, remote, Relay, runtime, provider, allocator or model action occurred.

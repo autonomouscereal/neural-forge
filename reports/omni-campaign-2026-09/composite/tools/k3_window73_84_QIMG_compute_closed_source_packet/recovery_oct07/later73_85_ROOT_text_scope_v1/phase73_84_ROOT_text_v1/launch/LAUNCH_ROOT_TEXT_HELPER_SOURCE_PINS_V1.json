@@ -1,0 +1,18 @@
+{
+  "create_next73_roots_ROOT_text_v1_remote.py": {
+    "bytes": 3184,
+    "sha256": "cb306770b3885d53dade1eaf2d9d8b518b057ac65f346c763937d78534175985"
+  },
+  "execute_metadata_collector73_ROOT_text_v1_remote.py": {
+    "bytes": 1520,
+    "sha256": "2f669e4abdd4a9bb5368dcf4d16d7fc115c2b50c071539941b80f8743612b99c"
+  },
+  "execute_prospective73_ROOT_text_v1_remote.py": {
+    "bytes": 3917,
+    "sha256": "4301a98d65e7942c43f2e6c37c4d14e7219eee6f33a62c61005d2ee146370f93"
+  },
+  "read_fresh_prospective73_ROOT_text_v1_remote.py": {
+    "bytes": 7778,
+    "sha256": "4bb20acbb57f1683fe00fae86dae744c67bf5c130e13f562c1d043418e2e088d"
+  }
+}
