@@ -1,0 +1,76 @@
+{
+  "checks": [
+    "full selected SHA and byte checks",
+    "compile-only of all selected source",
+    "only exact shared preflight delta",
+    "unchanged preflight functions outside shared delta",
+    "shared pure functions AST equality",
+    "new predecessor binder full pins",
+    "metadata counts unchanged",
+    "helper functions unchanged",
+    "local output path join",
+    "fresh readback write10GiB",
+    "current V4 shared-contract corrected helper manifest; selected later source bytes unchanged"
+  ],
+  "composition": {
+    "bytes": 17381,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_text_scope_v1\\LATER_ROOT_TEXT_SOURCE_COMPOSITION_V2.json",
+    "sha256": "a77c42cccb7629b5e0db1154f8cf96e29af07f08f73517a4f1b9ee4fa45329c2"
+  },
+  "contract_only_correction": {
+    "every_later_source_byte_unchanged_from_V1": true,
+    "new_shared_contract_has_corrected_61_helper_manifest": true,
+    "old_contract_preserved": true,
+    "source_composition_V1": {
+      "bytes": 16821,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_text_scope_v1\\LATER_ROOT_TEXT_SOURCE_COMPOSITION_V1.json",
+      "sha256": "123bede91f19891afb63639daad3d897949d8db93aa129a04fb5dd9e110318ba"
+    }
+  },
+  "fixtures_executed": false,
+  "observations": [
+    {
+      "actual_previous_closure_UUID_FS_cap_allocation_A_admission": null,
+      "binder_wrapper_LOCAL_OUTPUTS_equal": "D:/codex-owned-source-receipts/k3-later73-92-ROOT-text-source-only/phase73_84",
+      "metadata_count_before_A": 70,
+      "metadata_count_with_A": 71,
+      "native_math_and_phase_writer_extent_unchanged": true,
+      "readback_only_ROOT_write_guard_9_to10": true,
+      "six_controls_byte_identical": true,
+      "ten_other_selected_role_bytes_unchanged": true,
+      "three_helpers_byte_identical": true,
+      "window": [
+        73,
+        84
+      ]
+    },
+    {
+      "actual_previous_closure_UUID_FS_cap_allocation_A_admission": null,
+      "binder_wrapper_LOCAL_OUTPUTS_equal": "D:/codex-owned-source-receipts/k3-later73-92-ROOT-text-source-only/phase85_92",
+      "metadata_count_before_A": 73,
+      "metadata_count_with_A": 74,
+      "native_math_and_phase_writer_extent_unchanged": true,
+      "readback_only_ROOT_write_guard_9_to10": true,
+      "six_controls_byte_identical": true,
+      "ten_other_selected_role_bytes_unchanged": true,
+      "three_helpers_byte_identical": true,
+      "window": [
+        85,
+        92
+      ]
+    }
+  ],
+  "remote_Relay_provider_allocator_model_actions": false,
+  "runtime_imports_or_entrypoints": false,
+  "schema": "neural_forge.k3_later_ROOT_text_focused_source_check.v1",
+  "shared_changed_functions": [
+    "current_ROOT_serial_scope",
+    "run"
+  ],
+  "shared_contract": {
+    "bytes": 10129,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\ROOT_TEXT_WHOLE_CALLER_SOURCE_CONTRACT_V4.json",
+    "sha256": "4c41310f672e6ca257b8c4dc24e61fcba427fa4a06e2ad78e0f45570fb9ac1c9"
+  },
+  "verdict": "PASS_SOURCE_ONLY_PENDING_INDEPENDENT_REVIEW"
+}

@@ -1,0 +1,79 @@
+{
+  "actual60": null,
+  "actual_ROOT1075_only_terminal_join": {
+    "CPU_threads": 0,
+    "RAM_bytes": 0,
+    "all_ROOT_futures_discharged": false,
+    "container_id": "f03d8f57e45920a9beda53d504faabfcf3bd8d8942ab60b5b8775611fa93ef35",
+    "new_ROOT_write_bytes": 0,
+    "retained_output_bytes": 581078809,
+    "run_uuid": "27588780-c763-4489-89cf-1f296ae1cc89"
+  },
+  "actual_serial_scope": {
+    "ACE_CPU_threads": 4,
+    "ACE_RAM_bytes": 17179869184,
+    "CPU_threads": 4,
+    "H3_audio_CPU_threads": 2,
+    "H3_audio_RAM_bytes": 6442450944,
+    "P40_budget_or_execution_adopted": false,
+    "RAM_bytes": 17179869184,
+    "ROOT_owner": "codex-native-01a10f94-259b-7623-9679-ce4e68f82b8c",
+    "active_actor_adopted": false,
+    "active_actor_requires_complete_fresh_source_proof": true,
+    "full_ROOT_future_discharged": false,
+    "new_ROOT_write_bytes": 9663676416,
+    "same_owner_historical_ROOT12GiB4CPU2GiB_replaced_once": true,
+    "serial_execution": true,
+    "source_pin": {
+      "name": "ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_PUBLIC_PROOF_V1.json",
+      "sha256": "99a1dec0fddc46a6478cf8bb289856dfe1804838a973b35f1bc3545e4b474201"
+    }
+  },
+  "candidate_main_or_module_import_executed": false,
+  "cases": [
+    {
+      "case": "complete authentic eight public raws plus existing full ROOT1075-only terminal proof",
+      "pass": true
+    },
+    {
+      "case": "wrong source packet fullSHA",
+      "pass": true,
+      "refusal": "exact whole public ROOT serial source packet required"
+    },
+    {
+      "case": "wrong prepared ACE cap",
+      "pass": true,
+      "refusal": "exact ROOT prepared CPU source/noSwap/noGPU caps required",
+      "test_only_adjusted_member_expectation_to_reach_semantic_guard": true
+    },
+    {
+      "case": "wrong genuine ROOT owner",
+      "pass": true,
+      "refusal": "genuine source owner serial adoption required",
+      "test_only_adjusted_member_expectation_to_reach_semantic_guard": true
+    }
+  ],
+  "classify_and_unknown_actor_guards_unchanged": true,
+  "existing_changed_ASTs": [
+    "run"
+  ],
+  "facts_and_host_changes": 0,
+  "new_function_ASTs": [
+    "current_ROOT_serial_scope"
+  ],
+  "new_source_normal_promoted_commit": null,
+  "proof": {
+    "bytes": 53603,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_PUBLIC_PROOF_V1.json",
+    "sha256": "99a1dec0fddc46a6478cf8bb289856dfe1804838a973b35f1bc3545e4b474201"
+  },
+  "result": "PASS_SOURCE_ONLY",
+  "runtime_or_DB_Relay_or_resource_actions": false,
+  "schema": "neural_forge.k3_ROOT_serial_actual_public_metadata_focused_checks.v1",
+  "semantic_perturbations_test_only_not_actual_claims": true,
+  "source": {
+    "bytes": 124269,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_peer_scope_v1\\k3_owned_capacity_preflight61_72_ROOT_serial_v1.py",
+    "sha256": "0b402fa5b60ccc75a2e5df21daee49925b85b4ab83cffd9a4a38883203510e19"
+  }
+}

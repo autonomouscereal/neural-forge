@@ -1,0 +1,39 @@
+{
+  "actual60_or_release_claimed": false,
+  "candidate_entrypoints_executed": false,
+  "checks": [
+    "exact current owner/RUN/A/CID/immutableimage/10mounts/96GiB22CPU/noSwap",
+    "full current frozen Config/HostConfig/Mount and whole-code/control pin checks",
+    "natural terminal/noGPU process evidence, physical terminal object retained",
+    "complete raw metadata/Docker logs size+SHA lossless compressed decoder unchanged",
+    "native namespace PID derives execution and started/running/terminal events; no203 assumption",
+    "single whole bounded_window_complete event/status/closed60/scan/manifest/receipt joins",
+    "full raw source freeze now captured under its previously verified f17 pin",
+    "all preserved byte readbacks precede unchanged exact installed release_group",
+    "transaction normal catalog/ownrow/exactgroup only; no provider interruption/restoration"
+  ],
+  "result": "PASS_STATIC_SOURCE_ONLY",
+  "reviewed_actual49_config_sha256": "eaebf00e1506dc6f7a55f333ac05a35fab0cb3f2d4b7a96e6a10badece4f8e37",
+  "reviewed_actual49_source_freeze_sha256": "f17c6912d1e3ba5f62f7943ba9f8e004d9c8def3be54e5820bce174899110647",
+  "runtime_or_database_or_remote_actions": false,
+  "schema": "neural_forge.k3_terminal49_release_V2_independent_local_source_review.v1",
+  "separate_raw9_postterminal_connect_required": true,
+  "source_pins": {
+    "release_terminal49_readonly_v1.py": {
+      "bytes": 15281,
+      "sha256": "198c322ca1a6173bef1e59c38848edaf9e6160728eff00fca01ce0e381aca484"
+    },
+    "release_terminal49_readonly_v2.py": {
+      "bytes": 15452,
+      "sha256": "b6e099ba0f2662cf68df17c4443afeb819d16b35011f4a53df10212d9815c814"
+    },
+    "release_terminal49_v1.py": {
+      "bytes": 7991,
+      "sha256": "df4b800f69a7a1df18195819cfe9ed7edfd48a156947f1c7f7951aa48ffc4864"
+    },
+    "release_terminal49_v2.py": {
+      "bytes": 7991,
+      "sha256": "8856ec746756e981299d7451afb68fb667d2c4dd2ac6e0c21f5e3fd70c5ca9a3"
+    }
+  }
+}

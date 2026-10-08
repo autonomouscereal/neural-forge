@@ -1,0 +1,212 @@
+{
+  "additional_origin_hardening": "Only original127 unchanged inherited row values may use legacy_closed36; all additional rows require closed37_48 origin.",
+  "at_utc": "2026-10-07T17:14:36.530456+00:00",
+  "changed_existing_function_ASTs": {
+    "native": [
+      "DualStreamRun.__init__",
+      "DualStreamRun._carry_forward_previous_receipt",
+      "DualStreamRun.run"
+    ],
+    "resolver": [
+      "_old_role",
+      "ROResumePaths.__init__",
+      "ROResumePaths._check_roots",
+      "ROResumePaths.read_path",
+      "ROResumePaths.record",
+      "NativeResumeReads.sealed_metadata",
+      "ControllerReads.existing_layer"
+    ],
+    "runtime": [
+      "Closed36Ancestry.__init__",
+      "Closed36Ancestry.logical",
+      "Closed36Ancestry.pin",
+      "Closed36Ancestry.matches",
+      "Closed36Ancestry.matches_stamp",
+      "Closed36Ancestry.historical_path",
+      "Closed36Ancestry.map_read",
+      "Closed36Ancestry.record",
+      "nas_resume_from_arguments"
+    ],
+    "verifier": [
+      "verify"
+    ]
+  },
+  "compile_passed": true,
+  "deployable_from_this_packet": false,
+  "focused_cpu_checks": {
+    "exit_code": 0,
+    "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/test_path_seams.py",
+    "scope": "Explicit synthetic filesystem metadata + genuine original127 row values and actual incompleteclosed36 metadata; no tensors/futureactual48/runtime admission proof",
+    "sha256": "817d14d0600a48ee51c2e28d2199ce517d9bf5e70371a1accebde55922fca5f0",
+    "stderr": "test_changed_actual_hash_stat_and_inherited_catalog_refused (__main__.PathSeams.test_changed_actual_hash_stat_and_inherited_catalog_refused) ... ok\ntest_exact_context_and_origin_only_no_legacy_or_new_stamp_bypass (__main__.PathSeams.test_exact_context_and_origin_only_no_legacy_or_new_stamp_bypass) ... ok\ntest_old_unlisted_foreign_and_changed_owned_output_refused (__main__.PathSeams.test_old_unlisted_foreign_and_changed_owned_output_refused) ... ok\ntest_overlap_and_same_physical_root_refused (__main__.PathSeams.test_overlap_and_same_physical_root_refused) ... ok\ntest_same_NAS_device_is_disjoint_and_old_reads_select_exact_origin (__main__.PathSeams.test_same_NAS_device_is_disjoint_and_old_reads_select_exact_origin) ... ok\ntest_unresolved48_and_incomplete_actual36_cannot_admit48 (__main__.PathSeams.test_unresolved48_and_incomplete_actual36_cannot_admit48) ... ok\n\n----------------------------------------------------------------------\nRan 6 tests in 0.309s\n\nOK\n",
+    "stdout": "",
+    "test_count": 6
+  },
+  "future_boundary_inputs": {
+    "before49_dual_hashes": null,
+    "closed48_continuity": null,
+    "complete183_or_more_actual_roster": null,
+    "completed37_48_receipt": null,
+    "completed37_48_scanner": null,
+    "fresh_allocation_capacity_runtime": null,
+    "new_identity_binding": null
+  },
+  "native_changed_functions_only_boundary_path_guards": true,
+  "original_qualified_functions_AST_unchanged": [
+    "resolve_lane_dir",
+    "lane_file_digests",
+    "under_share",
+    "canonical_json",
+    "sha256_text",
+    "sha256_bytes",
+    "import_lane_tensor_sha256",
+    "read_raw_tensor_records",
+    "zero_gain_census",
+    "torch_dtype",
+    "require_finite",
+    "digest_receipt_status",
+    "read_share_rate",
+    "resolve_share_policy",
+    "Segment.__init__",
+    "Segment.record",
+    "Corpus.__init__",
+    "Corpus.record",
+    "Corpus.row_chunks",
+    "ShardStager.__init__",
+    "ShardStager._manifest_path",
+    "ShardStager._load_manifest",
+    "ShardStager._write_manifest",
+    "ShardStager._resident_owned",
+    "ShardStager._copy_in_flight",
+    "ShardStager._worker",
+    "ShardStager._ensure_thread",
+    "ShardStager.queue",
+    "ShardStager.path_for",
+    "ShardStager._check_stalled",
+    "ShardStager.note_source_read",
+    "ShardStager.release",
+    "ShardStager.close",
+    "ShardStager.record",
+    "read_layer",
+    "resolve_compute_dtype",
+    "_chunked_linear",
+    "selected_divergence_scores",
+    "Pair.__init__",
+    "Pair.clone",
+    "attention_half",
+    "routed_y_lat",
+    "dense_y_lat",
+    "moe_write",
+    "ffn_half",
+    "Refusal.__init__",
+    "measured_solve_gram",
+    "_score_relL2",
+    "evaluate_acceptance",
+    "acceptance_message",
+    "DualCoresetFold.__init__",
+    "DualCoresetFold._split_positions",
+    "DualCoresetFold._timed",
+    "DualCoresetFold.stage1",
+    "DualCoresetFold.stage2",
+    "DualCoresetFold.refit",
+    "DualCoresetFold._prediction_chunks",
+    "DualCoresetFold._routed_write",
+    "DualCoresetFold._score_map",
+    "DualCoresetFold._score_extras",
+    "DualCoresetFold.score",
+    "DualStreamRun._resume_context",
+    "DualStreamRun._model_identity",
+    "DualStreamRun._digest_receipt_status",
+    "DualStreamRun._model_tensor",
+    "DualStreamRun._write_snapshot_manifest",
+    "DualStreamRun.installed_stamp",
+    "DualStreamRun.prefix_lineage",
+    "DualStreamRun.prior_moe_layers",
+    "DualStreamRun.snapshot_provenance",
+    "DualStreamRun.dual_snapshot_available",
+    "DualStreamRun.load_dual_snapshot",
+    "DualStreamRun.layer_dir",
+    "DualStreamRun.valid_done_chain",
+    "DualStreamRun.write_done_marker",
+    "DualStreamRun.initial_pair",
+    "DualStreamRun._head_tensors",
+    "DualStreamRun.logits_rows",
+    "DualStreamRun.require_peak_rss",
+    "DualStreamRun.run_layer",
+    "DualStreamRun.zero_child_prefix",
+    "DualStreamRun.accept_layer",
+    "DualStreamRun.window_acceptance",
+    "DualStreamRun.write_dense_layer_verbatim",
+    "DualStreamRun._verbatim_file",
+    "DualStreamRun.write_body_verbatim",
+    "DualStreamRun.write_model_level_verbatim",
+    "DualStreamRun.compare_layer0_receipt",
+    "DualStreamRun.layer_tensor_listing",
+    "DualStreamRun.fit_layer",
+    "DualStreamRun.write_ffn",
+    "DualStreamRun.load_ffn",
+    "DualStreamRun.write_held_rows",
+    "DualStreamRun.stream_divergence",
+    "DualStreamRun.dequant_crosscheck",
+    "DualStreamRun.mixer_diagnostic",
+    "DualStreamRun.end_of_stack",
+    "DualStreamRun.determinism_sha256",
+    "main"
+  ],
+  "prior_validation": {
+    "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/SOURCE_ONLY_PROPOSAL_VALIDATION_V1.json",
+    "sha256": "08369081845df5e08437685b09a671965e0b700b2008831c1cd8d04381479860"
+  },
+  "qualified_unchanged_count": 99,
+  "runtime_or_model_actions_performed": false,
+  "schema": "neural_forge.k3_NAS49_60_source_only_proposal_validation.v2",
+  "source_frozen_live_bytes_changed": false,
+  "source_pins": {
+    "composer": {
+      "bytes": 19165,
+      "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/compose_source_proposal.py",
+      "purpose": "Source-only exclusive local composition; no runtime or model work.",
+      "sha256": "ccf030d1947a81cb711fe53e68815cf1bdd1974ea5b473e0d43148189ac1c56b"
+    },
+    "native": {
+      "bytes": 190685,
+      "parent": {
+        "bytes": 190685,
+        "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas37_48_resume_review/k3_dense_pass.py",
+        "sha256": "720465874722e1548c08f82a019be7dcb477efcc5828d6edd10610c1ea076243"
+      },
+      "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/k3_dense_pass.py",
+      "sha256": "fcfac6ae15d91b7028d9f165af934d7b738d6efd4dd178be3e3b4710ad8ebfb0"
+    },
+    "resolver": {
+      "bytes": 23700,
+      "parent": {
+        "bytes": 19240,
+        "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas37_48_resume_review/ro_resume_paths.py",
+        "sha256": "9230b81428d6ddf35748a471443fb7ffc7cd4a0d9ac2cec6a5b61a170cd0742d"
+      },
+      "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/ro_resume_paths.py",
+      "sha256": "be4f3aede6f94d242cad9c4037656c3de3eff8f2268f5f2b17d23cf69025a804"
+    },
+    "runtime": {
+      "bytes": 15730,
+      "parent": {
+        "bytes": 9074,
+        "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas37_48_resume_review/ro_resume_runtime.py",
+        "sha256": "7a0d25b0314029cd8177a7e292f377466ab24d3c0cfa44cf9135ae754ae35233"
+      },
+      "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/ro_resume_runtime.py",
+      "sha256": "4e58891969a6e83b6cf2247b8837edeb53d7a37d03de2aba07a4a14e7b150e6b"
+    },
+    "verifier": {
+      "bytes": 42002,
+      "parent": {
+        "bytes": 41614,
+        "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas37_48_verifier_review/verify_later_window.py",
+        "sha256": "265dc3f5455b1160372b819c30d9b9c3f98266df159886dcbb628f6a5e7b95eb"
+      },
+      "path": "owner_fold_policy_oct06/native_executor/k3_continuation/recovery_oct07/nas49_60_proposal/verifier/verify_later_window.py",
+      "sha256": "03d3f2b429e5902f973020d7b4e2d43eb840111a0f022a223081df7e54047880"
+    }
+  }
+}

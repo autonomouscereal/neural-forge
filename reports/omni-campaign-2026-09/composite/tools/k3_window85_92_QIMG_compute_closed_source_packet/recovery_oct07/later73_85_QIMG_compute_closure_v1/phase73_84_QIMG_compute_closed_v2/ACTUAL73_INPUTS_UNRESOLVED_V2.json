@@ -1,0 +1,31 @@
+{
+  "inputs": {
+    "binding_receipt": null,
+    "closed72_continuity": null,
+    "controller_events_jsonl": null,
+    "controller_terminal_result": null,
+    "fitter_execution": null,
+    "full_ffn_validation": null,
+    "resources_jsonl": null,
+    "snapshot_manifest": null,
+    "terminal_receipt": null
+  },
+  "new_output_filesystem": null,
+  "operating_cap_proposal": null,
+  "previous61": {
+    "inputs": {
+      "allocation": null,
+      "catalog": null,
+      "driver_config": null,
+      "identity": null,
+      "observation": null,
+      "recovery_plan": null,
+      "source_binding": null,
+      "source_closure": null,
+      "source_freeze": null
+    },
+    "source_bundle": null
+  },
+  "run_uuid": null,
+  "schema": "neural_forge.k3_actual73_84_local_source_binding_inputs.v1"
+}

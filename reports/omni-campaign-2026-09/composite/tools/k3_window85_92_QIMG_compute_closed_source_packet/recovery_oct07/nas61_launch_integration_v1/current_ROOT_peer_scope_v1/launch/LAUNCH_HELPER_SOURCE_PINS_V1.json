@@ -1,0 +1,18 @@
+{
+  "create_next61_roots_remote.py": {
+    "bytes": 2845,
+    "sha256": "59189c94c606f075dd6e2efcbe105608fc8ab9ecbe699b8cd4dd48cce5110008"
+  },
+  "execute_metadata_collector61_remote.py": {
+    "bytes": 1520,
+    "sha256": "6a7aaaf2c616a9f5269e8ca61956c3e181050912de62b0368222c5d943db465b"
+  },
+  "execute_prospective61_remote.py": {
+    "bytes": 3917,
+    "sha256": "22b318848c2ba80e5145bb57fb4c6226b8de148b201edc8225d2eb21c31d92fc"
+  },
+  "read_fresh_prospective61_remote.py": {
+    "bytes": 7615,
+    "sha256": "f252d2b18c3a72e62b6c7aa2aaa566670557ece9f212431a592b86ce649987fc"
+  }
+}

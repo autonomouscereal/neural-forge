@@ -1,0 +1,10 @@
+{
+  "cause": "Composer assumed an inline source-closure serialization; actual binder publishes SOURCE_BINDING_RESULT/SOURCE_CLOSURE through extras.",
+  "error_type": "AssertionError",
+  "exact_error": "(0, files['production_control/source_closure.json']=encode(closure))",
+  "partial_leaf_preserved": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase73_84_QIMG_compute_closed_v1",
+  "runtime_or_Git_actions": false,
+  "schema": "neural_forge.k3_later_QIMG_source_composition_failure.v1",
+  "source_script_sha256": "e34e66f43cb0aadfb553875bd3c86131b73a15c4847dddb8083471d616143298",
+  "stage": "source_composition"
+}
