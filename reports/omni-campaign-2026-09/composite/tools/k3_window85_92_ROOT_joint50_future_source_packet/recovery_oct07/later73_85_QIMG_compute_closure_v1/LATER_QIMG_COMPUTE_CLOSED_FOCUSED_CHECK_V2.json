@@ -1,0 +1,42 @@
+{
+  "composition": {
+    "bytes": 22712,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\LATER_QIMG_COMPUTE_CLOSED_SOURCE_COMPOSITION_V2.json",
+    "sha256": "260e62d48042368360cb2b143ffabbcf8ac93cef5a35fb36673983ccb1f4ec26"
+  },
+  "fixtures_candidate_imports_runtime_remote_Relay_model_actions": false,
+  "observations": [
+    {
+      "inherited3proofroles_fullhash_and_extent_guard": true,
+      "math_terminal92_disk_provider_facts_host_unchanged": true,
+      "metadata_before_A": 73,
+      "metadata_with_A": 74,
+      "new_binder_wrapper_localpath_equal": "D:/codex-owned-source-receipts/k3-later73-92-QIMG-compute-closed-source-only/phase73_84",
+      "old_other10roles_byte_identical": true,
+      "only_shared_preflight_classify_run_and_new_purejoin_changed": true,
+      "scripts": 5,
+      "six_controls_byte_identical": true,
+      "window": [
+        73,
+        84
+      ]
+    },
+    {
+      "inherited3proofroles_fullhash_and_extent_guard": true,
+      "math_terminal92_disk_provider_facts_host_unchanged": true,
+      "metadata_before_A": 76,
+      "metadata_with_A": 77,
+      "new_binder_wrapper_localpath_equal": "D:/codex-owned-source-receipts/k3-later73-92-QIMG-compute-closed-source-only/phase85_92",
+      "old_other10roles_byte_identical": true,
+      "only_shared_preflight_classify_run_and_new_purejoin_changed": true,
+      "scripts": 5,
+      "six_controls_byte_identical": true,
+      "window": [
+        85,
+        92
+      ]
+    }
+  ],
+  "schema": "neural_forge.k3_later_NEXT_QIMG_source_check.v1",
+  "verdict": "PASS_SOURCE_ONLY_PENDING_INDEPENDENT_REVIEW"
+}

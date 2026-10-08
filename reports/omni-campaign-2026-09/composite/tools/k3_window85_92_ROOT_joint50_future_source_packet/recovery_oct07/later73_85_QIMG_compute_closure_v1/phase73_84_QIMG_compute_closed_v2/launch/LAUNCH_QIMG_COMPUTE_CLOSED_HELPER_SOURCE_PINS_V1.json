@@ -1,0 +1,18 @@
+{
+  "create_next73_roots_QIMG_compute_closed_v2_remote.py": {
+    "bytes": 3184,
+    "sha256": "cb306770b3885d53dade1eaf2d9d8b518b057ac65f346c763937d78534175985"
+  },
+  "execute_metadata_collector73_QIMG_compute_closed_v2_remote.py": {
+    "bytes": 1520,
+    "sha256": "2f669e4abdd4a9bb5368dcf4d16d7fc115c2b50c071539941b80f8743612b99c"
+  },
+  "execute_prospective73_QIMG_compute_closed_v2_remote.py": {
+    "bytes": 3917,
+    "sha256": "d0f0e4b6b1ed3611c8e3d732f4eab64a00827dc07ecf378f91f045c7230535d7"
+  },
+  "read_fresh_prospective73_QIMG_compute_closed_v2_remote.py": {
+    "bytes": 8310,
+    "sha256": "c4b5dbc161cee7d1317fcace98b0900d9b33b1deb5c2e160c7ad568134a010d6"
+  }
+}

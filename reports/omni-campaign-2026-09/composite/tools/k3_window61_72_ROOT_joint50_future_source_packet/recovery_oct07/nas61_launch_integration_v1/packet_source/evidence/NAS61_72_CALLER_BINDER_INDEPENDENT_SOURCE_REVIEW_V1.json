@@ -1,0 +1,223 @@
+{
+  "actual60_closed_or_future_phase_launched_or_capability_or_training_claimed": false,
+  "actual60_provenance_static_review": [
+    "Exact9 current60 metadata raw references and9 previous49 provenance raw references fullSHA/byte-stable guards before publication.",
+    "Prior cffe bound-bundle guard joins the complete production inventory/f28 parent and exact63 metadata roles; actual49 config/catalog/observation/plan/mount/allocation/freeze identity joins.",
+    "V3 adds complete execution code inventory equality plus every bound control source pin subset; the real normal49 freeze producer emits those exact fields.",
+    "Native namespace PID is derived from actual fitter_execution.pid, joined actual plan argv/start/running/end; no literal203 or hostPID substitution.",
+    "Pinned pure closed60 validator joins real full49\u201360 finite/load scanner, terminal processing1..60 installed hashes and both actual before61 endpoints/manifest/old48 predecessor context.",
+    "V4 requires actual whole-controller bounded_window_complete status, fullprefix60, later false and a single matching complete event/final continuity hash/path/ended_at.",
+    "Peak comes from native terminal and the window_validated resource sample after serial readers; actual noSwap/cap/non-OOM joins plus next array delta are conditional operating evidence, not wholeRSS proof.",
+    "Normal connect own native binding is read from actual pinned receipt; parent must supply the authentic post-terminal receipt as specified by the contract."
+  ],
+  "at_utc": "2026-10-07T21:48:06.371850+00:00",
+  "authentic99_OTHER_native_qualified_ASTs_match9086": true,
+  "binder": {
+    "bytes": 26216,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py",
+    "sha256": "f745dc57365bc4c4d4ebf37825ac4777944560d171ac38c6b8d47b9c9463dc10"
+  },
+  "binder_V2_to_V3_AST_delta": {
+    "added": [],
+    "changed": [
+      "bind",
+      "selected",
+      "validate_actual60"
+    ],
+    "removed": []
+  },
+  "binder_V3_to_V4_AST_delta": {
+    "added": [],
+    "changed": [
+      "validate_actual60"
+    ],
+    "removed": []
+  },
+  "caller_existing_function_AST_deltas": {
+    "facts": {
+      "added": [],
+      "changed": [],
+      "removed": []
+    },
+    "host": {
+      "added": [],
+      "changed": [
+        "main"
+      ],
+      "removed": []
+    },
+    "preflight": {
+      "added": [],
+      "changed": [
+        "current_NAS_scope",
+        "host",
+        "run"
+      ],
+      "removed": []
+    }
+  },
+  "candidate_import_or_main_or_refusal_test_or_fixture_rerun": false,
+  "complete_source_pin_compile_count": 11,
+  "contract": {
+    "bytes": 13228,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\BINDING_AND_CALLER_SOURCE_CONTRACT_V4.json",
+    "sha256": "607570dd3baacaeeebb3b506ceb7914ba606864f89f45ce0f827a9a79a2bf953"
+  },
+  "existing_author_checks": {
+    "bytes": 3809,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\SOURCE_PROPOSAL_FOCUSED_CHECKS_V4.json",
+    "rerun": false,
+    "scope": "Recorded compile/AST/source pins plus actual-null refusal and unbound caller early refusals; no fabricated actual60.",
+    "sha256": "1550f9b9d5dde20b85efc26b2e13d31d3c34fc193b88893667760dcc38148941"
+  },
+  "freeze_producer": {
+    "bytes": 3249,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\normal_existing_control_derivatives_v1\\normal_freeze49_remote.py",
+    "read_only_source_not_executed": true,
+    "sha256": "df96e9d67f9ad162540f1dc26bdcf9ece1d0b177fd942c752b1e928d1959203a"
+  },
+  "locations": {
+    "completed=[r for r in events if r['stage']=='bounded_window_complete']": [
+      162
+    ],
+    "completed[0]['final_continuity_sha256']==sha(raw['closed60_continuity'])": [
+      165
+    ],
+    "freeze['code_files']==expected_code": [
+      104
+    ],
+    "freeze['control_files'][name[len('production_control/'):]]==row['sha256']": [
+      107
+    ],
+    "len(mounts)==11": [
+      288
+    ],
+    "len(roster)==66": [
+      290
+    ],
+    "namespace_pid=execution['pid']": [
+      154
+    ],
+    "peak+ARRAY_DELTA<=CAP_PROPOSAL": [
+      180
+    ],
+    "source_proposal_only=True": [
+      235,
+      293
+    ],
+    "status['stage']=='bounded_window_complete'": [
+      145
+    ]
+  },
+  "minimal_fix_review": {
+    "V2_freeze_inventory_gap_closed_by_V3": true,
+    "independent_whole_controller_completion_gap_closed_by_V4": true,
+    "remaining_concrete_source_error_found": null
+  },
+  "previous_review": {
+    "bytes": 10754,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_independent_review_v1\\NAS61_72_INDEPENDENT_SOURCE_REVIEW_V1.json",
+    "sha256": "f0a4735485d666c21362bce55fe360ca0d5533aa3bffd76826ea9ec3b109e94c"
+  },
+  "resource_accounting": {
+    "104GiB_cap_is_conditional_proposal_bytes": 111669149696,
+    "Lexar_QIMG_once_bytes": 25769803776,
+    "Lexar_headroom_bytes": 17179869184,
+    "Lexar_selected_total_bytes": 209506378752,
+    "NAS_approved_base_bytes": 690415992832,
+    "NAS_inherited_base_once_bytes": 692026605568,
+    "NAS_selected_total_bytes": 858583311360,
+    "NAS_total_when_Lexar_selected_bytes": 692026605568,
+    "actual60_peak_or_whole_RSS_claimed": false,
+    "backup_reservation_preserved_bytes": 132070244352,
+    "conservative_inherited_padding_not_new_future_jobs_bytes": 1610612736,
+    "next_array_delta_bytes_not_RSS": 8220835840,
+    "old37_48_and49_retained_payloads_recharged": false,
+    "qualification_embedded_once_bytes": 536870912,
+    "reclaim_credit_bytes": 0,
+    "selected_output_FS_qualifier_diagnostics_correct": true,
+    "whole_writer_bytes_once": 166556705792
+  },
+  "resume_point_absent_from_authentic99_roster": true,
+  "runtime_or_model_or_remote_or_GPU_or_allocator_or_provider_or_DB_actions": false,
+  "schema": "chimera.k3_61_72_caller_binder_independent_source_review.v1",
+  "scope": "Full eleven source byte pins/compile, exact caller/binder AST delta, producer-schema/static dataflow review and arithmetic; no candidate function/main/API import or execution.",
+  "selected49_or_live_source_edit": false,
+  "selected49_packet_parent": {
+    "bytes": 8244191,
+    "full550_audit_rerun": false,
+    "only_source_parents_and_authentic_qualification_roster_read": true,
+    "sha256": "f28b4ef8acf58d89eca2956baf27b1a7bbb1390c54fa7a68d6a22f435485cc43"
+  },
+  "source_pins": {
+    "ancestry": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "collector": {
+      "bytes": 25401,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\collect_actual61_72_multi_origin.py",
+      "sha256": "671f4b2828c893d506ca79e4b89da43f5a1040eeb4a9ac9013258aa96f57b971"
+    },
+    "driver": {
+      "bytes": 44015,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\continuation_worker61_72_template_v1.py",
+      "sha256": "f6a0949dc02bebe3806fb87ff7323d2df6a1ebcbb28cd205f4d6a4938e133cfb"
+    },
+    "facts": {
+      "bytes": 12012,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\candidate_v2\\k3_owned_readonly_facts61_72_template_v2.py",
+      "sha256": "6d490a40ca4026edbee4da8ce3e19f6734d7f1717f615fb0432071bd6b6e32f8"
+    },
+    "host": {
+      "bytes": 18043,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\candidate_v2\\k3_capacity_host_loop61_72_template_v2.py",
+      "sha256": "7612a588de135aba8cd3b44227c9fd15d30685fa2dc92af44abe2ab11034ed2e"
+    },
+    "native": {
+      "bytes": 190685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\k3_dense_pass.py",
+      "sha256": "078187a4cfa2f5f7810f0c0a8fa85f7fcc8304085684d45dfda5b895854881d0"
+    },
+    "preflight": {
+      "bytes": 115167,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\candidate_v3\\k3_owned_capacity_preflight61_72_template_v3.py",
+      "sha256": "6c6f1ff7a249e76b040074437005cc344dcd2ce802c1f34f9c661f596d409a55"
+    },
+    "qualification": {
+      "bytes": 5073,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\native_nas_io_qualification61_72_template_v1.py",
+      "sha256": "e59b071db359c5dd0015a18a52dd7872325ed0e4df98592d8cf964a34e074056"
+    },
+    "resolver": {
+      "bytes": 25760,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\ro_resume_paths.py",
+      "sha256": "219fd84678e3cf4c17401fc367c4f803e4046432a34241cff0cdc3a859e880c4"
+    },
+    "runtime": {
+      "bytes": 23255,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\ro_resume_runtime.py",
+      "sha256": "1bd169f1c215337475fc250e2e1ae6c19a37f35bc761e0fc48566d85acf614c7"
+    },
+    "verifier": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\verify_later_window.py",
+      "sha256": "4bfc5ff16560b83b3a338baba19cb16efe9db7d9fa66d28a49373fcabd63fc56"
+    }
+  },
+  "source_roster": {
+    "bytes": 3923,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\FUTURE_SOURCE_PINS_V3.json",
+    "sha256": "86f03668a61eeaa4a906304b0cf5cbabc929f279876bf10203316944ffb8c07f"
+  },
+  "unresolved_execution_seams": [
+    "Actual60 complete raw9 and actual prior49 provenance; actual native binding/new UUID/destination selection remain unresolved.",
+    "New source proposal intentionally sets source_proposal_only=true/can_arm=false; current_NAS_scope refuses it. Tested promotion and immutable execution packet selection remain required.",
+    "Actual third-origin catalog/observation/current consumed tensor hashes, final plan/config and normal fresh owned allocation/caps/freeze/admission are absent.",
+    "Current peer/source roles must be selected from the real later boundary; retained historical roles do not assert peer futures are current.",
+    "Only one NAS or Lexar output filesystem is supported; old three RO origins are preserved. No split-FS route or later73\u201392 admission inferred.",
+    "104GiB proposal uses the specified measured-final60-peak-plus-array-delta check and still needs actual full admission/operating observation; no universal peak bound."
+  ],
+  "verdict": "PASS_SOURCE_ONLY_CONDITIONAL_UNPROMOTED_NONDEPLOYABLE"
+}

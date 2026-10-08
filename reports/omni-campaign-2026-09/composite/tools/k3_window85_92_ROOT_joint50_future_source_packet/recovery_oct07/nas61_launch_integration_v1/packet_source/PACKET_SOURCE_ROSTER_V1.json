@@ -1,0 +1,145 @@
+{
+  "actual60_raw9_newUUID_filesystem_caps_allocation_admission": null,
+  "collector_outside_production_module_roster": true,
+  "deployable": false,
+  "members": {
+    "README.md": {
+      "bytes": 1295,
+      "sha256": "884c303c5470c969667514d95ca60a1c68fabcfd79df5f79aa1527e21756ef11"
+    },
+    "binding_proposal/ACTUAL61_72_INPUTS_UNRESOLVED_V1.json": {
+      "bytes": 1716,
+      "sha256": "4a2416f30abc11c1804120c13dbc293983f1dd84452f3948dd3b8dbb7c91b4bf"
+    },
+    "binding_proposal/BINDING_AND_CALLER_SOURCE_CONTRACT_V4.json": {
+      "bytes": 13228,
+      "sha256": "607570dd3baacaeeebb3b506ceb7914ba606864f89f45ce0f827a9a79a2bf953"
+    },
+    "binding_proposal/CALLER_SOURCE_PROPOSAL_V3.json": {
+      "bytes": 2911,
+      "sha256": "df23f05a0aadb1a5174e340beae56e31654a25e62ebb78a86d10273b08042483"
+    },
+    "binding_proposal/FUTURE_SOURCE_PINS_V3.json": {
+      "bytes": 3923,
+      "sha256": "86f03668a61eeaa4a906304b0cf5cbabc929f279876bf10203316944ffb8c07f"
+    },
+    "binding_proposal/SOURCE_PROPOSAL_FOCUSED_CHECKS_V4.json": {
+      "bytes": 3809,
+      "sha256": "1550f9b9d5dde20b85efc26b2e13d31d3c34fc193b88893667760dcc38148941"
+    },
+    "binding_proposal/bind_actual61_72_source_proposal_v4.py": {
+      "bytes": 26216,
+      "sha256": "f745dc57365bc4c4d4ebf37825ac4777944560d171ac38c6b8d47b9c9463dc10"
+    },
+    "collect_actual61_72_multi_origin.py": {
+      "bytes": 25401,
+      "sha256": "671f4b2828c893d506ca79e4b89da43f5a1040eeb4a9ac9013258aa96f57b971"
+    },
+    "continuation_worker61_72_template_v1.py": {
+      "bytes": 44015,
+      "sha256": "f6a0949dc02bebe3806fb87ff7323d2df6a1ebcbb28cd205f4d6a4938e133cfb"
+    },
+    "evidence/ACTUAL_HEADER_61_72_WRITE_AND_ARRAY_COMPONENTS_V1.json": {
+      "bytes": 117834,
+      "sha256": "d85a82c01d844daf2b89ab2b4071f5d6b4f7b616ae581e65ade55767d96ad78e"
+    },
+    "evidence/INTEGRATION_HANDOFF_V1.json": {
+      "bytes": 7393,
+      "sha256": "2242c3ec3d518e64133eaa97b4c43b3a5d281fda0821b7dfd79d5a097646a9f1"
+    },
+    "evidence/NAS61_72_CALLER_BINDER_INDEPENDENT_SOURCE_REVIEW_V1.json": {
+      "bytes": 12429,
+      "sha256": "93f7d11c06796e6a6c71dd8b74f00cd8d6dc7bf8296a9c08297d17bc7d9751fb"
+    },
+    "evidence/NAS61_72_INDEPENDENT_SOURCE_REVIEW_V1.json": {
+      "bytes": 10754,
+      "sha256": "f0a4735485d666c21362bce55fe360ca0d5533aa3bffd76826ea9ec3b109e94c"
+    },
+    "evidence/SOURCE_ONLY_PROPOSAL_VALIDATION_V2.json": {
+      "bytes": 8981,
+      "sha256": "786c2dec8c385fd1d3eeed6a0b9b0d405ccc8c58fdc93f45e01ed9368541d57c"
+    },
+    "evidence/k3_dense_pass_9086.py": {
+      "bytes": 187275,
+      "sha256": "9086d7c0a5ec2bc7cfd1b823aecdc12e2973b3c81b064776ad3670df9d6b7b69"
+    },
+    "evidence/parent49_facts.py": {
+      "bytes": 11667,
+      "sha256": "38e27e17c59bc1a6c5b1ed9dd55e3e7923330961534af54bed6ce739df01a0dd"
+    },
+    "evidence/parent49_host.py": {
+      "bytes": 17687,
+      "sha256": "089c84de8866d297038733c43ddf180192d339e9b6c73fad9df974a3a0101ada"
+    },
+    "evidence/parent49_preflight.py": {
+      "bytes": 113469,
+      "sha256": "c3c6359b79342824af5b77d5073e4dabde720501de8648de587defbecb2f102e"
+    },
+    "k3_capacity_host_loop61_72_template_v2.py": {
+      "bytes": 18043,
+      "sha256": "7612a588de135aba8cd3b44227c9fd15d30685fa2dc92af44abe2ab11034ed2e"
+    },
+    "k3_dense_pass.py": {
+      "bytes": 190685,
+      "sha256": "078187a4cfa2f5f7810f0c0a8fa85f7fcc8304085684d45dfda5b895854881d0"
+    },
+    "k3_owned_capacity_preflight61_72_template_v3.py": {
+      "bytes": 115167,
+      "sha256": "6c6f1ff7a249e76b040074437005cc344dcd2ce802c1f34f9c661f596d409a55"
+    },
+    "k3_owned_readonly_facts61_72_template_v2.py": {
+      "bytes": 12012,
+      "sha256": "6d490a40ca4026edbee4da8ce3e19f6734d7f1717f615fb0432071bd6b6e32f8"
+    },
+    "k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "native_nas_io_qualification61_72_template_v1.py": {
+      "bytes": 5073,
+      "sha256": "e59b071db359c5dd0015a18a52dd7872325ed0e4df98592d8cf964a34e074056"
+    },
+    "ro_resume_paths.py": {
+      "bytes": 25760,
+      "sha256": "219fd84678e3cf4c17401fc367c4f803e4046432a34241cff0cdc3a859e880c4"
+    },
+    "ro_resume_runtime.py": {
+      "bytes": 23255,
+      "sha256": "1bd169f1c215337475fc250e2e1ae6c19a37f35bc761e0fc48566d85acf614c7"
+    },
+    "verify_later_window.py": {
+      "bytes": 42002,
+      "sha256": "4bfc5ff16560b83b3a338baba19cb16efe9db7d9fa66d28a49373fcabd63fc56"
+    }
+  },
+  "preserved_parent_source_packet_sha256": "f28b4ef8acf58d89eca2956baf27b1a7bbb1390c54fa7a68d6a22f435485cc43",
+  "prior_selected49_promoted_commit": "4e8c18ec39b2b9540422dea05d68b47c635aec41",
+  "production_modules": {
+    "ancestry": "k3_recovery_ancestry.py",
+    "driver": "continuation_worker61_72_template_v1.py",
+    "facts": "k3_owned_readonly_facts61_72_template_v2.py",
+    "host": "k3_capacity_host_loop61_72_template_v2.py",
+    "native": "k3_dense_pass.py",
+    "preflight": "k3_owned_capacity_preflight61_72_template_v3.py",
+    "qualification": "native_nas_io_qualification61_72_template_v1.py",
+    "resolver": "ro_resume_paths.py",
+    "runtime": "ro_resume_runtime.py",
+    "verifier": "verify_later_window.py"
+  },
+  "schema": "neural_forge.k3_window61_72_exact_source_packet_roster.v1",
+  "selected_sources": {
+    "ancestry": "k3_recovery_ancestry.py",
+    "collector": "collect_actual61_72_multi_origin.py",
+    "driver": "continuation_worker61_72_template_v1.py",
+    "facts": "k3_owned_readonly_facts61_72_template_v2.py",
+    "host": "k3_capacity_host_loop61_72_template_v2.py",
+    "native": "k3_dense_pass.py",
+    "preflight": "k3_owned_capacity_preflight61_72_template_v3.py",
+    "qualification": "native_nas_io_qualification61_72_template_v1.py",
+    "resolver": "ro_resume_paths.py",
+    "runtime": "ro_resume_runtime.py",
+    "verifier": "verify_later_window.py"
+  },
+  "source_only": true,
+  "source_only_binder": "binding_proposal/bind_actual61_72_source_proposal_v4.py"
+}

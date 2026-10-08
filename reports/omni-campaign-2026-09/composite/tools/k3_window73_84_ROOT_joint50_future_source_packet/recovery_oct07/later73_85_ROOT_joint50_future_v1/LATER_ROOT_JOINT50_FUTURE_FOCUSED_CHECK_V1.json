@@ -1,0 +1,65 @@
+{
+  "composition": {
+    "bytes": 25916,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\LATER_ROOT_JOINT50_FUTURE_SOURCE_COMPOSITION_V1.json",
+    "sha256": "3592c7a241424cb576dd5d6ccebcc94851b1c9a7862e3837296723834a8efb01"
+  },
+  "fixtures_candidate_imports_runtime_remote_Relay_model_actions": false,
+  "generator": {
+    "bytes": 14302,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\compose_later_ROOT_joint50_future_v1.py",
+    "sha256": "2e4e521c6b82149d01bb28d9555ad1b10c3a797858feb3854de1d46e010ba876"
+  },
+  "observations": [
+    {
+      "binder_changed_functions": [
+        "selected",
+        "bind",
+        "verify_bound_bundle",
+        "final_configs"
+      ],
+      "inherited_joint_proof_role_once_fullhash_extent_and_binding_guard": true,
+      "metadata_before_A": 74,
+      "metadata_with_A": 75,
+      "mounts": 12,
+      "native_math_terminal92_provider_facts_host_classify_memory_CPU_unchanged": true,
+      "new_binder_wrapper_localpath_equal": "D:/codex-owned-source-receipts/k3-later73-92-ROOT-joint50-future-source-only/phase73_84",
+      "old_other10roles_byte_identical": true,
+      "old_serial16GiB_4CPU_ROOT10GiB_and_speech20_retained": true,
+      "only_preflight_existing_run_changed_and_one_pure_join_added": true,
+      "scripts": 5,
+      "six_controls_byte_identical": true,
+      "window": [
+        73,
+        84
+      ],
+      "wrapper_operation_AST_and_helper_functions_unchanged": true
+    },
+    {
+      "binder_changed_functions": [
+        "selected",
+        "bind",
+        "verify_bound_bundle",
+        "final_configs"
+      ],
+      "inherited_joint_proof_role_once_fullhash_extent_and_binding_guard": true,
+      "metadata_before_A": 77,
+      "metadata_with_A": 78,
+      "mounts": 13,
+      "native_math_terminal92_provider_facts_host_classify_memory_CPU_unchanged": true,
+      "new_binder_wrapper_localpath_equal": "D:/codex-owned-source-receipts/k3-later73-92-ROOT-joint50-future-source-only/phase85_92",
+      "old_other10roles_byte_identical": true,
+      "old_serial16GiB_4CPU_ROOT10GiB_and_speech20_retained": true,
+      "only_preflight_existing_run_changed_and_one_pure_join_added": true,
+      "scripts": 5,
+      "six_controls_byte_identical": true,
+      "window": [
+        85,
+        92
+      ],
+      "wrapper_operation_AST_and_helper_functions_unchanged": true
+    }
+  ],
+  "schema": "neural_forge.k3_later_NEXT_ROOT_joint50_source_check.v1",
+  "verdict": "PASS_SOURCE_ONLY_PENDING_INDEPENDENT_REVIEW"
+}

@@ -1,0 +1,131 @@
+{
+  "A": null,
+  "FS": null,
+  "QIMG_ROOT_future_bytes_once": 2147483648,
+  "QIMG_native_compute_proof_roles": {
+    "QIMG_native_compute_closure": {
+      "bytes": 46772,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_COMPUTE_CLOSURE_PUBLIC_PROOF_V1.json",
+      "sha256": "0f287f18050665afd92ee5d35cbf5f3cee516efff185af2e9d643f0721d54b20"
+    },
+    "QIMG_native_terminal_raw_part_1": {
+      "bytes": 9338811,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_1_V1.json",
+      "sha256": "8e2ada9351e913b593c1b0d851e40725aabdbf11ce1e14b6e9cd3355eec68e28"
+    },
+    "QIMG_native_terminal_raw_part_2": {
+      "bytes": 9393937,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_2_V1.json",
+      "sha256": "db9fd521dc10e5524f7cd8260d9e079a65647b9cb64ad33426cb1def51fae4ad"
+    }
+  },
+  "QIMG_pending_compute_once": {
+    "CPU_threads": 0,
+    "RAM_bytes": 0,
+    "fresh_no_successor_holder_frame_required": true
+  },
+  "QIMG_retained_Lexar_future_bytes_once": 25769803776,
+  "ROOT_current_actor_or_runtime_adopted": false,
+  "ROOT_pending_text_delta_bytes": 1073741824,
+  "ROOT_serial_future_write_bytes_once": 10737418240,
+  "UUID": null,
+  "authentic_ROOT_serial_source_role_once": true,
+  "binder": {
+    "bytes": 57568,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\bind_actual85_92_QIMG_compute_closed_v2.py",
+    "sha256": "545f41d4722fb29476a5490b30c30516422c15c7993a1e5aa105dbc91b42e8f4"
+  },
+  "collector_revision_alias_alignment": true,
+  "controls": {
+    "normal_caller_ready85_remote.py": {
+      "bytes": 1650,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\controls\\normal_caller_ready85_remote.py",
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+    },
+    "normal_cap_arm_bound_remote.py": {
+      "bytes": 5223,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\controls\\normal_cap_arm_bound_remote.py",
+      "sha256": "17d0a9a85d1fbacc82974e7e6f35d31ca28ffab8da13681b10a8baca30c2ad8a"
+    },
+    "normal_freeze85_remote.py": {
+      "bytes": 3249,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\controls\\normal_freeze85_remote.py",
+      "sha256": "e1558f8098d6013d0d707d609d65708b8aee6893cc8c8c50fe957174a34e0ee8"
+    },
+    "normal_precheck13_remote.py": {
+      "bytes": 1385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\controls\\normal_precheck13_remote.py",
+      "sha256": "b4541cb88e1ff12558ab800798fd05a1a402fbfc04e4a017bc218a223b2a606f"
+    },
+    "normal_stage_assets85_remote.py": {
+      "bytes": 1833,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\controls\\normal_stage_assets85_remote.py",
+      "sha256": "fd74118dd70bd0b536b1188f84865b194006f28930ddbad77dcdf5f40453f815"
+    },
+    "stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\controls\\stage_owned_bound_source_remote.py",
+      "sha256": "5443a420b9a7485ed2d6811138ded31c58a1aee77059751972eb994273389834"
+    }
+  },
+  "current_ROOT_actor_or_runtime_adopted": false,
+  "helper_manifest": {
+    "bytes": 679,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\LAUNCH_QIMG_COMPUTE_CLOSED_HELPER_SOURCE_PINS_V1.json",
+    "sha256": "91b96a7d83a6958dfe03b2cb76c933892f226621dc2f6e54204e047d51b2f57d"
+  },
+  "helpers": {
+    "create_next85_roots_QIMG_compute_closed_v2_remote.py": {
+      "bytes": 3214,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\create_next85_roots_QIMG_compute_closed_v2_remote.py",
+      "sha256": "9ebf89ae41cba570d54fb05521a918d4c2aa2b866a6910cc2e5b5c0f0b3c8b1e"
+    },
+    "execute_metadata_collector85_QIMG_compute_closed_v2_remote.py": {
+      "bytes": 1520,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\execute_metadata_collector85_QIMG_compute_closed_v2_remote.py",
+      "sha256": "150b932a43b0183d879810019e56eaa7281ab016f4de2a0e196d318772d031b0"
+    },
+    "execute_prospective85_QIMG_compute_closed_v2_remote.py": {
+      "bytes": 3916,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\execute_prospective85_QIMG_compute_closed_v2_remote.py",
+      "sha256": "24db8865fbfc5213e90c3cfef1a5198952ab93b15f5135cd59a4d9ad7f8c0deb"
+    },
+    "read_fresh_prospective85_QIMG_compute_closed_v2_remote.py": {
+      "bytes": 8307,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\read_fresh_prospective85_QIMG_compute_closed_v2_remote.py",
+      "sha256": "9bc64d441914e2564921e8d4a3db11f24bda455c55723eabb573422775dbece4"
+    }
+  },
+  "independent_review": null,
+  "metadata_before_A": 76,
+  "metadata_with_A": 77,
+  "mount_count": 13,
+  "native_full_sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b",
+  "normal_promoted_commit": null,
+  "operating_cap": null,
+  "recurring_PG_gate_or_new_manual_ACK_required": false,
+  "script_count": 5,
+  "selected_source_roster": {
+    "bytes": 4075,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\SELECTED_PHASE_QIMG_COMPUTE_CLOSED_SOURCE_PINS_V1.json",
+    "sha256": "eea62c3179201f17acb3c923a8208a156d6a8b8fddb1f3de1d786b2d063df2dc"
+  },
+  "source_filename": "ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_TEXT_PUBLIC_PROOF_V2.json",
+  "source_proof": {
+    "bytes": 191797,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\ROOT_CURRENT_SERIAL_H3_AUDIO_ACE_TEXT_PUBLIC_PROOF_V2.json",
+    "sha256": "3f12e995d8715d56700d1b32954876808f544ab5244917a033b147fb2e2152ab"
+  },
+  "source_role": "ROOT_current_serial_scope",
+  "whole_ROOT_future_bytes_once": 52613349376,
+  "whole_writer_once": 40692831840,
+  "window": [
+    85,
+    92
+  ],
+  "wrapper": {
+    "bytes": 26117,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\phase85_92_QIMG_compute_closed_v2\\launch\\launch_actual85_92_QIMG_compute_closed_v2.py",
+    "sha256": "f50848599ddcbb71e331bb6c10393740485b22c89cf4e9e5f9e32888504734dc"
+  }
+}

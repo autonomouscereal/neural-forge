@@ -1,0 +1,103 @@
+{
+  "P40_budget_or_execution_adoption_claimed": false,
+  "accounting": {
+    "ACE_ROOT_remaining_write_bytes": 8589934592,
+    "ACE_phase_CPU_threads": 4,
+    "ACE_phase_RAM_bytes": 17179869184,
+    "GPU_future_from_these_sources": 0,
+    "H3_audio_ROOT_remaining_write_bytes": 1073741824,
+    "H3_audio_phase_CPU_threads": 2,
+    "H3_audio_phase_RAM_bytes": 6442450944,
+    "NAS_future_from_these_sources": 0,
+    "old_ROOT_pending_CPU_threads": 4,
+    "old_ROOT_pending_RAM_bytes": 12884901888,
+    "old_ROOT_pending_ROOT_write_bytes": 2147483648,
+    "prospective_replacement_delta_RAM_bytes": 4294967296,
+    "prospective_replacement_delta_ROOT_write_bytes": 7516192768,
+    "serial_ROOT_CPU_threads_once": 4,
+    "serial_ROOT_envelope_RAM_bytes_once": 17179869184,
+    "sum_ROOT_writes_once": 9663676416
+  },
+  "actual61_admission_or_ROOT_model_start_claimed": false,
+  "at": "2026-10-07T23:10:54.425749+00:00",
+  "capability_accepted": false,
+  "concrete_missing_consumer_joins": [
+    "The dated preflight still enforces QVL_CPU_request12GiB/4CPU/2GiB, hardcodes qvl_pending_ram12 and ROOT QVL2. It has no current serial H3/ACE source role or replacement join. Ordinary isolated source correction is authorized; no generic user confirmation or blanket peer ACK is required.",
+    "The H3 request is prepared-only and unbound; new actual actor classification needs real immutable H3 source/request/container/cap/birth evidence if that phase later appears. Public declaration6/2 is a funded future, not active enforcement.",
+    "ACE stage/refusal proves prepared source and exact16/4/8 promise but no START. A fresh actual ROOT phase/terminal projection remains necessary at actual61 admission; no pending budget discharge is proven.",
+    "Bind new serial declaration/request/raw source pins into the complete capacity source roster and compare exact genuine ROOT owner/binding. Retain all existing QIMG, ROOT1075-only terminal, backup/VX/floor, qualifier, ordinary, speech, headroom and unknown-actor guards."
+  ],
+  "exact_same_owner": "codex-native-01a10f94-259b-7623-9679-ce4e68f82b8c",
+  "existing_authentic_ROOT1075_phase_discharge_available": true,
+  "interpretation": [
+    "H3 audio and ACE are same-owner serial jobs: future RAM/CPU use MAX16GiB/4CPU once; future retained ROOT writes sum8GiB+1GiB=9GiB. No deletion/cleanup or occupied-byte credit follows.",
+    "The authentic serial adoption supplies the new source envelope; minimal derivative should replace the dated same-owner pending ROOT12/4/2 term with16/4/9 after exact old ROOT1075 closure/current serial source joins. Preserve the old12 receipt historically; do not add12+6+16 RAM or old2+new9 future disk.",
+    "When an exact approved ROOT serial job is physically active, its current materialized/residual growth and outstanding serial remainder must total the envelope once. Do not exempt siblings/session-wide actors or fabricate current caps.",
+    "GENUINE_ROOT_ACCOUNTING_ADOPTION_PUBLIC_COPY_V3 explicitly supersedes only owned NAS declaration for new requests. It preserves other promises and does not itself implement the old ROOT12 preflight replacement.",
+    "Typed project STATUS corroborates current scopes but is awareness, not tensor/runtime closure or authority. The P40 QUESTION alone establishes no approved48GiB/8CPU/64GiB promise, actor exemption or execution permission."
+  ],
+  "new_manual_ack_or_permission_required": false,
+  "remote_DB_Relay_private_inbox_model_or_runtime_actions": false,
+  "result": "PASS_PUBLIC_SOURCE_ACCOUNTING_INTERPRETATION",
+  "schema": "neural_forge.k3_ROOT_serial_peer_public_source_independent_review.v1",
+  "serial_adoption_explicitly_names_old_QVL12_as_superseded": false,
+  "source_edits_or_fixture_tests": false,
+  "source_pins": {
+    "ACE_actual_staged_request": {
+      "bytes": 10452,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\ace24_cpu_runtime_route_v1\\owned_stage_ACE24_request_e7719a0e-47a1-4362-b5db-30d7b0707f99_v1.json",
+      "sha256": "72a8311c1ac8fafa6b1c13f08d78ffeac2772dec959f213afecbeb234e8733ba"
+    },
+    "ACE_intent": {
+      "bytes": 1565,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\ace24_cpu_runtime_route_v1\\run_intent_e7719a0e-47a1-4362-b5db-30d7b0707f99.json",
+      "sha256": "cf39aa973de1c47710b9d9e10491c840f5d0dcd8e1821583a8d27d352fc93fa1"
+    },
+    "ACE_refusal_control": {
+      "bytes": 1015,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\ace24_cpu_runtime_route_v1\\control_start_b1ba05509e0842ff8f629bc9714ea577.json",
+      "sha256": "44a920d9504f14c5263ca18ad810df920e077dd997fd61a57f6dcf8904cc6444"
+    },
+    "ACE_request_template": {
+      "bytes": 4087,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\ace24_cpu_runtime_route_v1\\ACE24_CPU_LIFECYCLE_REQUEST_TEMPLATE_V1.json",
+      "sha256": "d08653cc11d8e73969e42aa26ecfc7f908b748eaa4f61287ca989d474c38f865"
+    },
+    "ACE_source_stage": {
+      "bytes": 6402,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\ace24_cpu_runtime_route_v1\\ROOT_ACE24_SOURCE_ADOPTION_AND_ACTUAL_STAGE_V1_e7719a0e-47a1-4362-b5db-30d7b0707f99.json",
+      "sha256": "ef5068f46321d5374f250440cf3db2800c5a6b33b0c577e8e5348646d01f1337"
+    },
+    "H3_audio_request_template": {
+      "bytes": 4169,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\H3_audio_VAE_cpu_runtime_route_v3_current49\\H3_AUDIO_CPU_LIFECYCLE_REQUEST_TEMPLATE_V1.json",
+      "sha256": "6159d3c3be42d13a499ec1f28c40e7f7c8ad82283df6b513a5f07e5df15781c7"
+    },
+    "ROOT_current_NAS_accounting": {
+      "bytes": 12180,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\H3_audio_VAE_cpu_runtime_route_v3_current49\\GENUINE_ROOT_ACCOUNTING_ADOPTION_PUBLIC_COPY_V3.json",
+      "sha256": "b059dea3e8fa8bc51a7dfb8a77dae7b3e0ed3cd46a4885e6956a52e91780e8fc"
+    },
+    "ROOT_serial_adoption": {
+      "bytes": 3435,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\H3_audio_VAE_cpu_runtime_route_v3_current49\\ROOT_H3_AUDIO_SERIAL_PENDING_ACE_ADOPTION_V1.json",
+      "sha256": "f13b874a59934ed4fa3f50e0e6d464713d8f5aab5b1756963607068d02da11f7"
+    },
+    "dated_preflight": {
+      "bytes": 115167,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\packet_source\\k3_owned_capacity_preflight61_72_template_v3.py",
+      "sha256": "6c6f1ff7a249e76b040074437005cc344dcd2ce802c1f34f9c661f596d409a55"
+    },
+    "retained_QIMG_ROOT1075_public_proof": {
+      "bytes": 1797866,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas49_60_proposal\\current_peer_admission_v1\\corrected_v3\\CURRENT_QIMG_NATIVE_AND_ROOT1075_PUBLIC_PROOF_V3.json",
+      "sha256": "1a49ab6d7ae2c5cff10a93df3e6ef63a0f239feb9646ec246c3a9b5cc5d242b9"
+    },
+    "typed_project_awareness": {
+      "bytes": 6154,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery-oct07-g5-typed-project-awareness-20261007T225921425886Z.json",
+      "sha256": "af72c0415fcdce9bf67b8552b1e3671eb58c3b05c395f20c9805d2ffcc6f4e39"
+    }
+  },
+  "training_eligible": false
+}

@@ -1,0 +1,279 @@
+{
+  "actual72_84": null,
+  "can_arm": false,
+  "composition_sha256": "4dc2ccd66c202a64512d44158a6c2075e8e8343ad480154d9d4d2b21287f650d",
+  "deployable": false,
+  "fixtures_executed": false,
+  "imports_or_remote_or_runtime_actions": false,
+  "payload_reads": 0,
+  "phases": [
+    {
+      "compile_module_count": 24,
+      "complete_recursive_provenance": true,
+      "complete_source_pins_checked": true,
+      "exact_original_assignment_AST": true,
+      "native_sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56",
+      "old_origin_alias_and_latest_seal_join": true,
+      "packed_transport_and_strict_UUID_datetime_AST": true,
+      "prior_prefix_real_dynamic_namespace_PID_and_whole_events": true,
+      "root_caps_UUID_and_admission_unresolved": true,
+      "runtime_actions": false,
+      "terminal92_metadata_publication_join_retained": false,
+      "window": [
+        73,
+        84
+      ]
+    },
+    {
+      "compile_module_count": 24,
+      "complete_recursive_provenance": true,
+      "complete_source_pins_checked": true,
+      "exact_original_assignment_AST": true,
+      "native_sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b",
+      "old_origin_alias_and_latest_seal_join": true,
+      "packed_transport_and_strict_UUID_datetime_AST": true,
+      "prior_prefix_real_dynamic_namespace_PID_and_whole_events": true,
+      "root_caps_UUID_and_admission_unresolved": true,
+      "runtime_actions": false,
+      "terminal92_metadata_publication_join_retained": true,
+      "window": [
+        85,
+        92
+      ]
+    }
+  ],
+  "result": "PASS_SOURCE_ONLY_PENDING_INDEPENDENT_REVIEW",
+  "schema": "neural_forge.k3_later73_85_focused_source_check.v7",
+  "source_roster": {
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v1\\k3_capacity_host_loop73_84_template_v1.py": {
+      "bytes": 17968,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v1\\k3_capacity_host_loop73_84_template_v1.py",
+      "sha256": "9977e5e19f1861cfbc86ee7cd2de7c291b79dc8245977aac51ea562bdbaab5a6"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v1\\k3_owned_readonly_facts73_84_template_v1.py": {
+      "bytes": 11937,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v1\\k3_owned_readonly_facts73_84_template_v1.py",
+      "sha256": "805c052d94dee6c4daab4de7266438f381f7fba6f9afb53619bbdb94532097ff"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\bind_actual73_84_runtime_v9.py": {
+      "bytes": 54645,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\bind_actual73_84_runtime_v9.py",
+      "sha256": "a99d5d6cca5878a71ca96a711d02305978ec29a6aa797cdd67b75143d6bde357"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_caller_ready73_remote.py": {
+      "bytes": 1650,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_caller_ready73_remote.py",
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_cap_arm_bound_remote.py": {
+      "bytes": 5223,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_cap_arm_bound_remote.py",
+      "sha256": "17d0a9a85d1fbacc82974e7e6f35d31ca28ffab8da13681b10a8baca30c2ad8a"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_freeze73_remote.py": {
+      "bytes": 3249,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_freeze73_remote.py",
+      "sha256": "41c8d6cd851d99e824c78d2367d04d639e9126470b79c4e0be6c6df592857dfb"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_precheck12_remote.py": {
+      "bytes": 1385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_precheck12_remote.py",
+      "sha256": "c8c0155f21f3a073147167940025f6e51bd2acae389cebc41d16c2c65fbeb758"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_stage_assets73_remote.py": {
+      "bytes": 1833,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\normal_stage_assets73_remote.py",
+      "sha256": "8853e897a12d525f8a1c61ea75612179f587c852fcc4669f1240c52ff074cc65"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\controls\\stage_owned_bound_source_remote.py",
+      "sha256": "109fd4792e92f639fcd18594f70ece15dced06e08c297a9ca958c6515378ce78"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\k3_owned_capacity_preflight73_84_ROOT_serial_v9.py": {
+      "bytes": 124734,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\k3_owned_capacity_preflight73_84_ROOT_serial_v9.py",
+      "sha256": "2a0773b275c8531bdb6248faad7161977904690ce6e0fec4edd1edf1648ae669"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\create_next73_roots_ROOT_serial_v9_remote.py": {
+      "bytes": 3184,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\create_next73_roots_ROOT_serial_v9_remote.py",
+      "sha256": "cb306770b3885d53dade1eaf2d9d8b518b057ac65f346c763937d78534175985"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\execute_metadata_collector73_ROOT_serial_v9_remote.py": {
+      "bytes": 1520,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\execute_metadata_collector73_ROOT_serial_v9_remote.py",
+      "sha256": "2f669e4abdd4a9bb5368dcf4d16d7fc115c2b50c071539941b80f8743612b99c"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\execute_prospective73_ROOT_serial_v9_remote.py": {
+      "bytes": 3917,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\execute_prospective73_ROOT_serial_v9_remote.py",
+      "sha256": "4301a98d65e7942c43f2e6c37c4d14e7219eee6f33a62c61005d2ee146370f93"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\launch_actual73_84_v9.py": {
+      "bytes": 26034,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\launch_actual73_84_v9.py",
+      "sha256": "c25f7b44bb9b25393ddb14006317b47c3bf711babce1a2d8813af711b7d226c5"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\read_fresh_prospective73_ROOT_serial_v9_remote.py": {
+      "bytes": 7776,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase73_84_candidate_v9\\launch\\read_fresh_prospective73_ROOT_serial_v9_remote.py",
+      "sha256": "2269383e6337c6c72427214099d14dc6db58dab8dfbe6f89f0362d518f1c150b"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v1\\k3_capacity_host_loop85_92_template_v1.py": {
+      "bytes": 17967,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v1\\k3_capacity_host_loop85_92_template_v1.py",
+      "sha256": "fc3ef46f960632109e3ea91cc2ebbaee2465ac3b10fcc7c8c5929ea3f89b4a8b"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v1\\k3_owned_readonly_facts85_92_template_v1.py": {
+      "bytes": 11936,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v1\\k3_owned_readonly_facts85_92_template_v1.py",
+      "sha256": "854eab9d510a88e4fb3a293ba7185f1dcdb0a562f0368875b11323edf8b05ec4"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\bind_actual85_92_runtime_v9.py": {
+      "bytes": 54972,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\bind_actual85_92_runtime_v9.py",
+      "sha256": "0b00f66e7e66cf0546e14e76843172ca8721398fbb6b3ac60eac6ea1ce9903de"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_caller_ready85_remote.py": {
+      "bytes": 1650,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_caller_ready85_remote.py",
+      "sha256": "1d9718f3d69bddc1adb885ed192eead2a15806f9dc0d02bb4f6922f869f594b3"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_cap_arm_bound_remote.py": {
+      "bytes": 5223,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_cap_arm_bound_remote.py",
+      "sha256": "17d0a9a85d1fbacc82974e7e6f35d31ca28ffab8da13681b10a8baca30c2ad8a"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_freeze85_remote.py": {
+      "bytes": 3249,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_freeze85_remote.py",
+      "sha256": "e1558f8098d6013d0d707d609d65708b8aee6893cc8c8c50fe957174a34e0ee8"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_precheck13_remote.py": {
+      "bytes": 1385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_precheck13_remote.py",
+      "sha256": "b4541cb88e1ff12558ab800798fd05a1a402fbfc04e4a017bc218a223b2a606f"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_stage_assets85_remote.py": {
+      "bytes": 1833,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\normal_stage_assets85_remote.py",
+      "sha256": "fd74118dd70bd0b536b1188f84865b194006f28930ddbad77dcdf5f40453f815"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\stage_owned_bound_source_remote.py": {
+      "bytes": 3217,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\controls\\stage_owned_bound_source_remote.py",
+      "sha256": "5443a420b9a7485ed2d6811138ded31c58a1aee77059751972eb994273389834"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\k3_owned_capacity_preflight85_92_ROOT_serial_v9.py": {
+      "bytes": 124801,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\k3_owned_capacity_preflight85_92_ROOT_serial_v9.py",
+      "sha256": "6cfac2f548fca339c26cf0a91c0fee52f4f74ece1f640d9304609764da7bd640"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\create_next85_roots_ROOT_serial_v9_remote.py": {
+      "bytes": 3214,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\create_next85_roots_ROOT_serial_v9_remote.py",
+      "sha256": "9ebf89ae41cba570d54fb05521a918d4c2aa2b866a6910cc2e5b5c0f0b3c8b1e"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\execute_metadata_collector85_ROOT_serial_v9_remote.py": {
+      "bytes": 1520,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\execute_metadata_collector85_ROOT_serial_v9_remote.py",
+      "sha256": "150b932a43b0183d879810019e56eaa7281ab016f4de2a0e196d318772d031b0"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\execute_prospective85_ROOT_serial_v9_remote.py": {
+      "bytes": 3916,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\execute_prospective85_ROOT_serial_v9_remote.py",
+      "sha256": "5134d9af074901b52f7eb24e33374bc0d73a625ea5d52b6237ed9894c8710ee6"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\launch_actual85_92_v9.py": {
+      "bytes": 26033,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\launch_actual85_92_v9.py",
+      "sha256": "0548c76c41f185c17c9b2affb1c4e453cda835bc680fda26d94a8b8e579a5963"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\read_fresh_prospective85_ROOT_serial_v9_remote.py": {
+      "bytes": 7773,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\launch\\read_fresh_prospective85_ROOT_serial_v9_remote.py",
+      "sha256": "584c65977c9e5569f1d53ba43a1101f99436f42b985831406db81378f53794e7"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\collect_actual73_84_multi_origin.py": {
+      "bytes": 27372,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\collect_actual73_84_multi_origin.py",
+      "sha256": "3c6057a187c49007e2f3c12abfe6411a03bd536067418b3722b86654e77ff48b"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\continuation_worker73_84_template_v1.py": {
+      "bytes": 44293,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\continuation_worker73_84_template_v1.py",
+      "sha256": "7daf9999e01b5df2bb9b382773f28a3dc847928b9f57f289a94d597f04bf57f9"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_dense_pass.py": {
+      "bytes": 190685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_dense_pass.py",
+      "sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\native_nas_io_qualification73_84_template_v1.py": {
+      "bytes": 5148,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\native_nas_io_qualification73_84_template_v1.py",
+      "sha256": "1edb4b8701003d1b0c9c9b83a1b371d17bb8d471565693fb7c6f7ee37e3d55f1"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_paths.py": {
+      "bytes": 26436,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_paths.py",
+      "sha256": "146665bbce576e52462d73384d96fafd7ec07a07a2f7a9f95bd52c9655f84ada"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_runtime.py": {
+      "bytes": 30768,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\ro_resume_runtime.py",
+      "sha256": "288bf5f3cde564b70932097d28a049fc1c4be500b83d7a43e33cb1273fa5e260"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\verify_later_window.py": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\verify_later_window.py",
+      "sha256": "51a178d37c142f646aacd6c726cfd2c8868d2ea19a2b632d578fd1a504257901"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\collect_actual85_92_multi_origin.py": {
+      "bytes": 28901,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\collect_actual85_92_multi_origin.py",
+      "sha256": "5d5b3853ed7a7538371881484d09f98280bdf6059ce17d8f80cf1cfe6b780660"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\continuation_worker85_92_template_v1.py": {
+      "bytes": 44624,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\continuation_worker85_92_template_v1.py",
+      "sha256": "4e17e5e87688096c747f83ab7d68f1ed4c5e521d36bff750780bcfa6e5e43509"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_dense_pass.py": {
+      "bytes": 192629,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_dense_pass.py",
+      "sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_recovery_ancestry.py": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\native_nas_io_qualification85_92_template_v1.py": {
+      "bytes": 5223,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\native_nas_io_qualification85_92_template_v1.py",
+      "sha256": "29ceb3fa3cdaa4dcc006be478ab9f410b704703a0a973db1d2122cf12195f9a1"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_paths.py": {
+      "bytes": 27385,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_paths.py",
+      "sha256": "6c626aef115e17274c119ec8357d77380bf3d22df07ecda5f123988f3b74e6e8"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_runtime.py": {
+      "bytes": 38322,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_runtime.py",
+      "sha256": "22cdf12a5de1f6a6755b59085f15c0da508cb5cb34e3dba022dd085aa2b6f9f8"
+    },
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\verify_later_window.py": {
+      "bytes": 44685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\verify_later_window.py",
+      "sha256": "a717f7b437807c38c086aad67dbc72c4733e8fb823f1e66c7c47e5515e60be87"
+    }
+  }
+}

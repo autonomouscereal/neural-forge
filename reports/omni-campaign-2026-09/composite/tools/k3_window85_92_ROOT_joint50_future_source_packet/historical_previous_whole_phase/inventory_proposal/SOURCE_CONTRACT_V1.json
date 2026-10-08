@@ -1,0 +1,24 @@
+{
+  "actual_closed92_request": null,
+  "borrowed_exact_reader_source_sha256": "2b1375c9d1417866ffe5eb32fb52f0fc36b6593ed584d8788f6c742f2ac819d8",
+  "byte_exact_reader_functions": [
+    "header",
+    "native_ffn_shapes",
+    "finite_library_readback"
+  ],
+  "capability_accepted": false,
+  "compile_passed": true,
+  "deployable": false,
+  "no_source_model_provider_allocator_database_or_Relay_actions": true,
+  "planned_artifact_count": 189,
+  "planned_marker_count": 93,
+  "planned_serial_full_hash_and_bounded_safe_open": true,
+  "schema": "neural_forge.k3_closed92_export_inventory_source_proposal.v1",
+  "source": {
+    "bytes": 18360,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\final_export_inventory_source_v1\\build_final_export_inventory.py",
+    "sha256": "dc957e33824efecb87d24519c7d1e12d7c717d64649ff399ba53b4bea8946ab9"
+  },
+  "source_only": true,
+  "training_eligible": false
+}

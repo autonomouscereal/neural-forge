@@ -1,0 +1,20 @@
+{
+  "contract": {
+    "bytes": 10129,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\ROOT_TEXT_WHOLE_CALLER_SOURCE_CONTRACT_V4.json",
+    "sha256": "4c41310f672e6ca257b8c4dc24e61fcba427fa4a06e2ad78e0f45570fb9ac1c9"
+  },
+  "corrected_source": {
+    "bytes": 5605,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\check_actual_ROOT_text_source_v4.py",
+    "sha256": "feb7b9f00c5a00c2938a910b7750265a9a113863bdc5046a4ca624163e86766c"
+  },
+  "failed_check": "two permitted AST differences were compared in the wrong source-order; actual order current_ROOT_serial_scope then run",
+  "failed_source": {
+    "bytes": 5600,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_text_peer_scope_v3\\check_actual_ROOT_text_source_v3.py",
+    "sha256": "865036c0739e9ab9574e584be7be8aa7cdedd159dc2116a8855bdfdbcef7fc7e"
+  },
+  "schema": "neural_forge.k3_owned_source_check_preserved_failure.v1",
+  "source_code_or_runtime_failure": false
+}

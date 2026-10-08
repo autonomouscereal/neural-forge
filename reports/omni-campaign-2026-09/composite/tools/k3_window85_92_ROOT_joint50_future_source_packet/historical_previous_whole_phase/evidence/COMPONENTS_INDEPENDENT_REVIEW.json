@@ -1,0 +1,480 @@
+{
+  "actual72_84_92_closed_or_launched_or_capability_training_claimed": false,
+  "at_utc": "2026-10-07T22:00:01.142621+00:00",
+  "boundaries": {
+    "73-84": {
+      "RO_origin_count": 4,
+      "closed_prefix_after_full_serial_scan": 84,
+      "finite_new_write_paths": 82,
+      "installed_prefix": "1..72",
+      "mount_count": 12,
+      "native_final_snapshot": "before_L85",
+      "periodic_snapshot": "before_L84",
+      "required_closed_prefix": 72,
+      "resume_dual": "before_L73"
+    },
+    "85-92": {
+      "RO_origin_count": 5,
+      "before93_payload_created": false,
+      "finite_new_write_paths": 59,
+      "installed_prefix": "1..84",
+      "mount_count": 13,
+      "periodic_snapshot": null,
+      "required_closed_prefix": 84,
+      "resume_dual": "before_L85",
+      "terminal93_layer_layout": "retained originalL00 plus actual MoE1..92; no new before93 checkpoint"
+    }
+  },
+  "combined_handoff": {
+    "bytes": 16551,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\INTEGRATION_HANDOFF_V2.json",
+    "sha256": "1934b24580cf9158aa38226eb1d8e555d973d94374b2a03aa9f1951c551e9498"
+  },
+  "controller_and_reader_static_review": [
+    "One legal bounded native window with --resume/--acceptance record/--snapshot-keep0/original options, original CUDA0 sm75 runtime/source/corpus; no staged source or arbitrary rung retry.",
+    "Source/CID/mount/cap/noSwap/owned allocation and fresh existing capacity ABI remain; CAP_BYTES/CPUs/binding/root/newUUID unresolved and must be selected later.",
+    "Real emitted paths/SHA/actual width feed one serial complete finite/load FFN scanner then native observation/whole prefix/ancestry verifier; saved directories alone never close the prefix.",
+    "Terminal reader fully reloads both saved teacher-forced native head outputs with actual corpus real_lengths/positions, exactshape/dtype/source/header/count/finite checks; these are diagnostics rather than free-run capability proof.",
+    "Numerical finite misses remain record-only; malformed/source/hash/shape/load/nonfinite tensor/output failures remain functional errors."
+  ],
+  "current_full_SHA_stat_symlink_root_and_exclusive_output_guard_functions_unchanged": [
+    "logical_relative",
+    "LocalFiles.identity",
+    "LocalFiles.hash",
+    "LocalFiles.exists",
+    "ROResumePaths._check_roots",
+    "ROResumePaths._check_descendant",
+    "ROResumePaths.read_path",
+    "ROResumePaths.write_path",
+    "ROResumePaths.note_created_output",
+    "ROResumePaths.verify_old_recorded_reference",
+    "NativeResumeReads.marker",
+    "NativeResumeReads.ffn_reference",
+    "NativeResumeReads.snapshot",
+    "VerifierReads.recorded"
+  ],
+  "exact_module_pin_and_compile_count": 16,
+  "final_inventory_source": {
+    "actual_closed92_request_or_inventory_execution": false,
+    "bytes": 18360,
+    "compile_and_three_bounded_reader_ASTs_match_final_verifier": true,
+    "conditional_artifact_count": 189,
+    "conditional_marker_count": 93,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\final_export_inventory_source_v1\\build_final_export_inventory.py",
+    "sha256": "dc957e33824efecb87d24519c7d1e12d7c717d64649ff399ba53b4bea8946ab9",
+    "source_scope": "After genuine closed92 and sole-writer terminal evidence, normal own CPU admission; full current SHA and bounded finite/load of93 FFN/dense,93 body,global and2reviews; exclusive metadata outside model roots; no copy/publication."
+  },
+  "full_existing_function_AST_deltas": {
+    "73-84": {
+      "driver": {
+        "added": [],
+        "changed": [
+          "Driver.__init__",
+          "Driver.admit",
+          "Driver.execute"
+        ],
+        "removed": []
+      },
+      "k3_dense_pass.py": {
+        "added": [],
+        "changed": [
+          "DualStreamRun.__init__",
+          "DualStreamRun._carry_forward_previous_receipt",
+          "DualStreamRun.resume_point",
+          "DualStreamRun.run"
+        ],
+        "removed": []
+      },
+      "ro_resume_paths.py": {
+        "added": [],
+        "changed": [
+          "ControllerReads.existing_layer",
+          "NativeResumeReads.sealed_metadata",
+          "ROResumePaths.__init__",
+          "ROResumePaths.record",
+          "_old_role"
+        ],
+        "removed": []
+      },
+      "ro_resume_runtime.py": {
+        "added": [
+          "Closed72Ancestry.__init__",
+          "Closed72Ancestry.matches",
+          "Closed72Ancestry.record",
+          "validate_closed72_metadata"
+        ],
+        "changed": [
+          "nas_resume_from_arguments"
+        ],
+        "removed": []
+      },
+      "verify_later_window.py": {
+        "added": [],
+        "changed": [
+          "verify"
+        ],
+        "removed": []
+      }
+    },
+    "85-92": {
+      "driver": {
+        "added": [],
+        "changed": [
+          "Driver.__init__",
+          "Driver.admit",
+          "Driver.execute"
+        ],
+        "removed": []
+      },
+      "k3_dense_pass.py": {
+        "added": [],
+        "changed": [
+          "DualStreamRun.__init__",
+          "DualStreamRun._carry_forward_previous_receipt",
+          "DualStreamRun.resume_point",
+          "DualStreamRun.run"
+        ],
+        "removed": []
+      },
+      "ro_resume_paths.py": {
+        "added": [],
+        "changed": [
+          "ControllerReads.existing_layer",
+          "NativeResumeReads.sealed_metadata",
+          "ROResumePaths.__init__",
+          "ROResumePaths.record",
+          "_future_role",
+          "_old_role"
+        ],
+        "removed": []
+      },
+      "ro_resume_runtime.py": {
+        "added": [
+          "Closed84Ancestry.__init__",
+          "Closed84Ancestry.matches",
+          "Closed84Ancestry.record",
+          "validate_closed84_metadata"
+        ],
+        "changed": [
+          "nas_resume_from_arguments"
+        ],
+        "removed": []
+      },
+      "verify_later_window.py": {
+        "added": [],
+        "changed": [
+          "verify"
+        ],
+        "removed": []
+      }
+    }
+  },
+  "new_fixture_or_test_rerun_or_candidate_import_execution": false,
+  "original_ancestry88_full_bytes_unchanged": true,
+  "prior61_independent_review_sha256": "f0a4735485d666c21362bce55fe360ca0d5533aa3bffd76826ea9ec3b109e94c",
+  "prior_combined_handoff_preserved": {
+    "bytes": 14926,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\INTEGRATION_HANDOFF_V1.json",
+    "sha256": "a15a4be0568263ab69a14e59b0f83b7eea2a3da27d32e6e60696e63ae3da90b4"
+  },
+  "producer_context_chain_static_review": [
+    "Legacy44 and closed36_9086 contexts stay original; authentic37\u201348 origin uses720,49\u201360 uses5e,61\u201372 uses078,73\u201384 uses21e.",
+    "Closed72/Closed84 ancestry initializes each previous sealed full-prefix/scanner/terminal/manifest/endpoints against its own origin and predecessor fullSHA, preserving older contexts.",
+    "Current73 native21e/current85 native655e are genuine new source identities; only current-owned new declared paths match the current consumer context.",
+    "Original127 semantic catalog rows remain immutable; authenticated full parent rows retain all earlier origins, while appended rows belong only to newest closed61\u201372 or closed73\u201384 origin.",
+    "Exact disjoint aliases and physical root(dev,ino) identities allow shared NASdevice; every actual consumed old artifact is fullhashed with stable current stat before use.",
+    "NativeResumeReads selects one unique latest sealed source metadata role and preserves logical old /run-output reference strings."
+  ],
+  "qualified99_OTHER_native_ASTs_match9086_each_window": true,
+  "recorded_source_checks_rerun": false,
+  "resume_point_not_in_authentic99_roster": true,
+  "runtime_remote_model_Relay_DB_allocator_provider_or_payload_actions": false,
+  "schema": "chimera.k3_73_84_and85_92_independent_source_review.v1",
+  "scope": "Exact16 module pins/compile, actual99 other qualified ASTs, complete source-context/resume/catalog/controller/verifier/static writer accounting; no candidate import, function execution, fixture or runtime.",
+  "selected49_61_or_live_source_edit": false,
+  "source_compositions_and_recorded_checks": {
+    "73-84": {
+      "checks": {
+        "actual_prior_closure_claimed": false,
+        "bytes": 4726,
+        "historical_synthetic_scope": true,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\SOURCE_CHECKS_V1.json",
+        "recorded_pass_count": 9,
+        "rerun": false,
+        "sha256": "6eb61fda432d19e547fae0bcd632fb2e205446988b6b01c5604a6536a9ae7a7f"
+      },
+      "composition": {
+        "bytes": 4365,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window73_84_candidate_v3\\SOURCE_COMPOSITION_V3.json",
+        "sha256": "190dfd8f9834617268c0bdc1a845e7900401dde598bf1e3733a5d38f80603d79"
+      }
+    },
+    "85-92": {
+      "checks": {
+        "actual_prior_closure_claimed": false,
+        "bytes": 4906,
+        "historical_synthetic_scope": false,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\SOURCE_CHECKS_V4.json",
+        "recorded_pass_count": 7,
+        "rerun": false,
+        "sha256": "26eaaf4a936f3829b3957ae4d9613c176320bfbb43be919778c3b99f9d3a131a"
+      },
+      "composition": {
+        "bytes": 4969,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\SOURCE_COMPOSITION_V4.json",
+        "sha256": "6d46ec91fef0215906a80d814fe8043c8d1728b81ad462331a6e564ab277f722"
+      }
+    }
+  },
+  "source_pins": [
+    {
+      "bytes": 27372,
+      "name": "collect_actual73_84_multi_origin.py",
+      "phase": "73-84",
+      "sha256": "3c6057a187c49007e2f3c12abfe6411a03bd536067418b3722b86654e77ff48b"
+    },
+    {
+      "bytes": 44293,
+      "name": "continuation_worker73_84_template_v1.py",
+      "phase": "73-84",
+      "sha256": "7daf9999e01b5df2bb9b382773f28a3dc847928b9f57f289a94d597f04bf57f9"
+    },
+    {
+      "bytes": 190685,
+      "name": "k3_dense_pass.py",
+      "phase": "73-84",
+      "sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56"
+    },
+    {
+      "bytes": 17493,
+      "name": "k3_recovery_ancestry.py",
+      "phase": "73-84",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    {
+      "bytes": 5148,
+      "name": "native_nas_io_qualification73_84_template_v1.py",
+      "phase": "73-84",
+      "sha256": "1edb4b8701003d1b0c9c9b83a1b371d17bb8d471565693fb7c6f7ee37e3d55f1"
+    },
+    {
+      "bytes": 26436,
+      "name": "ro_resume_paths.py",
+      "phase": "73-84",
+      "sha256": "146665bbce576e52462d73384d96fafd7ec07a07a2f7a9f95bd52c9655f84ada"
+    },
+    {
+      "bytes": 30768,
+      "name": "ro_resume_runtime.py",
+      "phase": "73-84",
+      "sha256": "288bf5f3cde564b70932097d28a049fc1c4be500b83d7a43e33cb1273fa5e260"
+    },
+    {
+      "bytes": 42002,
+      "name": "verify_later_window.py",
+      "phase": "73-84",
+      "sha256": "51a178d37c142f646aacd6c726cfd2c8868d2ea19a2b632d578fd1a504257901"
+    },
+    {
+      "bytes": 28901,
+      "name": "collect_actual85_92_multi_origin.py",
+      "phase": "85-92",
+      "sha256": "5d5b3853ed7a7538371881484d09f98280bdf6059ce17d8f80cf1cfe6b780660"
+    },
+    {
+      "bytes": 44624,
+      "name": "continuation_worker85_92_template_v1.py",
+      "phase": "85-92",
+      "sha256": "4e17e5e87688096c747f83ab7d68f1ed4c5e521d36bff750780bcfa6e5e43509"
+    },
+    {
+      "bytes": 192629,
+      "name": "k3_dense_pass.py",
+      "phase": "85-92",
+      "sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b"
+    },
+    {
+      "bytes": 17493,
+      "name": "k3_recovery_ancestry.py",
+      "phase": "85-92",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    {
+      "bytes": 5223,
+      "name": "native_nas_io_qualification85_92_template_v1.py",
+      "phase": "85-92",
+      "sha256": "29ceb3fa3cdaa4dcc006be478ab9f410b704703a0a973db1d2122cf12195f9a1"
+    },
+    {
+      "bytes": 27385,
+      "name": "ro_resume_paths.py",
+      "phase": "85-92",
+      "sha256": "6c626aef115e17274c119ec8357d77380bf3d22df07ecda5f123988f3b74e6e8"
+    },
+    {
+      "bytes": 38322,
+      "name": "ro_resume_runtime.py",
+      "phase": "85-92",
+      "sha256": "22cdf12a5de1f6a6755b59085f15c0da508cb5cb34e3dba022dd085aa2b6f9f8"
+    },
+    {
+      "bytes": 44685,
+      "name": "verify_later_window.py",
+      "phase": "85-92",
+      "sha256": "a717f7b437807c38c086aad67dbc72c4733e8fb823f1e66c7c47e5515e60be87"
+    }
+  ],
+  "terminal_manifest_V3_gap_and_V4_correction": {
+    "actual_prior_continuity_fullhash_and_guard_prior_join": true,
+    "actual_source_published_paths_SHA_current_context_and_semantic_prior_manifest_join": true,
+    "bytes": 44685,
+    "collector_only_verifier_literal_pin_changed": true,
+    "final_V4_verifier_sha256": "a717f7b437807c38c086aad67dbc72c4733e8fb823f1e66c7c47e5515e60be87",
+    "final_collector_sha256": "5d5b3853ed7a7538371881484d09f98280bdf6059ce17d8f80cf1cfe6b780660",
+    "finding": "The V3 terminal verifier hashed the fresh manifest but did not join the native publication record source/published hashes.",
+    "native655_and_six_non_verifier_collector_modules_unchanged": [
+      "continuation_worker85_92_template_v1.py",
+      "k3_dense_pass.py",
+      "k3_recovery_ancestry.py",
+      "native_nas_io_qualification85_92_template_v1.py",
+      "ro_resume_paths.py",
+      "ro_resume_runtime.py"
+    ],
+    "old_checkpoint_producer_entries_preserved_and_no_new93_payload": true,
+    "preserved_V3_verifier_sha256": "2b1375c9d1417866ffe5eb32fb52f0fc36b6593ed584d8788f6c742f2ac819d8",
+    "publication_proof_recorded_in_actual_closed92_when_run": true,
+    "remaining_concrete_source_error_found": null,
+    "source_locations": {
+      "\"terminal_snapshot_manifest_publication_readback\": terminal_manifest_publication_readback": [
+        601
+      ],
+      "NativeResumeReads(paths).sealed_metadata(\"snapshots_manifest.json\")": [
+        471
+      ],
+      "canonical(manifest) == canonical(source_manifest)": [
+        487
+      ],
+      "publication.get(\"before93_created\") is False": [
+        485
+      ],
+      "publication.get(\"consumer_resume_context\") == context": [
+        486
+      ],
+      "publication.get(\"new_checkpoint_payload_files\") == []": [
+        484
+      ],
+      "publication.get(\"published_sha256\") == manifest_sha": [
+        480
+      ],
+      "publication.get(\"source_path\") == str(source_manifest_path)": [
+        477
+      ],
+      "source_manifest_sha = prior_continuity[\"snapshot_manifest_sha256\"]": [
+        473
+      ]
+    },
+    "verifier_only_verify_function_changed": true
+  },
+  "unresolved_and_material_limits": [
+    "Actual72/84 raw closures, complete prior provenance/catalogs/observations/source contexts/UUIDs/RO hostroots/caps/current peer promises are absent.",
+    "Normal future caller/binder/source promotion/immutable source packet/config/allocator/freeze/fresh FS+RAM admission remain unselected; these source modules are not deployable.",
+    "The new homogeneous output root can be existing NAS or Lexar when an actual future phase is admitted. No split-FS export, clone/delete/reclaim credit or endpoint copy reduction is implemented.",
+    "Whole write extents include qualification, temporary saver, duplicate canonical FFN, held_positions, retained ancestry copies and metadata/headroom once; raw projection or qualification must not be added again.",
+    "Source/header array components do not prove whole-process RSS, GPU head peak, current available memory, quotas, future capacity or all later windows admission.",
+    "The actual final export inventory and complete physical assembly/capability evaluation remain future work; structural closure does not establish retained intelligence or training acceptance."
+  ],
+  "verdict": "PASS_SOURCE_ONLY_CONDITIONAL_NONDEPLOYABLE",
+  "writer_accounting": {
+    "73-84": {
+      "bytes": 118576,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\remaining_parent_header_accounting_v1\\ACTUAL_HEADER_73_84_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+      "sha256": "f183d67fc519f4896415b5084c1be069a5574bfbb1cc534b7b4969ebed9577fa",
+      "source_terms_once_bytes": [
+        33750489792,
+        110981283840,
+        18496880640,
+        536870912,
+        17177643328,
+        0
+      ],
+      "whole_RSS_proof": false,
+      "whole_writer_once_bytes": 180943168512,
+      "writer": {
+        "all_new_layer_tensor_payload_bytes": 33750489792,
+        "allocation_forecast_bytes": 209715200,
+        "conservative_complete_source_scope_extent_bytes": 180943168512,
+        "conservative_three_max_pairs_bytes": 110981283840,
+        "exact_checkpoint_schedule_scope_extent_bytes": 176832750592,
+        "exact_scheduled_checkpoint_payload_bytes": 106870865920,
+        "final_endpoint_dual_payload_bytes": 36993761280,
+        "final_endpoint_layer": 85,
+        "header_slot_forecast_bytes": 461373440,
+        "held_I64_outputs_assigned_from_overhead_once_bytes": 2225856,
+        "json_slot_forecast_bytes": 3289382912,
+        "metadata_actual_extents_and_role_allowlist_require_future_binding": true,
+        "no_whole_process_RSS_or_universal_filesystem_quota_guarantee": true,
+        "old_prefix_tensor_copy_bytes": 0,
+        "one_additional_max_single_atomic_saver_temp_bytes": 18496880640,
+        "original_broad_overhead_allowance_bytes": 17179869184,
+        "periodic_dual_pairs": [
+          {
+            "before_layer": 84,
+            "dual_payload_bytes": 32883343360
+          }
+        ],
+        "qualification_reserve_once_bytes": 536870912,
+        "receipt_slots_each_bytes": 536870912,
+        "reclaim_cleanup_credit_bytes": 0,
+        "remaining_allowance_after_forecasts_bytes": 13217171776,
+        "remaining_headers_JSON_allocation_allowance_bytes": 17177643328,
+        "review_payload_upper_bound_bytes": 0,
+        "safetensors_header_roles_including_one_temp": 55,
+        "same_qualification_or_raw_projection_must_not_be_added_again": true,
+        "separately_retained_verifier_endpoint_copy_bytes": 36993761280
+      }
+    },
+    "85-92": {
+      "bytes": 84948,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\remaining_parent_header_accounting_v1\\ACTUAL_HEADER_85_92_WRITE_AND_ARRAY_COMPONENTS_V1.json",
+      "sha256": "a5511acd289ed6c2c080762a26dbf11ba84fb9e02b47c7211a1a7c11176c7eb8",
+      "source_terms_once_bytes": [
+        22076917888,
+        0,
+        887886848,
+        536870912,
+        17178385280,
+        12770912
+      ],
+      "whole_RSS_proof": false,
+      "whole_writer_once_bytes": 40692831840,
+      "writer": {
+        "all_new_layer_tensor_payload_bytes": 22076917888,
+        "allocation_forecast_bytes": 209715200,
+        "conservative_complete_source_scope_extent_bytes": 40692831840,
+        "conservative_three_max_pairs_bytes": 0,
+        "exact_checkpoint_schedule_scope_extent_bytes": 40692831840,
+        "exact_scheduled_checkpoint_payload_bytes": 0,
+        "final_endpoint_dual_payload_bytes": 0,
+        "final_endpoint_layer": null,
+        "header_slot_forecast_bytes": 293601280,
+        "held_I64_outputs_assigned_from_overhead_once_bytes": 1483904,
+        "json_slot_forecast_bytes": 3088056320,
+        "metadata_actual_extents_and_role_allowlist_require_future_binding": true,
+        "no_whole_process_RSS_or_universal_filesystem_quota_guarantee": true,
+        "old_prefix_tensor_copy_bytes": 0,
+        "one_additional_max_single_atomic_saver_temp_bytes": 887886848,
+        "original_broad_overhead_allowance_bytes": 17179869184,
+        "periodic_dual_pairs": [],
+        "qualification_reserve_once_bytes": 536870912,
+        "receipt_slots_each_bytes": 536870912,
+        "reclaim_cleanup_credit_bytes": 0,
+        "remaining_allowance_after_forecasts_bytes": 13587012480,
+        "remaining_headers_JSON_allocation_allowance_bytes": 17178385280,
+        "review_payload_upper_bound_bytes": 12770912,
+        "safetensors_header_roles_including_one_temp": 35,
+        "same_qualification_or_raw_projection_must_not_be_added_again": true,
+        "separately_retained_verifier_endpoint_copy_bytes": 0
+      }
+    }
+  }
+}

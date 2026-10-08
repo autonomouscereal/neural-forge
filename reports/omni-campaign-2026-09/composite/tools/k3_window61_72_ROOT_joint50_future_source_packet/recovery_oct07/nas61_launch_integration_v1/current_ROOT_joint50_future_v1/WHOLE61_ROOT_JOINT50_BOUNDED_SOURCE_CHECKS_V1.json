@@ -1,0 +1,23 @@
+{
+  "all_source_files_compile_only": true,
+  "binder_changed_functions": [
+    "selected",
+    "bind",
+    "verify_bound_bundle",
+    "final_configs"
+  ],
+  "contract": {
+    "bytes": 14060,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_joint50_future_v1\\NEXT61_ROOT_JOINT50_FUTURE_WHOLE_CALLER_SOURCE_CONTRACT_V1.json",
+    "sha256": "95a1b6bcbb32ad744f64d5aeb51bec4c12848c928b80f44b82444cf617c72de3"
+  },
+  "parent": {
+    "bytes": 12952,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_QIMG_compute_closed_v1\\NEXT61_QIMG_COMPUTE_CLOSED_WHOLE_CALLER_SOURCE_CONTRACT_V1.json",
+    "sha256": "9ec8de8738efff839ced697f18419bec347da129553b6ce2fd0d9de8fa271269"
+  },
+  "runtime_actions": false,
+  "schema": "neural_forge.k3_NEXT61_ROOT_joint50_future_bounded_source_checks.v1",
+  "tests_or_fixture_expansion": false,
+  "wrapper_operation_ASTs_unchanged": true
+}
