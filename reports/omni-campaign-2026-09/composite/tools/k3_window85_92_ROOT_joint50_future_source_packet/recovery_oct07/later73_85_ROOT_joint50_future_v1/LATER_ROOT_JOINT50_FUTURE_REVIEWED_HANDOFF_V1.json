@@ -1,0 +1,173 @@
+{
+  "actual_unbound": {
+    "actual72_raw9_and_previous61_complete_provenance": null,
+    "actual84_raw9_and_previous73_complete_provenance": null,
+    "actual_native_namespace_PID_and_events": null,
+    "allocation_A": null,
+    "current_complete_catalog_and_consumed_artifact_fullSHA": null,
+    "fresh_peer_capacity": null,
+    "new_FS": null,
+    "new_UUID": null,
+    "normal_freeze_and_admission": null,
+    "operating_cap_and_previous_peak_growth": null
+  },
+  "at_UTC": "2026-10-08T03:41:46.293059+00:00",
+  "can_arm": false,
+  "composition": {
+    "bytes": 25916,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\LATER_ROOT_JOINT50_FUTURE_SOURCE_COMPOSITION_V1.json",
+    "sha256": "3592c7a241424cb576dd5d6ccebcc94851b1c9a7862e3837296723834a8efb01"
+  },
+  "deployable": false,
+  "fixtures_or_candidate_imports": false,
+  "focused_check": {
+    "bytes": 2743,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\LATER_ROOT_JOINT50_FUTURE_FOCUSED_CHECK_V1.json",
+    "sha256": "f31c694ac3a4a33a3b90691a1d2b5769a04ea28f980b8c10a369e97968955730"
+  },
+  "generator": {
+    "bytes": 14302,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\compose_later_ROOT_joint50_future_v1.py",
+    "sha256": "2e4e521c6b82149d01bb28d9555ad1b10c3a797858feb3854de1d46e010ba876"
+  },
+  "immutable_packet": null,
+  "independent_review": {
+    "bytes": 42994,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\NEXT_QIMG_compute_closure_independent_review_v1\\NEXT73_85_ROOT_JOINT50_FUTURE_WHOLE_CALLER_INDEPENDENT_REVIEW_V1.json",
+    "sha256": "b1d4a81234a97fc358d0ab412932c5a41e59e6451d2630f8f3a54e8953d10eaf"
+  },
+  "next_owner_action": "Root/resource author may integrate this reviewed source successor through ordinary source promotion when authorized; actual later windows need genuine preceding closures and fresh normal source/runtime/capacity/allocation bindings.",
+  "normal_promoted_commit": null,
+  "phase_source_pins": [
+    {
+      "ROOT_joint50_future_proof_role": {
+        "ROOT_current_joint50_serial_future": {
+          "bytes": 533199,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase73_84_ROOT_joint50_future_v1\\ROOT_CURRENT_JOINT50_SERIAL_FUTURE_PUBLIC_PROOF_V1.json",
+          "sha256": "65379f9787f9eec44575c6785b33eb4d461cefc91bc1754fdddfcf2dae528708"
+        }
+      },
+      "binder": {
+        "bytes": 58930,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase73_84_ROOT_joint50_future_v1\\bind_actual73_84_ROOT_joint50_future_v1.py",
+        "sha256": "61a51d56a9642e39e1f0db1fc2b4d222356d78d6848363a20d9ccf2d65ded734"
+      },
+      "helper_manifest": {
+        "bytes": 679,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase73_84_ROOT_joint50_future_v1\\launch\\LAUNCH_ROOT_JOINT50_FUTURE_HELPER_SOURCE_PINS_V1.json",
+        "sha256": "58f936f23bc713469076d4ea2f9a6752a68b51a62d9569d694a82f0d692cd4e4"
+      },
+      "metadata_before_A": 74,
+      "metadata_with_A": 75,
+      "mount_count": 12,
+      "native_full_sha256": "21e322039fa65334a49e222997f92a76e640cf68d75e5388244b1e7719baae56",
+      "script_count": 5,
+      "selected_source_roster": {
+        "bytes": 4072,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase73_84_ROOT_joint50_future_v1\\SELECTED_PHASE_ROOT_JOINT50_FUTURE_SOURCE_PINS_V1.json",
+        "sha256": "82868be54f45128d84caba08a0e201078b8ae6faab53c89fae3edb861341aa69"
+      },
+      "whole_ROOT_future_bytes_once": 54760833024,
+      "whole_writer_once": 180943168512,
+      "window": [
+        73,
+        84
+      ],
+      "wrapper": {
+        "bytes": 26118,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase73_84_ROOT_joint50_future_v1\\launch\\launch_actual73_84_ROOT_joint50_future_v1.py",
+        "sha256": "7bafa876bd1c3e0600f2c7c673a2c4e91d9da2244cf776e45e9d9b8eddac9969"
+      }
+    },
+    {
+      "ROOT_joint50_future_proof_role": {
+        "ROOT_current_joint50_serial_future": {
+          "bytes": 533199,
+          "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase85_92_ROOT_joint50_future_v1\\ROOT_CURRENT_JOINT50_SERIAL_FUTURE_PUBLIC_PROOF_V1.json",
+          "sha256": "65379f9787f9eec44575c6785b33eb4d461cefc91bc1754fdddfcf2dae528708"
+        }
+      },
+      "binder": {
+        "bytes": 59267,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase85_92_ROOT_joint50_future_v1\\bind_actual85_92_ROOT_joint50_future_v1.py",
+        "sha256": "edf251cb550423a489ea95f66eb61b432a398bfb80f4e3270f447aac417482bc"
+      },
+      "helper_manifest": {
+        "bytes": 679,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase85_92_ROOT_joint50_future_v1\\launch\\LAUNCH_ROOT_JOINT50_FUTURE_HELPER_SOURCE_PINS_V1.json",
+        "sha256": "3b38e2495bef37a732efa8cd878083033b09197e58bdfdbd22bc8a96870e0147"
+      },
+      "metadata_before_A": 77,
+      "metadata_with_A": 78,
+      "mount_count": 13,
+      "native_full_sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b",
+      "script_count": 5,
+      "selected_source_roster": {
+        "bytes": 4080,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase85_92_ROOT_joint50_future_v1\\SELECTED_PHASE_ROOT_JOINT50_FUTURE_SOURCE_PINS_V1.json",
+        "sha256": "c3f6420466bce3602e5f164f9052969bcacffec6ea3713a4be6bc08712dbb3b2"
+      },
+      "whole_ROOT_future_bytes_once": 54760833024,
+      "whole_writer_once": 40692831840,
+      "window": [
+        85,
+        92
+      ],
+      "wrapper": {
+        "bytes": 26117,
+        "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_ROOT_joint50_future_v1\\phase85_92_ROOT_joint50_future_v1\\launch\\launch_actual85_92_ROOT_joint50_future_v1.py",
+        "sha256": "9c3bfb6af7f2188877325c741232b8b296bc3fdce1a105a27a374af1ca1ba95c"
+      }
+    }
+  ],
+  "previous_reviewed_QIMG_composition": {
+    "bytes": 22712,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_QIMG_compute_closure_v1\\LATER_QIMG_COMPUTE_CLOSED_SOURCE_COMPOSITION_V2.json",
+    "sha256": "260e62d48042368360cb2b143ffabbcf8ac93cef5a35fb36673983ccb1f4ec26"
+  },
+  "prior_normal_tested_commit": "0bfe6e21ccc695536f4c80ba582a102c9810a096",
+  "runtime_remote_Relay_DB_Git_provider_allocator_model_actions": false,
+  "schema": "neural_forge.k3_later73_85_NEXT_ROOT_joint50_reviewed_source_handoff.v1",
+  "shared61_review": {
+    "bytes": 24822,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\NEXT_QIMG_compute_closure_independent_review_v1\\NEXT61_ROOT_JOINT50_FUTURE_WHOLE_CALLER_INDEPENDENT_REVIEW_V1.json",
+    "sha256": "8de19949a95e5af77fa8a21027714dd7e4b18f6772425643dbcca0fd60bd05eb"
+  },
+  "shared61_whole_contract": {
+    "bytes": 14060,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_ROOT_joint50_future_v1\\NEXT61_ROOT_JOINT50_FUTURE_WHOLE_CALLER_SOURCE_CONTRACT_V1.json",
+    "sha256": "95a1b6bcbb32ad744f64d5aeb51bec4c12848c928b80f44b82444cf617c72de3"
+  },
+  "shared_preflight_composition": {
+    "bytes": 4437,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\NEXT_ROOT_joint50_future_scope_v1\\NEXT_ROOT_JOINT50_PREFLIGHT_SOURCE_COMPOSITION_V1.json",
+    "sha256": "f00070e9ca1c56b3ff2b5564c326870fdec3ad639161e315e04240fa52ad2891"
+  },
+  "source_delta": {
+    "Lexar_bytes_once": 30064771072,
+    "ROOT_bytes_once": 2147483648,
+    "ROOT_current_joint50_serial_future_inherited_once": true,
+    "additional_CPU_threads": 0,
+    "additional_RAM_bytes": 0,
+    "conservative_speech_ROOT_bytes_once": 21474836480,
+    "old_serial_CPU_threads": 4,
+    "old_serial_RAM_bytes": 17179869184,
+    "old_serial_ROOT_bytes_once": 10737418240,
+    "owner_adoption_sha256": "e886d40173bd3a02065946f9f60a49d89356d7894334e8d5af26369cdf81930f",
+    "whole_ROOT_future_bytes_once": 54760833024
+  },
+  "source_only": true,
+  "source_packet_portable": false,
+  "source_workspace_and_prior_component_packet_references_retained": true,
+  "unchanged": {
+    "current49_runtime_and_all_prior_source_packets": true,
+    "facts_host": true,
+    "native_mathematical_fold": true,
+    "preflight_classifier_RAM_CPU": true,
+    "six_normal_controls": true,
+    "ten_other_selected_modules": true,
+    "terminal92_manifest_publication_join_and_no_before93": true,
+    "wrapper_operations_after_filename_binding": true
+  },
+  "verdict": "PASS_SOURCE_ONLY_CONDITIONAL"
+}

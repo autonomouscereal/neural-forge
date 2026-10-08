@@ -1,0 +1,246 @@
+{
+  "CLI": [
+    "python",
+    "-B",
+    "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py",
+    "--inputs",
+    "<complete actual60 + actual49 provenance JSON>",
+    "--inputs-sha256",
+    "<its full raw SHA256>",
+    "--output-directory",
+    "<new direct child of this leaf>"
+  ],
+  "NAS_writer_member_zero_when_Lexar_selected": true,
+  "actual60_roles_exact": [
+    "closed60_continuity",
+    "terminal_receipt",
+    "full_ffn_validation",
+    "snapshot_manifest",
+    "fitter_execution",
+    "controller_terminal_result",
+    "resources_jsonl",
+    "controller_events_jsonl",
+    "binding_receipt"
+  ],
+  "binder": {
+    "bytes": 26216,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\bind_actual61_72_source_proposal_v4.py",
+    "sha256": "f745dc57365bc4c4d4ebf37825ac4777944560d171ac38c6b8d47b9c9463dc10"
+  },
+  "caller_proposal": {
+    "bytes": 2911,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\CALLER_SOURCE_PROPOSAL_V3.json",
+    "sha256": "df23f05a0aadb1a5174e340beae56e31654a25e62ebb78a86d10273b08042483"
+  },
+  "canonical_destinations": {
+    "collector": "observer_source/collect_actual61_72_multi_origin.py",
+    "driver": "production_control/continuation_worker.py",
+    "facts": "production_control/k3_owned_readonly_facts_NAS61_72_v1.py",
+    "host": "production_control/k3_capacity_host_loop_v1.py",
+    "native": "production_code/reports/omni-campaign-2026-09/composite/tools/k3_dense_pass.py",
+    "preflight": "production_control/k3_owned_capacity_preflight_NAS61_72_v1.py",
+    "qualification": "production_control/native_nas_io_qualification.py",
+    "resolver": [
+      "production_code/reports/omni-campaign-2026-09/composite/tools/ro_resume_paths.py",
+      "production_control/ro_resume_paths.py"
+    ],
+    "runtime": [
+      "production_code/reports/omni-campaign-2026-09/composite/tools/ro_resume_runtime.py",
+      "production_control/ro_resume_runtime.py"
+    ],
+    "verifier": "production_control/verify_later_window.py"
+  },
+  "current60_raw_hashes_UUID_binding_allocation_CID_current_caps_admission": null,
+  "current_execution_PID": "derive positive Popen namespace PID from actual fitter_execution; join exact prior plan argv and start/running/terminal events; no203 or hostPID substitution",
+  "deployable": false,
+  "disk_scope": {
+    "Lexar_QIMG_future_once_bytes": 25769803776,
+    "Lexar_headroom_bytes": 17179869184,
+    "Lexar_whole_future_if_Lexar_selected_bytes": 209506378752,
+    "NAS_approved_base_once_bytes": 690415992832,
+    "NAS_common_if_Lexar_selected_bytes": 692026605568,
+    "NAS_common_if_NAS_selected_bytes": 858583311360,
+    "NAS_retained_common_base_bytes": 692026605568,
+    "historical49_and37_attempt_members_not_recharged": true,
+    "inherited_floor_padding_bytes": 1610612736,
+    "padding_is_not_new_writers_or_duplicate_qualifier_promise": true,
+    "qualification_embedded_once_bytes": 536870912,
+    "reclaim_credit_bytes": 0,
+    "remaining_copy_bytes": 0,
+    "replaces_previous49_writer_member_in_funded_expression": true,
+    "whole_phase_writer_once_bytes": 166556705792
+  },
+  "existing_caller_ABI": {
+    "actual61_next_window": "61-72",
+    "caller_source_pin_and_atomic_SHA_publication_unchanged": true,
+    "config_schema": "neural_forge.k3_capacity_host_loop_config.v1",
+    "controller_wait_seconds": 180,
+    "decision_schema": "neural_forge.k3_owned_launch_capacity.v2",
+    "driver_request_schema": "neural_forge.k3_driver_capacity_request.v1",
+    "driver_response_schema": "neural_forge.k3_driver_capacity_response.v1",
+    "facts_deadline_seconds": 65,
+    "fresh_request_facts_capacity_seconds": 150,
+    "host_preflight_deadline_seconds": 100,
+    "mounted_request_directory": "/run-control-output/capacity_requests",
+    "mounted_response_directory": "/run-control-output/capacity_responses",
+    "request_schema": "neural_forge.k3_owned_capacity_preflight_request.v2",
+    "unanswered_request_bound_unchanged": 64
+  },
+  "focused_checks": {
+    "bytes": 3809,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\SOURCE_PROPOSAL_FOCUSED_CHECKS_V4.json",
+    "sha256": "1550f9b9d5dde20b85efc26b2e13d31d3c34fc193b88893667760dcc38148941"
+  },
+  "full_prior_execution_code_roster_and_bound_control_source_freeze_join": true,
+  "live37_48_and_selected49_wrapper_changed": false,
+  "operating_cap_proposal": {
+    "CPU_threads": 22,
+    "historical49_cap_bytes": 103079215104,
+    "memory_bytes": 111669149696,
+    "qualified_array_delta_bytes": 8220835840,
+    "requires_actual60_final_measured_peak_plus_array_delta_at_most_cap": true,
+    "shared_libraries_buffers_evaluation_saver_observer_variation_still_requires_fresh_actual_frame_and_normal_admission": true,
+    "swap_bytes": 0,
+    "whole_RSS_proof_claimed": false
+  },
+  "output": {
+    "exact_sorted_mount_count": 11,
+    "filesystem_options": [
+      "NAS",
+      "Lexar"
+    ],
+    "filesystem_selected": null,
+    "metadata_RW_alias": "/run-control-output",
+    "old_tensor_copy_move_delete_bytes": 0,
+    "split_output_filesystems_supported": false,
+    "unique_RW_alias": "/run-output"
+  },
+  "phase61_plan_config_allocator_freeze_control_derivatives_not_selected": true,
+  "previous49_provenance_roles_exact": [
+    "source_closure",
+    "source_binding",
+    "identity",
+    "catalog",
+    "observation",
+    "driver_config",
+    "source_freeze",
+    "allocation",
+    "recovery_plan"
+  ],
+  "qualification_actual_selected_filesystem_explicit": true,
+  "reference_shape": {
+    "path": "<actual complete raw file>",
+    "sha256": "<actual full raw SHA256>"
+  },
+  "remaining_actual_binding_sequence": [
+    "actual49 normal source publication/config/allocation and closure60 raw9",
+    "normal post-terminal connect raw receipt; derive genuine session binding",
+    "bind local source proposal and select actual NAS or Lexar destination",
+    "review/test/promote new source and package immutable selected blobs",
+    "collect actual three-origin metadata-only catalog/observation with671f derivative",
+    "compose real61 plan/config/runtime/current-peer source scope through existing normal protocol",
+    "fresh honest prospective preflight and normal allocator/source freeze/caller readiness/arm"
+  ],
+  "remote_Relay_GPU_allocator_provider_actions": false,
+  "schema": "neural_forge.k3_actual61_72_source_binding_and_caller_contract.v4",
+  "selected_for_runtime": false,
+  "selected_sources": {
+    "ancestry": {
+      "bytes": 17493,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\k3_recovery_ancestry.py",
+      "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+    },
+    "collector": {
+      "bytes": 25401,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\collect_actual61_72_multi_origin.py",
+      "sha256": "671f4b2828c893d506ca79e4b89da43f5a1040eeb4a9ac9013258aa96f57b971"
+    },
+    "driver": {
+      "bytes": 44015,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\continuation_worker61_72_template_v1.py",
+      "sha256": "f6a0949dc02bebe3806fb87ff7323d2df6a1ebcbb28cd205f4d6a4938e133cfb"
+    },
+    "facts": {
+      "bytes": 12012,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\candidate_v2\\k3_owned_readonly_facts61_72_template_v2.py",
+      "sha256": "6d490a40ca4026edbee4da8ce3e19f6734d7f1717f615fb0432071bd6b6e32f8"
+    },
+    "host": {
+      "bytes": 18043,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\candidate_v2\\k3_capacity_host_loop61_72_template_v2.py",
+      "sha256": "7612a588de135aba8cd3b44227c9fd15d30685fa2dc92af44abe2ab11034ed2e"
+    },
+    "native": {
+      "bytes": 190685,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\k3_dense_pass.py",
+      "sha256": "078187a4cfa2f5f7810f0c0a8fa85f7fcc8304085684d45dfda5b895854881d0"
+    },
+    "preflight": {
+      "bytes": 115167,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\candidate_v3\\k3_owned_capacity_preflight61_72_template_v3.py",
+      "sha256": "6c6f1ff7a249e76b040074437005cc344dcd2ce802c1f34f9c661f596d409a55"
+    },
+    "qualification": {
+      "bytes": 5073,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\native_nas_io_qualification61_72_template_v1.py",
+      "sha256": "e59b071db359c5dd0015a18a52dd7872325ed0e4df98592d8cf964a34e074056"
+    },
+    "resolver": {
+      "bytes": 25760,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\ro_resume_paths.py",
+      "sha256": "219fd84678e3cf4c17401fc367c4f803e4046432a34241cff0cdc3a859e880c4"
+    },
+    "runtime": {
+      "bytes": 23255,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\ro_resume_runtime.py",
+      "sha256": "1bd169f1c215337475fc250e2e1ae6c19a37f35bc761e0fc48566d85acf614c7"
+    },
+    "verifier": {
+      "bytes": 42002,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_72_integration_proposal_v1\\candidate_v3\\verify_later_window.py",
+      "sha256": "4bfc5ff16560b83b3a338baba19cb16efe9db7d9fa66d28a49373fcabd63fc56"
+    }
+  },
+  "source_bind_output": {
+    "actual_configs_catalog_observation_sourcepromotion_and_admission": null,
+    "allocated_mode_adds_one_actual_raw_allocation": true,
+    "can_arm": false,
+    "current_scope_source_proposal_only": true,
+    "metadata_roles": 66,
+    "selected_scripts": 5
+  },
+  "source_only": true,
+  "source_roster": {
+    "bytes": 3923,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\FUTURE_SOURCE_PINS_V3.json",
+    "sha256": "86f03668a61eeaa4a906304b0cf5cbabc929f279876bf10203316944ffb8c07f"
+  },
+  "three_origin_inputs": {
+    "closed37_48": "/resume-window37-48",
+    "closed49_60": "/resume-window49-60",
+    "legacy_closed36": "/resume-prefix"
+  },
+  "unchanged_scope_guards": [
+    "complete fresh container/process census",
+    "exact current source/config/argv/mount/cap joins",
+    "unknown work refuses",
+    "ordinary32GiB/48CPU once",
+    "qualification residual6GiB/2CPU once",
+    "QIMG full50GiB/8CPU minus proven current cap once",
+    "other ROOT pending12GiB/4CPU/ROOT2 until current source join",
+    "authentic terminal speech zero RAM/CPU with ROOT20 conservative once",
+    "backup132070244352 reservation once",
+    "backup actual quiescent deferral with conservative256MiB/1CPU future",
+    "VX8GiB and NAS512GiB floor",
+    "actual NAS/Lexar/ROOT domains and RAM/Lexar16GiB headroom",
+    "H3 original preserved future holds"
+  ],
+  "unresolved_inputs": {
+    "bytes": 1716,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\actual61_72_binding_proposal_v1\\ACTUAL61_72_INPUTS_UNRESOLVED_V1.json",
+    "sha256": "4a2416f30abc11c1804120c13dbc293983f1dd84452f3948dd3b8dbb7c91b4bf"
+  },
+  "v2_contract_retained_sha256": "8cda3df4bf61f7734285a86b9df8053365f9a4cae11ba1c0d485d1fdd0467ce2",
+  "v3_contract_retained_sha256": "ed8d0d275b6b175ec03fa18633041e286372a0b7f8f241d3d38000b0daf58661",
+  "whole_controller_terminal_result_and_single_completion_event_join": true
+}

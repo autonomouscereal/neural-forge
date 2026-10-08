@@ -1,0 +1,46 @@
+{
+  "actual_current_holder_absence_proven": false,
+  "actual_current_normal_row_reobserved": false,
+  "actual_next_admission_claimed": false,
+  "candidate_main_imported_or_executed": false,
+  "checks": [
+    {
+      "decoded_plus_existing_metadata_bytes": 58264916,
+      "existing_source49_metadata_bytes": 20153445,
+      "name": "actual_full62_terminal_normal_release_ownerV37_join",
+      "passed": true
+    },
+    {
+      "name": "changed_actual_terminal_raw_fullSHA_refused",
+      "passed": true,
+      "reason": "complete raw QIMG metadata fullSHA/bytes required"
+    },
+    {
+      "name": "changed_actual_normal_release_owner_bytes_refused",
+      "passed": true,
+      "reason": "complete raw QIMG metadata fullSHA/bytes required"
+    }
+  ],
+  "input_source_pins": {
+    "QIMG_native_compute_closure": {
+      "bytes": 46772,
+      "name": "QIMG_EXACT_NATIVE_COMPUTE_CLOSURE_PUBLIC_PROOF_V1.json",
+      "sha256": "0f287f18050665afd92ee5d35cbf5f3cee516efff185af2e9d643f0721d54b20"
+    },
+    "QIMG_native_terminal_raw_part_1": {
+      "bytes": 9338811,
+      "name": "QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_1_V1.json",
+      "sha256": "8e2ada9351e913b593c1b0d851e40725aabdbf11ce1e14b6e9cd3355eec68e28"
+    },
+    "QIMG_native_terminal_raw_part_2": {
+      "bytes": 9393937,
+      "name": "QIMG_EXACT_NATIVE_TERMINAL_RAW_PART_2_V1.json",
+      "sha256": "db9fd521dc10e5524f7cd8260d9e079a65647b9cb64ad33426cb1def51fae4ad"
+    }
+  },
+  "passed": true,
+  "pure_consumer_sha256": "a90c0c1b365f79a5168af592601e2b4212d77edf80467c282b7d4660ac4d95d6",
+  "runtime_or_database_or_Relay_actions": false,
+  "schema": "neural_forge.k3_NEXT_QIMG_closed_compute_focused_metadata_checks.v1",
+  "source49_changed": false
+}

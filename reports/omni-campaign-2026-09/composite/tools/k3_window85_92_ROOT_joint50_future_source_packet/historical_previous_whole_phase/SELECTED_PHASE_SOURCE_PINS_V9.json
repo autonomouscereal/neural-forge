@@ -1,0 +1,57 @@
+{
+  "ancestry": {
+    "bytes": 17493,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_recovery_ancestry.py",
+    "sha256": "88e118847efb589d9cc48fc578996c3ca48cd0a0b9a4b491aab573fed54a9d41"
+  },
+  "collector": {
+    "bytes": 28901,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\collect_actual85_92_multi_origin.py",
+    "sha256": "5d5b3853ed7a7538371881484d09f98280bdf6059ce17d8f80cf1cfe6b780660"
+  },
+  "driver": {
+    "bytes": 44624,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\continuation_worker85_92_template_v1.py",
+    "sha256": "4e17e5e87688096c747f83ab7d68f1ed4c5e521d36bff750780bcfa6e5e43509"
+  },
+  "facts": {
+    "bytes": 11936,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v1\\k3_owned_readonly_facts85_92_template_v1.py",
+    "sha256": "854eab9d510a88e4fb3a293ba7185f1dcdb0a562f0368875b11323edf8b05ec4"
+  },
+  "host": {
+    "bytes": 17967,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v1\\k3_capacity_host_loop85_92_template_v1.py",
+    "sha256": "fc3ef46f960632109e3ea91cc2ebbaee2465ac3b10fcc7c8c5929ea3f89b4a8b"
+  },
+  "native": {
+    "bytes": 192629,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\k3_dense_pass.py",
+    "sha256": "655e10cb06105a7933231a958e679d5e45a8b45ae1d9fb89a1e7940fd464f61b"
+  },
+  "preflight": {
+    "bytes": 124801,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_85_control_integration_v1\\phase85_92_candidate_v9\\k3_owned_capacity_preflight85_92_ROOT_serial_v9.py",
+    "sha256": "6cfac2f548fca339c26cf0a91c0fee52f4f74ece1f640d9304609764da7bd640"
+  },
+  "qualification": {
+    "bytes": 5223,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\native_nas_io_qualification85_92_template_v1.py",
+    "sha256": "29ceb3fa3cdaa4dcc006be478ab9f410b704703a0a973db1d2122cf12195f9a1"
+  },
+  "resolver": {
+    "bytes": 27385,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_paths.py",
+    "sha256": "6c626aef115e17274c119ec8357d77380bf3d22df07ecda5f123988f3b74e6e8"
+  },
+  "runtime": {
+    "bytes": 38322,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\ro_resume_runtime.py",
+    "sha256": "22cdf12a5de1f6a6755b59085f15c0da508cb5cb34e3dba022dd085aa2b6f9f8"
+  },
+  "verifier": {
+    "bytes": 44685,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\later73_92_integration_source_proposals_v1\\window85_92_candidate_v4b\\verify_later_window.py",
+    "sha256": "a717f7b437807c38c086aad67dbc72c4733e8fb823f1e66c7c47e5515e60be87"
+  }
+}

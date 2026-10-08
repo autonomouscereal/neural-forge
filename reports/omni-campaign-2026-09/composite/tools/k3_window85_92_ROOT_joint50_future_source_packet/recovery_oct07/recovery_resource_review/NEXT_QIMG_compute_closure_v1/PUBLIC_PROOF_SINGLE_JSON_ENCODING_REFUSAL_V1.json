@@ -1,0 +1,9 @@
+{
+  "schema": "neural_forge.k3_local_QIMG_proof_encoding_attempt.v1",
+  "selected": false,
+  "source_sha256": "70ebb974045acf8b6b6d7209b08aa85e6fe397f1353b976dc1ed39af07d618ca",
+  "error": "AssertionError: complete one-JSON proof exceeds unchanged16MiB guard",
+  "compressed_terminal_rows_bytes": 18731548,
+  "metadata_bytes_written_by_failed_attempt": 0,
+  "runtime_actions": false
+}

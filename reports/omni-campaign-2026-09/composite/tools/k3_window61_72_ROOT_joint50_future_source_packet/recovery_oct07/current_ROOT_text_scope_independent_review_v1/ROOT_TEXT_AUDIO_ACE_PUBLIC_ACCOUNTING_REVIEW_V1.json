@@ -1,0 +1,66 @@
+{
+  "at_utc": "2026-10-08T00:27:54.795989+00:00",
+  "capability_accepted": false,
+  "inclusive_ROOT_source_frame": {
+    "is_additional47GiB": false,
+    "new": 50465865728,
+    "old": 49392123904
+  },
+  "limits": [
+    "Public immutable source adoption is not fresh resource/actor admission.",
+    "No current49 source hotpatch; next whole caller/proof/pin/metadata source derivative still requires its independent review.",
+    "Prepared conservative speech20 future is retained by parent steering; no old-future discount is inferred from inclusive47 source frame."
+  ],
+  "new_same_serial_RAM_CPU": {
+    "CPU_threads": 4,
+    "RAM_bytes": 17179869184
+  },
+  "new_source_derivative_pending_review": true,
+  "no_active_ROOT_actor_or_native_text_capture_claimed": true,
+  "no_candidate_entrypoints_imports_tests_or_fixtures": true,
+  "no_remote_DB_Relay_runtime_allocator_provider_actions": true,
+  "own_future_writes_bytes": {
+    "ACE": 8589934592,
+    "audio": 1073741824,
+    "delta_vs_9GiB": 1073741824,
+    "text": 1073741824,
+    "total": 10737418240
+  },
+  "pins": [
+    {
+      "bytes": 28989,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\ROOT_H3_TEXT_SERIAL_PENDING_ACE_AUDIO_ADOPTION_V1.json",
+      "sha256": "f776fc901232fed121f2ba62b690834659a63e0c426f8c290e9f92685e5162af"
+    },
+    {
+      "bytes": 44251,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\H3_text_layer50_streaming_native_source_v1\\PREPARED_H3_NATIVE_STREAMED_TEXT_SOURCE_CHECKPOINT_V1.json",
+      "sha256": "db441f870c5ae6c85ae4c6a0191593cb25b4fd1993e0de30bd4dc742928acce0"
+    },
+    {
+      "bytes": 51689,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\H3_streamed_text_collector_independent_review_v1\\INDEPENDENT_H3_NATIVE_STREAMED_TEXT_COLLECTOR_SOURCE_ACCEPTANCE_V1.json",
+      "sha256": "17bd92cc81bab9af0aa63345d71c3a9ad2c9071e19b0e2d7cf5898cef613f265"
+    },
+    {
+      "bytes": 3435,
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\all_sources_next_execution_oct07\\qvl32_native_execution_01a10f94\\H3_audio_VAE_cpu_runtime_route_v2_verifier_phase\\ROOT_H3_AUDIO_SERIAL_PENDING_ACE_ADOPTION_V1.json",
+      "sha256": "f13b874a59934ed4fa3f50e0e6d464713d8f5aab5b1756963607068d02da11f7"
+    }
+  ],
+  "prepared_K3_conservative_frame": {
+    "current49_runtime_adoption": false,
+    "new49GiB": 52613349376,
+    "old48GiB": 51539607552,
+    "only1GiB_added": true,
+    "speech_20GiB_retained": true
+  },
+  "prior_root_serial_RAM_CPU": {
+    "CPU_threads": 4,
+    "RAM_bytes": 17179869184
+  },
+  "same_genuine_ROOT_binding_as_prior_f13": true,
+  "schema": "neural_forge.k3_next_ROOT_text_audio_ACE_public_adoption_independent_review.v1",
+  "training_accepted": false,
+  "verdict": "PASS_PUBLIC_SOURCE_ACCOUNTING_ONLY"
+}

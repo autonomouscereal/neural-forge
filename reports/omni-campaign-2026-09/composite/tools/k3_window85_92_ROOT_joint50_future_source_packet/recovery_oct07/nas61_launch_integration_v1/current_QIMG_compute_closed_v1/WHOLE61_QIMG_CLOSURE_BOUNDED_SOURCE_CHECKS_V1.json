@@ -1,0 +1,24 @@
+{
+  "actual_next_binding_or_admission": null,
+  "facts_host_math_observer_native_and_normal_controls_unchanged": true,
+  "records": [
+    {
+      "candidate": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_QIMG_compute_closed_v1\\bind_actual61_QIMG_compute_closed_v1.py",
+      "changed_functions": [
+        "selected",
+        "bind",
+        "verify_bound_bundle",
+        "final_configs"
+      ],
+      "sha256": "9aeee414367f1123d08f20a7978026a5acc394117662529c06c38fbe72f909e4"
+    },
+    {
+      "candidate": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\nas61_launch_integration_v1\\current_QIMG_compute_closed_v1\\launch\\launch_actual61_QIMG_compute_closed_v1.py",
+      "changed_functions": [],
+      "sha256": "03276fcc0f6415a096a95cf99db202ee202e2ca3076803d5e693606e99d6d7c3"
+    }
+  ],
+  "runtime_or_database_actions": false,
+  "schema": "neural_forge.k3_NEXT61_QIMG_whole_caller_bounded_source_checks.v1",
+  "wrapper_operation_ASTs_unchanged": true
+}

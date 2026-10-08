@@ -1,0 +1,57 @@
+{
+  "actual_next_admission": null,
+  "candidate_main_or_actors_imported": false,
+  "checks": [
+    {
+      "case": "exact_current_e886_complete10raw_pending_scope_join",
+      "passed": true
+    },
+    {
+      "case": "wrong_current_source_fullSHA_refused",
+      "passed": true,
+      "reason": "exact current ROOT joint50 source proof required"
+    },
+    {
+      "case": "mismatched_existing_serial_envelope_refused",
+      "passed": true,
+      "reason": "existing ROOT serial MAX envelope and active actor guards preserved"
+    }
+  ],
+  "consumer": {
+    "bytes": 8723,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\NEXT_ROOT_joint50_future_scope_v1\\ROOT_joint50_future_consumer_v1.py",
+    "sha256": "e48f85c0633febd615767e34634c8ae13559d7611ab032307b83fd04d5651247"
+  },
+  "current_actor_adoption": false,
+  "old_proof_or_math_checks_rerun": false,
+  "proof": {
+    "bytes": 533199,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\NEXT_ROOT_joint50_future_scope_v1\\ROOT_CURRENT_JOINT50_SERIAL_FUTURE_PUBLIC_PROOF_V1.json",
+    "sha256": "65379f9787f9eec44575c6785b33eb4d461cefc91bc1754fdddfcf2dae528708"
+  },
+  "public_raw_member_count": 10,
+  "result": {
+    "CPU_serial_MAX_threads_once": 4,
+    "P40_proposal_adopted": false,
+    "RAM_serial_MAX_bytes_once": 17179869184,
+    "additional_CPU_threads": 0,
+    "additional_Lexar_write_bytes_once": 30064771072,
+    "additional_RAM_bytes": 0,
+    "additional_ROOT_write_bytes_once": 2147483648,
+    "compatibility_fullhash_phase_adopted": false,
+    "conservative_ROOT_speech_padding_preserved_bytes": 2147483648,
+    "conservative_whole_ROOT_required_bytes": 54760833024,
+    "current_actor_adopted": false,
+    "owner_adoption_sha256": "e886d40173bd3a02065946f9f60a49d89356d7894334e8d5af26369cdf81930f",
+    "owner_inclusive_ROOT_floor_bytes": 52613349376,
+    "prior_future_or_retained_disk_credit_bytes": 0,
+    "source_pin": {
+      "bytes": 533199,
+      "name": "ROOT_CURRENT_JOINT50_SERIAL_FUTURE_PUBLIC_PROOF_V1.json",
+      "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\NEXT_ROOT_joint50_future_scope_v1\\ROOT_CURRENT_JOINT50_SERIAL_FUTURE_PUBLIC_PROOF_V1.json",
+      "sha256": "65379f9787f9eec44575c6785b33eb4d461cefc91bc1754fdddfcf2dae528708"
+    }
+  },
+  "runtime_actions": false,
+  "schema": "neural_forge.k3_NEXT_ROOT_joint50_bounded_current_metadata_checks.v1"
+}

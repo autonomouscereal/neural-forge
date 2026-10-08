@@ -1,0 +1,48 @@
+{
+  "NEXT_sources_before_allocation": [
+    71,
+    74,
+    77
+  ],
+  "P40_STATUS_question_is_not_adoption": true,
+  "actual_next_terminal_UUID_FS_A_cap_admission": null,
+  "approval_timeout": "Initial bounded filename call auto-review deadline elapsed; sole allowed bounded retry succeeded, no runtime action.",
+  "compatibility_STATUS_is_not_adoption": true,
+  "consumer": {
+    "bytes": 8723,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\NEXT_ROOT_joint50_future_scope_v1\\ROOT_joint50_future_consumer_v1.py",
+    "sha256": "e48f85c0633febd615767e34634c8ae13559d7611ab032307b83fd04d5651247"
+  },
+  "current49_changed": false,
+  "future_delta_once": {
+    "CPU_threads": 0,
+    "Lexar_bytes": 30064771072,
+    "RAM_bytes": 0,
+    "ROOT_bytes": 2147483648
+  },
+  "normal_promoted_commit": null,
+  "prepared_after_preserving_padding": {
+    "Lexar_QIMG_ROOTjoint_head_once_bytes": 73014444032,
+    "ROOT_bytes": 54760833024,
+    "ROOT_serial_RAM_CPU": [
+      17179869184,
+      4
+    ]
+  },
+  "prepared_before": {
+    "Lexar_QIMG_head_once_bytes": 42949672960,
+    "ROOT_bytes": 52613349376,
+    "ROOT_serial_RAM_CPU": [
+      17179869184,
+      4
+    ]
+  },
+  "proof": {
+    "bytes": 533199,
+    "path": "C:\\Users\\cereal\\Documents\\Codex\\2026-10-05\\task-4\\owner_fold_policy_oct06\\native_executor\\k3_continuation\\recovery_oct07\\recovery_resource_review\\NEXT_ROOT_joint50_future_scope_v1\\ROOT_CURRENT_JOINT50_SERIAL_FUTURE_PUBLIC_PROOF_V1.json",
+    "sha256": "65379f9787f9eec44575c6785b33eb4d461cefc91bc1754fdddfcf2dae528708"
+  },
+  "schema": "neural_forge.k3_NEXT_ROOT_joint50_actual_source_accounting_delta.v1",
+  "script_count": 5,
+  "source_only": true
+}
