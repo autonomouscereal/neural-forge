@@ -20,6 +20,7 @@ from safetensors.torch import save_file
 from chimera_omni.charted import H3_FP32_PARAMETERS, ChartedBlockSpec
 from chimera_omni.importing.safetensors_io import read_safetensors_file
 from chimera_omni.modeling.charted import H3CurveModulation
+from chimera_omni.importing.h3_modulation import normalize_h3_coefficients
 
 
 SCHEMA = "chimera_omni.composite.charted_block.v1"
@@ -148,6 +149,12 @@ def convert(*, block_state: Path, folded_mlp: Path, source_weights: Path, corese
     expected = {k: v for k, v in spec.parameter_shapes("", 1).items() if not k.startswith("chart_")}
     if {k: tuple(v.shape) for k, v in tensors.items()} != expected:
         raise ValueError("converted tensor geometry does not match the H3 native spec")
+    # Native curve-form constructor requests FP32 projections. The current
+    # pruned source stores weights/biases in F16; widen their exact represented
+    # values, retaining raw block pins and an explicit before/after value receipt.
+    tensors, coefficient_widening = normalize_h3_coefficients(
+        tensors, {name: expected[name] for name in H3_FP32_PARAMETERS},
+        {"h3_time.proj.weight", "h3_time.proj.bias"})
     if any(tensors[name].dtype != torch.float32 for name in H3_FP32_PARAMETERS):
         raise ValueError("H3 curve, time projection and RoPE source coefficients must be stored in FP32")
     if not all(bool(torch.isfinite(t).all()) for t in tensors.values()):
@@ -188,6 +195,7 @@ def convert(*, block_state: Path, folded_mlp: Path, source_weights: Path, corese
             "source_weights": str(source_weights.resolve()), "source_globals_tensor_sha256": global_digests,
             "source_globals_scope": "selected tensors only; full source-file identity is not reverified here",
             "frozen_tensor_sha256": frozen_digests, "folded_tensor_sha256": mlp_digests,
+            "h3_native_modulation_fp32_policy": coefficient_widening,
             "capture_references": reference_sources},
         "accounting": {"parent_mlp_parameters": parent_mlp, "child_mlp_parameters": child_mlp,
             "parent_block_parameters": sum(t.numel() for t in frozen.values()),
