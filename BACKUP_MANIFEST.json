@@ -1,0 +1,547 @@
+{
+  "schema": "chimera.task4.code_overlay_manifest.v1",
+  "created_at_utc": "20261009T164521Z",
+  "repository": "autonomouscereal/neural-forge",
+  "original_baseline_commit": "b6d46ad8d47097e6171ef4367761e530fd747d5d",
+  "original_final_local_commit": "7cafc2a14614ad182dc8154975e9c39346b61a9d",
+  "original_task_commits": [
+    "75012f7d740929a9f6a46c5bad3042e84ace82e9",
+    "e3e72abe3c0374129ca51b305fd2144ad2ae9a0f",
+    "bb679fd2f50051785cefcbc597afcd4a146b1abc",
+    "841a13786a5c2d9dd66405721c7e1b1d595ae3b0",
+    "3a92de8de4c8952ca53dd2adb06712af9af84826",
+    "53de216d135024b1f4c79a38089d1aedaeb253e7",
+    "e65ae8fae293d7842655a7bfa044f5585ddf3a63",
+    "ea45a0573fa647f4dfe56afcbfde3e0ef4ddc38b",
+    "eed06e09a7f50225ddad6a4aa8eafe60c4c1bdae",
+    "04a6ec3fe96d694a9b2e27d5d20b57a3abb5b905",
+    "54e85ed000e66eaf6f380fbc3fdbe1af65d834ad",
+    "550a73c7df8466659e2fc7a25f89a7ec21722930",
+    "a5a4a7961d206bdb17e22f00701b1eb5e97cefdd",
+    "036ed54d226dc9327a7fc7aa646ffa5a50d2bda8",
+    "06ebad3c3a88a8a40588bf99b1eefb1925acd4fc",
+    "866adcfd586185225158d7d4228173ca95bf9319",
+    "148aa86c177247f79cc321f037cdb2f7286261f6",
+    "5ec226e49e459c7eb0cc2a51c1cf9d3b1a595b59",
+    "7cafc2a14614ad182dc8154975e9c39346b61a9d"
+  ],
+  "files": {
+    "reports/omni-campaign-2026-09/calibration/SHARDED_LOADING_REVIEW_2026-10-06.md": {
+      "bytes": 7034,
+      "sha256": "5777454af34fc6cf04e284f4048359fd4c57308c8c527a9328db0fa3ed52b864",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 6911,
+      "original_commit_blob_sha256": "60117d9b0fcbc35d167bae2e316a8c28f80c8952d14cfe65ed3a5445d70a0a6a"
+    },
+    "reports/omni-campaign-2026-09/calibration/oc_run_frozen_bank.py": {
+      "bytes": 46403,
+      "sha256": "dc14af0c3442d656fa41868c0551a5e68a47dcb1f8676d7be88ad13e25ba541e",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 46403,
+      "original_commit_blob_sha256": "dc14af0c3442d656fa41868c0551a5e68a47dcb1f8676d7be88ad13e25ba541e"
+    },
+    "reports/omni-campaign-2026-09/calibration/test_oc_sharded_loader.py": {
+      "bytes": 10260,
+      "sha256": "c716d0967b40b67ae972c80d3356c6e39f216407d98c347a134e5f39a3067951",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 10260,
+      "original_commit_blob_sha256": "c716d0967b40b67ae972c80d3356c6e39f216407d98c347a134e5f39a3067951"
+    },
+    "reports/omni-campaign-2026-09/composite/reviews/QIMG_DUAL_STREAM_FOLD_CONTRACT.md": {
+      "bytes": 9778,
+      "sha256": "7c4ef259afedff83e122c357f9351970bafa1651a739d7aef2d2c33cfb3cecaa",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 9614,
+      "original_commit_blob_sha256": "f95433b3f191ed072d1ff5cdb676258b21ca82f601bc7ae88883f2c7c2923791"
+    },
+    "reports/omni-campaign-2026-09/composite/test_hy3d_dense_child_tiny.py": {
+      "bytes": 9293,
+      "sha256": "bf1a869b43f5c4326661d86b5584202e18d32029f413257ebf100cad4e64c9ca",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 9293,
+      "original_commit_blob_sha256": "bf1a869b43f5c4326661d86b5584202e18d32029f413257ebf100cad4e64c9ca"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/C17_NATIVE_CHART_CANDIDATE.md": {
+      "bytes": 6519,
+      "sha256": "d102a4518f6b23e0a43ffd6a1ca9f0692782d74eb586c169fb96d208f4f3c9ea",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 6400,
+      "original_commit_blob_sha256": "35cc98d718e67326ddbf6543f640fc7d6119a90a0f4493b46e9f52852ca7f803"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/C18_ACE_HOST_TABLES.md": {
+      "bytes": 5602,
+      "sha256": "19b225aa3088faae704a4abe1185e59ae623f7f8229a9afaf31ef020ca0e63b2",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5602,
+      "original_commit_blob_sha256": "19b225aa3088faae704a4abe1185e59ae623f7f8229a9afaf31ef020ca0e63b2"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/K3_CONTINUATION_PREFLIGHT.md": {
+      "bytes": 6024,
+      "sha256": "6574eca2a6d0e689c0a68edcb2445b2cb0873a2a2df7d851607fcaeb213f8006",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5927,
+      "original_commit_blob_sha256": "8d21bdce9048496c71a82b4167ca85af2e47ca6f0cb8586be64ec26701fa9bc2"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_ATOMIC_PUBLICATION.md": {
+      "bytes": 2432,
+      "sha256": "5449aa83cd6e2644e10a67917839ce8a00e7caebdfc09a98644c4f7377b55716",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 2432,
+      "original_commit_blob_sha256": "5449aa83cd6e2644e10a67917839ce8a00e7caebdfc09a98644c4f7377b55716"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_DEVELOPMENT_REFOLD.md": {
+      "bytes": 5803,
+      "sha256": "c34e5263a9a47a71e36058a8aca2c31cc10167e7f22f9403dc95d21d6d222722",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5714,
+      "original_commit_blob_sha256": "29760ec201dedfd14bcbe3e6bda31b8b174663f50215e858fcbfe40b3bc73d9a"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_FRESH_CAPTURE.md": {
+      "bytes": 5341,
+      "sha256": "41cb32e6d4687603b191146df62469817c13db08856c8cc5d3c06e4740c4b0c0",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5246,
+      "original_commit_blob_sha256": "1ce4682dfeb852dc860b2192bf975f6406cbcc3b1330f4167a832dbe89529e2b"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_FRESH_FOLD.md": {
+      "bytes": 4681,
+      "sha256": "e7f0fe89b93b85127331dd074fd237d9592c9adad62d8720b525fa1a25cc7839",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 4617,
+      "original_commit_blob_sha256": "c782a78833f47081b4b5f597c8f0fe3dd120fbe090d03ccc6608c48d361b335e"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_NATIVE_STACK.md": {
+      "bytes": 6621,
+      "sha256": "21c33a21157e14fa4c3f1e343ecb1743f5a4d1f74c94d730371aa20cb2bd8cce",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 6621,
+      "original_commit_blob_sha256": "21c33a21157e14fa4c3f1e343ecb1743f5a4d1f74c94d730371aa20cb2bd8cce"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_OWNER_DIAGNOSTIC_POLICY.md": {
+      "bytes": 5156,
+      "sha256": "75e3b60baaf32e4ba2d1cba0dd8602e367a730be9b72459a1ff5cd1eee281047",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5156,
+      "original_commit_blob_sha256": "75e3b60baaf32e4ba2d1cba0dd8602e367a730be9b72459a1ff5cd1eee281047"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_STACK_CAPTURE.md": {
+      "bytes": 6911,
+      "sha256": "38da1839afe803434328c9bcde48332d90c2313239cfa389ab4a09c7a7e2b666",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 6911,
+      "original_commit_blob_sha256": "38da1839afe803434328c9bcde48332d90c2313239cfa389ab4a09c7a7e2b666"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/QIMG_STACK_FOLD.md": {
+      "bytes": 3442,
+      "sha256": "374ada69828062e1abff8470751be72db6aedaf915efd4b1d2d7e551830e1627",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 3442,
+      "original_commit_blob_sha256": "374ada69828062e1abff8470751be72db6aedaf915efd4b1d2d7e551830e1627"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c10_native_candidate_binding.py": {
+      "bytes": 14997,
+      "sha256": "d2a22c1bf47d7ebda3ff2df9b5fb8a9f92e668bbb8d3251f3449028b8cedbb77",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 14997,
+      "original_commit_blob_sha256": "d2a22c1bf47d7ebda3ff2df9b5fb8a9f92e668bbb8d3251f3449028b8cedbb77"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c10_union_install.py": {
+      "bytes": 140138,
+      "sha256": "b99593383cdbb21a0b4660dcd994814b82056453709063e56fa5f2a7af712b0a",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 140138,
+      "original_commit_blob_sha256": "b99593383cdbb21a0b4660dcd994814b82056453709063e56fa5f2a7af712b0a"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_convert_h3.py": {
+      "bytes": 15289,
+      "sha256": "68ecdb4c83df6e993b1e1cf74fbf71f74a8c4eff899b28cb878a546d7d83a435",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 15289,
+      "original_commit_blob_sha256": "68ecdb4c83df6e993b1e1cf74fbf71f74a8c4eff899b28cb878a546d7d83a435"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_hy3d_contract.py": {
+      "bytes": 19252,
+      "sha256": "2aeda72d8fd1749943905a37da6932e12a0997036efedcd15b7d6b71e6585eda",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 19252,
+      "original_commit_blob_sha256": "2aeda72d8fd1749943905a37da6932e12a0997036efedcd15b7d6b71e6585eda"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_atomic_publication.py": {
+      "bytes": 4818,
+      "sha256": "86a5de1c00e00f3c91202360372c653ec5c631f445b684fe8ce7a8c6bdf822e1",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 4818,
+      "original_commit_blob_sha256": "86a5de1c00e00f3c91202360372c653ec5c631f445b684fe8ce7a8c6bdf822e1"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_broad_capture.py": {
+      "bytes": 29056,
+      "sha256": "a34e66eaba748d1a7f065e0d2d44b50828e26675963e0e37e905b9277fc5fabe",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 29056,
+      "original_commit_blob_sha256": "a34e66eaba748d1a7f065e0d2d44b50828e26675963e0e37e905b9277fc5fabe"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_development_refold.py": {
+      "bytes": 24645,
+      "sha256": "6d62d2589ea38f03e2203c9651fc75ec2bcc841689aa52782279048b43aa3677",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 24645,
+      "original_commit_blob_sha256": "6d62d2589ea38f03e2203c9651fc75ec2bcc841689aa52782279048b43aa3677"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_fold.py": {
+      "bytes": 36824,
+      "sha256": "786da8d009278c8391fc4232880e88c416ca92102ffbf652421186101d693eb9",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 36824,
+      "original_commit_blob_sha256": "786da8d009278c8391fc4232880e88c416ca92102ffbf652421186101d693eb9"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_fresh_capture.py": {
+      "bytes": 15891,
+      "sha256": "ca39ebf353eac8fab98c092143e0f09a7b187c900e9d94aa5a97b93303804ff0",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 15891,
+      "original_commit_blob_sha256": "ca39ebf353eac8fab98c092143e0f09a7b187c900e9d94aa5a97b93303804ff0"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_fresh_fold.py": {
+      "bytes": 24452,
+      "sha256": "20cebac1513004bf9fd2f1fdf020054ab0af03bcf47540d7c0c167b184bc2807",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 24452,
+      "original_commit_blob_sha256": "20cebac1513004bf9fd2f1fdf020054ab0af03bcf47540d7c0c167b184bc2807"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_fresh_metadata.py": {
+      "bytes": 30028,
+      "sha256": "46a65ddf5c968083e8ebe01c1fdbf0d2ba6ad3e9684294acd752dd4b2d3fe946",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 30028,
+      "original_commit_blob_sha256": "46a65ddf5c968083e8ebe01c1fdbf0d2ba6ad3e9684294acd752dd4b2d3fe946"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_fresh_preregistration.py": {
+      "bytes": 18319,
+      "sha256": "33a067a65298f9948b4a76789cfa81f878460668d3758fa7dc861ce133f24f6c",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 18319,
+      "original_commit_blob_sha256": "33a067a65298f9948b4a76789cfa81f878460668d3758fa7dc861ce133f24f6c"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_joint_replay.py": {
+      "bytes": 23249,
+      "sha256": "55fa2f8fcf34b57c2f3c55ed0314ac84483c28b7b59694377c8426dcc1e62f8f",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 23249,
+      "original_commit_blob_sha256": "55fa2f8fcf34b57c2f3c55ed0314ac84483c28b7b59694377c8426dcc1e62f8f"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_native_stack.py": {
+      "bytes": 33550,
+      "sha256": "3ba08803ebea2b331682f1e3671d92704b18b8bed65e3f6ec49c2440af7e4421",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 33550,
+      "original_commit_blob_sha256": "3ba08803ebea2b331682f1e3671d92704b18b8bed65e3f6ec49c2440af7e4421"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_stack_capture.py": {
+      "bytes": 31893,
+      "sha256": "4f8a1b6d4ba88082c1d95eff7d74bee49bdd33cde4535ac28780068de3c5229d",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 31893,
+      "original_commit_blob_sha256": "4f8a1b6d4ba88082c1d95eff7d74bee49bdd33cde4535ac28780068de3c5229d"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c16_qimg_stack_fold.py": {
+      "bytes": 39153,
+      "sha256": "c7b410e188cb73e450236f14053bb9296c70eaa904eaa39b80170f0edb7e54b3",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 39153,
+      "original_commit_blob_sha256": "c7b410e188cb73e450236f14053bb9296c70eaa904eaa39b80170f0edb7e54b3"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c17_capture_k3.py": {
+      "bytes": 34646,
+      "sha256": "750fb8d8b41657fc7ace2da8c398187688ae7928af0e91a28a1d089f6253ee84",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 34646,
+      "original_commit_blob_sha256": "750fb8d8b41657fc7ace2da8c398187688ae7928af0e91a28a1d089f6253ee84"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c17_fit_native_charts.py": {
+      "bytes": 22754,
+      "sha256": "3f1407ebf4c558833c02d0ee1a4f6746903919605273957a008c604ec00d3500",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 22754,
+      "original_commit_blob_sha256": "3f1407ebf4c558833c02d0ee1a4f6746903919605273957a008c604ec00d3500"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c17_source_binding.py": {
+      "bytes": 11750,
+      "sha256": "b86d86a24e2bfedb229c071fff3ed89cc75d27aeaca6ed61a87db8af46a571d5",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 11750,
+      "original_commit_blob_sha256": "b86d86a24e2bfedb229c071fff3ed89cc75d27aeaca6ed61a87db8af46a571d5"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/c18_ace_host_tables.py": {
+      "bytes": 23182,
+      "sha256": "68e8858fd105f1c4b1a71421db4ed9c3b10ddf1d134bf080d725807afd655dac",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 23182,
+      "original_commit_blob_sha256": "68e8858fd105f1c4b1a71421db4ed9c3b10ddf1d134bf080d725807afd655dac"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_dense_child_bundle.py": {
+      "bytes": 11839,
+      "sha256": "d277a954bd3877c044a6ef36fa086d065762c5aace99a794940368d49a03a4ff",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 11839,
+      "original_commit_blob_sha256": "d277a954bd3877c044a6ef36fa086d065762c5aace99a794940368d49a03a4ff"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_dense_child_contract.py": {
+      "bytes": 6367,
+      "sha256": "75b48247df8aa9ef2261696f5f867d8f111512231602bb34cd8a0f59c8a5c293",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 6367,
+      "original_commit_blob_sha256": "75b48247df8aa9ef2261696f5f867d8f111512231602bb34cd8a0f59c8a5c293"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_dense_child_fit.py": {
+      "bytes": 9034,
+      "sha256": "47a00887670c31e85f7a3adb7c145ef5e0d82ba09ff20cd52b9d07ea1b6e5c97",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 9034,
+      "original_commit_blob_sha256": "47a00887670c31e85f7a3adb7c145ef5e0d82ba09ff20cd52b9d07ea1b6e5c97"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_dense_child_fold.py": {
+      "bytes": 9900,
+      "sha256": "e7826993469d59a1c6d6f70672fd368b5bdfcaa1a1588e960aab61f3075e8000",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 9900,
+      "original_commit_blob_sha256": "e7826993469d59a1c6d6f70672fd368b5bdfcaa1a1588e960aab61f3075e8000"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_dense_child_native.py": {
+      "bytes": 8541,
+      "sha256": "977fc8a1b933d5f542dc99623ed9878282870ae0525c09a1885a22c636142928",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 8541,
+      "original_commit_blob_sha256": "977fc8a1b933d5f542dc99623ed9878282870ae0525c09a1885a22c636142928"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_full21_capture_reuse.py": {
+      "bytes": 8554,
+      "sha256": "fff747dd43292b6c894375aca2b5645409adbfcae5ff257f6211e9a6d95def1f",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 8431,
+      "original_commit_blob_sha256": "fede7a0d93f0bf16f95257783a7000f1834ffe9c1a62c3c6e285106ac586aab3"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_full21_contract.py": {
+      "bytes": 8517,
+      "sha256": "a71a4c89f8a4ef7e3d457961220db16a2869c5ac57977b30ecd5dcda8b650681",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 8517,
+      "original_commit_blob_sha256": "a71a4c89f8a4ef7e3d457961220db16a2869c5ac57977b30ecd5dcda8b650681"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_full21_linalg.py": {
+      "bytes": 7405,
+      "sha256": "49397f663321047cab095412ab9a48ccff6e3505770b921cb6f9ac07d44207b0",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 7405,
+      "original_commit_blob_sha256": "49397f663321047cab095412ab9a48ccff6e3505770b921cb6f9ac07d44207b0"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/hy3d_full21_native.py": {
+      "bytes": 18466,
+      "sha256": "d3c0acb12e9b15393aac7eeeb8bf2ecdeec12507568c828ae6e1bcd6268dd913",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 18466,
+      "original_commit_blob_sha256": "d3c0acb12e9b15393aac7eeeb8bf2ecdeec12507568c828ae6e1bcd6268dd913"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/preflight_k3_continuation.py": {
+      "bytes": 20752,
+      "sha256": "59a3ce498b7b0994049ce0f3f1b5c4901e828fb881bbb7829ac904ce556bae04",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 20752,
+      "original_commit_blob_sha256": "59a3ce498b7b0994049ce0f3f1b5c4901e828fb881bbb7829ac904ce556bae04"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c10_chart_admission.py": {
+      "bytes": 3751,
+      "sha256": "ca0a6403d14b77b3e976215337f8481bb5faab147df9acdc873c718ee09112d9",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 3751,
+      "original_commit_blob_sha256": "ca0a6403d14b77b3e976215337f8481bb5faab147df9acdc873c718ee09112d9"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c10_native_candidate_binding.py": {
+      "bytes": 17816,
+      "sha256": "d6727cbc30ce8c35f16f5a544aa70fd995ef23b60908bd4950c918ff4296c2b5",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 17816,
+      "original_commit_blob_sha256": "d6727cbc30ce8c35f16f5a544aa70fd995ef23b60908bd4950c918ff4296c2b5"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c10_runtime_arithmetic.py": {
+      "bytes": 5941,
+      "sha256": "a9d6fb799ada34df25373b0d33d92d79370b7b01685008d85cd1273c23393306",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5941,
+      "original_commit_blob_sha256": "a9d6fb799ada34df25373b0d33d92d79370b7b01685008d85cd1273c23393306"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c10_union_install.py": {
+      "bytes": 56388,
+      "sha256": "067072c18f6dd0133856c902ede0130c246869904e9c06b7bd94ca92ff80cd2c",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 56388,
+      "original_commit_blob_sha256": "067072c18f6dd0133856c902ede0130c246869904e9c06b7bd94ca92ff80cd2c"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_fold_hy3d.py": {
+      "bytes": 15984,
+      "sha256": "d910f2a159a91ed84328e384ab975928df4d6cc7e42e2b7489fafad835b61470",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 15984,
+      "original_commit_blob_sha256": "d910f2a159a91ed84328e384ab975928df4d6cc7e42e2b7489fafad835b61470"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_atomic_publication.py": {
+      "bytes": 8065,
+      "sha256": "d6bd63701e2a803d35a47ff468fb5e9d7ddecd6e15e1daacbcfdec1dc875a9c0",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 8065,
+      "original_commit_blob_sha256": "d6bd63701e2a803d35a47ff468fb5e9d7ddecd6e15e1daacbcfdec1dc875a9c0"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_development_refold.py": {
+      "bytes": 24249,
+      "sha256": "d07874da051335c84982bfb3d263c4ce94310a3f60a60e98222e47e5778612e4",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 24249,
+      "original_commit_blob_sha256": "d07874da051335c84982bfb3d263c4ce94310a3f60a60e98222e47e5778612e4"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_fold.py": {
+      "bytes": 16329,
+      "sha256": "50b4965aa128cc97a4b949cc393f57b3c161debaaaef0c1162165864e740d95d",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 16329,
+      "original_commit_blob_sha256": "50b4965aa128cc97a4b949cc393f57b3c161debaaaef0c1162165864e740d95d"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_fresh_capture.py": {
+      "bytes": 16599,
+      "sha256": "bddf200924c4890cd4087e70e304032235f1eb698478ed0846dad915f010c304",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 16599,
+      "original_commit_blob_sha256": "bddf200924c4890cd4087e70e304032235f1eb698478ed0846dad915f010c304"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_fresh_fold.py": {
+      "bytes": 16270,
+      "sha256": "9564da284239f41c5bba1a71ca565dd491259a0530422b664bdbd960bbc53ec2",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 16270,
+      "original_commit_blob_sha256": "9564da284239f41c5bba1a71ca565dd491259a0530422b664bdbd960bbc53ec2"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_fresh_stages.py": {
+      "bytes": 15223,
+      "sha256": "6a366ea44539a9bb4d975774e980e4da90cf3e5d58d8ad8ef831f9df6846228e",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 15223,
+      "original_commit_blob_sha256": "6a366ea44539a9bb4d975774e980e4da90cf3e5d58d8ad8ef831f9df6846228e"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_joint_replay.py": {
+      "bytes": 13924,
+      "sha256": "f2e3bae1ff7719bfa20508d0e1b98285f5e0b15e83bb9005ded50977b4e1fbe5",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 13924,
+      "original_commit_blob_sha256": "f2e3bae1ff7719bfa20508d0e1b98285f5e0b15e83bb9005ded50977b4e1fbe5"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_native_stack.py": {
+      "bytes": 15870,
+      "sha256": "41fb3d4c14d8ace058390772181a07d0d356cafdf9f36860b1f8f862069606c1",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 15870,
+      "original_commit_blob_sha256": "41fb3d4c14d8ace058390772181a07d0d356cafdf9f36860b1f8f862069606c1"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_owner_diagnostic_policy.py": {
+      "bytes": 9523,
+      "sha256": "69ed091a9a2bada6bcbc6792ac3bc4126961e92839f382eb4ff9dc3014a37d5e",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 9523,
+      "original_commit_blob_sha256": "69ed091a9a2bada6bcbc6792ac3bc4126961e92839f382eb4ff9dc3014a37d5e"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_publication_producers.py": {
+      "bytes": 4314,
+      "sha256": "06b0c9c7a50897fe5783335166130b6447d9e9440895933a44d224632de10173",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 4314,
+      "original_commit_blob_sha256": "06b0c9c7a50897fe5783335166130b6447d9e9440895933a44d224632de10173"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_rejection_receipt.py": {
+      "bytes": 8769,
+      "sha256": "460c4fb0c14c99ccde565a6d1c7cdca40ad58762e552ea718bdb71fd7a95582f",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 8769,
+      "original_commit_blob_sha256": "460c4fb0c14c99ccde565a6d1c7cdca40ad58762e552ea718bdb71fd7a95582f"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_stack_capture.py": {
+      "bytes": 24246,
+      "sha256": "9d250775ebd2360322098fc467f9bbbd6bb2d3d4ffa423c0d4236ff3d71c5563",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 24246,
+      "original_commit_blob_sha256": "9d250775ebd2360322098fc467f9bbbd6bb2d3d4ffa423c0d4236ff3d71c5563"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c16_qimg_stack_fold.py": {
+      "bytes": 14588,
+      "sha256": "054da7876f374b5b939dce27aff565b999d557ebfd9fe182cca3ecf19630a844",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 14588,
+      "original_commit_blob_sha256": "054da7876f374b5b939dce27aff565b999d557ebfd9fe182cca3ecf19630a844"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c17_fit_native_charts.py": {
+      "bytes": 17474,
+      "sha256": "36c363ed37e65a02f9307b017eda603e10a1a6047ae2dfc4c21dfdc0268e96e4",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 17474,
+      "original_commit_blob_sha256": "36c363ed37e65a02f9307b017eda603e10a1a6047ae2dfc4c21dfdc0268e96e4"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_c18_ace_host_tables.py": {
+      "bytes": 14103,
+      "sha256": "2420c489cf34c46c88b203e42aedf95aeb5161286031590a616c6f08e61e89f1",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 14103,
+      "original_commit_blob_sha256": "2420c489cf34c46c88b203e42aedf95aeb5161286031590a616c6f08e61e89f1"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_mediafold_law_statistics.py": {
+      "bytes": 7642,
+      "sha256": "763267900d4cb9c8281674e7cf7f9088fa5bc3974afc6e35ef2ee629274435c9",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 7642,
+      "original_commit_blob_sha256": "763267900d4cb9c8281674e7cf7f9088fa5bc3974afc6e35ef2ee629274435c9"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_mediafold_score_statistics.py": {
+      "bytes": 7851,
+      "sha256": "05d1dd0a5c6a563a57c8d2b5a9db4f83e10c5acd22534c9bc8d2face37f180e4",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 7851,
+      "original_commit_blob_sha256": "05d1dd0a5c6a563a57c8d2b5a9db4f83e10c5acd22534c9bc8d2face37f180e4"
+    },
+    "reports/omni-campaign-2026-09/composite/tools/test_preflight_k3_continuation.py": {
+      "bytes": 17049,
+      "sha256": "87e1dd97de09257d274958b18c7549149a98f15ddfb7ca8f26d34f9186fcac29",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 17049,
+      "original_commit_blob_sha256": "87e1dd97de09257d274958b18c7549149a98f15ddfb7ca8f26d34f9186fcac29"
+    },
+    "reports/omni-campaign-2026-09/media/EXPERIMENTAL_FIT_SELECTOR.md": {
+      "bytes": 5032,
+      "sha256": "39e876aa1c1148f2ceee332a0124eac4d7e23936fb842a5ce15ca6e1a1ce1b65",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 4952,
+      "original_commit_blob_sha256": "b2e59c38ef173565fb6cde4d842902615281fc0918d2c7384e2fca12fdc0facd"
+    },
+    "reports/omni-campaign-2026-09/media/mediafold/experimental_fit_selector.py": {
+      "bytes": 5758,
+      "sha256": "3988791097dc871077a0365a7f13dd632d98850c6b46d948df917c36f8d97b78",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 5758,
+      "original_commit_blob_sha256": "3988791097dc871077a0365a7f13dd632d98850c6b46d948df917c36f8d97b78"
+    },
+    "reports/omni-campaign-2026-09/media/mediafold/linalg.py": {
+      "bytes": 28629,
+      "sha256": "5e07f0dbdccbed261ec0da48ee2180bf5e4bd68a06dd9dea5c2b8a8615f42ce3",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 28629,
+      "original_commit_blob_sha256": "5e07f0dbdccbed261ec0da48ee2180bf5e4bd68a06dd9dea5c2b8a8615f42ce3"
+    },
+    "reports/omni-campaign-2026-09/media/test_experimental_fit_selector.py": {
+      "bytes": 12553,
+      "sha256": "335380894639631e28bfd1be3e8f21c5b5598bf1b556439334edb0a460c5ad9a",
+      "git_mode": "100644",
+      "original_commit_blob_bytes": 12553,
+      "original_commit_blob_sha256": "335380894639631e28bfd1be3e8f21c5b5598bf1b556439334edb0a460c5ad9a"
+    }
+  },
+  "file_count": 73,
+  "source_bytes": 1248501,
+  "complete_repository": false,
+  "snapshot_history_parents": [],
+  "restoration": "Overlay these exact source bytes onto the original baseline checkout. Full history and the baseline are retained on local task branches; this root snapshot does not carry them.",
+  "capability_acceptance_or_training_eligibility_claimed": false
+}
